@@ -10,8 +10,6 @@
  * Supported source types: `url`, `html`, `markdown`, `svg`, `mermaid`.
  */
 import CopyButton from '@/components/copy-button'
-import { MermaidPreview } from '@/components/preview/mermaid-preview'
-import { SvgPreview } from '@/components/preview/svg-preview'
 import {
   Card,
   CardContent,
@@ -41,16 +39,6 @@ const sourceSchema = z.discriminatedUnion('type', [
     type: z.literal('markdown'),
     markdown: z.string(),
   }),
-  z.object({
-    type: z.literal('svg'),
-    svg: z
-      .string()
-      .describe('Raw SVG markup — will be sanitized before render'),
-  }),
-  z.object({
-    type: z.literal('mermaid'),
-    code: z.string().describe('Mermaid diagram source'),
-  }),
 ])
 
 export type ArtifactSource = z.infer<typeof sourceSchema>
@@ -60,8 +48,11 @@ const schema = z.object({
   description: z.string().optional(),
   source: sourceSchema.describe(
     'The artifact payload. Pick the `type` that matches your content: ' +
-      '`url` for a live site, `html` for a self-contained page, `markdown` ' +
-      'for rich text, `svg` for vector art, `mermaid` for diagrams.',
+      '`url` for a live site, `html` for a self-contained page, or ' +
+      '`markdown` for rich text. For SVG illustrations and Mermaid ' +
+      'diagrams, emit a fenced ```svg or ```mermaid code block in the ' +
+      'regular assistant message instead — the renderer shows the source ' +
+      'and a live preview side-by-side automatically.',
   ),
   footer: z.string().optional().describe('Optional small footnote text'),
 })
@@ -108,10 +99,6 @@ function getSourceLabel(source: ArtifactSource): string {
       return 'HTML artifact'
     case 'markdown':
       return 'Markdown artifact'
-    case 'svg':
-      return 'SVG artifact'
-    case 'mermaid':
-      return 'Diagram artifact'
   }
 }
 
@@ -123,10 +110,6 @@ function sourceToCopyString(source: ArtifactSource): string {
       return source.html
     case 'markdown':
       return source.markdown
-    case 'svg':
-      return source.svg
-    case 'mermaid':
-      return source.code
   }
 }
 
@@ -155,18 +138,6 @@ function sourceToDownload(
         mimeType: 'text/markdown;charset=utf-8',
         filename: `${base}.md`,
       }
-    case 'svg':
-      return {
-        content: source.svg,
-        mimeType: 'image/svg+xml',
-        filename: `${base}.svg`,
-      }
-    case 'mermaid':
-      return {
-        content: source.code,
-        mimeType: 'text/plain;charset=utf-8',
-        filename: `${base}.mmd`,
-      }
   }
 }
 
@@ -193,12 +164,10 @@ type ArtifactPreviewPanelLayout = 'card' | 'sidebar'
 function Preview({
   source,
   title,
-  isDarkMode,
   className,
 }: {
   source: ArtifactSource
   title?: string
-  isDarkMode: boolean
   className?: string
 }) {
   switch (source.type) {
@@ -237,16 +206,6 @@ function Preview({
           <ReactMarkdown>{source.markdown}</ReactMarkdown>
         </div>
       )
-    case 'svg':
-      return <SvgPreview code={source.svg} className={className} />
-    case 'mermaid':
-      return (
-        <MermaidPreview
-          code={source.code}
-          isDarkMode={isDarkMode}
-          className={className}
-        />
-      )
   }
 }
 
@@ -257,9 +216,6 @@ function getSidebarPreviewClassName(source: ArtifactSource): string {
       return 'h-full w-full border-0 bg-white'
     case 'markdown':
       return 'prose prose-sm h-full max-w-none overflow-auto px-4 py-3 text-content-primary dark:prose-invert'
-    case 'svg':
-    case 'mermaid':
-      return 'flex h-full w-full items-center justify-center overflow-auto p-4 [&>svg]:h-auto [&>svg]:max-h-full [&>svg]:w-full [&>svg]:max-w-full'
   }
 }
 
@@ -345,7 +301,6 @@ export function ArtifactPreviewPanel({
           <Preview
             source={source}
             title={title}
-            isDarkMode={isDarkMode}
             className={
               isSidebarLayout ? getSidebarPreviewClassName(source) : undefined
             }
