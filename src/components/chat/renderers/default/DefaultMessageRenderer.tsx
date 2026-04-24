@@ -321,6 +321,11 @@ const DefaultMessageComponent = ({
                     ]}
                     isStreaming={!!isStreaming && !!isLastMessage}
                     isDarkMode={isDarkMode}
+                    onRetry={
+                      onRegenerateMessage
+                        ? () => onRegenerateMessage(messageIndex)
+                        : undefined
+                    }
                   />
                 </div>
               )

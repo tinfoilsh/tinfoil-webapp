@@ -11,6 +11,7 @@
  */
 import { LoadingDots } from '@/components/loading-dots'
 import { logError } from '@/utils/error-handling'
+import { RefreshCw } from 'lucide-react'
 import React, { memo, useEffect, useRef, useState } from 'react'
 import { getGenUIWidget, renderGenUIInline } from './render'
 import type { GenUIToolCall } from './types'
@@ -19,6 +20,12 @@ interface GenUIToolCallRendererProps {
   toolCalls: GenUIToolCall[]
   isStreaming: boolean
   isDarkMode?: boolean
+  /**
+   * If provided, a "Try again" button is shown on parse-failure cards and
+   * will regenerate the assistant message that produced the failed tool
+   * call. Intended to be bound to the chat-level regenerate handler.
+   */
+  onRetry?: () => void
 }
 
 /** Minimum time (ms) a placeholder stays visible after we could render. */
@@ -83,6 +90,7 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
   toolCalls,
   isStreaming,
   isDarkMode,
+  onRetry,
 }: GenUIToolCallRendererProps) {
   const releasedIds = usePlaceholderRelease(
     toolCalls,
@@ -113,33 +121,18 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
               </div>
             )
           }
-          if (!isStreaming) {
-            logError(
-              'GenUI render failed',
-              new Error(`Unable to render component: ${tc.name}`),
-              {
-                component: 'GenUIToolCallRenderer',
-                action: 'render',
-                metadata: { toolName: tc.name },
-              },
-            )
-            return (
-              <div
-                key={tc.id}
-                className="my-4 rounded-lg border border-border-subtle bg-transparent px-4 py-3 text-sm text-content-muted"
-              >
-                Unable to render component: {tc.name}
-              </div>
-            )
-          }
         }
 
         if (isStreaming) {
           return (
             <div
               key={tc.id}
-              className="my-4 flex h-12 items-center gap-2 rounded-lg border border-border-subtle bg-transparent px-4"
+              className="my-4 flex items-center gap-2 rounded-lg border border-border-subtle bg-transparent px-4 py-3"
             >
+              <span
+                className="h-2 w-2 animate-pulse rounded-full bg-content-primary"
+                aria-hidden
+              />
               <span className="text-sm font-medium text-content-primary">
                 Generating component
               </span>
@@ -148,7 +141,46 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
           )
         }
 
-        return null
+        // Not streaming, and either:
+        //  - JSON never completed (`input` is null), or
+        //  - schema validation failed (`renderGenUIInline` returned null).
+        // In both cases the model did not produce a valid widget. Surface
+        // an error card with a retry affordance when available.
+        logError(
+          'GenUI parse/render failed',
+          new Error(`Unable to produce a valid widget: ${tc.name}`),
+          {
+            component: 'GenUIToolCallRenderer',
+            action: 'render',
+            metadata: { toolName: tc.name, hasInput: !!input },
+          },
+        )
+        return (
+          <div
+            key={tc.id}
+            className="my-4 flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-surface-card px-4 py-3 text-sm"
+          >
+            <div className="flex flex-col">
+              <span className="font-medium text-content-primary">
+                Couldn&apos;t produce a valid widget
+              </span>
+              <span className="text-xs text-content-muted">
+                The model returned a response that didn&apos;t match the{' '}
+                {tc.name} widget schema.
+              </span>
+            </div>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm font-medium text-content-primary transition-colors hover:bg-surface-card"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Try again
+              </button>
+            )}
+          </div>
+        )
       })}
     </React.Fragment>
   )
