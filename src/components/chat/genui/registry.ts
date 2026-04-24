@@ -12,6 +12,15 @@
  */
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { GenUIWidget } from './types'
+import { widget as Callout } from './widgets/Callout'
+import { widget as ComparisonTable } from './widgets/ComparisonTable'
+import { widget as DataTable } from './widgets/DataTable'
+import { widget as InfoCard } from './widgets/InfoCard'
+import { widget as KeyValueList } from './widgets/KeyValueList'
+import { widget as StatCards } from './widgets/StatCards'
+import { widget as Steps } from './widgets/Steps'
+import { widget as TaskPlan } from './widgets/TaskPlan'
+import { widget as Timeline } from './widgets/Timeline'
 
 /**
  * Full widget list. Order affects nothing functionally but influences the
@@ -19,8 +28,15 @@ import type { GenUIWidget } from './types'
  * widgets near the top.
  */
 export const GENUI_WIDGETS: GenUIWidget[] = [
-  // Widgets are registered in follow-up commits. Keep this array as the
-  // single mutation point so introducing or removing a widget is one diff.
+  InfoCard,
+  DataTable,
+  StatCards,
+  Steps,
+  Callout,
+  KeyValueList,
+  Timeline,
+  ComparisonTable,
+  TaskPlan,
 ]
 
 /**

@@ -14,6 +14,26 @@
 import type { ZodTypeAny, z } from 'zod'
 
 /**
+ * Helper that preserves specific-schema type inference inside a widget
+ * definition while yielding a `GenUIWidget` with the schema erased to
+ * `ZodTypeAny` for storage in the registry array.
+ *
+ * Usage inside a widget file:
+ * ```
+ * export const widget = defineGenUIWidget({
+ *   name: 'render_x',
+ *   schema: z.object({ ... }),
+ *   render: (args) => <...>, // args is typed from the schema
+ * })
+ * ```
+ */
+export function defineGenUIWidget<Schema extends ZodTypeAny>(
+  widget: GenUIWidget<Schema>,
+): GenUIWidget {
+  return widget as unknown as GenUIWidget
+}
+
+/**
  * Context passed to all widgets when rendering.
  */
 export interface GenUIRenderContext {
