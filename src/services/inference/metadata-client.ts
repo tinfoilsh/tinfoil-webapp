@@ -46,13 +46,35 @@ interface MetadataResponse {
 }
 
 /**
+ * Module-level dedup map for in-flight metadata requests. Keyed by URL
+ * so multiple `LinkPreview` instances for the same URL — or rapid
+ * remounts — share a single attested round-trip instead of hammering
+ * the enclave.
+ */
+const metadataPromiseByUrl = new Map<string, Promise<LinkMetadata>>()
+
+/**
  * Fetch OpenGraph metadata for a URL from the Tinfoil enclave.
  *
  * Throws on non-2xx responses so callers can fall back to their local
  * (model-provided) values. Attestation is verified by the underlying
  * `SecureClient` — a verification failure surfaces as a thrown error.
+ *
+ * In-flight requests for the same URL are deduplicated.
  */
-export async function fetchLinkMetadata(url: string): Promise<LinkMetadata> {
+export function fetchLinkMetadata(url: string): Promise<LinkMetadata> {
+  const existing = metadataPromiseByUrl.get(url)
+  if (existing) return existing
+
+  const promise = doFetchLinkMetadata(url).catch((err) => {
+    metadataPromiseByUrl.delete(url)
+    throw err
+  })
+  metadataPromiseByUrl.set(url, promise)
+  return promise
+}
+
+async function doFetchLinkMetadata(url: string): Promise<LinkMetadata> {
   const client = getClient()
 
   const response = await client.fetch(`${METADATA_ENCLAVE}/metadata`, {
