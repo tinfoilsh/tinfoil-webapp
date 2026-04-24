@@ -833,18 +833,24 @@ export function useChatMessaging({
         return updated
       }
 
+      const resolvedMessages = applyToMessages(currentChat.messages)
+
       setChats((prevChats) =>
         prevChats.map((c) =>
-          c.id === currentChat.id
-            ? { ...c, messages: applyToMessages(c.messages) }
-            : c,
+          c.id === currentChat.id ? { ...c, messages: resolvedMessages } : c,
         ),
       )
       setCurrentChat((prev) =>
-        prev ? { ...prev, messages: applyToMessages(prev.messages) } : prev,
+        prev ? { ...prev, messages: resolvedMessages } : prev,
       )
 
-      handleQuery(resultText)
+      // Pass `resolvedMessages` as the baseline so `handleQuery` doesn't
+      // overwrite the just-written resolution with stale closure state. If
+      // we didn't, the pending input-surface widget would linger for one
+      // render cycle while the input area waits for the streaming phase to
+      // push past it — visible as a brief delay before the widget
+      // disappears after the user clicks an option.
+      handleQuery(resultText, undefined, undefined, resolvedMessages)
     },
     [loadingState, currentChat, setChats, setCurrentChat, handleQuery],
   )
