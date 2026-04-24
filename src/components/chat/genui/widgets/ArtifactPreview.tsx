@@ -84,6 +84,22 @@ export function openArtifactPreviewSidebar(
   )
 }
 
+/**
+ * Structural equality check used by the sidebar listener to decide whether
+ * an incoming `OPEN_ARTIFACT_PREVIEW_EVENT` is for the artifact that is
+ * already showing (in which case the sidebar toggles closed).
+ */
+export function artifactDetailsEqual(
+  a: ArtifactPreviewSidebarDetail,
+  b: ArtifactPreviewSidebarDetail,
+): boolean {
+  if (a.title !== b.title) return false
+  if (a.description !== b.description) return false
+  if (a.footer !== b.footer) return false
+  if (a.source.type !== b.source.type) return false
+  return sourceToCopyString(a.source) === sourceToCopyString(b.source)
+}
+
 function getSourceLabel(source: ArtifactSource): string {
   switch (source.type) {
     case 'url':
@@ -300,8 +316,8 @@ export function ArtifactPreviewPanel({
 }
 
 /**
- * Compact inline summary card shown in the chat scroll. Clicking "Open
- * preview" dispatches a DOM event that opens the sidebar.
+ * Compact inline card shown in the chat scroll. The whole card is a single
+ * click target that toggles the artifact sidebar.
  */
 function ArtifactPreviewInlineCard({
   title,
@@ -315,51 +331,24 @@ function ArtifactPreviewInlineCard({
     source,
     footer,
   }
-  const copyText = sourceToCopyString(source)
+  const displayTitle = title ?? getSourceLabel(source)
+  const subtitle = description ?? getSourceLabel(source)
   return (
-    <Card className="my-3 max-w-2xl overflow-hidden">
-      <div className="border-b border-border-subtle bg-surface-chat-background px-4 py-2.5">
-        <p className="text-xs font-medium uppercase tracking-wide text-content-muted">
-          {getSourceLabel(source)}
-        </p>
-        {title && <CardTitle className="mt-1 text-base">{title}</CardTitle>}
-        {description && (
-          <CardDescription className="mt-1">{description}</CardDescription>
-        )}
+    <button
+      type="button"
+      onClick={() => openArtifactPreviewSidebar(detail)}
+      className="my-3 flex max-w-md items-center gap-3 rounded-lg border border-border-subtle bg-surface-card px-3 py-2.5 text-left transition-colors hover:bg-surface-chat-background"
+    >
+      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface-chat-background text-content-muted">
+        <Eye className="h-4 w-4" />
       </div>
-      <CardContent className="space-y-3 p-4">
-        <p className="text-sm text-content-muted">
-          Preview opens in the sidebar.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => openArtifactPreviewSidebar(detail)}
-            className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm font-medium text-content-primary transition-colors hover:bg-surface-card"
-          >
-            <Eye className="h-4 w-4" />
-            <span>Open preview</span>
-          </button>
-          {source.type === 'url' && (
-            <a
-              href={source.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm font-medium text-content-primary transition-colors hover:bg-surface-card"
-            >
-              <ExternalLink className="h-4 w-4" />
-              <span>Open source</span>
-            </a>
-          )}
-          <CopyButton text={copyText} />
-        </div>
-      </CardContent>
-      {footer && (
-        <CardFooter className="border-t border-border-subtle bg-surface-chat-background px-4 py-3">
-          <p className="text-xs text-content-muted">{footer}</p>
-        </CardFooter>
-      )}
-    </Card>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-sm font-medium text-content-primary">
+          {displayTitle}
+        </span>
+        <span className="truncate text-xs text-content-muted">{subtitle}</span>
+      </div>
+    </button>
   )
 }
 

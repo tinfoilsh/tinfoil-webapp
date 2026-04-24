@@ -91,6 +91,7 @@ import { DragProvider } from './drag-context'
 import { GenUIInputAreaRenderer } from './genui/GenUIInputAreaRenderer'
 import { selectPendingInputToolCallFromChat } from './genui/pending-input-tool-call'
 import {
+  artifactDetailsEqual,
   OPEN_ARTIFACT_PREVIEW_EVENT,
   type ArtifactPreviewSidebarDetail,
 } from './genui/widgets/ArtifactPreview'
@@ -977,14 +978,26 @@ export function ChatInterface({
       event: CustomEvent<ArtifactPreviewSidebarDetail>,
     ) => {
       if (!event.detail) return
-      setArtifactPreview(event.detail)
-      setIsArtifactSidebarOpen(true)
-      setIsVerifierSidebarOpen(false)
-      setIsSettingsModalOpen(false)
-      setIsAskSidebarOpen(false)
-      if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
-        setIsSidebarOpen(false)
-      }
+      // Toggle: clicking the inline card while its artifact is already open
+      // closes the sidebar instead of re-opening it.
+      setArtifactPreview((prev) => {
+        const sameArtifact =
+          prev !== null &&
+          isArtifactSidebarOpen &&
+          artifactDetailsEqual(prev, event.detail)
+        if (sameArtifact) {
+          setIsArtifactSidebarOpen(false)
+          return prev
+        }
+        setIsArtifactSidebarOpen(true)
+        setIsVerifierSidebarOpen(false)
+        setIsSettingsModalOpen(false)
+        setIsAskSidebarOpen(false)
+        if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
+          setIsSidebarOpen(false)
+        }
+        return event.detail
+      })
     }
     window.addEventListener(
       OPEN_ARTIFACT_PREVIEW_EVENT,
@@ -996,7 +1009,7 @@ export function ChatInterface({
         handleOpenArtifactPreview as EventListener,
       )
     }
-  }, [windowWidth, setIsSidebarOpen])
+  }, [windowWidth, setIsSidebarOpen, isArtifactSidebarOpen])
 
   // Auto-focus input when component mounts and is ready (no autoscroll)
   useEffect(() => {
