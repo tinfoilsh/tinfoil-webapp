@@ -12,16 +12,21 @@
  */
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { GenUIWidget } from './types'
+import { widget as ArtifactPreview } from './widgets/ArtifactPreview'
 import { widget as BarChart } from './widgets/BarChart'
 import { widget as Callout } from './widgets/Callout'
 import { widget as ComparisonTable } from './widgets/ComparisonTable'
 import { widget as DataTable } from './widgets/DataTable'
 import { widget as Gauge } from './widgets/Gauge'
+import { widget as Image } from './widgets/Image'
+import { widget as ImageGrid } from './widgets/ImageGrid'
 import { widget as InfoCard } from './widgets/InfoCard'
 import { widget as KeyValueList } from './widgets/KeyValueList'
 import { widget as LineChart } from './widgets/LineChart'
+import { widget as LinkPreview } from './widgets/LinkPreview'
 import { widget as PieChart } from './widgets/PieChart'
 import { widget as ProgressBar } from './widgets/ProgressBar'
+import { widget as SourceCards } from './widgets/SourceCards'
 import { widget as StatCards } from './widgets/StatCards'
 import { widget as Steps } from './widgets/Steps'
 import { widget as TaskPlan } from './widgets/TaskPlan'
@@ -47,6 +52,11 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   PieChart,
   ProgressBar,
   Gauge,
+  Image,
+  ImageGrid,
+  LinkPreview,
+  SourceCards,
+  ArtifactPreview,
 ]
 
 /**

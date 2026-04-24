@@ -65,6 +65,13 @@ describe('GenUI registry', () => {
       render_pie_chart: { data: [{ name: 'A', value: 1 }] },
       render_progress_bar: { label: 'L', value: 50 },
       render_gauge: { label: 'Speed', value: 60 },
+      render_image: { url: 'https://example.com/a.png' },
+      render_image_grid: { images: [{ url: 'https://example.com/a.png' }] },
+      render_link_preview: { url: 'https://example.com', title: 'Ex' },
+      render_source_cards: {
+        sources: [{ title: 'T', url: 'https://example.com' }],
+      },
+      render_artifact_preview: { format: 'svg', code: '<svg/>' },
     }
     for (const widget of GENUI_WIDGETS) {
       const fixture = fixtures[widget.name]
