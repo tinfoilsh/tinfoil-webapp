@@ -42,7 +42,148 @@ function buildMailto(to: string | undefined, v: Variant): string {
   return `mailto:${target}${qs ? `?${qs}` : ''}`
 }
 
-function MessageComposeCard({ channel = 'email', to, title, variants }: Props) {
+function VariantTabs({
+  variants,
+  selected,
+  onSelect,
+  inline = false,
+}: {
+  variants: Variant[]
+  selected: number
+  onSelect: (i: number) => void
+  inline?: boolean
+}) {
+  if (variants.length <= 1) return null
+  const containerClass = inline
+    ? 'flex flex-wrap gap-1'
+    : 'flex flex-wrap gap-1 border-b border-border-subtle bg-surface-chat-background px-3 py-2'
+  const inactiveBg = inline ? 'bg-surface-chat-background' : 'bg-surface-card'
+  return (
+    <div className={containerClass}>
+      {variants.map((v, i) => (
+        <button
+          key={`${v.label}-${i}`}
+          type="button"
+          onClick={() => onSelect(i)}
+          className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+            selected === i
+              ? 'border-content-primary bg-content-primary text-surface-chat-background'
+              : `border-border-subtle ${inactiveBg} text-content-primary hover:border-content-primary/40`
+          }`}
+        >
+          {v.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function EmailComposeCard({ to, title, variants }: Props) {
+  const [selected, setSelected] = useState(0)
+  const [copied, setCopied] = useState(false)
+  const variant = variants[selected] ?? variants[0]
+
+  async function copyBody() {
+    try {
+      await navigator.clipboard.writeText(variant.body)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Clipboard may be unavailable in some contexts; leave copied=false
+    }
+  }
+
+  const headerLabel = title ?? 'New Message'
+
+  return (
+    <Card className="my-3 max-w-2xl overflow-hidden">
+      {/* Window chrome — title bar with traffic-light dots and actions. */}
+      <div className="flex items-center gap-2 border-b border-border-subtle bg-surface-chat-background px-3 py-2">
+        <div className="flex items-center gap-1.5" aria-hidden>
+          <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+          <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+        </div>
+        <p className="flex-1 truncate text-center text-xs font-medium text-content-muted">
+          {headerLabel}
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={copyBody}
+            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-content-muted transition-colors hover:bg-surface-card hover:text-content-primary"
+            aria-label="Copy body"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+          <a
+            href={buildMailto(to, variant)}
+            className="inline-flex items-center gap-1 rounded-md bg-content-primary px-2.5 py-1 text-xs font-medium text-surface-chat-background transition-colors hover:opacity-90"
+          >
+            <Send className="h-3.5 w-3.5" />
+            Send
+          </a>
+        </div>
+      </div>
+
+      <VariantTabs
+        variants={variants}
+        selected={selected}
+        onSelect={setSelected}
+      />
+
+      {/* Recipient / Subject header fields. */}
+      <div className="flex flex-col divide-y divide-border-subtle">
+        <EmailHeaderRow
+          label="To"
+          value={to ?? ''}
+          placeholder="recipient@example.com"
+        />
+        <EmailHeaderRow
+          label="Subject"
+          value={variant.subject ?? ''}
+          placeholder="(no subject)"
+        />
+      </div>
+
+      {/* Body area — plain text block, no inner border box. */}
+      <div className="whitespace-pre-wrap px-4 py-4 font-sans text-sm leading-relaxed text-content-primary">
+        {variant.body}
+      </div>
+    </Card>
+  )
+}
+
+function EmailHeaderRow({
+  label,
+  value,
+  placeholder,
+}: {
+  label: string
+  value: string
+  placeholder: string
+}) {
+  const isEmpty = value.trim().length === 0
+  return (
+    <div className="flex items-baseline gap-3 px-4 py-2 text-sm">
+      <span className="w-16 flex-shrink-0 text-xs font-medium uppercase tracking-wide text-content-muted">
+        {label}
+      </span>
+      <span
+        className={
+          isEmpty
+            ? 'truncate text-content-muted'
+            : 'truncate text-content-primary'
+        }
+      >
+        {isEmpty ? placeholder : value}
+      </span>
+    </div>
+  )
+}
+
+function MessageOnlyCard({ title, variants }: Props) {
   const [selected, setSelected] = useState(0)
   const [copied, setCopied] = useState(false)
   const variant = variants[selected] ?? variants[0]
@@ -63,41 +204,16 @@ function MessageComposeCard({ channel = 'email', to, title, variants }: Props) {
         {title && (
           <p className="text-sm font-semibold text-content-primary">{title}</p>
         )}
-        {variants.length > 1 && (
-          <div className="flex flex-wrap gap-1">
-            {variants.map((v, i) => (
-              <button
-                key={`${v.label}-${i}`}
-                type="button"
-                onClick={() => setSelected(i)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  selected === i
-                    ? 'border-content-primary bg-content-primary text-surface-chat-background'
-                    : 'border-border-subtle bg-surface-chat-background text-content-primary hover:border-content-primary/40'
-                }`}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
-        )}
-        {channel === 'email' && variant.subject && (
-          <div className="flex flex-col gap-0.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-content-muted">
-              Subject
-            </p>
-            <p className="text-sm text-content-primary">{variant.subject}</p>
-          </div>
-        )}
-        <div className="flex flex-col gap-0.5">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-content-muted">
-            {channel === 'email' ? 'Body' : 'Message'}
-          </p>
-          <pre className="whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-3 font-sans text-sm text-content-primary">
-            {variant.body}
-          </pre>
+        <VariantTabs
+          variants={variants}
+          selected={selected}
+          onSelect={setSelected}
+          inline
+        />
+        <div className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-content-primary">
+          {variant.body}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex items-center justify-end">
           <button
             type="button"
             onClick={copyBody}
@@ -106,19 +222,17 @@ function MessageComposeCard({ channel = 'email', to, title, variants }: Props) {
             <Copy className="h-4 w-4" />
             {copied ? 'Copied' : 'Copy'}
           </button>
-          {channel === 'email' && (
-            <a
-              href={buildMailto(to, variant)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm text-content-primary transition-colors hover:border-content-primary/40"
-            >
-              <Send className="h-4 w-4" />
-              Open in client
-            </a>
-          )}
         </div>
       </div>
     </Card>
   )
+}
+
+function MessageComposeCard(props: Props) {
+  if ((props.channel ?? 'email') === 'email') {
+    return <EmailComposeCard {...props} />
+  }
+  return <MessageOnlyCard {...props} />
 }
 
 export const widget = defineGenUIWidget({
