@@ -1,8 +1,6 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
-import {
-  fetchLinkMetadata,
-  type LinkMetadata,
-} from '@/services/inference/metadata-client'
+import { Favicon } from '@/components/ui/favicon'
+import { fetchLinkMetadata } from '@/services/inference/metadata-client'
 import { ExternalLink } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
@@ -10,13 +8,21 @@ import { defineGenUIWidget } from '../types'
 
 const schema = z.object({
   url: z.string().describe('Full URL of the resource'),
-  title: z.string().describe('Page or resource title'),
-  description: z.string().optional(),
-  image: z.string().optional().describe('Preview image URL'),
-  siteName: z.string().optional(),
+  title: z
+    .string()
+    .describe(
+      'Best guess at the page or resource title. Used as a fallback if the metadata fetch fails.',
+    ),
 })
 
 type Props = z.infer<typeof schema>
+
+interface ResolvedMetadata {
+  title: string | null
+  description: string | null
+  image: string | null
+  siteName: string | null
+}
 
 function getDomain(url: string): string {
   try {
@@ -27,23 +33,29 @@ function getDomain(url: string): string {
 }
 
 /**
- * Fetches OpenGraph metadata from the attested
- * `opengraph-metadata.tinfoil.sh` enclave and overwrites the
- * model-provided fields once the response arrives. Falls back silently to
- * the model's values if the fetch fails (e.g. attestation failure or a
- * non-public target URL).
+ * Fetches OpenGraph metadata from the `opengraph-metadata.tinfoil.sh`
+ * enclave. Falls back silently to the model-provided title if the fetch
+ * fails — the metadata is a UX nicety, not a security claim, so a
+ * failure just means we render a leaner card.
  */
-function useEnclaveMetadata(url: string): LinkMetadata | null {
-  const [metadata, setMetadata] = useState<LinkMetadata | null>(null)
+function useEnclaveMetadata(url: string): ResolvedMetadata | null {
+  const [metadata, setMetadata] = useState<ResolvedMetadata | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    setMetadata(null)
     fetchLinkMetadata(url)
-      .then((m) => {
-        if (!cancelled) setMetadata(m)
+      .then((data) => {
+        if (cancelled) return
+        setMetadata({
+          title: data.title,
+          description: data.description,
+          image: data.image,
+          siteName: data.siteName,
+        })
       })
       .catch(() => {
-        /* keep model-provided values */
+        /* keep model-provided title; render a leaner card */
       })
     return () => {
       cancelled = true
@@ -53,14 +65,13 @@ function useEnclaveMetadata(url: string): LinkMetadata | null {
   return metadata
 }
 
-function LinkPreview({ url, title, description, image, siteName }: Props) {
-  const enclaveMetadata = useEnclaveMetadata(url)
+function LinkPreview({ url, title }: Props) {
+  const metadata = useEnclaveMetadata(url)
 
-  const resolvedTitle = enclaveMetadata?.title ?? title
-  const resolvedDescription = enclaveMetadata?.description ?? description
-  const resolvedImage = enclaveMetadata?.image ?? image
-  const resolvedSiteName = enclaveMetadata?.siteName ?? siteName
-  const resolvedFavicon = enclaveMetadata?.favicon
+  const resolvedTitle = metadata?.title ?? title
+  const resolvedDescription = metadata?.description
+  const resolvedImage = metadata?.image
+  const resolvedSiteName = metadata?.siteName
   const displayName = resolvedSiteName || getDomain(url)
 
   return (
@@ -82,15 +93,10 @@ function LinkPreview({ url, title, description, image, siteName }: Props) {
       <div className="flex min-w-0 flex-1 flex-col justify-between gap-1 p-4">
         <div>
           <div className="mb-1 flex items-center gap-2">
-            {resolvedFavicon && (
-              <ImageWithSkeleton
-                src={resolvedFavicon}
-                alt=""
-                wrapperClassName="relative h-4 w-4 shrink-0 overflow-hidden rounded bg-surface-card"
-                className="h-4 w-4 object-cover"
-                loading="lazy"
-              />
-            )}
+            <Favicon
+              url={url}
+              className="h-4 w-4 shrink-0 rounded object-cover"
+            />
             <span className="truncate text-xs text-content-muted">
               {displayName}
             </span>
@@ -116,7 +122,7 @@ function LinkPreview({ url, title, description, image, siteName }: Props) {
 export const widget = defineGenUIWidget({
   name: 'render_link_preview',
   description:
-    'Display a rich preview card for a single web link. Use when linking to an article, page, or resource and you want to surface title, description, and favicon. The card fetches authoritative metadata (title, description, site name, image, favicon) from the attested opengraph-metadata.tinfoil.sh enclave; provide the best values you know as a fallback.',
+    'Display a rich preview card for a single web link. Use when linking to an article, page, or resource and you want to surface title, description, and favicon. The card fetches metadata (title, description, site name, image, favicon) from the opengraph-metadata.tinfoil.sh enclave. Provide only the URL and a fallback title — every other field is resolved server-side.',
   schema,
   promptHint: 'rich preview card for a single web link',
   render: (args) => <LinkPreview {...args} />,
