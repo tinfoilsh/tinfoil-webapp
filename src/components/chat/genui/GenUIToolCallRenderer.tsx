@@ -1,10 +1,11 @@
 /**
  * Renders a set of GenUI tool calls inline in the chat.
  *
- * While a tool call is still streaming (its arguments JSON is incomplete),
- * a placeholder is shown. Once arguments parse and a minimum placeholder
- * hold elapses, the corresponding widget is rendered. Unknown or malformed
- * tool calls render a muted fallback card after streaming ends.
+ * While the assistant message is still streaming, a tracer placeholder is
+ * always shown — even if the tool arguments JSON has fully parsed — so the
+ * user has continuous visual feedback until the turn completes. Once
+ * streaming ends, the placeholder is swapped for the real widget (or a
+ * parse-failure card if arguments are invalid).
  *
  * Input-surface widgets are skipped here — they render inside `ChatInput`
  * via `GenUIInputAreaRenderer`.
@@ -12,7 +13,7 @@
 import { LoadingDots } from '@/components/loading-dots'
 import { logError } from '@/utils/error-handling'
 import { RefreshCw } from 'lucide-react'
-import React, { memo, useEffect, useRef, useState } from 'react'
+import React, { memo } from 'react'
 import { getGenUIWidget, renderGenUIInline } from './render'
 import type { GenUIToolCall } from './types'
 
@@ -28,9 +29,6 @@ interface GenUIToolCallRendererProps {
   onRetry?: () => void
 }
 
-/** Minimum time (ms) a placeholder stays visible after we could render. */
-const PLACEHOLDER_MIN_DURATION_MS = 300
-
 function resolveInput(tc: GenUIToolCall): Record<string, unknown> | null {
   if (!tc.arguments) return null
   try {
@@ -44,59 +42,12 @@ function resolveInput(tc: GenUIToolCall): Record<string, unknown> | null {
   return null
 }
 
-function usePlaceholderRelease(
-  toolCalls: GenUIToolCall[],
-  minDurationMs: number,
-): Set<string> {
-  const firstSeenAtRef = useRef<Map<string, number>>(new Map())
-  const [releasedIds, setReleasedIds] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    const now = Date.now()
-    const firstSeen = firstSeenAtRef.current
-    const timers: ReturnType<typeof setTimeout>[] = []
-
-    for (const tc of toolCalls) {
-      if (!firstSeen.has(tc.id)) {
-        firstSeen.set(tc.id, now)
-      }
-      if (releasedIds.has(tc.id)) continue
-
-      const shownAt = firstSeen.get(tc.id) ?? now
-      const elapsed = now - shownAt
-      const remaining = Math.max(0, minDurationMs - elapsed)
-      const id = tc.id
-
-      const timer = setTimeout(() => {
-        setReleasedIds((prev) => {
-          if (prev.has(id)) return prev
-          const next = new Set(prev)
-          next.add(id)
-          return next
-        })
-      }, remaining)
-      timers.push(timer)
-    }
-
-    return () => {
-      for (const t of timers) clearTimeout(t)
-    }
-  }, [toolCalls, minDurationMs, releasedIds])
-
-  return releasedIds
-}
-
 export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
   toolCalls,
   isStreaming,
   isDarkMode,
   onRetry,
 }: GenUIToolCallRendererProps) {
-  const releasedIds = usePlaceholderRelease(
-    toolCalls,
-    PLACEHOLDER_MIN_DURATION_MS,
-  )
-
   return (
     <React.Fragment>
       {toolCalls.map((tc) => {
@@ -109,20 +60,10 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
           return null
         }
 
-        const input = resolveInput(tc)
-        const canShowComponent = !isStreaming || releasedIds.has(tc.id)
-
-        if (input && canShowComponent) {
-          const rendered = renderGenUIInline(tc.name, input, { isDarkMode })
-          if (rendered) {
-            return (
-              <div key={tc.id} className="my-4">
-                {rendered}
-              </div>
-            )
-          }
-        }
-
+        // While the assistant is still streaming, always show the tracer.
+        // This guarantees continuous visual feedback from the moment the
+        // tool call starts until the turn completes, even if the JSON
+        // arguments finish parsing early.
         if (isStreaming) {
           return (
             <div
@@ -139,6 +80,18 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
               <LoadingDots />
             </div>
           )
+        }
+
+        const input = resolveInput(tc)
+        if (input) {
+          const rendered = renderGenUIInline(tc.name, input, { isDarkMode })
+          if (rendered) {
+            return (
+              <div key={tc.id} className="my-4">
+                {rendered}
+              </div>
+            )
+          }
         }
 
         // Not streaming, and either:

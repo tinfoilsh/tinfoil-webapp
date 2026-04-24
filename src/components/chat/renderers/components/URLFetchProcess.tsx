@@ -107,19 +107,23 @@ export const URLFetchProcess = memo(function URLFetchProcess({
         className="hover:bg-surface-secondary/50 group -mx-1 flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
       >
         <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
-          <svg
-            className={`h-3.5 w-3.5 transform text-content-primary/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
+          {anyFetching ? (
+            <PiSpinner className="h-3.5 w-3.5 animate-spin text-content-primary/50" />
+          ) : (
+            <svg
+              className={`h-3.5 w-3.5 transform text-content-primary/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          )}
         </span>
         <span className="min-w-0 truncate text-base font-medium text-content-primary/50">
           {label}

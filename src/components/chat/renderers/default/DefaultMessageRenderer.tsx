@@ -19,6 +19,7 @@ import { MessageActions } from '../components/MessageActions'
 import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
+import { StreamingTracerDot } from '../components/StreamingTracerDot'
 import { ThoughtProcess } from '../components/ThoughtProcess'
 import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
@@ -375,6 +376,21 @@ const DefaultMessageComponent = ({
               return null
           }
         })}
+
+      {!isUser && isStreaming && isLastMessage && (
+        <div className="w-full px-4 pb-2 pt-6">
+          <StreamingTracerDot
+            tone={
+              message.timeline && message.timeline.length > 0
+                ? message.timeline[message.timeline.length - 1].type ===
+                  'content'
+                  ? 'primary'
+                  : 'secondary'
+                : 'primary'
+            }
+          />
+        </div>
+      )}
 
       {/* User message content (or assistant without timeline, e.g. rate limit errors) */}
       {message.content &&
