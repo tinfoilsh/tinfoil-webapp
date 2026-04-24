@@ -1,5 +1,10 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
+import {
+  fetchLinkMetadata,
+  type LinkMetadata,
+} from '@/services/inference/metadata-client'
 import { ExternalLink } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
@@ -11,6 +16,8 @@ const schema = z.object({
   siteName: z.string().optional(),
 })
 
+type Props = z.infer<typeof schema>
+
 function getDomain(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, '')
@@ -19,71 +26,98 @@ function getDomain(url: string): string {
   }
 }
 
-function getFaviconUrl(url: string): string | null {
-  try {
-    const host = new URL(url).hostname
-    return `https://icons.duckduckgo.com/ip3/${host}.ico`
-  } catch {
-    return null
-  }
+/**
+ * Fetches OpenGraph metadata from the attested
+ * `opengraph-metadata.tinfoil.sh` enclave and overwrites the
+ * model-provided fields once the response arrives. Falls back silently to
+ * the model's values if the fetch fails (e.g. attestation failure or a
+ * non-public target URL).
+ */
+function useEnclaveMetadata(url: string): LinkMetadata | null {
+  const [metadata, setMetadata] = useState<LinkMetadata | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchLinkMetadata(url)
+      .then((m) => {
+        if (!cancelled) setMetadata(m)
+      })
+      .catch(() => {
+        /* keep model-provided values */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [url])
+
+  return metadata
+}
+
+function LinkPreview({ url, title, description, image, siteName }: Props) {
+  const enclaveMetadata = useEnclaveMetadata(url)
+
+  const resolvedTitle = enclaveMetadata?.title ?? title
+  const resolvedDescription = enclaveMetadata?.description ?? description
+  const resolvedImage = enclaveMetadata?.image ?? image
+  const resolvedSiteName = enclaveMetadata?.siteName ?? siteName
+  const resolvedFavicon = enclaveMetadata?.favicon
+  const displayName = resolvedSiteName || getDomain(url)
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="hover:border-border-primary my-3 flex w-full overflow-hidden rounded-lg border border-border-subtle bg-surface-card transition-colors hover:bg-surface-chat-background"
+    >
+      {resolvedImage && (
+        <ImageWithSkeleton
+          src={resolvedImage}
+          alt=""
+          wrapperClassName="relative h-32 w-32 shrink-0 overflow-hidden bg-surface-card sm:h-40 sm:w-40"
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
+      )}
+      <div className="flex min-w-0 flex-1 flex-col justify-between gap-1 p-4">
+        <div>
+          <div className="mb-1 flex items-center gap-2">
+            {resolvedFavicon && (
+              <ImageWithSkeleton
+                src={resolvedFavicon}
+                alt=""
+                wrapperClassName="relative h-4 w-4 shrink-0 overflow-hidden rounded bg-surface-card"
+                className="h-4 w-4 object-cover"
+                loading="lazy"
+              />
+            )}
+            <span className="truncate text-xs text-content-muted">
+              {displayName}
+            </span>
+          </div>
+          <p className="line-clamp-2 text-sm font-semibold text-content-primary">
+            {resolvedTitle}
+          </p>
+          {resolvedDescription && (
+            <p className="mt-1 line-clamp-2 text-xs text-content-muted">
+              {resolvedDescription}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-1 text-xs text-content-muted">
+          <span className="truncate">{getDomain(url)}</span>
+          <ExternalLink className="h-3 w-3 shrink-0" />
+        </div>
+      </div>
+    </a>
+  )
 }
 
 export const widget = defineGenUIWidget({
   name: 'render_link_preview',
   description:
-    'Display a rich preview card for a single web link. Use when linking to an article, page, or resource and you want to surface title, description, and favicon.',
+    'Display a rich preview card for a single web link. Use when linking to an article, page, or resource and you want to surface title, description, and favicon. The card fetches authoritative metadata (title, description, site name, image, favicon) from the attested opengraph-metadata.tinfoil.sh enclave; provide the best values you know as a fallback.',
   schema,
   promptHint: 'rich preview card for a single web link',
-  render: ({ url, title, description, image, siteName }) => {
-    const favicon = getFaviconUrl(url)
-    const displayName = siteName || getDomain(url)
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="hover:border-border-primary my-3 flex max-w-2xl overflow-hidden rounded-lg border border-border-subtle bg-surface-card transition-colors hover:bg-surface-chat-background"
-      >
-        {image && (
-          <ImageWithSkeleton
-            src={image}
-            alt=""
-            wrapperClassName="relative h-32 w-32 shrink-0 overflow-hidden bg-surface-card sm:h-40 sm:w-40"
-            className="h-full w-full object-cover"
-            loading="lazy"
-          />
-        )}
-        <div className="flex min-w-0 flex-1 flex-col justify-between gap-1 p-4">
-          <div>
-            <div className="mb-1 flex items-center gap-2">
-              {favicon && (
-                <ImageWithSkeleton
-                  src={favicon}
-                  alt=""
-                  wrapperClassName="relative h-4 w-4 shrink-0 overflow-hidden rounded bg-surface-card"
-                  className="h-4 w-4 object-cover"
-                  loading="lazy"
-                />
-              )}
-              <span className="truncate text-xs text-content-muted">
-                {displayName}
-              </span>
-            </div>
-            <p className="line-clamp-2 text-sm font-semibold text-content-primary">
-              {title}
-            </p>
-            {description && (
-              <p className="mt-1 line-clamp-2 text-xs text-content-muted">
-                {description}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-1 text-xs text-content-muted">
-            <span className="truncate">{getDomain(url)}</span>
-            <ExternalLink className="h-3 w-3 shrink-0" />
-          </div>
-        </div>
-      </a>
-    )
-  },
+  render: (args) => <LinkPreview {...args} />,
 })
