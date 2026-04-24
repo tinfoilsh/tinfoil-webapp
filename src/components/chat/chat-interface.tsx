@@ -80,6 +80,7 @@ const useLayoutEffect =
 
 import { UrlHashMessageHandler } from '../url-hash-message-handler'
 import { UrlHashSettingsHandler } from '../url-hash-settings-handler'
+import { ArtifactSidebar } from './artifact-sidebar'
 import { AskSidebar } from './ask-sidebar'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
@@ -89,6 +90,10 @@ import { useDocumentUploader } from './document-uploader'
 import { DragProvider } from './drag-context'
 import { GenUIInputAreaRenderer } from './genui/GenUIInputAreaRenderer'
 import { selectPendingInputToolCallFromChat } from './genui/pending-input-tool-call'
+import {
+  OPEN_ARTIFACT_PREVIEW_EVENT,
+  type ArtifactPreviewSidebarDetail,
+} from './genui/widgets/ArtifactPreview'
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
 import { useMaxMessages } from './hooks/use-max-messages'
@@ -467,6 +472,15 @@ export function ChatInterface({
   // Ask-sidebar state: a disposable side conversation seeded with highlighted
   // text. Nothing is persisted unless the user clicks "Open as chat".
   const [isAskSidebarOpen, setIsAskSidebarOpen] = useState(false)
+
+  // Artifact-sidebar state — opened when a `render_artifact_preview` inline
+  // card dispatches `OPEN_ARTIFACT_PREVIEW_EVENT` on the window.
+  const [isArtifactSidebarOpen, setIsArtifactSidebarOpen] = useState(false)
+  const [artifactSidebarWidth, setArtifactSidebarWidth] = useState<number>(
+    CONSTANTS.ARTIFACT_SIDEBAR_WIDTH_PX,
+  )
+  const [artifactPreview, setArtifactPreview] =
+    useState<ArtifactPreviewSidebarDetail | null>(null)
 
   // State for web search toggle (persisted in localStorage)
   const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
@@ -934,12 +948,16 @@ export function ChatInterface({
     if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
       if (
         isSidebarOpen &&
-        (isVerifierSidebarOpen || isSettingsModalOpen || isAskSidebarOpen)
+        (isVerifierSidebarOpen ||
+          isSettingsModalOpen ||
+          isAskSidebarOpen ||
+          isArtifactSidebarOpen)
       ) {
         // Close right sidebars to prioritize left sidebar
         setIsVerifierSidebarOpen(false)
         setIsSettingsModalOpen(false)
         setIsAskSidebarOpen(false)
+        setIsArtifactSidebarOpen(false)
       }
     }
   }, [
@@ -948,7 +966,37 @@ export function ChatInterface({
     isVerifierSidebarOpen,
     isSettingsModalOpen,
     isAskSidebarOpen,
+    isArtifactSidebarOpen,
   ])
+
+  // Listen for `OPEN_ARTIFACT_PREVIEW_EVENT` dispatched by the
+  // `render_artifact_preview` inline card. Shows the artifact in the right
+  // slide-over and closes any other right-side panel so only one is visible.
+  useEffect(() => {
+    const handleOpenArtifactPreview = (
+      event: CustomEvent<ArtifactPreviewSidebarDetail>,
+    ) => {
+      if (!event.detail) return
+      setArtifactPreview(event.detail)
+      setIsArtifactSidebarOpen(true)
+      setIsVerifierSidebarOpen(false)
+      setIsSettingsModalOpen(false)
+      setIsAskSidebarOpen(false)
+      if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
+        setIsSidebarOpen(false)
+      }
+    }
+    window.addEventListener(
+      OPEN_ARTIFACT_PREVIEW_EVENT,
+      handleOpenArtifactPreview as EventListener,
+    )
+    return () => {
+      window.removeEventListener(
+        OPEN_ARTIFACT_PREVIEW_EVENT,
+        handleOpenArtifactPreview as EventListener,
+      )
+    }
+  }, [windowWidth, setIsSidebarOpen])
 
   // Auto-focus input when component mounts and is ready (no autoscroll)
   useEffect(() => {
@@ -1163,6 +1211,7 @@ export function ChatInterface({
       handleSetVerifierSidebarOpen(true)
       setIsSettingsModalOpen(false)
       setIsAskSidebarOpen(false)
+      setIsArtifactSidebarOpen(false)
       sidebarChat.reset()
     }
   }
@@ -1188,6 +1237,8 @@ export function ChatInterface({
       setSettingsInitialTab(undefined)
       setIsSettingsModalOpen(true)
       handleSetVerifierSidebarOpen(false)
+      setIsAskSidebarOpen(false)
+      setIsArtifactSidebarOpen(false)
       // If window is narrow, close left sidebar when opening settings
       if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
         setIsSidebarOpen(false)
@@ -2233,18 +2284,21 @@ export function ChatInterface({
         (isSidebarOpen ||
           isVerifierSidebarOpen ||
           isSettingsModalOpen ||
-          isAskSidebarOpen)
+          isAskSidebarOpen ||
+          isArtifactSidebarOpen)
       ) && (
         <div
           className="fixed top-4 z-50 flex gap-2 transition-all duration-300"
           style={{
             right:
               windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
-                ? isAskSidebarOpen
-                  ? `${CONSTANTS.ASK_SIDEBAR_WIDTH_PX + 24}px`
-                  : isVerifierSidebarOpen
-                    ? `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX + 24}px`
-                    : '16px'
+                ? isArtifactSidebarOpen
+                  ? `${artifactSidebarWidth + 24}px`
+                  : isAskSidebarOpen
+                    ? `${CONSTANTS.ASK_SIDEBAR_WIDTH_PX + 24}px`
+                    : isVerifierSidebarOpen
+                      ? `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX + 24}px`
+                      : '16px'
                 : '16px',
           }}
         >
@@ -2494,6 +2548,16 @@ export function ChatInterface({
         isDarkMode={isDarkMode}
       />
 
+      <ArtifactSidebar
+        isOpen={isArtifactSidebarOpen}
+        onClose={() => setIsArtifactSidebarOpen(false)}
+        artifact={artifactPreview}
+        isDarkMode={isDarkMode}
+        width={artifactSidebarWidth}
+        onWidthChange={setArtifactSidebarWidth}
+        isResizable={windowWidth >= CONSTANTS.MOBILE_BREAKPOINT}
+      />
+
       {/* Share Modal */}
       <ShareModalLazy
         isOpen={isShareModalOpen}
@@ -2504,7 +2568,10 @@ export function ChatInterface({
           isSidebarOpen && windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
         }
         isRightSidebarOpen={
-          (isVerifierSidebarOpen || isSettingsModalOpen || isAskSidebarOpen) &&
+          (isVerifierSidebarOpen ||
+            isSettingsModalOpen ||
+            isAskSidebarOpen ||
+            isArtifactSidebarOpen) &&
           windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
         }
         chatTitle={currentChat?.title}
@@ -2543,11 +2610,13 @@ export function ChatInterface({
         style={{
           right:
             windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
-              ? isAskSidebarOpen
-                ? `${CONSTANTS.ASK_SIDEBAR_WIDTH_PX}px`
-                : isVerifierSidebarOpen
-                  ? `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX}px`
-                  : '0'
+              ? isArtifactSidebarOpen
+                ? `${artifactSidebarWidth}px`
+                : isAskSidebarOpen
+                  ? `${CONSTANTS.ASK_SIDEBAR_WIDTH_PX}px`
+                  : isVerifierSidebarOpen
+                    ? `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX}px`
+                    : '0'
               : '0',
           bottom: 0,
           left:
@@ -2602,6 +2671,7 @@ export function ChatInterface({
             onAsk={(text) => {
               setIsVerifierSidebarOpen(false)
               setIsSettingsModalOpen(false)
+              setIsArtifactSidebarOpen(false)
               if (
                 windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT &&
                 isSidebarOpen
