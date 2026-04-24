@@ -20,7 +20,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { cn } from '@/components/ui/utils'
-import { Code2, ExternalLink, Eye } from 'lucide-react'
+import { Code2, Download, ExternalLink, Eye, FileText } from 'lucide-react'
 import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { z } from 'zod'
@@ -128,6 +128,63 @@ function sourceToCopyString(source: ArtifactSource): string {
     case 'mermaid':
       return source.code
   }
+}
+
+function sourceToDownload(
+  source: ArtifactSource,
+  title: string | undefined,
+): { content: string; mimeType: string; filename: string } {
+  const base =
+    (title ?? 'artifact').trim().replace(/[^\w.-]+/g, '-') || 'artifact'
+  switch (source.type) {
+    case 'url':
+      return {
+        content: source.url,
+        mimeType: 'text/plain;charset=utf-8',
+        filename: `${base}.url.txt`,
+      }
+    case 'html':
+      return {
+        content: source.html,
+        mimeType: 'text/html;charset=utf-8',
+        filename: `${base}.html`,
+      }
+    case 'markdown':
+      return {
+        content: source.markdown,
+        mimeType: 'text/markdown;charset=utf-8',
+        filename: `${base}.md`,
+      }
+    case 'svg':
+      return {
+        content: source.svg,
+        mimeType: 'image/svg+xml',
+        filename: `${base}.svg`,
+      }
+    case 'mermaid':
+      return {
+        content: source.code,
+        mimeType: 'text/plain;charset=utf-8',
+        filename: `${base}.mmd`,
+      }
+  }
+}
+
+function downloadArtifact(
+  source: ArtifactSource,
+  title: string | undefined,
+): void {
+  if (typeof window === 'undefined') return
+  const { content, mimeType, filename } = sourceToDownload(source, title)
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 type ViewMode = 'preview' | 'source'
@@ -316,8 +373,10 @@ export function ArtifactPreviewPanel({
 }
 
 /**
- * Compact inline card shown in the chat scroll. The whole card is a single
- * click target that toggles the artifact sidebar.
+ * Full-width inline card shown in the chat scroll. The row itself is a
+ * single click target that toggles the artifact sidebar. The download
+ * button lives inside the row but stops propagation so the sidebar
+ * doesn't toggle when the user just wants to save the file.
  */
 function ArtifactPreviewInlineCard({
   title,
@@ -334,21 +393,41 @@ function ArtifactPreviewInlineCard({
   const displayTitle = title ?? getSourceLabel(source)
   const subtitle = description ?? getSourceLabel(source)
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => openArtifactPreviewSidebar(detail)}
-      className="my-3 flex max-w-md items-center gap-3 rounded-lg border border-border-subtle bg-surface-card px-3 py-2.5 text-left transition-colors hover:bg-surface-chat-background"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          openArtifactPreviewSidebar(detail)
+        }
+      }}
+      className="my-3 flex w-full cursor-pointer items-center gap-4 rounded-lg border border-border-subtle bg-surface-card px-4 py-4 text-left transition-colors hover:bg-surface-chat-background"
     >
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md border border-border-subtle bg-surface-chat-background text-content-muted">
-        <Eye className="h-4 w-4" />
-      </div>
+      <FileText
+        className="h-6 w-6 flex-shrink-0 text-content-muted"
+        aria-hidden
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium text-content-primary">
           {displayTitle}
         </span>
         <span className="truncate text-xs text-content-muted">{subtitle}</span>
       </div>
-    </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          downloadArtifact(source, title)
+        }}
+        className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-card"
+        aria-label="Download artifact"
+      >
+        <Download className="h-3.5 w-3.5" />
+        Download
+      </button>
+    </div>
   )
 }
 
