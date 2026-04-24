@@ -1,6 +1,6 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Card } from '@/components/ui/card'
-import { Check, Clock, Flame, Users } from 'lucide-react'
+import { Check, Clock, Flame, Printer, RotateCcw, Users } from 'lucide-react'
 import { useState, type Dispatch, type SetStateAction } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -94,8 +94,21 @@ function Recipe({
       value: typeof servings === 'number' ? String(servings) : servings,
     })
 
+  const hasAnyCheckedIngredients = checkedIngredients.size > 0
+  const hasAnyCompletedSteps = completedSteps.size > 0
+  const canReset = hasAnyCheckedIngredients || hasAnyCompletedSteps
+
+  function resetProgress(): void {
+    setCheckedIngredients(new Set())
+    setCompletedSteps(new Set())
+  }
+
+  function print(): void {
+    if (typeof window !== 'undefined') window.print()
+  }
+
   return (
-    <Card className="my-3 max-w-2xl overflow-hidden">
+    <Card className="my-3 w-full overflow-hidden">
       {image && (
         <ImageWithSkeleton
           src={image}
@@ -105,25 +118,52 @@ function Recipe({
           loading="lazy"
         />
       )}
-      <div className="flex flex-col gap-4 p-5">
-        <div className="flex flex-col gap-1">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-content-muted">
-            {cuisine && (
-              <span className="uppercase tracking-wide">{cuisine}</span>
+      <div className="flex flex-col gap-5 p-5 sm:p-6">
+        {/* Header: action buttons anchor top-right; title block centers
+            within the remaining space. */}
+        <div className="relative flex flex-col items-center gap-2 text-center">
+          <div className="absolute right-0 top-0 flex items-center gap-1">
+            {canReset && (
+              <button
+                type="button"
+                onClick={resetProgress}
+                className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-surface-chat-background px-2.5 py-1 text-xs text-content-muted transition-colors hover:bg-surface-card hover:text-content-primary"
+                aria-label="Reset checklist"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset
+              </button>
             )}
-            {cuisine && difficultyText && <span>·</span>}
-            {difficultyText && <span>{difficultyText}</span>}
+            <button
+              type="button"
+              onClick={print}
+              className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-surface-chat-background px-2.5 py-1 text-xs text-content-muted transition-colors hover:bg-surface-card hover:text-content-primary"
+              aria-label="Print recipe"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Print
+            </button>
           </div>
-          <h3 className="text-lg font-semibold text-content-primary">
+
+          {(cuisine || difficultyText) && (
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-content-muted">
+              {cuisine}
+              {cuisine && difficultyText && (
+                <span className="mx-1.5 opacity-60">·</span>
+              )}
+              {difficultyText}
+            </p>
+          )}
+          <h3 className="text-2xl font-semibold leading-tight text-content-primary sm:text-3xl">
             {title}
           </h3>
           {description && (
-            <p className="text-sm text-content-muted">{description}</p>
+            <p className="max-w-xl text-sm text-content-muted">{description}</p>
           )}
         </div>
 
         {metaItems.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-center gap-2">
             {metaItems.map((m) => {
               const Icon = m.icon
               return (
