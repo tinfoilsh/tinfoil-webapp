@@ -547,12 +547,16 @@ export function useChatMessaging({
           startingChatId,
         })
 
-        if (
-          assistantMessage &&
-          (assistantMessage.content ||
-            assistantMessage.thoughts ||
-            assistantMessage.webSearch)
-        ) {
+        const hasAssistantMessageToSave =
+          !!assistantMessage &&
+          (!!assistantMessage.content ||
+            !!assistantMessage.thoughts ||
+            !!assistantMessage.webSearch ||
+            !!assistantMessage.urlFetches?.length ||
+            !!assistantMessage.toolCalls?.length ||
+            !!assistantMessage.timeline?.length)
+
+        if (assistantMessage && hasAssistantMessageToSave) {
           const chatId = currentChatIdRef.current
 
           // If user navigated away during streaming, don't save to the new chat
@@ -579,6 +583,8 @@ export function useChatMessaging({
               isLocalOnly: updatedChat.isLocalOnly,
               hasContent: !!assistantMessage.content,
               hasThoughts: !!assistantMessage.thoughts,
+              hasToolCalls: !!assistantMessage.toolCalls?.length,
+              hasTimeline: !!assistantMessage.timeline?.length,
               isFirstMessage,
             },
           })

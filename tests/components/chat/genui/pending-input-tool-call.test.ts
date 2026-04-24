@@ -9,6 +9,23 @@ vi.mock('@/components/chat/genui/registry', () => {
   const input: Partial<GenUIWidget> = {
     name: 'ask_user_input',
     surface: 'input',
+    renderInputArea: () => null,
+    schema: {
+      safeParse: (value: unknown) => {
+        const valid =
+          !!value &&
+          typeof value === 'object' &&
+          !Array.isArray(value) &&
+          'question' in value &&
+          typeof value.question === 'string' &&
+          'options' in value &&
+          Array.isArray(value.options) &&
+          value.options.length >= 2
+        return valid
+          ? { success: true, data: value }
+          : { success: false, error: {} }
+      },
+    } as any,
   }
   const inline: Partial<GenUIWidget> = {
     name: 'render_info_card',
@@ -88,7 +105,7 @@ describe('selectPendingInputToolCall', () => {
           id: 'b1',
           name: 'ask_user_input',
           toolCallId: 't1',
-          args: '{"prompt":"Pick one"}',
+          args: '{"question":"Pick one","options":[{"label":"A"},{"label":"B"}]}',
         },
       ]),
     ]
@@ -97,7 +114,40 @@ describe('selectPendingInputToolCall', () => {
       toolCallId: 't1',
       name: 'ask_user_input',
     })
-    expect(result?.args).toEqual({ prompt: 'Pick one' })
+    expect(result?.args).toEqual({
+      question: 'Pick one',
+      options: [{ label: 'A' }, { label: 'B' }],
+    })
+  })
+
+  it('returns null for malformed input tool arguments', () => {
+    const msgs: Message[] = [
+      assistantMessage([
+        {
+          type: 'tool_call',
+          id: 'b1',
+          name: 'ask_user_input',
+          toolCallId: 't1',
+          args: '{"question":"Pick one"',
+        },
+      ]),
+    ]
+    expect(selectPendingInputToolCall(msgs)).toBeNull()
+  })
+
+  it('returns null for schema-invalid input tool arguments', () => {
+    const msgs: Message[] = [
+      assistantMessage([
+        {
+          type: 'tool_call',
+          id: 'b1',
+          name: 'ask_user_input',
+          toolCallId: 't1',
+          args: '{"question":"Pick one"}',
+        },
+      ]),
+    ]
+    expect(selectPendingInputToolCall(msgs)).toBeNull()
   })
 
   it('skips already-resolved input tool calls', () => {

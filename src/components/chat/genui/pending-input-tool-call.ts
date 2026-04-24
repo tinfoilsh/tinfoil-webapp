@@ -14,7 +14,7 @@ export interface PendingInputToolCall {
   blockId: string
   toolCallId: string
   name: string
-  args: Record<string, unknown> | null
+  args: Record<string, unknown>
 }
 
 function parseArgs(argsString: string): Record<string, unknown> | null {
@@ -30,9 +30,26 @@ function parseArgs(argsString: string): Record<string, unknown> | null {
   return null
 }
 
-function isInputSurface(name: string): boolean {
+function parseRenderableInputArgs(
+  name: string,
+  argsString: string,
+): Record<string, unknown> | null {
   const widget = GENUI_WIDGETS_BY_NAME[name]
-  return widget?.surface === 'input'
+  if (widget?.surface !== 'input' || !widget.renderInputArea) return null
+
+  const args = parseArgs(argsString)
+  if (!args) return null
+
+  const parsed = widget.schema.safeParse(args)
+  if (
+    !parsed.success ||
+    !parsed.data ||
+    typeof parsed.data !== 'object' ||
+    Array.isArray(parsed.data)
+  ) {
+    return null
+  }
+  return parsed.data as Record<string, unknown>
 }
 
 /**
@@ -54,15 +71,16 @@ export function selectPendingInputToolCall(
     for (let j = msg.timeline.length - 1; j >= 0; j--) {
       const block = msg.timeline[j]
       if (block.type !== 'tool_call') continue
-      if (!isInputSurface(block.name)) continue
       if ((block as TimelineToolCallBlock).resolvedAt) continue
+      const args = parseRenderableInputArgs(block.name, block.arguments)
+      if (!args) continue
 
       return {
         messageIndex: i,
         blockId: block.id,
         toolCallId: block.toolCallId,
         name: block.name,
-        args: parseArgs(block.arguments),
+        args,
       }
     }
     // Only the LAST assistant message is considered — stop here.

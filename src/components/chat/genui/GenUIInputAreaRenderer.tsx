@@ -26,14 +26,6 @@ export const GenUIInputAreaRenderer = memo(function GenUIInputAreaRenderer({
   onResolve,
   onCancel,
 }: GenUIInputAreaRendererProps) {
-  if (!pending.args) {
-    return (
-      <div className="py-2 text-sm text-content-muted">
-        Waiting for component input…
-      </div>
-    )
-  }
-
   const rendered = renderGenUIInputArea(pending.name, pending.args, {
     toolCallId: pending.toolCallId,
     isDarkMode,
