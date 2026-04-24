@@ -90,13 +90,6 @@ export async function fetchLinkMetadata(url: string): Promise<LinkMetadata> {
   }
 }
 
-/**
- * Module-level dedup cache for favicon lookups. Keyed by hostname so
- * multiple mentions of the same domain across a page share a single
- * in-flight enclave request and a single stored result.
- */
-const faviconPromiseByHost = new Map<string, Promise<string | null>>()
-
 function getHostKey(url: string): string | null {
   try {
     return new URL(url).hostname.toLowerCase()
@@ -106,26 +99,17 @@ function getHostKey(url: string): string | null {
 }
 
 /**
- * Resolve the favicon for a URL's host via the attested metadata enclave.
+ * Build a direct `<img src>` URL pointing at the enclave's lightweight
+ * `GET /favicon?host=...` endpoint.
  *
- * Returns `null` when the page exposes no favicon or the fetch fails.
- * Requests are deduplicated by hostname so a chat view with dozens of
- * links from the same domain only pays for one attested round-trip.
+ * The browser loads the bytes in a single request. No JSON round-trip,
+ * no async state in the UI. The enclave proxies to DuckDuckGo's icon
+ * service server-side so the browser never talks to DuckDuckGo directly.
+ *
+ * Returns `null` for URLs whose hostname cannot be parsed.
  */
-export function fetchFavicon(url: string): Promise<string | null> {
+export function getFaviconUrl(url: string): string | null {
   const host = getHostKey(url)
-  if (!host) return Promise.resolve(null)
-  const existing = faviconPromiseByHost.get(host)
-  if (existing) return existing
-
-  // Normalize to the hostname root so every per-URL call hits the same
-  // cache key. This trades a potentially-different per-page favicon for
-  // drastically fewer enclave requests, which is the right tradeoff for a
-  // favicon thumbnail.
-  const lookupUrl = `https://${host}/`
-  const promise = fetchLinkMetadata(lookupUrl)
-    .then((m) => m.favicon)
-    .catch(() => null)
-  faviconPromiseByHost.set(host, promise)
-  return promise
+  if (!host) return null
+  return `${METADATA_ENCLAVE}/favicon?host=${encodeURIComponent(host)}`
 }
