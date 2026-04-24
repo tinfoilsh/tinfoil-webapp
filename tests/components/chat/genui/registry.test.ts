@@ -60,6 +60,11 @@ describe('GenUI registry', () => {
         features: [{ label: 'Feat', values: [true, false] }],
       },
       render_task_plan: { tasks: [{ title: 'Task' }] },
+      render_bar_chart: { data: [{ label: 'A', value: 1 }] },
+      render_line_chart: { data: [{ x: 'Jan', y: 1 }] },
+      render_pie_chart: { data: [{ name: 'A', value: 1 }] },
+      render_progress_bar: { label: 'L', value: 50 },
+      render_gauge: { label: 'Speed', value: 60 },
     }
     for (const widget of GENUI_WIDGETS) {
       const fixture = fixtures[widget.name]
