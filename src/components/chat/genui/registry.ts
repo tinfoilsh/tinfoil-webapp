@@ -13,10 +13,12 @@
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { GenUIWidget } from './types'
 import { widget as ArtifactPreview } from './widgets/ArtifactPreview'
+import { widget as AskUserInput } from './widgets/AskUserInput'
 import { widget as BarChart } from './widgets/BarChart'
 import { widget as Callout } from './widgets/Callout'
 import { widget as Clock } from './widgets/Clock'
 import { widget as ComparisonTable } from './widgets/ComparisonTable'
+import { widget as ConfirmationCard } from './widgets/ConfirmationCard'
 import { widget as Countdown } from './widgets/Countdown'
 import { widget as DataTable } from './widgets/DataTable'
 import { widget as Gauge } from './widgets/Gauge'
@@ -65,6 +67,8 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   Countdown,
   Quote,
   RecipeCard,
+  AskUserInput,
+  ConfirmationCard,
 ]
 
 /**

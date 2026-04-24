@@ -10,7 +10,7 @@ describe('GenUI registry', () => {
     const names = GENUI_WIDGETS.map((w) => w.name)
     expect(names).toEqual(Array.from(new Set(names)))
     for (const name of names) {
-      expect(name).toMatch(/^render_[a-z_]+$/)
+      expect(name).toMatch(/^[a-z][a-z_]*$/)
     }
   })
 
@@ -76,6 +76,11 @@ describe('GenUI registry', () => {
       render_countdown: { target: '2030-01-01T00:00:00Z' },
       render_quote: { text: 'Hello world' },
       render_recipe_card: { title: 'Pasta' },
+      ask_user_input: {
+        question: 'Pick one',
+        options: [{ label: 'A' }, { label: 'B' }],
+      },
+      confirmation_card: { title: 'Delete item?' },
     }
     for (const widget of GENUI_WIDGETS) {
       const fixture = fixtures[widget.name]
