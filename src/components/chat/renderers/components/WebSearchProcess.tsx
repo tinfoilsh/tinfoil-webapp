@@ -46,6 +46,21 @@ function FadeInFavicon({
   )
 }
 
+function InlineSourceFavicons({ sources }: { sources: WebSearchSource[] }) {
+  return (
+    <span className="mt-1 inline-flex shrink-0 items-center align-middle">
+      {sources.map((source, index) => (
+        <FadeInFavicon
+          key={`${source.url}-${index}`}
+          url={source.url}
+          className="h-4 w-4 shrink-0 rounded-full border border-surface-chat bg-surface-chat"
+          style={{ marginLeft: index === 0 ? 0 : -6 }}
+        />
+      ))}
+    </span>
+  )
+}
+
 export const WebSearchProcess = memo(function WebSearchProcess({
   webSearch,
   groupInstances,
@@ -71,7 +86,6 @@ const SingleWebSearchProcess = memo(function SingleWebSearchProcess({
   const isFailed = webSearch.status === 'failed'
   const isBlocked = webSearch.status === 'blocked'
 
-  // Deduplicate sources by URL for display
   const uniqueSources = useMemo(() => {
     if (!webSearch.sources) return []
     const seen = new Set<string>()
@@ -131,13 +145,11 @@ const SingleWebSearchProcess = memo(function SingleWebSearchProcess({
             </svg>
           ) : null}
         </span>
-        <span className="min-w-0 text-base text-content-primary/50">
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-base text-content-primary/50">
           {isSearching ? (
-            <>
-              <span className="font-medium">Searching the web...</span>
-            </>
+            <span className="font-medium">Searching the web...</span>
           ) : isFailed ? (
-            <>
+            <span>
               <span className="font-medium">Search failed</span>
               {webSearch.query && (
                 <span className="font-normal">
@@ -145,38 +157,26 @@ const SingleWebSearchProcess = memo(function SingleWebSearchProcess({
                   for &quot;{webSearch.query}&quot;
                 </span>
               )}
-            </>
+            </span>
           ) : isBlocked ? (
-            <>
+            <span>
               <span className="font-medium">Web search blocked</span>
               {webSearch.reason && (
                 <span className="font-normal"> — {webSearch.reason}</span>
               )}
-            </>
+            </span>
           ) : (
             <>
-              <span className="font-medium">Searched the web</span>
-              {webSearch.query && (
-                <span className="font-normal">
-                  {' '}
-                  for &quot;{webSearch.query}&quot;
-                </span>
-              )}
-              {hasSources && (
-                <span
-                  className="inline-flex items-center align-middle"
-                  style={{ marginLeft: 6 }}
-                >
-                  {sourcesToShow.map((source, index) => (
-                    <FadeInFavicon
-                      key={`${source.url}-${index}`}
-                      url={source.url}
-                      className="h-4 w-4 shrink-0 rounded-full border border-surface-chat bg-surface-chat"
-                      style={{ marginLeft: index === 0 ? 0 : -6 }}
-                    />
-                  ))}
-                </span>
-              )}
+              <span>
+                <span className="font-medium">Searched the web</span>
+                {webSearch.query && (
+                  <span className="font-normal">
+                    {' '}
+                    for &quot;{webSearch.query}&quot;
+                  </span>
+                )}
+              </span>
+              {hasSources && <InlineSourceFavicons sources={sourcesToShow} />}
             </>
           )}
         </span>
@@ -296,22 +296,10 @@ const GroupedWebSearchProcess = memo(function GroupedWebSearchProcess({
             </svg>
           )}
         </span>
-        <span className="min-w-0 text-base text-content-primary/50">
+        <span className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-base text-content-primary/50">
           <span className="font-medium">{label}</span>
           {mergedSources.length > 0 && (
-            <span
-              className="inline-flex items-center align-middle"
-              style={{ marginLeft: 6 }}
-            >
-              {faviconsToShow.map((source, index) => (
-                <FadeInFavicon
-                  key={`${source.url}-${index}`}
-                  url={source.url}
-                  className="h-4 w-4 shrink-0 rounded-full border border-surface-chat bg-surface-chat"
-                  style={{ marginLeft: index === 0 ? 0 : -6 }}
-                />
-              ))}
-            </span>
+            <InlineSourceFavicons sources={faviconsToShow} />
           )}
         </span>
       </button>
