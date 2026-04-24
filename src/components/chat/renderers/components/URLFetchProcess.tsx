@@ -1,4 +1,5 @@
 import type { URLFetchState } from '@/components/chat/types'
+import { Favicon } from '@/components/ui/favicon'
 import { memo, useMemo, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 
@@ -21,15 +22,6 @@ function getDisplayUrl(url: string): string {
   }
 }
 
-function getFaviconUrl(url: string): string {
-  try {
-    const parsedUrl = new URL(url)
-    return `https://icons.duckduckgo.com/ip3/${parsedUrl.hostname}.ico`
-  } catch {
-    return ''
-  }
-}
-
 function FetchSpinner() {
   return (
     <PiSpinner className="h-3.5 w-3.5 shrink-0 animate-spin text-content-primary/50" />
@@ -45,14 +37,7 @@ function URLFetchRow({ fetch }: { fetch: URLFetchState }) {
       {fetch.status === 'fetching' ? (
         <FetchSpinner />
       ) : (
-        <img
-          src={getFaviconUrl(fetch.url)}
-          alt=""
-          className="h-3.5 w-3.5 shrink-0 rounded-sm"
-          onError={(e) => {
-            ;(e.target as HTMLImageElement).style.display = 'none'
-          }}
-        />
+        <Favicon url={fetch.url} className="h-3.5 w-3.5 shrink-0 rounded-sm" />
       )}
       <span
         className={`min-w-0 truncate ${
@@ -82,14 +67,7 @@ function InlineFavicons({ urlFetches }: { urlFetches: URLFetchState[] }) {
             key={fetch.id}
             className="bg-surface-secondary inline-flex h-4 w-4 items-center justify-center overflow-hidden rounded-full ring-1 ring-border-subtle"
           >
-            <img
-              src={getFaviconUrl(fetch.url)}
-              alt=""
-              className="h-3 w-3"
-              onError={(e) => {
-                ;(e.target as HTMLImageElement).style.display = 'none'
-              }}
-            />
+            <Favicon url={fetch.url} className="h-3 w-3" />
           </span>
         ))}
       </span>

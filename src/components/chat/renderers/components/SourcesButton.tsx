@@ -5,20 +5,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Favicon as EnclaveFavicon } from '@/components/ui/favicon'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { ArrowUpRight } from 'lucide-react'
 import { memo, useMemo, useState } from 'react'
 
 const MAX_PREVIEW_FAVICONS = 4
-
-function getFaviconUrl(url: string): string {
-  try {
-    const parsedUrl = new URL(url)
-    return `https://icons.duckduckgo.com/ip3/${parsedUrl.hostname}.ico`
-  } catch {
-    return ''
-  }
-}
 
 function getDomain(url: string): string {
   try {
@@ -29,9 +21,12 @@ function getDomain(url: string): string {
   }
 }
 
-const faviconCache = new Map<string, { loaded: boolean; error: boolean }>()
-
-function Favicon({
+/**
+ * Round favicon badge with a neutral fallback dot for sites that expose
+ * no icon. Delegates the actual network fetch to the shared enclave-
+ * backed `Favicon` component.
+ */
+function FaviconBadge({
   url,
   size,
   className,
@@ -40,45 +35,26 @@ function Favicon({
   size: number
   className?: string
 }) {
-  const faviconUrl = getFaviconUrl(url)
-  const cached = faviconCache.get(faviconUrl)
-  const [loaded, setLoaded] = useState(cached?.loaded ?? false)
-  const [error, setError] = useState(cached?.error ?? false)
-
-  const handleLoad = () => {
-    setLoaded(true)
-    faviconCache.set(faviconUrl, { loaded: true, error: false })
-  }
-
-  const handleError = () => {
-    setError(true)
-    faviconCache.set(faviconUrl, { loaded: false, error: true })
-  }
-
-  if (error || !faviconUrl) {
-    return (
+  const fallback = (
+    <span
+      className={`bg-surface-secondary inline-flex items-center justify-center rounded-full text-content-muted ${className ?? ''}`}
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
       <span
-        className={`bg-surface-secondary inline-flex items-center justify-center rounded-full text-content-muted ${className ?? ''}`}
-        style={{ width: size, height: size }}
-        aria-hidden="true"
-      >
-        <span
-          className="block rounded-full bg-current"
-          style={{ width: size * 0.35, height: size * 0.35 }}
-        />
-      </span>
-    )
-  }
-
+        className="block rounded-full bg-current"
+        style={{ width: size * 0.35, height: size * 0.35 }}
+      />
+    </span>
+  )
   return (
-    <img
-      src={faviconUrl}
-      alt=""
+    <EnclaveFavicon
+      url={url}
       width={size}
       height={size}
-      className={`shrink-0 rounded-full bg-white p-[1px] transition-opacity ${loaded ? 'opacity-100' : 'opacity-0'} ${className ?? ''}`}
-      onLoad={handleLoad}
-      onError={handleError}
+      className={`shrink-0 rounded-full bg-white p-[1px] ${className ?? ''}`}
+      placeholder={fallback}
+      fallback={fallback}
     />
   )
 }
@@ -129,7 +105,7 @@ export const SourcesButton = memo(function SourcesButton({
         <span>Sources</span>
         <span className="inline-flex items-center">
           {previewDomains.map((url, index) => (
-            <Favicon
+            <FaviconBadge
               key={`${url}-${index}`}
               url={url}
               size={16}
@@ -158,7 +134,11 @@ export const SourcesButton = memo(function SourcesButton({
                     rel="noopener noreferrer"
                     className="group flex items-start gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-surface-chat-background"
                   >
-                    <Favicon url={source.url} size={20} className="mt-0.5" />
+                    <FaviconBadge
+                      url={source.url}
+                      size={20}
+                      className="mt-0.5"
+                    />
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <span className="truncate text-sm font-medium text-content-primary">
                         {source.title || source.url}

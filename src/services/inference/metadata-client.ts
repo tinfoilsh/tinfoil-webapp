@@ -89,3 +89,43 @@ export async function fetchLinkMetadata(url: string): Promise<LinkMetadata> {
     cached: data.cached,
   }
 }
+
+/**
+ * Module-level dedup cache for favicon lookups. Keyed by hostname so
+ * multiple mentions of the same domain across a page share a single
+ * in-flight enclave request and a single stored result.
+ */
+const faviconPromiseByHost = new Map<string, Promise<string | null>>()
+
+function getHostKey(url: string): string | null {
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Resolve the favicon for a URL's host via the attested metadata enclave.
+ *
+ * Returns `null` when the page exposes no favicon or the fetch fails.
+ * Requests are deduplicated by hostname so a chat view with dozens of
+ * links from the same domain only pays for one attested round-trip.
+ */
+export function fetchFavicon(url: string): Promise<string | null> {
+  const host = getHostKey(url)
+  if (!host) return Promise.resolve(null)
+  const existing = faviconPromiseByHost.get(host)
+  if (existing) return existing
+
+  // Normalize to the hostname root so every per-URL call hits the same
+  // cache key. This trades a potentially-different per-page favicon for
+  // drastically fewer enclave requests, which is the right tradeoff for a
+  // favicon thumbnail.
+  const lookupUrl = `https://${host}/`
+  const promise = fetchLinkMetadata(lookupUrl)
+    .then((m) => m.favicon)
+    .catch(() => null)
+  faviconPromiseByHost.set(host, promise)
+  return promise
+}

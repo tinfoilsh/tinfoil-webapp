@@ -72,7 +72,7 @@ describe('GenUI registry', () => {
         sources: [{ title: 'T', url: 'https://example.com' }],
       },
       render_artifact_preview: {
-        source: { type: 'svg', svg: '<svg/>' },
+        source: { type: 'markdown', markdown: '# Hello' },
       },
       render_clock: {},
       render_countdown: { target: '2030-01-01T00:00:00Z' },

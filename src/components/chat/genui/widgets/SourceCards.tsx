@@ -1,4 +1,5 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
+import { Favicon } from '@/components/ui/favicon'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
@@ -27,15 +28,6 @@ function getDomain(url: string): string {
   }
 }
 
-function getFaviconUrl(url: string): string | null {
-  try {
-    const host = new URL(url).hostname
-    return `https://icons.duckduckgo.com/ip3/${host}.ico`
-  } catch {
-    return null
-  }
-}
-
 export const widget = defineGenUIWidget({
   name: 'render_source_cards',
   description:
@@ -49,7 +41,6 @@ export const widget = defineGenUIWidget({
       )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {sources.map((src, i) => {
-          const favicon = getFaviconUrl(src.url)
           const domain = getDomain(src.url)
           return (
             <a
@@ -70,15 +61,10 @@ export const widget = defineGenUIWidget({
               )}
               <div className="flex flex-col gap-2 p-3">
                 <div className="flex items-center gap-2">
-                  {favicon && (
-                    <ImageWithSkeleton
-                      src={favicon}
-                      alt=""
-                      wrapperClassName="relative h-4 w-4 shrink-0 overflow-hidden rounded bg-surface-card"
-                      className="h-4 w-4 object-cover"
-                      loading="lazy"
-                    />
-                  )}
+                  <Favicon
+                    url={src.url}
+                    className="h-4 w-4 shrink-0 rounded object-cover"
+                  />
                   <span className="truncate text-xs text-content-muted">
                     {domain}
                   </span>

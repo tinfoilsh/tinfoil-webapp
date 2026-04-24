@@ -3,14 +3,10 @@ import type {
   WebSearchSource,
   WebSearchState,
 } from '@/components/chat/types'
+import { Favicon } from '@/components/ui/favicon'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { memo, useMemo, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
-
-const webSearchFaviconCache = new Map<
-  string,
-  { loaded: boolean; error: boolean }
->()
 
 interface WebSearchProcessProps {
   webSearch: WebSearchState
@@ -21,15 +17,6 @@ interface WebSearchProcessProps {
    * tool-call runs stay inline without stacking one pill per search.
    */
   groupInstances?: WebSearchInstance[]
-}
-
-function getFaviconUrl(url: string): string {
-  try {
-    const parsedUrl = new URL(url)
-    return `https://icons.duckduckgo.com/ip3/${parsedUrl.hostname}.ico`
-  } catch {
-    return ''
-  }
 }
 
 function getDomainName(url: string): string {
@@ -52,32 +39,9 @@ function FadeInFavicon({
   className: string
   style?: React.CSSProperties
 }) {
-  const faviconUrl = getFaviconUrl(url)
-  const cached = webSearchFaviconCache.get(faviconUrl)
-  const [loaded, setLoaded] = useState(cached?.loaded ?? false)
-  const [error, setError] = useState(cached?.error ?? false)
-
-  const handleLoad = () => {
-    setLoaded(true)
-    webSearchFaviconCache.set(faviconUrl, { loaded: true, error: false })
-  }
-
-  const handleError = () => {
-    setError(true)
-    webSearchFaviconCache.set(faviconUrl, { loaded: false, error: true })
-  }
-
-  if (error) return null
-
   return (
     <span className="relative block" style={style}>
-      <img
-        src={faviconUrl}
-        alt=""
-        className={`${className} transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
-        onLoad={handleLoad}
-        onError={handleError}
-      />
+      <Favicon url={url} className={className} />
     </span>
   )
 }
