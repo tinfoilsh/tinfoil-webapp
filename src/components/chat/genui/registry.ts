@@ -1,0 +1,54 @@
+/**
+ * GenUI widget registry.
+ *
+ * This file is the single entry point for every model-renderable widget.
+ * Widgets are plain modules under `./widgets/` that export a `widget:
+ * GenUIWidget`. Adding a widget is: create a file, import it here, add it to
+ * the array. Nothing else needs to change.
+ *
+ * `buildGenUIToolSchemas` derives the OpenAI `tools` request field from each
+ * widget's Zod schema so tool definitions and render implementations never
+ * drift.
+ */
+import { zodToJsonSchema } from 'zod-to-json-schema'
+import type { GenUIWidget } from './types'
+
+/**
+ * Full widget list. Order affects nothing functionally but influences the
+ * order of prompt hints presented to the model — keep frequently-useful
+ * widgets near the top.
+ */
+export const GENUI_WIDGETS: GenUIWidget[] = [
+  // Widgets are registered in follow-up commits. Keep this array as the
+  // single mutation point so introducing or removing a widget is one diff.
+]
+
+/**
+ * Lookup table keyed by tool name.
+ */
+export const GENUI_WIDGETS_BY_NAME: Record<string, GenUIWidget> =
+  Object.fromEntries(GENUI_WIDGETS.map((w) => [w.name, w]))
+
+/**
+ * Build the OpenAI `tools` array sent with chat completion requests.
+ */
+export function buildGenUIToolSchemas() {
+  return GENUI_WIDGETS.map((w) => ({
+    type: 'function' as const,
+    function: {
+      name: w.name,
+      description: w.description,
+      parameters: zodToJsonSchema(w.schema, {
+        target: 'openApi3',
+        $refStrategy: 'none',
+      }) as Record<string, unknown>,
+    },
+  }))
+}
+
+/**
+ * True if the given tool name corresponds to a registered GenUI widget.
+ */
+export function isGenUIToolName(name: string): boolean {
+  return name in GENUI_WIDGETS_BY_NAME
+}
