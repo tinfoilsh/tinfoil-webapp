@@ -77,6 +77,11 @@ interface UseChatMessagingReturn {
   cancelGeneration: () => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
   regenerateMessage: (messageIndex: number) => void
+  resolveInputToolCall: (
+    toolCallId: string,
+    resultText: string,
+    resultData?: unknown,
+  ) => void
 }
 
 export function useChatMessaging({
@@ -785,6 +790,65 @@ export function useChatMessaging({
     [loadingState, currentChat, handleQuery],
   )
 
+  /**
+   * Resolve a pending input-surface GenUI tool call.
+   *
+   * Marks the matching `tool_call` block as resolved on the last assistant
+   * message and sends the user's choice as a follow-up user message. The new
+   * message runs through `handleQuery` so the assistant continues the
+   * conversation naturally.
+   */
+  const resolveInputToolCall = useCallback(
+    (toolCallId: string, resultText: string, resultData?: unknown) => {
+      if (loadingState !== 'idle' || !currentChat) return
+
+      const now = Date.now()
+      const applyToMessages = (messages: Message[]): Message[] => {
+        if (messages.length === 0) return messages
+        const updated = [...messages]
+        for (let i = updated.length - 1; i >= 0; i--) {
+          const msg = updated[i]
+          if (msg.role !== 'assistant' || !msg.timeline) continue
+          const newTimeline = msg.timeline.map((block) => {
+            if (
+              block.type === 'tool_call' &&
+              block.toolCallId === toolCallId &&
+              !block.resolvedAt
+            ) {
+              return {
+                ...block,
+                resolvedAt: now,
+                resolution: {
+                  text: resultText,
+                  data: resultData,
+                  resolvedAt: now,
+                },
+              }
+            }
+            return block
+          })
+          updated[i] = { ...msg, timeline: newTimeline }
+          break
+        }
+        return updated
+      }
+
+      setChats((prevChats) =>
+        prevChats.map((c) =>
+          c.id === currentChat.id
+            ? { ...c, messages: applyToMessages(c.messages) }
+            : c,
+        ),
+      )
+      setCurrentChat((prev) =>
+        prev ? { ...prev, messages: applyToMessages(prev.messages) } : prev,
+      )
+
+      handleQuery(resultText)
+    },
+    [loadingState, currentChat, setChats, setCurrentChat, handleQuery],
+  )
+
   // Regenerate a message - same as edit but uses the original content
   const regenerateMessage = useCallback(
     (messageIndex: number) => {
@@ -823,5 +887,6 @@ export function useChatMessaging({
     cancelGeneration,
     editMessage,
     regenerateMessage,
+    resolveInputToolCall,
   }
 }

@@ -87,6 +87,8 @@ import { ChatSidebar } from './chat-sidebar'
 import { CONSTANTS } from './constants'
 import { useDocumentUploader } from './document-uploader'
 import { DragProvider } from './drag-context'
+import { GenUIInputAreaRenderer } from './genui/GenUIInputAreaRenderer'
+import { selectPendingInputToolCallFromChat } from './genui/pending-input-tool-call'
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
 import { useMaxMessages } from './hooks/use-max-messages'
@@ -711,6 +713,7 @@ export function ChatInterface({
     reloadChats,
     editMessage,
     regenerateMessage,
+    resolveInputToolCall,
     initialChatDecryptionFailed,
     clearInitialChatDecryptionFailed,
     localChatNotFound,
@@ -2704,119 +2707,130 @@ export function ChatInterface({
                   paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
                 }}
               >
-                <form
-                  onSubmit={handleSubmit}
-                  className="pointer-events-auto relative mx-auto max-w-3xl px-1 md:px-8"
-                >
-                  <ChatInput
-                    input={input}
-                    setInput={setInput}
-                    handleSubmit={handleSubmit}
-                    loadingState={loadingState}
-                    cancelGeneration={cancelGeneration}
-                    inputRef={inputRef}
-                    handleInputFocus={handleInputFocus}
-                    inputMinHeight={inputMinHeight}
-                    isDarkMode={isDarkMode}
-                    handleDocumentUpload={handleFileUpload}
-                    processedDocuments={processedDocuments}
-                    removeDocument={removeDocument}
-                    isPremium={isPremium}
-                    quote={quote}
-                    onClearQuote={() => setQuote(null)}
-                    hasMessages={
-                      currentChat?.messages && currentChat.messages.length > 0
-                    }
-                    audioModel={
-                      (
-                        models.find(
-                          (m) => m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
-                        ) || models.find((m) => m.type === 'audio')
-                      )?.modelName
-                    }
-                    modelSelectorButton={
-                      models.length > 0 &&
-                      selectedModel &&
-                      handleModelSelect ? (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            data-model-selector
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              handleLabelClick('model', () => {})
-                            }}
-                            className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
-                          >
-                            {(() => {
-                              const model = models.find(
-                                (m) => m.modelName === selectedModel,
-                              )
-                              if (!model) return null
-                              return (
-                                <>
-                                  <span className="text-xs font-medium">
-                                    {model.name}
-                                  </span>
-                                  <svg
-                                    className={`h-3 w-3 transition-transform ${expandedLabel === 'model' ? 'rotate-180' : ''}`}
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M19 9l-7 7-7-7"
-                                    />
-                                  </svg>
-                                </>
-                              )
-                            })()}
-                          </button>
+                {selectPendingInputToolCallFromChat(currentChat) ? (
+                  <div className="pointer-events-auto relative mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 md:px-8">
+                    <GenUIInputAreaRenderer
+                      pending={selectPendingInputToolCallFromChat(currentChat)!}
+                      isDarkMode={isDarkMode}
+                      onResolve={resolveInputToolCall}
+                    />
+                  </div>
+                ) : (
+                  <form
+                    onSubmit={handleSubmit}
+                    className="pointer-events-auto relative mx-auto max-w-3xl px-1 md:px-8"
+                  >
+                    <ChatInput
+                      input={input}
+                      setInput={setInput}
+                      handleSubmit={handleSubmit}
+                      loadingState={loadingState}
+                      cancelGeneration={cancelGeneration}
+                      inputRef={inputRef}
+                      handleInputFocus={handleInputFocus}
+                      inputMinHeight={inputMinHeight}
+                      isDarkMode={isDarkMode}
+                      handleDocumentUpload={handleFileUpload}
+                      processedDocuments={processedDocuments}
+                      removeDocument={removeDocument}
+                      isPremium={isPremium}
+                      quote={quote}
+                      onClearQuote={() => setQuote(null)}
+                      hasMessages={
+                        currentChat?.messages && currentChat.messages.length > 0
+                      }
+                      audioModel={
+                        (
+                          models.find(
+                            (m) =>
+                              m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
+                          ) || models.find((m) => m.type === 'audio')
+                        )?.modelName
+                      }
+                      modelSelectorButton={
+                        models.length > 0 &&
+                        selectedModel &&
+                        handleModelSelect ? (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              data-model-selector
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                handleLabelClick('model', () => {})
+                              }}
+                              className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
+                            >
+                              {(() => {
+                                const model = models.find(
+                                  (m) => m.modelName === selectedModel,
+                                )
+                                if (!model) return null
+                                return (
+                                  <>
+                                    <span className="text-xs font-medium">
+                                      {model.name}
+                                    </span>
+                                    <svg
+                                      className={`h-3 w-3 transition-transform ${expandedLabel === 'model' ? 'rotate-180' : ''}`}
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M19 9l-7 7-7-7"
+                                      />
+                                    </svg>
+                                  </>
+                                )
+                              })()}
+                            </button>
 
-                          {expandedLabel === 'model' && (
-                            <ModelSelector
-                              selectedModel={selectedModel}
-                              onSelect={handleModelSelect}
-                              isDarkMode={isDarkMode}
-                              models={models}
-                            />
-                          )}
-                        </div>
-                      ) : undefined
-                    }
-                    reasoningSelectorButton={(() => {
-                      const m = models.find(
-                        (mm) => mm.modelName === selectedModel,
-                      )
-                      if (!isReasoningModel(m)) return undefined
-                      return (
-                        <ReasoningEffortSelector
-                          supportsEffort={supportsReasoningEffort(m)}
-                          supportsToggle={supportsThinkingToggle(m)}
-                          reasoningEffort={reasoningEffort}
-                          onEffortChange={setReasoningEffort}
-                          thinkingEnabled={thinkingEnabled}
-                          onThinkingEnabledChange={setThinkingEnabled}
-                          isOpen={expandedLabel === 'reasoning'}
-                          onToggle={() =>
-                            handleLabelClick('reasoning', () => {})
-                          }
-                          onClose={() =>
-                            handleLabelClick('reasoning', () => {})
-                          }
-                        />
-                      )
-                    })()}
-                    webSearchEnabled={webSearchEnabled}
-                    onWebSearchToggle={() =>
-                      setWebSearchEnabled((prev) => !prev)
-                    }
-                  />
-                </form>
+                            {expandedLabel === 'model' && (
+                              <ModelSelector
+                                selectedModel={selectedModel}
+                                onSelect={handleModelSelect}
+                                isDarkMode={isDarkMode}
+                                models={models}
+                              />
+                            )}
+                          </div>
+                        ) : undefined
+                      }
+                      reasoningSelectorButton={(() => {
+                        const m = models.find(
+                          (mm) => mm.modelName === selectedModel,
+                        )
+                        if (!isReasoningModel(m)) return undefined
+                        return (
+                          <ReasoningEffortSelector
+                            supportsEffort={supportsReasoningEffort(m)}
+                            supportsToggle={supportsThinkingToggle(m)}
+                            reasoningEffort={reasoningEffort}
+                            onEffortChange={setReasoningEffort}
+                            thinkingEnabled={thinkingEnabled}
+                            onThinkingEnabledChange={setThinkingEnabled}
+                            isOpen={expandedLabel === 'reasoning'}
+                            onToggle={() =>
+                              handleLabelClick('reasoning', () => {})
+                            }
+                            onClose={() =>
+                              handleLabelClick('reasoning', () => {})
+                            }
+                          />
+                        )
+                      })()}
+                      webSearchEnabled={webSearchEnabled}
+                      onWebSearchToggle={() =>
+                        setWebSearchEnabled((prev) => !prev)
+                      }
+                    />
+                  </form>
+                )}
 
                 {/* Scroll to bottom button - absolutely positioned in parent */}
                 {showScrollButton && currentChat?.messages?.length > 0 && (
