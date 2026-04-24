@@ -1,5 +1,5 @@
 import { Card } from '@/components/ui/card'
-import { Copy, Mail } from 'lucide-react'
+import { Copy, Send } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -97,16 +97,7 @@ function MessageComposeCard({ channel = 'email', to, title, variants }: Props) {
             {variant.body}
           </pre>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {channel === 'email' && (
-            <a
-              href={buildMailto(to, variant)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm text-content-primary transition-colors hover:border-content-primary/40"
-            >
-              <Mail className="h-4 w-4" />
-              Open in Mail
-            </a>
-          )}
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <button
             type="button"
             onClick={copyBody}
@@ -115,6 +106,15 @@ function MessageComposeCard({ channel = 'email', to, title, variants }: Props) {
             <Copy className="h-4 w-4" />
             {copied ? 'Copied' : 'Copy'}
           </button>
+          {channel === 'email' && (
+            <a
+              href={buildMailto(to, variant)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm text-content-primary transition-colors hover:border-content-primary/40"
+            >
+              <Send className="h-4 w-4" />
+              Open in client
+            </a>
+          )}
         </div>
       </div>
     </Card>
