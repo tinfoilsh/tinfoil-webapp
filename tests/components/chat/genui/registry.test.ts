@@ -72,6 +72,10 @@ describe('GenUI registry', () => {
         sources: [{ title: 'T', url: 'https://example.com' }],
       },
       render_artifact_preview: { format: 'svg', code: '<svg/>' },
+      render_clock: {},
+      render_countdown: { target: '2030-01-01T00:00:00Z' },
+      render_quote: { text: 'Hello world' },
+      render_recipe_card: { title: 'Pasta' },
     }
     for (const widget of GENUI_WIDGETS) {
       const fixture = fixtures[widget.name]

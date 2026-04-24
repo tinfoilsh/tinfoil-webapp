@@ -15,7 +15,9 @@ import type { GenUIWidget } from './types'
 import { widget as ArtifactPreview } from './widgets/ArtifactPreview'
 import { widget as BarChart } from './widgets/BarChart'
 import { widget as Callout } from './widgets/Callout'
+import { widget as Clock } from './widgets/Clock'
 import { widget as ComparisonTable } from './widgets/ComparisonTable'
+import { widget as Countdown } from './widgets/Countdown'
 import { widget as DataTable } from './widgets/DataTable'
 import { widget as Gauge } from './widgets/Gauge'
 import { widget as Image } from './widgets/Image'
@@ -26,6 +28,8 @@ import { widget as LineChart } from './widgets/LineChart'
 import { widget as LinkPreview } from './widgets/LinkPreview'
 import { widget as PieChart } from './widgets/PieChart'
 import { widget as ProgressBar } from './widgets/ProgressBar'
+import { widget as Quote } from './widgets/Quote'
+import { widget as RecipeCard } from './widgets/RecipeCard'
 import { widget as SourceCards } from './widgets/SourceCards'
 import { widget as StatCards } from './widgets/StatCards'
 import { widget as Steps } from './widgets/Steps'
@@ -57,6 +61,10 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   LinkPreview,
   SourceCards,
   ArtifactPreview,
+  Clock,
+  Countdown,
+  Quote,
+  RecipeCard,
 ]
 
 /**
