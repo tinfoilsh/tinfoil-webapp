@@ -28,11 +28,13 @@ import { widget as InfoCard } from './widgets/InfoCard'
 import { widget as KeyValueList } from './widgets/KeyValueList'
 import { widget as LineChart } from './widgets/LineChart'
 import { widget as LinkPreview } from './widgets/LinkPreview'
+import { widget as MessageCompose } from './widgets/MessageCompose'
 import { widget as PieChart } from './widgets/PieChart'
 import { widget as ProgressBar } from './widgets/ProgressBar'
 import { widget as Quote } from './widgets/Quote'
 import { widget as RecipeCard } from './widgets/RecipeCard'
 import { widget as SourceCards } from './widgets/SourceCards'
+import { widget as SportsData } from './widgets/SportsData'
 import { widget as StatCards } from './widgets/StatCards'
 import { widget as Steps } from './widgets/Steps'
 import { widget as TaskPlan } from './widgets/TaskPlan'
@@ -67,6 +69,8 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   Countdown,
   Quote,
   RecipeCard,
+  MessageCompose,
+  SportsData,
   AskUserInput,
   ConfirmationCard,
 ]

@@ -81,6 +81,14 @@ describe('GenUI registry', () => {
         options: [{ label: 'A' }, { label: 'B' }],
       },
       confirmation_card: { title: 'Delete item?' },
+      render_message_compose: {
+        variants: [{ label: 'Formal', body: 'Hello.' }],
+      },
+      render_sports_data: {
+        kind: 'fixture',
+        home: { name: 'A' },
+        away: { name: 'B' },
+      },
     }
     for (const widget of GENUI_WIDGETS) {
       const fixture = fixtures[widget.name]
