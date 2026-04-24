@@ -520,6 +520,7 @@ export function useChatMessaging({
           thinkingEnabled,
           webSearchEnabled,
           piiCheckEnabled,
+          genUIEnabled: true,
         })
 
         const assistantMessage = await processStreamingResponse(response, {
