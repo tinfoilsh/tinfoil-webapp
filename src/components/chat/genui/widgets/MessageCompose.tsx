@@ -100,7 +100,7 @@ function EmailComposeCard({ to, title, variants }: Props) {
   const headerLabel = title ?? 'New Message'
 
   return (
-    <Card className="my-3 max-w-2xl overflow-hidden">
+    <Card className="my-3 w-full overflow-hidden">
       {/* Window chrome — title bar with traffic-light dots and actions. */}
       <div className="flex items-center gap-2 border-b border-border-subtle bg-surface-chat-background px-3 py-2">
         <div className="flex items-center gap-1.5" aria-hidden>
@@ -203,7 +203,7 @@ function MessageOnlyCard({ title, variants }: Props) {
   }
 
   return (
-    <Card className="my-3 max-w-2xl overflow-hidden">
+    <Card className="my-3 w-full overflow-hidden">
       <div className="flex flex-col gap-3 p-4">
         {title && (
           <p className="text-sm font-semibold text-content-primary">{title}</p>

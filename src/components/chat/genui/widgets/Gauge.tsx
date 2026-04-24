@@ -130,43 +130,47 @@ export const widget = defineGenUIWidget({
 
     const widthClass = size === 'small' ? 'max-w-[200px]' : 'max-w-xs'
     return (
-      <Card className={`my-3 ${widthClass}`}>
-        <div className="p-4">
-          <p className="text-xs font-medium text-content-muted">{label}</p>
-          <svg
-            viewBox={`0 0 ${VIEWBOX} ${BASELINE + 10}`}
-            className="mt-2 w-full"
-          >
-            <path
-              d={backgroundPath}
-              stroke="currentColor"
-              strokeOpacity={0.15}
-              strokeWidth={STROKE}
-              fill="none"
-              strokeLinecap="round"
-            />
-            {zonePaths}
-            <path
-              d={valuePath}
-              stroke={color}
-              strokeWidth={STROKE}
-              fill="none"
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="-mt-6 text-center">
-            <p className="text-2xl font-semibold text-content-primary">
-              {String(value)}
-            </p>
-            {(valueLabel || unit) && (
-              <p className="text-xs text-content-muted">{valueLabel ?? unit}</p>
+      <div className="my-3 flex w-full justify-center">
+        <Card className={`w-full ${widthClass}`}>
+          <div className="p-4">
+            <p className="text-xs font-medium text-content-muted">{label}</p>
+            <svg
+              viewBox={`0 0 ${VIEWBOX} ${BASELINE + 10}`}
+              className="mt-2 w-full"
+            >
+              <path
+                d={backgroundPath}
+                stroke="currentColor"
+                strokeOpacity={0.15}
+                strokeWidth={STROKE}
+                fill="none"
+                strokeLinecap="round"
+              />
+              {zonePaths}
+              <path
+                d={valuePath}
+                stroke={color}
+                strokeWidth={STROKE}
+                fill="none"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="-mt-6 text-center">
+              <p className="text-2xl font-semibold text-content-primary">
+                {String(value)}
+              </p>
+              {(valueLabel || unit) && (
+                <p className="text-xs text-content-muted">
+                  {valueLabel ?? unit}
+                </p>
+              )}
+            </div>
+            {description && (
+              <p className="mt-2 text-xs text-content-muted">{description}</p>
             )}
           </div>
-          {description && (
-            <p className="mt-2 text-xs text-content-muted">{description}</p>
-          )}
-        </div>
-      </Card>
+        </Card>
+      </div>
     )
   },
 })

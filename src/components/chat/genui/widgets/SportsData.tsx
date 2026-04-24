@@ -93,7 +93,7 @@ export const widget = defineGenUIWidget({
     away,
     standings,
   }) => (
-    <Card className="my-3 max-w-xl overflow-hidden">
+    <Card className="my-3 w-full overflow-hidden">
       <div className="flex flex-col gap-3 p-4">
         <div className="flex flex-col gap-0.5">
           <div className="flex items-center gap-2 text-xs text-content-muted">

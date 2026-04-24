@@ -112,11 +112,13 @@ function Countdown({
 
   if (!targetDate) {
     return (
-      <Card className="my-3 max-w-md">
-        <div className="p-5 text-sm text-content-muted">
-          Invalid target date.
-        </div>
-      </Card>
+      <div className="my-3 flex w-full justify-center">
+        <Card className="w-full max-w-md">
+          <div className="p-5 text-sm text-content-muted">
+            Invalid target date.
+          </div>
+        </Card>
+      </div>
     )
   }
 
@@ -124,37 +126,39 @@ function Countdown({
   const targetLabel = label ?? formatTargetLabel(targetDate)
 
   return (
-    <Card className="my-3 max-w-md">
-      <div className="flex flex-col gap-3 p-5">
-        <div className="flex flex-col gap-0.5">
-          {title && (
-            <p className="text-sm font-semibold text-content-primary">
-              {title}
+    <div className="my-3 flex w-full justify-center">
+      <Card className="w-full max-w-md">
+        <div className="flex flex-col gap-3 p-5">
+          <div className="flex flex-col gap-0.5">
+            {title && (
+              <p className="text-sm font-semibold text-content-primary">
+                {title}
+              </p>
+            )}
+            <p className="text-xs text-content-muted">
+              {remaining.done ? 'Target' : 'Counting down to'} {targetLabel}
             </p>
+          </div>
+
+          {remaining.done ? (
+            <div className="rounded-lg border border-border-subtle bg-surface-chat-background px-4 py-3 text-sm font-medium text-content-primary">
+              {completedMessage ?? 'Time is up.'}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-start gap-3">
+              <Cell value={remaining.days} label="Days" />
+              <Cell value={remaining.hours} label="Hrs" />
+              <Cell value={remaining.minutes} label="Min" />
+              {showSeconds && <Cell value={remaining.seconds} label="Sec" />}
+            </div>
           )}
-          <p className="text-xs text-content-muted">
-            {remaining.done ? 'Target' : 'Counting down to'} {targetLabel}
-          </p>
+
+          {description && (
+            <p className="text-xs text-content-muted">{description}</p>
+          )}
         </div>
-
-        {remaining.done ? (
-          <div className="rounded-lg border border-border-subtle bg-surface-chat-background px-4 py-3 text-sm font-medium text-content-primary">
-            {completedMessage ?? 'Time is up.'}
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-start gap-3">
-            <Cell value={remaining.days} label="Days" />
-            <Cell value={remaining.hours} label="Hrs" />
-            <Cell value={remaining.minutes} label="Min" />
-            {showSeconds && <Cell value={remaining.seconds} label="Sec" />}
-          </div>
-        )}
-
-        {description && (
-          <p className="text-xs text-content-muted">{description}</p>
-        )}
-      </div>
-    </Card>
+      </Card>
+    </div>
   )
 }
 

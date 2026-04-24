@@ -262,25 +262,27 @@ function Clock({
   const parts = getTimeParts(now, timeZone)
   const digitalNow = new Date(digitalTick)
   return (
-    <Card className="my-3 max-w-xs">
-      <div className="flex flex-col items-center gap-2 p-5">
-        {label && (
-          <p className="text-xs font-medium uppercase tracking-wide text-content-muted">
-            {label}
+    <div className="my-3 flex w-full justify-center">
+      <Card className="w-full max-w-xs">
+        <div className="flex flex-col items-center gap-2 p-5">
+          {label && (
+            <p className="text-xs font-medium uppercase tracking-wide text-content-muted">
+              {label}
+            </p>
+          )}
+          <Dial parts={parts} showSeconds={showSeconds} />
+          <p className="font-mono text-xl font-semibold tabular-nums text-content-primary">
+            {formatTime(digitalNow, timeZone, showSeconds)}
           </p>
-        )}
-        <Dial parts={parts} showSeconds={showSeconds} />
-        <p className="font-mono text-xl font-semibold tabular-nums text-content-primary">
-          {formatTime(digitalNow, timeZone, showSeconds)}
-        </p>
-        {showDate && (
-          <p className="text-xs text-content-muted">
-            {formatDate(digitalNow, timeZone)}
-            {timeZone ? ` · ${timeZone}` : ''}
-          </p>
-        )}
-      </div>
-    </Card>
+          {showDate && (
+            <p className="text-xs text-content-muted">
+              {formatDate(digitalNow, timeZone)}
+              {timeZone ? ` · ${timeZone}` : ''}
+            </p>
+          )}
+        </div>
+      </Card>
+    </div>
   )
 }
 
