@@ -34,10 +34,14 @@ type Variant = z.infer<typeof variantSchema>
 type Props = z.infer<typeof schema>
 
 function buildMailto(to: string | undefined, v: Variant): string {
-  const params = new URLSearchParams()
-  if (v.subject) params.set('subject', v.subject)
-  if (v.body) params.set('body', v.body)
-  const qs = params.toString()
+  // RFC 6068: the mailto query string must use percent-encoding (`%20` for
+  // spaces). `URLSearchParams.toString()` produces `application/x-www-form-
+  // urlencoded` output (`+` for spaces), which Mail.app interprets
+  // literally, so we hand-roll the query with `encodeURIComponent`.
+  const parts: string[] = []
+  if (v.subject) parts.push(`subject=${encodeURIComponent(v.subject)}`)
+  if (v.body) parts.push(`body=${encodeURIComponent(v.body)}`)
+  const qs = parts.join('&')
   const target = to ? encodeURIComponent(to) : ''
   return `mailto:${target}${qs ? `?${qs}` : ''}`
 }
@@ -122,7 +126,7 @@ function EmailComposeCard({ to, title, variants }: Props) {
             className="inline-flex items-center gap-1 rounded-md bg-content-primary px-2.5 py-1 text-xs font-medium text-surface-chat-background transition-colors hover:opacity-90"
           >
             <Send className="h-3.5 w-3.5" />
-            Send
+            Open in mail client
           </a>
         </div>
       </div>
