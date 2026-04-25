@@ -17,24 +17,20 @@ import { widget as AskUserInput } from './widgets/AskUserInput'
 import { widget as BarChart } from './widgets/BarChart'
 import { widget as Callout } from './widgets/Callout'
 import { widget as Clock } from './widgets/Clock'
-import { widget as ComparisonTable } from './widgets/ComparisonTable'
 import { widget as ConfirmationCard } from './widgets/ConfirmationCard'
 import { widget as Countdown } from './widgets/Countdown'
-import { widget as Gauge } from './widgets/Gauge'
 import { widget as Image } from './widgets/Image'
 import { widget as ImageGrid } from './widgets/ImageGrid'
 import { widget as LineChart } from './widgets/LineChart'
 import { widget as LinkPreview } from './widgets/LinkPreview'
 import { widget as MessageCompose } from './widgets/MessageCompose'
 import { widget as PieChart } from './widgets/PieChart'
-import { widget as ProgressBar } from './widgets/ProgressBar'
 import { widget as Quote } from './widgets/Quote'
 import { widget as RecipeCard } from './widgets/RecipeCard'
 import { widget as SourceCards } from './widgets/SourceCards'
 import { widget as SportsData } from './widgets/SportsData'
 import { widget as StatCards } from './widgets/StatCards'
 import { widget as Steps } from './widgets/Steps'
-import { widget as TaskPlan } from './widgets/TaskPlan'
 import { widget as Timeline } from './widgets/Timeline'
 
 /**
@@ -47,13 +43,9 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   Steps,
   Callout,
   Timeline,
-  ComparisonTable,
-  TaskPlan,
   BarChart,
   LineChart,
   PieChart,
-  ProgressBar,
-  Gauge,
   Image,
   ImageGrid,
   LinkPreview,
