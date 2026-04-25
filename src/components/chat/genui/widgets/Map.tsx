@@ -104,6 +104,9 @@ function loadMapKit(): Promise<MapKitNamespace> {
     script.onload = () => {
       const mk = (window as unknown as { mapkit?: MapKitNamespace }).mapkit
       if (!mk) {
+        // Clear the cached rejected promise so subsequent map mounts can
+        // retry the script load instead of inheriting this failure.
+        mapKitLoader = null
         reject(new Error('mapkit global missing after script load'))
         return
       }
