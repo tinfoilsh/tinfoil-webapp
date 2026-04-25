@@ -50,6 +50,12 @@ interface MetadataResponse {
  * so multiple `LinkPreview` instances for the same URL — or rapid
  * remounts — share a single attested round-trip instead of hammering
  * the enclave.
+ *
+ * Entries are removed once the request settles (success or failure) so
+ * the map only ever holds promises that are actually in flight. This
+ * keeps the dedup behavior intact for concurrent callers without
+ * holding resolved results indefinitely (which would both serve stale
+ * data and grow unbounded over a session).
  */
 const metadataPromiseByUrl = new Map<string, Promise<LinkMetadata>>()
 
@@ -66,9 +72,8 @@ export function fetchLinkMetadata(url: string): Promise<LinkMetadata> {
   const existing = metadataPromiseByUrl.get(url)
   if (existing) return existing
 
-  const promise = doFetchLinkMetadata(url).catch((err) => {
+  const promise = doFetchLinkMetadata(url).finally(() => {
     metadataPromiseByUrl.delete(url)
-    throw err
   })
   metadataPromiseByUrl.set(url, promise)
   return promise
