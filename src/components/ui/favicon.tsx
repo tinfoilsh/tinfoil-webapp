@@ -1,6 +1,23 @@
 import { getFaviconUrl } from '@/services/inference/metadata-client'
 import { useState } from 'react'
 
+// Module-level memory of favicon URLs that have already loaded (or failed)
+// during this session. Keeps remounts — for example, when react-markdown
+// re-parses a streaming message and recreates citation pills — from
+// flashing back through the loading placeholder before re-resolving an
+// image the browser already has cached.
+const RESOLVED_FAVICONS = new Set<string>()
+const FAILED_FAVICONS = new Set<string>()
+
+type FaviconState = 'loading' | 'ready' | 'error'
+
+function initialFaviconState(src: string | null): FaviconState {
+  if (!src) return 'error'
+  if (FAILED_FAVICONS.has(src)) return 'error'
+  if (RESOLVED_FAVICONS.has(src)) return 'ready'
+  return 'loading'
+}
+
 /**
  * Favicon <img> that loads the icon through the enclave's `/favicon`
  * endpoint. Call sites previously pointed directly at
@@ -39,7 +56,9 @@ export function Favicon({
   ...imgProps
 }: FaviconProps) {
   const src = getFaviconUrl(url)
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [state, setState] = useState<FaviconState>(() =>
+    initialFaviconState(src),
+  )
 
   if (!src) return <>{fallback}</>
   if (state === 'error') return <>{fallback}</>
@@ -58,10 +77,12 @@ export function Favicon({
             : imgProps.style
         }
         onLoad={() => {
+          RESOLVED_FAVICONS.add(src)
           setState('ready')
           onResolve?.()
         }}
         onError={() => {
+          FAILED_FAVICONS.add(src)
           setState('error')
           onResolveError?.()
         }}
