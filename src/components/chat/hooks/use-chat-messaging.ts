@@ -861,19 +861,48 @@ export function useChatMessaging({
     [loadingState, currentChat, setChats, setCurrentChat, handleQuery],
   )
 
-  // Regenerate a message - same as edit but uses the original content
+  // Tracks a regenerate request issued while a stream is in flight. Once
+  // the in-progress generation has been cancelled and `loadingState`
+  // settles back to 'idle', the deferred request is fired by the effect
+  // below.
+  const pendingRegenerateIndexRef = useRef<number | null>(null)
+
+  // Regenerate a message - same as edit but uses the original content.
+  // If a stream is currently in flight, cancel it first and defer the
+  // regeneration until state settles.
   const regenerateMessage = useCallback(
     (messageIndex: number) => {
-      if (loadingState !== 'idle' || !currentChat) return
+      if (!currentChat) return
 
       const originalMessage = currentChat.messages[messageIndex]
       if (!originalMessage || originalMessage.role !== 'user') return
 
-      // Re-submit with the same content
+      if (loadingState !== 'idle') {
+        pendingRegenerateIndexRef.current = messageIndex
+        void cancelGeneration()
+        return
+      }
+
       editMessage(messageIndex, originalMessage.content || '')
     },
-    [loadingState, currentChat, editMessage],
+    [loadingState, currentChat, editMessage, cancelGeneration],
   )
+
+  // Fire the deferred regenerate once cancellation has settled the state.
+  useEffect(() => {
+    if (loadingState !== 'idle') return
+    const idx = pendingRegenerateIndexRef.current
+    if (idx === null || !currentChat) return
+
+    const originalMessage = currentChat.messages[idx]
+    if (!originalMessage || originalMessage.role !== 'user') {
+      pendingRegenerateIndexRef.current = null
+      return
+    }
+
+    pendingRegenerateIndexRef.current = null
+    editMessage(idx, originalMessage.content || '')
+  }, [loadingState, currentChat, editMessage])
 
   // Update currentChatIdRef when currentChat changes
   // But don't overwrite during streaming to preserve ID swaps
