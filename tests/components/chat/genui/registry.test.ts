@@ -62,7 +62,7 @@ describe('GenUI registry', () => {
         source: { type: 'markdown', markdown: '# Hello' },
       },
       render_clock: {},
-      render_countdown: { target: '2030-01-01T00:00:00Z' },
+      render_countdown: { durationSeconds: 300 },
       render_quote: { text: 'Hello world' },
       render_recipe_card: { title: 'Pasta' },
       ask_user_input: {
