@@ -293,9 +293,9 @@ function Recipe({
 
         {tagItems.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {tagItems.map((tag) => (
+            {tagItems.map((tag, idx) => (
               <span
-                key={tag}
+                key={`${idx}-${tag}`}
                 className="rounded-full border border-border-subtle bg-surface-chat-background px-2.5 py-0.5 text-[11px] text-content-muted"
               >
                 {tag}
