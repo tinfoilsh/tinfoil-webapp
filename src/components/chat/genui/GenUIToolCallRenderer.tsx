@@ -10,10 +10,10 @@
  * Input-surface widgets are skipped here — they render inside `ChatInput`
  * via `GenUIInputAreaRenderer`.
  */
-import { LoadingDots } from '@/components/loading-dots'
 import { logError } from '@/utils/error-handling'
 import { RefreshCw } from 'lucide-react'
 import React, { memo } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 import { getGenUIWidget, renderGenUIInline } from './render'
 import type { GenUIToolCall } from './types'
 
@@ -70,14 +70,13 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
               key={tc.id}
               className="my-4 flex items-center gap-2 rounded-lg border border-border-subtle bg-transparent px-4 py-3"
             >
-              <span
-                className="h-2 w-2 animate-pulse rounded-full bg-content-primary"
+              <PiSpinner
+                className="h-3.5 w-3.5 animate-spin text-content-primary"
                 aria-hidden
               />
               <span className="text-sm font-medium text-content-primary">
                 Generating component
               </span>
-              <LoadingDots />
             </div>
           )
         }

@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+'use client'
+
+import { useEffect, useRef } from 'react'
 
 interface StreamingTracerDotProps {
   className?: string
@@ -6,10 +8,47 @@ interface StreamingTracerDotProps {
   tone?: 'primary' | 'secondary'
 }
 
-const SQUARE_SIZE_PX = 5
-const GAP_PX = 2.5
-const STRIDE_PX = SQUARE_SIZE_PX + GAP_PX
-const STEP_DURATION_MS = 90
+const DOT_SIZE_PX = 10
+const STYLE_ELEMENT_ID = 'tracer-dot-styles'
+
+let persistentDot: HTMLDivElement | null = null
+
+function ensureStylesInjected() {
+  if (typeof document === 'undefined') return
+  if (document.getElementById(STYLE_ELEMENT_ID)) return
+  const style = document.createElement('style')
+  style.id = STYLE_ELEMENT_ID
+  style.textContent = `
+    .tracer-dot {
+      width: ${DOT_SIZE_PX}px;
+      height: ${DOT_SIZE_PX}px;
+      border-radius: 9999px;
+      background: currentColor;
+      animation: tracer-dot-pulse 1.6s ease-in-out infinite;
+    }
+
+    @keyframes tracer-dot-pulse {
+      0%, 100% {
+        transform: scale(0.6);
+        opacity: 0.5;
+      }
+      50% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+  `
+  document.head.appendChild(style)
+}
+
+function getPersistentDot(): HTMLDivElement {
+  if (persistentDot) return persistentDot
+  ensureStylesInjected()
+  const dot = document.createElement('div')
+  dot.className = 'tracer-dot'
+  persistentDot = dot
+  return persistentDot
+}
 
 export function StreamingTracerDot({
   className = '',
@@ -18,80 +57,29 @@ export function StreamingTracerDot({
 }: StreamingTracerDotProps) {
   const toneClass =
     tone === 'secondary' ? 'text-content-primary/50' : 'text-content-primary'
-  const containerRef = useRef<HTMLSpanElement | null>(null)
-  const [cells, setCells] = useState(6)
+  const hostRef = useRef<HTMLSpanElement | null>(null)
 
   useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
+    const host = hostRef.current
+    if (!host) return
 
-    const update = () => {
-      const width = el.clientWidth
-      const next = Math.max(2, Math.floor((width + GAP_PX) / STRIDE_PX))
-      setCells((prev) => (prev === next ? prev : next))
+    const dot = getPersistentDot()
+    host.appendChild(dot)
+
+    return () => {
+      if (dot.parentNode === host) {
+        host.removeChild(dot)
+      }
     }
-
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(el)
-    return () => observer.disconnect()
   }, [])
 
-  const durationMs = cells * STEP_DURATION_MS
-  const travelPx = cells * STRIDE_PX
-
   return (
-    <>
-      <span
-        ref={containerRef}
-        className={`tracer-loader relative block w-full overflow-hidden ${toneClass} ${className}`}
-        role="status"
-        aria-label={label}
-      >
-        <span
-          className="tracer-loader__highlight"
-          style={{
-            animationDuration: `${durationMs}ms`,
-            animationTimingFunction: `steps(${cells})`,
-            ['--travel' as string]: `${travelPx}px`,
-          }}
-        />
-      </span>
-      <style jsx>{`
-        .tracer-loader {
-          height: ${SQUARE_SIZE_PX}px;
-          box-sizing: border-box;
-          -webkit-mask: linear-gradient(
-              90deg,
-              #000 ${SQUARE_SIZE_PX}px,
-              #0000 0
-            )
-            left / ${STRIDE_PX}px 100%;
-          mask: linear-gradient(90deg, #000 ${SQUARE_SIZE_PX}px, #0000 0) left /
-            ${STRIDE_PX}px 100%;
-          background: color-mix(in srgb, currentColor 25%, transparent);
-        }
-
-        .tracer-loader__highlight {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: ${SQUARE_SIZE_PX}px;
-          height: 100%;
-          background: currentColor;
-          animation-name: tracer-loader-slide;
-          animation-iteration-count: infinite;
-        }
-
-        @keyframes tracer-loader-slide {
-          0% {
-            transform: translateX(0);
-          }
-          100% {
-            transform: translateX(var(--travel));
-          }
-        }
-      `}</style>
-    </>
+    <span
+      ref={hostRef}
+      className={`inline-grid shrink-0 place-items-center ${toneClass} ${className}`}
+      role="status"
+      aria-label={label}
+      style={{ width: DOT_SIZE_PX, height: DOT_SIZE_PX }}
+    />
   )
 }
