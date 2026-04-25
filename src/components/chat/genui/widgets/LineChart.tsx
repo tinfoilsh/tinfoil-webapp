@@ -27,12 +27,21 @@ function inferChartKeys(
   preferredX?: string,
   preferredY?: string,
 ): { xKey: string; yKey: string } {
-  const first = data[0] ?? {}
-  const keys = Object.keys(first)
-  let xKey = preferredX && preferredX in first ? preferredX : undefined
-  let yKey = preferredY && preferredY in first ? preferredY : undefined
-  if (!xKey) xKey = keys.find((k) => typeof first[k] === 'string') ?? keys[0]
-  if (!yKey) yKey = keys.find((k) => k !== xKey && typeof first[k] === 'number')
+  const allKeys = new Set<string>()
+  for (const row of data) {
+    for (const key of Object.keys(row)) allKeys.add(key)
+  }
+  const keys = Array.from(allKeys)
+
+  const isNumericKey = (key: string) =>
+    data.some((row) => typeof row[key] === 'number')
+  const isStringKey = (key: string) =>
+    data.some((row) => typeof row[key] === 'string')
+
+  let xKey = preferredX && allKeys.has(preferredX) ? preferredX : undefined
+  let yKey = preferredY && allKeys.has(preferredY) ? preferredY : undefined
+  if (!xKey) xKey = keys.find(isStringKey) ?? keys[0]
+  if (!yKey) yKey = keys.find((k) => k !== xKey && isNumericKey(k))
   if (!yKey) yKey = keys.find((k) => k !== xKey) ?? keys[0]
   return { xKey: xKey || 'label', yKey: yKey || 'value' }
 }
