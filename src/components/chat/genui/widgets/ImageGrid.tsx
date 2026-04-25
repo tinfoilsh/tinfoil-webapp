@@ -1,4 +1,5 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
+import { sanitizeUrl } from '@braintree/sanitize-url'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
@@ -30,10 +31,11 @@ export const widget = defineGenUIWidget({
       )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {images.map((img, i) => {
-          const Wrapper = img.link ? 'a' : 'div'
-          const wrapperProps = img.link
+          const safeLink = img.link ? sanitizeUrl(img.link) : null
+          const Wrapper = safeLink ? 'a' : 'div'
+          const wrapperProps = safeLink
             ? {
-                href: img.link,
+                href: safeLink,
                 target: '_blank' as const,
                 rel: 'noopener noreferrer',
               }

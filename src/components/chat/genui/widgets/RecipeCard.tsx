@@ -1,5 +1,6 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Card } from '@/components/ui/card'
+import { sanitizeUrl } from '@braintree/sanitize-url'
 import { Check, Clock, Flame, Printer, RotateCcw, Users } from 'lucide-react'
 import { useState, type Dispatch, type SetStateAction } from 'react'
 import { z } from 'zod'
@@ -308,7 +309,7 @@ function Recipe({
             Source:{' '}
             {sourceUrl ? (
               <a
-                href={sourceUrl}
+                href={sanitizeUrl(sourceUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline decoration-dotted underline-offset-2 hover:text-content-primary"

@@ -1,4 +1,5 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
+import { sanitizeUrl } from '@braintree/sanitize-url'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
@@ -39,10 +40,11 @@ export const widget = defineGenUIWidget({
         />
       </div>
     )
+    const safeLink = link ? sanitizeUrl(link) : null
     return (
       <figure className="my-3 max-w-xl">
-        {link ? (
-          <a href={link} target="_blank" rel="noopener noreferrer">
+        {safeLink ? (
+          <a href={safeLink} target="_blank" rel="noopener noreferrer">
             {content}
           </a>
         ) : (

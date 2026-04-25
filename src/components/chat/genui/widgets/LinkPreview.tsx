@@ -1,6 +1,7 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Favicon } from '@/components/ui/favicon'
 import { fetchLinkMetadata } from '@/services/inference/metadata-client'
+import { sanitizeUrl } from '@braintree/sanitize-url'
 import { ExternalLink } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
@@ -73,10 +74,11 @@ function LinkPreview({ url, title }: Props) {
   const resolvedImage = metadata?.image
   const resolvedSiteName = metadata?.siteName
   const displayName = resolvedSiteName || getDomain(url)
+  const safeHref = sanitizeUrl(url)
 
   return (
     <a
-      href={url}
+      href={safeHref}
       target="_blank"
       rel="noopener noreferrer"
       className="hover:border-border-primary my-3 flex w-full overflow-hidden rounded-lg border border-border-subtle bg-surface-card transition-colors hover:bg-surface-chat-background"

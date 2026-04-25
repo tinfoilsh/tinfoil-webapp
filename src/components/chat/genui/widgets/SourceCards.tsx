@@ -1,5 +1,6 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Favicon } from '@/components/ui/favicon'
+import { sanitizeUrl } from '@braintree/sanitize-url'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
@@ -42,10 +43,11 @@ export const widget = defineGenUIWidget({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {sources.map((src, i) => {
           const domain = getDomain(src.url)
+          const safeHref = sanitizeUrl(src.url)
           return (
             <a
               key={i}
-              href={src.url}
+              href={safeHref}
               target="_blank"
               rel="noopener noreferrer"
               className="hover:border-border-primary group flex flex-col gap-2 overflow-hidden rounded-lg border border-border-subtle bg-surface-card transition-colors hover:bg-surface-chat-background"

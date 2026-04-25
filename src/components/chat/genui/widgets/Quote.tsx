@@ -1,3 +1,4 @@
+import { sanitizeUrl } from '@braintree/sanitize-url'
 import { ExternalLink } from 'lucide-react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -50,7 +51,7 @@ export const widget = defineGenUIWidget({
               <>
                 {(author || role) && <span>·</span>}
                 <a
-                  href={sourceUrl}
+                  href={sanitizeUrl(sourceUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:text-content-primary"
