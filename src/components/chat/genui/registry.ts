@@ -20,12 +20,9 @@ import { widget as Clock } from './widgets/Clock'
 import { widget as ComparisonTable } from './widgets/ComparisonTable'
 import { widget as ConfirmationCard } from './widgets/ConfirmationCard'
 import { widget as Countdown } from './widgets/Countdown'
-import { widget as DataTable } from './widgets/DataTable'
 import { widget as Gauge } from './widgets/Gauge'
 import { widget as Image } from './widgets/Image'
 import { widget as ImageGrid } from './widgets/ImageGrid'
-import { widget as InfoCard } from './widgets/InfoCard'
-import { widget as KeyValueList } from './widgets/KeyValueList'
 import { widget as LineChart } from './widgets/LineChart'
 import { widget as LinkPreview } from './widgets/LinkPreview'
 import { widget as MessageCompose } from './widgets/MessageCompose'
@@ -46,12 +43,9 @@ import { widget as Timeline } from './widgets/Timeline'
  * widgets near the top.
  */
 export const GENUI_WIDGETS: GenUIWidget[] = [
-  InfoCard,
-  DataTable,
   StatCards,
   Steps,
   Callout,
-  KeyValueList,
   Timeline,
   ComparisonTable,
   TaskPlan,

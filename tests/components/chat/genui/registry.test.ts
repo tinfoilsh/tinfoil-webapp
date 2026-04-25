@@ -45,15 +45,9 @@ describe('GenUI registry', () => {
   it('accepts valid fixtures through each widget schema', () => {
     // Smoke-test — parses must succeed with a minimal valid payload.
     const fixtures: Record<string, unknown> = {
-      render_info_card: { title: 'Hello' },
-      render_data_table: {
-        columns: ['A', 'B'],
-        rows: [{ A: 1, B: 'x' }],
-      },
       render_stat_cards: { stats: [{ label: 'Users', value: 10 }] },
       render_steps: { steps: [{ title: 'Do it' }] },
       render_callout: { content: 'note' },
-      render_key_value_list: { items: [{ label: 'L', value: 'V' }] },
       render_timeline: { events: [{ date: '2024', title: 'E' }] },
       render_comparison_table: {
         items: ['A', 'B'],

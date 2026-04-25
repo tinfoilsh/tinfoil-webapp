@@ -44,7 +44,7 @@ describe('event-normalizer tool_call handling', () => {
         {
           index: 0,
           id: 'call_1',
-          name: 'render_info_card',
+          name: 'render_callout',
           argsDelta: '{"ti',
         },
       ]),
@@ -52,7 +52,7 @@ describe('event-normalizer tool_call handling', () => {
     )
 
     expect(first).toEqual([
-      { type: 'tool_call_start', id: 'call_1', name: 'render_info_card' },
+      { type: 'tool_call_start', id: 'call_1', name: 'render_callout' },
       { type: 'tool_call_delta', id: 'call_1', argumentsDelta: '{"ti' },
     ])
 
@@ -72,7 +72,7 @@ describe('event-normalizer tool_call handling', () => {
 
     normalizer.processChunk(
       buildChunk([
-        { index: 0, id: 'call_a', name: 'render_info_card' },
+        { index: 0, id: 'call_a', name: 'render_callout' },
         { index: 1, id: 'call_b', name: 'render_bar_chart' },
       ]),
       preprocessor,
@@ -107,7 +107,7 @@ describe('event-normalizer tool_call handling', () => {
         {
           index: 0,
           id: 'call_1',
-          name: 'render_info_card',
+          name: 'render_callout',
           argsDelta: '{}',
         },
       ]),
@@ -118,7 +118,7 @@ describe('event-normalizer tool_call handling', () => {
     expect(events).toContainEqual({
       type: 'tool_call_start',
       id: 'call_1',
-      name: 'render_info_card',
+      name: 'render_callout',
     })
   })
 })
@@ -126,7 +126,7 @@ describe('event-normalizer tool_call handling', () => {
 describe('TimelineBuilder tool_call operations', () => {
   it('accumulates argument deltas onto the matching block', () => {
     const tb = new TimelineBuilder()
-    tb.startToolCall('call_1', 'render_info_card')
+    tb.startToolCall('call_1', 'render_callout')
     tb.appendToolCallArguments('call_1', '{"ti')
     tb.appendToolCallArguments('call_1', 'tle":"X"}')
 
@@ -135,7 +135,7 @@ describe('TimelineBuilder tool_call operations', () => {
     const block = snapshot[0] as TimelineToolCallBlock
     expect(block.type).toBe('tool_call')
     expect(block.arguments).toBe('{"title":"X"}')
-    expect(block.name).toBe('render_info_card')
+    expect(block.name).toBe('render_callout')
   })
 
   it('resolveToolCall stamps the block with the resolution', () => {
@@ -160,7 +160,7 @@ describe('TimelineBuilder tool_call operations', () => {
     tb.appendThinking('thinking...')
     expect(tb.isThinkingOpen).toBe(true)
 
-    tb.startToolCall('call_1', 'render_info_card')
+    tb.startToolCall('call_1', 'render_callout')
 
     expect(tb.isThinkingOpen).toBe(false)
     const snapshot = tb.snapshot()
@@ -178,7 +178,7 @@ describe('MessageAssembler tool_call derivation', () => {
         type: 'tool_call',
         id: 'tc-0',
         toolCallId: 'call_1',
-        name: 'render_info_card',
+        name: 'render_callout',
         arguments: '{"title":"Hi"}',
       },
       {
@@ -193,7 +193,7 @@ describe('MessageAssembler tool_call derivation', () => {
     expect(message.toolCalls).toHaveLength(2)
     expect(message.toolCalls?.[0]).toEqual({
       id: 'call_1',
-      name: 'render_info_card',
+      name: 'render_callout',
       arguments: '{"title":"Hi"}',
     })
   })

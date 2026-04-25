@@ -28,13 +28,13 @@ vi.mock('@/components/chat/genui/registry', () => {
     } as any,
   }
   const inline: Partial<GenUIWidget> = {
-    name: 'render_info_card',
+    name: 'render_callout',
     surface: 'inline',
   }
   return {
     GENUI_WIDGETS_BY_NAME: {
       ask_user_input: input,
-      render_info_card: inline,
+      render_callout: inline,
     },
   }
 })
@@ -88,7 +88,7 @@ describe('selectPendingInputToolCall', () => {
         {
           type: 'tool_call',
           id: 'b1',
-          name: 'render_info_card',
+          name: 'render_callout',
           toolCallId: 't1',
           args: '{}',
         },
