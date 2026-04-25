@@ -6,7 +6,7 @@
  * placeholder tile on error.
  */
 import { ImageOff } from 'lucide-react'
-import { useState, type ImgHTMLAttributes } from 'react'
+import { useRef, useState, type ImgHTMLAttributes } from 'react'
 
 interface ImageWithSkeletonProps
   extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'onLoad' | 'onError'> {
@@ -22,6 +22,16 @@ export function ImageWithSkeleton({
 }: ImageWithSkeletonProps) {
   const [loaded, setLoaded] = useState(false)
   const [errored, setErrored] = useState(false)
+  const prevSrcRef = useRef(imgProps.src)
+
+  // Reset load/error state when the source changes so a new image
+  // always shows the skeleton (and never inherits a stale error/loaded
+  // state from a previous src).
+  if (prevSrcRef.current !== imgProps.src) {
+    prevSrcRef.current = imgProps.src
+    if (loaded) setLoaded(false)
+    if (errored) setErrored(false)
+  }
 
   return (
     <div
