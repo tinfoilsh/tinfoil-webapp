@@ -23,6 +23,7 @@ import { widget as Image } from './widgets/Image'
 import { widget as ImageGrid } from './widgets/ImageGrid'
 import { widget as LineChart } from './widgets/LineChart'
 import { widget as LinkPreview } from './widgets/LinkPreview'
+import { widget as Map } from './widgets/Map'
 import { widget as MessageCompose } from './widgets/MessageCompose'
 import { widget as PieChart } from './widgets/PieChart'
 import { widget as Quote } from './widgets/Quote'
@@ -57,6 +58,7 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   RecipeCard,
   MessageCompose,
   SportsData,
+  Map,
   AskUserInput,
   ConfirmationCard,
 ]
