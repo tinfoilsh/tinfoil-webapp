@@ -249,7 +249,7 @@ function MapPlaceholder({ message }: { message: string }) {
 // Resolve a free-form location string to a coordinate by trying the
 // address geocoder first, then falling back to Search for place-name
 // queries like "Paris, France" or "Eiffel Tower". Logs both failures so
-// "Map unavailable" never silently swallows the underlying error.
+// the underlying error never gets silently swallowed.
 function resolveCoordinate(
   mk: MapKitNamespace,
   query: string,
@@ -258,7 +258,7 @@ function resolveCoordinate(
     const geocoder = new mk.Geocoder()
     geocoder.lookup(query, (geoErr, geoData) => {
       const geoResult = geoData?.results?.[0]
-      if (!geoErr && geoResult) {
+      if (geoResult) {
         resolve(
           new mk.Coordinate(
             geoResult.coordinate.latitude,
@@ -267,10 +267,17 @@ function resolveCoordinate(
         )
         return
       }
+      if (geoErr) {
+        logError('MapKit geocoder lookup failed', geoErr, {
+          component: 'MapWidget',
+          action: 'resolveCoordinate.geocoder',
+          metadata: { query },
+        })
+      }
       const search = new mk.Search()
       search.search(query, (searchErr, searchData) => {
         const place = searchData?.places?.[0]
-        if (!searchErr && place) {
+        if (place) {
           resolve(
             new mk.Coordinate(
               place.coordinate.latitude,
@@ -279,11 +286,15 @@ function resolveCoordinate(
           )
           return
         }
-        logError('Failed to resolve map location', searchErr ?? geoErr, {
-          component: 'MapWidget',
-          action: 'resolveCoordinate',
-          metadata: { query },
-        })
+        logError(
+          'MapKit search returned no places',
+          searchErr ?? new Error('empty places response'),
+          {
+            component: 'MapWidget',
+            action: 'resolveCoordinate.search',
+            metadata: { query },
+          },
+        )
         resolve(null)
       })
     })
@@ -383,12 +394,15 @@ function MapViewImpl(props: Props) {
 
         const finalize = () => {
           if (cancelled || !mapRef.current) return
-          if (annotations.length === 0) {
-            setStatus('error')
-            return
-          }
+          // The map itself is always usable (drag, zoom, pan), so flip
+          // to 'ready' as soon as it mounts. Annotations are best-effort
+          // — if every geocode fails we still show a working world map
+          // and the "Open in Apple Maps" button which uses the original
+          // string and lets Apple Maps resolve it server-side.
           for (const a of annotations) mapRef.current.addAnnotation(a)
-          mapRef.current.showItems(annotations, { animate: false })
+          if (annotations.length > 0) {
+            mapRef.current.showItems(annotations, { animate: false })
+          }
           setStatus('ready')
         }
 
