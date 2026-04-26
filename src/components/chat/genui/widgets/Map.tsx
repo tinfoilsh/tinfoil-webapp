@@ -1,6 +1,7 @@
 import { Card } from '@/components/ui/card'
 import { getMapKitToken } from '@/services/mapkit-token'
 import { logError } from '@/utils/error-handling'
+import type { LucideIcon } from 'lucide-react'
 import { Copy, ExternalLink, MapPin, Navigation } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
@@ -363,14 +364,15 @@ function modeLabel(mode: Props['mode'], count: number): string | null {
 function MapWidget(props: Props) {
   const { title, locations, mode, query } = props
   const primary = locations[0]
-  const showDirections = mode === 'directions' || locations.length > 1
+  const isDirections = mode === 'directions' || locations.length > 1
   const [copied, setCopied] = useState(false)
 
   const badge = modeLabel(mode, locations.length)
   const appleMapsUrl = primaryAppleMapsUrl(props)
-  const directionsUrl = showDirections
-    ? buildDirectionsUrl(locations, props.travelMode)
-    : null
+  const PrimaryIcon: LucideIcon = isDirections ? Navigation : MapPin
+  const primaryLabel = isDirections
+    ? 'Open directions in Apple Maps'
+    : 'Open in Apple Maps'
 
   async function copyAddress() {
     const text =
@@ -456,25 +458,14 @@ function MapWidget(props: Props) {
               {copied ? 'Copied' : 'Copy address'}
             </button>
           )}
-          {directionsUrl && (
-            <a
-              href={directionsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs text-content-primary transition-colors hover:border-content-primary/40"
-            >
-              <Navigation className="h-3.5 w-3.5" />
-              Get directions
-            </a>
-          )}
           <a
             href={appleMapsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 rounded-md bg-content-primary px-3 py-1.5 text-xs font-medium text-surface-chat-background transition-colors hover:opacity-90"
           >
-            <MapPin className="h-3.5 w-3.5" />
-            Open in Apple Maps
+            <PrimaryIcon className="h-3.5 w-3.5" />
+            {primaryLabel}
           </a>
         </div>
       </div>
@@ -485,9 +476,9 @@ function MapWidget(props: Props) {
 export const widget = defineGenUIWidget({
   name: 'render_map',
   description:
-    'Display an interactive Apple Map with one or more pinned locations. Includes buttons to open the location(s) in Apple Maps and to get directions. Use when the user asks about places, addresses, routes, or wants to see somewhere on a map. Provide latitude/longitude when known; otherwise an address string is geocoded automatically.',
+    'Display an interactive Apple Map with one or more pinned locations and a button to open the map (or directions, when multiple stops are provided) in Apple Maps. Use when the user asks about places, addresses, routes, or wants to see somewhere on a map. Provide latitude/longitude when known; otherwise an address string is geocoded automatically.',
   schema,
   promptHint:
-    'an interactive Apple Map with one or more locations and buttons to open in Apple Maps and get directions',
+    'an interactive Apple Map with one or more locations and a button to open in Apple Maps',
   render: (args) => <MapWidget {...args} />,
 })
