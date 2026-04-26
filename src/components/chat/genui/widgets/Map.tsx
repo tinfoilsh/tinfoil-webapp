@@ -14,9 +14,21 @@ const locationSchema = z.object({
   address: z
     .string()
     .optional()
-    .describe('Street address — used for Apple Maps lookup if no coords'),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
+    .describe(
+      'Full address or place query (e.g. "1 Apple Park Way, Cupertino, CA" or "Eiffel Tower, Paris"). Used for geocoding when coordinates are not provided.',
+    ),
+  latitude: z
+    .number()
+    .optional()
+    .describe(
+      'Latitude in degrees. Always provide this when you know it — relying on geocoding alone can fail for ambiguous names.',
+    ),
+  longitude: z
+    .number()
+    .optional()
+    .describe(
+      'Longitude in degrees. Always provide this when you know it — relying on geocoding alone can fail for ambiguous names.',
+    ),
   description: z.string().optional().describe('One-line subtitle'),
 })
 
@@ -64,6 +76,21 @@ interface MapKitNamespace {
         data: {
           results?: Array<{
             coordinate: { latitude: number; longitude: number }
+          }>
+        },
+      ) => void,
+    ) => void
+  }
+  Search: new () => {
+    search: (
+      query: string,
+      callback: (
+        error: Error | null,
+        data: {
+          places?: Array<{
+            coordinate: { latitude: number; longitude: number }
+            name?: string
+            formattedAddress?: string
           }>
         },
       ) => void,
@@ -219,6 +246,50 @@ function MapPlaceholder({ message }: { message: string }) {
   )
 }
 
+// Resolve a free-form location string to a coordinate by trying the
+// address geocoder first, then falling back to Search for place-name
+// queries like "Paris, France" or "Eiffel Tower". Logs both failures so
+// "Map unavailable" never silently swallows the underlying error.
+function resolveCoordinate(
+  mk: MapKitNamespace,
+  query: string,
+): Promise<unknown | null> {
+  return new Promise((resolve) => {
+    const geocoder = new mk.Geocoder()
+    geocoder.lookup(query, (geoErr, geoData) => {
+      const geoResult = geoData?.results?.[0]
+      if (!geoErr && geoResult) {
+        resolve(
+          new mk.Coordinate(
+            geoResult.coordinate.latitude,
+            geoResult.coordinate.longitude,
+          ),
+        )
+        return
+      }
+      const search = new mk.Search()
+      search.search(query, (searchErr, searchData) => {
+        const place = searchData?.places?.[0]
+        if (!searchErr && place) {
+          resolve(
+            new mk.Coordinate(
+              place.coordinate.latitude,
+              place.coordinate.longitude,
+            ),
+          )
+          return
+        }
+        logError('Failed to resolve map location', searchErr ?? geoErr, {
+          component: 'MapWidget',
+          action: 'resolveCoordinate',
+          metadata: { query },
+        })
+        resolve(null)
+      })
+    })
+  })
+}
+
 // Build a stable identity for the locations array so streaming re-renders
 // (which produce a fresh `locations` reference every token) don't tear
 // down and rebuild the live MapKit instance — that was causing the chat
@@ -292,26 +363,20 @@ function MapViewImpl(props: Props) {
             })
             annotations.push(annotation)
           } else if (loc.address || loc.name) {
+            // The geocoder targets street addresses; Search handles
+            // place names like "Paris, France" or "Eiffel Tower". Try
+            // the geocoder first and fall back to Search so we cover
+            // both shapes from the model.
             const lookupTarget = loc.address ?? loc.name
-            const geocoder = new mk.Geocoder()
-            const promise = new Promise<unknown | null>((resolve) => {
-              geocoder.lookup(lookupTarget, (error, data) => {
-                if (error || !data.results || data.results.length === 0) {
-                  resolve(null)
-                  return
-                }
-                const result = data.results[0]
-                const coord = new mk.Coordinate(
-                  result.coordinate.latitude,
-                  result.coordinate.longitude,
-                )
-                const annotation = new mk.MarkerAnnotation(coord, {
+            const promise = resolveCoordinate(mk, lookupTarget).then(
+              (coord) => {
+                if (!coord) return null
+                return new mk.MarkerAnnotation(coord, {
                   title: loc.name,
                   subtitle: loc.description ?? loc.address ?? '',
                 })
-                resolve(annotation)
-              })
-            })
+              },
+            )
             pendingLookups.push(promise)
           }
         }
