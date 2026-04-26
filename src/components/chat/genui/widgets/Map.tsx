@@ -102,6 +102,11 @@ interface MapKitNamespace {
     Satellite: string
     Muted: string
   }
+  ColorScheme: {
+    Light: string
+    Dark: string
+    Adaptive: string
+  }
 }
 
 interface MapKitMap {
@@ -112,6 +117,7 @@ interface MapKitMap {
   ) => void
   addAnnotation: (annotation: unknown) => void
   mapType: string
+  colorScheme: string
 }
 
 let mapKitLoader: Promise<MapKitNamespace> | null = null
@@ -319,10 +325,11 @@ function locationsKey(locations: Location[]): string {
     .join('~')
 }
 
-function MapViewImpl(props: Props) {
-  const { locations, mapType } = props
+function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
+  const { locations, mapType, isDarkMode } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapKitMap | null>(null)
+  const mapKitRef = useRef<MapKitNamespace | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
 
   const locationsSignature = useMemo(() => locationsKey(locations), [locations])
@@ -343,6 +350,12 @@ function MapViewImpl(props: Props) {
           showsCompass: 'adaptive',
           showsZoomControl: true,
           showsMapTypeControl: false,
+          colorScheme:
+            isDarkMode === true
+              ? mk.ColorScheme.Dark
+              : isDarkMode === false
+                ? mk.ColorScheme.Light
+                : mk.ColorScheme.Adaptive,
         })
 
         if (mapType) {
@@ -357,6 +370,7 @@ function MapViewImpl(props: Props) {
           if (desired) map.mapType = desired
         }
 
+        mapKitRef.current = mk
         mapRef.current = map
 
         const annotations: unknown[] = []
@@ -439,8 +453,24 @@ function MapViewImpl(props: Props) {
     }
     // Only rebuild the map when the actual content changes — `locations`
     // is referenced via a ref above so a new array reference per render
-    // doesn't tear down the live MapKit instance.
+    // doesn't tear down the live MapKit instance. `isDarkMode` is handled
+    // by a separate effect that mutates the existing instance.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationsSignature, mapType])
+
+  // Update the existing map's color scheme without tearing it down when
+  // the user toggles between light and dark themes mid-session.
+  useEffect(() => {
+    const map = mapRef.current
+    const mk = mapKitRef.current
+    if (!map || !mk) return
+    map.colorScheme =
+      isDarkMode === true
+        ? mk.ColorScheme.Dark
+        : isDarkMode === false
+          ? mk.ColorScheme.Light
+          : mk.ColorScheme.Adaptive
+  }, [isDarkMode])
 
   return (
     <div className="relative h-full w-full">
@@ -465,6 +495,7 @@ function MapViewImpl(props: Props) {
 const MapView = memo(MapViewImpl, (prev, next) => {
   return (
     prev.mapType === next.mapType &&
+    prev.isDarkMode === next.isDarkMode &&
     locationsKey(prev.locations) === locationsKey(next.locations)
   )
 })
@@ -477,8 +508,8 @@ function modeLabel(mode: Props['mode'], count: number): string | null {
   return null
 }
 
-function MapWidget(props: Props) {
-  const { title, locations, mode, query } = props
+function MapWidget(props: Props & { isDarkMode?: boolean }) {
+  const { title, locations, mode, query, isDarkMode } = props
   const primary = locations[0]
   const isDirections = mode === 'directions' || locations.length > 1
   const [copied, setCopied] = useState(false)
@@ -526,7 +557,7 @@ function MapWidget(props: Props) {
         )}
 
         <div className="relative aspect-[16/9] w-full overflow-hidden rounded-lg border border-border-subtle bg-surface-card sm:aspect-[2/1]">
-          <MapView {...props} />
+          <MapView {...props} isDarkMode={isDarkMode} />
         </div>
 
         {locations.length > 1 && (
@@ -596,5 +627,5 @@ export const widget = defineGenUIWidget({
   schema,
   promptHint:
     'an interactive Apple Map with one or more locations and a button to open in Apple Maps',
-  render: (args) => <MapWidget {...args} />,
+  render: (args, ctx) => <MapWidget {...args} isDarkMode={ctx.isDarkMode} />,
 })
