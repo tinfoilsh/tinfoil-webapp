@@ -864,8 +864,13 @@ export function useChatMessaging({
   // Tracks a regenerate request issued while a stream is in flight. Once
   // the in-progress generation has been cancelled and `loadingState`
   // settles back to 'idle', the deferred request is fired by the effect
-  // below.
-  const pendingRegenerateIndexRef = useRef<number | null>(null)
+  // below. The chat id is captured alongside the index so a chat switch
+  // during cancellation cannot redirect the regenerate to a different
+  // conversation.
+  const pendingRegenerateRef = useRef<{
+    chatId: string
+    messageIndex: number
+  } | null>(null)
 
   // Regenerate a message - same as edit but uses the original content.
   // If a stream is currently in flight, cancel it first and defer the
@@ -878,7 +883,10 @@ export function useChatMessaging({
       if (!originalMessage || originalMessage.role !== 'user') return
 
       if (loadingState !== 'idle') {
-        pendingRegenerateIndexRef.current = messageIndex
+        pendingRegenerateRef.current = {
+          chatId: currentChat.id,
+          messageIndex,
+        }
         void cancelGeneration()
         return
       }
@@ -891,17 +899,25 @@ export function useChatMessaging({
   // Fire the deferred regenerate once cancellation has settled the state.
   useEffect(() => {
     if (loadingState !== 'idle') return
-    const idx = pendingRegenerateIndexRef.current
-    if (idx === null || !currentChat) return
+    const pending = pendingRegenerateRef.current
+    if (pending === null || !currentChat) return
 
-    const originalMessage = currentChat.messages[idx]
-    if (!originalMessage || originalMessage.role !== 'user') {
-      pendingRegenerateIndexRef.current = null
+    // Drop the deferred request if the user navigated to a different
+    // chat while cancellation was in flight — regenerating against an
+    // unrelated conversation would silently rewrite its history.
+    if (currentChat.id !== pending.chatId) {
+      pendingRegenerateRef.current = null
       return
     }
 
-    pendingRegenerateIndexRef.current = null
-    editMessage(idx, originalMessage.content || '')
+    const originalMessage = currentChat.messages[pending.messageIndex]
+    if (!originalMessage || originalMessage.role !== 'user') {
+      pendingRegenerateRef.current = null
+      return
+    }
+
+    pendingRegenerateRef.current = null
+    editMessage(pending.messageIndex, originalMessage.content || '')
   }, [loadingState, currentChat, editMessage])
 
   // Update currentChatIdRef when currentChat changes
