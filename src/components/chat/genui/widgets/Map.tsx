@@ -3,7 +3,7 @@ import { getMapKitToken } from '@/services/mapkit-token'
 import { logError } from '@/utils/error-handling'
 import type { LucideIcon } from 'lucide-react'
 import { Copy, ExternalLink, MapPin, Navigation } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
@@ -219,11 +219,35 @@ function MapPlaceholder({ message }: { message: string }) {
   )
 }
 
-function MapView(props: Props) {
+// Build a stable identity for the locations array so streaming re-renders
+// (which produce a fresh `locations` reference every token) don't tear
+// down and rebuild the live MapKit instance — that was causing the chat
+// view to flicker as the map reloaded mid-stream.
+function locationsKey(locations: Location[]): string {
+  return locations
+    .map((l) =>
+      [
+        l.name ?? '',
+        l.address ?? '',
+        typeof l.latitude === 'number' ? l.latitude : '',
+        typeof l.longitude === 'number' ? l.longitude : '',
+        l.description ?? '',
+      ].join('|'),
+    )
+    .join('~')
+}
+
+function MapViewImpl(props: Props) {
   const { locations, mapType } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapKitMap | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+
+  const locationsSignature = useMemo(() => locationsKey(locations), [locations])
+  // Refs let the effect read the current `locations` array without
+  // listing it as a dep (which would re-fire on every parent render).
+  const locationsRef = useRef(locations)
+  locationsRef.current = locations
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -256,7 +280,7 @@ function MapView(props: Props) {
         const annotations: unknown[] = []
         const pendingLookups: Array<Promise<unknown | null>> = []
 
-        for (const loc of locations) {
+        for (const loc of locationsRef.current) {
           if (
             typeof loc.latitude === 'number' &&
             typeof loc.longitude === 'number'
@@ -334,7 +358,10 @@ function MapView(props: Props) {
         mapRef.current = null
       }
     }
-  }, [locations, mapType])
+    // Only rebuild the map when the actual content changes — `locations`
+    // is referenced via a ref above so a new array reference per render
+    // doesn't tear down the live MapKit instance.
+  }, [locationsSignature, mapType])
 
   return (
     <div className="relative h-full w-full">
@@ -352,6 +379,16 @@ function MapView(props: Props) {
     </div>
   )
 }
+
+// Skip re-rendering when the inputs are structurally equal. The widget
+// renderer rebuilds props on every streaming token, so without this the
+// map would reconcile (and the effect could re-fire) constantly.
+const MapView = memo(MapViewImpl, (prev, next) => {
+  return (
+    prev.mapType === next.mapType &&
+    locationsKey(prev.locations) === locationsKey(next.locations)
+  )
+})
 
 function modeLabel(mode: Props['mode'], count: number): string | null {
   if (mode === 'directions' || (mode === undefined && count > 1)) {
