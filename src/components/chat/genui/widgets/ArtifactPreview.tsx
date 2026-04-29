@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/card'
 import { cn } from '@/components/ui/utils'
 import { Code2, Download, ExternalLink, Eye, FileText } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -161,38 +161,77 @@ function downloadArtifact(
 type ViewMode = 'preview' | 'source'
 type ArtifactPreviewPanelLayout = 'card' | 'sidebar'
 
+function FocusableIframe({
+  title,
+  src,
+  srcDoc,
+  className,
+  shouldAutoFocus,
+}: {
+  title: string
+  src?: string
+  srcDoc?: string
+  className: string
+  shouldAutoFocus: boolean
+}) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  const focusIframe = useCallback(() => {
+    iframeRef.current?.contentWindow?.focus()
+  }, [])
+
+  useEffect(() => {
+    if (!shouldAutoFocus) return
+    focusIframe()
+  }, [focusIframe, shouldAutoFocus, src, srcDoc])
+
+  return (
+    <iframe
+      ref={iframeRef}
+      title={title}
+      src={src}
+      srcDoc={srcDoc}
+      sandbox="allow-forms allow-modals allow-popups allow-scripts"
+      referrerPolicy="no-referrer"
+      className={className}
+      onLoad={shouldAutoFocus ? focusIframe : undefined}
+      onMouseEnter={shouldAutoFocus ? focusIframe : undefined}
+    />
+  )
+}
+
 function Preview({
   source,
   title,
   className,
+  shouldAutoFocusIframe = false,
 }: {
   source: ArtifactSource
   title?: string
   className?: string
+  shouldAutoFocusIframe?: boolean
 }) {
   switch (source.type) {
     case 'url':
       return (
-        <iframe
+        <FocusableIframe
           title={title ?? 'Artifact preview'}
           src={source.url}
-          sandbox="allow-forms allow-modals allow-popups allow-scripts"
-          referrerPolicy="no-referrer"
           className={
             className ?? 'h-[420px] w-full rounded-md border-0 bg-white'
           }
+          shouldAutoFocus={shouldAutoFocusIframe}
         />
       )
     case 'html':
       return (
-        <iframe
+        <FocusableIframe
           title={title ?? 'Artifact preview'}
           srcDoc={source.html}
-          sandbox="allow-forms allow-modals allow-popups allow-scripts"
-          referrerPolicy="no-referrer"
           className={
             className ?? 'h-[420px] w-full rounded-md border-0 bg-white'
           }
+          shouldAutoFocus={shouldAutoFocusIframe}
         />
       )
     case 'markdown':
@@ -304,6 +343,7 @@ export function ArtifactPreviewPanel({
             className={
               isSidebarLayout ? getSidebarPreviewClassName(source) : undefined
             }
+            shouldAutoFocusIframe={isSidebarLayout}
           />
         ) : (
           <pre
