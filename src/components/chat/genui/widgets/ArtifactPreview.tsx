@@ -23,6 +23,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
+import { injectArtifactPolyfills } from './artifact-polyfills'
 
 export const OPEN_ARTIFACT_PREVIEW_EVENT = 'openArtifactPreviewSidebar'
 
@@ -227,7 +228,7 @@ function Preview({
       return (
         <FocusableIframe
           title={title ?? 'Artifact preview'}
-          srcDoc={source.html}
+          srcDoc={injectArtifactPolyfills(source.html)}
           className={
             className ?? 'h-[420px] w-full rounded-md border-0 bg-white'
           }
