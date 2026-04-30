@@ -8,6 +8,9 @@ import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
 const MAPKIT_SCRIPT_URL = 'https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js'
+const APPLE_MAPS_CONSENT_KEY = 'tinfoil:apple-maps-consent'
+const APPLE_MAPS_PRIVACY_URL =
+  'https://www.apple.com/legal/privacy/data/en/apple-maps/'
 
 const locationSchema = z.object({
   name: z.string().describe('Display name shown on the pin'),
@@ -500,6 +503,74 @@ const MapView = memo(MapViewImpl, (prev, next) => {
   )
 })
 
+function readPersistedConsent(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return localStorage.getItem(APPLE_MAPS_CONSENT_KEY) === 'granted'
+  } catch {
+    return false
+  }
+}
+
+function persistConsent() {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(APPLE_MAPS_CONSENT_KEY, 'granted')
+  } catch {
+    // Storage may be unavailable (private mode, quota); ignore.
+  }
+}
+
+function MapConsentGate({ onApprove }: { onApprove: () => void }) {
+  const [remember, setRemember] = useState(false)
+
+  function handleApprove() {
+    if (remember) persistConsent()
+    onApprove()
+  }
+
+  return (
+    <div className="relative h-full w-full">
+      <MapPlaceholder message="" />
+      <div className="absolute inset-0 flex items-center justify-center bg-black/20 p-4 backdrop-blur-sm">
+        <div className="w-full max-w-sm rounded-lg border border-border-subtle bg-surface-card p-4 shadow-lg">
+          <p className="text-sm font-semibold text-content-primary">
+            Display on Apple Maps?
+          </p>
+          <p className="mt-1 text-xs text-content-muted">
+            Loading this map will send data (your IP address and the locations
+            being shown) to Apple.
+          </p>
+          <label className="mt-3 flex items-center gap-2 text-xs text-content-muted">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            Remember my choice on this device
+          </label>
+          <button
+            type="button"
+            onClick={handleApprove}
+            className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-content-primary px-3 py-1.5 text-xs font-medium text-surface-chat-background transition-colors hover:opacity-90"
+          >
+            <MapPin className="h-3.5 w-3.5" />
+            Display on Maps
+          </button>
+          <a
+            href={APPLE_MAPS_PRIVACY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 block text-center text-[11px] text-content-muted underline transition-colors hover:text-content-primary"
+          >
+            Apple Maps Privacy Policy
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function modeLabel(mode: Props['mode'], count: number): string | null {
   if (mode === 'directions' || (mode === undefined && count > 1)) {
     return 'Directions'
@@ -520,6 +591,10 @@ function MapWidget(props: Props & { isDarkMode?: boolean }) {
   const primaryLabel = isDirections
     ? 'Open directions in Apple Maps'
     : 'Open in Apple Maps'
+
+  const [approved, setApproved] = useState<boolean>(() =>
+    readPersistedConsent(),
+  )
 
   async function copyAddress() {
     const text =
@@ -557,7 +632,11 @@ function MapWidget(props: Props & { isDarkMode?: boolean }) {
         )}
 
         <div className="relative aspect-[16/9] w-full overflow-hidden rounded-lg border border-border-subtle bg-surface-card sm:aspect-[2/1]">
-          <MapView {...props} isDarkMode={isDarkMode} />
+          {approved ? (
+            <MapView {...props} isDarkMode={isDarkMode} />
+          ) : (
+            <MapConsentGate onApprove={() => setApproved(true)} />
+          )}
         </div>
 
         {locations.length > 1 && (
