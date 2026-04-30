@@ -1,13 +1,16 @@
 import { Card } from '@/components/ui/card'
 import { getMapKitToken } from '@/services/mapkit-token'
 import { logError } from '@/utils/error-handling'
+import { load as loadMapKitJs, type MapKit } from '@apple/mapkit-loader'
 import type { LucideIcon } from 'lucide-react'
 import { Copy, ExternalLink, MapPin, Navigation } from 'lucide-react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
-const MAPKIT_SCRIPT_URL = 'https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js'
+type MapKitMap = InstanceType<MapKit['Map']>
+type MapKitMarkerAnnotation = InstanceType<MapKit['MarkerAnnotation']>
+
 const APPLE_MAPS_CONSENT_KEY = 'tinfoil:apple-maps-consent'
 const APPLE_MAPS_PRIVACY_URL =
   'https://www.apple.com/legal/privacy/data/en/apple-maps/'
@@ -58,115 +61,26 @@ const schema = z.object({
 type Location = z.infer<typeof locationSchema>
 type Props = z.infer<typeof schema>
 
-// Apple's MapKit JS namespace is attached to `window.mapkit` once the script
-// loads. We type it loosely here because we only need a handful of methods.
-interface MapKitNamespace {
-  init: (opts: {
-    authorizationCallback: (cb: (token: string) => void) => void
-    language?: string
-  }) => void
-  Map: new (container: HTMLElement, opts?: Record<string, unknown>) => MapKitMap
-  Coordinate: new (latitude: number, longitude: number) => unknown
-  MarkerAnnotation: new (
-    coordinate: unknown,
-    opts?: Record<string, unknown>,
-  ) => unknown
-  Geocoder: new () => {
-    lookup: (
-      place: string,
-      callback: (
-        error: Error | null,
-        data: {
-          results?: Array<{
-            coordinate: { latitude: number; longitude: number }
-          }>
-        },
-      ) => void,
-    ) => void
-  }
-  Search: new () => {
-    search: (
-      query: string,
-      callback: (
-        error: Error | null,
-        data: {
-          places?: Array<{
-            coordinate: { latitude: number; longitude: number }
-            name?: string
-            formattedAddress?: string
-          }>
-        },
-      ) => void,
-    ) => void
-  }
-  MapType: {
-    Standard: string
-    Hybrid: string
-    Satellite: string
-    Muted: string
-  }
-  ColorScheme: {
-    Light: string
-    Dark: string
-    Adaptive: string
-  }
-}
+// Cache the loader promise across mounts so multiple maps on the same page
+// share a single MapKit JS download and initialization.
+let mapKitLoader: Promise<MapKit> | null = null
 
-interface MapKitMap {
-  destroy: () => void
-  showItems: (
-    items: unknown[],
-    opts?: { animate?: boolean; padding?: unknown },
-  ) => void
-  addAnnotation: (annotation: unknown) => void
-  mapType: string
-  colorScheme: string
-}
-
-let mapKitLoader: Promise<MapKitNamespace> | null = null
-
-function loadMapKit(): Promise<MapKitNamespace> {
+function loadMapKit(): Promise<MapKit> {
   if (typeof window === 'undefined') {
     return Promise.reject(new Error('MapKit can only load in the browser'))
   }
-  const existing = (window as unknown as { mapkit?: MapKitNamespace }).mapkit
-  if (existing) return Promise.resolve(existing)
   if (mapKitLoader) return mapKitLoader
 
-  mapKitLoader = new Promise<MapKitNamespace>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.src = MAPKIT_SCRIPT_URL
-    script.crossOrigin = 'anonymous'
-    script.async = true
-    script.onload = () => {
-      const mk = (window as unknown as { mapkit?: MapKitNamespace }).mapkit
-      if (!mk) {
-        // Clear the cached rejected promise so subsequent map mounts can
-        // retry the script load instead of inheriting this failure.
-        mapKitLoader = null
-        reject(new Error('mapkit global missing after script load'))
-        return
-      }
-      mk.init({
-        authorizationCallback: (cb) => {
-          getMapKitToken()
-            .then((token) => cb(token))
-            .catch((error) => {
-              logError('MapKit authorization failed', error, {
-                component: 'MapWidget',
-                action: 'authorizationCallback',
-              })
-              cb('')
-            })
-        },
-      })
-      resolve(mk)
-    }
-    script.onerror = () => {
-      mapKitLoader = null
-      reject(new Error('failed to load mapkit.js'))
-    }
-    document.head.appendChild(script)
+  mapKitLoader = (async () => {
+    const token = await getMapKitToken()
+    return loadMapKitJs({
+      token,
+      libraries: ['services', 'full-map'],
+    })
+  })().catch((error) => {
+    // Clear the cached rejection so a later mount can retry from scratch.
+    mapKitLoader = null
+    throw error
   })
 
   return mapKitLoader
@@ -260,14 +174,14 @@ function MapPlaceholder({ message }: { message: string }) {
 // queries like "Paris, France" or "Eiffel Tower". Logs both failures so
 // the underlying error never gets silently swallowed.
 function resolveCoordinate(
-  mk: MapKitNamespace,
+  mk: MapKit,
   query: string,
-): Promise<unknown | null> {
+): Promise<InstanceType<MapKit['Coordinate']> | null> {
   return new Promise((resolve) => {
     const geocoder = new mk.Geocoder()
     geocoder.lookup(query, (geoErr, geoData) => {
       const geoResult = geoData?.results?.[0]
-      if (geoResult) {
+      if (geoResult?.coordinate) {
         resolve(
           new mk.Coordinate(
             geoResult.coordinate.latitude,
@@ -286,7 +200,7 @@ function resolveCoordinate(
       const search = new mk.Search()
       search.search(query, (searchErr, searchData) => {
         const place = searchData?.places?.[0]
-        if (place) {
+        if (place?.coordinate) {
           resolve(
             new mk.Coordinate(
               place.coordinate.latitude,
@@ -332,7 +246,7 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
   const { locations, mapType, isDarkMode } = props
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<MapKitMap | null>(null)
-  const mapKitRef = useRef<MapKitNamespace | null>(null)
+  const mapKitRef = useRef<MapKit | null>(null)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
 
   const locationsSignature = useMemo(() => locationsKey(locations), [locations])
@@ -355,29 +269,29 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
           showsMapTypeControl: false,
           colorScheme:
             isDarkMode === true
-              ? mk.ColorScheme.Dark
+              ? mk.Map.ColorSchemes.Dark
               : isDarkMode === false
-                ? mk.ColorScheme.Light
-                : mk.ColorScheme.Adaptive,
+                ? mk.Map.ColorSchemes.Light
+                : mk.Map.ColorSchemes.Adaptive,
         })
 
         if (mapType) {
           const desired =
             mapType === 'hybrid'
-              ? mk.MapType.Hybrid
+              ? mk.Map.MapTypes.Hybrid
               : mapType === 'satellite'
-                ? mk.MapType.Satellite
+                ? mk.Map.MapTypes.Satellite
                 : mapType === 'muted'
-                  ? mk.MapType.Muted
-                  : mk.MapType.Standard
+                  ? mk.Map.MapTypes.MutedStandard
+                  : mk.Map.MapTypes.Standard
           if (desired) map.mapType = desired
         }
 
         mapKitRef.current = mk
         mapRef.current = map
 
-        const annotations: unknown[] = []
-        const pendingLookups: Array<Promise<unknown | null>> = []
+        const annotations: MapKitMarkerAnnotation[] = []
+        const pendingLookups: Array<Promise<MapKitMarkerAnnotation | null>> = []
 
         for (const loc of locationsRef.current) {
           if (
@@ -469,10 +383,10 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
     if (!map || !mk) return
     map.colorScheme =
       isDarkMode === true
-        ? mk.ColorScheme.Dark
+        ? mk.Map.ColorSchemes.Dark
         : isDarkMode === false
-          ? mk.ColorScheme.Light
-          : mk.ColorScheme.Adaptive
+          ? mk.Map.ColorSchemes.Light
+          : mk.Map.ColorSchemes.Adaptive
   }, [isDarkMode])
 
   return (
