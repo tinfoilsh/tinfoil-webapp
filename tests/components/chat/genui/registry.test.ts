@@ -46,30 +46,19 @@ describe('GenUI registry', () => {
     // Smoke-test — parses must succeed with a minimal valid payload.
     const fixtures: Record<string, unknown> = {
       render_stat_cards: { stats: [{ label: 'Users', value: 10 }] },
-      render_steps: { steps: [{ title: 'Do it' }] },
-      render_callout: { content: 'note' },
       render_timeline: { events: [{ date: '2024', title: 'E' }] },
-      render_bar_chart: { data: [{ label: 'A', value: 1 }] },
-      render_line_chart: { data: [{ x: 'Jan', y: 1 }] },
-      render_pie_chart: { data: [{ name: 'A', value: 1 }] },
-      render_image: { url: 'https://example.com/a.png' },
-      render_image_grid: { images: [{ url: 'https://example.com/a.png' }] },
+      render_chart: { type: 'bar', data: [{ label: 'A', value: 1 }] },
+      render_image: { images: [{ url: 'https://example.com/a.png' }] },
       render_link_preview: { url: 'https://example.com', title: 'Ex' },
-      render_source_cards: {
-        sources: [{ title: 'T', url: 'https://example.com' }],
-      },
       render_artifact_preview: {
         source: { type: 'markdown', markdown: '# Hello' },
       },
-      render_clock: {},
-      render_countdown: { durationSeconds: 300 },
-      render_quote: { text: 'Hello world' },
+      render_clock: { mode: 'timer', durationSeconds: 300 },
       render_recipe_card: { title: 'Pasta' },
       ask_user_input: {
         question: 'Pick one',
         options: [{ label: 'A' }, { label: 'B' }],
       },
-      confirmation_card: { title: 'Delete item?' },
       render_message_compose: {
         variants: [{ label: 'Formal', body: 'Hello.' }],
       },

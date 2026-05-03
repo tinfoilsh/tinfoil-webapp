@@ -14,24 +14,15 @@ import { zodToJsonSchema } from 'zod-to-json-schema'
 import type { GenUIWidget } from './types'
 import { widget as ArtifactPreview } from './widgets/ArtifactPreview'
 import { widget as AskUserInput } from './widgets/AskUserInput'
-import { widget as BarChart } from './widgets/BarChart'
-import { widget as Callout } from './widgets/Callout'
+import { widget as Chart } from './widgets/Chart'
 import { widget as Clock } from './widgets/Clock'
-import { widget as ConfirmationCard } from './widgets/ConfirmationCard'
-import { widget as Countdown } from './widgets/Countdown'
 import { widget as Image } from './widgets/Image'
-import { widget as ImageGrid } from './widgets/ImageGrid'
-import { widget as LineChart } from './widgets/LineChart'
 import { widget as LinkPreview } from './widgets/LinkPreview'
 import { widget as Map } from './widgets/Map'
 import { widget as MessageCompose } from './widgets/MessageCompose'
-import { widget as PieChart } from './widgets/PieChart'
-import { widget as Quote } from './widgets/Quote'
 import { widget as RecipeCard } from './widgets/RecipeCard'
-import { widget as SourceCards } from './widgets/SourceCards'
 import { widget as SportsData } from './widgets/SportsData'
 import { widget as StatCards } from './widgets/StatCards'
-import { widget as Steps } from './widgets/Steps'
 import { widget as Timeline } from './widgets/Timeline'
 
 /**
@@ -41,26 +32,17 @@ import { widget as Timeline } from './widgets/Timeline'
  */
 export const GENUI_WIDGETS: GenUIWidget[] = [
   StatCards,
-  Steps,
-  Callout,
   Timeline,
-  BarChart,
-  LineChart,
-  PieChart,
+  Chart,
   Image,
-  ImageGrid,
   LinkPreview,
-  SourceCards,
   ArtifactPreview,
   Clock,
-  Countdown,
-  Quote,
   RecipeCard,
   MessageCompose,
   SportsData,
   Map,
   AskUserInput,
-  ConfirmationCard,
 ]
 
 /**

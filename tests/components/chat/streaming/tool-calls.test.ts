@@ -73,7 +73,7 @@ describe('event-normalizer tool_call handling', () => {
     normalizer.processChunk(
       buildChunk([
         { index: 0, id: 'call_a', name: 'render_callout' },
-        { index: 1, id: 'call_b', name: 'render_bar_chart' },
+        { index: 1, id: 'call_b', name: 'render_chart' },
       ]),
       preprocessor,
     )
@@ -185,7 +185,7 @@ describe('MessageAssembler tool_call derivation', () => {
         type: 'tool_call',
         id: 'tc-1',
         toolCallId: 'call_2',
-        name: 'render_bar_chart',
+        name: 'render_chart',
         arguments: '{"data":[]}',
       },
     ])
