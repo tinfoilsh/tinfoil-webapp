@@ -1,3 +1,5 @@
+import { GenUIToolCallRenderer } from '@/components/chat/genui/GenUIToolCallRenderer'
+import { renderGenUIResolved } from '@/components/chat/genui/render'
 import { cn } from '@/components/ui/utils'
 import {
   ArrowPathIcon,
@@ -17,6 +19,7 @@ import { MessageActions } from '../components/MessageActions'
 import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
+import { StreamingTracerDot } from '../components/StreamingTracerDot'
 import { ThoughtProcess } from '../components/ThoughtProcess'
 import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
@@ -274,6 +277,60 @@ const DefaultMessageComponent = ({
                   <URLFetchProcess urlFetches={block.fetches} />
                 </div>
               )
+            case 'tool_call': {
+              const resolved = block.resolvedAt && block.resolution
+              if (resolved) {
+                let parsed: Record<string, unknown> | null = null
+                try {
+                  const raw = JSON.parse(block.arguments)
+                  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+                    parsed = raw as Record<string, unknown>
+                  }
+                } catch {
+                  // Ignore malformed args — renderResolved will receive null.
+                }
+                const stamp =
+                  parsed &&
+                  renderGenUIResolved(
+                    block.name,
+                    parsed,
+                    {
+                      text: block.resolution!.text,
+                      data: block.resolution!.data,
+                      resolvedAt: block.resolvedAt!,
+                    },
+                    { isDarkMode },
+                  )
+                if (stamp) {
+                  return (
+                    <div key={block.id} className="w-full px-4">
+                      {stamp}
+                    </div>
+                  )
+                }
+                return null
+              }
+              return (
+                <div key={block.id} className="w-full px-4">
+                  <GenUIToolCallRenderer
+                    toolCalls={[
+                      {
+                        id: block.toolCallId,
+                        name: block.name,
+                        arguments: block.arguments,
+                      },
+                    ]}
+                    isStreaming={!!isStreaming && !!isLastMessage}
+                    isDarkMode={isDarkMode}
+                    onRetry={
+                      onRegenerateMessage && messageIndex > 0
+                        ? () => onRegenerateMessage(messageIndex - 1)
+                        : undefined
+                    }
+                  />
+                </div>
+              )
+            }
             case 'content': {
               if (!block.content) return null
               const isLastContent =
@@ -319,6 +376,21 @@ const DefaultMessageComponent = ({
               return null
           }
         })}
+
+      {!isUser && isStreaming && isLastMessage && (
+        <div className="w-full px-4 pb-2 pt-6">
+          <StreamingTracerDot
+            tone={
+              message.timeline && message.timeline.length > 0
+                ? message.timeline[message.timeline.length - 1].type ===
+                  'content'
+                  ? 'primary'
+                  : 'secondary'
+                : 'primary'
+            }
+          />
+        </div>
+      )}
 
       {/* User message content (or assistant without timeline, e.g. rate limit errors) */}
       {message.content &&

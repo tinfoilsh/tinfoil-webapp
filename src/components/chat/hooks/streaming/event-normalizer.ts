@@ -134,11 +134,65 @@ export interface EventNormalizer {
   flush(): NormalizedEvent[]
 }
 
+/**
+ * Extracts tool-call events from an OpenAI streaming chunk. The model may
+ * emit multiple concurrent tool calls identified by `index`; `id` and
+ * `function.name` only appear on the first chunk per tool call, while
+ * subsequent chunks only carry `function.arguments` deltas.
+ */
+function extractToolCallEvents(
+  json: SSEJson,
+  indexToId: Map<number, string>,
+  startedIds: Set<string>,
+): NormalizedEvent[] {
+  const toolCalls = json.choices?.[0]?.delta?.tool_calls
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return []
+
+  const events: NormalizedEvent[] = []
+  for (const tc of toolCalls) {
+    const index: number | undefined =
+      typeof tc.index === 'number' ? tc.index : undefined
+    if (index === undefined) continue
+
+    let id: string | undefined = indexToId.get(index)
+    if (!id && typeof tc.id === 'string' && tc.id.length > 0) {
+      const newId: string = tc.id
+      id = newId
+      indexToId.set(index, newId)
+    }
+    if (!id) continue
+
+    const name: string | undefined =
+      typeof tc.function?.name === 'string' ? tc.function.name : undefined
+
+    if (name && !startedIds.has(id)) {
+      events.push({ type: 'tool_call_start', id, name })
+      startedIds.add(id)
+    }
+
+    const argsDelta: string | undefined =
+      typeof tc.function?.arguments === 'string'
+        ? tc.function.arguments
+        : undefined
+    if (argsDelta) {
+      events.push({ type: 'tool_call_delta', id, argumentsDelta: argsDelta })
+    }
+  }
+  return events
+}
+
 export function createEventNormalizer(): EventNormalizer {
   let isFirstChunk = true
   let initialBuffer = ''
   let isInThinking = false
   let isReasoningFormat = false
+  const toolCallIndexToId = new Map<number, string>()
+  const toolCallStartedIds = new Set<string>()
+  // Once the assistant has started emitting a tool call, any subsequent
+  // `delta.content` is almost always serialization noise from the provider
+  // (fragments of the tool name or trailing whitespace) rather than real
+  // prose. Suppress all content emitted after the first tool call starts.
+  let sawToolCall = false
 
   return {
     processChunk(sseJson, preprocessor, logger): NormalizedEvent[] {
@@ -154,6 +208,23 @@ export function createEventNormalizer(): EventNormalizer {
         return events
       }
 
+      // GenUI tool calls (OpenAI streaming shape). Close any open thinking
+      // block first so tool calls appear after it chronologically, same
+      // pattern as web_search / url_fetch.
+      const toolCallEvents = extractToolCallEvents(
+        sseJson,
+        toolCallIndexToId,
+        toolCallStartedIds,
+      )
+      if (toolCallEvents.length > 0) {
+        if (isInThinking) {
+          events.push({ type: 'thinking_end' })
+          isInThinking = false
+        }
+        events.push(...toolCallEvents)
+        sawToolCall = true
+      }
+
       // Search reasoning
       const searchReasoning = sseJson.choices?.[0]?.delta?.search_reasoning
       if (searchReasoning) {
@@ -163,8 +234,13 @@ export function createEventNormalizer(): EventNormalizer {
       // Annotations
       events.push(...extractAnnotations(sseJson))
 
-      // Preprocess content (strip tinfoil markers, normalize channel tags)
-      const rawContent: string = sseJson.choices?.[0]?.delta?.content || ''
+      // Preprocess content (strip tinfoil markers, normalize channel tags).
+      // Once a tool call has been emitted on this assistant turn, drop any
+      // further `delta.content` — providers sometimes trail serialization
+      // noise (fragments of the tool name) through the content channel.
+      const rawContent: string = sawToolCall
+        ? ''
+        : sseJson.choices?.[0]?.delta?.content || ''
       const preprocessed = preprocessor.process(rawContent)
 
       // Tool events from tinfoil markers — close thinking first so

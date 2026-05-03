@@ -1,3 +1,4 @@
+import { Favicon } from '@/components/ui/favicon'
 import { type BaseModel } from '@/config/models'
 import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
 import { useUser } from '@clerk/nextjs'
@@ -51,9 +52,8 @@ function renderSegment(seg: Segment, key: React.Key) {
     const inner = (
       <>
         {seg.href && (
-          <img
-            src={`https://icons.duckduckgo.com/ip3/${new URL(seg.href).hostname}.ico`}
-            alt=""
+          <Favicon
+            url={seg.href}
             className="h-[1.1em] w-[1.1em] shrink-0 rounded-full bg-white p-[1px]"
           />
         )}

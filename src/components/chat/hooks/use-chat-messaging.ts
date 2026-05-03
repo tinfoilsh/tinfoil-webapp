@@ -77,6 +77,11 @@ interface UseChatMessagingReturn {
   cancelGeneration: () => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
   regenerateMessage: (messageIndex: number) => void
+  resolveInputToolCall: (
+    toolCallId: string,
+    resultText: string,
+    resultData?: unknown,
+  ) => void
 }
 
 export function useChatMessaging({
@@ -520,6 +525,7 @@ export function useChatMessaging({
           thinkingEnabled,
           webSearchEnabled,
           piiCheckEnabled,
+          genUIEnabled: true,
         })
 
         const assistantMessage = await processStreamingResponse(response, {
@@ -541,12 +547,16 @@ export function useChatMessaging({
           startingChatId,
         })
 
-        if (
-          assistantMessage &&
-          (assistantMessage.content ||
-            assistantMessage.thoughts ||
-            assistantMessage.webSearch)
-        ) {
+        const hasAssistantMessageToSave =
+          !!assistantMessage &&
+          (!!assistantMessage.content ||
+            !!assistantMessage.thoughts ||
+            !!assistantMessage.webSearch ||
+            !!assistantMessage.urlFetches?.length ||
+            !!assistantMessage.toolCalls?.length ||
+            !!assistantMessage.timeline?.length)
+
+        if (assistantMessage && hasAssistantMessageToSave) {
           const chatId = currentChatIdRef.current
 
           // If user navigated away during streaming, don't save to the new chat
@@ -573,6 +583,8 @@ export function useChatMessaging({
               isLocalOnly: updatedChat.isLocalOnly,
               hasContent: !!assistantMessage.content,
               hasThoughts: !!assistantMessage.thoughts,
+              hasToolCalls: !!assistantMessage.toolCalls?.length,
+              hasTimeline: !!assistantMessage.timeline?.length,
               isFirstMessage,
             },
           })
@@ -784,19 +796,129 @@ export function useChatMessaging({
     [loadingState, currentChat, handleQuery],
   )
 
-  // Regenerate a message - same as edit but uses the original content
+  /**
+   * Resolve a pending input-surface GenUI tool call.
+   *
+   * Marks the matching `tool_call` block as resolved on the last assistant
+   * message and sends the user's choice as a follow-up user message. The new
+   * message runs through `handleQuery` so the assistant continues the
+   * conversation naturally.
+   */
+  const resolveInputToolCall = useCallback(
+    (toolCallId: string, resultText: string, resultData?: unknown) => {
+      if (loadingState !== 'idle' || !currentChat) return
+
+      const now = Date.now()
+      const applyToMessages = (messages: Message[]): Message[] => {
+        if (messages.length === 0) return messages
+        const updated = [...messages]
+        for (let i = updated.length - 1; i >= 0; i--) {
+          const msg = updated[i]
+          if (msg.role !== 'assistant' || !msg.timeline) continue
+          const newTimeline = msg.timeline.map((block) => {
+            if (
+              block.type === 'tool_call' &&
+              block.toolCallId === toolCallId &&
+              !block.resolvedAt
+            ) {
+              return {
+                ...block,
+                resolvedAt: now,
+                resolution: {
+                  text: resultText,
+                  data: resultData,
+                  resolvedAt: now,
+                },
+              }
+            }
+            return block
+          })
+          updated[i] = { ...msg, timeline: newTimeline }
+          break
+        }
+        return updated
+      }
+
+      const resolvedMessages = applyToMessages(currentChat.messages)
+
+      setChats((prevChats) =>
+        prevChats.map((c) =>
+          c.id === currentChat.id ? { ...c, messages: resolvedMessages } : c,
+        ),
+      )
+      setCurrentChat((prev) =>
+        prev ? { ...prev, messages: resolvedMessages } : prev,
+      )
+
+      // Pass `resolvedMessages` as the baseline so `handleQuery` doesn't
+      // overwrite the just-written resolution with stale closure state. If
+      // we didn't, the pending input-surface widget would linger for one
+      // render cycle while the input area waits for the streaming phase to
+      // push past it — visible as a brief delay before the widget
+      // disappears after the user clicks an option.
+      handleQuery(resultText, undefined, undefined, resolvedMessages)
+    },
+    [loadingState, currentChat, setChats, setCurrentChat, handleQuery],
+  )
+
+  // Tracks a regenerate request issued while a stream is in flight. Once
+  // the in-progress generation has been cancelled and `loadingState`
+  // settles back to 'idle', the deferred request is fired by the effect
+  // below. The chat id is captured alongside the index so a chat switch
+  // during cancellation cannot redirect the regenerate to a different
+  // conversation.
+  const pendingRegenerateRef = useRef<{
+    chatId: string
+    messageIndex: number
+  } | null>(null)
+
+  // Regenerate a message - same as edit but uses the original content.
+  // If a stream is currently in flight, cancel it first and defer the
+  // regeneration until state settles.
   const regenerateMessage = useCallback(
     (messageIndex: number) => {
-      if (loadingState !== 'idle' || !currentChat) return
+      if (!currentChat) return
 
       const originalMessage = currentChat.messages[messageIndex]
       if (!originalMessage || originalMessage.role !== 'user') return
 
-      // Re-submit with the same content
+      if (loadingState !== 'idle') {
+        pendingRegenerateRef.current = {
+          chatId: currentChat.id,
+          messageIndex,
+        }
+        void cancelGeneration()
+        return
+      }
+
       editMessage(messageIndex, originalMessage.content || '')
     },
-    [loadingState, currentChat, editMessage],
+    [loadingState, currentChat, editMessage, cancelGeneration],
   )
+
+  // Fire the deferred regenerate once cancellation has settled the state.
+  useEffect(() => {
+    if (loadingState !== 'idle') return
+    const pending = pendingRegenerateRef.current
+    if (pending === null || !currentChat) return
+
+    // Drop the deferred request if the user navigated to a different
+    // chat while cancellation was in flight — regenerating against an
+    // unrelated conversation would silently rewrite its history.
+    if (currentChat.id !== pending.chatId) {
+      pendingRegenerateRef.current = null
+      return
+    }
+
+    const originalMessage = currentChat.messages[pending.messageIndex]
+    if (!originalMessage || originalMessage.role !== 'user') {
+      pendingRegenerateRef.current = null
+      return
+    }
+
+    pendingRegenerateRef.current = null
+    editMessage(pending.messageIndex, originalMessage.content || '')
+  }, [loadingState, currentChat, editMessage])
 
   // Update currentChatIdRef when currentChat changes
   // But don't overwrite during streaming to preserve ID swaps
@@ -822,5 +944,6 @@ export function useChatMessaging({
     cancelGeneration,
     editMessage,
     regenerateMessage,
+    resolveInputToolCall,
   }
 }

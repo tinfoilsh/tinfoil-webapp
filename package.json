@@ -19,6 +19,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@apple/mapkit-loader": "^0.2.1",
     "@braintree/sanitize-url": "^7.1.1",
     "@clerk/nextjs": "^6.21.0",
     "@headlessui/react": "^2.1.1",
@@ -52,6 +53,7 @@
     "react-markdown": "^9.0.3",
     "react-qr-code": "^2.0.18",
     "react-syntax-highlighter": "^16.1.0",
+    "recharts": "^3.8.1",
     "rehype-katex": "^7.0.1",
     "rehype-raw": "^7.0.0",
     "remark-breaks": "^4.0.0",
@@ -60,7 +62,9 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "tinfoil": "^1.1.0",
-    "uuid": "^11.0.3"
+    "uuid": "^11.0.3",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",

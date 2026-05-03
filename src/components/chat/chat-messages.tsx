@@ -2,13 +2,13 @@ import { type BaseModel } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
 import 'katex/dist/katex.min.css'
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { LoadingDots } from '../loading-dots'
 import { ensureTimeline } from './ensure-timeline'
 import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
 import { useMaxMessages } from './hooks/use-max-messages'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
 import { PrintableChat } from './PrintableChat'
 import { getRendererRegistry } from './renderers/client'
+import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
 import type { LabelType, Message } from './types'
 import { WelcomeScreen } from './WelcomeScreen'
 
@@ -142,9 +142,9 @@ const LoadingMessage = memo(function LoadingMessage({
   }
 
   return (
-    <div className="no-scroll-anchoring group mx-auto mb-6 flex w-full max-w-3xl flex-col items-start px-4">
-      <div className="flex items-center gap-3">
-        <LoadingDots isThinking={false} />
+    <div className="no-scroll-anchoring group mx-auto mb-6 flex w-full max-w-3xl flex-col items-start px-4 pt-6">
+      <div className="flex w-full flex-col gap-2">
+        <StreamingTracerDot tone="secondary" />
         {isRetrying && (
           <span className="text-sm text-content-secondary">
             {getRetryMessage()}
