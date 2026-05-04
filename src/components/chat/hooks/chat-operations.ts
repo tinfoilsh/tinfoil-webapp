@@ -81,7 +81,7 @@ export async function deleteChat(
   isSignedIn: boolean,
 ): Promise<void> {
   if (isSignedIn) {
-    await chatStorage.deleteChat(chatId)
+    await chatStorage.deleteChat(chatId, { requireCloudDelete: true })
   } else {
     sessionChatStorage.deleteChat(chatId)
   }

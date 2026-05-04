@@ -142,15 +142,21 @@ export class ChatStorageService {
     }
   }
 
-  async deleteChat(id: string): Promise<void> {
+  async deleteChat(
+    id: string,
+    options: { requireCloudDelete?: boolean } = {},
+  ): Promise<void> {
     await this.initialize()
 
     const chat = await indexedDBStorage.getChat(id)
     if (chat?.isLocalOnly !== true) {
-      if (!(await cloudStorage.isAuthenticated())) {
+      const isAuthenticated = await cloudStorage.isAuthenticated()
+      if (!isAuthenticated && options.requireCloudDelete === true) {
         throw new Error('Authentication token not set')
       }
-      await cloudSync.deleteFromCloud(id)
+      if (isAuthenticated) {
+        await cloudSync.deleteFromCloud(id)
+      }
     }
 
     // Mark as deleted to prevent re-sync
