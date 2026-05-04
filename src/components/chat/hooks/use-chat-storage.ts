@@ -249,9 +249,11 @@ export function useChatStorage({
             const newChats = ensureAtLeastOneChat(filtered)
 
             // Switch to another chat if we deleted the current one
-            if (currentChat?.id === chatId && newChats.length > 0) {
-              setCurrentChat(newChats[0])
-            }
+            setCurrentChat((prevCurrent) =>
+              prevCurrent?.id === chatId && newChats.length > 0
+                ? newChats[0]
+                : prevCurrent,
+            )
 
             return newChats
           })
@@ -263,7 +265,7 @@ export function useChatStorage({
           })
         })
     },
-    [currentChat?.id, isSignedIn],
+    [isSignedIn],
   )
 
   // Update chat title
