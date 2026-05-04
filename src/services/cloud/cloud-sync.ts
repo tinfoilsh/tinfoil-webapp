@@ -338,11 +338,6 @@ export class CloudSyncService {
     }
 
     try {
-      // First, backup any unsynced local changes
-      const backupResult = await this.backupUnsyncedChats()
-      result.uploaded = backupResult.uploaded
-      result.errors.push(...backupResult.errors)
-
       // Get cached sync status to determine what changed
       const cachedStatus = this.chatSyncCache.load()
 
@@ -350,6 +345,14 @@ export class CloudSyncService {
         // No cached status, fall back to full sync (first page only)
         return await this.doSyncAllChats()
       }
+
+      // Delete local chats that were deleted on another device
+      await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncChangedChats')
+
+      // First, backup any unsynced local changes
+      const backupResult = await this.backupUnsyncedChats()
+      result.uploaded = backupResult.uploaded
+      result.errors.push(...backupResult.errors)
 
       // Fetch chats updated since our last sync, paginating through all results
       let continuationToken: string | undefined
@@ -409,11 +412,6 @@ export class CloudSyncService {
         hasMore =
           updatedChats.hasMore === true && !!updatedChats.nextContinuationToken
         continuationToken = updatedChats.nextContinuationToken
-      }
-
-      // Delete local chats that were deleted on another device
-      if (cachedStatus?.lastUpdated) {
-        await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncChangedChats')
       }
 
       // Update cached sync status
@@ -705,6 +703,12 @@ export class CloudSyncService {
     }
 
     try {
+      const cachedStatus = this.chatSyncCache.load()
+      if (cachedStatus?.lastUpdated) {
+        // Delete local chats that were deleted on another device
+        await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncAllChats')
+      }
+
       // First, backup any unsynced local changes
       const backupResult = await this.backupUnsyncedChats()
       result.uploaded = backupResult.uploaded
@@ -740,12 +744,6 @@ export class CloudSyncService {
       })
       result.downloaded += ingestResult.downloaded
       result.errors.push(...ingestResult.errors)
-
-      // Delete local chats that were deleted on another device
-      const cachedStatus = this.chatSyncCache.load()
-      if (cachedStatus?.lastUpdated) {
-        await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncAllChats')
-      }
 
       // Update cached sync status after successful sync
       try {
@@ -828,8 +826,10 @@ export class CloudSyncService {
   async deleteFromCloud(chatId: string): Promise<void> {
     // Don't attempt deletion if not authenticated
     if (!(await cloudStorage.isAuthenticated())) {
-      return
+      throw new Error('Authentication token not set')
     }
+
+    deletedChatsTracker.markAsDeleted(chatId)
 
     try {
       await cloudStorage.deleteChat(chatId)
@@ -844,13 +844,7 @@ export class CloudSyncService {
         metadata: { chatId },
       })
     } catch (error) {
-      // Silently fail if no auth token set
-      if (
-        error instanceof Error &&
-        error.message.includes('Authentication token not set')
-      ) {
-        return
-      }
+      deletedChatsTracker.removeFromDeleted(chatId)
       throw error
     }
   }
@@ -1062,6 +1056,11 @@ export class CloudSyncService {
     }
 
     try {
+      const cachedStatus = this.getProjectSyncCache(projectId).load()
+      if (cachedStatus?.lastUpdated) {
+        await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncProjectChats')
+      }
+
       const localChats = await indexedDBStorage.getAllChats()
       const localChatMap = new Map(localChats.map((c) => [c.id, c]))
 
@@ -1174,6 +1173,19 @@ export class CloudSyncService {
     }
 
     try {
+      // Get cached sync status to determine what changed
+      const cachedStatus = this.getProjectSyncCache(projectId).load()
+
+      if (!cachedStatus?.lastUpdated) {
+        // No cached status, fall back to full sync
+        return await this.doSyncProjectChats(projectId)
+      }
+
+      await syncRemoteDeletions(
+        cachedStatus.lastUpdated,
+        'syncProjectChatsChanged',
+      )
+
       // First, backup any unsynced local project chats
       const unsyncedChats = await indexedDBStorage.getUnsyncedChats()
       const projectChatsToSync = unsyncedChats.filter(
@@ -1192,14 +1204,6 @@ export class CloudSyncService {
             `Failed to backup project chat ${chat.id}: ${error instanceof Error ? error.message : String(error)}`,
           )
         }
-      }
-
-      // Get cached sync status to determine what changed
-      const cachedStatus = this.getProjectSyncCache(projectId).load()
-
-      if (!cachedStatus?.lastUpdated) {
-        // No cached status, fall back to full sync
-        return await this.doSyncProjectChats(projectId)
       }
 
       // Fetch and process chats updated since our last sync, with pagination
