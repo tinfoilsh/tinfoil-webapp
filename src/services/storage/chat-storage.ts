@@ -145,20 +145,19 @@ export class ChatStorageService {
   async deleteChat(id: string): Promise<void> {
     await this.initialize()
 
+    const chat = await indexedDBStorage.getChat(id)
+    if (chat?.isLocalOnly !== true) {
+      if (!(await cloudStorage.isAuthenticated())) {
+        throw new Error('Authentication token not set')
+      }
+      await cloudSync.deleteFromCloud(id)
+    }
+
     // Mark as deleted to prevent re-sync
     deletedChatsTracker.markAsDeleted(id)
 
     await indexedDBStorage.deleteChat(id)
     chatEvents.emit({ reason: 'delete', ids: [id] })
-
-    // Also delete from cloud storage (non-blocking)
-    cloudSync.deleteFromCloud(id).catch((error: unknown) => {
-      logError('Failed to delete chat from cloud', error, {
-        component: 'ChatStorageService',
-        action: 'deleteChat',
-        metadata: { chatId: id },
-      })
-    })
   }
 
   async deleteAllNonLocalChats(): Promise<number> {

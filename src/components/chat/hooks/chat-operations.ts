@@ -80,20 +80,10 @@ export async function deleteChat(
   chatId: string,
   isSignedIn: boolean,
 ): Promise<void> {
-  deletedChatsTracker.markAsDeleted(chatId)
-
-  try {
-    if (isSignedIn) {
-      await chatStorage.deleteChat(chatId)
-    } else {
-      sessionChatStorage.deleteChat(chatId)
-    }
-  } catch (error) {
-    logError('Failed to delete chat', error, {
-      component: 'chat-operations',
-      action: 'deleteChat',
-      metadata: { chatId },
-    })
+  if (isSignedIn) {
+    await chatStorage.deleteChat(chatId)
+  } else {
+    sessionChatStorage.deleteChat(chatId)
   }
 }
 

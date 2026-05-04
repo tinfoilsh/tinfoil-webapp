@@ -183,6 +183,7 @@ export async function syncRemoteDeletions(
     const successfulIds: string[] = []
     for (const id of deletedIds) {
       try {
+        deletedChatsTracker.markAsDeleted(id)
         await indexedDBStorage.deleteChat(id)
         successfulIds.push(id)
       } catch (error) {

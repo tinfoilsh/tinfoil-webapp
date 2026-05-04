@@ -241,25 +241,27 @@ export function useChatStorage({
   // Delete chat
   const deleteChat = useCallback(
     (chatId: string) => {
-      setChats((prevChats) => {
-        const filtered = prevChats.filter((c) => c.id !== chatId)
-        const newChats = ensureAtLeastOneChat(filtered)
-
-        // Switch to another chat if we deleted the current one
-        if (currentChat?.id === chatId && newChats.length > 0) {
-          setCurrentChat(newChats[0])
-        }
-
-        return newChats
-      })
-
       // Delete from storage
-      deleteChatFromStorage(chatId, !!isSignedIn).catch((error) => {
-        logError('Failed to delete chat', error, {
-          component: 'useChatStorage',
-          metadata: { chatId },
+      deleteChatFromStorage(chatId, !!isSignedIn)
+        .then(() => {
+          setChats((prevChats) => {
+            const filtered = prevChats.filter((c) => c.id !== chatId)
+            const newChats = ensureAtLeastOneChat(filtered)
+
+            // Switch to another chat if we deleted the current one
+            if (currentChat?.id === chatId && newChats.length > 0) {
+              setCurrentChat(newChats[0])
+            }
+
+            return newChats
+          })
         })
-      })
+        .catch((error) => {
+          logError('Failed to delete chat', error, {
+            component: 'useChatStorage',
+            metadata: { chatId },
+          })
+        })
     },
     [currentChat?.id, isSignedIn],
   )
