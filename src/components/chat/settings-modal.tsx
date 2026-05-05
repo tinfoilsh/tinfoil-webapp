@@ -312,6 +312,7 @@ export function SettingsModal({
 
   // Advanced settings collapsed state
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
+  const [dangerZoneOpen, setDangerZoneOpen] = useState(false)
 
   // Placeholder animation state
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
@@ -2348,224 +2349,245 @@ ${encryptionKey.replace('key_', '')}
 
                   {/* Danger Zone */}
                   <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Danger Zone
-                    </h3>
-
-                    {/* Delete all saved chats */}
-                    <div
-                      className={cn(
-                        'rounded-lg border p-4',
-                        isDarkMode
-                          ? 'border-red-500/30 bg-red-950/10'
-                          : 'border-red-200 bg-red-50/50',
-                      )}
+                    <button
+                      onClick={() => setDangerZoneOpen(!dangerZoneOpen)}
+                      className="flex w-full items-center justify-between"
                     >
-                      <div className="space-y-3">
-                        <div>
-                          <div className="font-aeonik text-sm font-medium text-content-primary">
-                            Delete all saved chats
-                          </div>
-                          <div className="font-aeonik-fono text-xs text-content-muted">
-                            {isSignedIn
-                              ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
-                              : 'Permanently delete every chat from this browser. This cannot be undone.'}
-                          </div>
-                        </div>
-                        {showDeleteAllChatsConfirm ? (
-                          <div className="space-y-2">
-                            <label className="block">
-                              <span className="font-aeonik-fono text-xs text-content-muted">
-                                Type{' '}
-                                <code className="font-mono text-content-primary">
-                                  {DELETE_ALL_CHATS_CONFIRM_PHRASE}
-                                </code>{' '}
-                                to confirm.
-                              </span>
-                              <input
-                                type="text"
-                                autoComplete="off"
-                                autoCorrect="off"
-                                autoCapitalize="off"
-                                spellCheck={false}
-                                value={deleteAllChatsConfirmText}
-                                onChange={(e) =>
-                                  setDeleteAllChatsConfirmText(e.target.value)
-                                }
-                                disabled={isDeletingAllChats}
-                                placeholder={DELETE_ALL_CHATS_CONFIRM_PHRASE}
-                                className={cn(
-                                  'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                  isDarkMode
-                                    ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                    : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                )}
-                              />
-                            </label>
-                            <div className="flex flex-col gap-2 sm:flex-row">
-                              <button
-                                onClick={handleDeleteAllChats}
-                                disabled={
-                                  isDeletingAllChats ||
-                                  deleteAllChatsConfirmText
-                                    .trim()
-                                    .toLowerCase() !==
-                                    DELETE_ALL_CHATS_CONFIRM_PHRASE
-                                }
-                                className={cn(
-                                  'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                  isDarkMode
-                                    ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                    : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                )}
-                              >
-                                {isDeletingAllChats
-                                  ? 'Deleting…'
-                                  : 'Yes, delete all my chats'}
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setShowDeleteAllChatsConfirm(false)
-                                  setDeleteAllChatsConfirmText('')
-                                }}
-                                disabled={isDeletingAllChats}
-                                className={cn(
-                                  'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                  isDarkMode
-                                    ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                    : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                )}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setShowDeleteAllChatsConfirm(true)}
-                            className={cn(
-                              'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                              isDarkMode
-                                ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                            )}
-                          >
-                            Delete all saved chats
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Delete all projects (signed-in premium users only) */}
-                    {isSignedIn && isPremium && (
-                      <div
+                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                        Danger Zone
+                      </h3>
+                      <ChevronDownIcon
                         className={cn(
-                          'rounded-lg border p-4',
-                          isDarkMode
-                            ? 'border-red-500/30 bg-red-950/10'
-                            : 'border-red-200 bg-red-50/50',
+                          'h-4 w-4 text-content-muted transition-transform',
+                          dangerZoneOpen && 'rotate-180',
                         )}
-                      >
-                        <div className="space-y-3">
-                          <div>
-                            <div className="font-aeonik text-sm font-medium text-content-primary">
-                              Delete all projects
-                            </div>
-                            <div className="font-aeonik-fono text-xs text-content-muted">
-                              Permanently delete every project and its
-                              documents. Chats inside projects will be detached
-                              but kept. This cannot be undone.
-                            </div>
-                          </div>
-                          {showDeleteAllProjectsConfirm ? (
-                            <div className="space-y-2">
-                              <label className="block">
-                                <span className="font-aeonik-fono text-xs text-content-muted">
-                                  Type{' '}
-                                  <code className="font-mono text-content-primary">
-                                    {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
-                                  </code>{' '}
-                                  to confirm.
-                                </span>
-                                <input
-                                  type="text"
-                                  autoComplete="off"
-                                  autoCorrect="off"
-                                  autoCapitalize="off"
-                                  spellCheck={false}
-                                  value={deleteAllProjectsConfirmText}
-                                  onChange={(e) =>
-                                    setDeleteAllProjectsConfirmText(
-                                      e.target.value,
-                                    )
-                                  }
-                                  disabled={isDeletingAllProjects}
-                                  placeholder={
-                                    DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                  }
-                                  className={cn(
-                                    'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                    isDarkMode
-                                      ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                      : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                  )}
-                                />
-                              </label>
-                              <div className="flex flex-col gap-2 sm:flex-row">
-                                <button
-                                  onClick={handleDeleteAllProjects}
-                                  disabled={
-                                    isDeletingAllProjects ||
-                                    deleteAllProjectsConfirmText
-                                      .trim()
-                                      .toLowerCase() !==
-                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                  }
-                                  className={cn(
-                                    'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                    isDarkMode
-                                      ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                      : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                  )}
-                                >
-                                  {isDeletingAllProjects
-                                    ? 'Deleting…'
-                                    : 'Yes, delete all my projects'}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setShowDeleteAllProjectsConfirm(false)
-                                    setDeleteAllProjectsConfirmText('')
-                                  }}
-                                  disabled={isDeletingAllProjects}
-                                  className={cn(
-                                    'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                    isDarkMode
-                                      ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                      : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                  )}
-                                >
-                                  Cancel
-                                </button>
+                      />
+                    </button>
+
+                    {dangerZoneOpen && (
+                      <>
+                        {/* Delete all saved chats */}
+                        <div
+                          className={cn(
+                            'rounded-lg border p-4',
+                            isDarkMode
+                              ? 'border-red-500/30 bg-red-950/10'
+                              : 'border-red-200 bg-red-50/50',
+                          )}
+                        >
+                          <div className="space-y-3">
+                            <div>
+                              <div className="font-aeonik text-sm font-medium text-content-primary">
+                                Delete all saved chats
+                              </div>
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                {isSignedIn
+                                  ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
+                                  : 'Permanently delete every chat from this browser. This cannot be undone.'}
                               </div>
                             </div>
-                          ) : (
-                            <button
-                              onClick={() =>
-                                setShowDeleteAllProjectsConfirm(true)
-                              }
-                              className={cn(
-                                'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                isDarkMode
-                                  ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                  : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                              )}
-                            >
-                              Delete all projects
-                            </button>
-                          )}
+                            {showDeleteAllChatsConfirm ? (
+                              <div className="space-y-2">
+                                <label className="block">
+                                  <span className="font-aeonik-fono text-xs text-content-muted">
+                                    Type{' '}
+                                    <code className="font-mono text-content-primary">
+                                      {DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                    </code>{' '}
+                                    to confirm.
+                                  </span>
+                                  <input
+                                    type="text"
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="off"
+                                    spellCheck={false}
+                                    value={deleteAllChatsConfirmText}
+                                    onChange={(e) =>
+                                      setDeleteAllChatsConfirmText(
+                                        e.target.value,
+                                      )
+                                    }
+                                    disabled={isDeletingAllChats}
+                                    placeholder={
+                                      DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                    }
+                                    className={cn(
+                                      'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                      isDarkMode
+                                        ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                        : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                    )}
+                                  />
+                                </label>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                  <button
+                                    onClick={handleDeleteAllChats}
+                                    disabled={
+                                      isDeletingAllChats ||
+                                      deleteAllChatsConfirmText
+                                        .trim()
+                                        .toLowerCase() !==
+                                        DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                    }
+                                    className={cn(
+                                      'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                      isDarkMode
+                                        ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                        : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                    )}
+                                  >
+                                    {isDeletingAllChats
+                                      ? 'Deleting…'
+                                      : 'Yes, delete all my chats'}
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setShowDeleteAllChatsConfirm(false)
+                                      setDeleteAllChatsConfirmText('')
+                                    }}
+                                    disabled={isDeletingAllChats}
+                                    className={cn(
+                                      'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                      isDarkMode
+                                        ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                        : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                    )}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() =>
+                                  setShowDeleteAllChatsConfirm(true)
+                                }
+                                className={cn(
+                                  'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                  isDarkMode
+                                    ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                    : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                )}
+                              >
+                                Delete all saved chats
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </div>
+
+                        {/* Delete all projects (signed-in premium users only) */}
+                        {isSignedIn && isPremium && (
+                          <div
+                            className={cn(
+                              'rounded-lg border p-4',
+                              isDarkMode
+                                ? 'border-red-500/30 bg-red-950/10'
+                                : 'border-red-200 bg-red-50/50',
+                            )}
+                          >
+                            <div className="space-y-3">
+                              <div>
+                                <div className="font-aeonik text-sm font-medium text-content-primary">
+                                  Delete all projects
+                                </div>
+                                <div className="font-aeonik-fono text-xs text-content-muted">
+                                  Permanently delete every project and its
+                                  documents. Chats inside projects will be
+                                  detached but kept. This cannot be undone.
+                                </div>
+                              </div>
+                              {showDeleteAllProjectsConfirm ? (
+                                <div className="space-y-2">
+                                  <label className="block">
+                                    <span className="font-aeonik-fono text-xs text-content-muted">
+                                      Type{' '}
+                                      <code className="font-mono text-content-primary">
+                                        {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
+                                      </code>{' '}
+                                      to confirm.
+                                    </span>
+                                    <input
+                                      type="text"
+                                      autoComplete="off"
+                                      autoCorrect="off"
+                                      autoCapitalize="off"
+                                      spellCheck={false}
+                                      value={deleteAllProjectsConfirmText}
+                                      onChange={(e) =>
+                                        setDeleteAllProjectsConfirmText(
+                                          e.target.value,
+                                        )
+                                      }
+                                      disabled={isDeletingAllProjects}
+                                      placeholder={
+                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                      }
+                                      className={cn(
+                                        'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                        isDarkMode
+                                          ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                          : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                      )}
+                                    />
+                                  </label>
+                                  <div className="flex flex-col gap-2 sm:flex-row">
+                                    <button
+                                      onClick={handleDeleteAllProjects}
+                                      disabled={
+                                        isDeletingAllProjects ||
+                                        deleteAllProjectsConfirmText
+                                          .trim()
+                                          .toLowerCase() !==
+                                          DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                      }
+                                      className={cn(
+                                        'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                        isDarkMode
+                                          ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                          : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                      )}
+                                    >
+                                      {isDeletingAllProjects
+                                        ? 'Deleting…'
+                                        : 'Yes, delete all my projects'}
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setShowDeleteAllProjectsConfirm(false)
+                                        setDeleteAllProjectsConfirmText('')
+                                      }}
+                                      disabled={isDeletingAllProjects}
+                                      className={cn(
+                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                        isDarkMode
+                                          ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                          : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                      )}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() =>
+                                    setShowDeleteAllProjectsConfirm(true)
+                                  }
+                                  className={cn(
+                                    'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                  )}
+                                >
+                                  Delete all projects
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </>
