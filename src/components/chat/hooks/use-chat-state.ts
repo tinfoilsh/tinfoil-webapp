@@ -40,6 +40,8 @@ interface UseChatStateReturn {
   setIsInitialLoad: (isLoading: boolean) => void
   setVerificationComplete: (complete: boolean) => void
   setVerificationSuccess: (success: boolean) => void
+  setChats: React.Dispatch<React.SetStateAction<Chat[]>>
+  setCurrentChat: React.Dispatch<React.SetStateAction<Chat>>
 
   // Actions
   handleSubmit: (e: React.FormEvent) => void
@@ -297,6 +299,8 @@ export function useChatState({
     setIsInitialLoad,
     setVerificationComplete,
     setVerificationSuccess,
+    setChats,
+    setCurrentChat,
 
     // Actions
     handleSubmit,

@@ -57,6 +57,9 @@ export async function saveChat(
   skipCloudSync = false,
 ): Promise<Chat> {
   try {
+    if (chat.isTemporary) {
+      return chat
+    }
     if (isSignedIn) {
       return await chatStorage.saveChat(chat, skipCloudSync)
     } else {

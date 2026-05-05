@@ -176,7 +176,7 @@ export function useChatMessaging({
         const updatedChat = newChats.find(
           (c) => c.id === currentChatIdRef.current,
         )
-        if (updatedChat) {
+        if (updatedChat && !updatedChat.isTemporary) {
           if (storeHistory) {
             chatStorage
               .saveChatAndSync(updatedChat)
@@ -300,7 +300,24 @@ export function useChatMessaging({
       }
 
       // Handle blank chat conversion: create chat immediately with server-valid ID
-      if (isBlankChat && storeHistory) {
+      if (isBlankChat && currentChat.isTemporary) {
+        updatedMessages = userMessage ? [userMessage] : []
+        updatedChat = {
+          ...currentChat,
+          title: 'Temporary Chat',
+          titleState: 'placeholder',
+          messages: updatedMessages,
+          isBlankChat: false,
+          createdAt: new Date(),
+        }
+
+        currentChatIdRef.current = updatedChat.id
+        setCurrentChat(updatedChat)
+
+        if (scrollToBottom) {
+          setTimeout(() => scrollToBottom(), 50)
+        }
+      } else if (isBlankChat && storeHistory) {
         logInfo('[handleQuery] Converting blank chat to real chat', {
           component: 'useChatMessaging',
           action: 'handleQuery.blankChatConversion',
@@ -414,7 +431,9 @@ export function useChatMessaging({
           setTimeout(() => scrollToBottom(), 50)
         }
 
-        sessionChatStorage.saveChat(updatedChat)
+        if (!updatedChat.isTemporary) {
+          sessionChatStorage.saveChat(updatedChat)
+        }
 
         // Clear pendingSave flag immediately for session storage (it's synchronous)
         setTimeout(() => {
@@ -453,7 +472,9 @@ export function useChatMessaging({
         }
 
         // Save the updated chat
-        if (storeHistory) {
+        if (updatedChat.isTemporary) {
+          // Temporary chats are never persisted
+        } else if (storeHistory) {
           await chatStorage.saveChatAndSync(updatedChat)
         } else {
           sessionChatStorage.saveChat(updatedChat)

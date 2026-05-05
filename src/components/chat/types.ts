@@ -118,6 +118,8 @@ export type Chat = {
   isBlankChat?: boolean
   // Local-only flag - true for chats that should never sync to cloud
   isLocalOnly?: boolean
+  // Temporary flag - true for ephemeral chats that are never persisted anywhere
+  isTemporary?: boolean
   // Pending save flag - true while initial save is in progress
   pendingSave?: boolean
   // Project association - when set, chat belongs to a project
