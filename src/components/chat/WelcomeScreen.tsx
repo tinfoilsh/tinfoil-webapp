@@ -209,7 +209,11 @@ interface WelcomeScreenProps {
   thinkingEnabled?: boolean
   setThinkingEnabled?: (enabled: boolean) => void
   onOpenVerifier?: () => void
+  isTemporaryMode?: boolean
 }
+
+// isTemporaryMode is forwarded to the embedded ChatInput so the input can
+// adopt the dashed border treatment when the parent is in temporary mode.
 
 export const WelcomeScreen = memo(function WelcomeScreen({
   isDarkMode,
@@ -236,6 +240,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   thinkingEnabled,
   setThinkingEnabled,
   onOpenVerifier,
+  isTemporaryMode,
 }: WelcomeScreenProps) {
   const { user } = useUser()
   const [nickname, setNickname] = useState<string>('')
@@ -551,6 +556,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   })()}
                   webSearchEnabled={webSearchEnabled}
                   onWebSearchToggle={onWebSearchToggle}
+                  isTemporaryMode={isTemporaryMode}
                 />
               </motion.div>
             )}

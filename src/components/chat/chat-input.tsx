@@ -54,6 +54,7 @@ type ChatInputProps = {
   onWebSearchToggle?: () => void
   quote?: string | null
   onClearQuote?: () => void
+  isTemporaryMode?: boolean
 }
 
 // Maximum number of characters displayed in the collapsed quote preview.
@@ -81,6 +82,7 @@ export function ChatInput({
   onWebSearchToggle,
   quote,
   onClearQuote,
+  isTemporaryMode,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsScrollRef = useRef<HTMLDivElement>(null)
@@ -449,7 +451,10 @@ export function ChatInput({
         )}
         <div
           className={cn(
-            'rounded-3xl border border-border-subtle bg-surface-chat px-3 py-3 shadow-md transition-colors md:rounded-4xl md:px-6 md:py-4',
+            'rounded-3xl border bg-surface-chat px-3 py-3 shadow-md transition-colors md:rounded-4xl md:px-6 md:py-4',
+            isTemporaryMode
+              ? 'border-dashed border-content-muted'
+              : 'border-border-subtle',
           )}
         >
           <input
