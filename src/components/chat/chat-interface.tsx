@@ -2631,8 +2631,8 @@ export function ChatInterface({
                   ? ({
                       paddingBottom: inputAreaHeight + 32,
                       '--input-area-height': `${inputAreaHeight}px`,
-                      '--mask-fade-start': `calc(100% - ${inputAreaHeight + 32}px)`,
-                      '--mask-fade-end': `calc(100% - ${inputAreaHeight}px)`,
+                      '--mask-fade-start': `calc(100% - ${inputAreaHeight + 80}px)`,
+                      '--mask-fade-end': `calc(100% - ${inputAreaHeight + 8}px)`,
                       maskImage:
                         'linear-gradient(to bottom, black 0, black var(--mask-fade-start), transparent var(--mask-fade-end)), linear-gradient(black, black)',
                       maskSize:
