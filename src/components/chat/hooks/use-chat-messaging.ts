@@ -313,6 +313,9 @@ export function useChatMessaging({
 
         currentChatIdRef.current = updatedChat.id
         setCurrentChat(updatedChat)
+        setChats((prevChats) =>
+          prevChats.map((c) => (c.id === updatedChat.id ? updatedChat : c)),
+        )
 
         if (scrollToBottom) {
           setTimeout(() => scrollToBottom(), 50)
