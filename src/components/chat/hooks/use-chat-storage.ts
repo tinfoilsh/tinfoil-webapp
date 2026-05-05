@@ -279,7 +279,7 @@ export function useChatStorage({
         )
 
         const chatToUpdate = updatedChats.find((c) => c.id === chatId)
-        if (chatToUpdate && storeHistory) {
+        if (chatToUpdate && !chatToUpdate.isTemporary && storeHistory) {
           persistenceManager.save(chatToUpdate).catch((error) => {
             logError('Failed to save chat title update', error, {
               component: 'useChatStorage',

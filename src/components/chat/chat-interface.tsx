@@ -30,6 +30,7 @@ import { BiSolidLock, BiSolidLockOpen } from 'react-icons/bi'
 import { GoSidebarCollapse } from 'react-icons/go'
 import { IoShareOutline } from 'react-icons/io5'
 import { PiFilePlusLight, PiNotePencilLight, PiSpinner } from 'react-icons/pi'
+import { SlGhost } from 'react-icons/sl'
 import type { TinfoilAI } from 'tinfoil'
 
 import {
@@ -104,7 +105,7 @@ import { ReasoningEffortSelector } from './reasoning-effort-selector'
 import { initializeRenderers } from './renderers/client'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
-import type { Attachment } from './types'
+import type { Attachment, Chat } from './types'
 // Lazy-load modals that aren't shown on initial load
 const CloudSyncSetupModal = dynamic(
   () =>
@@ -466,6 +467,12 @@ export function ChatInterface({
   // text. Nothing is persisted unless the user clicks "Open as chat".
   const [isAskSidebarOpen, setIsAskSidebarOpen] = useState(false)
 
+  // Temporary chat mode: when active the current chat is replaced with an
+  // ephemeral in-memory chat that is never persisted (no IndexedDB, no session
+  // storage, no cloud sync). Disabling restores the previously active chat.
+  const [isTemporaryMode, setIsTemporaryMode] = useState(false)
+  const previousChatIdRef = useRef<string | null>(null)
+
   // State for web search toggle (persisted in localStorage)
   const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
     if (typeof window === 'undefined') return true
@@ -694,6 +701,8 @@ export function ChatInterface({
     setIsInitialLoad,
     setVerificationComplete,
     setVerificationSuccess,
+    setChats,
+    setCurrentChat,
 
     // Actions
     handleQuery,
@@ -757,6 +766,12 @@ export function ChatInterface({
       initialUrlChatLoadedRef.current = true
     }
 
+    // Temporary chats are ephemeral and never appear in the URL.
+    if (currentChat.isTemporary) {
+      clearUrl()
+      return
+    }
+
     // In local-only mode, a blank "new chat" should live at `/` (not `/chat/local`)
     // so it never depends on host routing for that path.
     if (currentChat.isLocalOnly && currentChat.isBlankChat) {
@@ -813,6 +828,7 @@ export function ChatInterface({
     currentChat.id,
     currentChat.isBlankChat,
     currentChat.isLocalOnly,
+    currentChat.isTemporary,
     currentChat.projectId,
     isProjectMode,
     activeProject?.id,
@@ -1278,6 +1294,44 @@ export function ChatInterface({
     createNewChat(false, true)
     exitProjectMode()
   }, [createNewChat, exitProjectMode])
+
+  const handleToggleTemporaryMode = useCallback(() => {
+    setIsTemporaryMode((prev) => {
+      const next = !prev
+      if (next) {
+        previousChatIdRef.current = currentChat?.id ?? null
+        const tempChat: Chat = {
+          id: `temp-${Date.now()}`,
+          title: 'Temporary Chat',
+          titleState: 'placeholder',
+          messages: [],
+          createdAt: new Date(),
+          isBlankChat: true,
+          isTemporary: true,
+        }
+        setCurrentChat(tempChat)
+      } else {
+        const previousId = previousChatIdRef.current
+        const restored = previousId
+          ? chats.find((c) => c.id === previousId)
+          : undefined
+        if (restored) {
+          setCurrentChat(restored)
+        } else {
+          createNewChat(false, true)
+        }
+        previousChatIdRef.current = null
+      }
+      return next
+    })
+  }, [chats, createNewChat, currentChat?.id, setCurrentChat])
+
+  useEffect(() => {
+    if (isTemporaryMode && currentChat && !currentChat.isTemporary) {
+      setIsTemporaryMode(false)
+      previousChatIdRef.current = null
+    }
+  }, [isTemporaryMode, currentChat])
 
   // Handler for exiting project mode while dragging - does NOT create a new chat
   // so the drag operation can continue and drop into cloud/local tabs
@@ -2224,6 +2278,28 @@ export function ChatInterface({
           </div>
         )}
 
+      {/* Temporary chat indicator (top-left, fills inner corner) */}
+      {(isTemporaryMode || currentChat?.isTemporary) && (
+        <div
+          className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-brand-accent-light/15 px-3 py-2 text-xs font-medium text-brand-accent-light transition-all duration-300"
+          style={{
+            left: (() => {
+              const isMobile = windowWidth < CONSTANTS.MOBILE_BREAKPOINT
+              if (isMobile) {
+                return isSidebarOpen ? '-9999px' : '0px'
+              }
+              if (isSidebarOpen) {
+                return `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`
+              }
+              return `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`
+            })(),
+          }}
+        >
+          <SlGhost className="h-3.5 w-3.5 shrink-0" />
+          <span>Temporary chat</span>
+        </div>
+      )}
+
       {/* Right side toggle buttons */}
       {!(
         windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
@@ -2259,18 +2335,47 @@ export function ChatInterface({
               </button>
             )}
 
-          {/* Share button - only show when there are messages */}
-          {currentChat?.messages && currentChat.messages.length > 0 && (
-            <button
-              type="button"
-              onClick={handleOpenShareModal}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary md:px-3 md:py-2"
-              aria-label="Share"
-            >
-              <IoShareOutline className="h-4 w-4" />
-              <span className="hidden text-sm md:inline">Share</span>
-            </button>
+          {/* Temporary chat toggle - hidden once a chat has started */}
+          {!(currentChat?.messages && currentChat.messages.length > 0) && (
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={handleToggleTemporaryMode}
+                aria-label={
+                  isTemporaryMode
+                    ? 'Exit temporary chat'
+                    : 'Start temporary chat'
+                }
+                aria-pressed={isTemporaryMode}
+                className={cn(
+                  'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
+                  isTemporaryMode
+                    ? 'border-brand-accent-light/40 bg-brand-accent-light/15 text-brand-accent-light hover:bg-brand-accent-light/25'
+                    : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                )}
+              >
+                <SlGhost className="h-4 w-4" />
+              </button>
+              <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                {isTemporaryMode ? 'Exit temporary chat' : 'Temporary chat'}
+              </span>
+            </div>
           )}
+
+          {/* Share button - only show when there are messages and chat is not temporary */}
+          {!currentChat?.isTemporary &&
+            currentChat?.messages &&
+            currentChat.messages.length > 0 && (
+              <button
+                type="button"
+                onClick={handleOpenShareModal}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary md:px-3 md:py-2"
+                aria-label="Share"
+              >
+                <IoShareOutline className="h-4 w-4" />
+                <span className="hidden text-sm md:inline">Share</span>
+              </button>
+            )}
 
           {/* Verifier toggle button */}
           <div className="group relative">
@@ -2614,6 +2719,12 @@ export function ChatInterface({
             }}
           />
           <div className="relative flex min-h-0 flex-1">
+            {isTemporaryMode && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-30 rounded-2xl border-2 border-brand-accent-light/60 ring-1 ring-inset ring-brand-accent-light/20"
+              />
+            )}
             {streamError && (
               <StreamErrorBanner
                 message={streamError}

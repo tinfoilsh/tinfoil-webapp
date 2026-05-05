@@ -67,6 +67,10 @@ export function createUpdateChatWithHistoryCheck({
       }))
     }
 
+    if (updatedChat.isTemporary) {
+      return
+    }
+
     if (storeHistory) {
       const shouldSkipCloudSync =
         skipCloudSync || updatedChat.isLocalOnly || isStreamingRef.current
