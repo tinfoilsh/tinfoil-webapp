@@ -49,6 +49,7 @@ type ChatMessagesProps = {
   thinkingEnabled?: boolean
   setThinkingEnabled?: (enabled: boolean) => void
   onOpenVerifier?: () => void
+  isTemporaryMode?: boolean
 }
 
 // Optimized wrapper component that receives expanded state from parent
@@ -220,6 +221,7 @@ export function ChatMessages({
   thinkingEnabled,
   setThinkingEnabled,
   onOpenVerifier,
+  isTemporaryMode,
 }: ChatMessagesProps) {
   const [mounted, setMounted] = useState(false)
   const maxMessages = useMaxMessages()
@@ -325,6 +327,7 @@ export function ChatMessages({
             thinkingEnabled={thinkingEnabled}
             setThinkingEnabled={setThinkingEnabled}
             onOpenVerifier={onOpenVerifier}
+            isTemporaryMode={isTemporaryMode}
           />
         </div>
       </div>

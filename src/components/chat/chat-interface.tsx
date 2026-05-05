@@ -2661,291 +2661,306 @@ export function ChatInterface({
           top: 0,
         }}
       >
-        <div className="relative flex h-full flex-col bg-surface-chat-background">
-          {/* Project Mode Banner */}
-          {(isProjectMode && activeProject) || loadingProject ? (
-            <ProjectModeBanner
-              projectName={activeProject?.name || loadingProject?.name || ''}
-              isDarkMode={isDarkMode}
-            />
-          ) : null}
-
-          {/* Rate Limit Banner */}
-          {shouldShowRateLimitBanner(rateLimit) && (
-            <RateLimitBanner rateLimit={rateLimit} isDarkMode={isDarkMode} />
+        <div
+          className={cn(
+            'relative flex h-full flex-col transition-colors',
+            isTemporaryMode
+              ? 'bg-brand-accent-light/15 p-2'
+              : 'bg-surface-chat-background',
           )}
-
-          {/* Decryption Progress Banner */}
-          {decryptionProgress && decryptionProgress.isDecrypting && (
-            <div className="border-b border-border-subtle bg-surface-chat px-4 py-2 text-content-secondary">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <PiSpinner className="h-4 w-4 animate-spin text-content-secondary" />
-                  <span className="text-sm">
-                    Decrypting chats with new key...
-                  </span>
-                </div>
-                {decryptionProgress.total > 0 && (
-                  <span className="text-sm">
-                    {decryptionProgress.current} / {decryptionProgress.total}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Messages Area */}
-          <QuoteSelectionPopover
-            containerRef={scrollContainerRef}
-            onQuote={(text) => {
-              setQuote(text)
-              inputRef.current?.focus()
-            }}
-            onAsk={(text) => {
-              setIsVerifierSidebarOpen(false)
-              setIsSettingsModalOpen(false)
-              if (
-                windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT &&
-                isSidebarOpen
-              ) {
-                setIsSidebarOpen(false)
-              }
-              setIsAskSidebarOpen(true)
-              // Hand the current chat transcript to the sidebar so the model
-              // can reason about the highlighted snippet in context. The
-              // transcript is sent as a hidden user message; only the quote
-              // and assistant reply are shown in the sidebar UI.
-              sidebarChat.askQuote(text, currentChat?.messages ?? [])
-            }}
-          />
-          <div className="relative flex min-h-0 flex-1">
-            {isTemporaryMode && (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 z-30 rounded-2xl border-2 border-brand-accent-light/60 ring-1 ring-inset ring-brand-accent-light/20"
-              />
+        >
+          <div
+            className={cn(
+              'relative flex h-full flex-col',
+              isTemporaryMode
+                ? 'overflow-hidden rounded-lg border border-brand-accent-light/40 bg-surface-chat-background shadow-[0_0_0_1px_rgba(0,0,0,0.04)_inset]'
+                : 'rounded-none border-0',
             )}
-            {streamError && (
-              <StreamErrorBanner
-                message={streamError}
-                onDismiss={dismissStreamError}
+          >
+            {/* Project Mode Banner */}
+            {(isProjectMode && activeProject) || loadingProject ? (
+              <ProjectModeBanner
+                projectName={activeProject?.name || loadingProject?.name || ''}
                 isDarkMode={isDarkMode}
               />
-            )}
-            <div
-              ref={scrollContainerRef}
-              onScroll={handleScroll}
-              data-scroll-container="main"
-              className="relative flex-1 overflow-y-auto bg-surface-chat-background"
-              style={
-                inputAreaHeight
-                  ? ({
-                      paddingBottom: inputAreaHeight + 32,
-                      '--input-area-height': `${inputAreaHeight}px`,
-                      '--mask-fade-start': `calc(100% - ${inputAreaHeight + 80}px)`,
-                      '--mask-fade-end': `calc(100% - ${inputAreaHeight + 8}px)`,
-                      maskImage:
-                        'linear-gradient(to bottom, black 0, black var(--mask-fade-start), transparent var(--mask-fade-end)), linear-gradient(black, black)',
-                      maskSize:
-                        'calc(100% - var(--scrollbar-gutter, 14px)) 100%, var(--scrollbar-gutter, 14px) 100%',
-                      maskPosition: '0 0, 100% 0',
-                      maskRepeat: 'no-repeat, no-repeat',
-                      WebkitMaskImage:
-                        'linear-gradient(to bottom, black 0, black var(--mask-fade-start), transparent var(--mask-fade-end)), linear-gradient(black, black)',
-                      WebkitMaskSize:
-                        'calc(100% - var(--scrollbar-gutter, 14px)) 100%, var(--scrollbar-gutter, 14px) 100%',
-                      WebkitMaskPosition: '0 0, 100% 0',
-                      WebkitMaskRepeat: 'no-repeat, no-repeat',
-                    } as React.CSSProperties)
-                  : ({
-                      paddingBottom: inputAreaHeight + 32,
-                      '--input-area-height': `${inputAreaHeight}px`,
-                    } as React.CSSProperties)
-              }
-            >
-              <div className="flex min-h-full min-w-0 flex-1 [container-type:inline-size]">
-                <ChatMessages
-                  messages={currentChat?.messages || []}
-                  isDarkMode={isDarkMode}
-                  chatId={currentChat.id}
-                  isWaitingForResponse={isWaitingForResponse}
-                  isStreamingResponse={isStreaming}
-                  isPremium={isPremium}
-                  models={models}
-                  onSubmit={handleSubmit}
-                  input={input}
-                  setInput={setInput}
-                  loadingState={loadingState}
-                  retryInfo={retryInfo}
-                  cancelGeneration={cancelGeneration}
-                  inputRef={inputRef}
-                  handleInputFocus={handleInputFocus}
-                  handleDocumentUpload={handleFileUpload}
-                  processedDocuments={processedDocuments}
-                  removeDocument={removeDocument}
-                  selectedModel={selectedModel}
-                  handleModelSelect={handleModelSelect}
-                  expandedLabel={expandedLabel}
-                  handleLabelClick={handleLabelClick}
-                  onEditMessage={editMessage}
-                  onRegenerateMessage={regenerateMessage}
-                  showScrollButton={showScrollButton}
-                  webSearchEnabled={webSearchEnabled}
-                  onWebSearchToggle={() => setWebSearchEnabled((prev) => !prev)}
-                  reasoningEffort={reasoningEffort}
-                  setReasoningEffort={setReasoningEffort}
-                  thinkingEnabled={thinkingEnabled}
-                  setThinkingEnabled={setThinkingEnabled}
-                  onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
-                />
-              </div>
-            </div>
-          </div>
+            ) : null}
 
-          {/* Input Form - Show on mobile always, on desktop only when there are messages */}
-          {isClient &&
-            (windowWidth < CONSTANTS.MOBILE_BREAKPOINT ||
-              (currentChat?.messages && currentChat.messages.length > 0)) && (
+            {/* Rate Limit Banner */}
+            {shouldShowRateLimitBanner(rateLimit) && (
+              <RateLimitBanner rateLimit={rateLimit} isDarkMode={isDarkMode} />
+            )}
+
+            {/* Decryption Progress Banner */}
+            {decryptionProgress && decryptionProgress.isDecrypting && (
+              <div className="border-b border-border-subtle bg-surface-chat px-4 py-2 text-content-secondary">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <PiSpinner className="h-4 w-4 animate-spin text-content-secondary" />
+                    <span className="text-sm">
+                      Decrypting chats with new key...
+                    </span>
+                  </div>
+                  {decryptionProgress.total > 0 && (
+                    <span className="text-sm">
+                      {decryptionProgress.current} / {decryptionProgress.total}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Messages Area */}
+            <QuoteSelectionPopover
+              containerRef={scrollContainerRef}
+              onQuote={(text) => {
+                setQuote(text)
+                inputRef.current?.focus()
+              }}
+              onAsk={(text) => {
+                setIsVerifierSidebarOpen(false)
+                setIsSettingsModalOpen(false)
+                if (
+                  windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT &&
+                  isSidebarOpen
+                ) {
+                  setIsSidebarOpen(false)
+                }
+                setIsAskSidebarOpen(true)
+                // Hand the current chat transcript to the sidebar so the model
+                // can reason about the highlighted snippet in context. The
+                // transcript is sent as a hidden user message; only the quote
+                // and assistant reply are shown in the sidebar UI.
+                sidebarChat.askQuote(text, currentChat?.messages ?? [])
+              }}
+            />
+            <div className="relative flex min-h-0 flex-1">
+              {streamError && (
+                <StreamErrorBanner
+                  message={streamError}
+                  onDismiss={dismissStreamError}
+                  isDarkMode={isDarkMode}
+                />
+              )}
               <div
-                ref={inputAreaRef}
-                className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-4"
-                style={{
-                  minHeight: '80px',
-                  maxHeight: '50dvh',
-                  paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
-                }}
+                ref={scrollContainerRef}
+                onScroll={handleScroll}
+                data-scroll-container="main"
+                className="relative flex-1 overflow-y-auto bg-surface-chat-background"
+                style={
+                  inputAreaHeight
+                    ? ({
+                        paddingBottom: inputAreaHeight + 32,
+                        '--input-area-height': `${inputAreaHeight}px`,
+                        '--mask-fade-start': `calc(100% - ${inputAreaHeight + 80}px)`,
+                        '--mask-fade-end': `calc(100% - ${inputAreaHeight + 8}px)`,
+                        maskImage:
+                          'linear-gradient(to bottom, black 0, black var(--mask-fade-start), transparent var(--mask-fade-end)), linear-gradient(black, black)',
+                        maskSize:
+                          'calc(100% - var(--scrollbar-gutter, 14px)) 100%, var(--scrollbar-gutter, 14px) 100%',
+                        maskPosition: '0 0, 100% 0',
+                        maskRepeat: 'no-repeat, no-repeat',
+                        WebkitMaskImage:
+                          'linear-gradient(to bottom, black 0, black var(--mask-fade-start), transparent var(--mask-fade-end)), linear-gradient(black, black)',
+                        WebkitMaskSize:
+                          'calc(100% - var(--scrollbar-gutter, 14px)) 100%, var(--scrollbar-gutter, 14px) 100%',
+                        WebkitMaskPosition: '0 0, 100% 0',
+                        WebkitMaskRepeat: 'no-repeat, no-repeat',
+                      } as React.CSSProperties)
+                    : ({
+                        paddingBottom: inputAreaHeight + 32,
+                        '--input-area-height': `${inputAreaHeight}px`,
+                      } as React.CSSProperties)
+                }
               >
-                <form
-                  onSubmit={handleSubmit}
-                  className="pointer-events-auto relative mx-auto max-w-3xl px-1 md:px-8"
-                >
-                  <ChatInput
+                <div className="flex min-h-full min-w-0 flex-1 [container-type:inline-size]">
+                  <ChatMessages
+                    messages={currentChat?.messages || []}
+                    isDarkMode={isDarkMode}
+                    chatId={currentChat.id}
+                    isWaitingForResponse={isWaitingForResponse}
+                    isStreamingResponse={isStreaming}
+                    isPremium={isPremium}
+                    models={models}
+                    onSubmit={handleSubmit}
                     input={input}
                     setInput={setInput}
-                    handleSubmit={handleSubmit}
                     loadingState={loadingState}
+                    retryInfo={retryInfo}
                     cancelGeneration={cancelGeneration}
                     inputRef={inputRef}
                     handleInputFocus={handleInputFocus}
-                    inputMinHeight={inputMinHeight}
-                    isDarkMode={isDarkMode}
                     handleDocumentUpload={handleFileUpload}
                     processedDocuments={processedDocuments}
                     removeDocument={removeDocument}
-                    isPremium={isPremium}
-                    quote={quote}
-                    onClearQuote={() => setQuote(null)}
-                    hasMessages={
-                      currentChat?.messages && currentChat.messages.length > 0
-                    }
-                    audioModel={
-                      (
-                        models.find(
-                          (m) => m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
-                        ) || models.find((m) => m.type === 'audio')
-                      )?.modelName
-                    }
-                    modelSelectorButton={
-                      models.length > 0 &&
-                      selectedModel &&
-                      handleModelSelect ? (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            data-model-selector
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              handleLabelClick('model', () => {})
-                            }}
-                            className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
-                          >
-                            {(() => {
-                              const model = models.find(
-                                (m) => m.modelName === selectedModel,
-                              )
-                              if (!model) return null
-                              return (
-                                <>
-                                  <span className="text-xs font-medium">
-                                    {model.name}
-                                  </span>
-                                  <svg
-                                    className={`h-3 w-3 transition-transform ${expandedLabel === 'model' ? 'rotate-180' : ''}`}
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M19 9l-7 7-7-7"
-                                    />
-                                  </svg>
-                                </>
-                              )
-                            })()}
-                          </button>
-
-                          {expandedLabel === 'model' && (
-                            <ModelSelector
-                              selectedModel={selectedModel}
-                              onSelect={handleModelSelect}
-                              isDarkMode={isDarkMode}
-                              models={models}
-                            />
-                          )}
-                        </div>
-                      ) : undefined
-                    }
-                    reasoningSelectorButton={(() => {
-                      const m = models.find(
-                        (mm) => mm.modelName === selectedModel,
-                      )
-                      if (!isReasoningModel(m)) return undefined
-                      return (
-                        <ReasoningEffortSelector
-                          supportsEffort={supportsReasoningEffort(m)}
-                          supportsToggle={supportsThinkingToggle(m)}
-                          reasoningEffort={reasoningEffort}
-                          onEffortChange={setReasoningEffort}
-                          thinkingEnabled={thinkingEnabled}
-                          onThinkingEnabledChange={setThinkingEnabled}
-                          isOpen={expandedLabel === 'reasoning'}
-                          onToggle={() =>
-                            handleLabelClick('reasoning', () => {})
-                          }
-                          onClose={() =>
-                            handleLabelClick('reasoning', () => {})
-                          }
-                        />
-                      )
-                    })()}
+                    selectedModel={selectedModel}
+                    handleModelSelect={handleModelSelect}
+                    expandedLabel={expandedLabel}
+                    handleLabelClick={handleLabelClick}
+                    onEditMessage={editMessage}
+                    onRegenerateMessage={regenerateMessage}
+                    showScrollButton={showScrollButton}
                     webSearchEnabled={webSearchEnabled}
                     onWebSearchToggle={() =>
                       setWebSearchEnabled((prev) => !prev)
                     }
+                    reasoningEffort={reasoningEffort}
+                    setReasoningEffort={setReasoningEffort}
+                    thinkingEnabled={thinkingEnabled}
+                    setThinkingEnabled={setThinkingEnabled}
+                    onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
+                    isTemporaryMode={isTemporaryMode}
                   />
-                </form>
-
-                {/* Scroll to bottom button - absolutely positioned in parent */}
-                {showScrollButton && currentChat?.messages?.length > 0 && (
-                  <div className="pointer-events-auto absolute -top-[50px] left-1/2 z-10 -translate-x-1/2">
-                    <button
-                      onClick={() => scrollToLastMessage()}
-                      className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-surface-sidebar-button shadow-md transition-colors hover:bg-surface-sidebar-button-hover"
-                      aria-label="Scroll to bottom"
-                    >
-                      <ArrowDownIcon
-                        className="h-4 w-4 text-content-secondary"
-                        strokeWidth={2}
-                      />
-                    </button>
-                  </div>
-                )}
+                </div>
               </div>
-            )}
+            </div>
+
+            {/* Input Form - Show on mobile always, on desktop only when there are messages */}
+            {isClient &&
+              (windowWidth < CONSTANTS.MOBILE_BREAKPOINT ||
+                (currentChat?.messages && currentChat.messages.length > 0)) && (
+                <div
+                  ref={inputAreaRef}
+                  className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-4"
+                  style={{
+                    minHeight: '80px',
+                    maxHeight: '50dvh',
+                    paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
+                  }}
+                >
+                  <form
+                    onSubmit={handleSubmit}
+                    className="pointer-events-auto relative mx-auto max-w-3xl px-1 md:px-8"
+                  >
+                    <ChatInput
+                      input={input}
+                      setInput={setInput}
+                      handleSubmit={handleSubmit}
+                      loadingState={loadingState}
+                      cancelGeneration={cancelGeneration}
+                      inputRef={inputRef}
+                      handleInputFocus={handleInputFocus}
+                      inputMinHeight={inputMinHeight}
+                      isDarkMode={isDarkMode}
+                      handleDocumentUpload={handleFileUpload}
+                      processedDocuments={processedDocuments}
+                      removeDocument={removeDocument}
+                      isPremium={isPremium}
+                      quote={quote}
+                      onClearQuote={() => setQuote(null)}
+                      isTemporaryMode={isTemporaryMode}
+                      hasMessages={
+                        currentChat?.messages && currentChat.messages.length > 0
+                      }
+                      audioModel={
+                        (
+                          models.find(
+                            (m) =>
+                              m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
+                          ) || models.find((m) => m.type === 'audio')
+                        )?.modelName
+                      }
+                      modelSelectorButton={
+                        models.length > 0 &&
+                        selectedModel &&
+                        handleModelSelect ? (
+                          <div className="relative">
+                            <button
+                              type="button"
+                              data-model-selector
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                handleLabelClick('model', () => {})
+                              }}
+                              className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
+                            >
+                              {(() => {
+                                const model = models.find(
+                                  (m) => m.modelName === selectedModel,
+                                )
+                                if (!model) return null
+                                return (
+                                  <>
+                                    <span className="text-xs font-medium">
+                                      {model.name}
+                                    </span>
+                                    <svg
+                                      className={`h-3 w-3 transition-transform ${expandedLabel === 'model' ? 'rotate-180' : ''}`}
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M19 9l-7 7-7-7"
+                                      />
+                                    </svg>
+                                  </>
+                                )
+                              })()}
+                            </button>
+
+                            {expandedLabel === 'model' && (
+                              <ModelSelector
+                                selectedModel={selectedModel}
+                                onSelect={handleModelSelect}
+                                isDarkMode={isDarkMode}
+                                models={models}
+                              />
+                            )}
+                          </div>
+                        ) : undefined
+                      }
+                      reasoningSelectorButton={(() => {
+                        const m = models.find(
+                          (mm) => mm.modelName === selectedModel,
+                        )
+                        if (!isReasoningModel(m)) return undefined
+                        return (
+                          <ReasoningEffortSelector
+                            supportsEffort={supportsReasoningEffort(m)}
+                            supportsToggle={supportsThinkingToggle(m)}
+                            reasoningEffort={reasoningEffort}
+                            onEffortChange={setReasoningEffort}
+                            thinkingEnabled={thinkingEnabled}
+                            onThinkingEnabledChange={setThinkingEnabled}
+                            isOpen={expandedLabel === 'reasoning'}
+                            onToggle={() =>
+                              handleLabelClick('reasoning', () => {})
+                            }
+                            onClose={() =>
+                              handleLabelClick('reasoning', () => {})
+                            }
+                          />
+                        )
+                      })()}
+                      webSearchEnabled={webSearchEnabled}
+                      onWebSearchToggle={() =>
+                        setWebSearchEnabled((prev) => !prev)
+                      }
+                    />
+                  </form>
+
+                  {/* Scroll to bottom button - absolutely positioned in parent */}
+                  {showScrollButton && currentChat?.messages?.length > 0 && (
+                    <div className="pointer-events-auto absolute -top-[50px] left-1/2 z-10 -translate-x-1/2">
+                      <button
+                        onClick={() => scrollToLastMessage()}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-surface-sidebar-button shadow-md transition-colors hover:bg-surface-sidebar-button-hover"
+                        aria-label="Scroll to bottom"
+                      >
+                        <ArrowDownIcon
+                          className="h-4 w-4 text-content-secondary"
+                          strokeWidth={2}
+                        />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+          </div>
         </div>
       </div>
 
