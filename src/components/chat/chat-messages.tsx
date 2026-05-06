@@ -145,7 +145,7 @@ const LoadingMessage = memo(function LoadingMessage({
   return (
     <div className="no-scroll-anchoring group mx-auto mb-6 flex w-full max-w-3xl flex-col items-start px-4">
       <div className="flex items-center gap-3">
-        <LoadingDots isThinking={false} />
+        <LoadingDots />
         {isRetrying && (
           <span className="text-sm text-content-secondary">
             {getRetryMessage()}
