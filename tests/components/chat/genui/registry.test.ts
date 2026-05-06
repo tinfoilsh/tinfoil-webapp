@@ -1,0 +1,78 @@
+import {
+  buildGenUIToolSchemas,
+  GENUI_WIDGETS,
+  GENUI_WIDGETS_BY_NAME,
+} from '@/components/chat/genui/registry'
+import { describe, expect, it } from 'vitest'
+
+describe('GenUI registry', () => {
+  it('has unique render_* tool names', () => {
+    const names = GENUI_WIDGETS.map((w) => w.name)
+    expect(names).toEqual(Array.from(new Set(names)))
+    for (const name of names) {
+      expect(name).toMatch(/^[a-z][a-z_]*$/)
+    }
+  })
+
+  it('GENUI_WIDGETS_BY_NAME covers every widget', () => {
+    for (const widget of GENUI_WIDGETS) {
+      expect(GENUI_WIDGETS_BY_NAME[widget.name]).toBe(widget)
+    }
+  })
+
+  it('builds OpenAI tool schemas for every widget', () => {
+    const schemas = buildGenUIToolSchemas()
+    expect(schemas).toHaveLength(GENUI_WIDGETS.length)
+    for (const entry of schemas) {
+      expect(entry.type).toBe('function')
+      expect(typeof entry.function.name).toBe('string')
+      expect(typeof entry.function.description).toBe('string')
+      expect(entry.function.parameters).toBeTruthy()
+    }
+  })
+
+  it('every widget either renders inline or in the input area (or both)', () => {
+    for (const widget of GENUI_WIDGETS) {
+      const hasInline = typeof widget.render === 'function'
+      const hasInput = typeof widget.renderInputArea === 'function'
+      expect(hasInline || hasInput).toBe(true)
+      if (widget.surface === 'input') {
+        expect(hasInput).toBe(true)
+      }
+    }
+  })
+
+  it('accepts valid fixtures through each widget schema', () => {
+    // Smoke-test — parses must succeed with a minimal valid payload.
+    const fixtures: Record<string, unknown> = {
+      render_stat_cards: { stats: [{ label: 'Users', value: 10 }] },
+      render_timeline: { events: [{ date: '2024', title: 'E' }] },
+      render_chart: { type: 'bar', data: [{ label: 'A', value: 1 }] },
+      render_image: { images: [{ url: 'https://example.com/a.png' }] },
+      render_link_preview: { url: 'https://example.com', title: 'Ex' },
+      render_artifact_preview: {
+        source: { type: 'markdown', markdown: '# Hello' },
+      },
+      render_clock: { mode: 'timer', durationSeconds: 300 },
+      render_recipe_card: { title: 'Pasta' },
+      ask_user_input: {
+        question: 'Pick one',
+        options: [{ label: 'A' }, { label: 'B' }],
+      },
+      render_message_compose: {
+        variants: [{ label: 'Formal', body: 'Hello.' }],
+      },
+      render_sports_data: {
+        kind: 'fixture',
+        home: { name: 'A' },
+        away: { name: 'B' },
+      },
+    }
+    for (const widget of GENUI_WIDGETS) {
+      const fixture = fixtures[widget.name]
+      if (fixture === undefined) continue
+      const parsed = widget.schema.safeParse(fixture)
+      expect(parsed.success).toBe(true)
+    }
+  })
+})
