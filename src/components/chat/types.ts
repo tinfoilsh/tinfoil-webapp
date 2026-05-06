@@ -58,11 +58,27 @@ export type TimelineContentBlock = {
   content: string
 }
 
+export type TimelineToolCallBlock = {
+  type: 'tool_call'
+  id: string
+  toolCallId: string
+  name: string
+  // Accumulating JSON string from streamed argument deltas.
+  arguments: string
+  // Set once a `surface: 'input'` widget has been resolved by the user.
+  resolvedAt?: number
+  resolution?: {
+    text: string
+    data?: unknown
+  }
+}
+
 export type TimelineBlock =
   | TimelineThinkingBlock
   | TimelineWebSearchBlock
   | TimelineURLFetchBlock
   | TimelineContentBlock
+  | TimelineToolCallBlock
 
 export type Attachment = {
   id: string
@@ -100,6 +116,11 @@ export type Message = {
   searchReasoning?: string // Search agent's reasoning for multi-turn context
   quote?: string // Highlighted text the user is replying to
   timeline?: TimelineBlock[] // Chronological sequence of blocks for rendering
+  toolCalls?: Array<{
+    id: string
+    name: string
+    arguments: string
+  }> // GenUI tool calls emitted by the model (derived from timeline)
 }
 
 export type TitleState = 'placeholder' | 'generated' | 'manual'
