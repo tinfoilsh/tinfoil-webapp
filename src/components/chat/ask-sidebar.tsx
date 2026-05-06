@@ -126,7 +126,7 @@ export function AskSidebar({
                 ))}
                 {showLoadingDots && (
                   <div className="mx-auto flex w-full max-w-3xl px-4">
-                    <LoadingDots isThinking={false} />
+                    <LoadingDots />
                   </div>
                 )}
               </div>

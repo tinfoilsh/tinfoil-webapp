@@ -2281,7 +2281,7 @@ export function ChatInterface({
       {/* Temporary chat indicator (top-left, fills inner corner) */}
       {(isTemporaryMode || currentChat?.isTemporary) && (
         <div
-          className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-brand-accent-light/15 px-3 py-2 text-xs font-medium text-brand-accent-light transition-all duration-300"
+          className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(163,22%,15%)] px-3 py-2 text-xs font-medium text-brand-accent-light transition-all duration-300"
           style={{
             left: (() => {
               const isMobile = windowWidth < CONSTANTS.MOBILE_BREAKPOINT
@@ -2661,22 +2661,8 @@ export function ChatInterface({
           top: 0,
         }}
       >
-        <div
-          className={cn(
-            'relative flex h-full flex-col transition-colors',
-            isTemporaryMode
-              ? 'bg-brand-accent-light/15 p-2'
-              : 'bg-surface-chat-background',
-          )}
-        >
-          <div
-            className={cn(
-              'relative flex h-full flex-col',
-              isTemporaryMode
-                ? 'overflow-hidden rounded-lg border border-brand-accent-light/40 bg-surface-chat-background shadow-[0_0_0_1px_rgba(0,0,0,0.04)_inset]'
-                : 'rounded-none border-0',
-            )}
-          >
+        <div className="relative flex h-full flex-col bg-surface-chat-background transition-colors">
+          <div className="relative flex h-full flex-col">
             {/* Project Mode Banner */}
             {(isProjectMode && activeProject) || loadingProject ? (
               <ProjectModeBanner
