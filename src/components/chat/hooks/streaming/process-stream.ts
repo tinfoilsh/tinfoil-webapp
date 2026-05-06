@@ -128,6 +128,15 @@ export async function processStreamingResponse(
       case 'search_reasoning':
         assembler.addSearchReasoning(event.content)
         break
+
+      case 'tool_call_start':
+        timeline.startToolCall(event.id, event.name)
+        markFirstEvent()
+        break
+
+      case 'tool_call_delta':
+        timeline.appendToolCallArguments(event.id, event.argumentsDelta)
+        break
     }
 
     dirty = true

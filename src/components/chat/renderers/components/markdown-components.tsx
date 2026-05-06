@@ -1,23 +1,14 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { CodeBlock } from '@/components/code-block'
+import { Favicon } from '@/components/ui/favicon'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { useState } from 'react'
 import type { Components } from 'react-markdown'
 import { ExpandableTable } from './ExpandableTable'
-
-function getFaviconUrl(url: string): string {
-  try {
-    const parsedUrl = new URL(url)
-    return `https://icons.duckduckgo.com/ip3/${parsedUrl.hostname}.ico`
-  } catch {
-    return ''
-  }
-}
 
 function getDomainName(url: string): string {
   try {
@@ -30,25 +21,9 @@ function getDomainName(url: string): string {
   }
 }
 
-const faviconCache = new Map<string, { loaded: boolean; error: boolean }>()
-
 function CitationPill({ url, title }: { url: string; title?: string }) {
-  const faviconUrl = getFaviconUrl(url)
-  const cached = faviconCache.get(faviconUrl)
-  const [imgLoaded, setImgLoaded] = useState(cached?.loaded ?? false)
-  const [imgError, setImgError] = useState(cached?.error ?? false)
   const sanitizedHref = sanitizeUrl(url)
   const domain = getDomainName(url)
-
-  const handleLoad = () => {
-    setImgLoaded(true)
-    faviconCache.set(faviconUrl, { loaded: true, error: false })
-  }
-
-  const handleError = () => {
-    setImgError(true)
-    faviconCache.set(faviconUrl, { loaded: false, error: true })
-  }
 
   return (
     <Tooltip delayDuration={300}>
@@ -63,15 +38,7 @@ function CitationPill({ url, title }: { url: string; title?: string }) {
             className="inline-flex h-[1.1em] w-[1.1em] shrink-0 items-center justify-center rounded-full bg-white"
             aria-hidden="true"
           >
-            {!imgError && (
-              <img
-                src={faviconUrl}
-                alt=""
-                className={`h-full w-full rounded-full p-[1px] transition-opacity ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
-                onLoad={handleLoad}
-                onError={handleError}
-              />
-            )}
+            <Favicon url={url} className="h-full w-full rounded-full p-[1px]" />
           </span>
           <span className="leading-none">{domain}</span>
         </a>

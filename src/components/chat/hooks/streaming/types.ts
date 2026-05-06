@@ -43,6 +43,18 @@ export type SearchReasoningEvent = {
   content: string
 }
 
+export type ToolCallStartEvent = {
+  type: 'tool_call_start'
+  id: string
+  name: string
+}
+
+export type ToolCallDeltaEvent = {
+  type: 'tool_call_delta'
+  id: string
+  argumentsDelta: string
+}
+
 export type NormalizedEvent =
   | ThinkingStartEvent
   | ThinkingDeltaEvent
@@ -52,6 +64,8 @@ export type NormalizedEvent =
   | URLFetchEvent
   | AnnotationEvent
   | SearchReasoningEvent
+  | ToolCallStartEvent
+  | ToolCallDeltaEvent
 
 // ---------------------------------------------------------------------------
 // Context passed by callers (unchanged from the old processor)
