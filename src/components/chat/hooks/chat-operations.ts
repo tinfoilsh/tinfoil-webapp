@@ -83,10 +83,21 @@ export async function deleteChat(
   chatId: string,
   isSignedIn: boolean,
 ): Promise<void> {
-  if (isSignedIn) {
-    await chatStorage.deleteChat(chatId, { requireCloudDelete: true })
-  } else {
-    sessionChatStorage.deleteChat(chatId)
+  deletedChatsTracker.markAsDeleted(chatId)
+
+  try {
+    if (isSignedIn) {
+      await chatStorage.deleteChat(chatId)
+    } else {
+      sessionChatStorage.deleteChat(chatId)
+    }
+  } catch (error) {
+    // Roll back the tombstone so a chat that failed to delete can still
+    // appear in the UI on subsequent loads / sync passes within this
+    // session. Without this, a transient failure would silently hide
+    // the chat until reload.
+    deletedChatsTracker.removeFromDeleted(chatId)
+    throw error
   }
 }
 

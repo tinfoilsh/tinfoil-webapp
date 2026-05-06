@@ -183,8 +183,11 @@ export async function syncRemoteDeletions(
     const successfulIds: string[] = []
     for (const id of deletedIds) {
       try {
-        deletedChatsTracker.markAsDeleted(id)
         await indexedDBStorage.deleteChat(id)
+        // Mirror the deletion into the in-memory tracker so any concurrent
+        // listing/ingest pass that already observed the chat won't bring
+        // it back into IndexedDB before the next deletion sync runs.
+        deletedChatsTracker.markAsDeleted(id)
         successfulIds.push(id)
       } catch (error) {
         logError(
