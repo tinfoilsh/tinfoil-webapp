@@ -69,6 +69,11 @@ interface UseChatStateReturn {
   reloadChats: () => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
   regenerateMessage: (messageIndex: number) => void
+  resolveInputToolCall: (
+    toolCallId: string,
+    resultText: string,
+    resultData?: unknown,
+  ) => void
   initialChatDecryptionFailed: boolean
   clearInitialChatDecryptionFailed: () => void
   localChatNotFound: boolean
@@ -182,6 +187,7 @@ export function useChatState({
     cancelGeneration,
     editMessage,
     regenerateMessage,
+    resolveInputToolCall,
   } = useChatMessaging({
     systemPrompt,
     rules,
@@ -319,6 +325,7 @@ export function useChatState({
     reloadChats,
     editMessage,
     regenerateMessage,
+    resolveInputToolCall,
     initialChatDecryptionFailed,
     clearInitialChatDecryptionFailed,
     localChatNotFound,
