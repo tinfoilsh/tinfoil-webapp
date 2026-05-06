@@ -2281,7 +2281,7 @@ export function ChatInterface({
       {/* Temporary chat indicator (top-left, fills inner corner) */}
       {(isTemporaryMode || currentChat?.isTemporary) && (
         <div
-          className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(163,22%,15%)] px-3 py-2 text-xs font-medium text-brand-accent-light transition-all duration-300"
+          className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(18,90%,92%)] py-7 pl-16 pr-3 text-xs font-medium text-orange-600 transition-all duration-300 dark:bg-[hsl(20,40%,15%)] dark:text-orange-500 md:py-2 md:pl-3"
           style={{
             left: (() => {
               const isMobile = windowWidth < CONSTANTS.MOBILE_BREAKPOINT
@@ -2350,7 +2350,7 @@ export function ChatInterface({
                 className={cn(
                   'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
                   isTemporaryMode
-                    ? 'border-brand-accent-light/40 bg-brand-accent-light/15 text-brand-accent-light hover:bg-brand-accent-light/25'
+                    ? 'border-orange-500/40 bg-orange-500/15 text-orange-500 hover:bg-orange-500/25'
                     : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                 )}
               >
@@ -2661,8 +2661,22 @@ export function ChatInterface({
           top: 0,
         }}
       >
-        <div className="relative flex h-full flex-col bg-surface-chat-background transition-colors">
-          <div className="relative flex h-full flex-col">
+        <div
+          className={cn(
+            'relative flex h-full flex-col transition-colors',
+            isTemporaryMode
+              ? 'bg-orange-500/15 p-2'
+              : 'bg-surface-chat-background',
+          )}
+        >
+          <div
+            className={cn(
+              'relative flex h-full flex-col',
+              isTemporaryMode
+                ? 'overflow-hidden rounded-lg bg-surface-chat-background'
+                : '',
+            )}
+          >
             {/* Project Mode Banner */}
             {(isProjectMode && activeProject) || loadingProject ? (
               <ProjectModeBanner
