@@ -162,6 +162,20 @@ export function CloudSyncSetupModal({
         action: 'handleGenerateKey',
       })
 
+      // When the user has a PRF-capable passkey, the passkey wraps the
+      // encryption key for them — they don't need to manually save a recovery
+      // copy. Skip the "Save this key securely" step and complete the flow
+      // immediately. They can reveal the backup key from Settings later if
+      // they want a paper copy.
+      if (prfSupported && !manualRecoveryNeeded) {
+        const success = await onSetupComplete(newKey, keySetupMode)
+        if (success) {
+          persistCloudSyncEnabled(true)
+          onClose()
+          return
+        }
+      }
+
       setCurrentStep('key-display')
     } catch (error) {
       logError('Failed to generate encryption key', error, {
