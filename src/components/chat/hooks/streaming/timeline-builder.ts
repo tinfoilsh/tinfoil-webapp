@@ -10,6 +10,7 @@ import type {
   TimelineBlock,
   TimelineContentBlock,
   TimelineThinkingBlock,
+  TimelineToolCallBlock,
   TimelineWebSearchBlock,
   URLFetchState,
   WebSearchState,
@@ -140,6 +141,58 @@ export class TimelineBuilder {
           ),
         }
         break
+      }
+    }
+  }
+
+  // -- Tool Calls ---------------------------------------------------------
+
+  startToolCall(toolCallId: string, name: string): void {
+    this.finalizeThinkingForTool()
+    const block: TimelineToolCallBlock = {
+      type: 'tool_call',
+      id: `tool-call-${this.blocks.length}`,
+      toolCallId,
+      name,
+      arguments: '',
+    }
+    this.blocks.push(block)
+  }
+
+  appendToolCallArguments(toolCallId: string, delta: string): void {
+    for (let i = this.blocks.length - 1; i >= 0; i--) {
+      const block = this.blocks[i]
+      if (
+        block.type === 'tool_call' &&
+        (block as TimelineToolCallBlock).toolCallId === toolCallId
+      ) {
+        const existing = block as TimelineToolCallBlock
+        this.blocks[i] = {
+          ...existing,
+          arguments: existing.arguments + delta,
+        }
+        return
+      }
+    }
+  }
+
+  resolveToolCall(
+    toolCallId: string,
+    resolution: { text: string; data?: unknown; resolvedAt: number },
+  ): void {
+    for (let i = this.blocks.length - 1; i >= 0; i--) {
+      const block = this.blocks[i]
+      if (
+        block.type === 'tool_call' &&
+        (block as TimelineToolCallBlock).toolCallId === toolCallId
+      ) {
+        const existing = block as TimelineToolCallBlock
+        this.blocks[i] = {
+          ...existing,
+          resolvedAt: resolution.resolvedAt,
+          resolution: { text: resolution.text, data: resolution.data },
+        }
+        return
       }
     }
   }

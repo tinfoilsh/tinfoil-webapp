@@ -1,4 +1,5 @@
 import type { URLFetchState } from '@/components/chat/types'
+import { Favicon } from '@/components/ui/favicon'
 import { memo, useMemo, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 
@@ -21,15 +22,6 @@ function getDisplayUrl(url: string): string {
   }
 }
 
-function getFaviconUrl(url: string): string {
-  try {
-    const parsedUrl = new URL(url)
-    return `https://icons.duckduckgo.com/ip3/${parsedUrl.hostname}.ico`
-  } catch {
-    return ''
-  }
-}
-
 function FetchSpinner() {
   return (
     <PiSpinner className="h-3.5 w-3.5 shrink-0 animate-spin text-content-primary/50" />
@@ -45,14 +37,7 @@ function URLFetchRow({ fetch }: { fetch: URLFetchState }) {
       {fetch.status === 'fetching' ? (
         <FetchSpinner />
       ) : (
-        <img
-          src={getFaviconUrl(fetch.url)}
-          alt=""
-          className="h-3.5 w-3.5 shrink-0 rounded-sm"
-          onError={(e) => {
-            ;(e.target as HTMLImageElement).style.display = 'none'
-          }}
-        />
+        <Favicon url={fetch.url} className="h-3.5 w-3.5 shrink-0 rounded-sm" />
       )}
       <span
         className={`min-w-0 truncate ${
@@ -82,14 +67,7 @@ function InlineFavicons({ urlFetches }: { urlFetches: URLFetchState[] }) {
             key={fetch.id}
             className="bg-surface-secondary inline-flex h-4 w-4 items-center justify-center overflow-hidden rounded-full ring-1 ring-border-subtle"
           >
-            <img
-              src={getFaviconUrl(fetch.url)}
-              alt=""
-              className="h-3 w-3"
-              onError={(e) => {
-                ;(e.target as HTMLImageElement).style.display = 'none'
-              }}
-            />
+            <Favicon url={fetch.url} className="h-3 w-3" />
           </span>
         ))}
       </span>
@@ -129,19 +107,23 @@ export const URLFetchProcess = memo(function URLFetchProcess({
         className="hover:bg-surface-secondary/50 group -mx-1 flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
       >
         <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
-          <svg
-            className={`h-3.5 w-3.5 transform text-content-primary/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
-          </svg>
+          {anyFetching ? (
+            <PiSpinner className="h-3.5 w-3.5 animate-spin text-content-primary/50" />
+          ) : (
+            <svg
+              className={`h-3.5 w-3.5 transform text-content-primary/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          )}
         </span>
         <span className="min-w-0 truncate text-base font-medium text-content-primary/50">
           {label}
