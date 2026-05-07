@@ -296,8 +296,10 @@ export const useDocumentUploader = (
       formData.append('files', file)
 
       const { endpoint } = await getDocUploadModel()
-      // For vision-capable models, fetch per-page images alongside text
-      // so chat-query-builder can interleave them for the model.
+      // Decided at upload time based on the current model: vision-capable
+      // models get per-page images, text-only models skip the bandwidth.
+      // If the user later switches to a vision model they'll need to
+      // re-upload to get image rendering for an existing attachment.
       const fetchEndpoint = isCurrentModelMultimodal
         ? `${endpoint}?mode=images`
         : endpoint
