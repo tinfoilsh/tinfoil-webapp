@@ -11,11 +11,44 @@
  * via `GenUIInputAreaRenderer`.
  */
 import { logError } from '@/utils/error-handling'
-import { RefreshCw, Sparkles } from 'lucide-react'
-import React, { memo, useEffect } from 'react'
+import { ChevronRight, RefreshCw, Sparkles } from 'lucide-react'
+import React, { memo, useEffect, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
+import { tryParsePartialJson } from './partial-json'
 import { getGenUIWidget, renderGenUIInline } from './render'
 import type { GenUIToolCall } from './types'
+
+/**
+ * Convert a `render_artifact_preview` tool name into a human-friendly
+ * label for the streaming tracer ("artifact preview"). We strip the
+ * `render_` prefix (every GenUI widget uses it) and replace underscores
+ * with spaces.
+ */
+function prettyWidgetName(toolName: string): string {
+  return toolName.replace(/^render_/, '').replace(/_/g, ' ')
+}
+
+/**
+ * Pull a short human-readable hint out of partially-streamed tool
+ * arguments. We try the small set of fields most widgets surface as
+ * their primary label so the tracer can show "Generating chart: Sales
+ * by region" rather than a generic spinner. Returns null when nothing
+ * useful has streamed yet.
+ */
+function extractPartialHint(parsed: unknown): string | null {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null
+  }
+  const obj = parsed as Record<string, unknown>
+  const candidates = ['title', 'question', 'description', 'label', 'name']
+  for (const key of candidates) {
+    const value = obj[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+  return null
+}
 
 interface GenUIToolCallRendererProps {
   toolCalls: GenUIToolCall[]
@@ -65,20 +98,7 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
         // tool call starts until the turn completes, even if the JSON
         // arguments finish parsing early.
         if (isStreaming) {
-          return (
-            <div
-              key={tc.id}
-              className="my-4 flex items-center gap-2 rounded-lg border border-border-subtle bg-transparent px-4 py-3"
-            >
-              <PiSpinner
-                className="h-3.5 w-3.5 animate-spin text-content-primary"
-                aria-hidden
-              />
-              <span className="text-sm font-medium text-content-primary">
-                Generating component
-              </span>
-            </div>
-          )
+          return <StreamingToolCallTracer key={tc.id} toolCall={tc} />
         }
 
         const input = resolveInput(tc)
@@ -134,6 +154,67 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
     </React.Fragment>
   )
 })
+
+/**
+ * Live tracer shown while the model is streaming a GenUI tool call.
+ *
+ * Replaces a static spinner with a card that surfaces:
+ *   - The widget name being generated (e.g. "artifact preview").
+ *   - A short hint pulled from the partially-streamed JSON when one is
+ *     available (the tool's `title` / `description` etc.).
+ *   - A live byte counter so the user can tell the stream is still
+ *     making progress even when no human-readable hint has streamed.
+ *   - A collapsible raw JSON view for power users who want to see
+ *     exactly what the model is sending.
+ */
+function StreamingToolCallTracer({ toolCall }: { toolCall: GenUIToolCall }) {
+  const [showRaw, setShowRaw] = useState(false)
+  const partial = tryParsePartialJson(toolCall.arguments)
+  const hint = extractPartialHint(partial)
+  const charCount = toolCall.arguments.length
+  const label = prettyWidgetName(toolCall.name)
+
+  return (
+    <div className="my-4 rounded-lg border border-border-subtle bg-transparent px-4 py-3">
+      <div className="flex items-center gap-2">
+        <PiSpinner
+          className="h-3.5 w-3.5 animate-spin text-content-primary"
+          aria-hidden
+        />
+        <span className="text-sm font-medium text-content-primary">
+          Generating {label}
+          {hint ? `: ${hint}` : null}
+        </span>
+        {charCount > 0 && (
+          <span className="ml-auto text-xs tabular-nums text-content-muted">
+            {charCount.toLocaleString()} chars
+          </span>
+        )}
+      </div>
+      {charCount > 0 && (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => setShowRaw((prev) => !prev)}
+            className="flex items-center gap-1 text-xs text-content-muted hover:text-content-primary"
+            aria-expanded={showRaw}
+          >
+            <ChevronRight
+              className={`h-3 w-3 transition-transform ${showRaw ? 'rotate-90' : ''}`}
+              aria-hidden
+            />
+            {showRaw ? 'Hide stream' : 'Show stream'}
+          </button>
+          {showRaw && (
+            <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-surface-chat-background p-2 text-xs text-content-muted">
+              <code>{toolCall.arguments}</code>
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function ParseFailureCard({
   toolName,
