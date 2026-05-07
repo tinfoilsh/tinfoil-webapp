@@ -255,12 +255,21 @@ function buildAttachment(opts: {
       description: opts.description ?? opts.fileName,
     }
   }
-  if (opts.textContent || opts.pages?.length) {
+  // Synthesize textContent from pages when the document was uploaded in
+  // images mode and md_content is missing, so consumers that filter on
+  // textContent (share, preview) still see the document.
+  const textContent =
+    opts.textContent ||
+    opts.pages
+      ?.map((p) => p.text)
+      .filter(Boolean)
+      .join('\n\n---\n\n')
+  if (textContent || opts.pages?.length) {
     return {
       id: opts.id,
       type: 'document',
       fileName: opts.fileName,
-      textContent: opts.textContent,
+      textContent: textContent || undefined,
       pages: opts.pages,
     }
   }
