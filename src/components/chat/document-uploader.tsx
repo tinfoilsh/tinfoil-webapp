@@ -17,7 +17,7 @@ import {
 import { useState } from 'react'
 import { SecureClient } from 'tinfoil'
 import { CONSTANTS } from './constants'
-import type { DocumentProcessingResult } from './types'
+import type { DocumentPage, DocumentProcessingResult } from './types'
 
 /**
  * Re-export getFileIconType for backward compatibility
@@ -145,6 +145,7 @@ export const useDocumentUploader = (
         thumbnailBase64?: string
       },
       hasDescription?: boolean,
+      pages?: DocumentPage[],
     ) => void,
     onError: (error: Error, documentId: string) => void,
     onGeneratingDescription?: (
@@ -295,6 +296,13 @@ export const useDocumentUploader = (
       formData.append('files', file)
 
       const { endpoint } = await getDocUploadModel()
+      // Decided at upload time based on the current model: vision-capable
+      // models get per-page images, text-only models skip the bandwidth.
+      // If the user later switches to a vision model they'll need to
+      // re-upload to get image rendering for an existing attachment.
+      const fetchEndpoint = isCurrentModelMultimodal
+        ? `${endpoint}?mode=images`
+        : endpoint
 
       const apiKey = await getSessionToken()
       const client = new SecureClient()
@@ -305,7 +313,7 @@ export const useDocumentUploader = (
       )
 
       const response = await client
-        .fetch(endpoint, {
+        .fetch(fetchEndpoint, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -343,8 +351,15 @@ export const useDocumentUploader = (
       const processingResult =
         (await response.json()) as DocumentProcessingResult
 
-      if (processingResult.document && processingResult.document.md_content) {
-        onSuccess(processingResult.document.md_content, documentId)
+      const doc = processingResult.document
+      if (doc?.md_content || doc?.pages?.length) {
+        onSuccess(
+          doc.md_content ?? '',
+          documentId,
+          undefined,
+          undefined,
+          doc.pages,
+        )
       } else {
         onSuccess('', documentId)
       }

@@ -113,7 +113,7 @@ import { ReasoningEffortSelector } from './reasoning-effort-selector'
 import { initializeRenderers } from './renderers/client'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
-import type { Attachment, Chat } from './types'
+import type { Attachment, Chat, DocumentPage } from './types'
 // Lazy-load modals that aren't shown on initial load
 const CloudSyncSetupModal = dynamic(
   () =>
@@ -242,6 +242,7 @@ function buildAttachment(opts: {
   imageData?: { base64: string; mimeType: string; thumbnailBase64?: string }
   textContent?: string
   description?: string
+  pages?: DocumentPage[]
 }): Attachment | undefined {
   if (opts.imageData) {
     return {
@@ -254,12 +255,22 @@ function buildAttachment(opts: {
       description: opts.description ?? opts.fileName,
     }
   }
-  if (opts.textContent) {
+  // Synthesize textContent from pages when the document was uploaded in
+  // images mode and md_content is missing, so consumers that filter on
+  // textContent (share, preview) still see the document.
+  const textContent =
+    opts.textContent ||
+    opts.pages
+      ?.map((p) => p.text)
+      .filter(Boolean)
+      .join('\n\n---\n\n')
+  if (textContent || opts.pages?.length) {
     return {
       id: opts.id,
       type: 'document',
       fileName: opts.fileName,
-      textContent: opts.textContent,
+      textContent: textContent || undefined,
+      pages: opts.pages,
     }
   }
   return undefined
@@ -1570,7 +1581,7 @@ export function ChatInterface({
 
       await handleDocumentUpload(
         file,
-        (content, documentId, imageData, hasDescription) => {
+        (content, documentId, imageData, hasDescription, pages) => {
           const newDocTokens = estimateTokenCount(content)
           const contextLimit = parseContextWindowTokens(
             selectedModelDetails?.contextWindow,
@@ -1603,6 +1614,7 @@ export function ChatInterface({
             imageData: imageData ?? undefined,
             textContent: content ?? undefined,
             description: hasDescription && content ? content : undefined,
+            pages,
           })
 
           setProcessedDocuments((prev) => {
@@ -2916,127 +2928,130 @@ export function ChatInterface({
                   {selectPendingInputToolCallFromChat(currentChat) ? (
                     <div className="pointer-events-auto relative mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 md:px-8">
                       <GenUIInputAreaRenderer
-                        pending={selectPendingInputToolCallFromChat(currentChat)!}
+                        pending={
+                          selectPendingInputToolCallFromChat(currentChat)!
+                        }
                         isDarkMode={isDarkMode}
                         onResolve={resolveInputToolCall}
                       />
                     </div>
                   ) : (
-                  <form
-                    onSubmit={handleSubmit}
-                    className="pointer-events-auto relative mx-auto max-w-3xl px-1 md:px-8"
-                  >
-                    <ChatInput
-                      input={input}
-                      setInput={setInput}
-                      handleSubmit={handleSubmit}
-                      loadingState={loadingState}
-                      cancelGeneration={cancelGeneration}
-                      inputRef={inputRef}
-                      handleInputFocus={handleInputFocus}
-                      inputMinHeight={inputMinHeight}
-                      isDarkMode={isDarkMode}
-                      handleDocumentUpload={handleFileUpload}
-                      processedDocuments={processedDocuments}
-                      removeDocument={removeDocument}
-                      isPremium={isPremium}
-                      quote={quote}
-                      onClearQuote={() => setQuote(null)}
-                      isTemporaryMode={isTemporaryMode}
-                      hasMessages={
-                        currentChat?.messages && currentChat.messages.length > 0
-                      }
-                      audioModel={
-                        (
-                          models.find(
-                            (m) =>
-                              m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
-                          ) || models.find((m) => m.type === 'audio')
-                        )?.modelName
-                      }
-                      modelSelectorButton={
-                        models.length > 0 &&
-                        selectedModel &&
-                        handleModelSelect ? (
-                          <div className="relative">
-                            <button
-                              type="button"
-                              data-model-selector
-                              onClick={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                handleLabelClick('model', () => {})
-                              }}
-                              className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
-                            >
-                              {(() => {
-                                const model = models.find(
-                                  (m) => m.modelName === selectedModel,
-                                )
-                                if (!model) return null
-                                return (
-                                  <>
-                                    <span className="text-xs font-medium">
-                                      {model.name}
-                                    </span>
-                                    <svg
-                                      className={`h-3 w-3 transition-transform ${expandedLabel === 'model' ? 'rotate-180' : ''}`}
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M19 9l-7 7-7-7"
-                                      />
-                                    </svg>
-                                  </>
-                                )
-                              })()}
-                            </button>
+                    <form
+                      onSubmit={handleSubmit}
+                      className="pointer-events-auto relative mx-auto max-w-3xl px-1 md:px-8"
+                    >
+                      <ChatInput
+                        input={input}
+                        setInput={setInput}
+                        handleSubmit={handleSubmit}
+                        loadingState={loadingState}
+                        cancelGeneration={cancelGeneration}
+                        inputRef={inputRef}
+                        handleInputFocus={handleInputFocus}
+                        inputMinHeight={inputMinHeight}
+                        isDarkMode={isDarkMode}
+                        handleDocumentUpload={handleFileUpload}
+                        processedDocuments={processedDocuments}
+                        removeDocument={removeDocument}
+                        isPremium={isPremium}
+                        quote={quote}
+                        onClearQuote={() => setQuote(null)}
+                        isTemporaryMode={isTemporaryMode}
+                        hasMessages={
+                          currentChat?.messages &&
+                          currentChat.messages.length > 0
+                        }
+                        audioModel={
+                          (
+                            models.find(
+                              (m) =>
+                                m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
+                            ) || models.find((m) => m.type === 'audio')
+                          )?.modelName
+                        }
+                        modelSelectorButton={
+                          models.length > 0 &&
+                          selectedModel &&
+                          handleModelSelect ? (
+                            <div className="relative">
+                              <button
+                                type="button"
+                                data-model-selector
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  handleLabelClick('model', () => {})
+                                }}
+                                className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
+                              >
+                                {(() => {
+                                  const model = models.find(
+                                    (m) => m.modelName === selectedModel,
+                                  )
+                                  if (!model) return null
+                                  return (
+                                    <>
+                                      <span className="text-xs font-medium">
+                                        {model.name}
+                                      </span>
+                                      <svg
+                                        className={`h-3 w-3 transition-transform ${expandedLabel === 'model' ? 'rotate-180' : ''}`}
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M19 9l-7 7-7-7"
+                                        />
+                                      </svg>
+                                    </>
+                                  )
+                                })()}
+                              </button>
 
-                            {expandedLabel === 'model' && (
-                              <ModelSelector
-                                selectedModel={selectedModel}
-                                onSelect={handleModelSelect}
-                                isDarkMode={isDarkMode}
-                                models={models}
-                              />
-                            )}
-                          </div>
-                        ) : undefined
-                      }
-                      reasoningSelectorButton={(() => {
-                        const m = models.find(
-                          (mm) => mm.modelName === selectedModel,
-                        )
-                        if (!isReasoningModel(m)) return undefined
-                        return (
-                          <ReasoningEffortSelector
-                            supportsEffort={supportsReasoningEffort(m)}
-                            supportsToggle={supportsThinkingToggle(m)}
-                            reasoningEffort={reasoningEffort}
-                            onEffortChange={setReasoningEffort}
-                            thinkingEnabled={thinkingEnabled}
-                            onThinkingEnabledChange={setThinkingEnabled}
-                            isOpen={expandedLabel === 'reasoning'}
-                            onToggle={() =>
-                              handleLabelClick('reasoning', () => {})
-                            }
-                            onClose={() =>
-                              handleLabelClick('reasoning', () => {})
-                            }
-                          />
-                        )
-                      })()}
-                      webSearchEnabled={webSearchEnabled}
-                      onWebSearchToggle={() =>
-                        setWebSearchEnabled((prev) => !prev)
-                      }
-                    />
-                  </form>
+                              {expandedLabel === 'model' && (
+                                <ModelSelector
+                                  selectedModel={selectedModel}
+                                  onSelect={handleModelSelect}
+                                  isDarkMode={isDarkMode}
+                                  models={models}
+                                />
+                              )}
+                            </div>
+                          ) : undefined
+                        }
+                        reasoningSelectorButton={(() => {
+                          const m = models.find(
+                            (mm) => mm.modelName === selectedModel,
+                          )
+                          if (!isReasoningModel(m)) return undefined
+                          return (
+                            <ReasoningEffortSelector
+                              supportsEffort={supportsReasoningEffort(m)}
+                              supportsToggle={supportsThinkingToggle(m)}
+                              reasoningEffort={reasoningEffort}
+                              onEffortChange={setReasoningEffort}
+                              thinkingEnabled={thinkingEnabled}
+                              onThinkingEnabledChange={setThinkingEnabled}
+                              isOpen={expandedLabel === 'reasoning'}
+                              onToggle={() =>
+                                handleLabelClick('reasoning', () => {})
+                              }
+                              onClose={() =>
+                                handleLabelClick('reasoning', () => {})
+                              }
+                            />
+                          )
+                        })()}
+                        webSearchEnabled={webSearchEnabled}
+                        onWebSearchToggle={() =>
+                          setWebSearchEnabled((prev) => !prev)
+                        }
+                      />
+                    </form>
                   )}
 
                   {/* Scroll to bottom button - absolutely positioned in parent */}

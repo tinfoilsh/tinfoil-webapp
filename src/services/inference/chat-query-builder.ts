@@ -206,8 +206,13 @@ export class ChatQueryBuilder {
 
     // Derive document content from attachments (or legacy fields via helpers)
     const docAttachments = getMessageDocuments(msg)
-    if (docAttachments.length > 0) {
-      const docContent = docAttachments
+    const pagedDocs = multimodal
+      ? docAttachments.filter((a) => a.pages && a.pages.length > 0)
+      : []
+    const textOnlyDocs = docAttachments.filter((a) => !pagedDocs.includes(a))
+
+    if (textOnlyDocs.length > 0) {
+      const docContent = textOnlyDocs
         .filter((a) => a.textContent)
         .map(
           (a) =>
@@ -222,12 +227,36 @@ export class ChatQueryBuilder {
     // Derive image data from attachments (or legacy fields via helpers)
     const imageAttachments = getMessageImages(msg)
 
-    if (imageAttachments.length > 0 && multimodal) {
+    if (multimodal && (imageAttachments.length > 0 || pagedDocs.length > 0)) {
       const content: Array<{
         type: string
         text?: string
         image_url?: { url: string }
-      }> = [{ type: 'text', text: textContent }]
+      }> = []
+
+      for (const doc of pagedDocs) {
+        content.push({
+          type: 'text',
+          text: `[Attached file: ${doc.fileName}]`,
+        })
+        for (const p of doc.pages!) {
+          const label = p.is_scanned
+            ? `Page ${p.page} (scanned):`
+            : `Page ${p.page}:`
+          content.push({
+            type: 'text',
+            text: p.text ? `${label}\n${p.text}` : label,
+          })
+          if (p.image) {
+            content.push({
+              type: 'image_url',
+              image_url: { url: `data:image/png;base64,${p.image}` },
+            })
+          }
+        }
+      }
+
+      content.push({ type: 'text', text: textContent })
 
       for (const img of imageAttachments) {
         if (img.base64 && img.mimeType) {

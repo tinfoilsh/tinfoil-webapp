@@ -80,6 +80,13 @@ export type TimelineBlock =
   | TimelineContentBlock
   | TimelineToolCallBlock
 
+export type DocumentPage = {
+  page: number
+  text: string
+  image: string
+  is_scanned: boolean
+}
+
 export type Attachment = {
   id: string
   type: 'image' | 'document'
@@ -90,6 +97,7 @@ export type Attachment = {
   textContent?: string
   description?: string
   fileSize?: number
+  pages?: DocumentPage[]
   // v1 format: per-attachment encryption key material (base64-encoded)
   encryptionKey?: string
 }
@@ -179,6 +187,7 @@ export interface DocumentMetadata {
 export interface DocumentProcessingResult {
   document?: {
     md_content: string
+    pages?: DocumentPage[]
     filename?: string
   } & DocumentMetadata
   status?: DocumentProcessingStatus
