@@ -157,17 +157,12 @@ module.exports = {
           '25%': { transform: 'translateX(3px)' },
           '75%': { transform: 'translateX(-3px)' },
         },
-        'tracer-pulse': {
-          '0%, 100%': { transform: 'scale(0.7)' },
-          '50%': { transform: 'scale(1)' },
-        },
       },
       animation: {
         scroll: 'scroll 12s linear infinite',
         shimmer: 'shimmer 3s ease-in-out infinite',
         fadeIn: 'fadeIn 1s ease-in-out forwards',
         'spring-horizontal': 'spring-horizontal 0.5s ease-in-out infinite',
-        'tracer-pulse': 'tracer-pulse 1.6s ease-in-out infinite',
       },
     },
   },
