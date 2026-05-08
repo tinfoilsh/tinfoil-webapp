@@ -2,6 +2,7 @@ import { type BaseModel } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
 import 'katex/dist/katex.min.css'
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { CONSTANTS } from './constants'
 import { ensureTimeline } from './ensure-timeline'
 import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
 import { useMaxMessages } from './hooks/use-max-messages'
@@ -407,8 +408,7 @@ export function ChatMessages({
           data-spacer
           className="flex-shrink-0"
           style={{
-            height:
-              'max(0px, calc(70dvh - var(--input-area-height, 0px) - 32px))',
+            height: `max(0px, calc(70dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
           }}
           aria-hidden="true"
         />
