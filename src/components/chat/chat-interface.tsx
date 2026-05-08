@@ -2839,35 +2839,27 @@ export function ChatInterface({
                   isDarkMode={isDarkMode}
                 />
               )}
+              {inputAreaHeight > 0 && (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[5]"
+                  style={{
+                    height: `${inputAreaHeight + 80}px`,
+                    background:
+                      'linear-gradient(to bottom, hsl(var(--surface-chat-background) / 0) 0%, hsl(var(--surface-chat-background)) 72px)',
+                  }}
+                />
+              )}
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
                 data-scroll-container="main"
                 className="relative flex-1 overflow-y-auto bg-surface-chat-background"
                 style={
-                  inputAreaHeight
-                    ? ({
-                        paddingBottom: inputAreaHeight + 32,
-                        '--input-area-height': `${inputAreaHeight}px`,
-                        '--mask-fade-start': `calc(100% - ${inputAreaHeight + 80}px)`,
-                        '--mask-fade-end': `calc(100% - ${inputAreaHeight + 8}px)`,
-                        maskImage:
-                          'linear-gradient(to bottom, black 0, black var(--mask-fade-start), transparent var(--mask-fade-end)), linear-gradient(black, black)',
-                        maskSize:
-                          'calc(100% - var(--scrollbar-gutter, 14px)) 100%, var(--scrollbar-gutter, 14px) 100%',
-                        maskPosition: '0 0, 100% 0',
-                        maskRepeat: 'no-repeat, no-repeat',
-                        WebkitMaskImage:
-                          'linear-gradient(to bottom, black 0, black var(--mask-fade-start), transparent var(--mask-fade-end)), linear-gradient(black, black)',
-                        WebkitMaskSize:
-                          'calc(100% - var(--scrollbar-gutter, 14px)) 100%, var(--scrollbar-gutter, 14px) 100%',
-                        WebkitMaskPosition: '0 0, 100% 0',
-                        WebkitMaskRepeat: 'no-repeat, no-repeat',
-                      } as React.CSSProperties)
-                    : ({
-                        paddingBottom: inputAreaHeight + 32,
-                        '--input-area-height': `${inputAreaHeight}px`,
-                      } as React.CSSProperties)
+                  {
+                    paddingBottom: inputAreaHeight + 32,
+                    '--input-area-height': `${inputAreaHeight}px`,
+                  } as React.CSSProperties
                 }
               >
                 <div className="flex min-h-full min-w-0 flex-1 [container-type:inline-size]">
