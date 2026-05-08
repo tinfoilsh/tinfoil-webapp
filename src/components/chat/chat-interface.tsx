@@ -2839,25 +2839,15 @@ export function ChatInterface({
                   isDarkMode={isDarkMode}
                 />
               )}
-              {inputAreaHeight > 0 && (
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-x-0 bottom-0 z-[5]"
-                  style={{
-                    height: `${inputAreaHeight + 80}px`,
-                    background:
-                      'linear-gradient(to bottom, hsl(var(--surface-chat-background) / 0) 0%, hsl(var(--surface-chat-background)) 72px)',
-                  }}
-                />
-              )}
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
                 data-scroll-container="main"
-                className="relative flex-1 overflow-y-auto bg-surface-chat-background"
+                className="relative z-0 flex-1 overflow-y-auto bg-surface-chat-background"
                 style={
                   {
-                    paddingBottom: inputAreaHeight + 32,
+                    paddingBottom:
+                      inputAreaHeight + CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX,
                     '--input-area-height': `${inputAreaHeight}px`,
                   } as React.CSSProperties
                 }
@@ -2910,15 +2900,23 @@ export function ChatInterface({
                 (currentChat?.messages && currentChat.messages.length > 0)) && (
                 <div
                   ref={inputAreaRef}
-                  className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-4 pb-4"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 isolate z-30 px-4 pb-4"
                   style={{
                     minHeight: '80px',
                     maxHeight: '50dvh',
                     paddingBottom: 'calc(env(safe-area-inset-bottom) + 1rem)',
                   }}
                 >
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 z-0"
+                    style={{
+                      top: `-${CONSTANTS.CHAT_INPUT_FADE_HEIGHT_PX}px`,
+                      background: `linear-gradient(to bottom, hsl(var(--surface-chat-background) / 0) 0%, hsl(var(--surface-chat-background)) ${CONSTANTS.CHAT_INPUT_FADE_SOLID_AT_PX}px)`,
+                    }}
+                  />
                   {selectPendingInputToolCallFromChat(currentChat) ? (
-                    <div className="pointer-events-auto relative mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 md:px-8">
+                    <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 md:px-8">
                       <GenUIInputAreaRenderer
                         pending={
                           selectPendingInputToolCallFromChat(currentChat)!
@@ -2930,7 +2928,7 @@ export function ChatInterface({
                   ) : (
                     <form
                       onSubmit={handleSubmit}
-                      className="pointer-events-auto relative mx-auto max-w-3xl px-1 md:px-8"
+                      className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8"
                     >
                       <ChatInput
                         input={input}
