@@ -282,7 +282,7 @@ export class ChatStorageService {
     await indexedDBStorage.updateChatLocalOnly(chatId, false)
 
     try {
-      await cloudSync.backupChatNow(chatId)
+      await cloudSync.backupChatNow(chatId, { restoreDeleted: true })
     } catch (error) {
       await indexedDBStorage.saveChat(existingChat)
       throw error

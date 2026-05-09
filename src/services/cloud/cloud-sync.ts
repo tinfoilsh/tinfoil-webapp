@@ -11,7 +11,11 @@ import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
 import { processRemoteChat } from './chat-codec'
 import { ingestRemoteChats, syncRemoteDeletions } from './chat-ingestion'
 import { canWriteToCloud } from './cloud-key-authorization'
-import { cloudStorage, type ChatSyncStatus } from './cloud-storage'
+import {
+  cloudStorage,
+  type ChatSyncStatus,
+  type UploadChatOptions,
+} from './cloud-storage'
 import {
   reencryptAndUploadChats as doReencryptAndUpload,
   retryDecryptionWithNewKey as doRetryDecryption,
@@ -485,7 +489,10 @@ export class CloudSyncService {
     await this.uploadCoalescer.waitForAllUploads()
   }
 
-  async backupChatNow(chatId: string): Promise<void> {
+  async backupChatNow(
+    chatId: string,
+    options: UploadChatOptions = {},
+  ): Promise<void> {
     if (!(await cloudStorage.isAuthenticated())) {
       throw new Error('Authentication required for cloud sync')
     }
@@ -507,7 +514,7 @@ export class CloudSyncService {
       throw new Error('Chat is not eligible for cloud sync')
     }
 
-    await cloudStorage.uploadChat(chat)
+    await cloudStorage.uploadChat(chat, options)
 
     const newVersion = (chat.syncVersion ?? 0) + 1
     await indexedDBStorage.markAsSynced(chatId, newVersion)
