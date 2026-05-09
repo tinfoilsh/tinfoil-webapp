@@ -36,6 +36,13 @@ interface ChatUploadState {
   inFlight: Promise<void> | null
   /** Number of consecutive failures */
   failureCount: number
+  /** Last terminal upload error for this worker, if any */
+  lastError: Error | null
+  /** Waiters that want to know whether this worker ultimately succeeded */
+  resultWaiters: Array<{
+    resolve: () => void
+    reject: (error: Error) => void
+  }>
 }
 
 /**
@@ -91,6 +98,8 @@ export class UploadCoalescer {
         dirty: false,
         inFlight: null,
         failureCount: 0,
+        lastError: null,
+        resultWaiters: [],
       }
       this.states.set(chatId, state)
     }
@@ -119,9 +128,13 @@ export class UploadCoalescer {
           await this.uploadWithRetry(chatId, state)
           // Success - reset failure count
           state.failureCount = 0
+          state.lastError = null
         } catch (error) {
+          const uploadError =
+            error instanceof Error ? error : new Error(String(error))
           // Upload failed after all retries
           state.failureCount++
+          state.lastError = uploadError
           logError('Upload failed after retries', error, {
             component: 'UploadCoalescer',
             action: 'worker',
@@ -140,6 +153,15 @@ export class UploadCoalescer {
       // Worker done - clear in-flight promise
       state.inFlight = null
 
+      const resultWaiters = state.resultWaiters.splice(0)
+      for (const waiter of resultWaiters) {
+        if (state.lastError) {
+          waiter.reject(state.lastError)
+        } else {
+          waiter.resolve()
+        }
+      }
+
       // Clean up state if no longer needed.
       // Only delete from the map if this worker's generation still matches.
       // After clear(), the map may hold a new state for the same chatId
@@ -150,6 +172,22 @@ export class UploadCoalescer {
     })()
 
     state.inFlight = workerPromise
+  }
+
+  /**
+   * Enqueue a chat and wait for the coalesced worker to finish.
+   * Rejects when the worker exhausts retries without a later successful upload.
+   */
+  async enqueueAndWait(chatId: string): Promise<void> {
+    this.enqueue(chatId)
+    const state = this.states.get(chatId)
+    if (!state?.inFlight) {
+      return
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      state.resultWaiters.push({ resolve, reject })
+    })
   }
 
   /**

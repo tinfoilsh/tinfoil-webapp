@@ -174,6 +174,21 @@ describe('UploadCoalescer', () => {
       // 1 initial + 2 retries = 3 total attempts
       expect(uploadFn).toHaveBeenCalledTimes(3)
     })
+
+    it('rejects enqueueAndWait after retries are exhausted', async () => {
+      const uploadFn = vi.fn().mockRejectedValue(new Error('Permanent failure'))
+      const coalescer = new UploadCoalescer(uploadFn, {
+        baseDelayMs: 100,
+        maxRetries: 1,
+      })
+
+      const uploadPromise = coalescer.enqueueAndWait('chat-1')
+      const expectation =
+        expect(uploadPromise).rejects.toThrow('Permanent failure')
+      await vi.runAllTimersAsync()
+
+      await expectation
+    })
   })
 
   describe('State tracking', () => {
