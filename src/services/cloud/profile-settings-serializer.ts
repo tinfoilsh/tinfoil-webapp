@@ -180,21 +180,27 @@ export function applySettingsToLocal(settings: ProfileData): void {
     settings.additionalContext !== undefined ||
     settings.isUsingPersonalization !== undefined
 
-  // Personalization
-  if (shouldApplyPersonalization) {
-    localStorage.setItem(USER_PREFS_NICKNAME, settings.nickname ?? '')
-    localStorage.setItem(USER_PREFS_PROFESSION, settings.profession ?? '')
-    localStorage.setItem(
-      USER_PREFS_TRAITS,
-      JSON.stringify(settings.traits ?? []),
-    )
+  // Personalization: only apply fields that the cloud payload explicitly
+  // provided so a partial update never erases unrelated local values.
+  if (settings.nickname !== undefined) {
+    localStorage.setItem(USER_PREFS_NICKNAME, settings.nickname)
+  }
+  if (settings.profession !== undefined) {
+    localStorage.setItem(USER_PREFS_PROFESSION, settings.profession)
+  }
+  if (settings.traits !== undefined) {
+    localStorage.setItem(USER_PREFS_TRAITS, JSON.stringify(settings.traits))
+  }
+  if (settings.additionalContext !== undefined) {
     localStorage.setItem(
       USER_PREFS_ADDITIONAL_CONTEXT,
-      settings.additionalContext ?? '',
+      settings.additionalContext,
     )
+  }
+  if (settings.isUsingPersonalization !== undefined) {
     localStorage.setItem(
       USER_PREFS_PERSONALIZATION_ENABLED,
-      (settings.isUsingPersonalization ?? false).toString(),
+      settings.isUsingPersonalization.toString(),
     )
   }
 
