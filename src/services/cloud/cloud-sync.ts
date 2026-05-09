@@ -514,6 +514,10 @@ export class CloudSyncService {
       throw new Error('Chat is not eligible for cloud sync')
     }
 
+    if (streamingTracker.isStreaming(chatId)) {
+      throw new Error('Cannot sync chat while it is streaming')
+    }
+
     await cloudStorage.uploadChat(chat, options)
 
     const newVersion = (chat.syncVersion ?? 0) + 1
