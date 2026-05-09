@@ -302,11 +302,11 @@ export function useProfileSync() {
   useEffect(() => {
     if (!isSignedIn || !cloudSyncEnabled) {
       hasInitialized.current = false
-      hasPendingChanges.current = false
       lastSyncedVersion.current = 0
       lastSyncedProfile.current = null
       profileSyncCache.current.clear()
       profileSync.clearCache()
+      clearLocalProfileChanged()
       return
     }
 
@@ -344,6 +344,7 @@ export function useProfileSync() {
 
     return () => clearInterval(interval)
   }, [
+    clearLocalProfileChanged,
     hasLocalProfileChanges,
     isSignedIn,
     cloudSyncEnabled,
