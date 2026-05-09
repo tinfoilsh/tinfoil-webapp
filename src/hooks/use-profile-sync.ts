@@ -1,5 +1,8 @@
 import { CLOUD_SYNC } from '@/config'
-import { SYNC_PROFILE_STATUS } from '@/constants/storage-keys'
+import {
+  SYNC_PROFILE_DIRTY,
+  SYNC_PROFILE_STATUS,
+} from '@/constants/storage-keys'
 import { getCurrentCloudKeyAuthorizationMode } from '@/services/cloud/cloud-key-authorization'
 import type { ProfileSyncStatus } from '@/services/cloud/cloud-storage'
 import {
@@ -22,11 +25,32 @@ export function useProfileSync() {
   const syncDebounceTimer = useRef<NodeJS.Timeout | null>(null)
   const lastSyncedVersion = useRef<number>(0)
   const hasPendingChanges = useRef(false)
+  const isApplyingRemoteProfile = useRef(false)
   const lastSyncedProfile = useRef<ProfileData | null>(null)
   const profileSyncCache = useRef(
     new SyncStatusCache<ProfileSyncStatus>(PROFILE_SYNC_STATUS_KEY),
   )
   const [cloudSyncEnabled, setCloudSyncEnabled] = useState(isCloudSyncEnabled())
+
+  const hasLocalProfileChanges = useCallback(() => {
+    if (hasPendingChanges.current) return true
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem(SYNC_PROFILE_DIRTY) === 'true'
+  }, [])
+
+  const markLocalProfileChanged = useCallback(() => {
+    hasPendingChanges.current = true
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(SYNC_PROFILE_DIRTY, 'true')
+    }
+  }, [])
+
+  const clearLocalProfileChanged = useCallback(() => {
+    hasPendingChanges.current = false
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(SYNC_PROFILE_DIRTY)
+    }
+  }, [])
 
   // Listen for cloud sync setting changes
   useEffect(() => {
@@ -53,7 +77,7 @@ export function useProfileSync() {
     if (!isSignedIn || !isCloudSyncEnabled()) return
 
     // Skip sync if we have pending local changes
-    if (hasPendingChanges.current) {
+    if (hasLocalProfileChanges()) {
       logInfo('Skipping cloud sync - local changes pending', {
         component: 'ProfileSync',
         action: 'syncFromCloud',
@@ -68,7 +92,7 @@ export function useProfileSync() {
         const cloudVersion = cloudProfile.version || 0
 
         // Re-check pending changes after fetch to avoid race with local edits
-        if (hasPendingChanges.current) {
+        if (hasLocalProfileChanges()) {
           return
         }
 
@@ -80,7 +104,13 @@ export function useProfileSync() {
         // Check if the cloud profile is actually different from what we have
         if (hasProfileChanged(cloudProfile, lastSyncedProfile.current)) {
           // Apply cloud settings to localStorage
-          applySettingsToLocal(cloudProfile)
+          isApplyingRemoteProfile.current = true
+          try {
+            applySettingsToLocal(cloudProfile)
+          } finally {
+            isApplyingRemoteProfile.current = false
+          }
+          clearLocalProfileChanged()
           lastSyncedVersion.current = cloudVersion
           lastSyncedProfile.current = cloudProfile
 
@@ -102,14 +132,14 @@ export function useProfileSync() {
         action: 'syncFromCloud',
       })
     }
-  }, [isSignedIn])
+  }, [clearLocalProfileChanged, hasLocalProfileChanges, isSignedIn])
 
   // Smart sync: check sync status first and only fetch profile if changed
   const smartSyncFromCloud = useCallback(async () => {
     if (!isSignedIn || !isCloudSyncEnabled()) return
 
     // Skip sync if we have pending local changes
-    if (hasPendingChanges.current) {
+    if (hasLocalProfileChanges()) {
       return
     }
 
@@ -161,7 +191,7 @@ export function useProfileSync() {
         const cloudVersion = cloudProfile.version || 0
 
         // Re-check pending changes after fetch
-        if (hasPendingChanges.current) {
+        if (hasLocalProfileChanges()) {
           return
         }
 
@@ -172,7 +202,13 @@ export function useProfileSync() {
 
         // Apply if changed
         if (hasProfileChanged(cloudProfile, lastSyncedProfile.current)) {
-          applySettingsToLocal(cloudProfile)
+          isApplyingRemoteProfile.current = true
+          try {
+            applySettingsToLocal(cloudProfile)
+          } finally {
+            isApplyingRemoteProfile.current = false
+          }
+          clearLocalProfileChanged()
           lastSyncedVersion.current = cloudVersion
           lastSyncedProfile.current = cloudProfile
         }
@@ -186,7 +222,7 @@ export function useProfileSync() {
         action: 'smartSyncFromCloud',
       })
     }
-  }, [isSignedIn])
+  }, [clearLocalProfileChanged, hasLocalProfileChanges, isSignedIn])
 
   // Sync profile from local to cloud (debounced)
   const syncToCloud = useCallback(async () => {
@@ -211,7 +247,6 @@ export function useProfileSync() {
           profileSync.hasFailedRemoteDecryption() &&
           authorizationMode !== 'explicit_start_fresh'
         ) {
-          hasPendingChanges.current = false
           return
         }
 
@@ -223,7 +258,7 @@ export function useProfileSync() {
             component: 'ProfileSync',
             action: 'syncToCloud',
           })
-          hasPendingChanges.current = false
+          clearLocalProfileChanged()
           return
         }
 
@@ -244,7 +279,7 @@ export function useProfileSync() {
             lastSyncedVersion.current = result.version
           }
           lastSyncedProfile.current = localSettings
-          hasPendingChanges.current = false
+          clearLocalProfileChanged()
 
           logInfo('Profile synced to cloud', {
             component: 'ProfileSync',
@@ -259,16 +294,9 @@ export function useProfileSync() {
           component: 'ProfileSync',
           action: 'syncToCloud',
         })
-        // Keep pending changes flag on error
-      } finally {
-        if (hasPendingChanges.current) {
-          setTimeout(() => {
-            hasPendingChanges.current = false
-          }, 10000)
-        }
       }
     }, 2000) // 2 second debounce
-  }, [isSignedIn])
+  }, [clearLocalProfileChanged, isSignedIn])
 
   // Initial sync when authenticated and periodic sync (only if cloud sync is enabled)
   useEffect(() => {
@@ -288,34 +316,52 @@ export function useProfileSync() {
         component: 'useProfileSync',
         action: 'initialize',
       })
-      // Initial sync on page load - this will also set lastSyncedVersion
-      syncFromCloud().then(() => {
-        // After initial sync, get the current cloud version and profile
-        const cachedProfile = profileSync.getCachedProfile()
-        if (cachedProfile) {
-          if (cachedProfile.version) {
-            lastSyncedVersion.current = cachedProfile.version
+      if (hasLocalProfileChanges()) {
+        syncToCloud()
+      } else {
+        // Initial sync on page load - this will also set lastSyncedVersion
+        syncFromCloud().then(() => {
+          // After initial sync, get the current cloud version and profile
+          const cachedProfile = profileSync.getCachedProfile()
+          if (cachedProfile) {
+            if (cachedProfile.version) {
+              lastSyncedVersion.current = cachedProfile.version
+            }
+            lastSyncedProfile.current = cachedProfile
           }
-          lastSyncedProfile.current = cachedProfile
-        }
-      })
+        })
+      }
     }
 
     // Use smart sync at regular intervals to reduce bandwidth
     const interval = setInterval(() => {
-      smartSyncFromCloud()
+      if (hasLocalProfileChanges()) {
+        syncToCloud()
+      } else {
+        smartSyncFromCloud()
+      }
     }, CLOUD_SYNC.PROFILE_SYNC_INTERVAL)
 
     return () => clearInterval(interval)
-  }, [isSignedIn, cloudSyncEnabled, syncFromCloud, smartSyncFromCloud])
+  }, [
+    hasLocalProfileChanges,
+    isSignedIn,
+    cloudSyncEnabled,
+    syncFromCloud,
+    smartSyncFromCloud,
+    syncToCloud,
+  ])
 
   // Listen for settings changes and sync to cloud
   useEffect(() => {
     if (!isSignedIn) return
 
     const handleSettingsChange = () => {
+      if (isApplyingRemoteProfile.current) {
+        return
+      }
       // Immediately mark as pending to prevent cloud overwrites during debounce
-      hasPendingChanges.current = true
+      markLocalProfileChanged()
       syncToCloud()
     }
 
@@ -342,13 +388,19 @@ export function useProfileSync() {
         clearTimeout(syncDebounceTimer.current)
       }
     }
-  }, [isSignedIn, syncToCloud])
+  }, [isSignedIn, markLocalProfileChanged, syncToCloud])
 
   // Retry decryption when encryption key changes
   const retryDecryption = useCallback(async () => {
     const decryptedProfile = await profileSync.retryDecryptionWithNewKey()
     if (decryptedProfile) {
-      applySettingsToLocal(decryptedProfile)
+      isApplyingRemoteProfile.current = true
+      try {
+        applySettingsToLocal(decryptedProfile)
+      } finally {
+        isApplyingRemoteProfile.current = false
+      }
+      clearLocalProfileChanged()
       // Update the synced version and profile after successful decryption
       if (decryptedProfile.version) {
         lastSyncedVersion.current = decryptedProfile.version
@@ -362,7 +414,7 @@ export function useProfileSync() {
         },
       })
     }
-  }, [])
+  }, [clearLocalProfileChanged])
 
   return {
     syncFromCloud,

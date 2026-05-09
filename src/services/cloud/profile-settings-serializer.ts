@@ -73,10 +73,10 @@ export function loadLocalSettings(): ProfileData {
 
   // Personalization
   const nickname = localStorage.getItem(USER_PREFS_NICKNAME)
-  if (nickname) settings.nickname = nickname
+  if (nickname !== null) settings.nickname = nickname
 
   const profession = localStorage.getItem(USER_PREFS_PROFESSION)
-  if (profession) settings.profession = profession
+  if (profession !== null) settings.profession = profession
 
   const traits = localStorage.getItem(USER_PREFS_TRAITS)
   if (traits) {
@@ -88,7 +88,7 @@ export function loadLocalSettings(): ProfileData {
   }
 
   const additionalContext = localStorage.getItem(USER_PREFS_ADDITIONAL_CONTEXT)
-  if (additionalContext) settings.additionalContext = additionalContext
+  if (additionalContext !== null) settings.additionalContext = additionalContext
 
   const isUsingPersonalization = localStorage.getItem(
     USER_PREFS_PERSONALIZATION_ENABLED,
@@ -108,7 +108,7 @@ export function loadLocalSettings(): ProfileData {
   const customSystemPrompt = localStorage.getItem(
     USER_PREFS_CUSTOM_SYSTEM_PROMPT,
   )
-  if (customSystemPrompt) {
+  if (customSystemPrompt !== null) {
     settings.customSystemPrompt = customSystemPrompt
   }
 
@@ -173,30 +173,28 @@ export function applySettingsToLocal(settings: ProfileData): void {
     )
   }
 
+  const shouldApplyPersonalization =
+    settings.nickname !== undefined ||
+    settings.profession !== undefined ||
+    settings.traits !== undefined ||
+    settings.additionalContext !== undefined ||
+    settings.isUsingPersonalization !== undefined
+
   // Personalization
-  if (settings.nickname !== undefined) {
-    localStorage.setItem(USER_PREFS_NICKNAME, settings.nickname)
-  }
-
-  if (settings.profession !== undefined) {
-    localStorage.setItem(USER_PREFS_PROFESSION, settings.profession)
-  }
-
-  if (settings.traits !== undefined) {
-    localStorage.setItem(USER_PREFS_TRAITS, JSON.stringify(settings.traits))
-  }
-
-  if (settings.additionalContext !== undefined) {
+  if (shouldApplyPersonalization) {
+    localStorage.setItem(USER_PREFS_NICKNAME, settings.nickname ?? '')
+    localStorage.setItem(USER_PREFS_PROFESSION, settings.profession ?? '')
+    localStorage.setItem(
+      USER_PREFS_TRAITS,
+      JSON.stringify(settings.traits ?? []),
+    )
     localStorage.setItem(
       USER_PREFS_ADDITIONAL_CONTEXT,
-      settings.additionalContext,
+      settings.additionalContext ?? '',
     )
-  }
-
-  if (settings.isUsingPersonalization !== undefined) {
     localStorage.setItem(
       USER_PREFS_PERSONALIZATION_ENABLED,
-      settings.isUsingPersonalization.toString(),
+      (settings.isUsingPersonalization ?? false).toString(),
     )
   }
 
@@ -236,26 +234,20 @@ export function applySettingsToLocal(settings: ProfileData): void {
   }
 
   // Trigger personalization change event
-  if (
-    settings.nickname !== undefined ||
-    settings.profession !== undefined ||
-    settings.traits !== undefined ||
-    settings.additionalContext !== undefined ||
-    settings.isUsingPersonalization !== undefined
-  ) {
+  if (shouldApplyPersonalization) {
     window.dispatchEvent(
       new CustomEvent('personalizationChanged', {
         detail: {
           nickname:
-            settings.nickname ||
-            localStorage.getItem(USER_PREFS_NICKNAME) ||
+            settings.nickname ??
+            localStorage.getItem(USER_PREFS_NICKNAME) ??
             '',
           profession:
-            settings.profession ||
-            localStorage.getItem(USER_PREFS_PROFESSION) ||
+            settings.profession ??
+            localStorage.getItem(USER_PREFS_PROFESSION) ??
             '',
           traits:
-            settings.traits ||
+            settings.traits ??
             (() => {
               try {
                 return JSON.parse(
@@ -266,12 +258,12 @@ export function applySettingsToLocal(settings: ProfileData): void {
               }
             })(),
           additionalContext:
-            settings.additionalContext ||
-            localStorage.getItem(USER_PREFS_ADDITIONAL_CONTEXT) ||
+            settings.additionalContext ??
+            localStorage.getItem(USER_PREFS_ADDITIONAL_CONTEXT) ??
             '',
           language:
-            settings.language ||
-            localStorage.getItem(USER_PREFS_LANGUAGE) ||
+            settings.language ??
+            localStorage.getItem(USER_PREFS_LANGUAGE) ??
             'English',
           isEnabled:
             settings.isUsingPersonalization ??
