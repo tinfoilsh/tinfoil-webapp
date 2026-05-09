@@ -1382,10 +1382,11 @@ export function SettingsModal({
         chatsById.set(chat.id, chat)
       }
 
-      const localChats = isSignedIn
-        ? await chatStorage.getAllChats()
-        : sessionChatStorage.getAllChats()
-      localChats.forEach(addChat)
+      const indexedDbChats = await chatStorage.getAllChats()
+      indexedDbChats.forEach(addChat)
+      if (!isSignedIn) {
+        sessionChatStorage.getAllChats().forEach(addChat)
+      }
 
       // If cloud sync is enabled, fetch all chats with pagination
       if (isCloudSyncEnabled() && isSignedIn) {
