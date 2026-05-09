@@ -2,7 +2,7 @@ import { syncRemoteDeletions } from '@/services/cloud/chat-ingestion'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetDeletedChatsSince = vi.fn()
-const mockGetAllChats = vi.fn()
+const mockGetChat = vi.fn()
 const mockDeleteChat = vi.fn()
 const mockMarkAsDeleted = vi.fn()
 const mockEmit = vi.fn()
@@ -19,7 +19,7 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
 
 vi.mock('@/services/storage/indexed-db', () => ({
   indexedDBStorage: {
-    getAllChats: (...args: any[]) => mockGetAllChats(...args),
+    getChat: (...args: any[]) => mockGetChat(...args),
     deleteChat: (...args: any[]) => mockDeleteChat(...args),
   },
 }))
@@ -50,7 +50,9 @@ describe('syncRemoteDeletions', () => {
     mockGetDeletedChatsSince.mockResolvedValue({
       deletedIds: ['local-chat', 'cloud-chat'],
     })
-    mockGetAllChats.mockResolvedValue([{ id: 'local-chat', isLocalOnly: true }])
+    mockGetChat.mockImplementation(async (id: string) =>
+      id === 'local-chat' ? { id, isLocalOnly: true } : null,
+    )
 
     await syncRemoteDeletions('2026-01-01T00:00:00.000Z', 'test')
 

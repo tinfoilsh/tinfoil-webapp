@@ -180,13 +180,10 @@ export async function syncRemoteDeletions(
 ): Promise<void> {
   try {
     const { deletedIds } = await cloudStorage.getDeletedChatsSince(since)
-    const localChatMap = new Map(
-      (await indexedDBStorage.getAllChats()).map((chat) => [chat.id, chat]),
-    )
     const successfulIds: string[] = []
     for (const id of deletedIds) {
       try {
-        const localChat = localChatMap.get(id)
+        const localChat = await indexedDBStorage.getChat(id)
         if (localChat?.isLocalOnly) {
           continue
         }
