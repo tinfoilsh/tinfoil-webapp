@@ -15,6 +15,7 @@ import { processRemoteChat, type RemoteChatData } from './chat-codec'
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
 const AUTH_INIT_WAIT_MS = 3000
+const RESTORE_DELETED_CHAT_HEADER = 'X-Restore-Deleted-Chat'
 
 export interface ChatListResponse {
   conversations: Array<{
@@ -55,6 +56,10 @@ export interface BulkUploadResponse {
   results: BulkConversationResult[]
   succeeded: number
   failed: number
+}
+
+export interface UploadChatOptions {
+  restoreDeleted?: boolean
 }
 
 export type RawChatContent =
@@ -115,7 +120,10 @@ export class CloudStorageService {
     return authTokenManager.isAuthenticated()
   }
 
-  async uploadChat(chat: StoredChat): Promise<string | null> {
+  async uploadChat(
+    chat: StoredChat,
+    options: UploadChatOptions = {},
+  ): Promise<string | null> {
     const messages: Message[] = (chat.messages as Message[]) || []
 
     await this.encryptAndUploadAttachments(messages, chat.id)
@@ -132,6 +140,9 @@ export class CloudStorageService {
     }
     if (chat.projectId) {
       headers['X-Project-Id'] = chat.projectId
+    }
+    if (options.restoreDeleted) {
+      headers[RESTORE_DELETED_CHAT_HEADER] = 'true'
     }
 
     const response = await fetch(
