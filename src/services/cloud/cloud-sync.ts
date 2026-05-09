@@ -485,6 +485,34 @@ export class CloudSyncService {
     await this.uploadCoalescer.waitForAllUploads()
   }
 
+  async backupChatNow(chatId: string): Promise<void> {
+    if (!(await cloudStorage.isAuthenticated())) {
+      throw new Error('Authentication required for cloud sync')
+    }
+
+    if (!(await canWriteToCloud())) {
+      throw new Error('Cloud sync key is not authorized')
+    }
+
+    if (streamingTracker.isStreaming(chatId)) {
+      throw new Error('Cannot sync chat while it is streaming')
+    }
+
+    const chat = await indexedDBStorage.getChat(chatId)
+    if (!chat) {
+      throw new Error('Chat not found')
+    }
+
+    if (!isUploadableChat(chat, isStreaming)) {
+      throw new Error('Chat is not eligible for cloud sync')
+    }
+
+    await cloudStorage.uploadChat(chat)
+
+    const newVersion = (chat.syncVersion ?? 0) + 1
+    await indexedDBStorage.markAsSynced(chatId, newVersion)
+  }
+
   private async doBackupChat(chatId: string): Promise<void> {
     try {
       if (!(await canWriteToCloud())) {

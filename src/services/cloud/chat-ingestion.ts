@@ -180,9 +180,17 @@ export async function syncRemoteDeletions(
 ): Promise<void> {
   try {
     const { deletedIds } = await cloudStorage.getDeletedChatsSince(since)
+    const localChatMap = new Map(
+      (await indexedDBStorage.getAllChats()).map((chat) => [chat.id, chat]),
+    )
     const successfulIds: string[] = []
     for (const id of deletedIds) {
       try {
+        const localChat = localChatMap.get(id)
+        if (localChat?.isLocalOnly) {
+          continue
+        }
+
         await indexedDBStorage.deleteChat(id)
         // Mirror the deletion into the in-memory tracker so any concurrent
         // listing/ingest pass that already observed the chat won't bring

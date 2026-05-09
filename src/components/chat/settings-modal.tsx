@@ -1376,7 +1376,16 @@ export function SettingsModal({
     setExportType('chats')
 
     try {
-      const allChats: Chat[] = []
+      const chatsById = new Map<string, Chat>()
+      const addChat = (chat: Chat) => {
+        if (!chat.id || chatsById.has(chat.id)) return
+        chatsById.set(chat.id, chat)
+      }
+
+      const localChats = isSignedIn
+        ? await chatStorage.getAllChats()
+        : sessionChatStorage.getAllChats()
+      localChats.forEach(addChat)
 
       // If cloud sync is enabled, fetch all chats with pagination
       if (isCloudSyncEnabled() && isSignedIn) {
@@ -1392,7 +1401,7 @@ export function SettingsModal({
 
           // Convert StoredChat to Chat
           for (const storedChat of result.chats) {
-            allChats.push({
+            addChat({
               id: storedChat.id,
               title: storedChat.title,
               messages: storedChat.messages,
@@ -1407,14 +1416,10 @@ export function SettingsModal({
           hasMore = result.hasMore
           continuationToken = result.nextToken
         }
-      } else {
-        // For non-authenticated users, get all local chats
-        const localChats = await chatStorage.getAllChats()
-        allChats.push(...localChats)
       }
 
       // Filter out blank chats and chats that failed decryption
-      const exportableChats = allChats.filter(
+      const exportableChats = Array.from(chatsById.values()).filter(
         (chat) =>
           !chat.isBlankChat && chat.messages && chat.messages.length > 0,
       )
