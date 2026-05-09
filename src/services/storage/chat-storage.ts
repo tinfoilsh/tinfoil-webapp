@@ -273,24 +273,40 @@ export class ChatStorageService {
   async convertChatToCloud(chatId: string): Promise<void> {
     await this.initialize()
 
+    const existingChat = await indexedDBStorage.getChat(chatId)
+    if (!existingChat) {
+      throw new Error('Chat not found')
+    }
+
     await indexedDBStorage.resetChatTimestamps(chatId)
     await indexedDBStorage.updateChatLocalOnly(chatId, false)
 
-    chatEvents.emit({ reason: 'save', ids: [chatId] })
+    try {
+      await cloudSync.backupChatNow(chatId)
+    } catch (error) {
+      await indexedDBStorage.saveChat(existingChat)
+      throw error
+    }
 
-    await cloudSync.backupChat(chatId)
+    chatEvents.emit({ reason: 'save', ids: [chatId] })
   }
 
   async convertChatToLocal(chatId: string): Promise<void> {
     await this.initialize()
 
+    const existingChat = await indexedDBStorage.getChat(chatId)
+    if (!existingChat) {
+      throw new Error('Chat not found')
+    }
+
     await indexedDBStorage.resetChatTimestamps(chatId)
     await indexedDBStorage.updateChatLocalOnly(chatId, true)
     await indexedDBStorage.updateChatProject(chatId, null)
 
-    chatEvents.emit({ reason: 'save', ids: [chatId] })
-
-    cloudSync.deleteFromCloud(chatId).catch((error) => {
+    try {
+      await cloudSync.deleteFromCloud(chatId)
+    } catch (error) {
+      await indexedDBStorage.saveChat(existingChat)
       logError(
         'Failed to delete chat from cloud during local conversion',
         error,
@@ -300,7 +316,10 @@ export class ChatStorageService {
           metadata: { chatId },
         },
       )
-    })
+      throw error
+    }
+
+    chatEvents.emit({ reason: 'save', ids: [chatId] })
   }
 
   async removeChatFromProject(chatId: string): Promise<void> {
