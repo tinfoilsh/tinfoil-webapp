@@ -35,19 +35,32 @@ describe('profile-settings-serializer', () => {
     })
   })
 
-  it('clears local personalization fields when the remote profile omits them', () => {
-    localStorage.setItem(USER_PREFS_NICKNAME, 'old')
-    localStorage.setItem(USER_PREFS_PROFESSION, 'old job')
+  it('keeps unspecified personalization fields intact on partial remote updates', () => {
+    localStorage.setItem(USER_PREFS_NICKNAME, 'Alice')
+    localStorage.setItem(USER_PREFS_PROFESSION, 'Dev')
     localStorage.setItem(USER_PREFS_TRAITS, JSON.stringify(['concise']))
-    localStorage.setItem(USER_PREFS_ADDITIONAL_CONTEXT, 'old context')
+    localStorage.setItem(USER_PREFS_ADDITIONAL_CONTEXT, 'context')
     localStorage.setItem(USER_PREFS_PERSONALIZATION_ENABLED, 'true')
 
-    applySettingsToLocal({ isUsingPersonalization: false })
+    applySettingsToLocal({ nickname: 'Bob' })
+
+    expect(localStorage.getItem(USER_PREFS_NICKNAME)).toBe('Bob')
+    expect(localStorage.getItem(USER_PREFS_PROFESSION)).toBe('Dev')
+    expect(localStorage.getItem(USER_PREFS_TRAITS)).toBe(
+      JSON.stringify(['concise']),
+    )
+    expect(localStorage.getItem(USER_PREFS_ADDITIONAL_CONTEXT)).toBe('context')
+    expect(localStorage.getItem(USER_PREFS_PERSONALIZATION_ENABLED)).toBe(
+      'true',
+    )
+  })
+
+  it('clears explicitly emptied personalization fields', () => {
+    localStorage.setItem(USER_PREFS_NICKNAME, 'Alice')
+
+    applySettingsToLocal({ nickname: '', isUsingPersonalization: false })
 
     expect(localStorage.getItem(USER_PREFS_NICKNAME)).toBe('')
-    expect(localStorage.getItem(USER_PREFS_PROFESSION)).toBe('')
-    expect(localStorage.getItem(USER_PREFS_TRAITS)).toBe('[]')
-    expect(localStorage.getItem(USER_PREFS_ADDITIONAL_CONTEXT)).toBe('')
     expect(localStorage.getItem(USER_PREFS_PERSONALIZATION_ENABLED)).toBe(
       'false',
     )
