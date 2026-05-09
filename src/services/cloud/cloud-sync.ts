@@ -652,11 +652,11 @@ export class CloudSyncService {
         action: 'backupUnsyncedChats',
       })
 
-      // Route each chat through doBackupChat for consistent streaming checks,
-      // upload logic, and markAsSynced handling
+      // Route each chat through the coalescer so periodic syncs share the
+      // same per-chat serialization as save-triggered uploads.
       const uploadPromises = chatsToSync.map(async (chat) => {
         try {
-          await this.doBackupChat(chat.id)
+          await this.uploadCoalescer.enqueueAndWait(chat.id)
           result.uploaded++
         } catch (error) {
           result.errors.push(
@@ -1228,9 +1228,7 @@ export class CloudSyncService {
 
       for (const chat of projectChatsToSync) {
         try {
-          // Call doBackupChat directly (not via coalescer) so we can
-          // await completion and accurately track upload results
-          await this.doBackupChat(chat.id)
+          await this.uploadCoalescer.enqueueAndWait(chat.id)
           result.uploaded++
         } catch (error) {
           result.errors.push(
