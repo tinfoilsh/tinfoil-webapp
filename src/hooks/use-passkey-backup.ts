@@ -22,6 +22,7 @@ import {
   authenticatePrfPasskey,
   createPrfPasskey,
   decryptKeyBundle,
+  deletePasskeyCredential,
   deriveKeyEncryptionKey,
   getCachedPrfResult,
   getPasskeyCredentialState,
@@ -70,7 +71,26 @@ export interface PasskeyBackupState {
    * prompt automatically on page load.
    */
   passkeyFirstTimePromptAvailable: boolean
+  /** Specific passkey recovery failure to show users a useful next step. */
+  passkeyRecoveryFailure: PasskeyRecoveryFailure | null
 }
+
+export type PasskeyRecoveryFailure = 'auth_failed' | 'stale_backup'
+
+type StoredPasskeyBackup = {
+  credentialId: string
+  syncVersion: number
+  bundleVersion: number
+}
+
+type GeneratedPasskeyKey = {
+  key: string
+  credentialId: string
+}
+
+type ApplyRecoveredKeyBundleResult =
+  | { mode: CloudKeyAuthorizationMode }
+  | { mode: null; reason: PasskeyRecoveryFailure }
 
 export interface UsePasskeyBackupOptions {
   /** Current encryption key from useCloudSync (null if not yet set) */
@@ -217,6 +237,7 @@ export function usePasskeyBackup({
     passkeySetupFailed: false,
     passkeyRetryAvailable: true,
     passkeyFirstTimePromptAvailable: false,
+    passkeyRecoveryFailure: null,
   })
 
   const isMountedRef = useRef(true)
@@ -269,6 +290,7 @@ export function usePasskeyBackup({
           passkeySetupFailed: false,
           passkeyRetryAvailable: true,
           passkeyFirstTimePromptAvailable: false,
+          passkeyRecoveryFailure: null,
         })
       }
       previousUserIdRef.current = currentUserId
@@ -310,13 +332,13 @@ export function usePasskeyBackup({
       incrementBundleVersion?: boolean
       enforceRemoteBundleVersion?: boolean
     },
-  ): Promise<boolean> => {
+  ): Promise<StoredPasskeyBackup | null> => {
     const passkeyResult = await createPrfPasskey(
       userInfo.userId,
       userInfo.userName,
       userInfo.displayName,
     )
-    if (!passkeyResult) return false
+    if (!passkeyResult) return null
 
     const kek = await deriveKeyEncryptionKey(passkeyResult.prfOutput)
     const result = await storeEncryptedKeys(
@@ -329,11 +351,15 @@ export function usePasskeyBackup({
         enforceRemoteBundleVersion: options?.enforceRemoteBundleVersion,
       },
     )
-    if (!result) return false
+    if (!result) return null
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
     setLocalSyncVersion(passkeyResult.credentialId, result.syncVersion)
     setLocalBundleVersion(result.bundleVersion)
-    return true
+    return {
+      credentialId: passkeyResult.credentialId,
+      syncVersion: result.syncVersion,
+      bundleVersion: result.bundleVersion,
+    }
   }
 
   /**
@@ -348,7 +374,7 @@ export function usePasskeyBackup({
         incrementBundleVersion?: boolean
         enforceRemoteBundleVersion?: boolean
       },
-    ): Promise<string | null> => {
+    ): Promise<GeneratedPasskeyKey | null> => {
       const userInfo = getPasskeyUserInfo()
       if (!userInfo) return null
 
@@ -370,7 +396,7 @@ export function usePasskeyBackup({
       if (!created) return null
 
       await encryptionService.setKey(newKey)
-      return newKey
+      return { key: newKey, credentialId: created.credentialId }
     },
     [],
   )
@@ -437,6 +463,7 @@ export function usePasskeyBackup({
         passkeyActive: true,
         passkeyRecoveryNeeded: false,
         manualRecoveryNeeded: false,
+        passkeyRecoveryFailure: null,
       }))
     }
   }
@@ -455,6 +482,7 @@ export function usePasskeyBackup({
         passkeyActive: true,
         passkeyRecoveryNeeded: false,
         manualRecoveryNeeded: false,
+        passkeyRecoveryFailure: null,
       }))
     }
   }
@@ -536,7 +564,7 @@ export function usePasskeyBackup({
         primary: string | null
         alternatives: string[]
       },
-    ): Promise<CloudKeyAuthorizationMode | null> => {
+    ): Promise<ApplyRecoveredKeyBundleResult> => {
       await encryptionService.setAllKeys(bundle.primary, bundle.alternatives)
 
       const authorizationMode = getRecoveredAuthorizationMode(
@@ -546,10 +574,10 @@ export function usePasskeyBackup({
       if (authorizationMode === 'explicit_start_fresh') {
         try {
           await authorizeCurrentPrimaryKeyOrThrow('explicit_start_fresh')
-          return 'explicit_start_fresh'
+          return { mode: 'explicit_start_fresh' }
         } catch {
           await rollbackToPreviousKeys(previousKeys)
-          return null
+          return { mode: null, reason: 'stale_backup' }
         }
       }
 
@@ -558,20 +586,20 @@ export function usePasskeyBackup({
         validation = await validateCurrentPrimaryKey()
       } catch {
         await rollbackToPreviousKeys(previousKeys)
-        return null
+        return { mode: null, reason: 'auth_failed' }
       }
 
       if (!validation.canWrite) {
         await rollbackToPreviousKeys(previousKeys)
-        return null
+        return { mode: null, reason: 'stale_backup' }
       }
 
       try {
         await authorizeCurrentPrimaryKeyOrThrow('validated')
-        return 'validated'
+        return { mode: 'validated' }
       } catch {
         await rollbackToPreviousKeys(previousKeys)
-        return null
+        return { mode: null, reason: 'auth_failed' }
       }
     },
     [getRecoveredAuthorizationMode, rollbackToPreviousKeys],
@@ -582,6 +610,16 @@ export function usePasskeyBackup({
    * Called after key changes to keep the backup in sync.
    */
   const updatePasskeyBackup = useCallback(async (): Promise<void> => {
+    const markBackupUpdateNeeded = (): void => {
+      if (!isMountedRef.current) return
+      setState((prev) => ({
+        ...prev,
+        passkeySetupFailed: true,
+        passkeySetupAvailable: true,
+        passkeyRetryAvailable: true,
+      }))
+    }
+
     try {
       const authorizationMode = await getCurrentCloudKeyAuthorizationMode()
       if (!authorizationMode) return
@@ -597,7 +635,10 @@ export function usePasskeyBackup({
         cached && entries.some((e) => e.id === cached.credentialId)
           ? cached
           : await authenticatePrfPasskey(entries.map((e) => e.id))
-      if (!result) return
+      if (!result) {
+        markBackupUpdateNeeded()
+        return
+      }
 
       const kek = await deriveKeyEncryptionKey(result.prfOutput)
       const keys = encryptionService.getAllKeys()
@@ -638,9 +679,20 @@ export function usePasskeyBackup({
         },
       )
 
-      if (stored) {
-        setLocalSyncVersion(result.credentialId, stored.syncVersion)
-        setLocalBundleVersion(stored.bundleVersion)
+      if (!stored) {
+        markBackupUpdateNeeded()
+        return
+      }
+
+      setLocalSyncVersion(result.credentialId, stored.syncVersion)
+      setLocalBundleVersion(stored.bundleVersion)
+      if (isMountedRef.current) {
+        setState((prev) => ({
+          ...prev,
+          passkeySetupFailed: false,
+          passkeySetupAvailable: false,
+          passkeyActive: true,
+        }))
       }
 
       logInfo('Updated passkey backup after key change', {
@@ -660,12 +712,14 @@ export function usePasskeyBackup({
             },
           },
         )
+        markBackupUpdateNeeded()
         return
       }
       logError('Failed to update passkey backup after key change', error, {
         component: 'usePasskeyBackup',
         action: 'updatePasskeyBackup',
       })
+      markBackupUpdateNeeded()
     }
   }, [doesCurrentStateMatchBundle])
 
@@ -703,8 +757,10 @@ export function usePasskeyBackup({
       }
 
       const previousKeys = encryptionService.getAllKeys()
-      const appliedMode = await applyRecoveredKeyBundle(bundle, previousKeys)
-      if (!appliedMode) return
+      const applied = await applyRecoveredKeyBundle(bundle, previousKeys)
+      if (!applied.mode) {
+        return
+      }
 
       setLocalSyncVersion(cached.credentialId, entry.sync_version)
       if (entry.bundle_version !== undefined) {
@@ -737,16 +793,39 @@ export function usePasskeyBackup({
     // "warning dismissed" flag, so a dismissal from an earlier failure
     // flow doesn't silently suppress the warning on a new attempt.
     setupWarningDismissedFlag.clear()
+    if (isMountedRef.current) {
+      setState((prev) => ({ ...prev, passkeyRecoveryFailure: null }))
+    }
     try {
       const previousKeys = encryptionService.getAllKeys()
       const recovery = await performPasskeyRecovery()
-      if (!recovery) return null
+      if (!recovery) {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            passkeyRecoveryFailure: 'auth_failed',
+          }))
+        }
+        return null
+      }
 
-      const appliedMode = await applyRecoveredKeyBundle(
+      const applied = await applyRecoveredKeyBundle(
         recovery.keyBundle,
         previousKeys,
       )
-      if (!appliedMode) return null
+      if (!applied.mode) {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            passkeyRecoveryFailure: applied.reason,
+            manualRecoveryNeeded:
+              applied.reason === 'stale_backup'
+                ? true
+                : prev.manualRecoveryNeeded,
+          }))
+        }
+        return null
+      }
 
       applyRecoveredKeys(recovery)
       passkeyRecoveryDismissedFlag.clear()
@@ -1043,7 +1122,7 @@ export function usePasskeyBackup({
         component: 'usePasskeyBackup',
         action: 'setupNewKeySplit',
       })
-      return newKey
+      return newKey.key
     } catch (error) {
       if (error instanceof PrfNotSupportedError) throw error
       if (error instanceof PasskeyTimeoutError) throw error
@@ -1103,31 +1182,47 @@ export function usePasskeyBackup({
     }
 
     try {
-      const previousKeys = encryptionService.getAllKeys()
-      const newKey = await generateKeyWithPasskeyBackup('validated')
+      const remoteState = await inspectRemoteEncryptedState()
+      if (remoteState !== 'empty') {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            manualRecoveryNeeded: remoteState === 'exists',
+            passkeyFirstTimePromptAvailable: false,
+            passkeySetupFailed: true,
+            passkeyRetryAvailable: false,
+          }))
+        }
+        return false
+      }
 
-      if (newKey) {
-        const appliedMode = await applyRecoveredKeyBundle(
+      const previousKeys = encryptionService.getAllKeys()
+      const generated = await generateKeyWithPasskeyBackup('validated')
+
+      if (generated) {
+        const applied = await applyRecoveredKeyBundle(
           {
-            primary: newKey,
+            primary: generated.key,
             alternatives: [],
             authorizationMode: 'validated',
           },
           previousKeys,
         )
-        if (!appliedMode) {
+        if (!applied.mode) {
+          await deletePasskeyCredential(generated.credentialId)
           if (isMountedRef.current) {
             setState((prev) => ({
               ...prev,
               manualRecoveryNeeded: true,
               passkeyFirstTimePromptAvailable: false,
+              passkeyRecoveryFailure: applied.reason,
             }))
           }
           return false
         }
 
         applyNewPasskeyKey()
-        onEncryptionKeyRecoveredRef.current?.(newKey)
+        onEncryptionKeyRecoveredRef.current?.(generated.key)
         if (isMountedRef.current) {
           setState((prev) => ({
             ...prev,
