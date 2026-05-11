@@ -225,6 +225,23 @@ export async function savePasskeyCredentials(
   }
 }
 
+export async function deletePasskeyCredential(
+  credentialId: string,
+): Promise<boolean> {
+  try {
+    const entries = await loadPasskeyCredentials()
+    const updated = entries.filter((entry) => entry.id !== credentialId)
+    if (updated.length === entries.length) return true
+    return await savePasskeyCredentials(updated)
+  } catch (error) {
+    logError('Failed to delete passkey credential', error, {
+      component: 'PasskeyKeyStorage',
+      action: 'deletePasskeyCredential',
+    })
+    return false
+  }
+}
+
 /**
  * Check if any passkey credentials exist for the authenticated user.
  */

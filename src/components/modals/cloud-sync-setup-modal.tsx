@@ -40,6 +40,7 @@ interface CloudSyncSetupModalBaseProps {
   initialCloudSyncEnabled?: boolean
   prfSupported?: boolean
   manualRecoveryNeeded?: boolean
+  passkeyRecoveryFailure?: 'auth_failed' | 'stale_backup' | null
   /**
    * When true, the modal skips the passkey-based flow entirely and opens
    * directly on the manual "generate or restore key" step. Used when the
@@ -85,6 +86,7 @@ export function CloudSyncSetupModal({
   passkeyRecoveryNeeded = false,
   prfSupported = false,
   manualRecoveryNeeded = false,
+  passkeyRecoveryFailure = null,
   forceManualFlow = false,
   onSkipRecovery,
   onRecoverWithPasskey,
@@ -792,8 +794,9 @@ ${generatedKey.replace('key_', '')}
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
           <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
           <p className="text-xs text-amber-700 dark:text-amber-400">
-            Passkey authentication failed. You can try again or enter your
-            encryption key manually.
+            {passkeyRecoveryFailure === 'stale_backup'
+              ? "This passkey is valid, but its backup key doesn't match your existing cloud data. Enter your backup key manually, or start fresh if you no longer need the old data."
+              : 'Passkey authentication failed. You can try again or enter your encryption key manually.'}
           </p>
         </div>
       )}
