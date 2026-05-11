@@ -1,43 +1,50 @@
-import { selectPendingInputToolCall } from '@/components/chat/genui/pending-input-tool-call'
 import type { GenUIWidget } from '@/components/chat/genui/types'
 import type { Message } from '@/components/chat/types'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
+const { registryMock } = vi.hoisted(() => ({
+  registryMock: () => {
+    const input: Partial<GenUIWidget> = {
+      name: 'ask_user_input',
+      surface: 'input',
+      renderInputArea: () => null,
+      schema: {
+        safeParse: (value: unknown) => {
+          const valid =
+            !!value &&
+            typeof value === 'object' &&
+            !Array.isArray(value) &&
+            'question' in value &&
+            typeof value.question === 'string' &&
+            'options' in value &&
+            Array.isArray(value.options) &&
+            value.options.length >= 2
+          return valid
+            ? { success: true, data: value }
+            : { success: false, error: {} }
+        },
+      } as any,
+    }
+    const inline: Partial<GenUIWidget> = {
+      name: 'render_callout',
+      surface: 'inline',
+    }
+    return {
+      GENUI_WIDGETS_BY_NAME: {
+        ask_user_input: input,
+        render_callout: inline,
+      },
+    }
+  },
+}))
+
 // The selector consults the registry to identify input-surface widgets;
 // stub it before importing anything that depends on it.
-vi.mock('@/components/chat/genui/registry', () => {
-  const input: Partial<GenUIWidget> = {
-    name: 'ask_user_input',
-    surface: 'input',
-    renderInputArea: () => null,
-    schema: {
-      safeParse: (value: unknown) => {
-        const valid =
-          !!value &&
-          typeof value === 'object' &&
-          !Array.isArray(value) &&
-          'question' in value &&
-          typeof value.question === 'string' &&
-          'options' in value &&
-          Array.isArray(value.options) &&
-          value.options.length >= 2
-        return valid
-          ? { success: true, data: value }
-          : { success: false, error: {} }
-      },
-    } as any,
-  }
-  const inline: Partial<GenUIWidget> = {
-    name: 'render_callout',
-    surface: 'inline',
-  }
-  return {
-    GENUI_WIDGETS_BY_NAME: {
-      ask_user_input: input,
-      render_callout: inline,
-    },
-  }
-})
+vi.mock('@/components/chat/genui/registry', registryMock)
+vi.mock('@/components/chat/genui/registry.ts', registryMock)
+vi.mock('src/components/chat/genui/registry.ts', registryMock)
+
+let selectPendingInputToolCall: typeof import('@/components/chat/genui/pending-input-tool-call').selectPendingInputToolCall
 
 function assistantMessage(
   blocks: Array<{
@@ -76,7 +83,11 @@ function assistantMessage(
 }
 
 describe('selectPendingInputToolCall', () => {
-  beforeAll(() => {})
+  beforeAll(async () => {
+    ;({ selectPendingInputToolCall } = await import(
+      '@/components/chat/genui/pending-input-tool-call'
+    ))
+  })
 
   it('returns null when there are no messages', () => {
     expect(selectPendingInputToolCall([])).toBeNull()
