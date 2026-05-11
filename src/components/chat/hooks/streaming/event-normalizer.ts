@@ -154,11 +154,11 @@ function extractToolCallEvents(
       typeof tc.index === 'number' ? tc.index : undefined
     if (index === undefined) continue
 
-    let id: string | undefined = indexToId.get(index)
-    if (!id && typeof tc.id === 'string' && tc.id.length > 0) {
-      const newId: string = tc.id
-      id = newId
-      indexToId.set(index, newId)
+    const incomingId: string | undefined =
+      typeof tc.id === 'string' && tc.id.length > 0 ? tc.id : undefined
+    const id: string | undefined = incomingId ?? indexToId.get(index)
+    if (incomingId) {
+      indexToId.set(index, incomingId)
     }
     if (!id) continue
 
@@ -188,11 +188,6 @@ export function createEventNormalizer(): EventNormalizer {
   let isReasoningFormat = false
   const toolCallIndexToId = new Map<number, string>()
   const toolCallStartedIds = new Set<string>()
-  // Once the assistant has started emitting a tool call, any subsequent
-  // `delta.content` is almost always serialization noise from the provider
-  // (fragments of the tool name or trailing whitespace) rather than real
-  // prose. Suppress all content emitted after the first tool call starts.
-  let sawToolCall = false
 
   return {
     processChunk(sseJson, preprocessor, logger): NormalizedEvent[] {
@@ -222,7 +217,9 @@ export function createEventNormalizer(): EventNormalizer {
           isInThinking = false
         }
         events.push(...toolCallEvents)
-        sawToolCall = true
+      }
+      if (sseJson.choices?.[0]?.finish_reason === 'tool_calls') {
+        toolCallIndexToId.clear()
       }
 
       // Search reasoning
@@ -235,12 +232,7 @@ export function createEventNormalizer(): EventNormalizer {
       events.push(...extractAnnotations(sseJson))
 
       // Preprocess content (strip tinfoil markers, normalize channel tags).
-      // Once a tool call has been emitted on this assistant turn, drop any
-      // further `delta.content` — providers sometimes trail serialization
-      // noise (fragments of the tool name) through the content channel.
-      const rawContent: string = sawToolCall
-        ? ''
-        : sseJson.choices?.[0]?.delta?.content || ''
+      const rawContent = sseJson.choices?.[0]?.delta?.content || ''
       const preprocessed = preprocessor.process(rawContent)
 
       // Tool events from tinfoil markers — close thinking first so

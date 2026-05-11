@@ -270,6 +270,141 @@ describe('EventNormalizer', () => {
     })
   })
 
+  describe('tool calls', () => {
+    it('allows content after a tool-call turn finishes', () => {
+      const events = processAll([
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_widget',
+                    type: 'function',
+                    function: {
+                      name: 'render_stat_cards',
+                      arguments: '{"stats":[]}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        contentChunk('continued answer'),
+      ])
+
+      expect(events).toContainEqual({
+        type: 'tool_call_start',
+        id: 'call_widget',
+        name: 'render_stat_cards',
+      })
+      expect(events).toContainEqual({
+        type: 'content_delta',
+        content: 'continued answer',
+      })
+    })
+
+    it('allows post-widget prose when the router internally continues without a finish boundary', () => {
+      const events = processAll([
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_widget',
+                    type: 'function',
+                    function: {
+                      name: 'render_stat_cards',
+                      arguments: '{"stats":[]}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        contentChunk(' N'),
+        contentChunk('AD'),
+        contentChunk('+'),
+        contentChunk(' is important.'),
+      ])
+
+      expect(events).toContainEqual({
+        type: 'content_delta',
+        content: ' NAD+ is important.',
+      })
+    })
+
+    it('starts a new tool call when router continuations reuse index zero', () => {
+      const events = processAll([
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_first',
+                    type: 'function',
+                    function: {
+                      name: 'render_stat_cards',
+                      arguments: '{"stats":[]}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_second',
+                    type: 'function',
+                    function: {
+                      name: 'render_chart',
+                      arguments: '{"series":[]}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ])
+
+      expect(events).toContainEqual({
+        type: 'tool_call_start',
+        id: 'call_first',
+        name: 'render_stat_cards',
+      })
+      expect(events).toContainEqual({
+        type: 'tool_call_delta',
+        id: 'call_first',
+        argumentsDelta: '{"stats":[]}',
+      })
+      expect(events).toContainEqual({
+        type: 'tool_call_start',
+        id: 'call_second',
+        name: 'render_chart',
+      })
+      expect(events).toContainEqual({
+        type: 'tool_call_delta',
+        id: 'call_second',
+        argumentsDelta: '{"series":[]}',
+      })
+    })
+  })
+
   describe('legacy web_search_call events', () => {
     it('normalizes top-level web_search_call', () => {
       const chunk = {
