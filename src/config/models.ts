@@ -1,3 +1,4 @@
+import { setGenUIConfig } from '@/components/chat/genui/config'
 import { API_BASE_URL, IS_DEV } from '@/config'
 import { DEV_SIMULATOR_MODEL } from '@/utils/dev-simulator'
 import { logError } from '@/utils/error-handling'
@@ -171,6 +172,7 @@ export const getSystemPromptAndRules = async (): Promise<{
     }
 
     const data = await response.json()
+    applyGenUIConfigFromResponse(data?.genUI)
     return {
       systemPrompt: data.systemPrompt,
       rules: data.rules,
@@ -179,12 +181,36 @@ export const getSystemPromptAndRules = async (): Promise<{
     logError('Failed to fetch system prompt', error, {
       component: 'getSystemPromptAndRules',
     })
+    setGenUIConfig(null)
     // Return a basic fallback
     return {
       systemPrompt: 'You are an intelligent and helpful assistant named Tin.',
       rules: '',
     }
   }
+}
+
+/**
+ * Validates the optional `genUI` block from the system-prompt response and
+ * pushes it into the runtime config used by the GenUI prompt and tool
+ * builders. Malformed or missing payloads clear the runtime config so the
+ * bundled defaults take over, rather than leaving stale config from an
+ * earlier successful fetch active.
+ */
+export function applyGenUIConfigFromResponse(raw: unknown): void {
+  if (!raw || typeof raw !== 'object') {
+    setGenUIConfig(null)
+    return
+  }
+  const obj = raw as Record<string, unknown>
+  if (typeof obj.header !== 'string' || !Array.isArray(obj.enabledWidgets)) {
+    setGenUIConfig(null)
+    return
+  }
+  const enabledWidgets = obj.enabledWidgets.filter(
+    (w): w is string => typeof w === 'string',
+  )
+  setGenUIConfig({ header: obj.header, enabledWidgets })
 }
 
 // Fetch memory prompt from the API

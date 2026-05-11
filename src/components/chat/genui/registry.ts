@@ -11,6 +11,7 @@
  * drift.
  */
 import { zodToJsonSchema } from 'zod-to-json-schema'
+import { resolveEnabledWidgets } from './enabled-widgets'
 import type { GenUIWidget } from './types'
 import { widget as ArtifactPreview } from './widgets/ArtifactPreview'
 import { widget as Chart } from './widgets/Chart'
@@ -51,9 +52,13 @@ export const GENUI_WIDGETS_BY_NAME: Record<string, GenUIWidget> =
 
 /**
  * Build the OpenAI `tools` array sent with chat completion requests.
+ *
+ * Only widgets currently allowed by the controlplane's `enabledWidgets`
+ * allowlist are emitted. When no controlplane config is loaded yet, every
+ * registered widget is exposed so the first-render path keeps working.
  */
 export function buildGenUIToolSchemas() {
-  return GENUI_WIDGETS.map((w) => ({
+  return resolveEnabledWidgets().map((w) => ({
     type: 'function' as const,
     function: {
       name: w.name,
