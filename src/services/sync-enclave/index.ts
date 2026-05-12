@@ -13,6 +13,15 @@ export {
 } from './operation-hash'
 export type { OperationCanonicalInput } from './operation-hash'
 
+export {
+  cekBytesToHex,
+  cekHexToBytes,
+  unwrapCekFromBundle,
+  wrapCekForCredential,
+  wrapPrimaryCekForCredential,
+} from './key-bundle'
+export type { RemoteBundle } from './key-bundle'
+
 export * as syncApi from './sync-api'
 export type {
   BundleBody,
