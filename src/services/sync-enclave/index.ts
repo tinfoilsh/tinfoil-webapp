@@ -23,6 +23,15 @@ export {
 } from './key-bundle'
 export type { RemoteBundle } from './key-bundle'
 
+export * as passkeyKeyFlow from './passkey-key-flow'
+export type {
+  PasskeyFlowError,
+  PasskeyFlowFailure,
+  PasskeyFlowResult,
+  PasskeyFlowSuccess,
+  PasskeyUserInfo,
+} from './passkey-key-flow'
+
 export * as syncApi from './sync-api'
 export type {
   BundleBody,
