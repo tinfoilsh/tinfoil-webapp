@@ -143,14 +143,14 @@ export class ChatQueryBuilder {
         result.push(assistantParam)
 
         // Emit synthetic tool results so the model's next turn sees a
-        // consistent history. GenUI tools are display-only — the UI
-        // rendered the component on the client, so we just acknowledge.
+        // consistent history. GenUI tools auto-continue: the UI rendered
+        // the component on the client, so we just acknowledge.
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           for (const tc of msg.toolCalls) {
             result.push({
               role: 'tool',
               tool_call_id: tc.id,
-              content: 'displayed',
+              content: 'executed',
             } as ChatCompletionToolMessageParam)
           }
         }

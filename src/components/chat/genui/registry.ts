@@ -52,12 +52,12 @@ export const GENUI_WIDGETS_BY_NAME: Record<string, GenUIWidget> =
 
 /**
  * Router-internal flag the model router uses to recognise client tools that
- * have no real side effect: the router synthesises a constant "displayed"
- * result and loops the model so the answer keeps flowing past the widget
- * call instead of ending the turn at the tool boundary. The router strips
- * this field before forwarding the request upstream.
+ * have no real side effect: the router synthesises a constant tool result
+ * and loops the model so the answer keeps flowing past the widget call
+ * instead of ending the turn at the tool boundary. The router strips this
+ * field before forwarding the request upstream.
  */
-const ROUTER_DISPLAY_ONLY_FLAG = 'x-tinfoil-display-only' as const
+const ROUTER_AUTO_CONTINUE_FLAG = 'x-tinfoil-tool-auto-continue' as const
 
 /**
  * Build the OpenAI `tools` array sent with chat completion requests.
@@ -66,9 +66,9 @@ const ROUTER_DISPLAY_ONLY_FLAG = 'x-tinfoil-display-only' as const
  * allowlist are emitted. When no controlplane config is loaded yet, every
  * registered widget is exposed so the first-render path keeps working.
  *
- * Every GenUI tool is flagged display-only so the model router can keep
- * the model talking after the widget call instead of leaving the response
- * to cut off mid-thought.
+ * Every GenUI tool opts into router-side auto-continuation so the model
+ * keeps talking after the widget call instead of leaving the response to
+ * cut off mid-thought.
  */
 export function buildGenUIToolSchemas() {
   return resolveEnabledWidgets().map((w) => ({
@@ -80,7 +80,7 @@ export function buildGenUIToolSchemas() {
         target: 'openApi3',
         $refStrategy: 'none',
       }) as Record<string, unknown>,
-      [ROUTER_DISPLAY_ONLY_FLAG]: true,
+      [ROUTER_AUTO_CONTINUE_FLAG]: true,
     },
   }))
 }
