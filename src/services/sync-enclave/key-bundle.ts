@@ -13,7 +13,9 @@ import type { BundleBody } from './sync-api'
 
 const AES_GCM_IV_BYTES = 12
 const CEK_BYTES = 32
+const KEY_ID_BYTES = 16
 const BUNDLE_INFO = 'tinfoil-chat-kek-v1'
+const KEY_ID_INFO = 'tinfoil-key-id-v1'
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = ''
@@ -148,4 +150,36 @@ export function cekHexToBytes(hex: string): Uint8Array {
 
 export function cekBytesToHex(bytes: Uint8Array): string {
   return bytesToHex(bytes)
+}
+
+/**
+ * Derive the user's 16-byte key_id from their raw CEK via HKDF-SHA-256
+ * with `info = "tinfoil-key-id-v1"` and an empty salt — matches the
+ * enclave's `crypto.DeriveKeyID` byte-for-byte.
+ */
+export async function deriveKeyIdHex(cek: Uint8Array): Promise<string> {
+  if (cek.length !== CEK_BYTES) {
+    throw new Error(
+      `key-bundle: CEK must be ${CEK_BYTES} bytes, got ${cek.length}`,
+    )
+  }
+  const ikm = await crypto.subtle.importKey(
+    'raw',
+    cek as unknown as BufferSource,
+    'HKDF',
+    false,
+    ['deriveBits'],
+  )
+  const enc = new TextEncoder()
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(0) as unknown as BufferSource,
+      info: enc.encode(KEY_ID_INFO) as unknown as BufferSource,
+    },
+    ikm,
+    KEY_ID_BYTES * 8,
+  )
+  return bytesToHex(new Uint8Array(bits))
 }

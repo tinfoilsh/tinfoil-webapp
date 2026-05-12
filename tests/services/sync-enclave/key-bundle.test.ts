@@ -1,6 +1,7 @@
 import {
   cekBytesToHex,
   cekHexToBytes,
+  deriveKeyIdHex,
   unwrapCekFromBundle,
   wrapCekForCredential,
   wrapPrimaryCekForCredential,
@@ -102,5 +103,18 @@ describe('key-bundle', () => {
     const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef])
     expect(cekHexToBytes(cekBytesToHex(bytes))).toEqual(bytes)
     expect(() => cekHexToBytes('abc')).toThrow(/odd-length/)
+  })
+
+  it('deriveKeyIdHex matches the enclave reference vector', async () => {
+    // CEK = 0x00, 0x01, ..., 0x1f. Pinned against the Go enclave's
+    // crypto.DeriveKeyID with info="tinfoil-key-id-v1", empty salt.
+    const cek = new Uint8Array(32)
+    for (let i = 0; i < cek.length; i++) cek[i] = i
+    const kid = await deriveKeyIdHex(cek)
+    expect(kid).toBe('960e28ca37b723e7abc19995dbef143f')
+  })
+
+  it('deriveKeyIdHex rejects mis-sized CEKs', async () => {
+    await expect(deriveKeyIdHex(new Uint8Array(31))).rejects.toThrow(/32 bytes/)
   })
 })

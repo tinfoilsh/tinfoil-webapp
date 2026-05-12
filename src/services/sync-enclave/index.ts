@@ -16,6 +16,7 @@ export type { OperationCanonicalInput } from './operation-hash'
 export {
   cekBytesToHex,
   cekHexToBytes,
+  deriveKeyIdHex,
   unwrapCekFromBundle,
   wrapCekForCredential,
   wrapPrimaryCekForCredential,
