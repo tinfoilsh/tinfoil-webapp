@@ -1,3 +1,4 @@
+import { computeOperationHash } from './operation-hash'
 import { getSyncEnclaveClient, SyncEnclaveError } from './sync-enclave-client'
 
 /**
@@ -10,7 +11,14 @@ import { getSyncEnclaveClient, SyncEnclaveError } from './sync-enclave-client'
  *   - X-Key-Id            : the user's current key (hex, 16 bytes)
  *   - If-Match            : the etag the client believes the row is at
  *   - X-Idempotency-Key   : caller-chosen idempotency token
- *   - X-Operation-Hash    : SHA-256 of the request body (hex)
+ *   - X-Operation-Hash    : keyed HMAC over the canonical tuple
+ *                            (METHOD, PATH, KEY_ID, IF_MATCH, IDEM, BODY)
+ *                            under a CEK-derived subkey. See §7.0 of
+ *                            syncplan.md and `operation-hash.ts`. The
+ *                            controlplane sees this header so a plain
+ *                            SHA-256(plaintext) would be brute-forceable
+ *                            against low-entropy bodies; the keyed MAC
+ *                            closes that hole.
  *   - X-Rewrap            : "true" when the caller is intentionally
  *                            re-keying the row under a new key_id
  *
@@ -81,11 +89,13 @@ export interface WriteOptions {
   /** Caller-chosen idempotency token (must be unique per logical op). */
   idempotencyKey: string
   /**
-   * SHA-256 of the request body, hex-encoded. The enclave verifies this
-   * server-side so any retry MUST present the same hash to replay the
-   * stored response.
+   * Operation-hash subkey, derived once per session from the user's
+   * CEK via `deriveOpHashKey()`. The same subkey can be reused across
+   * many writes. Forcing this through the type system means callers
+   * cannot accidentally substitute a SHA-256(body) — the
+   * controlplane-visible header would then be brute-forceable.
    */
-  operationHashHex: string
+  opKey: CryptoKey
   /**
    * Set to true when the caller is intentionally re-keying a row under
    * a different key (the only path that bypasses the STALE_KEY check).
@@ -122,20 +132,36 @@ export interface TombstonesResponse {
   }>
 }
 
-function writeHeaders(
+async function writeHeaders(
+  method: 'PUT' | 'POST' | 'DELETE',
+  path: string,
   keyIdHex: string,
   opts: WriteOptions,
-): Record<string, string> {
+  body: Uint8Array,
+): Promise<Record<string, string>> {
+  const ifMatchStr = String(opts.ifMatch)
+  const opHash = await computeOperationHash(opts.opKey, {
+    method,
+    path,
+    keyIdHex,
+    ifMatch: ifMatchStr,
+    idempotencyKey: opts.idempotencyKey,
+    body,
+  })
   const headers: Record<string, string> = {
     'X-Key-Id': keyIdHex,
-    'If-Match': String(opts.ifMatch),
+    'If-Match': ifMatchStr,
     'X-Idempotency-Key': opts.idempotencyKey,
-    'X-Operation-Hash': opts.operationHashHex,
+    'X-Operation-Hash': opHash,
   }
   if (opts.rewrap) {
     headers['X-Rewrap'] = 'true'
   }
   return headers
+}
+
+function jsonBody(value: unknown): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(value))
 }
 
 /* -------------------------------------------------------------------------- */
@@ -192,11 +218,15 @@ export async function putProfile(
   opts: WriteOptions,
 ): Promise<WriteResponse> {
   const client = await getSyncEnclaveClient()
-  return client.put<WriteResponse>(
-    '/api/profile/',
-    { data },
-    writeHeaders(keyIdHex, opts),
-  )
+  const path = '/api/profile/'
+  const body = jsonBody({ data })
+  const headers = await writeHeaders('PUT', path, keyIdHex, opts, body)
+  headers['Content-Type'] = 'application/json'
+  return client.request<WriteResponse>(path, {
+    method: 'PUT',
+    body: body as unknown as BodyInit,
+    headers,
+  })
 }
 
 export async function putChat(
@@ -207,16 +237,18 @@ export async function putChat(
   extra?: { projectId?: string; messageCount?: number },
 ): Promise<WriteResponse> {
   const client = await getSyncEnclaveClient()
-  const headers = writeHeaders(keyIdHex, opts)
+  const path = `/api/storage/conversation/${encodeURIComponent(conversationId)}/data`
+  const headers = await writeHeaders('PUT', path, keyIdHex, opts, body)
   headers['Content-Type'] = 'application/octet-stream'
   if (extra?.projectId) headers['X-Project-Id'] = extra.projectId
   if (typeof extra?.messageCount === 'number') {
     headers['X-Message-Count'] = String(extra.messageCount)
   }
-  return client.request<WriteResponse>(
-    `/api/storage/conversation/${encodeURIComponent(conversationId)}/data`,
-    { method: 'PUT', body: body as unknown as BodyInit, headers },
-  )
+  return client.request<WriteResponse>(path, {
+    method: 'PUT',
+    body: body as unknown as BodyInit,
+    headers,
+  })
 }
 
 export async function putProject(
@@ -226,11 +258,15 @@ export async function putProject(
   opts: WriteOptions,
 ): Promise<WriteResponse> {
   const client = await getSyncEnclaveClient()
-  return client.put<WriteResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}`,
-    { projectId, data },
-    writeHeaders(keyIdHex, opts),
-  )
+  const path = `/api/projects/${encodeURIComponent(projectId)}`
+  const body = jsonBody({ projectId, data })
+  const headers = await writeHeaders('PUT', path, keyIdHex, opts, body)
+  headers['Content-Type'] = 'application/json'
+  return client.request<WriteResponse>(path, {
+    method: 'PUT',
+    body: body as unknown as BodyInit,
+    headers,
+  })
 }
 
 export async function putProjectDocument(
@@ -241,11 +277,15 @@ export async function putProjectDocument(
   opts: WriteOptions,
 ): Promise<WriteResponse> {
   const client = await getSyncEnclaveClient()
-  return client.put<WriteResponse>(
-    `/api/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`,
-    { documentId, data },
-    writeHeaders(keyIdHex, opts),
-  )
+  const path = `/api/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`
+  const body = jsonBody({ documentId, data })
+  const headers = await writeHeaders('PUT', path, keyIdHex, opts, body)
+  headers['Content-Type'] = 'application/json'
+  return client.request<WriteResponse>(path, {
+    method: 'PUT',
+    body: body as unknown as BodyInit,
+    headers,
+  })
 }
 
 /* -------------------------------------------------------------------------- */

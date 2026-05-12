@@ -1,3 +1,4 @@
+import { deriveOpHashKey } from '@/services/sync-enclave/operation-hash'
 import { resetSyncEnclaveClient } from '@/services/sync-enclave/sync-enclave-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -79,34 +80,78 @@ describe('sync-api', () => {
 
   it('putProfile attaches all five enclave write headers', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
+    const opKey = await deriveOpHashKey(new Uint8Array(32).fill(0x42))
     mockFetch.mockResolvedValueOnce(
       ok({ ok: true, etag: '1', key_id: 'aa'.repeat(16) }),
     )
     await api.putProfile('payload', 'aa'.repeat(16), {
       ifMatch: 0,
       idempotencyKey: 'idem-1',
-      operationHashHex: '11'.repeat(32),
+      opKey,
     })
     const headers = lastHeaders()
     expect(headers.get('X-Key-Id')).toBe('aa'.repeat(16))
     expect(headers.get('If-Match')).toBe('0')
     expect(headers.get('X-Idempotency-Key')).toBe('idem-1')
-    expect(headers.get('X-Operation-Hash')).toBe('11'.repeat(32))
+    expect(headers.get('X-Operation-Hash')).toMatch(/^[0-9a-f]{64}$/)
     expect(headers.get('X-Rewrap')).toBeNull()
   })
 
   it('putProfile sets X-Rewrap when rewrap=true', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
+    const opKey = await deriveOpHashKey(new Uint8Array(32).fill(0x42))
     mockFetch.mockResolvedValueOnce(
       ok({ ok: true, etag: '2', key_id: 'bb'.repeat(16) }),
     )
     await api.putProfile('payload', 'bb'.repeat(16), {
       ifMatch: 1,
       idempotencyKey: 'idem-2',
-      operationHashHex: '22'.repeat(32),
+      opKey,
       rewrap: true,
     })
     expect(lastHeaders().get('X-Rewrap')).toBe('true')
+  })
+
+  it('putProfile op-hash is deterministic across retries with same inputs', async () => {
+    const api = await import('@/services/sync-enclave/sync-api')
+    const opKey = await deriveOpHashKey(new Uint8Array(32).fill(0x42))
+    mockFetch.mockImplementation(async () =>
+      ok({ ok: true, etag: '1', key_id: 'aa'.repeat(16) }),
+    )
+    await api.putProfile('payload', 'aa'.repeat(16), {
+      ifMatch: 0,
+      idempotencyKey: 'idem-1',
+      opKey,
+    })
+    const first = lastHeaders().get('X-Operation-Hash')
+    await api.putProfile('payload', 'aa'.repeat(16), {
+      ifMatch: 0,
+      idempotencyKey: 'idem-1',
+      opKey,
+    })
+    const second = lastHeaders().get('X-Operation-Hash')
+    expect(second).toBe(first)
+  })
+
+  it('putProfile op-hash changes when body changes', async () => {
+    const api = await import('@/services/sync-enclave/sync-api')
+    const opKey = await deriveOpHashKey(new Uint8Array(32).fill(0x42))
+    mockFetch.mockImplementation(async () =>
+      ok({ ok: true, etag: '1', key_id: 'aa'.repeat(16) }),
+    )
+    await api.putProfile('payload-a', 'aa'.repeat(16), {
+      ifMatch: 0,
+      idempotencyKey: 'idem-1',
+      opKey,
+    })
+    const a = lastHeaders().get('X-Operation-Hash')
+    await api.putProfile('payload-b', 'aa'.repeat(16), {
+      ifMatch: 0,
+      idempotencyKey: 'idem-1',
+      opKey,
+    })
+    const b = lastHeaders().get('X-Operation-Hash')
+    expect(a).not.toBe(b)
   })
 
   it('listStatus encodes scope into the query string', async () => {
@@ -143,6 +188,7 @@ describe('sync-api', () => {
 
   it('putProjectDocument addresses doc by URL not body', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
+    const opKey = await deriveOpHashKey(new Uint8Array(32).fill(0x42))
     mockFetch.mockResolvedValueOnce(
       ok({ ok: true, etag: '1', key_id: 'aa'.repeat(16) }),
     )
@@ -154,7 +200,7 @@ describe('sync-api', () => {
       {
         ifMatch: 0,
         idempotencyKey: 'idem-1',
-        operationHashHex: '33'.repeat(32),
+        opKey,
       },
     )
     expect(lastRequest()[0]).toBe('/api/projects/proj-1/documents/doc-2')
