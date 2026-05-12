@@ -31,6 +31,15 @@ describe('GenUI registry', () => {
     }
   })
 
+  it('opts every GenUI tool into router-side auto-continuation', () => {
+    const schemas = buildGenUIToolSchemas()
+    for (const entry of schemas) {
+      const fn = entry.function as Record<string, unknown>
+      expect(fn['x-tinfoil-tool-auto-continue']).toBe(true)
+      expect(fn['x-tinfoil-display-only']).toBeUndefined()
+    }
+  })
+
   it('every widget either renders inline or in the input area (or both)', () => {
     for (const widget of GENUI_WIDGETS) {
       const hasInline = typeof widget.render === 'function'
