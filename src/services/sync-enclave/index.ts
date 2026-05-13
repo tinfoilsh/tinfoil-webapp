@@ -39,6 +39,9 @@ export type {
   EnclaveErrorKind,
 } from './enclave-error-classification'
 
+export { COVERED_CODES, decideRecovery } from './enclave-error-recovery'
+export type { RecoveryAction, RecoveryDecision } from './enclave-error-recovery'
+
 export {
   computeBackoffDelay,
   realScheduler,
