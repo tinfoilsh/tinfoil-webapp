@@ -32,6 +32,13 @@ export type {
   PasskeyUserInfo,
 } from './passkey-key-flow'
 
+export { classifyEnclaveError } from './enclave-error-classification'
+export type {
+  EnclaveErrorClassification,
+  EnclaveErrorCode,
+  EnclaveErrorKind,
+} from './enclave-error-classification'
+
 export * as syncApi from './sync-api'
 export type {
   AddBundleRequest,
