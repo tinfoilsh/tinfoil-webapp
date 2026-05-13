@@ -54,6 +54,8 @@ export type {
   AddBundleRequest,
   ConflictPolicy,
   DeleteRequest,
+  KeyCurrentBundle,
+  KeyCurrentResponse,
   KeyRegisterBundleInput,
   KeyRegisterRequest,
   KeyRegisterResponse,

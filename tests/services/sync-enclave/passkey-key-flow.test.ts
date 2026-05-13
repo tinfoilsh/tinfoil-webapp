@@ -26,6 +26,7 @@ vi.mock('@/services/passkey/passkey-service', () => ({
 
 const mockRegisterKey = vi.fn()
 const mockAddBundle = vi.fn()
+const mockKeyCurrent = vi.fn()
 
 vi.mock('@/services/sync-enclave/sync-api', async () => {
   const real = await vi.importActual<
@@ -35,6 +36,7 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
     ...real,
     registerKey: (...args: unknown[]) => mockRegisterKey(...args),
     addBundle: (...args: unknown[]) => mockAddBundle(...args),
+    keyCurrent: (...args: unknown[]) => mockKeyCurrent(...args),
   }
 })
 
@@ -62,6 +64,7 @@ describe('passkey-key-flow', () => {
     mockDeriveKeyEncryptionKey.mockReset()
     mockRegisterKey.mockReset()
     mockAddBundle.mockReset()
+    mockKeyCurrent.mockReset()
   })
 
   afterEach(() => {
@@ -212,6 +215,85 @@ describe('passkey-key-flow', () => {
       const arg = mockAddBundle.mock.calls[0][0]
       expect(arg.keyId).toBe('kid')
       expect(arg.credentialId).toBe('cred-newdev')
+    })
+  })
+
+  describe('fetchServerKeyState', () => {
+    it('returns empty when the enclave has no key for the user', async () => {
+      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+      const state = await flow.fetchServerKeyState()
+      expect(state).toEqual({ status: 'empty' })
+    })
+
+    it('reshapes wire bundles into BundleBody candidates', async () => {
+      mockKeyCurrent.mockResolvedValue({
+        key_id: 'aabb',
+        bundles: {
+          'cred-a': {
+            credential_id: 'cred-a',
+            kek_iv: 'AAEC', // 0x000102
+            encrypted_keys: 'AwQF', // 0x030405
+            bundle_version: 1,
+          },
+        },
+      })
+      const state = await flow.fetchServerKeyState()
+      expect(state.status).toBe('exists')
+      if (state.status !== 'exists') return
+      expect(state.keyIdHex).toBe('aabb')
+      expect(state.candidates).toHaveLength(1)
+      expect(state.candidates[0].credentialId).toBe('cred-a')
+      expect(state.candidates[0].kekIvHex).toBe('000102')
+      expect(state.candidates[0].wrappedKeyHex).toBe('030405')
+    })
+  })
+
+  describe('unlockFromServer', () => {
+    it('returns no_remote_key when the server has no key', async () => {
+      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+      const result = await flow.unlockFromServer()
+      expect(result).toEqual({ ok: false, reason: 'no_remote_key' })
+      expect(mockAuthenticatePrfPasskey).not.toHaveBeenCalled()
+    })
+
+    it('rejects when the unwrapped CEK derives a different key_id', async () => {
+      const cek = crypto.getRandomValues(new Uint8Array(32))
+      const kek = await importKek(0xe1)
+      const bundle = await wrapCekForCredential({
+        credentialId: 'cred-mismatch',
+        kek,
+        cek,
+      })
+      // Convert hex bundle fields back to base64 to fit the wire shape.
+      const hexToBase64 = (hex: string) => {
+        const bytes = new Uint8Array(hex.length / 2)
+        for (let i = 0; i < bytes.length; i++) {
+          bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
+        }
+        let s = ''
+        for (let i = 0; i < bytes.length; i++)
+          s += String.fromCharCode(bytes[i])
+        return btoa(s)
+      }
+      mockKeyCurrent.mockResolvedValue({
+        key_id: 'deadbeef'.repeat(4),
+        bundles: {
+          'cred-mismatch': {
+            credential_id: 'cred-mismatch',
+            kek_iv: hexToBase64(bundle.kekIvHex),
+            encrypted_keys: hexToBase64(bundle.wrappedKeyHex),
+          },
+        },
+      })
+      mockAuthenticatePrfPasskey.mockResolvedValue({
+        credentialId: 'cred-mismatch',
+        prfOutput: new Uint8Array(32).buffer,
+      })
+      mockDeriveKeyEncryptionKey.mockResolvedValue(kek)
+      const result = await flow.unlockFromServer()
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.reason).toBe('key_id_mismatch')
     })
   })
 })

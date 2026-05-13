@@ -46,19 +46,24 @@ import {
 } from './key-bundle'
 import {
   SyncEnclaveError,
+  b64ToHex,
   addBundle as enclaveAddBundle,
+  keyCurrent as enclaveKeyCurrent,
   registerKey as enclaveRegisterKey,
   hexToB64,
+  type KeyCurrentResponse,
 } from './sync-api'
 
 export type PasskeyFlowFailure =
   | 'user_cancelled'
   | 'prf_unsupported'
   | 'no_remote_bundle'
+  | 'no_remote_key'
   | 'bundle_decrypt_failed'
   | 'register_failed'
   | 'enclave_unavailable'
   | 'remote_key_exists'
+  | 'key_id_mismatch'
 
 export interface PasskeyFlowSuccess {
   ok: true
@@ -283,4 +288,88 @@ export async function addBundleForCurrentKey(opts: {
     keyIdHex: opts.keyIdHex,
     credentialId: passkey.credentialId,
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Server state probe + end-to-end unlock                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Re-shape the enclave's `/v1/key/current` response into a list of
+ * BundleBody candidates suitable for `unlockWithPasskey`. The wire
+ * carries kek_iv / encrypted_keys as base64; BundleBody expects hex.
+ */
+export function bundlesFromKeyCurrent(resp: KeyCurrentResponse): BundleBody[] {
+  return Object.values(resp.bundles).map((b) => ({
+    credentialId: b.credential_id,
+    kekIvHex: b64ToHex(b.kek_iv),
+    wrappedKeyHex: b64ToHex(b.encrypted_keys),
+    saltHex: '',
+    info: 'tinfoil-chat-kek-v1',
+  }))
+}
+
+/**
+ * Probe the server for the current key id + bundles. Returns
+ * `{ status: 'empty' }` when the user has no key registered yet, or
+ * `{ status: 'exists', keyIdHex, candidates }` otherwise.
+ */
+export async function fetchServerKeyState(): Promise<
+  | { status: 'empty' }
+  | {
+      status: 'exists'
+      keyIdHex: string
+      candidates: BundleBody[]
+      createdVia?: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
+    }
+> {
+  const resp = await enclaveKeyCurrent()
+  if (!resp.key_id) {
+    return { status: 'empty' }
+  }
+  return {
+    status: 'exists',
+    keyIdHex: resp.key_id,
+    candidates: bundlesFromKeyCurrent(resp),
+    createdVia: resp.created_via,
+  }
+}
+
+/**
+ * End-to-end "returning user" unlock against the enclave. Wraps the
+ * key-current probe + unlockWithPasskey + KeyID binding check into a
+ * single call the hook can invoke without juggling intermediate state.
+ */
+export async function unlockFromServer(opts?: {
+  prefer?: string
+}): Promise<PasskeyFlowResult> {
+  let state: Awaited<ReturnType<typeof fetchServerKeyState>>
+  try {
+    state = await fetchServerKeyState()
+  } catch (err) {
+    return { ok: false, reason: failureFromEnclaveError(err), cause: err }
+  }
+  if (state.status === 'empty') {
+    return { ok: false, reason: 'no_remote_key' }
+  }
+  const result = await unlockWithPasskey({
+    candidates: state.candidates,
+    prefer: opts?.prefer,
+  })
+  if (!result.ok) return result
+
+  // §8.6 binding check — the bundle plaintext carries the key_id the
+  // ciphertext was wrapped against. The enclave's reported key_id MUST
+  // match the derived id, or the bundle is talking about a different
+  // key.
+  if (result.keyIdHex !== state.keyIdHex) {
+    return {
+      ok: false,
+      reason: 'key_id_mismatch',
+      cause: new Error(
+        `keyIdHex ${result.keyIdHex} != enclave ${state.keyIdHex}`,
+      ),
+    }
+  }
+  return result
 }

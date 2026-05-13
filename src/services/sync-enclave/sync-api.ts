@@ -168,6 +168,29 @@ export interface AddBundleRequest {
   encryptedKeysHex: string
 }
 
+/**
+ * Bundle entry shape returned by /v1/key/current. Mirrors the
+ * controlplane `user_key_bundles` row layout (kek_iv + encrypted_keys
+ * are base64 strings on the wire).
+ */
+export interface KeyCurrentBundle {
+  credential_id: string
+  kek_iv: string
+  encrypted_keys: string
+  bundle_version?: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface KeyCurrentResponse {
+  /** Hex-encoded current KeyID, or null if the user has no key yet. */
+  key_id: string | null
+  /** Map of credential_id → bundle body. Empty when key_id is null. */
+  bundles: Record<string, KeyCurrentBundle>
+  created_via?: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
+  created_at?: string
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Migration                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -307,6 +330,25 @@ export async function addBundle(req: AddBundleRequest): Promise<OKResponse> {
   })
 }
 
+/**
+ * Fetch the current key id and the full set of passkey bundles
+ * registered for the authenticated user. Returns `{ key_id: null,
+ * bundles: {} }` when the user has no key yet (HTTP 404 from the
+ * enclave is mapped to this empty shape so callers can treat it as a
+ * normal "first-time user" state without special-casing exceptions).
+ */
+export async function keyCurrent(): Promise<KeyCurrentResponse> {
+  const client = await getSyncEnclaveClient()
+  try {
+    return await client.post<KeyCurrentResponse>('/v1/key/current', {})
+  } catch (err) {
+    if (err instanceof SyncEnclaveError && err.status === 404) {
+      return { key_id: null, bundles: {} }
+    }
+    throw err
+  }
+}
+
 export async function migrate(req: MigrateRequest): Promise<MigrateResponse> {
   const client = await getSyncEnclaveClient()
   return client.post<MigrateResponse>('/v1/blobs/migrate', {
@@ -349,6 +391,20 @@ export function bytesToBase64(b: Uint8Array): string {
 
 export function base64ToBytes(s: string): Uint8Array {
   return b64ToBytes(s)
+}
+
+/**
+ * Convert a base64 string to lowercase hex. Used to map the wire's
+ * `kek_iv` / `encrypted_keys` (base64) into the hex shape `BundleBody`
+ * expects.
+ */
+export function b64ToHex(s: string): string {
+  const bytes = b64ToBytes(s)
+  let out = ''
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0')
+  }
+  return out
 }
 
 /**
