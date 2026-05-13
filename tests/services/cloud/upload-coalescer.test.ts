@@ -184,10 +184,18 @@ describe('UploadCoalescer', () => {
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce(undefined)
 
+      // Pin the jitter to its upper bound so the retry windows are
+      // deterministic. With full-jitter exponential backoff
+      // delay = floor(random() * min(maxDelay, baseDelay * 2**attempt)),
+      // random()=0.9999 gives the worst-case wait per attempt.
       const coalescer = new UploadCoalescer(uploadFn, {
         baseDelayMs: 100,
         maxDelayMs: 400,
         maxRetries: 3,
+        scheduler: {
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          random: () => 0.9999,
+        },
       })
 
       coalescer.enqueue('chat-1')
@@ -196,11 +204,11 @@ describe('UploadCoalescer', () => {
       await vi.advanceTimersByTimeAsync(0)
       expect(uploadFn).toHaveBeenCalledTimes(1)
 
-      // Wait for first retry (100ms)
+      // Wait for first retry: max delay window = baseDelay * 2**0 = 100ms.
       await vi.advanceTimersByTimeAsync(100)
       expect(uploadFn).toHaveBeenCalledTimes(2)
 
-      // Wait for second retry (200ms)
+      // Wait for second retry: max delay window = baseDelay * 2**1 = 200ms.
       await vi.advanceTimersByTimeAsync(200)
       expect(uploadFn).toHaveBeenCalledTimes(3)
 
