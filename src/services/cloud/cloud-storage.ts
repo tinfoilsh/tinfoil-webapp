@@ -10,7 +10,52 @@ import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import { encryptionService } from '../encryption/encryption-service'
 import { type StoredChat } from '../storage/indexed-db'
+import {
+  pull as enclavePull,
+  push as enclavePush,
+  hexToB64,
+  pullItemPlaintext,
+  type PullKey,
+} from '../sync-enclave/sync-api'
 import { processRemoteChat, type RemoteChatData } from './chat-codec'
+
+/**
+ * Produce a unique idempotency key for an enclave write. The enclave
+ * stores the key with the row so retries from the same client see the
+ * same outcome; a fresh UUID-shaped value is sufficient.
+ */
+function newIdempotencyKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  let out = ''
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0')
+  }
+  return out
+}
+
+/**
+ * Build the `keys` array the enclave `pull` endpoint accepts: the
+ * primary CEK first, then any fallback (recovery) keys the local
+ * service has accumulated. The enclave tries each in order; the first
+ * that unseals wins.
+ */
+function pullKeysFromEncryptionService(): PullKey[] {
+  const all = encryptionService.getAllKeys()
+  const out: PullKey[] = []
+  if (all.primary) out.push({ key: hexToB64(all.primary) })
+  for (const alt of all.alternatives) {
+    if (alt !== all.primary) out.push({ key: hexToB64(alt) })
+  }
+  return out
+}
+
+function requirePrimaryKeyB64(): string {
+  const key = encryptionService.getKey()
+  if (!key) {
+    throw new Error('cloud-storage: no encryption key available')
+  }
+  return hexToB64(key)
+}
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
@@ -65,6 +110,13 @@ export interface UploadChatOptions {
 export type RawChatContent =
   | { content: string; formatVersion: 0 }
   | { binaryContent: ArrayBuffer; formatVersion: 1 }
+  /**
+   * Plaintext envelope-v2 JSON returned by the sync enclave. The `2`
+   * here mirrors the wire `tinfoil-sync-envelope-v2` AAD (see
+   * syncplan.md §5) — the row is sealed under v2 on the controlplane,
+   * the enclave unsealed it, so what we hand back is plaintext.
+   */
+  | { plaintext: string; formatVersion: 2 }
 
 function stripBase64FromMessages(messages: Message[]): Message[] {
   return messages.map((msg) => ({
@@ -131,32 +183,27 @@ export class CloudStorageService {
       ...chat,
       messages: stripBase64FromMessages(messages),
     }
-    const binary = await encryptionService.encryptV1(strippedChat)
+    const plaintext = new TextEncoder().encode(JSON.stringify(strippedChat))
 
-    const headers: Record<string, string> = {
-      ...(await this.getHeaders()),
-      'Content-Type': 'application/octet-stream',
-      'X-Message-Count': String(messages.length),
+    const metadata: Record<string, unknown> = {
+      messageCount: messages.length,
     }
     if (chat.projectId) {
-      headers['X-Project-Id'] = chat.projectId
+      metadata.projectId = chat.projectId
     }
     if (options.restoreDeleted) {
-      headers[RESTORE_DELETED_CHAT_HEADER] = 'true'
+      metadata.restoreDeleted = true
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/conversation/${chat.id}/data`,
-      {
-        method: 'PUT',
-        headers,
-        body: binary as unknown as BodyInit,
-      },
-    )
-
-    if (!response.ok) {
-      throw new Error(`Failed to upload chat: ${response.statusText}`)
-    }
+    await enclavePush({
+      scope: 'chat',
+      id: chat.id,
+      keyB64: requirePrimaryKeyB64(),
+      plaintext,
+      ifMatch: null,
+      idempotencyKey: newIdempotencyKey(),
+      metadata,
+    })
 
     return null
   }
@@ -221,57 +268,28 @@ export class CloudStorageService {
       throw new Error('Maximum 100 chats per bulk upload request')
     }
 
-    const metadata: Array<{
-      conversationId: string
-      messageCount: number
-      projectId?: string
-    }> = []
-    const binaryParts: Array<{ id: string; data: Uint8Array }> = []
-
+    // Each row goes through the enclave push pipeline. There's no bulk
+    // push on the enclave wire today, so we fan out single-row pushes
+    // and aggregate results to keep the BulkUploadResponse contract
+    // intact for callers (sign-in migration, bulk re-encrypt).
+    const results: BulkConversationResult[] = []
+    let succeeded = 0
+    let failed = 0
     for (const chat of chats) {
-      const messages = (chat.messages as Message[]) || []
-
-      await this.encryptAndUploadAttachments(messages, chat.id)
-      const strippedChat = {
-        ...chat,
-        messages: stripBase64FromMessages(messages),
+      try {
+        await this.uploadChat(chat as unknown as StoredChat)
+        results.push({ conversationId: chat.id, success: true })
+        succeeded += 1
+      } catch (err) {
+        results.push({
+          conversationId: chat.id,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        failed += 1
       }
-      const binary = await encryptionService.encryptV1(strippedChat)
-
-      metadata.push({
-        conversationId: chat.id,
-        messageCount: messages.length,
-        ...(chat.projectId ? { projectId: chat.projectId } : {}),
-      })
-      binaryParts.push({ id: chat.id, data: binary })
     }
-
-    const formData = new FormData()
-    formData.append(
-      'metadata',
-      new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
-    )
-    for (const part of binaryParts) {
-      formData.append(
-        part.id,
-        new Blob([part.data as BlobPart], { type: 'application/octet-stream' }),
-      )
-    }
-
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/conversations/bulk`,
-      {
-        method: 'POST',
-        headers: await this.getHeaders(),
-        body: formData,
-      },
-    )
-
-    if (!response.ok) {
-      throw new Error(`Bulk upload failed: ${response.statusText}`)
-    }
-
-    return response.json()
+    return { results, succeeded, failed }
   }
 
   /**
@@ -279,33 +297,25 @@ export class CloudStorageService {
    * Returns v0 JSON string or v1 binary ArrayBuffer based on X-Format-Version header.
    */
   async fetchRawChatContent(chatId: string): Promise<RawChatContent | null> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/conversation/${chatId}`,
-      {
-        headers: await this.getHeaders(),
-      },
-    )
+    const keys = pullKeysFromEncryptionService()
+    if (keys.length === 0) return null
 
-    if (response.status === 404) {
+    const resp = await enclavePull({
+      scope: 'chat',
+      ids: [chatId],
+      keys,
+    })
+    const item = resp.items[0]
+    if (!item || !item.ok) {
+      if (item && item.code === 'NOT_FOUND') return null
       return null
     }
-
-    if (!response.ok) {
-      throw new Error(`Failed to download chat: ${response.statusText}`)
+    const plaintext = pullItemPlaintext(item)
+    if (!plaintext) return null
+    return {
+      plaintext: new TextDecoder().decode(plaintext),
+      formatVersion: 2,
     }
-
-    const formatVersion = parseInt(
-      response.headers.get('X-Format-Version') || '0',
-      10,
-    )
-
-    if (formatVersion === 1) {
-      const binaryContent = await response.arrayBuffer()
-      return { binaryContent, formatVersion: 1 }
-    }
-
-    const content = await response.text()
-    return { content, formatVersion: 0 }
   }
 
   async downloadChat(chatId: string): Promise<StoredChat | null> {
@@ -316,12 +326,16 @@ export class CloudStorageService {
         return null
       }
 
-      const remote: RemoteChatData = {
-        id: chatId,
-        ...(raw.formatVersion === 1
-          ? { binaryContent: raw.binaryContent, formatVersion: 1 }
-          : { content: raw.content, formatVersion: 0 }),
-      }
+      const remote: RemoteChatData =
+        raw.formatVersion === 2
+          ? { id: chatId, plaintext: raw.plaintext, formatVersion: 2 }
+          : raw.formatVersion === 1
+            ? {
+                id: chatId,
+                binaryContent: raw.binaryContent,
+                formatVersion: 1,
+              }
+            : { id: chatId, content: raw.content, formatVersion: 0 }
 
       const result = await processRemoteChat(remote)
       return result.chat

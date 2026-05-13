@@ -119,7 +119,10 @@ export async function ingestRemoteChats(
       } else if (fetchMissingContent) {
         const fetched = await cloudStorage.fetchRawChatContent(remoteChat.id)
         if (fetched) {
-          if (fetched.formatVersion === 1) {
+          if (fetched.formatVersion === 2) {
+            codecInput.plaintext = fetched.plaintext
+            codecInput.formatVersion = 2
+          } else if (fetched.formatVersion === 1) {
             codecInput.binaryContent = fetched.binaryContent
             codecInput.formatVersion = 1
           } else {
@@ -130,7 +133,11 @@ export async function ingestRemoteChats(
       }
 
       // Skip if no content available (either not requested or fetch returned nothing)
-      if (!codecInput.content && !codecInput.binaryContent) {
+      if (
+        !codecInput.content &&
+        !codecInput.binaryContent &&
+        !codecInput.plaintext
+      ) {
         continue
       }
 

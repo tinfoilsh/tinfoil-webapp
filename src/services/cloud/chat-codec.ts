@@ -19,6 +19,12 @@ export interface RemoteChatData {
   content?: string | null
   /** v1 binary content (gzip+AES-GCM encrypted). Mutually exclusive with content. */
   binaryContent?: ArrayBuffer | null
+  /**
+   * Plaintext JSON returned by the sync enclave after server-side
+   * unsealing. When set, `processRemoteChat` decodes it directly and
+   * does NOT invoke the legacy `encryptionService.decrypt*` path.
+   */
+  plaintext?: string | null
   createdAt?: string
   updatedAt?: string | null
   formatVersion?: number
@@ -78,7 +84,7 @@ export async function processRemoteChat(
   )
 
   // If no content at all, return a placeholder
-  if (!remote.content && !remote.binaryContent) {
+  if (!remote.content && !remote.binaryContent && !remote.plaintext) {
     logInfo('Remote chat has no content', {
       component: 'ChatCodec',
       action: 'processRemoteChat',
@@ -102,7 +108,11 @@ export async function processRemoteChat(
     let decrypted: any
     let usedFallbackKey = false
 
-    if (remote.formatVersion === 1 && remote.binaryContent) {
+    if (remote.formatVersion === 2 && remote.plaintext) {
+      // Enclave already unsealed the row server-side. The plaintext is
+      // the JSON-serialized StoredChat shape uploadChat() persisted.
+      decrypted = JSON.parse(remote.plaintext)
+    } else if (remote.formatVersion === 1 && remote.binaryContent) {
       const info = await encryptionService.decryptV1WithFallbackInfo(
         new Uint8Array(remote.binaryContent),
       )
