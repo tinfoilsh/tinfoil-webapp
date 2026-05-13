@@ -208,6 +208,7 @@ export async function deletePasskeyCredential(
     await enclaveRemoveBundle({
       keyId: resp.key_id,
       credentialId,
+      idempotencyKey: newIdempotencyKey(),
     })
     return true
   } catch (error) {
@@ -323,6 +324,7 @@ export async function storeEncryptedKeys(
       credentialId,
       kekIvHex: b64ToHexLocal(encrypted.iv),
       encryptedKeysHex: b64ToHexLocal(encrypted.data),
+      idempotencyKey: newIdempotencyKey(),
     })
 
     const refreshed = await enclaveKeyCurrent()

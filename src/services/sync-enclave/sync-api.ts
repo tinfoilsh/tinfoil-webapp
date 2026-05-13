@@ -166,11 +166,15 @@ export interface AddBundleRequest {
   credentialId: string
   kekIvHex: string
   encryptedKeysHex: string
+  /** Client-generated idempotency key, e.g. `newIdempotencyKey()`. */
+  idempotencyKey: string
 }
 
 export interface RemoveBundleRequest {
   keyId: string
   credentialId: string
+  /** Client-generated idempotency key, e.g. `newIdempotencyKey()`. */
+  idempotencyKey: string
 }
 
 /**
@@ -363,6 +367,7 @@ export async function addBundle(req: AddBundleRequest): Promise<OKResponse> {
     credential_id: req.credentialId,
     kek_iv: req.kekIvHex,
     encrypted_keys: req.encryptedKeysHex,
+    idempotency_key: req.idempotencyKey,
   })
 }
 
@@ -377,6 +382,7 @@ export async function removeBundle(
   return client.post<OKResponse>('/v1/key/remove-bundle', {
     key_id: req.keyId,
     credential_id: req.credentialId,
+    idempotency_key: req.idempotencyKey,
   })
 }
 

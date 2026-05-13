@@ -51,6 +51,7 @@ import {
   keyCurrent as enclaveKeyCurrent,
   registerKey as enclaveRegisterKey,
   hexToB64,
+  newIdempotencyKey,
   type KeyCurrentResponse,
 } from './sync-api'
 
@@ -278,6 +279,7 @@ export async function addBundleForCurrentKey(opts: {
       credentialId: bundle.credentialId,
       kekIvHex: bundle.kekIvHex,
       encryptedKeysHex: bundle.wrappedKeyHex,
+      idempotencyKey: newIdempotencyKey(),
     })
   } catch (err) {
     return { ok: false, reason: failureFromEnclaveError(err), cause: err }

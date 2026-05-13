@@ -75,7 +75,11 @@ describe.skipIf(!enabled)('sync-enclave live smoke', () => {
     // leftover key wastes nothing but it does muddy subsequent runs.
     if (registeredKeyId) {
       try {
-        await removeBundle({ keyId: registeredKeyId, credentialId })
+        await removeBundle({
+          keyId: registeredKeyId,
+          credentialId,
+          idempotencyKey: newIdempotencyKey(),
+        })
       } catch (err) {
         if (!(err instanceof SyncEnclaveError)) throw err
       }
@@ -99,6 +103,7 @@ describe.skipIf(!enabled)('sync-enclave live smoke', () => {
         credentialId,
         kekIvHex: '00'.repeat(12),
         encryptedKeysHex: '00'.repeat(48),
+        idempotencyKey: newIdempotencyKey(),
       })
       return
     }

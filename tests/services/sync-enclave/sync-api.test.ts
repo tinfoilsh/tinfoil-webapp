@@ -137,6 +137,7 @@ describe('sync-api (enclave JSON-RPC)', () => {
       credentialId: 'cred-2',
       kekIvHex: 'bb'.repeat(12),
       encryptedKeysHex: 'cc'.repeat(32),
+      idempotencyKey: 'idem-add-1',
     })
     expect(lastRequest()[0]).toBe('/v1/key/add-bundle')
     const body = lastBody<{ key_id: string; credential_id: string }>()

@@ -103,6 +103,7 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       const arg = mockRemoveBundle.mock.calls[0][0]
       expect(arg.keyId).toBe('abc')
       expect(arg.credentialId).toBe('cred-a')
+      expect(typeof arg.idempotencyKey).toBe('string')
     })
 
     it('no-ops when the credential is already gone', async () => {
