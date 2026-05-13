@@ -1,210 +1,161 @@
+/**
+ * passkey-key-storage.storeEncryptedKeys — enclave-wire contract.
+ *
+ * The legacy implementation talked to /api/passkey-credentials/ and
+ * ran an optimistic client-side concurrency loop. The new module
+ * routes through the enclave's register-key / add-bundle wire and
+ * leaves concurrency to the enclave, so these tests assert the
+ * branching contract (first-time register vs add-bundle vs
+ * conflict) rather than version counters.
+ */
+
 import {
   PasskeyCredentialConflictError,
   storeEncryptedKeys,
   type KeyBundle,
-  type PasskeyCredentialEntry,
 } from '@/services/passkey/passkey-key-storage'
 import { deriveKeyEncryptionKey } from '@/services/passkey/passkey-service'
+import { deriveKeyIdHex } from '@/services/sync-enclave/key-bundle'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-const mockGetAuthHeaders = vi.fn()
-
-vi.mock('@/services/auth', () => ({
-  authTokenManager: {
-    getAuthHeaders: (...args: unknown[]) => mockGetAuthHeaders(...args),
-  },
-}))
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
   logInfo: vi.fn(),
 }))
 
-function generateTestPrfOutput(): ArrayBuffer {
-  return crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
-}
+const mockRegisterKey = vi.fn()
+const mockAddBundle = vi.fn()
+const mockKeyCurrent = vi.fn()
 
-function buildEntry(
-  id: string,
-  overrides: Partial<PasskeyCredentialEntry> = {},
-): PasskeyCredentialEntry {
+vi.mock('@/services/sync-enclave/sync-api', async () => {
+  const real = await vi.importActual<
+    typeof import('@/services/sync-enclave/sync-api')
+  >('@/services/sync-enclave/sync-api')
   return {
-    id,
-    encrypted_keys: 'ciphertext',
-    iv: 'iv',
-    created_at: '2026-01-01T00:00:00.000Z',
-    version: 1,
-    sync_version: 1,
-    bundle_version: 1,
-    ...overrides,
+    ...real,
+    registerKey: (...args: unknown[]) => mockRegisterKey(...args),
+    addBundle: (...args: unknown[]) => mockAddBundle(...args),
+    keyCurrent: (...args: unknown[]) => mockKeyCurrent(...args),
   }
+})
+
+const mockGetAlternativeKeyBytes = vi.fn<(k: string) => Uint8Array | null>()
+
+vi.mock('@/services/encryption/encryption-service', () => ({
+  encryptionService: {
+    getAlternativeKeyBytes: (k: string) => mockGetAlternativeKeyBytes(k),
+  },
+}))
+
+const PRIMARY_BYTES = new Uint8Array(32).fill(0x11)
+const KEY_BUNDLE: KeyBundle = {
+  primary: 'key_primary',
+  alternatives: ['key_alt1'],
+  authorizationMode: 'validated',
 }
 
-describe('passkey-key-storage storeEncryptedKeys', () => {
-  let fetchMock: ReturnType<typeof vi.fn>
+describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
   let kek: CryptoKey
-
-  const keyBundle: KeyBundle = {
-    primary: 'key_primary1234567890abcdef',
-    alternatives: ['key_alt1abcdef1234567890'],
-    authorizationMode: 'validated',
-  }
+  let expectedKeyId: string
 
   beforeEach(async () => {
-    fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
-    mockGetAuthHeaders.mockResolvedValue({ Authorization: 'Bearer test-token' })
-    const prfOutput = generateTestPrfOutput()
+    mockRegisterKey.mockReset()
+    mockAddBundle.mockReset()
+    mockKeyCurrent.mockReset()
+    mockGetAlternativeKeyBytes.mockReset()
+    mockGetAlternativeKeyBytes.mockImplementation((k) =>
+      k === 'key_primary' ? PRIMARY_BYTES : null,
+    )
+
+    const prfOutput = crypto.getRandomValues(new Uint8Array(32))
+      .buffer as ArrayBuffer
     kek = await deriveKeyEncryptionKey(prfOutput)
+    expectedKeyId = await deriveKeyIdHex(PRIMARY_BYTES)
   })
 
   afterEach(() => {
-    vi.unstubAllGlobals()
     vi.clearAllMocks()
   })
 
-  it('stores incremented sync and bundle versions after verifying the save', async () => {
-    const initialEntries = [
-      buildEntry('cred-1', { sync_version: 2, bundle_version: 4 }),
-      buildEntry('cred-2', { sync_version: 1, bundle_version: 4 }),
-    ]
-    let savedEntries: PasskeyCredentialEntry[] | null = null
+  it('registers the key + initial bundle when the enclave has no key yet', async () => {
+    mockKeyCurrent
+      .mockResolvedValueOnce({ key_id: null, bundles: {} })
+      .mockResolvedValueOnce({
+        key_id: expectedKeyId,
+        bundles: { 'cred-1': { bundle_version: 1 } },
+      })
+    mockRegisterKey.mockResolvedValue({ ok: true, key_id: expectedKeyId })
 
-    fetchMock.mockImplementation(
-      async (_url: string, options?: RequestInit): Promise<Response> => {
-        const method = options?.method ?? 'GET'
+    const result = await storeEncryptedKeys('cred-1', kek, KEY_BUNDLE)
 
-        if (method === 'GET') {
-          return {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            json: async () => savedEntries ?? initialEntries,
-          } as Response
-        }
-
-        savedEntries = JSON.parse(
-          String(options?.body),
-        ) as PasskeyCredentialEntry[]
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({}),
-        } as Response
-      },
-    )
-
-    const result = await storeEncryptedKeys('cred-1', kek, keyBundle, {
-      expectedSyncVersion: 2,
-      knownBundleVersion: 4,
-      incrementBundleVersion: true,
-      enforceRemoteBundleVersion: true,
-    })
-
-    expect(result).toEqual({ syncVersion: 3, bundleVersion: 5 })
-    expect(savedEntries).not.toBeNull()
-    expect(savedEntries?.find((entry) => entry.id === 'cred-1')).toMatchObject({
-      sync_version: 3,
-      bundle_version: 5,
-    })
+    expect(result).toEqual({ syncVersion: 1, bundleVersion: 1 })
+    expect(mockRegisterKey).toHaveBeenCalledOnce()
+    expect(mockAddBundle).not.toHaveBeenCalled()
+    const arg = mockRegisterKey.mock.calls[0][0]
+    expect(arg.createdVia).toBe('passkey')
+    expect(arg.initialBundle.credentialId).toBe('cred-1')
   })
 
-  it('retries when the first post-save verification does not contain the new entry', async () => {
-    const initialEntries = [
-      buildEntry('cred-1', { sync_version: 1, bundle_version: 1 }),
-    ]
-    let savedEntries: PasskeyCredentialEntry[] | null = null
-    let getCount = 0
-
-    fetchMock.mockImplementation(
-      async (_url: string, options?: RequestInit): Promise<Response> => {
-        const method = options?.method ?? 'GET'
-
-        if (method === 'GET') {
-          getCount += 1
-          const payload =
-            getCount <= 3 ? initialEntries : (savedEntries ?? initialEntries)
-
-          return {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            json: async () => payload,
-          } as Response
-        }
-
-        savedEntries = JSON.parse(
-          String(options?.body),
-        ) as PasskeyCredentialEntry[]
-        return {
-          ok: true,
-          status: 200,
-          statusText: 'OK',
-          json: async () => ({}),
-        } as Response
-      },
-    )
-
-    const result = await storeEncryptedKeys('cred-1', kek, keyBundle, {
-      expectedSyncVersion: 1,
-      knownBundleVersion: 1,
-      incrementBundleVersion: true,
-      enforceRemoteBundleVersion: true,
+  it('uses created_via=start_fresh when the bundle is marked explicit_start_fresh', async () => {
+    mockKeyCurrent
+      .mockResolvedValueOnce({ key_id: null, bundles: {} })
+      .mockResolvedValueOnce({
+        key_id: expectedKeyId,
+        bundles: { 'cred-1': { bundle_version: 1 } },
+      })
+    mockRegisterKey.mockResolvedValue({ ok: true, key_id: expectedKeyId })
+    await storeEncryptedKeys('cred-1', kek, {
+      ...KEY_BUNDLE,
+      authorizationMode: 'explicit_start_fresh',
     })
-
-    expect(result).toEqual({ syncVersion: 2, bundleVersion: 2 })
-    expect(
-      fetchMock.mock.calls.filter(([, options]) => options?.method === 'PUT'),
-    ).toHaveLength(2)
+    expect(mockRegisterKey.mock.calls[0][0].createdVia).toBe('start_fresh')
   })
 
-  it('rejects stale sync_version updates for the same credential', async () => {
-    const initialEntries = [
-      buildEntry('cred-1', { sync_version: 4, bundle_version: 2 }),
-    ]
-
-    fetchMock.mockImplementation(async (): Promise<Response> => {
-      return {
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: async () => initialEntries,
-      } as Response
-    })
-
+  it('maps EXISTING_DATA_UNDER_OTHER_KEY from register-key to a credential conflict', async () => {
+    mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+    mockRegisterKey.mockRejectedValue(
+      new SyncEnclaveError('exists', 409, 'EXISTING_DATA_UNDER_OTHER_KEY'),
+    )
     await expect(
-      storeEncryptedKeys('cred-1', kek, keyBundle, {
-        expectedSyncVersion: 3,
-        knownBundleVersion: 2,
-        incrementBundleVersion: true,
-        enforceRemoteBundleVersion: true,
-      }),
+      storeEncryptedKeys('cred-1', kek, KEY_BUNDLE),
     ).rejects.toBeInstanceOf(PasskeyCredentialConflictError)
   })
 
-  it('rejects updates when another credential already advertises a newer bundle version', async () => {
-    const initialEntries = [
-      buildEntry('cred-1', { sync_version: 2, bundle_version: 4 }),
-      buildEntry('cred-2', { sync_version: 1, bundle_version: 5 }),
-    ]
+  it('adds a bundle when the enclave already has the same primary CEK registered', async () => {
+    mockKeyCurrent
+      .mockResolvedValueOnce({ key_id: expectedKeyId, bundles: {} })
+      .mockResolvedValueOnce({
+        key_id: expectedKeyId,
+        bundles: { 'cred-2': { bundle_version: 7 } },
+      })
+    mockAddBundle.mockResolvedValue({ ok: true })
 
-    fetchMock.mockImplementation(async (): Promise<Response> => {
-      return {
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: async () => initialEntries,
-      } as Response
+    const result = await storeEncryptedKeys('cred-2', kek, KEY_BUNDLE)
+    expect(result).toEqual({ syncVersion: 7, bundleVersion: 7 })
+    expect(mockRegisterKey).not.toHaveBeenCalled()
+    expect(mockAddBundle).toHaveBeenCalledOnce()
+    const arg = mockAddBundle.mock.calls[0][0]
+    expect(arg.keyId).toBe(expectedKeyId)
+    expect(arg.credentialId).toBe('cred-2')
+  })
+
+  it('throws PasskeyCredentialConflictError when the enclave KeyID differs from the local CEK', async () => {
+    mockKeyCurrent.mockResolvedValue({
+      key_id: 'deadbeef'.repeat(4),
+      bundles: { 'cred-3': { bundle_version: 2 } },
     })
-
     await expect(
-      storeEncryptedKeys('cred-1', kek, keyBundle, {
-        expectedSyncVersion: 2,
-        knownBundleVersion: 4,
-        incrementBundleVersion: true,
-        enforceRemoteBundleVersion: true,
-      }),
+      storeEncryptedKeys('cred-3', kek, KEY_BUNDLE),
     ).rejects.toBeInstanceOf(PasskeyCredentialConflictError)
+    expect(mockRegisterKey).not.toHaveBeenCalled()
+    expect(mockAddBundle).not.toHaveBeenCalled()
+  })
+
+  it('returns null when an unexpected error escapes the enclave call', async () => {
+    mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+    mockRegisterKey.mockRejectedValue(new Error('boom'))
+    const result = await storeEncryptedKeys('cred-1', kek, KEY_BUNDLE)
+    expect(result).toBeNull()
   })
 })
