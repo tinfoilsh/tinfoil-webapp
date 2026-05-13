@@ -9,6 +9,7 @@
  */
 
 import { logError, logInfo } from '@/utils/error-handling'
+import { newIdempotencyKey } from '../sync-enclave/sync-api'
 
 const DEFAULT_BASE_DELAY_MS = 1000
 const DEFAULT_MAX_DELAY_MS = 8000
@@ -46,9 +47,12 @@ interface ChatUploadState {
 }
 
 /**
- * Upload function signature
+ * Upload function signature. The coalescer owns the idempotency key
+ * (§9.6 R1): it mints one per logical write and passes the same value
+ * into every retry of that write, so the enclave can de-duplicate
+ * replays into a single committed effect.
  */
-type UploadFn = (chatId: string) => Promise<void>
+type UploadFn = (chatId: string, idempotencyKey: string) => Promise<void>
 
 /**
  * UploadCoalescer - manages coalescing upload queue for chat backups
@@ -104,8 +108,10 @@ export class UploadCoalescer {
       this.states.set(chatId, state)
     }
 
+    // Mark as dirty (needs upload)
     state.dirty = true
 
+    // If no upload in progress, start the worker
     if (!state.inFlight) {
       this.startWorker(chatId, state)
     }
@@ -119,15 +125,25 @@ export class UploadCoalescer {
     const workerGeneration = this.generation
     const workerPromise = (async () => {
       while (state.dirty && workerGeneration === this.generation) {
+        // Clear dirty flag before upload
         state.dirty = false
 
+        // Mint one idempotency key per LOGICAL write (§9.6 R1). All
+        // retries inside uploadWithRetry replay under this key so the
+        // enclave dedupes them; once we loop back because `dirty` was
+        // set during the upload, that's a new logical write and gets
+        // a fresh key on the next iteration.
+        const idempotencyKey = newIdempotencyKey()
+
         try {
-          await this.uploadWithRetry(chatId, state)
+          await this.uploadWithRetry(chatId, state, idempotencyKey)
+          // Success - reset failure count
           state.failureCount = 0
           state.lastError = null
         } catch (error) {
           const uploadError =
             error instanceof Error ? error : new Error(String(error))
+          // Upload failed after all retries
           state.failureCount++
           state.lastError = uploadError
           logError('Upload failed after retries', error, {
@@ -145,6 +161,7 @@ export class UploadCoalescer {
         }
       }
 
+      // Worker done - clear in-flight promise
       state.inFlight = null
 
       const resultWaiters = state.resultWaiters.splice(0)
@@ -185,25 +202,30 @@ export class UploadCoalescer {
   }
 
   /**
-   * Upload with exponential backoff retry.
+   * Upload with exponential backoff retry. All attempts within this
+   * call replay under the same `idempotencyKey` so the enclave
+   * collapses them to a single committed effect (§9.6 R1).
    */
   private async uploadWithRetry(
     chatId: string,
     state: ChatUploadState,
+    idempotencyKey: string,
   ): Promise<void> {
     let lastError: Error | null = null
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
       try {
-        await this.uploadFn(chatId)
+        await this.uploadFn(chatId, idempotencyKey)
         return // Success
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error))
 
+        // Don't retry on final attempt
         if (attempt === this.config.maxRetries) {
           break
         }
 
+        // Calculate backoff delay
         const delay = Math.min(
           this.config.baseDelayMs * Math.pow(2, attempt),
           this.config.maxDelayMs,
@@ -221,8 +243,10 @@ export class UploadCoalescer {
           },
         })
 
+        // Wait before retry
         await this.sleep(delay)
 
+        // Check if new changes came in during wait
         if (state.dirty) {
           // New changes - let the outer loop handle it with fresh data
           return
@@ -230,9 +254,13 @@ export class UploadCoalescer {
       }
     }
 
+    // All retries exhausted
     throw lastError ?? new Error('Upload failed')
   }
 
+  /**
+   * Sleep for a specified duration.
+   */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }

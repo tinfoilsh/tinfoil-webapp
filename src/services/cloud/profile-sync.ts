@@ -5,6 +5,7 @@ import {
   pull as enclavePull,
   push as enclavePush,
   hexToB64,
+  newIdempotencyKey,
   pullItemPlaintext,
   type PullKey,
 } from '../sync-enclave/sync-api'
@@ -15,15 +16,6 @@ const API_BASE_URL =
 
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
-
-function newIdempotencyKey(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  let out = ''
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, '0')
-  }
-  return out
-}
 
 function pullKeysFromEncryptionService(): PullKey[] {
   const all = encryptionService.getAllKeys()

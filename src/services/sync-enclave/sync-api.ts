@@ -350,3 +350,19 @@ export function bytesToBase64(b: Uint8Array): string {
 export function base64ToBytes(s: string): Uint8Array {
   return b64ToBytes(s)
 }
+
+/**
+ * Mint a fresh idempotency key for one logical enclave write. The key
+ * MUST be reused across every HTTP retry of the same logical write
+ * (§9.6 R1) and refreshed when the caller has a new logical write to
+ * perform. Format is 32 lowercase hex characters — a UUID-equivalent
+ * 128 bits drawn from `crypto.getRandomValues`.
+ */
+export function newIdempotencyKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  let out = ''
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0')
+  }
+  return out
+}

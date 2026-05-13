@@ -14,24 +14,11 @@ import {
   pull as enclavePull,
   push as enclavePush,
   hexToB64,
+  newIdempotencyKey,
   pullItemPlaintext,
   type PullKey,
 } from '../sync-enclave/sync-api'
 import { processRemoteChat, type RemoteChatData } from './chat-codec'
-
-/**
- * Produce a unique idempotency key for an enclave write. The enclave
- * stores the key with the row so retries from the same client see the
- * same outcome; a fresh UUID-shaped value is sufficient.
- */
-function newIdempotencyKey(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  let out = ''
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, '0')
-  }
-  return out
-}
 
 /**
  * Build the `keys` array the enclave `pull` endpoint accepts: the
@@ -105,6 +92,16 @@ export interface BulkUploadResponse {
 
 export interface UploadChatOptions {
   restoreDeleted?: boolean
+  /**
+   * Idempotency key for the enclave write. Required to be stable
+   * across all HTTP retries of the same logical upload (§9.6 R1).
+   * The upload coalescer owns generation; when called from outside
+   * the coalescer (one-shot uploads, sign-in migration), the caller
+   * MUST mint a fresh UUID-shaped value once per logical write.
+   * When omitted, a fresh key is generated — this is only safe for
+   * fire-and-forget uploads that have no retry caller above them.
+   */
+  idempotencyKey?: string
 }
 
 export type RawChatContent =
@@ -201,7 +198,7 @@ export class CloudStorageService {
       keyB64: requirePrimaryKeyB64(),
       plaintext,
       ifMatch: null,
-      idempotencyKey: newIdempotencyKey(),
+      idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
       metadata,
     })
 

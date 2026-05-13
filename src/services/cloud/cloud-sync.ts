@@ -8,6 +8,7 @@ import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { chatEvents } from '../storage/chat-events'
 import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
 import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
+import { newIdempotencyKey } from '../sync-enclave/sync-api'
 import { processRemoteChat } from './chat-codec'
 import { ingestRemoteChats, syncRemoteDeletions } from './chat-ingestion'
 import { canWriteToCloud } from './cloud-key-authorization'
@@ -65,7 +66,7 @@ export class CloudSyncService {
 
   constructor() {
     this.uploadCoalescer = new UploadCoalescer(
-      (chatId) => this.doBackupChat(chatId),
+      (chatId, idempotencyKey) => this.doBackupChat(chatId, idempotencyKey),
       {
         baseDelayMs: UPLOAD_BASE_DELAY_MS,
         maxDelayMs: UPLOAD_MAX_DELAY_MS,
@@ -497,13 +498,19 @@ export class CloudSyncService {
       throw new Error('Cannot sync chat while it is streaming')
     }
 
-    await cloudStorage.uploadChat(chat, options)
+    await cloudStorage.uploadChat(chat, {
+      ...options,
+      idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
+    })
 
     const newVersion = (chat.syncVersion ?? 0) + 1
     await indexedDBStorage.markAsSynced(chatId, newVersion)
   }
 
-  private async doBackupChat(chatId: string): Promise<void> {
+  private async doBackupChat(
+    chatId: string,
+    idempotencyKey: string,
+  ): Promise<void> {
     try {
       if (!(await canWriteToCloud())) {
         return
@@ -574,7 +581,7 @@ export class CloudSyncService {
         return
       }
 
-      await cloudStorage.uploadChat(chat)
+      await cloudStorage.uploadChat(chat, { idempotencyKey })
 
       const newVersion = (chat.syncVersion ?? 0) + 1
       await indexedDBStorage.markAsSynced(chatId, newVersion)
