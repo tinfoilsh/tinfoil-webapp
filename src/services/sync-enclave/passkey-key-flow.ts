@@ -2,32 +2,30 @@
  * High-level passkey + sync-enclave glue used by the
  * `usePasskeyBackup` hook.
  *
- * Three flows live here:
+ * The enclave wire (see `internal/server/types.go`) exposes only
+ * `register-key` and `add-bundle` for key management. There is no
+ * "list bundles" endpoint, so this layer's contract is:
  *
- *   - publishCurrentLocalCek
- *       Pure migration shim. If the user has a local CEK (legacy
- *       client-side encryption) but the enclave doesn't have a key
- *       registered, wrap that same CEK under the user's existing
- *       passkey-PRF KEK and register it. Used to lift Phase 1 users
- *       onto the new flow without rotating their key.
+ *   - registerNewKeyWithPasskey: create a passkey, generate a fresh
+ *     CEK, wrap it under the passkey-PRF KEK, register the key +
+ *     initial bundle with the enclave. Treats a 409 from the enclave
+ *     as "remote key already exists, fall through to unlock".
  *
- *   - registerNewKeyWithPasskey
- *       Brand-new user: create a passkey, generate a fresh CEK, wrap
- *       it under the passkey-PRF KEK, and register with the enclave.
+ *   - unlockWithPasskey: authenticate a passkey, derive the KEK,
+ *     unwrap a bundle that the caller already has on hand (e.g. one
+ *     passed in via a previously-cached PRF probe, or one received
+ *     by the consumer through an out-of-band channel).
  *
- *   - unlockWithPasskey
- *       Returning user: authenticate the passkey, derive the KEK,
- *       fetch the user's bundle from the enclave, decrypt to recover
- *       the CEK.
+ *   - addBundleForCurrentKey: enroll a brand-new passkey for an
+ *     existing key (multi-device flow).
  *
- * Each returns either a success record carrying the raw CEK + key_id
- * + credential_id, or a typed failure so the hook can drive the UI
- * state machine.
+ * Each returns either a success record carrying the raw CEK +
+ * key_id + credential_id, or a typed failure so the hook can drive
+ * its state machine.
  *
  * The CEK is held only in memory and zeroed by callers when the
  * session ends. localStorage is never deleted by these helpers; the
- * hook is responsible for the safe "delete only bookkeeping after a
- * successful 200" cleanup.
+ * hook is responsible for cleanup.
  */
 
 import {
@@ -44,8 +42,14 @@ import {
   deriveKeyIdHex,
   unwrapCekFromBundle,
   wrapCekForCredential,
+  type BundleBody,
 } from './key-bundle'
-import * as syncApi from './sync-api'
+import {
+  SyncEnclaveError,
+  addBundle as enclaveAddBundle,
+  registerKey as enclaveRegisterKey,
+  hexToB64,
+} from './sync-api'
 
 export type PasskeyFlowFailure =
   | 'user_cancelled'
@@ -54,14 +58,12 @@ export type PasskeyFlowFailure =
   | 'bundle_decrypt_failed'
   | 'register_failed'
   | 'enclave_unavailable'
+  | 'remote_key_exists'
 
 export interface PasskeyFlowSuccess {
   ok: true
-  /** Hex-encoded 32-byte content encryption key. */
   cekHex: string
-  /** 32-char lowercase hex key_id (matches the enclave's derivation). */
   keyIdHex: string
-  /** Credential id of the passkey the bundle was wrapped under. */
   credentialId: string
 }
 
@@ -79,77 +81,44 @@ export interface PasskeyUserInfo {
   displayName: string
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Migration shim: legacy CEK -> enclave-registered key                      */
-/* -------------------------------------------------------------------------- */
+type CreatedVia = 'passkey' | 'manual' | 'recovery' | 'start_fresh'
 
-/**
- * Publish the user's existing local CEK to the sync enclave using the
- * passkey they already have registered. Returns `ok: false` with a
- * specific reason if the upgrade isn't applicable (no passkey, decrypt
- * mismatch, etc.) so the hook can fall through to the appropriate
- * recovery path.
- */
-export async function publishCurrentLocalCek(opts: {
-  /** Hex CEK currently held client-side. */
-  legacyCekHex: string
-}): Promise<PasskeyFlowResult> {
-  try {
-    // First check: does the enclave already know about a key for this user?
-    const current = await syncApi.getCurrentKey()
-    if (current.key_id) {
-      // Cross-device case: the enclave has a key already. We should not
-      // overwrite it. The caller's `unlockWithPasskey` path handles
-      // surfacing the existing remote bundle to the user.
-      const localKeyId = await deriveKeyIdHex(cekHexToBytes(opts.legacyCekHex))
-      if (localKeyId === current.key_id) {
-        // Already in sync. Use any existing credential id we know of.
-        return {
-          ok: true,
-          cekHex: opts.legacyCekHex,
-          keyIdHex: current.key_id,
-          credentialId: current.bundles[0]?.credential_id ?? '',
-        }
-      }
-      // Local and remote disagree — surface as "no_remote_bundle" so the
-      // caller falls through to unlockWithPasskey and adopts the remote
-      // CEK. (We never overwrite the enclave's existing key from a stale
-      // local cache.)
-      return { ok: false, reason: 'no_remote_bundle' }
-    }
-    // Enclave has nothing yet: we must register a passkey + bundle.
-    return {
-      ok: false,
-      reason: 'no_remote_bundle',
-    }
-  } catch (err) {
-    logError(
-      'sync enclave unavailable during legacy CEK publish',
-      err instanceof Error ? err : new Error(String(err)),
-      { component: 'passkey-key-flow', action: 'publishCurrentLocalCek' },
-    )
-    return { ok: false, reason: 'enclave_unavailable', cause: err }
+function randomIdempotencyKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  let out = ''
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0')
   }
+  return out
+}
+
+function failureFromPasskeyError(err: unknown): PasskeyFlowFailure {
+  if (!err || typeof err !== 'object') return 'user_cancelled'
+  const name = (err as { name?: string }).name
+  if (name === 'PrfNotSupportedError') return 'prf_unsupported'
+  if (name === 'PasskeyTimeoutError') return 'prf_unsupported'
+  return 'user_cancelled'
+}
+
+function failureFromEnclaveError(err: unknown): PasskeyFlowFailure {
+  if (err instanceof SyncEnclaveError) {
+    if (err.code === 'EXISTING_DATA_UNDER_OTHER_KEY' || err.status === 409) {
+      return 'remote_key_exists'
+    }
+    if (err.status && err.status >= 500) return 'enclave_unavailable'
+    return 'register_failed'
+  }
+  return 'enclave_unavailable'
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Brand-new user                                                            */
+/*  Brand-new user / register key with passkey                                */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Create a passkey, generate a fresh CEK, wrap it under the
- * passkey-PRF KEK, and register the whole bundle with the enclave in
- * one shot. Returns the CEK so callers can hydrate
- * `encryptionService` / `useSyncEnclaveSession`.
- */
 export async function registerNewKeyWithPasskey(opts: {
   user: PasskeyUserInfo
   startFresh?: boolean
-  createdVia?:
-    | 'enclave_register'
-    | 'passkey_recovery'
-    | 'manual_entry'
-    | 'legacy_import'
+  createdVia?: CreatedVia
 }): Promise<PasskeyFlowResult> {
   let passkey: PrfPasskeyResult | null
   try {
@@ -175,11 +144,16 @@ export async function registerNewKeyWithPasskey(opts: {
   })
 
   try {
-    await syncApi.registerKey({
-      keyIdHex,
-      bundle,
-      startFresh: opts.startFresh ?? true,
-      createdVia: opts.createdVia ?? 'enclave_register',
+    await enclaveRegisterKey({
+      keyB64: hexToB64(cekHex),
+      ifMatch: opts.startFresh ? '*' : '*',
+      createdVia: opts.createdVia ?? 'passkey',
+      idempotencyKey: randomIdempotencyKey(),
+      initialBundle: {
+        credentialId: bundle.credentialId,
+        kekIvHex: bundle.kekIvHex,
+        encryptedKeysHex: bundle.wrappedKeyHex,
+      },
     })
   } catch (err) {
     logError(
@@ -187,7 +161,7 @@ export async function registerNewKeyWithPasskey(opts: {
       err instanceof Error ? err : new Error(String(err)),
       { component: 'passkey-key-flow', action: 'registerNewKeyWithPasskey' },
     )
-    return { ok: false, reason: 'register_failed', cause: err }
+    return { ok: false, reason: failureFromEnclaveError(err), cause: err }
   }
 
   logInfo('registered new sync enclave key', {
@@ -204,50 +178,42 @@ export async function registerNewKeyWithPasskey(opts: {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Returning user                                                            */
+/*  Returning user / unlock with a remote bundle                              */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Authenticate the user's passkey, derive the KEK, fetch the
- * matching bundle from the enclave, and recover the raw CEK.
+ * Recover the user's CEK by re-authenticating their passkey and
+ * unwrapping a bundle the caller already has on hand.
  *
- * If `prefer` is supplied, it acts as a hint for which credential id
- * to ask WebAuthn for first (matches the previous PRF cache behavior).
+ * The caller supplies the candidate bundle(s) — typically obtained
+ * out-of-band when the consumer (passkey hook) loaded them from
+ * `passkey-key-storage` during the migration window, or when a
+ * second device received them via `add-bundle`.
  */
-export async function unlockWithPasskey(opts?: {
+export async function unlockWithPasskey(opts: {
+  /** Bundles the caller wants to try, keyed by credential_id. */
+  candidates: BundleBody[]
+  /** Optional hint for which credential id to authenticate first. */
   prefer?: string
-  passkey?: PrfPasskeyResult
 }): Promise<PasskeyFlowResult> {
-  let current: syncApi.CurrentKeyResponse
-  try {
-    current = await syncApi.getCurrentKey()
-  } catch (err) {
-    return { ok: false, reason: 'enclave_unavailable', cause: err }
-  }
-  if (!current.key_id || current.bundles.length === 0) {
+  if (opts.candidates.length === 0) {
     return { ok: false, reason: 'no_remote_bundle' }
   }
+  const credIds = opts.candidates.map((c) => c.credentialId)
+  const ordered = opts.prefer
+    ? [opts.prefer, ...credIds.filter((c) => c !== opts.prefer)]
+    : credIds
 
   let passkey: PrfPasskeyResult | null
-  if (opts?.passkey) {
-    passkey = opts.passkey
-  } else {
-    try {
-      const credIds = current.bundles
-        .map((b) => b.credential_id)
-        .filter((id) => id.length > 0)
-      const ordered = opts?.prefer
-        ? [opts.prefer, ...credIds.filter((c) => c !== opts.prefer)]
-        : credIds
-      passkey = await authenticatePrfPasskey(ordered)
-    } catch (err) {
-      return { ok: false, reason: failureFromPasskeyError(err), cause: err }
-    }
+  try {
+    passkey = await authenticatePrfPasskey(ordered)
+  } catch (err) {
+    return { ok: false, reason: failureFromPasskeyError(err), cause: err }
   }
   if (!passkey) return { ok: false, reason: 'user_cancelled' }
 
-  const remote = current.bundles.find(
-    (b) => b.credential_id === passkey!.credentialId,
+  const remote = opts.candidates.find(
+    (c) => c.credentialId === passkey!.credentialId,
   )
   if (!remote) return { ok: false, reason: 'no_remote_bundle' }
 
@@ -264,22 +230,19 @@ export async function unlockWithPasskey(opts?: {
     return { ok: false, reason: 'bundle_decrypt_failed', cause: err }
   }
 
+  const keyIdHex = await deriveKeyIdHex(cek)
   return {
     ok: true,
     cekHex: cekBytesToHex(cek),
-    keyIdHex: current.key_id,
+    keyIdHex,
     credentialId: passkey.credentialId,
   }
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Add a new device's bundle for an existing key                             */
+/*  Add another device's bundle                                               */
 /* -------------------------------------------------------------------------- */
 
-/**
- * After unlocking, register a brand-new passkey-bundle alongside the
- * existing key. Used when a user adds a second device.
- */
 export async function addBundleForCurrentKey(opts: {
   cekHex: string
   keyIdHex: string
@@ -305,9 +268,14 @@ export async function addBundleForCurrentKey(opts: {
   })
 
   try {
-    await syncApi.addBundle(opts.keyIdHex, bundle)
+    await enclaveAddBundle({
+      keyId: opts.keyIdHex,
+      credentialId: bundle.credentialId,
+      kekIvHex: bundle.kekIvHex,
+      encryptedKeysHex: bundle.wrappedKeyHex,
+    })
   } catch (err) {
-    return { ok: false, reason: 'register_failed', cause: err }
+    return { ok: false, reason: failureFromEnclaveError(err), cause: err }
   }
   return {
     ok: true,
@@ -315,16 +283,4 @@ export async function addBundleForCurrentKey(opts: {
     keyIdHex: opts.keyIdHex,
     credentialId: passkey.credentialId,
   }
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Helpers                                                                   */
-/* -------------------------------------------------------------------------- */
-
-function failureFromPasskeyError(err: unknown): PasskeyFlowFailure {
-  if (!err || typeof err !== 'object') return 'user_cancelled'
-  const name = (err as { name?: string }).name
-  if (name === 'PrfNotSupportedError') return 'prf_unsupported'
-  if (name === 'PasskeyTimeoutError') return 'prf_unsupported'
-  return 'user_cancelled'
 }

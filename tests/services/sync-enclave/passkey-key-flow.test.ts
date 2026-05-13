@@ -4,6 +4,7 @@ import {
   wrapCekForCredential,
 } from '@/services/sync-enclave/key-bundle'
 import * as flow from '@/services/sync-enclave/passkey-key-flow'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
@@ -23,15 +24,19 @@ vi.mock('@/services/passkey/passkey-service', () => ({
     mockDeriveKeyEncryptionKey(...args),
 }))
 
-const mockGetCurrentKey = vi.fn()
 const mockRegisterKey = vi.fn()
 const mockAddBundle = vi.fn()
 
-vi.mock('@/services/sync-enclave/sync-api', () => ({
-  getCurrentKey: (...args: unknown[]) => mockGetCurrentKey(...args),
-  registerKey: (...args: unknown[]) => mockRegisterKey(...args),
-  addBundle: (...args: unknown[]) => mockAddBundle(...args),
-}))
+vi.mock('@/services/sync-enclave/sync-api', async () => {
+  const real = await vi.importActual<
+    typeof import('@/services/sync-enclave/sync-api')
+  >('@/services/sync-enclave/sync-api')
+  return {
+    ...real,
+    registerKey: (...args: unknown[]) => mockRegisterKey(...args),
+    addBundle: (...args: unknown[]) => mockAddBundle(...args),
+  }
+})
 
 async function importKek(seed: number): Promise<CryptoKey> {
   const raw = new Uint8Array(32).fill(seed)
@@ -55,7 +60,6 @@ describe('passkey-key-flow', () => {
     mockCreatePrfPasskey.mockReset()
     mockAuthenticatePrfPasskey.mockReset()
     mockDeriveKeyEncryptionKey.mockReset()
-    mockGetCurrentKey.mockReset()
     mockRegisterKey.mockReset()
     mockAddBundle.mockReset()
   })
@@ -66,13 +70,11 @@ describe('passkey-key-flow', () => {
 
   describe('registerNewKeyWithPasskey', () => {
     it('creates a fresh CEK, wraps it, and registers with the enclave', async () => {
-      const prfOutput = new Uint8Array(32).fill(0x77).buffer
       mockCreatePrfPasskey.mockResolvedValue({
         credentialId: 'cred-new',
-        prfOutput,
+        prfOutput: new Uint8Array(32).fill(0x77).buffer,
       })
-      const kek = await importKek(0xa1)
-      mockDeriveKeyEncryptionKey.mockResolvedValue(kek)
+      mockDeriveKeyEncryptionKey.mockResolvedValue(await importKek(0xa1))
       mockRegisterKey.mockResolvedValue({ ok: true, key_id: 'kid' })
 
       const result = await flow.registerNewKeyWithPasskey({ user: USER })
@@ -81,10 +83,13 @@ describe('passkey-key-flow', () => {
       expect(result.credentialId).toBe('cred-new')
       expect(result.keyIdHex).toMatch(/^[0-9a-f]{32}$/)
       expect(result.cekHex).toMatch(/^[0-9a-f]{64}$/)
+
       expect(mockRegisterKey).toHaveBeenCalledOnce()
-      const registerArg = mockRegisterKey.mock.calls[0][0]
-      expect(registerArg.keyIdHex).toBe(result.keyIdHex)
-      expect(registerArg.bundle.credentialId).toBe('cred-new')
+      const arg = mockRegisterKey.mock.calls[0][0]
+      expect(arg.ifMatch).toBe('*')
+      expect(arg.createdVia).toBe('passkey')
+      expect(arg.initialBundle.credentialId).toBe('cred-new')
+      expect(arg.initialBundle.encryptedKeysHex).toMatch(/^[0-9a-f]+$/)
     })
 
     it('returns user_cancelled when the WebAuthn prompt is cancelled', async () => {
@@ -105,22 +110,39 @@ describe('passkey-key-flow', () => {
       expect(result.reason).toBe('prf_unsupported')
     })
 
-    it('returns register_failed when the enclave call rejects', async () => {
+    it('maps a 409 from the enclave to remote_key_exists', async () => {
       mockCreatePrfPasskey.mockResolvedValue({
         credentialId: 'cred-x',
         prfOutput: new Uint8Array(32).buffer,
       })
       mockDeriveKeyEncryptionKey.mockResolvedValue(await importKek(0xa2))
-      mockRegisterKey.mockRejectedValue(new Error('STALE_KEY'))
+      mockRegisterKey.mockRejectedValue(
+        new SyncEnclaveError('exists', 409, 'EXISTING_DATA_UNDER_OTHER_KEY'),
+      )
       const result = await flow.registerNewKeyWithPasskey({ user: USER })
       expect(result.ok).toBe(false)
       if (result.ok) return
-      expect(result.reason).toBe('register_failed')
+      expect(result.reason).toBe('remote_key_exists')
+    })
+
+    it('maps a 500 from the enclave to enclave_unavailable', async () => {
+      mockCreatePrfPasskey.mockResolvedValue({
+        credentialId: 'cred-x',
+        prfOutput: new Uint8Array(32).buffer,
+      })
+      mockDeriveKeyEncryptionKey.mockResolvedValue(await importKek(0xa2))
+      mockRegisterKey.mockRejectedValue(
+        new SyncEnclaveError('boom', 503, 'BACKEND_DOWN'),
+      )
+      const result = await flow.registerNewKeyWithPasskey({ user: USER })
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.reason).toBe('enclave_unavailable')
     })
   })
 
   describe('unlockWithPasskey', () => {
-    it('round-trips a registered key bundle into a CEK', async () => {
+    it('round-trips a candidate bundle into a CEK', async () => {
       const cek = crypto.getRandomValues(new Uint8Array(32))
       const cekHex = cekBytesToHex(cek)
       const expectedKid = await deriveKeyIdHex(cek)
@@ -130,27 +152,13 @@ describe('passkey-key-flow', () => {
         kek,
         cek,
       })
-
-      mockGetCurrentKey.mockResolvedValue({
-        key_id: expectedKid,
-        bundles: [
-          {
-            credential_id: bundle.credentialId,
-            kek_iv: bundle.kekIvHex,
-            wrapped_key: bundle.wrappedKeyHex,
-            salt: bundle.saltHex,
-            info: bundle.info ?? '',
-            created_at: '2026-05-01T00:00:00Z',
-          },
-        ],
-      })
       mockAuthenticatePrfPasskey.mockResolvedValue({
         credentialId: 'cred-r',
         prfOutput: new Uint8Array(32).buffer,
       })
       mockDeriveKeyEncryptionKey.mockResolvedValue(kek)
 
-      const result = await flow.unlockWithPasskey()
+      const result = await flow.unlockWithPasskey({ candidates: [bundle] })
       expect(result.ok).toBe(true)
       if (!result.ok) return
       expect(result.cekHex).toBe(cekHex)
@@ -158,14 +166,13 @@ describe('passkey-key-flow', () => {
       expect(result.credentialId).toBe('cred-r')
     })
 
-    it('reports no_remote_bundle when the enclave has no key registered', async () => {
-      mockGetCurrentKey.mockResolvedValue({ key_id: null, bundles: [] })
-      const result = await flow.unlockWithPasskey()
+    it('returns no_remote_bundle when the candidate list is empty', async () => {
+      const result = await flow.unlockWithPasskey({ candidates: [] })
       expect(result).toEqual({ ok: false, reason: 'no_remote_bundle' })
       expect(mockAuthenticatePrfPasskey).not.toHaveBeenCalled()
     })
 
-    it('reports bundle_decrypt_failed on KEK mismatch', async () => {
+    it('returns bundle_decrypt_failed on KEK mismatch', async () => {
       const cek = crypto.getRandomValues(new Uint8Array(32))
       const wrongKek = await importKek(0xc1)
       const correctKek = await importKek(0xc2)
@@ -174,88 +181,26 @@ describe('passkey-key-flow', () => {
         kek: correctKek,
         cek,
       })
-      mockGetCurrentKey.mockResolvedValue({
-        key_id: 'kid',
-        bundles: [
-          {
-            credential_id: bundle.credentialId,
-            kek_iv: bundle.kekIvHex,
-            wrapped_key: bundle.wrappedKeyHex,
-            salt: bundle.saltHex,
-            info: bundle.info ?? '',
-          },
-        ],
-      })
       mockAuthenticatePrfPasskey.mockResolvedValue({
         credentialId: 'cred-mismatch',
         prfOutput: new Uint8Array(32).buffer,
       })
       mockDeriveKeyEncryptionKey.mockResolvedValue(wrongKek)
-      const result = await flow.unlockWithPasskey()
+      const result = await flow.unlockWithPasskey({ candidates: [bundle] })
       expect(result.ok).toBe(false)
       if (result.ok) return
       expect(result.reason).toBe('bundle_decrypt_failed')
     })
   })
 
-  describe('publishCurrentLocalCek', () => {
-    it('reports no_remote_bundle when the enclave is empty', async () => {
-      mockGetCurrentKey.mockResolvedValue({ key_id: null, bundles: [] })
-      const result = await flow.publishCurrentLocalCek({
-        legacyCekHex: 'aa'.repeat(32),
-      })
-      expect(result.ok).toBe(false)
-      if (result.ok) return
-      expect(result.reason).toBe('no_remote_bundle')
-    })
-
-    it('passes through when local CEK matches the enclave key_id', async () => {
-      const cek = crypto.getRandomValues(new Uint8Array(32))
-      const cekHex = cekBytesToHex(cek)
-      const kid = await deriveKeyIdHex(cek)
-      mockGetCurrentKey.mockResolvedValue({
-        key_id: kid,
-        bundles: [
-          {
-            credential_id: 'cred-known',
-            kek_iv: '',
-            wrapped_key: '',
-            salt: '',
-            info: '',
-          },
-        ],
-      })
-      const result = await flow.publishCurrentLocalCek({ legacyCekHex: cekHex })
-      expect(result.ok).toBe(true)
-      if (!result.ok) return
-      expect(result.keyIdHex).toBe(kid)
-      expect(result.credentialId).toBe('cred-known')
-    })
-
-    it('refuses to overwrite a mismatched remote key', async () => {
-      const local = crypto.getRandomValues(new Uint8Array(32))
-      mockGetCurrentKey.mockResolvedValue({
-        key_id: 'ff'.repeat(16),
-        bundles: [],
-      })
-      const result = await flow.publishCurrentLocalCek({
-        legacyCekHex: cekBytesToHex(local),
-      })
-      expect(result.ok).toBe(false)
-      if (result.ok) return
-      expect(result.reason).toBe('no_remote_bundle')
-    })
-  })
-
   describe('addBundleForCurrentKey', () => {
     it('wraps the current CEK under a new passkey and posts to the enclave', async () => {
       const cek = crypto.getRandomValues(new Uint8Array(32))
-      const kek = await importKek(0xd1)
       mockCreatePrfPasskey.mockResolvedValue({
         credentialId: 'cred-newdev',
         prfOutput: new Uint8Array(32).buffer,
       })
-      mockDeriveKeyEncryptionKey.mockResolvedValue(kek)
+      mockDeriveKeyEncryptionKey.mockResolvedValue(await importKek(0xd1))
       mockAddBundle.mockResolvedValue({ ok: true })
       const result = await flow.addBundleForCurrentKey({
         cekHex: cekBytesToHex(cek),
@@ -264,9 +209,9 @@ describe('passkey-key-flow', () => {
       })
       expect(result.ok).toBe(true)
       expect(mockAddBundle).toHaveBeenCalledOnce()
-      const [kid, bundle] = mockAddBundle.mock.calls[0]
-      expect(kid).toBe('kid')
-      expect(bundle.credentialId).toBe('cred-newdev')
+      const arg = mockAddBundle.mock.calls[0][0]
+      expect(arg.keyId).toBe('kid')
+      expect(arg.credentialId).toBe('cred-newdev')
     })
   })
 })

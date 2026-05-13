@@ -1,394 +1,352 @@
-import { computeOperationHash } from './operation-hash'
-import { getSyncEnclaveClient, SyncEnclaveError } from './sync-enclave-client'
-
 /**
- * Typed API surface for the sync enclave. The enclave proxies most
- * endpoints to the controlplane after applying per-user encryption /
- * decryption; from the web client's point of view this is the only
- * service that touches plaintext.
+ * Typed JSON-RPC client for the sync enclave's `/v1/*` endpoints. See
+ * the enclave's `internal/server/types.go` for the canonical wire
+ * shapes; everything here is a TypeScript mirror.
  *
- * Every write through the enclave path carries:
- *   - X-Key-Id            : the user's current key (hex, 16 bytes)
- *   - If-Match            : the etag the client believes the row is at
- *   - X-Idempotency-Key   : caller-chosen idempotency token
- *   - X-Operation-Hash    : keyed HMAC over the canonical tuple
- *                            (METHOD, PATH, KEY_ID, IF_MATCH, IDEM, BODY)
- *                            under a CEK-derived subkey. See §7.0 of
- *                            syncplan.md and `operation-hash.ts`. The
- *                            controlplane sees this header so a plain
- *                            SHA-256(plaintext) would be brute-forceable
- *                            against low-entropy bodies; the keyed MAC
- *                            closes that hole.
- *   - X-Rewrap            : "true" when the caller is intentionally
- *                            re-keying the row under a new key_id
+ * All endpoints are POST with a JSON body and JSON response. The client
+ * is responsible for:
  *
- * The controlplane (via the enclave) returns:
- *   - 200 with { ok, etag, key_id } on success
- *   - 412 PRECONDITION_FAILED with { current_etag } on stale If-Match
- *   - 409 CONFLICT (STALE_KEY) with { current_key_id } on key mismatch
- *   - 409 CONFLICT (EXISTING_DATA_UNDER_OTHER_KEY) on register-key with
- *         pre-existing data tagged under a different key
+ *   - supplying the user's CEK on every push/pull/delete (base64 raw
+ *     32-byte key);
+ *   - choosing an idempotency key per logical operation;
+ *   - passing the ETag the client believes the row is at (or null for
+ *     a create) via `ifMatch`;
+ *   - feeding the enclave any conflict resolution preferences via
+ *     `conflictPolicy`.
+ *
+ * The enclave owns:
+ *   - encryption-at-rest (seal/unseal under the user's CEK);
+ *   - the per-row ETag and `key_id` columns;
+ *   - 412 STALE_BLOB / 409 STALE_KEY conflict semantics; and
+ *   - the auto-merge resolver path (see `internal/resolver`).
  */
+
+import { SyncEnclaveError, getSyncEnclaveClient } from './sync-enclave-client'
 
 export type Scope = 'profile' | 'chat' | 'project' | 'project_document'
 
-export interface BundleBody {
-  credentialId: string
-  /** 12-byte AES-GCM IV, hex-encoded. */
-  kekIvHex: string
-  /** Wrapped CEK ciphertext, hex-encoded. */
-  wrappedKeyHex: string
-  /** Salt used by HKDF over the PRF output. */
-  saltHex: string
-  /** Free-form descriptor (e.g. PRF info string). */
-  info?: string
-}
+export type ConflictPolicy = 'auto_merge' | 'reject' | 'replace_remote'
 
-export interface RegisterKeyRequest {
-  /** 16-byte key id, hex-encoded. */
-  keyIdHex: string
-  bundle: BundleBody
-  /**
-   * If true, instructs the controlplane to register this key even when
-   * the user already has data tagged under another key. The enclave
-   * will adopt the new key going forward; legacy rows are left for
-   * Phase 4 opportunistic migration.
-   */
-  startFresh?: boolean
-  /** Origin label persisted on user_keys.created_via. */
-  createdVia?:
-    | 'enclave_register'
-    | 'passkey_recovery'
-    | 'manual_entry'
-    | 'legacy_import'
-}
+/* -------------------------------------------------------------------------- */
+/*  Push / Pull / List / Delete                                               */
+/* -------------------------------------------------------------------------- */
 
-export interface RegisterKeyResponse {
-  ok: true
-  key_id: string
-}
-
-export interface CurrentKeyResponse {
-  key_id: string | null
-  bundles: Array<{
-    credential_id: string
-    kek_iv: string
-    wrapped_key: string
-    salt: string
-    info: string
-    created_at: string
-  }>
-}
-
-export interface WriteOptions {
-  /**
-   * The etag the caller believes the row is currently at. Use 0 for a
-   * create (or the first enclave write over a legacy row).
-   */
-  ifMatch: number
-  /** Caller-chosen idempotency token (must be unique per logical op). */
+export interface PushRequest {
+  scope: Scope
+  /** Required for non-profile scopes; ignored for profile (server fills it in). */
+  id?: string
+  /** User's CEK, base64-encoded raw 32 bytes. */
+  keyB64: string
+  /** Plaintext bytes the enclave will seal. */
+  plaintext: Uint8Array
+  /** CAS guard. null = create; otherwise the ETag the caller believes the row is at. */
+  ifMatch: string | null
   idempotencyKey: string
-  /**
-   * Operation-hash subkey, derived once per session from the user's
-   * CEK via `deriveOpHashKey()`. The same subkey can be reused across
-   * many writes. Forcing this through the type system means callers
-   * cannot accidentally substitute a SHA-256(body) — the
-   * controlplane-visible header would then be brute-forceable.
-   */
-  opKey: CryptoKey
-  /**
-   * Set to true when the caller is intentionally re-keying a row under
-   * a different key (the only path that bypasses the STALE_KEY check).
-   */
-  rewrap?: boolean
+  conflictPolicy?: ConflictPolicy
+  /** Arbitrary scope-specific metadata persisted alongside the row. */
+  metadata?: Record<string, unknown>
 }
 
-export interface WriteResponse {
+export interface PushResponse {
   ok: true
   etag: string
   key_id: string
 }
 
-export interface ListStatusResponse {
-  scope: Scope
-  needs_migration: number
-  migration_blocked: number
-  current_etag?: string
-  current_key_id?: string
+export interface PullKey {
+  /** base64 32-byte raw key. */
+  key: string
+  /** Optional hint; enclave verifies/derives. */
+  key_id?: string
 }
 
-export interface NeedsMigrationResponse {
+export interface PullRequest {
   scope: Scope
   ids?: string[]
-  items?: Array<{ id: string; project_id: string }>
+  all?: boolean
+  cursor?: string
+  limit?: number
+  /** One or more candidate decryption keys. The enclave tries each in order. */
+  keys: PullKey[]
 }
 
-export interface TombstonesResponse {
+export interface PullItem {
+  id: string
+  ok: boolean
+  /** Base64-encoded plaintext bytes when `ok=true`. */
+  plaintext?: string
+  key_id?: string
+  etag?: string
+  needs_rewrap?: boolean
+  /** Error code when `ok=false` (e.g. "NEEDS_REWRAP", "NOT_FOUND"). */
+  code?: string
+  reason?: string
+}
+
+export interface PullResponse {
+  items: PullItem[]
+  next_cursor?: string
+}
+
+export interface ListStatusRequest {
   scope: Scope
-  items: Array<{
-    id: string
-    parent_id?: string
-    deleted_at: string
-  }>
+  cursor?: string
+  limit?: number
 }
 
-async function writeHeaders(
-  method: 'PUT' | 'POST' | 'DELETE',
-  path: string,
-  keyIdHex: string,
-  opts: WriteOptions,
-  body: Uint8Array,
-): Promise<Record<string, string>> {
-  const ifMatchStr = String(opts.ifMatch)
-  const opHash = await computeOperationHash(opts.opKey, {
-    method,
-    path,
-    keyIdHex,
-    ifMatch: ifMatchStr,
-    idempotencyKey: opts.idempotencyKey,
-    body,
-  })
-  const headers: Record<string, string> = {
-    'X-Key-Id': keyIdHex,
-    'If-Match': ifMatchStr,
-    'X-Idempotency-Key': opts.idempotencyKey,
-    'X-Operation-Hash': opHash,
-  }
-  if (opts.rewrap) {
-    headers['X-Rewrap'] = 'true'
-  }
-  return headers
+export interface ListStatusUpdate {
+  id: string
+  etag: string
+  key_id: string
+  updated_at: string
+  cursor?: string
 }
 
-function jsonBody(value: unknown): Uint8Array {
-  return new TextEncoder().encode(JSON.stringify(value))
+export interface ListStatusDelete {
+  id: string
+  scope: Scope
+  deleted_at: string
+  cursor?: string
+}
+
+export interface ListStatusResponse {
+  updates: ListStatusUpdate[]
+  deletes: ListStatusDelete[]
+  next_cursor?: string
+}
+
+export interface DeleteRequest {
+  scope: Scope
+  id: string
+  ifMatch: string | null
+  idempotencyKey: string
+  /** Base64 CEK; required to derive the op-hash key per spec §7.0. */
+  keyB64: string
+}
+
+export interface OKResponse {
+  ok: true
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Key registry                                                              */
 /* -------------------------------------------------------------------------- */
 
-export async function registerKey(
-  req: RegisterKeyRequest,
-): Promise<RegisterKeyResponse> {
+export interface KeyRegisterBundleInput {
+  credentialId: string
+  /** AES-GCM IV, hex. */
+  kekIvHex: string
+  /** Wrapped CEK, hex. */
+  encryptedKeysHex: string
+}
+
+export interface KeyRegisterRequest {
+  /** Base64 raw 32-byte CEK. */
+  keyB64: string
+  /** Equivalent of If-Match for the user_keys row; "" for first register. */
+  ifMatch: string
+  /**
+   * Origin label persisted on `user_keys.created_via`. The enclave
+   * accepts only the four values listed here (see
+   * `internal/server/ops.go::RegisterKey`).
+   */
+  createdVia: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
+  idempotencyKey: string
+  /** Optional initial passkey bundle to register alongside the key. */
+  initialBundle?: KeyRegisterBundleInput
+}
+
+export interface KeyRegisterResponse {
+  ok: true
+  key_id: string
+}
+
+export interface AddBundleRequest {
+  keyId: string
+  credentialId: string
+  kekIvHex: string
+  encryptedKeysHex: string
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Migration                                                                 */
+/* -------------------------------------------------------------------------- */
+
+export interface MigrateRequest {
+  scope: Scope
+  ids?: string[]
+  limit?: number
+  /** Candidate keys the enclave will try when unsealing legacy rows. */
+  keys: PullKey[]
+  target: { key: string /* base64 raw 32-byte target CEK */ }
+}
+
+export interface MigrateResponse {
+  migrated: number
+  retryable_remaining: number
+  blocked_unmigrated: number
+  blocked: string[]
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Health                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export interface HealthResponse {
+  status: string
+  git_sha?: string
+}
+
+/* -------------------------------------------------------------------------- */
+/*  RPC calls                                                                 */
+/* -------------------------------------------------------------------------- */
+
+function bytesToB64(b: Uint8Array): string {
+  let s = ''
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i])
+  return btoa(s)
+}
+
+function b64ToBytes(s: string): Uint8Array {
+  const bin = atob(s)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+export async function push(req: PushRequest): Promise<PushResponse> {
   const client = await getSyncEnclaveClient()
-  return client.post<RegisterKeyResponse>('/api/keys', {
-    key_id: req.keyIdHex,
-    bundle: {
-      credential_id: req.bundle.credentialId,
-      kek_iv: req.bundle.kekIvHex,
-      wrapped_key: req.bundle.wrappedKeyHex,
-      salt: req.bundle.saltHex,
-      info: req.bundle.info ?? '',
-    },
-    start_fresh: req.startFresh ?? false,
-    created_via: req.createdVia ?? 'enclave_register',
+  return client.post<PushResponse>('/v1/sync/push', {
+    scope: req.scope,
+    id: req.id ?? '',
+    key: req.keyB64,
+    plaintext: bytesToB64(req.plaintext),
+    if_match: req.ifMatch,
+    idempotency_key: req.idempotencyKey,
+    conflict_policy: req.conflictPolicy ?? 'auto_merge',
+    metadata: req.metadata,
   })
 }
 
-export async function addBundle(
-  keyIdHex: string,
-  bundle: BundleBody,
-): Promise<{ ok: true }> {
+export async function pull(req: PullRequest): Promise<PullResponse> {
   const client = await getSyncEnclaveClient()
-  return client.post<{ ok: true }>(
-    `/api/keys/${encodeURIComponent(keyIdHex)}/bundles`,
-    {
-      credential_id: bundle.credentialId,
-      kek_iv: bundle.kekIvHex,
-      wrapped_key: bundle.wrappedKeyHex,
-      salt: bundle.saltHex,
-      info: bundle.info ?? '',
-    },
-  )
-}
-
-export async function getCurrentKey(): Promise<CurrentKeyResponse> {
-  const client = await getSyncEnclaveClient()
-  return client.get<CurrentKeyResponse>('/api/keys/current')
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Blob writes (enclave does the encryption)                                 */
-/* -------------------------------------------------------------------------- */
-
-export async function putProfile(
-  data: string,
-  keyIdHex: string,
-  opts: WriteOptions,
-): Promise<WriteResponse> {
-  const client = await getSyncEnclaveClient()
-  const path = '/api/profile/'
-  const body = jsonBody({ data })
-  const headers = await writeHeaders('PUT', path, keyIdHex, opts, body)
-  headers['Content-Type'] = 'application/json'
-  return client.request<WriteResponse>(path, {
-    method: 'PUT',
-    body: body as unknown as BodyInit,
-    headers,
+  return client.post<PullResponse>('/v1/sync/pull', {
+    scope: req.scope,
+    ids: req.ids,
+    all: req.all,
+    cursor: req.cursor,
+    limit: req.limit,
+    keys: req.keys,
   })
 }
 
-export async function putChat(
-  conversationId: string,
-  body: Uint8Array,
-  keyIdHex: string,
-  opts: WriteOptions,
-  extra?: { projectId?: string; messageCount?: number },
-): Promise<WriteResponse> {
-  const client = await getSyncEnclaveClient()
-  const path = `/api/storage/conversation/${encodeURIComponent(conversationId)}/data`
-  const headers = await writeHeaders('PUT', path, keyIdHex, opts, body)
-  headers['Content-Type'] = 'application/octet-stream'
-  if (extra?.projectId) headers['X-Project-Id'] = extra.projectId
-  if (typeof extra?.messageCount === 'number') {
-    headers['X-Message-Count'] = String(extra.messageCount)
-  }
-  return client.request<WriteResponse>(path, {
-    method: 'PUT',
-    body: body as unknown as BodyInit,
-    headers,
-  })
-}
-
-export async function putProject(
-  projectId: string,
-  data: string,
-  keyIdHex: string,
-  opts: WriteOptions,
-): Promise<WriteResponse> {
-  const client = await getSyncEnclaveClient()
-  const path = `/api/projects/${encodeURIComponent(projectId)}`
-  const body = jsonBody({ projectId, data })
-  const headers = await writeHeaders('PUT', path, keyIdHex, opts, body)
-  headers['Content-Type'] = 'application/json'
-  return client.request<WriteResponse>(path, {
-    method: 'PUT',
-    body: body as unknown as BodyInit,
-    headers,
-  })
-}
-
-export async function putProjectDocument(
-  projectId: string,
-  documentId: string,
-  data: string,
-  keyIdHex: string,
-  opts: WriteOptions,
-): Promise<WriteResponse> {
-  const client = await getSyncEnclaveClient()
-  const path = `/api/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`
-  const body = jsonBody({ documentId, data })
-  const headers = await writeHeaders('PUT', path, keyIdHex, opts, body)
-  headers['Content-Type'] = 'application/json'
-  return client.request<WriteResponse>(path, {
-    method: 'PUT',
-    body: body as unknown as BodyInit,
-    headers,
-  })
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Blob reads                                                                */
-/* -------------------------------------------------------------------------- */
-
-export async function getProfile(): Promise<{
-  data: string
-  etag: string
-  key_id: string | null
-} | null> {
-  const client = await getSyncEnclaveClient()
-  try {
-    return await client.get('/api/profile/')
-  } catch (err) {
-    if (err instanceof SyncEnclaveError && err.status === 404) return null
-    throw err
-  }
-}
-
-export async function getChat(
-  conversationId: string,
-): Promise<ArrayBuffer | null> {
-  const client = await getSyncEnclaveClient()
-  try {
-    return await client.request<ArrayBuffer>(
-      `/api/storage/conversation/${encodeURIComponent(conversationId)}`,
-      { method: 'GET' },
-    )
-  } catch (err) {
-    if (err instanceof SyncEnclaveError && err.status === 404) return null
-    throw err
-  }
-}
-
-export async function deleteChat(conversationId: string): Promise<void> {
-  const client = await getSyncEnclaveClient()
-  await client.delete(
-    `/api/storage/conversation/${encodeURIComponent(conversationId)}`,
-  )
-}
-
-export async function deleteProject(projectId: string): Promise<void> {
-  const client = await getSyncEnclaveClient()
-  await client.delete(`/api/projects/${encodeURIComponent(projectId)}`)
-}
-
-export async function deleteProjectDocument(
-  projectId: string,
-  documentId: string,
-): Promise<void> {
-  const client = await getSyncEnclaveClient()
-  await client.delete(
-    `/api/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`,
-  )
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Sync reads                                                                */
-/* -------------------------------------------------------------------------- */
-
-export async function listStatus(scope: Scope): Promise<ListStatusResponse> {
-  const client = await getSyncEnclaveClient()
-  return client.get<ListStatusResponse>(
-    `/api/sync/list-status?scope=${encodeURIComponent(scope)}`,
-  )
-}
-
-export async function needsMigration(
-  scope: Scope,
-  limit = 50,
-): Promise<NeedsMigrationResponse> {
-  const client = await getSyncEnclaveClient()
-  return client.get<NeedsMigrationResponse>(
-    `/api/sync/needs-migration?scope=${encodeURIComponent(scope)}&limit=${limit}`,
-  )
-}
-
-export async function recordMigrationFailure(
+export async function pullOne(
   scope: Scope,
   id: string,
-  projectId?: string,
-): Promise<void> {
+  keys: PullKey[],
+): Promise<PullItem | null> {
+  const resp = await pull({ scope, ids: [id], keys })
+  if (resp.items.length === 0) return null
+  return resp.items[0]
+}
+
+export function pullItemPlaintext(item: PullItem): Uint8Array | null {
+  if (!item.ok || !item.plaintext) return null
+  return b64ToBytes(item.plaintext)
+}
+
+export async function listStatus(
+  req: ListStatusRequest,
+): Promise<ListStatusResponse> {
   const client = await getSyncEnclaveClient()
-  await client.post('/api/sync/migration-failure', {
-    scope,
-    id,
-    ...(projectId ? { project_id: projectId } : {}),
+  return client.post<ListStatusResponse>('/v1/sync/list-status', {
+    scope: req.scope,
+    cursor: req.cursor,
+    limit: req.limit,
   })
 }
 
-export async function listTombstones(
-  scope: Scope,
-  since?: string,
-  cursorId?: string,
-  limit = 100,
-): Promise<TombstonesResponse> {
+export async function deleteRow(req: DeleteRequest): Promise<OKResponse> {
   const client = await getSyncEnclaveClient()
-  const params = new URLSearchParams({
-    scope,
-    limit: String(limit),
+  return client.post<OKResponse>('/v1/sync/delete', {
+    scope: req.scope,
+    id: req.id,
+    if_match: req.ifMatch,
+    idempotency_key: req.idempotencyKey,
+    key: req.keyB64,
   })
-  if (since) params.set('since', since)
-  if (cursorId) params.set('cursor_id', cursorId)
-  return client.get<TombstonesResponse>(`/api/sync/tombstones?${params}`)
+}
+
+export async function registerKey(
+  req: KeyRegisterRequest,
+): Promise<KeyRegisterResponse> {
+  const client = await getSyncEnclaveClient()
+  const body: Record<string, unknown> = {
+    key: req.keyB64,
+    if_match: req.ifMatch,
+    created_via: req.createdVia,
+    idempotency_key: req.idempotencyKey,
+  }
+  if (req.initialBundle) {
+    body.initial_bundle = {
+      credential_id: req.initialBundle.credentialId,
+      kek_iv: req.initialBundle.kekIvHex,
+      encrypted_keys: req.initialBundle.encryptedKeysHex,
+    }
+  }
+  return client.post<KeyRegisterResponse>('/v1/key/register', body)
+}
+
+export async function addBundle(req: AddBundleRequest): Promise<OKResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<OKResponse>('/v1/key/add-bundle', {
+    key_id: req.keyId,
+    credential_id: req.credentialId,
+    kek_iv: req.kekIvHex,
+    encrypted_keys: req.encryptedKeysHex,
+  })
+}
+
+export async function migrate(req: MigrateRequest): Promise<MigrateResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<MigrateResponse>('/v1/blobs/migrate', {
+    scope: req.scope,
+    ids: req.ids,
+    limit: req.limit,
+    keys: req.keys,
+    target: req.target,
+  })
+}
+
+export async function health(): Promise<HealthResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.get<HealthResponse>('/v1/health')
+}
+
+/**
+ * Re-export the typed error class so call sites can do
+ * `if (err instanceof SyncEnclaveError)` without reaching into the
+ * client module.
+ */
+export { SyncEnclaveError }
+
+/**
+ * Helpers callers commonly need: convert hex CEK → base64 (the wire
+ * format), and base64 plaintext → bytes.
+ */
+export function hexToB64(hex: string): string {
+  if (hex.length % 2 !== 0) throw new Error('sync-api: odd-length hex')
+  const bytes = new Uint8Array(hex.length / 2)
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
+  }
+  return bytesToB64(bytes)
+}
+
+export function bytesToBase64(b: Uint8Array): string {
+  return bytesToB64(b)
+}
+
+export function base64ToBytes(s: string): Uint8Array {
+  return b64ToBytes(s)
 }

@@ -9,7 +9,23 @@
  * Phase 4 opportunistic migration.
  */
 
-import type { BundleBody } from './sync-api'
+/**
+ * Local-only descriptor for a wrapped CEK + the bookkeeping needed
+ * to unwrap it later. This is NOT the on-wire shape — see
+ * `sync-api.KeyRegisterBundleInput` and `AddBundleRequest` for the
+ * fields the enclave actually persists.
+ */
+export interface BundleBody {
+  credentialId: string
+  /** 12-byte AES-GCM IV, hex-encoded. */
+  kekIvHex: string
+  /** Wrapped CEK ciphertext, hex-encoded. */
+  wrappedKeyHex: string
+  /** Salt used by HKDF over the PRF output. Kept locally for debug. */
+  saltHex: string
+  /** Free-form descriptor (e.g. PRF info string). */
+  info?: string
+}
 
 const AES_GCM_IV_BYTES = 12
 const CEK_BYTES = 32

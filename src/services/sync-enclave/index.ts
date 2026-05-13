@@ -21,7 +21,7 @@ export {
   wrapCekForCredential,
   wrapPrimaryCekForCredential,
 } from './key-bundle'
-export type { RemoteBundle } from './key-bundle'
+export type { BundleBody, RemoteBundle } from './key-bundle'
 
 export * as passkeyKeyFlow from './passkey-key-flow'
 export type {
@@ -34,14 +34,24 @@ export type {
 
 export * as syncApi from './sync-api'
 export type {
-  BundleBody,
-  CurrentKeyResponse,
+  AddBundleRequest,
+  ConflictPolicy,
+  DeleteRequest,
+  KeyRegisterBundleInput,
+  KeyRegisterRequest,
+  KeyRegisterResponse,
+  ListStatusDelete,
+  ListStatusRequest,
   ListStatusResponse,
-  NeedsMigrationResponse,
-  RegisterKeyRequest,
-  RegisterKeyResponse,
+  ListStatusUpdate,
+  MigrateRequest,
+  MigrateResponse,
+  OKResponse,
+  PullItem,
+  PullKey,
+  PullRequest,
+  PullResponse,
+  PushRequest,
+  PushResponse,
   Scope,
-  TombstonesResponse,
-  WriteOptions,
-  WriteResponse,
 } from './sync-api'
