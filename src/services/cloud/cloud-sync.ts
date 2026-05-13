@@ -446,6 +446,19 @@ export class CloudSyncService {
       return
     }
 
+    // §9.6 R6 — local-only chats MUST NEVER enter the enclave write
+    // path. Refuse the enqueue here so the user's opt-out is honored
+    // even if a caller passes a local-only chat id by mistake.
+    const chat = await indexedDBStorage.getChat(chatId)
+    if (chat?.isLocalOnly) {
+      logInfo('Skipping enqueue for local-only chat', {
+        component: 'CloudSync',
+        action: 'backupChat',
+        metadata: { chatId },
+      })
+      return
+    }
+
     // Use the upload coalescer - it handles:
     // - Coalescing rapid edits into a single upload
     // - Exponential backoff retry on failure

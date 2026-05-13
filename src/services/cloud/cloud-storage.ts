@@ -173,6 +173,15 @@ export class CloudStorageService {
     chat: StoredChat,
     options: UploadChatOptions = {},
   ): Promise<string | null> {
+    // §9.6 R6 — the user's opt-out is invariant: a chat marked
+    // localOnly MUST NEVER reach the enclave. Throw rather than
+    // silently drop so an upstream caller bug is caught instead of
+    // becoming a data-leak shaped like a successful upload.
+    if (chat.isLocalOnly) {
+      throw new Error(
+        'cloud-storage: refusing to upload a local-only chat (§9.6 R6)',
+      )
+    }
     const messages: Message[] = (chat.messages as Message[]) || []
 
     await this.encryptAndUploadAttachments(messages, chat.id)
@@ -269,10 +278,15 @@ export class CloudStorageService {
     // push on the enclave wire today, so we fan out single-row pushes
     // and aggregate results to keep the BulkUploadResponse contract
     // intact for callers (sign-in migration, bulk re-encrypt).
+    // §9.6 R6 — local-only chats are silently filtered out of the
+    // upload set instead of being attempted-and-failed. The caller
+    // already chose not to sync them; reporting them as failures
+    // would be misleading.
+    const eligible = chats.filter((c) => !c.isLocalOnly)
     const results: BulkConversationResult[] = []
     let succeeded = 0
     let failed = 0
-    for (const chat of chats) {
+    for (const chat of eligible) {
       try {
         await this.uploadChat(chat as unknown as StoredChat)
         results.push({ conversationId: chat.id, success: true })
