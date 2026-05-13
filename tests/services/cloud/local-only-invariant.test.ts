@@ -13,11 +13,13 @@ const mockEnclavePush = vi.fn()
 
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
-    getKey: () => 'a'.repeat(64),
+    getKey: () => `key_${'a'.repeat(64)}`,
     getAllKeys: () => ({
-      primary: 'a'.repeat(64),
+      primary: `key_${'a'.repeat(64)}`,
       alternatives: [],
     }),
+    getKeyBytesOrThrow: () => new Uint8Array(32),
+    getAlternativeKeyBytes: () => new Uint8Array(32),
   },
 }))
 

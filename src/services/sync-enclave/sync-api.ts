@@ -168,6 +168,11 @@ export interface AddBundleRequest {
   encryptedKeysHex: string
 }
 
+export interface RemoveBundleRequest {
+  keyId: string
+  credentialId: string
+}
+
 /**
  * Bundle entry shape returned by /v1/key/current. Mirrors the
  * controlplane `user_key_bundles` row layout (kek_iv + encrypted_keys
@@ -327,6 +332,20 @@ export async function addBundle(req: AddBundleRequest): Promise<OKResponse> {
     credential_id: req.credentialId,
     kek_iv: req.kekIvHex,
     encrypted_keys: req.encryptedKeysHex,
+  })
+}
+
+/**
+ * Revoke a passkey bundle from the current key. Maps to
+ * DELETE /api/keys/:keyId/bundles/:credentialId on the controlplane.
+ */
+export async function removeBundle(
+  req: RemoveBundleRequest,
+): Promise<OKResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<OKResponse>('/v1/key/remove-bundle', {
+    key_id: req.keyId,
+    credential_id: req.credentialId,
   })
 }
 

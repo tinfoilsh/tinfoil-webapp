@@ -8,41 +8,18 @@ import {
 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
-import { encryptionService } from '../encryption/encryption-service'
 import { type StoredChat } from '../storage/indexed-db'
 import {
   pull as enclavePull,
   push as enclavePush,
-  hexToB64,
   newIdempotencyKey,
   pullItemPlaintext,
-  type PullKey,
 } from '../sync-enclave/sync-api'
+import {
+  pullKeysFromEncryptionService,
+  requirePrimaryKeyB64,
+} from './cek-encoding'
 import { processRemoteChat, type RemoteChatData } from './chat-codec'
-
-/**
- * Build the `keys` array the enclave `pull` endpoint accepts: the
- * primary CEK first, then any fallback (recovery) keys the local
- * service has accumulated. The enclave tries each in order; the first
- * that unseals wins.
- */
-function pullKeysFromEncryptionService(): PullKey[] {
-  const all = encryptionService.getAllKeys()
-  const out: PullKey[] = []
-  if (all.primary) out.push({ key: hexToB64(all.primary) })
-  for (const alt of all.alternatives) {
-    if (alt !== all.primary) out.push({ key: hexToB64(alt) })
-  }
-  return out
-}
-
-function requirePrimaryKeyB64(): string {
-  const key = encryptionService.getKey()
-  if (!key) {
-    throw new Error('cloud-storage: no encryption key available')
-  }
-  return hexToB64(key)
-}
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'

@@ -13,15 +13,16 @@ import type {
 } from '@/types/project'
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
-import { encryptionService } from '../encryption/encryption-service'
 import {
   pull as enclavePull,
   push as enclavePush,
-  hexToB64,
   newIdempotencyKey,
   pullItemPlaintext,
-  type PullKey,
 } from '../sync-enclave/sync-api'
+import {
+  pullKeysFromEncryptionService,
+  requirePrimaryKeyB64,
+} from './cek-encoding'
 import { canWriteToCloud } from './cloud-key-authorization'
 
 const API_BASE_URL =
@@ -29,24 +30,6 @@ const API_BASE_URL =
 
 const PROJECT_SCOPE = 'project'
 const PROJECT_DOCUMENT_SCOPE = 'project_document'
-
-function pullKeysFromEncryptionService(): PullKey[] {
-  const all = encryptionService.getAllKeys()
-  const out: PullKey[] = []
-  if (all.primary) out.push({ key: hexToB64(all.primary) })
-  for (const alt of all.alternatives) {
-    if (alt !== all.primary) out.push({ key: hexToB64(alt) })
-  }
-  return out
-}
-
-function requirePrimaryKeyB64(): string {
-  const key = encryptionService.getKey()
-  if (!key) {
-    throw new Error('project-storage: no encryption key available')
-  }
-  return hexToB64(key)
-}
 
 function projectDocumentId(projectId: string, documentId: string): string {
   return `${projectId}/${documentId}`

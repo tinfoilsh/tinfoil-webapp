@@ -1,14 +1,15 @@
 import { logError, logInfo } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
-import { encryptionService } from '../encryption/encryption-service'
 import {
   pull as enclavePull,
   push as enclavePush,
-  hexToB64,
   newIdempotencyKey,
   pullItemPlaintext,
-  type PullKey,
 } from '../sync-enclave/sync-api'
+import {
+  pullKeysFromEncryptionService,
+  requirePrimaryKeyB64,
+} from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
 
 const API_BASE_URL =
@@ -16,24 +17,6 @@ const API_BASE_URL =
 
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
-
-function pullKeysFromEncryptionService(): PullKey[] {
-  const all = encryptionService.getAllKeys()
-  const out: PullKey[] = []
-  if (all.primary) out.push({ key: hexToB64(all.primary) })
-  for (const alt of all.alternatives) {
-    if (alt !== all.primary) out.push({ key: hexToB64(alt) })
-  }
-  return out
-}
-
-function requirePrimaryKeyB64(): string {
-  const key = encryptionService.getKey()
-  if (!key) {
-    throw new Error('profile-sync: no encryption key available')
-  }
-  return hexToB64(key)
-}
 
 export interface ProfileData {
   // Theme settings

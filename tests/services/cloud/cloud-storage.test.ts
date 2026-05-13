@@ -8,6 +8,8 @@ const mockIsInitialized = vi.fn()
 const mockWaitForInit = vi.fn()
 const mockGetKey = vi.fn()
 const mockGetAllKeys = vi.fn()
+const mockGetKeyBytesOrThrow = vi.fn()
+const mockGetAlternativeKeyBytes = vi.fn()
 const mockEnclavePush = vi.fn()
 
 vi.mock('@/services/auth', () => ({
@@ -23,6 +25,9 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
     getKey: (...args: any[]) => mockGetKey(...args),
     getAllKeys: (...args: any[]) => mockGetAllKeys(...args),
+    getKeyBytesOrThrow: (...args: any[]) => mockGetKeyBytesOrThrow(...args),
+    getAlternativeKeyBytes: (...args: any[]) =>
+      mockGetAlternativeKeyBytes(...args),
   },
 }))
 
@@ -42,11 +47,19 @@ describe('CloudStorageService auth readiness', () => {
     mockIsAuthenticated.mockResolvedValue(true)
     mockIsInitialized.mockReturnValue(true)
     mockWaitForInit.mockResolvedValue(true)
-    mockGetKey.mockReturnValue('a'.repeat(64))
+    // Real keys are `key_<base36-encoded 32-byte CEK>` per
+    // encryption-service. Mock the shape end-to-end so the helpers
+    // in `cek-encoding.ts` resolve to predictable bytes without
+    // re-implementing the base36 decoder in the test.
+    const TEST_KEY = `key_${'a'.repeat(64)}`
+    const TEST_BYTES = new Uint8Array(32)
+    mockGetKey.mockReturnValue(TEST_KEY)
     mockGetAllKeys.mockReturnValue({
-      primary: 'a'.repeat(64),
-      alternatives: ['a'.repeat(64)],
+      primary: TEST_KEY,
+      alternatives: [TEST_KEY],
     })
+    mockGetKeyBytesOrThrow.mockReturnValue(TEST_BYTES)
+    mockGetAlternativeKeyBytes.mockReturnValue(TEST_BYTES)
     mockEnclavePush.mockResolvedValue({ ok: true, etag: '1', keyId: 'kid' })
     vi.stubGlobal(
       'fetch',
