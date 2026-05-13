@@ -8,6 +8,7 @@ import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { chatEvents } from '../storage/chat-events'
 import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
 import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
+import { decideRecovery } from '../sync-enclave/enclave-error-recovery'
 import { newIdempotencyKey } from '../sync-enclave/sync-api'
 import { processRemoteChat } from './chat-codec'
 import { ingestRemoteChats, syncRemoteDeletions } from './chat-ingestion'
@@ -606,6 +607,22 @@ export class CloudSyncService {
       ) {
         return
       }
+      // §9.6 R4 — emit the typed recovery decision so the surrounding
+      // state machine (and any operator dashboards) can observe which
+      // Appendix B code we tripped and which recovery the spec
+      // mandates. The error itself is still re-thrown so the
+      // coalescer's retry path keeps its current semantics.
+      const decision = decideRecovery(error)
+      logInfo('upload-chat recovery decision', {
+        component: 'CloudSync',
+        action: 'backupChat',
+        metadata: {
+          chatId,
+          action: decision.action.type,
+          code: decision.classification.code ?? null,
+          kind: decision.classification.kind,
+        },
+      })
       throw error
     }
   }
