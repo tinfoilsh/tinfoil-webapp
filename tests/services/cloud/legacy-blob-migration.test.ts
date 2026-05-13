@@ -24,7 +24,22 @@ vi.mock('@/services/cloud/cek-encoding', () => ({
   pullKeysFromEncryptionService: () => mockPullKeys(),
 }))
 
-import { runLegacyBlobMigration } from '@/services/cloud/legacy-blob-migration'
+const mockClearFallbackKeys = vi.fn()
+const mockGetFallbackKeyCount = vi.fn<() => number>()
+
+vi.mock('@/services/encryption/encryption-service', () => ({
+  encryptionService: {
+    clearFallbackKeys: () => mockClearFallbackKeys(),
+    getFallbackKeyCount: () => mockGetFallbackKeyCount(),
+  },
+}))
+
+import {
+  finalizeAlternativesIfMigrated,
+  runLegacyBlobMigration,
+  runLegacyBlobMigrationAndFinalize,
+  type MigrationReport,
+} from '@/services/cloud/legacy-blob-migration'
 
 const ALL_SCOPES = ['profile', 'chat', 'project', 'project_document']
 
@@ -33,6 +48,9 @@ describe('runLegacyBlobMigration', () => {
     mockMigrate.mockReset()
     mockRequirePrimaryKeyB64.mockReset()
     mockPullKeys.mockReset()
+    mockClearFallbackKeys.mockReset()
+    mockGetFallbackKeyCount.mockReset()
+    mockGetFallbackKeyCount.mockReturnValue(0)
     mockRequirePrimaryKeyB64.mockReturnValue('PRIMARY_B64')
     mockPullKeys.mockReturnValue([{ key: 'PRIMARY_B64' }, { key: 'ALT_B64' }])
   })
@@ -158,5 +176,86 @@ describe('runLegacyBlobMigration', () => {
       expect(scope.batches).toBe(1)
     }
     expect(report.fullyMigrated).toBe(false)
+  })
+})
+
+function buildReport(
+  overrides: Partial<MigrationReport> = {},
+): MigrationReport {
+  return {
+    scopes: [],
+    totalMigrated: 0,
+    totalRemaining: 0,
+    totalBlocked: 0,
+    fullyMigrated: true,
+    ...overrides,
+  }
+}
+
+describe('finalizeAlternativesIfMigrated', () => {
+  beforeEach(() => {
+    mockClearFallbackKeys.mockReset()
+    mockGetFallbackKeyCount.mockReset()
+    mockGetFallbackKeyCount.mockReturnValue(0)
+  })
+
+  it('is a no-op when migration is not fully complete', () => {
+    const ran = finalizeAlternativesIfMigrated(
+      buildReport({ fullyMigrated: false, totalRemaining: 5 }),
+    )
+    expect(ran).toBe(false)
+    expect(mockClearFallbackKeys).not.toHaveBeenCalled()
+  })
+
+  it('clears fallback keys when fullyMigrated is true', () => {
+    mockGetFallbackKeyCount.mockReturnValue(3)
+    const ran = finalizeAlternativesIfMigrated(
+      buildReport({ totalMigrated: 12 }),
+    )
+    expect(ran).toBe(true)
+    expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
+  })
+
+  it('is idempotent — still returns true when no fallbacks remain', () => {
+    mockGetFallbackKeyCount.mockReturnValue(0)
+    expect(finalizeAlternativesIfMigrated(buildReport())).toBe(true)
+    expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
+  })
+})
+
+describe('runLegacyBlobMigrationAndFinalize', () => {
+  beforeEach(() => {
+    mockMigrate.mockReset()
+    mockRequirePrimaryKeyB64.mockReset()
+    mockPullKeys.mockReset()
+    mockClearFallbackKeys.mockReset()
+    mockGetFallbackKeyCount.mockReset()
+    mockGetFallbackKeyCount.mockReturnValue(0)
+    mockRequirePrimaryKeyB64.mockReturnValue('PRIMARY_B64')
+    mockPullKeys.mockReturnValue([{ key: 'PRIMARY_B64' }])
+  })
+
+  it('clears fallback keys when every scope drains', async () => {
+    mockMigrate.mockResolvedValue({
+      migrated: 0,
+      retryable_remaining: 0,
+      blocked_unmigrated: 0,
+      blocked: [],
+    })
+    const report = await runLegacyBlobMigrationAndFinalize()
+    expect(report.fullyMigrated).toBe(true)
+    expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
+  })
+
+  it('keeps fallback keys when remaining rows are reported', async () => {
+    mockMigrate.mockResolvedValue({
+      migrated: 0,
+      retryable_remaining: 1,
+      blocked_unmigrated: 0,
+      blocked: [],
+    })
+    const report = await runLegacyBlobMigrationAndFinalize()
+    expect(report.fullyMigrated).toBe(false)
+    expect(mockClearFallbackKeys).not.toHaveBeenCalled()
   })
 })

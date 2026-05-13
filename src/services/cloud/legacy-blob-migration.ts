@@ -22,6 +22,7 @@
  */
 
 import { logError, logInfo } from '@/utils/error-handling'
+import { encryptionService } from '../encryption/encryption-service'
 import {
   migrate as enclaveMigrate,
   type MigrateResponse,
@@ -140,4 +141,48 @@ export async function runLegacyBlobMigration(): Promise<MigrationReport> {
     totalBlocked,
     fullyMigrated: totalRemaining === 0,
   }
+}
+
+/**
+ * Layer C cleanup. Once the migration loop reports `fullyMigrated`,
+ * every row the enclave can read is sealed under the current primary
+ * CEK, so the local alternative-keys list is no longer required for
+ * any read path. Clear it from memory and from the persisted history
+ * bucket. The remote passkey bundle is NOT rewritten here — the next
+ * passkey ceremony picks up the now-empty `alternatives` from
+ * `encryptionService.getAllKeys()` and re-stores the bundle
+ * naturally, with no extra ceremony required.
+ *
+ * Idempotent and a no-op when `report.fullyMigrated` is false.
+ * Returns true when the local state was cleared (or already empty).
+ */
+export function finalizeAlternativesIfMigrated(
+  report: MigrationReport,
+): boolean {
+  if (!report.fullyMigrated) {
+    return false
+  }
+  const before = encryptionService.getFallbackKeyCount()
+  encryptionService.clearFallbackKeys()
+  logInfo('Cleared alternative keys after enclave migration', {
+    component: 'LegacyBlobMigration',
+    action: 'finalizeAlternativesIfMigrated',
+    metadata: {
+      cleared: before,
+      totalMigrated: report.totalMigrated,
+      totalBlocked: report.totalBlocked,
+    },
+  })
+  return true
+}
+
+/**
+ * Convenience: run the migration loop and, on success, drop the
+ * client-side alternatives. Returns the report so callers can still
+ * surface counts to the UI.
+ */
+export async function runLegacyBlobMigrationAndFinalize(): Promise<MigrationReport> {
+  const report = await runLegacyBlobMigration()
+  finalizeAlternativesIfMigrated(report)
+  return report
 }
