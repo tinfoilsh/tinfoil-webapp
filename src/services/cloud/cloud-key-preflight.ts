@@ -102,6 +102,18 @@ async function validateProfileProbe(): Promise<CloudKeyValidationResult> {
 
   try {
     const encrypted = JSON.parse(payload)
+    if (isEnclaveV2Envelope(encrypted)) {
+      // Enclave-sealed payloads cannot be unsealed client-side. The
+      // enclave's /v1/key/register flow performs the equivalent safety
+      // check server-side (returns 409 EXISTING_DATA_UNDER_OTHER_KEY
+      // when remote data is sealed under a different key), so we let
+      // that flow arbitrate instead of double-gating here.
+      return {
+        remoteState: 'exists',
+        canWrite: true,
+        probe: 'profile',
+      }
+    }
     const result = await encryptionService.decryptWithFallbackInfo(encrypted)
 
     return result.usedFallbackKey
@@ -114,6 +126,15 @@ async function validateProfileProbe(): Promise<CloudKeyValidationResult> {
   } catch {
     return blockedResult('profile')
   }
+}
+
+function isEnclaveV2Envelope(parsed: unknown): boolean {
+  return (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    (parsed as Record<string, unknown>).v === 2 &&
+    typeof (parsed as Record<string, unknown>).ct === 'string'
+  )
 }
 
 async function validateProjectProbe(): Promise<CloudKeyValidationResult> {
