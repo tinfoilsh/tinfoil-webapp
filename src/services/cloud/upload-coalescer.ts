@@ -9,6 +9,11 @@
  */
 
 import { logError, logInfo } from '@/utils/error-handling'
+import {
+  computeBackoffDelay,
+  realScheduler,
+  type RetryScheduler,
+} from '../sync-enclave/retry-policy'
 import { newIdempotencyKey } from '../sync-enclave/sync-api'
 
 const DEFAULT_BASE_DELAY_MS = 1000
@@ -25,6 +30,13 @@ export interface UploadCoalescerConfig {
   maxDelayMs?: number
   /** Maximum number of retry attempts (default: 3) */
   maxRetries?: number
+  /**
+   * Scheduler used for back-off sleeps and jitter randomness.
+   * Defaults to `realScheduler`, which uses `setTimeout` and
+   * `Math.random`. Tests inject a deterministic scheduler so the
+   * retry curve is observable without `vi.useFakeTimers` (§9.6 R3).
+   */
+  scheduler?: RetryScheduler
 }
 
 /**
@@ -72,7 +84,8 @@ type UploadFn = (chatId: string, idempotencyKey: string) => Promise<void>
 export class UploadCoalescer {
   private states: Map<string, ChatUploadState> = new Map()
   private uploadFn: UploadFn
-  private config: Required<UploadCoalescerConfig>
+  private config: Required<Omit<UploadCoalescerConfig, 'scheduler'>>
+  private scheduler: RetryScheduler
   private generation = 0
 
   constructor(uploadFn: UploadFn, config: UploadCoalescerConfig = {}) {
@@ -82,6 +95,7 @@ export class UploadCoalescer {
       maxDelayMs: config.maxDelayMs ?? DEFAULT_MAX_DELAY_MS,
       maxRetries: config.maxRetries ?? DEFAULT_MAX_RETRIES,
     }
+    this.scheduler = config.scheduler ?? realScheduler
   }
 
   /**
@@ -225,10 +239,11 @@ export class UploadCoalescer {
           break
         }
 
-        // Calculate backoff delay
-        const delay = Math.min(
-          this.config.baseDelayMs * Math.pow(2, attempt),
+        const delay = computeBackoffDelay(
+          attempt,
+          this.config.baseDelayMs,
           this.config.maxDelayMs,
+          this.scheduler.random(),
         )
 
         logInfo(`Upload failed, retrying in ${delay}ms`, {
@@ -243,8 +258,7 @@ export class UploadCoalescer {
           },
         })
 
-        // Wait before retry
-        await this.sleep(delay)
+        await this.scheduler.sleep(delay)
 
         // Check if new changes came in during wait
         if (state.dirty) {
@@ -256,13 +270,6 @@ export class UploadCoalescer {
 
     // All retries exhausted
     throw lastError ?? new Error('Upload failed')
-  }
-
-  /**
-   * Sleep for a specified duration.
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
   /**

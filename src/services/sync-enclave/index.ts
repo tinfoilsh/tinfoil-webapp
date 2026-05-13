@@ -39,6 +39,13 @@ export type {
   EnclaveErrorKind,
 } from './enclave-error-classification'
 
+export {
+  computeBackoffDelay,
+  realScheduler,
+  runWithRetry,
+} from './retry-policy'
+export type { RetryConfig, RetryScheduler } from './retry-policy'
+
 export * as syncApi from './sync-api'
 export type {
   AddBundleRequest,
