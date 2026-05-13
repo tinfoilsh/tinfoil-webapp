@@ -216,6 +216,37 @@ export interface MigrateResponse {
   blocked: string[]
 }
 
+/**
+ * MigrateAllRequest tells the enclave to drain every scope under the
+ * supplied target CEK in one call. The enclave handles per-scope
+ * pagination internally; clients do not iterate.
+ */
+export interface MigrateAllRequest {
+  keys: PullKey[]
+  target: { key: string /* base64 raw 32-byte target CEK */ }
+}
+
+export interface MigrateAllScopeReport {
+  scope: Scope
+  migrated: number
+  retryable_remaining: number
+  blocked_unmigrated: number
+  blocked?: string[]
+}
+
+export interface MigrateAllResponse {
+  migrated: number
+  retryable_remaining: number
+  blocked_unmigrated: number
+  /**
+   * True when the enclave hit its wall-clock budget before every
+   * scope was drained. The client should re-invoke migrate-all to
+   * pick up where it left off.
+   */
+  partial: boolean
+  scopes: MigrateAllScopeReport[]
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Health                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -374,6 +405,16 @@ export async function migrate(req: MigrateRequest): Promise<MigrateResponse> {
     scope: req.scope,
     ids: req.ids,
     limit: req.limit,
+    keys: req.keys,
+    target: req.target,
+  })
+}
+
+export async function migrateAll(
+  req: MigrateAllRequest,
+): Promise<MigrateAllResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<MigrateAllResponse>('/v1/blobs/migrate-all', {
     keys: req.keys,
     target: req.target,
   })

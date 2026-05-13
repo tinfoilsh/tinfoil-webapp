@@ -5,7 +5,7 @@ vi.mock('@/utils/error-handling', () => ({
   logInfo: vi.fn(),
 }))
 
-const mockMigrate = vi.fn()
+const mockMigrateAll = vi.fn()
 const mockRequirePrimaryKeyB64 = vi.fn<() => string>()
 const mockPullKeys = vi.fn<() => Array<{ key: string }>>()
 
@@ -15,7 +15,7 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
   >('@/services/sync-enclave/sync-api')
   return {
     ...real,
-    migrate: (...args: unknown[]) => mockMigrate(...args),
+    migrateAll: (...args: unknown[]) => mockMigrateAll(...args),
   }
 })
 
@@ -41,11 +41,26 @@ import {
   type MigrationReport,
 } from '@/services/cloud/legacy-blob-migration'
 
-const ALL_SCOPES = ['profile', 'chat', 'project', 'project_document']
+const ALL_SCOPES = ['profile', 'chat', 'project', 'project_document'] as const
+
+function emptyEnclaveReport() {
+  return {
+    migrated: 0,
+    retryable_remaining: 0,
+    blocked_unmigrated: 0,
+    partial: false,
+    scopes: ALL_SCOPES.map((scope) => ({
+      scope,
+      migrated: 0,
+      retryable_remaining: 0,
+      blocked_unmigrated: 0,
+    })),
+  }
+}
 
 describe('runLegacyBlobMigration', () => {
   beforeEach(() => {
-    mockMigrate.mockReset()
+    mockMigrateAll.mockReset()
     mockRequirePrimaryKeyB64.mockReset()
     mockPullKeys.mockReset()
     mockClearFallbackKeys.mockReset()
@@ -59,123 +74,117 @@ describe('runLegacyBlobMigration', () => {
     vi.clearAllMocks()
   })
 
-  it('walks every scope once when nothing needs migrating', async () => {
-    mockMigrate.mockResolvedValue({
-      migrated: 0,
-      retryable_remaining: 0,
-      blocked_unmigrated: 0,
-      blocked: [],
-    })
+  it('calls the enclave once when nothing needs migrating', async () => {
+    mockMigrateAll.mockResolvedValue(emptyEnclaveReport())
     const report = await runLegacyBlobMigration()
-    expect(mockMigrate).toHaveBeenCalledTimes(ALL_SCOPES.length)
+    expect(mockMigrateAll).toHaveBeenCalledTimes(1)
     expect(report.fullyMigrated).toBe(true)
     expect(report.totalMigrated).toBe(0)
     expect(report.totalRemaining).toBe(0)
     expect(report.totalBlocked).toBe(0)
   })
 
-  it('loops a scope until the enclave reports no retryable remaining', async () => {
-    let call = 0
-    mockMigrate.mockImplementation(async () => {
-      call += 1
-      // First scope: two batches, then drain. Other scopes: empty.
-      if (call === 1) {
-        return {
-          migrated: 100,
-          retryable_remaining: 50,
-          blocked_unmigrated: 0,
-          blocked: [],
-        }
-      }
-      if (call === 2) {
-        return {
-          migrated: 50,
-          retryable_remaining: 0,
-          blocked_unmigrated: 0,
-          blocked: [],
-        }
-      }
-      return {
-        migrated: 0,
-        retryable_remaining: 0,
-        blocked_unmigrated: 0,
-        blocked: [],
-      }
-    })
-    const report = await runLegacyBlobMigration()
-    expect(report.fullyMigrated).toBe(true)
-    expect(report.totalMigrated).toBe(150)
-    const firstScope = report.scopes[0]
-    expect(firstScope.batches).toBe(2)
-    expect(firstScope.migrated).toBe(150)
-  })
-
   it('passes primary + alternatives to the enclave as candidate keys', async () => {
-    mockMigrate.mockResolvedValue({
-      migrated: 0,
-      retryable_remaining: 0,
-      blocked_unmigrated: 0,
-      blocked: [],
-    })
+    mockMigrateAll.mockResolvedValue(emptyEnclaveReport())
     await runLegacyBlobMigration()
-    const arg = mockMigrate.mock.calls[0][0]
+    const arg = mockMigrateAll.mock.calls[0][0]
     expect(arg.keys).toEqual([{ key: 'PRIMARY_B64' }, { key: 'ALT_B64' }])
     expect(arg.target).toEqual({ key: 'PRIMARY_B64' })
   })
 
-  it('surfaces blocked ids and excludes them from "remaining"', async () => {
-    mockMigrate.mockResolvedValueOnce({
-      migrated: 5,
+  it('aggregates per-scope counts into a flat report', async () => {
+    mockMigrateAll.mockResolvedValue({
+      migrated: 150,
       retryable_remaining: 0,
       blocked_unmigrated: 2,
-      blocked: ['row-a', 'row-b'],
-    })
-    mockMigrate.mockResolvedValue({
-      migrated: 0,
-      retryable_remaining: 0,
-      blocked_unmigrated: 0,
-      blocked: [],
+      partial: false,
+      scopes: [
+        {
+          scope: 'profile',
+          migrated: 1,
+          retryable_remaining: 0,
+          blocked_unmigrated: 0,
+        },
+        {
+          scope: 'chat',
+          migrated: 149,
+          retryable_remaining: 0,
+          blocked_unmigrated: 2,
+          blocked: ['row-a', 'row-b'],
+        },
+      ],
     })
     const report = await runLegacyBlobMigration()
+    expect(report.totalMigrated).toBe(150)
     expect(report.totalBlocked).toBe(2)
-    expect(report.totalRemaining).toBe(0)
-    // fullyMigrated reflects retryable_remaining only; blocked rows
-    // are surfaced separately as candidates for LOST.
     expect(report.fullyMigrated).toBe(true)
-    expect(report.scopes[0].blocked).toEqual(['row-a', 'row-b'])
+    const chatScope = report.scopes.find((s) => s.scope === 'chat')!
+    expect(chatScope.blocked).toEqual(['row-a', 'row-b'])
   })
 
-  it('breaks out of a scope when the enclave returns an error', async () => {
-    mockMigrate.mockRejectedValueOnce(new Error('boom')).mockResolvedValue({
-      migrated: 0,
-      retryable_remaining: 0,
-      blocked_unmigrated: 0,
-      blocked: [],
-    })
+  it('re-invokes the enclave when the first pass reports partial', async () => {
+    mockMigrateAll
+      .mockResolvedValueOnce({
+        migrated: 200,
+        retryable_remaining: 50,
+        blocked_unmigrated: 0,
+        partial: true,
+        scopes: [
+          {
+            scope: 'chat',
+            migrated: 200,
+            retryable_remaining: 50,
+            blocked_unmigrated: 0,
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        migrated: 50,
+        retryable_remaining: 0,
+        blocked_unmigrated: 0,
+        partial: false,
+        scopes: [
+          {
+            scope: 'chat',
+            migrated: 50,
+            retryable_remaining: 0,
+            blocked_unmigrated: 0,
+          },
+        ],
+      })
     const report = await runLegacyBlobMigration()
-    // First scope aborted early — its remaining stays 0 (we don't
-    // know better) and the rest still ran.
-    expect(report.scopes.length).toBe(ALL_SCOPES.length)
-    expect(report.scopes[0].batches).toBe(0)
+    expect(mockMigrateAll).toHaveBeenCalledTimes(2)
+    expect(report.fullyMigrated).toBe(true)
+    expect(report.totalMigrated).toBe(250)
   })
 
-  it('caps batches per scope to avoid spinning forever on an enclave regression', async () => {
-    // Enclave forever says "migrated 0, remaining 1". The loop must
-    // break by the zero-progress guard within one batch, not run to
-    // MIGRATE_MAX_BATCHES_PER_SCOPE.
-    mockMigrate.mockResolvedValue({
-      migrated: 0,
-      retryable_remaining: 1,
+  it('caps the pass budget so a permanently-partial enclave cannot spin forever', async () => {
+    mockMigrateAll.mockResolvedValue({
+      migrated: 1,
+      retryable_remaining: 99,
       blocked_unmigrated: 0,
-      blocked: [],
+      partial: true,
+      scopes: [
+        {
+          scope: 'chat',
+          migrated: 1,
+          retryable_remaining: 99,
+          blocked_unmigrated: 0,
+        },
+      ],
     })
     const report = await runLegacyBlobMigration()
-    // Each scope runs exactly one batch because progress=0 trips the
-    // defensive break.
-    for (const scope of report.scopes) {
-      expect(scope.batches).toBe(1)
-    }
+    expect(mockMigrateAll).toHaveBeenCalledTimes(2)
     expect(report.fullyMigrated).toBe(false)
+    expect(report.totalRemaining).toBe(99)
+  })
+
+  it('returns an empty report when the enclave errors on the first pass', async () => {
+    mockMigrateAll.mockRejectedValue(new Error('boom'))
+    const report = await runLegacyBlobMigration()
+    expect(report.fullyMigrated).toBe(false)
+    expect(report.totalMigrated).toBe(0)
+    expect(report.scopes).toEqual([])
   })
 })
 
@@ -225,7 +234,7 @@ describe('finalizeAlternativesIfMigrated', () => {
 
 describe('runLegacyBlobMigrationAndFinalize', () => {
   beforeEach(() => {
-    mockMigrate.mockReset()
+    mockMigrateAll.mockReset()
     mockRequirePrimaryKeyB64.mockReset()
     mockPullKeys.mockReset()
     mockClearFallbackKeys.mockReset()
@@ -236,23 +245,26 @@ describe('runLegacyBlobMigrationAndFinalize', () => {
   })
 
   it('clears fallback keys when every scope drains', async () => {
-    mockMigrate.mockResolvedValue({
-      migrated: 0,
-      retryable_remaining: 0,
-      blocked_unmigrated: 0,
-      blocked: [],
-    })
+    mockMigrateAll.mockResolvedValue(emptyEnclaveReport())
     const report = await runLegacyBlobMigrationAndFinalize()
     expect(report.fullyMigrated).toBe(true)
     expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
   })
 
   it('keeps fallback keys when remaining rows are reported', async () => {
-    mockMigrate.mockResolvedValue({
+    mockMigrateAll.mockResolvedValue({
       migrated: 0,
       retryable_remaining: 1,
       blocked_unmigrated: 0,
-      blocked: [],
+      partial: false,
+      scopes: [
+        {
+          scope: 'chat',
+          migrated: 0,
+          retryable_remaining: 1,
+          blocked_unmigrated: 0,
+        },
+      ],
     })
     const report = await runLegacyBlobMigrationAndFinalize()
     expect(report.fullyMigrated).toBe(false)
