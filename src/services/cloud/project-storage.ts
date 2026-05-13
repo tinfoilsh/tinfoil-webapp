@@ -14,10 +14,63 @@ import type {
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import { encryptionService } from '../encryption/encryption-service'
+import {
+  pull as enclavePull,
+  push as enclavePush,
+  hexToB64,
+  pullItemPlaintext,
+  type PullKey,
+} from '../sync-enclave/sync-api'
 import { canWriteToCloud } from './cloud-key-authorization'
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
+
+const PROJECT_SCOPE = 'project'
+const PROJECT_DOCUMENT_SCOPE = 'project_document'
+
+function newIdempotencyKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  let out = ''
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0')
+  }
+  return out
+}
+
+function pullKeysFromEncryptionService(): PullKey[] {
+  const all = encryptionService.getAllKeys()
+  const out: PullKey[] = []
+  if (all.primary) out.push({ key: hexToB64(all.primary) })
+  for (const alt of all.alternatives) {
+    if (alt !== all.primary) out.push({ key: hexToB64(alt) })
+  }
+  return out
+}
+
+function requirePrimaryKeyB64(): string {
+  const key = encryptionService.getKey()
+  if (!key) {
+    throw new Error('project-storage: no encryption key available')
+  }
+  return hexToB64(key)
+}
+
+function projectDocumentId(projectId: string, documentId: string): string {
+  return `${projectId}/${documentId}`
+}
+
+// The legacy controlplane row exposed a numeric `syncVersion` to the
+// client. The enclave protocol carries the same monotonic counter as a
+// string ETag (§7 of the sync spec). The Project type still requires a
+// number, so we parse the decimal etag back. Non-numeric etags fall
+// back to 1 to keep the type contract intact; the next sync pass
+// refreshes the real value from the controlplane listing.
+function etagToSyncVersion(etag: string | undefined): number {
+  if (!etag) return 1
+  const parsed = parseInt(etag, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+}
 
 export class ProjectStorageService {
   private async getHeaders(): Promise<Record<string, string>> {
@@ -61,29 +114,25 @@ export class ProjectStorageService {
       memory: [],
     }
 
-    const encrypted = await encryptionService.encrypt(projectData)
+    const plaintext = new TextEncoder().encode(JSON.stringify(projectData))
 
-    const response = await fetch(`${API_BASE_URL}/api/storage/project`, {
-      method: 'PUT',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({
-        projectId,
-        data: JSON.stringify(encrypted),
-      }),
+    const pushResp = await enclavePush({
+      scope: PROJECT_SCOPE,
+      id: projectId,
+      keyB64: requirePrimaryKeyB64(),
+      plaintext,
+      ifMatch: null,
+      idempotencyKey: newIdempotencyKey(),
+      metadata: {},
     })
 
-    if (!response.ok) {
-      throw new Error(`Failed to create project: ${response.statusText}`)
-    }
-
-    const responseData = await response.json()
-
+    const now = new Date().toISOString()
     return {
       id: projectId,
       ...projectData,
-      createdAt: responseData.createdAt,
-      updatedAt: responseData.updatedAt,
-      syncVersion: responseData.syncVersion,
+      createdAt: now,
+      updatedAt: now,
+      syncVersion: etagToSyncVersion(pushResp.etag),
     }
   }
 
@@ -110,54 +159,56 @@ export class ProjectStorageService {
       memory: data.memory ?? existing.memory,
     }
 
-    const encrypted = await encryptionService.encrypt(projectData)
+    const plaintext = new TextEncoder().encode(JSON.stringify(projectData))
 
-    const response = await fetch(`${API_BASE_URL}/api/storage/project`, {
-      method: 'PUT',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({
-        projectId,
-        data: JSON.stringify(encrypted),
-      }),
+    await enclavePush({
+      scope: PROJECT_SCOPE,
+      id: projectId,
+      keyB64: requirePrimaryKeyB64(),
+      plaintext,
+      ifMatch: String(existing.syncVersion),
+      idempotencyKey: newIdempotencyKey(),
+      metadata: {},
     })
-
-    if (!response.ok) {
-      throw new Error(`Failed to update project: ${response.statusText}`)
-    }
   }
 
   async getProject(projectId: string): Promise<Project | null> {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/storage/project/${projectId}`,
-        {
-          headers: await this.getHeaders(),
-        },
-      )
+      const keys = pullKeysFromEncryptionService()
+      if (keys.length === 0) return null
 
-      if (response.status === 404) {
+      const resp = await enclavePull({
+        scope: PROJECT_SCOPE,
+        ids: [projectId],
+        keys,
+      })
+      const item = resp.items[0]
+      if (!item || !item.ok) {
+        if (item && item.code === 'NOT_FOUND') return null
         return null
       }
+      const plaintextBytes = pullItemPlaintext(item)
+      if (!plaintextBytes) return null
 
-      if (!response.ok) {
-        throw new Error(`Failed to get project: ${response.statusText}`)
-      }
+      const decoded = JSON.parse(
+        new TextDecoder().decode(plaintextBytes),
+      ) as ProjectData
 
-      const data = await response.json()
-
-      const decrypted = (await encryptionService.decrypt(
-        data.content,
-      )) as ProjectData
-
+      // PullItem only carries the row body + etag; createdAt/updatedAt
+      // come from the controlplane listing path (listProjects /
+      // getProjectsUpdatedSince), so we synthesize a "now" stamp here
+      // and let the next sync pass overwrite it with the authoritative
+      // value.
+      const now = new Date().toISOString()
       return {
         id: projectId,
-        name: decrypted.name,
-        description: decrypted.description,
-        systemInstructions: decrypted.systemInstructions,
-        memory: decrypted.memory || [],
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-        syncVersion: data.syncVersion,
+        name: decoded.name,
+        description: decoded.description,
+        systemInstructions: decoded.systemInstructions,
+        memory: decoded.memory || [],
+        createdAt: now,
+        updatedAt: now,
+        syncVersion: etagToSyncVersion(item.etag),
       }
     } catch (error) {
       logError(`Failed to get project ${projectId}`, error, {
@@ -308,39 +359,29 @@ export class ProjectStorageService {
 
     const { documentId } = await this.generateDocumentId(projectId)
 
-    const encrypted = await encryptionService.encrypt({
-      content,
-      filename,
-      contentType,
+    const docPayload = { content, filename, contentType }
+    const plaintext = new TextEncoder().encode(JSON.stringify(docPayload))
+
+    const pushResp = await enclavePush({
+      scope: PROJECT_DOCUMENT_SCOPE,
+      id: projectDocumentId(projectId, documentId),
+      keyB64: requirePrimaryKeyB64(),
+      plaintext,
+      ifMatch: null,
+      idempotencyKey: newIdempotencyKey(),
+      metadata: { filename, contentType, projectId },
     })
 
-    const response = await fetch(
-      `${API_BASE_URL}/api/projects/${projectId}/documents`,
-      {
-        method: 'PUT',
-        headers: await this.getHeaders(),
-        body: JSON.stringify({
-          documentId,
-          data: JSON.stringify(encrypted),
-        }),
-      },
-    )
-
-    if (!response.ok) {
-      throw new Error(`Failed to upload document: ${response.statusText}`)
-    }
-
-    const data = await response.json()
-
+    const now = new Date().toISOString()
     return {
       id: documentId,
       projectId,
       filename,
       contentType,
       sizeBytes: new TextEncoder().encode(content).length,
-      syncVersion: data.syncVersion,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
+      syncVersion: etagToSyncVersion(pushResp.etag),
+      createdAt: now,
+      updatedAt: now,
       content,
     }
   }
@@ -350,39 +391,41 @@ export class ProjectStorageService {
     documentId: string,
   ): Promise<ProjectDocument | null> {
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/api/projects/${projectId}/documents/${documentId}`,
-        {
-          headers: await this.getHeaders(),
-        },
-      )
+      const keys = pullKeysFromEncryptionService()
+      if (keys.length === 0) return null
 
-      if (response.status === 404) {
+      const resp = await enclavePull({
+        scope: PROJECT_DOCUMENT_SCOPE,
+        ids: [projectDocumentId(projectId, documentId)],
+        keys,
+      })
+      const item = resp.items[0]
+      if (!item || !item.ok) {
+        if (item && item.code === 'NOT_FOUND') return null
         return null
       }
+      const plaintextBytes = pullItemPlaintext(item)
+      if (!plaintextBytes) return null
 
-      if (!response.ok) {
-        throw new Error(`Failed to get document: ${response.statusText}`)
-      }
-
-      const data = await response.json()
-
-      const decrypted = (await encryptionService.decrypt(data.content)) as {
+      const decoded = JSON.parse(new TextDecoder().decode(plaintextBytes)) as {
         content: string
         filename?: string
         contentType?: string
       }
 
+      // Same timestamp-synthesis rationale as getProject: the
+      // controlplane listing path owns the authoritative values.
+      const now = new Date().toISOString()
       return {
         id: documentId,
         projectId,
-        filename: decrypted.filename || '',
-        contentType: decrypted.contentType || '',
-        sizeBytes: new TextEncoder().encode(decrypted.content).length,
-        syncVersion: data.syncVersion,
-        createdAt: data.createdAt,
-        updatedAt: data.updatedAt,
-        content: decrypted.content,
+        filename: decoded.filename || '',
+        contentType: decoded.contentType || '',
+        sizeBytes: new TextEncoder().encode(decoded.content).length,
+        syncVersion: etagToSyncVersion(item.etag),
+        createdAt: now,
+        updatedAt: now,
+        content: decoded.content,
       }
     } catch (error) {
       logError(`Failed to get document ${documentId}`, error, {
