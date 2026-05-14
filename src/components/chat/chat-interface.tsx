@@ -368,7 +368,7 @@ export function ChatInterface({
   // and bridges key changes back via onEncryptionKeyRecovered / updatePasskeyBackup.
   // Ref bridges the forward dependency: useCloudSync needs updatePasskeyBackup (from
   // usePasskeyBackup), which is defined after useCloudSync returns.
-  const updatePasskeyBackupRef = useRef<() => Promise<void>>()
+  const updatePasskeyBackupRef = useRef<(() => Promise<void>) | null>(null)
 
   const {
     syncing,
@@ -902,9 +902,8 @@ export function ChatInterface({
   useEffect(() => {
     const initTinfoil = async () => {
       try {
-        const { getTinfoilClient } = await import(
-          '@/services/inference/tinfoil-client'
-        )
+        const { getTinfoilClient } =
+          await import('@/services/inference/tinfoil-client')
         const client = await getTinfoilClient()
         if (!('getVerificationDocument' in client)) return
         const doc = await (client as TinfoilAI).getVerificationDocument()
@@ -2122,7 +2121,7 @@ export function ChatInterface({
     const nowContentLen = (last.content || '').length
     const nowThinkingish = Boolean(
       last.isThinking ||
-        ((last.thoughts || '').length > 0 && nowContentLen === 0),
+      ((last.thoughts || '').length > 0 && nowContentLen === 0),
     )
 
     const contentStartedNow =

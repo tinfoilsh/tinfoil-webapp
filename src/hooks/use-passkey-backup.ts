@@ -35,8 +35,10 @@ import {
 import { isPrfSupported } from '@/services/passkey/prf-support'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
-import type { UserResource } from '@clerk/types'
+import type { useUser } from '@clerk/nextjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
+
+type UserResource = NonNullable<ReturnType<typeof useUser>['user']>
 
 export interface PasskeyBackupState {
   /** Passkey backup exists on the backend or was used/stored this session */

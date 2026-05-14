@@ -358,7 +358,7 @@ const MarkdownPreview = ({
   contentRef,
 }: {
   code: string
-  contentRef: React.RefObject<HTMLDivElement>
+  contentRef: React.RefObject<HTMLDivElement | null>
 }) => (
   <div ref={contentRef} className="prose prose-sm max-w-none dark:prose-invert">
     <ReactMarkdown
@@ -640,9 +640,10 @@ const MermaidPreview = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string | null>(null)
+  const reactId = useId()
   const idRef = useMemo(
-    () => `mermaid-${Math.random().toString(36).slice(2, 11)}`,
-    [],
+    () => `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    [reactId],
   )
 
   useEffect(() => {
@@ -881,7 +882,7 @@ const CodePreview = ({
   code: string
   language: string
   isDarkMode: boolean
-  markdownRef?: React.RefObject<HTMLDivElement>
+  markdownRef?: React.RefObject<HTMLDivElement | null>
 }) => {
   const renderPreview = () => {
     switch (language) {

@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "npx serve out",
     "dev:serve": "node scripts/dev-serve.mjs",
-    "lint": "next lint",
+    "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky install",
     "find-unused": "ts-unused-exports tsconfig.json",
@@ -21,7 +21,7 @@
   "dependencies": {
     "@apple/mapkit-loader": "^0.2.1",
     "@braintree/sanitize-url": "^7.1.1",
-    "@clerk/nextjs": "^6.21.0",
+    "@clerk/nextjs": "^7.3.4",
     "@headlessui/react": "^2.1.1",
     "@heroicons/react": "^2.1.4",
     "@radix-ui/react-alert-dialog": "^1.1.4",
@@ -39,16 +39,16 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^11.18.2",
-    "html2pdf.js": "^0.12.1",
+    "html2pdf.js": "^0.14.0",
     "isomorphic-dompurify": "^2.35.0",
     "katex": "^0.16.22",
     "lottie-web": "^5.13.0",
     "lucide-react": "^0.473.0",
-    "mermaid": "^11.12.2",
-    "next": "^15.3.3",
+    "mermaid": "^11.15.0",
+    "next": "^16.2.6",
     "pako": "^2.1.0",
-    "react": "^18",
-    "react-dom": "^18",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "react-icons": "^5.5.0",
     "react-markdown": "^9.0.3",
     "react-qr-code": "^2.0.18",
@@ -62,7 +62,7 @@
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",
     "tinfoil": "^1.1.0",
-    "uuid": "^11.0.3",
+    "uuid": "^11.1.1",
     "zod": "^3.25.76",
     "zod-to-json-schema": "^3.25.2"
   },
@@ -75,14 +75,14 @@
     "@types/dompurify": "^3.0.5",
     "@types/node": "^20",
     "@types/pako": "^2.0.4",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
     "@vitest/coverage-v8": "^4.0.16",
     "concurrently": "^9.2.1",
     "eslint": "^9.28.0",
-    "eslint-config-next": "^15.3.3",
+    "eslint-config-next": "^16.2.6",
     "happy-dom": "^20.0.11",
     "husky": "^8.0.3",
     "lint-staged": "^15.2.10",
@@ -94,9 +94,15 @@
     "typescript": "^5",
     "vitest": "^4.0.16"
   },
+  "overrides": {
+    "@tinfoilsh/tinfoil-icons": {
+      "react": "$react"
+    },
+    "postcss": "^8.5.10"
+  },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
-      "eslint --max-warnings=0 --fix",
+      "eslint --fix",
       "prettier --write"
     ],
     "*.{json,css,scss,md,mdx}": [

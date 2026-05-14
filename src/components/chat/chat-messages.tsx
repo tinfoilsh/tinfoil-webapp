@@ -17,7 +17,7 @@ type ChatMessagesProps = {
   messages: Message[]
   isDarkMode: boolean
   chatId: string
-  messagesEndRef?: React.RefObject<HTMLDivElement>
+  messagesEndRef?: React.RefObject<HTMLDivElement | null>
   isWaitingForResponse?: boolean
   isStreamingResponse?: boolean
   isPremium?: boolean
@@ -28,7 +28,7 @@ type ChatMessagesProps = {
   loadingState?: any
   retryInfo?: { attempt: number; maxRetries: number; error?: string } | null
   cancelGeneration?: () => void
-  inputRef?: React.RefObject<HTMLTextAreaElement>
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>
   handleInputFocus?: () => void
   handleDocumentUpload?: (file: File) => Promise<void>
   processedDocuments?: any[]
@@ -344,9 +344,8 @@ export function ChatMessages({
   const lastMessage = liveMessages[liveMessages.length - 1]
   const hasAssistantThinking = Boolean(
     lastMessage &&
-      lastMessage.role === 'assistant' &&
-      (lastMessage.isThinking ||
-        (lastMessage.thoughts && !lastMessage.content)),
+    lastMessage.role === 'assistant' &&
+    (lastMessage.isThinking || (lastMessage.thoughts && !lastMessage.content)),
   )
   const showLoadingPlaceholder = isWaitingForResponse && !hasAssistantThinking
 

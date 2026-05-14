@@ -4,7 +4,7 @@
  * `render_image` GenUI component.
  */
 import DOMPurify from 'isomorphic-dompurify'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 
 interface MermaidPreviewProps {
   code: string
@@ -19,9 +19,10 @@ export function MermaidPreview({
 }: MermaidPreviewProps) {
   const [svg, setSvg] = useState<string>('')
   const [error, setError] = useState<string | null>(null)
+  const reactId = useId()
   const idRef = useMemo(
-    () => `mermaid-${Math.random().toString(36).slice(2, 11)}`,
-    [],
+    () => `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+    [reactId],
   )
 
   useEffect(() => {

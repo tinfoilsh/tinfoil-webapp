@@ -10,7 +10,6 @@
  *   4. Refresh the page
  */
 
-/* eslint-disable no-console */
 ;(() => {
   const STORAGE_KEY = 'tinfoil-sync-session-chats'
 

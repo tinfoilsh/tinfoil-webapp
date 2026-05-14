@@ -17,7 +17,7 @@ import type { Message } from './types'
 
 interface PrintableChatProps {
   messages: Message[]
-  printRef: React.RefObject<HTMLDivElement>
+  printRef: React.RefObject<HTMLDivElement | null>
 }
 
 const formatTimestamp = (timestamp: Date): string => {

@@ -85,9 +85,13 @@ export async function downloadMarkdownAsPdf(
     const opts = {
       margin,
       filename,
-      image: { type: 'jpeg', quality: 0.98 },
+      image: { type: 'jpeg' as const, quality: 0.98 },
       html2canvas: { scale: 2, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      jsPDF: {
+        unit: 'mm',
+        format: 'a4',
+        orientation: 'portrait' as const,
+      },
       pagebreak: {
         mode: ['css', 'legacy'],
         avoid: [
@@ -108,15 +112,7 @@ export async function downloadMarkdownAsPdf(
         ],
       },
     }
-    const pdfUrl = await (
-      html2pdf() as unknown as {
-        set: (opts: unknown) => {
-          from: (el: HTMLElement) => {
-            output: (type: 'bloburl') => Promise<string>
-          }
-        }
-      }
-    )
+    const pdfUrl: string = await html2pdf()
       .set(opts)
       .from(clone)
       .output('bloburl')
