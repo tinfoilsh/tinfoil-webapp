@@ -97,7 +97,8 @@
   "overrides": {
     "@tinfoilsh/tinfoil-icons": {
       "react": "$react"
-    }
+    },
+    "postcss": "^8.5.10"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
