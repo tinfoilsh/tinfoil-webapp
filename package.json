@@ -21,7 +21,7 @@
   "dependencies": {
     "@apple/mapkit-loader": "^0.2.1",
     "@braintree/sanitize-url": "^7.1.1",
-    "@clerk/nextjs": "^6.39.3",
+    "@clerk/nextjs": "^7.3.4",
     "@headlessui/react": "^2.1.1",
     "@heroicons/react": "^2.1.4",
     "@radix-ui/react-alert-dialog": "^1.1.4",
