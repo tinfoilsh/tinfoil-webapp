@@ -14,7 +14,12 @@ const LIGHT_THEME_TOKENS: Record<string, string> = {
   '--surface-input': '240 23.8% 95.9%',
 }
 
-const LAYOUT_SETTLE_MS = 30
+const LAYOUT_SETTLE_MS = 50
+
+const PDF_BODY_FONT = 'Helvetica, Arial, sans-serif'
+const PDF_MONO_FONT = 'ui-monospace, Menlo, Consolas, monospace'
+
+const MONO_TAGS = new Set(['CODE', 'PRE', 'KBD', 'SAMP'])
 
 interface UseChatPrintOptions {
   printRef: React.RefObject<HTMLDivElement | null>
@@ -43,11 +48,22 @@ export function useChatPrint({
     clone.classList.remove('hidden')
     clone.removeAttribute('aria-hidden')
     applyLightThemeTokens(clone)
+    applyPdfFonts(clone)
     expandOverflowingContainers(clone)
     wrapper.appendChild(clone)
     document.body.appendChild(wrapper)
 
     try {
+      // Wait for any web fonts to finish loading before html2canvas measures
+      // glyphs, otherwise the rasterizer uses pre-computed Aeonik metrics
+      // against fallback glyphs and produces kerning artifacts.
+      if (typeof document !== 'undefined' && 'fonts' in document) {
+        try {
+          await document.fonts.ready
+        } catch {
+          // Ignore; fall through to the timed settle below.
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, LAYOUT_SETTLE_MS))
 
       const html2pdf = (await import('html2pdf.js')).default
@@ -59,6 +75,7 @@ export function useChatPrint({
           scale: 2,
           useCORS: true,
           backgroundColor: '#ffffff',
+          letterRendering: true,
         },
         jsPDF: {
           unit: 'mm',
@@ -162,6 +179,27 @@ function applyLightThemeTokens(clone: HTMLElement): void {
       el.style.setProperty(name, value, 'important')
     }
     el.style.setProperty('color-scheme', 'light', 'important')
+  }
+}
+
+function applyPdfFonts(clone: HTMLElement): void {
+  // Aeonik is loaded by Next/font as a variable font. html2canvas can't
+  // reliably rasterize variable fonts and produces overlapping glyphs / wrong
+  // kerning. Pinning every element to Helvetica (or a monospace stack for
+  // code blocks) keeps text shaping consistent across measurement and paint.
+  const elements: HTMLElement[] = [
+    clone,
+    ...Array.from(clone.querySelectorAll<HTMLElement>('*')),
+  ]
+  for (const el of elements) {
+    const isMono = MONO_TAGS.has(el.tagName)
+    el.style.setProperty(
+      'font-family',
+      isMono ? PDF_MONO_FONT : PDF_BODY_FONT,
+      'important',
+    )
+    el.style.setProperty('font-variation-settings', 'normal', 'important')
+    el.style.setProperty('font-feature-settings', 'normal', 'important')
   }
 }
 
