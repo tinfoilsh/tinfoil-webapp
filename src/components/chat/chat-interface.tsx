@@ -489,7 +489,8 @@ export function ChatInterface({
   // Temporary chat mode: when active the current chat is replaced with an
   // ephemeral in-memory chat that is never persisted (no IndexedDB, no session
   // storage, no cloud sync). Disabling restores the previously active chat.
-  const [isTemporaryMode, setIsTemporaryMode] = useState(false)
+  // The mode is derived from currentChat.isTemporary further below, after
+  // useChatState provides currentChat.
   const previousChatIdRef = useRef<string | null>(null)
 
   // Artifact-sidebar state — opened when a `render_artifact_preview` inline
@@ -766,6 +767,8 @@ export function ChatInterface({
     webSearchEnabled,
     piiCheckEnabled,
   })
+
+  const isTemporaryMode = currentChat?.isTemporary === true
 
   // Ask sidebar - ephemeral streaming only. Nothing is persisted until the
   // user clicks "Open as chat", which creates a new real chat seeded with the
@@ -1374,42 +1377,44 @@ export function ChatInterface({
   }, [createNewChat, exitProjectMode])
 
   const handleToggleTemporaryMode = useCallback(() => {
-    setIsTemporaryMode((prev) => {
-      const next = !prev
-      if (next) {
-        previousChatIdRef.current = currentChat?.id ?? null
-        const tempChat: Chat = {
-          id: `temp-${Date.now()}`,
-          title: 'Temporary Chat',
-          titleState: 'placeholder',
-          messages: [],
-          createdAt: new Date(),
-          isBlankChat: true,
-          isTemporary: true,
-        }
-        setCurrentChat(tempChat)
+    if (currentChat?.isTemporary) {
+      const previousId = previousChatIdRef.current
+      previousChatIdRef.current = null
+      const restored = previousId
+        ? chats.find((c) => c.id === previousId)
+        : undefined
+      if (restored) {
+        setCurrentChat(restored)
       } else {
-        const previousId = previousChatIdRef.current
-        const restored = previousId
-          ? chats.find((c) => c.id === previousId)
-          : undefined
-        if (restored) {
-          setCurrentChat(restored)
-        } else {
-          createNewChat(false, true)
-        }
-        previousChatIdRef.current = null
+        createNewChat(false, true)
       }
-      return next
-    })
-  }, [chats, createNewChat, currentChat?.id, setCurrentChat])
+      return
+    }
+
+    previousChatIdRef.current = currentChat?.id ?? null
+    const tempChat: Chat = {
+      id: `temp-${Date.now()}`,
+      title: 'Temporary Chat',
+      titleState: 'placeholder',
+      messages: [],
+      createdAt: new Date(),
+      isBlankChat: true,
+      isTemporary: true,
+    }
+    setCurrentChat(tempChat)
+  }, [
+    chats,
+    createNewChat,
+    currentChat?.id,
+    currentChat?.isTemporary,
+    setCurrentChat,
+  ])
 
   useEffect(() => {
-    if (isTemporaryMode && currentChat && !currentChat.isTemporary) {
-      setIsTemporaryMode(false)
+    if (!isTemporaryMode && previousChatIdRef.current) {
       previousChatIdRef.current = null
     }
-  }, [isTemporaryMode, currentChat])
+  }, [isTemporaryMode])
 
   // Handler for exiting project mode while dragging - does NOT create a new chat
   // so the drag operation can continue and drop into cloud/local tabs

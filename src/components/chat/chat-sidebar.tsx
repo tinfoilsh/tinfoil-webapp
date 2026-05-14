@@ -390,8 +390,16 @@ export function ChatSidebar({
     const shouldBeLocal = activeTab === 'local'
 
     // Only switch to blank chat if we're already on a blank chat
-    // This ensures we don't interrupt the user when they've selected a real chat
-    if (currentChat?.isBlankChat && currentChat.isLocalOnly !== shouldBeLocal) {
+    // This ensures we don't interrupt the user when they've selected a real chat.
+    // Temporary chats are also blank but must not be replaced here — doing so
+    // would silently exit temporary-chat mode whenever the active tab and the
+    // temp chat's isLocalOnly disagree (which is always, since temp chats
+    // leave isLocalOnly undefined).
+    if (
+      currentChat?.isBlankChat &&
+      !currentChat.isTemporary &&
+      currentChat.isLocalOnly !== shouldBeLocal
+    ) {
       createNewChat(shouldBeLocal, false)
     }
   }, [
@@ -402,6 +410,7 @@ export function ChatSidebar({
     createNewChat,
     currentChat?.isBlankChat,
     currentChat?.isLocalOnly,
+    currentChat?.isTemporary,
   ])
 
   // Calculate if we should show the Load More button
