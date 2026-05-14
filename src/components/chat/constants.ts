@@ -53,4 +53,6 @@ export const CONSTANTS = {
     'How can I help you today?',
     'Your secrets are safe here...',
   ],
+  // Base document title used when no chat title is meaningful
+  BASE_DOCUMENT_TITLE: 'Tinfoil Private Chat',
 } as const

@@ -875,6 +875,37 @@ export function ChatInterface({
     clearUrl,
   ])
 
+  // Sync document.title with the active chat's title so the browser tab
+  // reflects what the user is reading. Blank/placeholder/temporary chats fall
+  // back to the base title because their "title" is a generic label.
+  const currentChatTitle = currentChat?.title
+  const currentChatTitleState = currentChat?.titleState
+  const currentChatIsBlank = currentChat?.isBlankChat
+  const currentChatIsTemp = currentChat?.isTemporary
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+
+    const base = CONSTANTS.BASE_DOCUMENT_TITLE
+    const trimmed = currentChatTitle?.trim()
+    const hasMeaningfulTitle =
+      !currentChatIsBlank &&
+      !currentChatIsTemp &&
+      currentChatTitleState !== 'placeholder' &&
+      !!trimmed &&
+      trimmed !== 'New Chat'
+
+    document.title = hasMeaningfulTitle ? `${trimmed} · ${base}` : base
+
+    return () => {
+      document.title = base
+    }
+  }, [
+    currentChatTitle,
+    currentChatTitleState,
+    currentChatIsBlank,
+    currentChatIsTemp,
+  ])
+
   // Initialize tinfoil client once when page loads
   useEffect(() => {
     const initTinfoil = async () => {
