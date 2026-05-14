@@ -1,6 +1,21 @@
 import { toast } from '@/hooks/use-toast'
 import { useCallback, useEffect, useState } from 'react'
 
+const LIGHT_THEME_TOKENS: Record<string, string> = {
+  '--content-primary': '221 39.3% 11%',
+  '--content-secondary': '221 20% 20%',
+  '--content-muted': '221 14% 34%',
+  '--content-inverse': '0 0% 100%',
+  '--border-subtle': '220 13% 91%',
+  '--border-strong': '217 19.1% 26.7%',
+  '--muted': '240 23.8% 95.9%',
+  '--surface-chat-background': '0 0% 100%',
+  '--surface-card': '0 0% 100%',
+  '--surface-input': '240 23.8% 95.9%',
+}
+
+const LAYOUT_SETTLE_MS = 30
+
 interface UseChatPrintOptions {
   printRef: React.RefObject<HTMLDivElement | null>
   enabled?: boolean
@@ -22,19 +37,60 @@ export function useChatPrint({
 
     setIsGeneratingPdf(true)
     const element = printRef.current
+    const wrapper = createPrintableWrapper(element.scrollWidth)
+    const clone = element.cloneNode(true) as HTMLElement
+
+    clone.classList.remove('hidden')
+    clone.removeAttribute('aria-hidden')
+    applyLightThemeTokens(clone)
+    expandOverflowingContainers(clone)
+    wrapper.appendChild(clone)
+    document.body.appendChild(wrapper)
+
     try {
-      element.classList.remove('hidden')
+      await new Promise((resolve) => setTimeout(resolve, LAYOUT_SETTLE_MS))
 
       const html2pdf = (await import('html2pdf.js')).default
-      const blob = await html2pdf()
-        .set({
-          margin: [15, 15, 15, 15],
-          filename: 'chat.pdf',
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        })
-        .from(element)
+      const opts = {
+        margin: [15, 15, 15, 15] as [number, number, number, number],
+        filename: 'chat.pdf',
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+        },
+        jsPDF: {
+          unit: 'mm',
+          format: 'a4',
+          orientation: 'portrait' as const,
+        },
+        pagebreak: {
+          mode: ['css', 'legacy'],
+          avoid: [
+            '.printable-role-header',
+            '.printable-documents',
+            '.printable-thinking',
+            'h1',
+            'h2',
+            'h3',
+            'h4',
+            'h5',
+            'h6',
+            'p',
+            'li',
+            'tr',
+            'thead',
+            'blockquote',
+            'pre',
+            'img',
+            'figure',
+          ],
+        },
+      }
+      const blob: Blob = await html2pdf()
+        .set(opts)
+        .from(clone)
         .outputPdf('blob')
 
       const pdfUrl = URL.createObjectURL(blob)
@@ -50,7 +106,7 @@ export function useChatPrint({
     } catch {
       toast({ title: 'Failed to generate PDF', variant: 'destructive' })
     } finally {
-      element.classList.add('hidden')
+      wrapper.remove()
       setIsGeneratingPdf(false)
     }
   }, [printRef, isGeneratingPdf])
@@ -73,4 +129,44 @@ export function useChatPrint({
     isGeneratingPdf,
     triggerPrint,
   }
+}
+
+function createPrintableWrapper(sourceWidth: number): HTMLDivElement {
+  const wrapper = document.createElement('div')
+  wrapper.setAttribute('aria-hidden', 'true')
+
+  const style = wrapper.style
+  style.setProperty('position', 'fixed', 'important')
+  style.setProperty('top', '-10000px', 'important')
+  style.setProperty('left', '0', 'important')
+  style.setProperty('width', `${Math.max(sourceWidth, 800)}px`, 'important')
+  style.setProperty('background-color', '#ffffff', 'important')
+  style.setProperty('color', '#000000', 'important')
+  style.setProperty('color-scheme', 'light', 'important')
+
+  for (const [name, value] of Object.entries(LIGHT_THEME_TOKENS)) {
+    style.setProperty(name, value, 'important')
+  }
+
+  return wrapper
+}
+
+function applyLightThemeTokens(clone: HTMLElement): void {
+  const elements: HTMLElement[] = [
+    clone,
+    ...Array.from(clone.querySelectorAll<HTMLElement>('*')),
+  ]
+
+  for (const el of elements) {
+    for (const [name, value] of Object.entries(LIGHT_THEME_TOKENS)) {
+      el.style.setProperty(name, value, 'important')
+    }
+    el.style.setProperty('color-scheme', 'light', 'important')
+  }
+}
+
+function expandOverflowingContainers(clone: HTMLElement): void {
+  clone
+    .querySelectorAll<HTMLElement>('table, pre, [style*="overflow"]')
+    .forEach((el) => el.style.setProperty('overflow', 'visible', 'important'))
 }
