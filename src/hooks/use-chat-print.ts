@@ -187,12 +187,17 @@ function applyPdfFonts(clone: HTMLElement): void {
   // reliably rasterize variable fonts and produces overlapping glyphs / wrong
   // kerning. Pinning every element to Helvetica (or a monospace stack for
   // code blocks) keeps text shaping consistent across measurement and paint.
+  // Syntax-highlighted code wraps tokens in nested <span>s under <pre>/<code>,
+  // so we check the ancestor chain — not just the element's own tag — to keep
+  // every glyph inside a code block in the monospace stack.
   const elements: HTMLElement[] = [
     clone,
     ...Array.from(clone.querySelectorAll<HTMLElement>('*')),
   ]
+  const monoSelector = Array.from(MONO_TAGS).join(',').toLowerCase()
   for (const el of elements) {
-    const isMono = MONO_TAGS.has(el.tagName)
+    const isMono =
+      MONO_TAGS.has(el.tagName) || el.closest(monoSelector) !== null
     el.style.setProperty(
       'font-family',
       isMono ? PDF_MONO_FONT : PDF_BODY_FONT,
