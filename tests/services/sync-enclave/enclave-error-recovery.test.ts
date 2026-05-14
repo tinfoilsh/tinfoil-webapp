@@ -26,6 +26,7 @@ describe('decideRecovery', () => {
       'AUTH',
       'FORBIDDEN',
       'NETWORK',
+      'NOT_FOUND',
     ]
     for (const code of required) {
       expect(COVERED_CODES, code).toContain(code)
@@ -45,6 +46,7 @@ describe('decideRecovery', () => {
     ['AUTH', 'retry'],
     ['FORBIDDEN', 'abort'],
     ['NETWORK', 'retry'],
+    ['NOT_FOUND', 'surface-not-found'],
   ])('maps %s → %s', (code, type) => {
     const decision = decideRecovery(err(code))
     expect(decision.action.type).toBe(type)

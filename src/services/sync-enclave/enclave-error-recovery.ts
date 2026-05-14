@@ -63,6 +63,13 @@ export type RecoveryAction =
   | { type: 'surface-conflict'; reason: 'SYNC_CONFLICT' }
   | { type: 'surface-existing-data-under-other-key' }
   /**
+   * The row was deleted on another device while we were writing or
+   * reading. The user cannot resolve this automatically — surface a
+   * "this item no longer exists on another device" prompt and let
+   * them choose to recreate it or discard their local copy.
+   */
+  | { type: 'surface-not-found' }
+  /**
    * Local key is wrong. Trigger the recovery wizard (passkey /
    * manual-key / start-fresh).
    */
@@ -150,6 +157,7 @@ const ACTIONS: Record<
   AUTH: () => ({ type: 'retry', reason: 'AUTH_REFRESH' }),
   FORBIDDEN: () => ({ type: 'abort', reason: 'FORBIDDEN' }),
   NETWORK: () => ({ type: 'retry', reason: 'NETWORK' }),
+  NOT_FOUND: () => ({ type: 'surface-not-found' }),
 }
 
 /**

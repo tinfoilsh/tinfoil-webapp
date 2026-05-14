@@ -60,6 +60,7 @@ export type EnclaveErrorCode =
   | 'AUTH'
   | 'FORBIDDEN'
   | 'NETWORK'
+  | 'NOT_FOUND'
 
 export interface EnclaveErrorClassification {
   kind: EnclaveErrorKind
@@ -128,6 +129,7 @@ function classifySyncEnclaveError(
         }
       case 'SYNC_CONFLICT':
       case 'EXISTING_DATA_UNDER_OTHER_KEY':
+      case 'NOT_FOUND':
         return { kind: 'USER_DECISION', code, status, message, cause: err }
       case 'IDEMPOTENCY_CONFLICT':
       case 'UNKNOWN_KEY':
@@ -189,6 +191,15 @@ function classifySyncEnclaveError(
       return {
         kind: 'TERMINAL',
         code: 'FORBIDDEN',
+        status,
+        message,
+        cause: err,
+      }
+    }
+    if (status === 404) {
+      return {
+        kind: 'USER_DECISION',
+        code: 'NOT_FOUND',
         status,
         message,
         cause: err,
