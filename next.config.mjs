@@ -22,25 +22,9 @@ const nextConfig = {
   // Optimize production builds
   productionBrowserSourceMaps: false,
 
-  // Experimental performance features
+  // Tree-shake large icon and utility packages.
   experimental: {
     optimizePackageImports: ['react-icons', 'lucide-react', '@heroicons/react'],
-  },
-
-  webpack: (config, { isServer }) => {
-    // Disable webpack cache for production builds to avoid large cache files
-    if (process.env.NODE_ENV === 'production') {
-      config.cache = false
-    }
-
-    if (!isServer) {
-      config.watchOptions = {
-        ...config.watchOptions,
-        ignored: ['**/.next/**', '**/node_modules/**', '**/*.tsbuildinfo'],
-      }
-    }
-
-    return config
   },
 
   // Proxy dev simulator to standalone server (only works in `next dev`, ignored in static export)
