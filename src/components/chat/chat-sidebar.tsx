@@ -782,7 +782,7 @@ export function ChatSidebar({
             >
               <img
                 src={isDarkMode ? '/icon-dark.png' : '/icon-light.png'}
-                alt="Tinfoil"
+                alt=""
                 className="h-6 w-6 transition-opacity group-hover/logo:opacity-0"
               />
               <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 transition-opacity group-hover/logo:opacity-100" />
