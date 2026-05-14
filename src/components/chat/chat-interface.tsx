@@ -67,6 +67,7 @@ import {
 } from '@/utils/project-upload-preference'
 import { TfTinSad } from '@tinfoilsh/tinfoil-icons'
 import dynamic from 'next/dynamic'
+import Head from 'next/head'
 import {
   useLayoutEffect as reactUseLayoutEffect,
   useCallback,
@@ -875,36 +876,27 @@ export function ChatInterface({
     clearUrl,
   ])
 
-  // Sync document.title with the active chat's title so the browser tab
-  // reflects what the user is reading. Blank/placeholder/temporary chats fall
-  // back to the base title because their "title" is a generic label.
-  const currentChatTitle = currentChat?.title
-  const currentChatTitleState = currentChat?.titleState
-  const currentChatIsBlank = currentChat?.isBlankChat
-  const currentChatIsTemp = currentChat?.isTemporary
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-
+  // Compute the browser-tab title from the active chat. The value is emitted
+  // declaratively via <Head> in the render below so Next.js owns head
+  // reconciliation — an imperative document.title write would be overwritten
+  // on the next render by the <title> declared in _app.tsx's <Head>.
+  // Blank/placeholder/temporary chats keep the base title because their
+  // displayed "title" is a generic label.
+  const chatTitle = currentChat?.title
+  const chatTitleState = currentChat?.titleState
+  const chatIsBlank = currentChat?.isBlankChat
+  const chatIsTemporary = currentChat?.isTemporary
+  const documentTitle = useMemo(() => {
     const base = CONSTANTS.BASE_DOCUMENT_TITLE
-    const trimmed = currentChatTitle?.trim()
+    const trimmed = chatTitle?.trim()
     const hasMeaningfulTitle =
-      !currentChatIsBlank &&
-      !currentChatIsTemp &&
-      currentChatTitleState !== 'placeholder' &&
+      !chatIsBlank &&
+      !chatIsTemporary &&
+      chatTitleState !== 'placeholder' &&
       !!trimmed &&
       trimmed !== 'New Chat'
-
-    document.title = hasMeaningfulTitle ? `${trimmed} · ${base}` : base
-
-    return () => {
-      document.title = base
-    }
-  }, [
-    currentChatTitle,
-    currentChatTitleState,
-    currentChatIsBlank,
-    currentChatIsTemp,
-  ])
+    return hasMeaningfulTitle ? `${trimmed} · ${base}` : base
+  }, [chatTitle, chatTitleState, chatIsBlank, chatIsTemporary])
 
   // Initialize tinfoil client once when page loads
   useEffect(() => {
@@ -2333,6 +2325,10 @@ export function ChatInterface({
       onDragLeave={handleGlobalDragLeave}
       onDrop={handleGlobalDrop}
     >
+      <Head>
+        <title>{documentTitle}</title>
+      </Head>
+
       {/* Global drag and drop overlay */}
       {isGlobalDragActive && (
         <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
