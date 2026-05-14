@@ -15,12 +15,12 @@ interface UseChatStateReturn {
   input: string
   loadingState: LoadingState
   retryInfo: { attempt: number; maxRetries: number; error?: string } | null
-  inputRef: React.RefObject<HTMLTextAreaElement>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
   isClient: boolean
   isSidebarOpen: boolean
   isDarkMode: boolean
   themeMode: ThemeMode
-  messagesEndRef: React.RefObject<HTMLDivElement>
+  messagesEndRef: React.RefObject<HTMLDivElement | null>
   isInitialLoad: boolean
   isThinking: boolean
   verificationComplete: boolean

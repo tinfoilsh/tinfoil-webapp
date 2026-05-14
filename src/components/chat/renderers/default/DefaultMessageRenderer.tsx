@@ -8,7 +8,7 @@ import {
   InformationCircleIcon,
   PencilSquareIcon,
 } from '@heroicons/react/24/outline'
-import React, { memo, useState } from 'react'
+import React, { memo, useState, type JSX } from 'react'
 import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
 import { RxCopy } from 'react-icons/rx'

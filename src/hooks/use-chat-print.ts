@@ -2,7 +2,7 @@ import { toast } from '@/hooks/use-toast'
 import { useCallback, useEffect, useState } from 'react'
 
 interface UseChatPrintOptions {
-  printRef: React.RefObject<HTMLDivElement>
+  printRef: React.RefObject<HTMLDivElement | null>
   enabled?: boolean
 }
 

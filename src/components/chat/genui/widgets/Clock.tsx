@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/card'
 import { Bell, BellOff } from 'lucide-react'
+import type { JSX } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'

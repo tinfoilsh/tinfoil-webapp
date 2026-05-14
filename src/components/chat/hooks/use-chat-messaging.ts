@@ -47,7 +47,7 @@ interface UseChatMessagingProps {
   currentChat: Chat
   setChats: React.Dispatch<React.SetStateAction<Chat[]>>
   setCurrentChat: React.Dispatch<React.SetStateAction<Chat>>
-  messagesEndRef: React.RefObject<HTMLDivElement>
+  messagesEndRef: React.RefObject<HTMLDivElement | null>
   scrollToBottom?: () => void
   reasoningEffort?: ReasoningEffort
   thinkingEnabled?: boolean
@@ -59,7 +59,7 @@ interface UseChatMessagingReturn {
   input: string
   loadingState: LoadingState
   retryInfo: { attempt: number; maxRetries: number; error?: string } | null
-  inputRef: React.RefObject<HTMLTextAreaElement>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
   isThinking: boolean
   isWaitingForResponse: boolean
   isStreaming: boolean

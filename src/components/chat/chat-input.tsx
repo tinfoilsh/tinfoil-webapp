@@ -38,7 +38,7 @@ type ChatInputProps = {
   handleSubmit: (e: FormEvent) => void
   loadingState: LoadingState
   cancelGeneration: () => void
-  inputRef: RefObject<HTMLTextAreaElement>
+  inputRef: RefObject<HTMLTextAreaElement | null>
   handleInputFocus: () => void
   inputMinHeight: string
   isDarkMode: boolean

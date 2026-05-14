@@ -7,7 +7,7 @@ type PopoverPosition = {
 }
 
 type QuoteSelectionPopoverProps = {
-  containerRef: React.RefObject<HTMLElement>
+  containerRef: React.RefObject<HTMLElement | null>
   onQuote: (text: string) => void
   onAsk?: (text: string) => void
 }

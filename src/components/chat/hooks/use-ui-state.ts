@@ -19,7 +19,7 @@ interface UseUIStateReturn {
   isDarkMode: boolean
   themeMode: ThemeMode
   windowWidth: number
-  messagesEndRef: React.RefObject<HTMLDivElement>
+  messagesEndRef: React.RefObject<HTMLDivElement | null>
   setIsSidebarOpen: React.Dispatch<React.SetStateAction<boolean>>
   toggleTheme: () => void
   setThemeMode: (mode: ThemeMode) => void

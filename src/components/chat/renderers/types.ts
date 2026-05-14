@@ -1,5 +1,6 @@
 import type { Attachment, LoadingState, Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import type { JSX } from 'react'
 
 // ProcessedDocument type for chat input documents
 export type ProcessedDocument = {
@@ -37,7 +38,7 @@ export interface InputRenderProps {
   setInput: (value: string) => void
   loadingState: LoadingState
   cancelGeneration: () => void
-  inputRef: React.RefObject<HTMLTextAreaElement>
+  inputRef: React.RefObject<HTMLTextAreaElement | null>
   handleInputFocus: () => void
   handleDocumentUpload?: (file: File) => Promise<void>
   processedDocuments?: ProcessedDocument[]

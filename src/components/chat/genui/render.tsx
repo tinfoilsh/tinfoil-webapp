@@ -10,6 +10,7 @@
  * `renderGenUIInputArea` mirrors the same pattern for `surface: 'input'`
  * widgets that mount inside the chat input area.
  */
+import type { JSX } from 'react'
 import { GENUI_WIDGETS_BY_NAME } from './registry'
 import type {
   GenUIInputContext,

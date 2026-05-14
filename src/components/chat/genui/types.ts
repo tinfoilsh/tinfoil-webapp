@@ -11,6 +11,7 @@
  * `./registry.ts`. The chat pipeline has no direct knowledge of any specific
  * widget — it only speaks `GenUIWidget`.
  */
+import type { JSX } from 'react'
 import type { ZodTypeAny, z } from 'zod'
 
 /**

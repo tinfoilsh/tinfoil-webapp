@@ -190,7 +190,7 @@ interface WelcomeScreenProps {
   setInput?: (value: string) => void
   loadingState?: LoadingState
   cancelGeneration?: () => void
-  inputRef?: React.RefObject<HTMLTextAreaElement>
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>
   handleInputFocus?: () => void
   handleDocumentUpload?: (file: File) => Promise<void>
   processedDocuments?: ProcessedDocument[]
