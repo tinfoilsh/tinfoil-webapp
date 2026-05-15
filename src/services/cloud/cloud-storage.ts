@@ -30,17 +30,19 @@ const AUTH_INIT_WAIT_MS = 3000
 const RESTORE_DELETED_CHAT_HEADER = 'X-Restore-Deleted-Chat'
 const ENCLAVE_CHAT_LIST_LIMIT = 100
 
+/**
+ * Lean chat list entry. Anything the caller needs beyond (id,
+ * updatedAt, projectId) must come from decrypting the row's content
+ * — we deliberately do NOT carry title/messageCount/size on the wire
+ * any more. Those columns lived on the controlplane only to render
+ * the old client-side-decrypt list UI, and surfacing them here from
+ * the new enclave path either lies (zeros / empty strings) or
+ * duplicates plaintext that the resolver/ingest already derives.
+ */
 export interface ChatListResponse {
   conversations: Array<{
     id: string
-    key: string
-    createdAt: string
     updatedAt: string
-    title: string
-    messageCount: number
-    syncVersion: number
-    size: number
-    formatVersion: number
     content?: string
     projectId?: string
   }>
@@ -96,27 +98,22 @@ export type RawChatContent =
    */
   | { plaintext: string; formatVersion: 2 }
 
-function etagToSyncVersion(etag: string | undefined): number {
-  if (!etag) return 1
-  const parsed = parseInt(etag, 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
-}
-
 function chatUpdateToMeta(
   update: ListStatusUpdate,
 ): ChatListResponse['conversations'][number] {
   return {
     id: update.id,
-    key: update.id,
-    createdAt: update.updated_at,
     updatedAt: update.updated_at,
-    title: '',
-    messageCount: 0,
-    syncVersion: etagToSyncVersion(update.etag),
-    size: 0,
-    formatVersion: 2,
     projectId: update.project_id ?? undefined,
   }
+}
+
+// hasNextCursor guards against truthy-but-meaningless cursor values
+// (e.g. a Go zero-time `"0001-01-01T00:00:00Z"`) so paginating loops
+// can't accidentally run forever if the server ever stops gating the
+// field as carefully as today's `pickNextCursor` does.
+function hasNextCursor(cursor: string | undefined): boolean {
+  return typeof cursor === 'string' && cursor.length > 0
 }
 
 function stripBase64FromMessages(messages: Message[]): Message[] {
@@ -452,7 +449,7 @@ export class CloudStorageService {
     return {
       conversations,
       nextContinuationToken: status.next_cursor,
-      hasMore: !!status.next_cursor,
+      hasMore: hasNextCursor(status.next_cursor),
     }
   }
 
@@ -475,7 +472,6 @@ export class CloudStorageService {
     }
     for (const conversation of conversations) {
       conversation.content = plaintextById.get(conversation.id)
-      conversation.formatVersion = 2
     }
   }
 
@@ -596,7 +592,7 @@ export class CloudStorageService {
     return {
       conversations,
       nextContinuationToken: status.next_cursor,
-      hasMore: !!status.next_cursor,
+      hasMore: hasNextCursor(status.next_cursor),
     }
   }
 
