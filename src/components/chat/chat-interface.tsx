@@ -54,6 +54,7 @@ import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-s
 
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { uploadAttachmentToBucket } from '@/services/exec-snapshot/upload-attachment-to-bucket'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
@@ -247,6 +248,8 @@ function buildAttachment(opts: {
   textContent?: string
   description?: string
   pages?: DocumentPage[]
+  fileAccessToken?: string
+  sha256?: string
 }): Attachment | undefined {
   if (opts.imageData) {
     return {
@@ -257,6 +260,8 @@ function buildAttachment(opts: {
       base64: opts.imageData.base64,
       thumbnailBase64: opts.imageData.thumbnailBase64,
       description: opts.description ?? opts.fileName,
+      fileAccessToken: opts.fileAccessToken,
+      sha256: opts.sha256,
     }
   }
   // Synthesize textContent from pages when the document was uploaded in
@@ -275,6 +280,8 @@ function buildAttachment(opts: {
       fileName: opts.fileName,
       textContent: textContent || undefined,
       pages: opts.pages,
+      fileAccessToken: opts.fileAccessToken,
+      sha256: opts.sha256,
     }
   }
   return undefined
@@ -1689,9 +1696,39 @@ export function ChatInterface({
         },
       ])
 
+      // Kick off the bucket upload in parallel with docling/image processing.
+      // Gated on the same condition that lets the user enable the toggle —
+      // signed-in users with a derived encryption key. Failures are
+      // non-fatal: the attachment still works for non-code-exec purposes.
+      const bucketUploadPromise: Promise<{
+        fileAccessToken: string
+        sha256: string
+      } | null> =
+        canEnableCodeExecution && codeExecutionEncryptionKey
+          ? (async () => {
+              try {
+                const bearer = await getSessionToken()
+                if (!bearer) return null
+                return await uploadAttachmentToBucket(
+                  file,
+                  codeExecutionEncryptionKey,
+                  bearer,
+                )
+              } catch (err) {
+                logError('Bucket upload for /user-uploads failed', err, {
+                  component: 'ChatInterface',
+                  action: 'uploadAttachmentToBucket',
+                  metadata: { fileName: file.name },
+                })
+                return null
+              }
+            })()
+          : Promise.resolve(null)
+
       await handleDocumentUpload(
         file,
-        (content, documentId, imageData, hasDescription, pages) => {
+        async (content, documentId, imageData, hasDescription, pages) => {
+          const bucketResult = await bucketUploadPromise
           const newDocTokens = estimateTokenCount(content)
           const contextLimit = parseContextWindowTokens(
             selectedModelDetails?.contextWindow,
@@ -1725,6 +1762,8 @@ export function ChatInterface({
             textContent: content ?? undefined,
             description: hasDescription && content ? content : undefined,
             pages,
+            fileAccessToken: bucketResult?.fileAccessToken,
+            sha256: bucketResult?.sha256,
           })
 
           setProcessedDocuments((prev) => {
@@ -1782,6 +1821,8 @@ export function ChatInterface({
       )
     },
     [
+      canEnableCodeExecution,
+      codeExecutionEncryptionKey,
       handleDocumentUpload,
       processedDocuments,
       selectedModelDetails?.contextWindow,

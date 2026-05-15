@@ -128,6 +128,19 @@ export interface SendChatStreamParams {
   codeExecutionEncryptionKey?: string
   /** Per-chat hex token authenticating the code-exec container. */
   codeExecutionContainerAuthToken?: string
+  /**
+   * Manifest of files the orchestrator should reconcile into
+   * `/user-uploads` before this turn runs. Each entry references a
+   * bucket item the webapp pre-uploaded at attach time. The MCP only
+   * fetches files whose sha doesn't match what's already in the
+   * sandbox, so resending the full set every turn is cheap.
+   * Only forwarded when codeExecutionEnabled is true.
+   */
+  codeExecutionUploads?: Array<{
+    fileAccessToken: string
+    filename: string
+    sha256: string
+  }>
 }
 
 export async function sendChatStream(
@@ -150,6 +163,7 @@ export async function sendChatStream(
     codeExecutionAccessToken,
     codeExecutionEncryptionKey,
     codeExecutionContainerAuthToken,
+    codeExecutionUploads,
   } = params
 
   const genUITools = genUIEnabled ? buildGenUIToolSchemas() : []
@@ -355,10 +369,15 @@ export async function sendChatStream(
             'FETCH_ERROR',
           )
         }
+        // Always include `uploads` (possibly empty) so the orchestrator
+        // reconciles /user-uploads to the chat's current set of attached
+        // files. Omitting the field would leave the sandbox holding
+        // stale files from a prior turn.
         requestBody.code_execution_options = {
           accessToken: codeExecutionAccessToken,
           encryptionKey: codeExecutionEncryptionKey,
           containerAuthToken: codeExecutionContainerAuthToken,
+          uploads: codeExecutionUploads ?? [],
         }
       }
       if (piiCheckEnabled) {
