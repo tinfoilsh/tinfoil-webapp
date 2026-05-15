@@ -88,7 +88,11 @@ describe('CloudStorageService auth readiness', () => {
     await service.listChats()
 
     expect(mockWaitForInit).toHaveBeenCalledWith(3000)
-    expect(mockListStatus).toHaveBeenCalledWith({ scope: 'chat', limit: 500 })
+    expect(mockListStatus).toHaveBeenCalledWith({
+      scope: 'chat',
+      cursor: undefined,
+      limit: 100,
+    })
   })
 
   it('waits for auth token manager initialization before checking auth state', async () => {

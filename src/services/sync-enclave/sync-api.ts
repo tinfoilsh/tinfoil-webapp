@@ -98,6 +98,8 @@ export interface ListStatusUpdate {
   id: string
   etag: string
   key_id: string
+  /** Server-supplied project membership for chat rows; absent for other scopes. */
+  project_id?: string | null
   updated_at: string
   cursor?: string
 }

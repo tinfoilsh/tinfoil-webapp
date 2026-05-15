@@ -102,16 +102,6 @@ function etagToSyncVersion(etag: string | undefined): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
 }
 
-function cursorToOffset(cursor: string | undefined): number {
-  if (!cursor) return 0
-  const parsed = parseInt(cursor, 10)
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
-}
-
-function offsetToken(offset: number, total: number): string | undefined {
-  return offset < total ? String(offset) : undefined
-}
-
 function chatUpdateToMeta(
   update: ListStatusUpdate,
 ): ChatListResponse['conversations'][number] {
@@ -125,7 +115,7 @@ function chatUpdateToMeta(
     syncVersion: etagToSyncVersion(update.etag),
     size: 0,
     formatVersion: 2,
-    projectId: undefined,
+    projectId: update.project_id ?? undefined,
   }
 }
 
@@ -207,9 +197,11 @@ export class CloudStorageService {
 
     const metadata: Record<string, unknown> = {
       messageCount: messages.length,
-    }
-    if (chat.projectId) {
-      metadata.projectId = chat.projectId
+      // Always emit projectId so the enclave→controlplane path
+      // mirrors what the local chat row says. A `null` clears the
+      // server's project_id column; omitting the field would leave
+      // a stale assignment behind on cross-project moves.
+      projectId: chat.projectId ?? null,
     }
     if (options.restoreDeleted) {
       metadata.restoreDeleted = true
@@ -446,102 +438,103 @@ export class CloudStorageService {
   }): Promise<ChatListResponse> {
     await this.ensureAuthReady()
     const limit = Math.min(options?.limit ?? ENCLAVE_CHAT_LIST_LIMIT, 500)
-    const offset = cursorToOffset(options?.continuationToken)
     const status = await enclaveListStatus({
       scope: 'chat',
-      limit: 500,
+      cursor: options?.continuationToken,
+      limit,
     })
-    const page = status.updates.slice(offset, offset + limit)
-    const conversations = page.map(chatUpdateToMeta)
+    const conversations = status.updates.map(chatUpdateToMeta)
 
     if (options?.includeContent && conversations.length > 0) {
-      const keys = pullKeysFromEncryptionService()
-      if (keys.length > 0) {
-        const pulled = await enclavePull({
-          scope: 'chat',
-          ids: conversations.map((c) => c.id),
-          keys,
-        })
-        const plaintextById = new Map<string, string>()
-        for (const item of pulled.items) {
-          const plaintext = item.ok ? pullItemPlaintext(item) : null
-          if (plaintext) {
-            plaintextById.set(item.id, new TextDecoder().decode(plaintext))
-          }
-        }
-        for (const conversation of conversations) {
-          conversation.content = plaintextById.get(conversation.id)
-          conversation.formatVersion = 2
-        }
-      }
+      await this.attachInlineContent(conversations)
     }
 
-    const nextContinuationToken = offsetToken(
-      offset + page.length,
-      status.updates.length,
-    )
     return {
       conversations,
-      nextContinuationToken,
-      hasMore: !!nextContinuationToken,
+      nextContinuationToken: status.next_cursor,
+      hasMore: !!status.next_cursor,
     }
   }
 
-  async updateMetadata(
-    chatId: string,
-    metadata: Record<string, string>,
+  private async attachInlineContent(
+    conversations: ChatListResponse['conversations'],
   ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/storage/metadata`, {
-      method: 'POST',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({
-        conversationId: chatId,
-        metadata,
-      }),
+    const keys = pullKeysFromEncryptionService()
+    if (keys.length === 0) return
+    const pulled = await enclavePull({
+      scope: 'chat',
+      ids: conversations.map((c) => c.id),
+      keys,
     })
-
-    if (!response.ok) {
-      throw new Error(`Failed to update metadata: ${response.statusText}`)
+    const plaintextById = new Map<string, string>()
+    for (const item of pulled.items) {
+      const plaintext = item.ok ? pullItemPlaintext(item) : null
+      if (plaintext) {
+        plaintextById.set(item.id, new TextDecoder().decode(plaintext))
+      }
+    }
+    for (const conversation of conversations) {
+      conversation.content = plaintextById.get(conversation.id)
+      conversation.formatVersion = 2
     }
   }
 
   async deleteChat(chatId: string): Promise<void> {
-    const status = await enclaveListStatus({ scope: 'chat', limit: 500 })
-    const current = status.updates.find((u) => u.id === chatId)
-    if (!current) return
     await enclaveDeleteRow({
       scope: 'chat',
       id: chatId,
-      ifMatch: current.etag,
+      ifMatch: null,
       idempotencyKey: newIdempotencyKey(),
       keyB64: requirePrimaryKeyB64(),
     })
   }
 
   async deleteAllChats(): Promise<{ deleted: number }> {
-    const status = await enclaveListStatus({ scope: 'chat', limit: 500 })
     let deleted = 0
-    for (const update of status.updates) {
-      await enclaveDeleteRow({
+    let cursor: string | undefined
+    do {
+      const status = await enclaveListStatus({
         scope: 'chat',
-        id: update.id,
-        ifMatch: update.etag,
-        idempotencyKey: newIdempotencyKey(),
-        keyB64: requirePrimaryKeyB64(),
+        cursor,
+        limit: 500,
       })
-      deleted++
-    }
+      for (const update of status.updates) {
+        await enclaveDeleteRow({
+          scope: 'chat',
+          id: update.id,
+          ifMatch: update.etag,
+          idempotencyKey: newIdempotencyKey(),
+          keyB64: requirePrimaryKeyB64(),
+        })
+        deleted++
+      }
+      // Loop until the server stops advertising a next cursor — the
+      // freshly-deleted rows fall out of the result set so each page
+      // is fresh work, never a re-pass of what we just deleted.
+      cursor = status.next_cursor
+    } while (cursor)
     return { deleted }
   }
 
   async getChatSyncStatus(): Promise<ChatSyncStatus> {
-    const status = await enclaveListStatus({ scope: 'chat', limit: 500 })
-    const lastUpdated = status.updates.reduce<string | null>(
-      (latest, update) =>
-        !latest || update.updated_at > latest ? update.updated_at : latest,
-      null,
-    )
-    return { count: status.updates.length, lastUpdated }
+    let count = 0
+    let lastUpdated: string | null = null
+    let cursor: string | undefined
+    do {
+      const status = await enclaveListStatus({
+        scope: 'chat',
+        cursor,
+        limit: 500,
+      })
+      count += status.updates.length
+      for (const update of status.updates) {
+        if (!lastUpdated || update.updated_at > lastUpdated) {
+          lastUpdated = update.updated_at
+        }
+      }
+      cursor = status.next_cursor
+    } while (cursor)
+    return { count, lastUpdated }
   }
 
   async getProfileSyncStatus(): Promise<ProfileSyncStatus> {
@@ -558,21 +551,32 @@ export class CloudStorageService {
     return response.json()
   }
 
+  /**
+   * Intentionally a no-op. Project membership rides on the next
+   * `uploadChat` (via `metadata.projectId`) and the controlplane
+   * stamps the row's `project_id` column from there. Callers MUST
+   * pair this with a `backupChat` so the change actually propagates.
+   */
   async updateChatProject(
-    chatId: string,
-    projectId: string | null,
+    _chatId: string,
+    _projectId: string | null,
   ): Promise<void> {
-    void chatId
-    void projectId
+    return
   }
 
   async getDeletedChatsSince(since: string): Promise<{ deletedIds: string[] }> {
-    const status = await enclaveListStatus({
-      scope: 'chat',
-      cursor: since,
-      limit: 500,
-    })
-    return { deletedIds: status.deletes.map((d) => d.id) }
+    const deletedIds: string[] = []
+    let cursor: string | undefined = since
+    do {
+      const status = await enclaveListStatus({
+        scope: 'chat',
+        cursor,
+        limit: 500,
+      })
+      for (const d of status.deletes) deletedIds.push(d.id)
+      cursor = status.next_cursor
+    } while (cursor)
+    return { deletedIds }
   }
 
   async getChatsUpdatedSince(options: {
@@ -587,25 +591,7 @@ export class CloudStorageService {
     })
     const conversations = status.updates.map(chatUpdateToMeta)
     if (options.includeContent && conversations.length > 0) {
-      const keys = pullKeysFromEncryptionService()
-      if (keys.length > 0) {
-        const pulled = await enclavePull({
-          scope: 'chat',
-          ids: conversations.map((c) => c.id),
-          keys,
-        })
-        const plaintextById = new Map<string, string>()
-        for (const item of pulled.items) {
-          const plaintext = item.ok ? pullItemPlaintext(item) : null
-          if (plaintext) {
-            plaintextById.set(item.id, new TextDecoder().decode(plaintext))
-          }
-        }
-        for (const conversation of conversations) {
-          conversation.content = plaintextById.get(conversation.id)
-          conversation.formatVersion = 2
-        }
-      }
+      await this.attachInlineContent(conversations)
     }
     return {
       conversations,
