@@ -3,10 +3,15 @@ import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import {
   TINFOIL_EVENTS_HEADER,
+  TINFOIL_EVENTS_VALUE_CODE_EXECUTION,
   TINFOIL_EVENTS_VALUE_WEB_SEARCH,
 } from '@/utils/tinfoil-events'
 import OpenAI from 'openai'
-import { AuthenticationError, TinfoilAI } from 'tinfoil'
+import {
+  AuthenticationError,
+  SecureClient,
+  type VerificationDocument,
+} from 'tinfoil'
 import { authTokenManager } from '../auth'
 
 export interface RateLimitInfo {
@@ -18,7 +23,8 @@ export interface RateLimitInfo {
 const SESSION_TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000
 const AUTH_INIT_WAIT_MS = 3000
 
-let clientInstance: TinfoilAI | OpenAI | null = null
+let clientInstance: OpenAI | null = null
+let secureClient: SecureClient | null = null
 let lastSessionToken: string | null = null
 let cachedSessionToken: string | null = null
 let cachedSessionTokenExpiresAt: number | null = null
@@ -206,6 +212,7 @@ export async function refreshRateLimit(): Promise<void> {
 
 export function resetTinfoilClient(): void {
   clientInstance = null
+  secureClient = null
   lastSessionToken = null
   cachedSessionToken = null
   cachedSessionTokenExpiresAt = null
@@ -231,7 +238,7 @@ export function invalidateAnonymousSessionCache(): void {
   }
 }
 
-async function initClient(sessionToken: string): Promise<TinfoilAI | OpenAI> {
+async function initClient(sessionToken: string): Promise<OpenAI> {
   try {
     if (IS_DEV) {
       clientInstance = new OpenAI({
@@ -239,26 +246,28 @@ async function initClient(sessionToken: string): Promise<TinfoilAI | OpenAI> {
         baseURL: `${window.location.origin}/api/local-router/v1`,
         dangerouslyAllowBrowser: true,
         defaultHeaders: {
-          [TINFOIL_EVENTS_HEADER]: TINFOIL_EVENTS_VALUE_WEB_SEARCH,
+          [TINFOIL_EVENTS_HEADER]: `${TINFOIL_EVENTS_VALUE_WEB_SEARCH},${TINFOIL_EVENTS_VALUE_CODE_EXECUTION}`,
         },
       })
     } else {
-      clientInstance = new TinfoilAI({
+      secureClient = new SecureClient({})
+      // Run the enclave attestation + transport setup here so getBaseURL returns the resolved enclave URL
+      await secureClient.ready()
+      clientInstance = new OpenAI({
         apiKey: sessionToken,
+        baseURL: secureClient.getBaseURL(),
         dangerouslyAllowBrowser: true,
-        // Opt into the router's inline progress-marker stream so the
-        // chat UI can surface live web_search and URL-fetch status while
-        // the underlying SSE stream stays spec-conformant for any other
-        // OpenAI-compatible consumer.
+        // Opt into the router's inline progress-marker stream.
         defaultHeaders: {
-          [TINFOIL_EVENTS_HEADER]: TINFOIL_EVENTS_VALUE_WEB_SEARCH,
+          [TINFOIL_EVENTS_HEADER]: `${TINFOIL_EVENTS_VALUE_WEB_SEARCH},${TINFOIL_EVENTS_VALUE_CODE_EXECUTION}`,
         },
+        fetch: secureClient.fetch,
       })
     }
     lastSessionToken = sessionToken
     return clientInstance
   } catch (error) {
-    logError('Failed to initialize TinfoilAI client', error, {
+    logError('Failed to initialize Tinfoil client', error, {
       component: 'tinfoil-client',
       action: 'initClient',
     })
@@ -270,26 +279,38 @@ export async function getSessionToken(): Promise<string> {
   return fetchSessionToken()
 }
 
-async function getRawClient(): Promise<TinfoilAI | OpenAI> {
+/**
+ * Lazily build the OpenAI client (and SecureClient on prod) the first
+ * time anything needs them, and rebuild on session-token rotation.
+ */
+async function ensureInitialized(): Promise<void> {
   const sessionToken = await fetchSessionToken()
-
   if (!clientInstance || lastSessionToken !== sessionToken) {
     await initClient(sessionToken)
   }
+}
 
+/**
+ * Returns the enclave verification document, or `null` in dev mode
+ */
+export async function getVerificationDocument(): Promise<VerificationDocument | null> {
+  await ensureInitialized()
+  return secureClient ? secureClient.getVerificationDocument() : null
+}
+
+async function getRawClient(): Promise<OpenAI> {
+  await ensureInitialized()
   return clientInstance!
 }
 
 /**
- * Returns a proxy that behaves like TinfoilAI but automatically retries
- * once on AuthenticationError (refreshing the session token in between).
+ * Returns a proxy that behaves like the underlying OpenAI client with
+ * one extra behavior: on `AuthenticationError`, the proxy resets the
+ * session token cache, rebuilds the client, and replays the call once
+ * with the refreshed handle.
  *
- * Property accesses build up a path (e.g. ['chat','completions','create']).
- * The actual call is intercepted in the `apply` trap, which resolves the
- * full path on the live clientInstance, invokes the method, and retries
- * with a fresh client on AuthenticationError.
  */
-export async function getTinfoilClient(): Promise<TinfoilAI | OpenAI> {
+export async function getTinfoilClient(): Promise<OpenAI> {
   await getRawClient()
 
   function resolvePath(path: PropertyKey[]): { fn: any; thisArg: any } {
@@ -339,5 +360,5 @@ export async function getTinfoilClient(): Promise<TinfoilAI | OpenAI> {
     })
   }
 
-  return proxyWithRetry([]) as TinfoilAI | OpenAI
+  return proxyWithRetry([]) as OpenAI
 }

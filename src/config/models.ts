@@ -38,6 +38,15 @@ const DEV_MODELS: BaseModel[] = [
     chat: true,
     multimodal: true,
   },
+  {
+    modelName: 'gpt-oss-120b',
+    image: 'openai.png',
+    name: 'GPT-OSS 120B',
+    nameShort: 'GPT-OSS',
+    description: 'OpenAI GPT-OSS 120B',
+    type: 'chat',
+    chat: true,
+  },
 ]
 
 /**

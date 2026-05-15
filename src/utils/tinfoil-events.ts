@@ -31,9 +31,13 @@ export const TINFOIL_EVENTS_HEADER = 'X-Tinfoil-Events'
  * families can be added later.
  */
 export const TINFOIL_EVENTS_VALUE_WEB_SEARCH = 'web_search'
+export const TINFOIL_EVENTS_VALUE_CODE_EXECUTION = 'code_execution'
 
 /** The `type` value on every web_search_call marker payload. */
 export const TINFOIL_WEB_SEARCH_CALL_TYPE = 'tinfoil.web_search_call'
+
+/** The `type` value on every tool_call marker payload (code execution). */
+export const TINFOIL_TOOL_CALL_TYPE = 'tinfoil.tool_call'
 
 const OPEN_TAG = '<tinfoil-event>'
 const CLOSE_TAG = '</tinfoil-event>'
@@ -58,13 +62,30 @@ export interface TinfoilWebSearchCallEvent {
 }
 
 /**
+ * Parsed `tinfoil.tool_call` marker. `arguments` arrives on `in_progress`,
+ * `output` on the terminal status.
+ */
+export interface TinfoilToolCallEvent {
+  type: typeof TINFOIL_TOOL_CALL_TYPE
+  item_id?: string
+  status: 'in_progress' | 'completed' | 'failed' | 'blocked'
+  tool?: {
+    name?: string
+    arguments?: Record<string, unknown>
+    output?: string
+  }
+}
+
+export type TinfoilEvent = TinfoilWebSearchCallEvent | TinfoilToolCallEvent
+
+/**
  * Result of consuming a single content chunk. `text` is the chunk with
  * every complete marker removed; `events` is the zero-or-more decoded
  * payloads the router emitted inside those markers.
  */
 export interface TinfoilEventConsumeResult {
   text: string
-  events: TinfoilWebSearchCallEvent[]
+  events: TinfoilEvent[]
 }
 
 /**
@@ -120,7 +141,7 @@ export function createTinfoilEventParser(): {
   const consume = (chunk: string): TinfoilEventConsumeResult => {
     buffer += chunk
     let text = ''
-    const events: TinfoilWebSearchCallEvent[] = []
+    const events: TinfoilEvent[] = []
 
     // Drain a deferred trailing-pad `\n` left over from the previous
     // `consume` call. Only applies to the very first byte so we do not
@@ -220,16 +241,20 @@ export function createTinfoilEventParser(): {
   return { consume, flush }
 }
 
-function parseMarkerPayload(raw: string): TinfoilWebSearchCallEvent | null {
+function parseMarkerPayload(raw: string): TinfoilEvent | null {
   const trimmed = raw.trim()
   if (!trimmed) return null
   try {
     const decoded = JSON.parse(trimmed) as unknown
     if (!decoded || typeof decoded !== 'object') return null
     const obj = decoded as Record<string, unknown>
-    if (obj.type !== TINFOIL_WEB_SEARCH_CALL_TYPE) return null
+    if (
+      obj.type !== TINFOIL_WEB_SEARCH_CALL_TYPE &&
+      obj.type !== TINFOIL_TOOL_CALL_TYPE
+    )
+      return null
     if (typeof obj.status !== 'string') return null
-    return obj as unknown as TinfoilWebSearchCallEvent
+    return obj as unknown as TinfoilEvent
   } catch {
     return null
   }
@@ -244,7 +269,7 @@ function parseMarkerPayload(raw: string): TinfoilWebSearchCallEvent | null {
  */
 export function extractTinfoilEventsFromText(input: string): {
   text: string
-  events: TinfoilWebSearchCallEvent[]
+  events: TinfoilEvent[]
 } {
   const parser = createTinfoilEventParser()
   const { text, events } = parser.consume(input)

@@ -11,7 +11,11 @@
  */
 
 import type { StreamLogger } from '@/utils/dev-stream-logger'
-import type { TinfoilWebSearchCallEvent } from '@/utils/tinfoil-events'
+import {
+  TINFOIL_TOOL_CALL_TYPE,
+  type TinfoilEvent,
+  type TinfoilToolCallEvent,
+} from '@/utils/tinfoil-events'
 import type { ContentPreprocessor } from './content-preprocessor'
 import type { NormalizedEvent } from './types'
 
@@ -79,10 +83,35 @@ function toURLFetchStatus(s: string): URLFetchStatus {
   return s as URLFetchStatus
 }
 
-function normalizeToolEvent(
-  event: TinfoilWebSearchCallEvent,
+function normalizeCodeExecEvent(
+  event: TinfoilToolCallEvent,
   logger?: StreamLogger,
 ): NormalizedEvent[] {
+  logger?.logTinfoilEvent(event)
+
+  // `item_id` is what pairs in-progress with the terminal event in
+  // process-stream.
+  if (!event.item_id) return []
+
+  const mapped: NormalizedEvent = {
+    type: 'code_exec_tool_call',
+    id: event.item_id,
+    toolName: event.tool?.name || 'unknown',
+    status: event.status,
+    arguments: event.tool?.arguments,
+    output: event.tool?.output,
+  }
+  return [mapped]
+}
+
+function normalizeToolEvent(
+  event: TinfoilEvent,
+  logger?: StreamLogger,
+): NormalizedEvent[] {
+  if (event.type === TINFOIL_TOOL_CALL_TYPE) {
+    return normalizeCodeExecEvent(event, logger)
+  }
+
   logger?.logTinfoilEvent(event)
 
   const action = event.action
@@ -166,7 +195,7 @@ function extractToolCallEvents(
       typeof tc.function?.name === 'string' ? tc.function.name : undefined
 
     if (name && !startedIds.has(id)) {
-      events.push({ type: 'tool_call_start', id, name })
+      events.push({ type: 'genui_tool_call_start', id, name })
       startedIds.add(id)
     }
 
@@ -175,7 +204,11 @@ function extractToolCallEvents(
         ? tc.function.arguments
         : undefined
     if (argsDelta) {
-      events.push({ type: 'tool_call_delta', id, argumentsDelta: argsDelta })
+      events.push({
+        type: 'genui_tool_call_delta',
+        id,
+        argumentsDelta: argsDelta,
+      })
     }
   }
   return events

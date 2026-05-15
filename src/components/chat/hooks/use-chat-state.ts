@@ -1,4 +1,5 @@
 import type { BaseModel } from '@/config/models'
+import { useExecSnapshot } from '@/services/exec-snapshot/use-exec-snapshot'
 import { useEffect, useRef } from 'react'
 import type { AIModel, Chat, LabelType, LoadingState, Message } from '../types'
 import { useChatMessaging } from './use-chat-messaging'
@@ -33,6 +34,7 @@ interface UseChatStateReturn {
   hasValidatedModel: boolean
   expandedLabel: LabelType
   windowWidth: number
+  codeExecutionEncryptionKey: string | null
 
   // Setters
   setInput: (input: string) => void
@@ -90,6 +92,8 @@ export function useChatState({
   initialChatId,
   isLocalChatUrl = false,
   webSearchEnabled,
+  canUseCodeExecution = false,
+  codeExecutionEnabled,
   piiCheckEnabled,
 }: {
   systemPrompt: string
@@ -102,6 +106,11 @@ export function useChatState({
   initialChatId?: string | null
   isLocalChatUrl?: boolean
   webSearchEnabled?: boolean
+  // Feature flag: when false, useExecSnapshot stays a no-op and no
+  // key material is derived. Distinct from `codeExecutionEnabled`,
+  // which is the user-facing toggle.
+  canUseCodeExecution?: boolean
+  codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
 }): UseChatStateReturn {
   const hasCreatedInitialChatRef = useRef(false)
@@ -170,6 +179,10 @@ export function useChatState({
     isClient,
   })
 
+  const { codeExecutionEncryptionKey } = useExecSnapshot({
+    enabled: canUseCodeExecution,
+  })
+
   // Chat Messaging
   const {
     input,
@@ -203,7 +216,11 @@ export function useChatState({
     reasoningEffort,
     thinkingEnabled,
     webSearchEnabled,
+    // code-exec requires encryptionKey for snapshots
+    codeExecutionEnabled:
+      codeExecutionEnabled && codeExecutionEncryptionKey != null,
     piiCheckEnabled,
+    codeExecutionEncryptionKey,
   })
 
   // Update ref with cancelGeneration function
@@ -298,6 +315,7 @@ export function useChatState({
     hasValidatedModel,
     expandedLabel,
     windowWidth,
+    codeExecutionEncryptionKey,
 
     // Setters
     setInput,

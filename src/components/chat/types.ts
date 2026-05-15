@@ -58,6 +58,8 @@ export type TimelineContentBlock = {
   content: string
 }
 
+// GenUI tool calls — one block per call. Arguments arrive as JSON-string
+// deltas during streaming; widgets can be resolved via the input surface.
 export type TimelineToolCallBlock = {
   type: 'tool_call'
   id: string
@@ -73,12 +75,31 @@ export type TimelineToolCallBlock = {
   }
 }
 
+// Code-execution tool call. Args are fully-formed (router emits a single
+// in_progress event with the parsed args, then a terminal event with output).
+export type ToolCallState = {
+  id: string
+  toolName: string
+  arguments?: Record<string, unknown>
+  status: 'running' | 'completed' | 'failed'
+  output?: string
+}
+
+// Code-execution timeline block. Consecutive code-exec calls are merged
+// into a single block so the renderer can group them under one header.
+export type TimelineCodeExecBlock = {
+  type: 'code_exec'
+  id: string
+  calls: ToolCallState[]
+}
+
 export type TimelineBlock =
   | TimelineThinkingBlock
   | TimelineWebSearchBlock
   | TimelineURLFetchBlock
   | TimelineContentBlock
   | TimelineToolCallBlock
+  | TimelineCodeExecBlock
 
 export type DocumentPage = {
   page: number
@@ -124,11 +145,14 @@ export type Message = {
   searchReasoning?: string // Search agent's reasoning for multi-turn context
   quote?: string // Highlighted text the user is replying to
   timeline?: TimelineBlock[] // Chronological sequence of blocks for rendering
+  // GenUI tool calls emitted by the model (derived from timeline)
   toolCalls?: Array<{
     id: string
     name: string
     arguments: string
-  }> // GenUI tool calls emitted by the model (derived from timeline)
+  }>
+  // Code-execution tool calls (derived from timeline)
+  codeExecCalls?: ToolCallState[]
 }
 
 export type TitleState = 'placeholder' | 'generated' | 'manual'
@@ -153,6 +177,8 @@ export type Chat = {
   pendingSave?: boolean
   // Project association - when set, chat belongs to a project
   projectId?: string
+  // For code execution.
+  codeExecutionAccessToken?: string
 }
 
 export type LoadingState = 'idle' | 'loading' | 'streaming' | 'retrying'

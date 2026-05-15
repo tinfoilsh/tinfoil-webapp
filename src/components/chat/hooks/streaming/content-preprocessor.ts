@@ -8,7 +8,7 @@
 
 import {
   createTinfoilEventParser,
-  type TinfoilWebSearchCallEvent,
+  type TinfoilEvent,
 } from '@/utils/tinfoil-events'
 
 // ---------------------------------------------------------------------------
@@ -17,7 +17,7 @@ import {
 
 export interface PreprocessedContent {
   text: string
-  toolEvents: TinfoilWebSearchCallEvent[]
+  toolEvents: TinfoilEvent[]
 }
 
 export interface ContentPreprocessor {

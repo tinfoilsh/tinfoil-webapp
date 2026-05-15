@@ -14,6 +14,7 @@ import { GoClockFill } from 'react-icons/go'
 import { RxCopy } from 'react-icons/rx'
 import { hasMessageAttachments } from '../../attachment-helpers'
 import { CHAT_FONT_CLASSES, useChatFont } from '../../hooks/use-chat-font'
+import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
 import { SourcesButton } from '../components/SourcesButton'
@@ -333,6 +334,12 @@ const DefaultMessageComponent = ({
                 </div>
               )
             }
+            case 'code_exec':
+              return (
+                <div key={block.id} className="no-scroll-anchoring w-full px-4">
+                  <CodeExecProcess calls={block.calls} />
+                </div>
+              )
             case 'content': {
               if (!block.content) return null
               const isLastContent =

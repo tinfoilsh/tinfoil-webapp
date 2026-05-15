@@ -34,6 +34,8 @@ export const DefaultInputRenderer: InputRenderer = {
         hasMessages={props.hasMessages}
         webSearchEnabled={props.webSearchEnabled}
         onWebSearchToggle={props.onWebSearchToggle}
+        codeExecutionEnabled={props.codeExecutionEnabled}
+        onCodeExecutionToggle={props.onCodeExecutionToggle}
       />
     )
   },

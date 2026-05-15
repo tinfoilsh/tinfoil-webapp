@@ -297,7 +297,7 @@ describe('EventNormalizer', () => {
       ])
 
       expect(events).toContainEqual({
-        type: 'tool_call_start',
+        type: 'genui_tool_call_start',
         id: 'call_widget',
         name: 'render_stat_cards',
       })
@@ -383,22 +383,22 @@ describe('EventNormalizer', () => {
       ])
 
       expect(events).toContainEqual({
-        type: 'tool_call_start',
+        type: 'genui_tool_call_start',
         id: 'call_first',
         name: 'render_stat_cards',
       })
       expect(events).toContainEqual({
-        type: 'tool_call_delta',
+        type: 'genui_tool_call_delta',
         id: 'call_first',
         argumentsDelta: '{"stats":[]}',
       })
       expect(events).toContainEqual({
-        type: 'tool_call_start',
+        type: 'genui_tool_call_start',
         id: 'call_second',
         name: 'render_chart',
       })
       expect(events).toContainEqual({
-        type: 'tool_call_delta',
+        type: 'genui_tool_call_delta',
         id: 'call_second',
         argumentsDelta: '{"series":[]}',
       })
