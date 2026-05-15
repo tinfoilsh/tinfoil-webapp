@@ -93,6 +93,7 @@ export function ChatInput({
   const prevInputValueRef = useRef(input)
   const shouldRemountOnClearRef = useRef(false)
   const hasInitiallyFocusedRef = useRef(false)
+  const refocusAfterResetRef = useRef(false)
 
   const useIsomorphicLayoutEffect =
     typeof window !== 'undefined' ? useLayoutEffect : useEffect
@@ -123,13 +124,24 @@ export function ChatInput({
   useEffect(() => {
     const prev = prevInputValueRef.current
     if (prev !== '' && input === '' && shouldRemountOnClearRef.current) {
+      refocusAfterResetRef.current =
+        typeof document !== 'undefined' &&
+        inputRef.current !== null &&
+        document.activeElement === inputRef.current
       setTextareaResetNonce((n) => n + 1)
     }
     prevInputValueRef.current = input
     if (input === '') {
       shouldRemountOnClearRef.current = false
     }
-  }, [input])
+  }, [input, inputRef])
+
+  useEffect(() => {
+    if (refocusAfterResetRef.current && inputRef.current) {
+      inputRef.current.focus()
+      refocusAfterResetRef.current = false
+    }
+  }, [textareaResetNonce, inputRef])
 
   // --- Speech-to-text state ---
   const [isRecording, setIsRecording] = useState(false)
@@ -757,11 +769,7 @@ export function ChatInput({
                   )
                 const hasInput = input.trim().length > 0
                 const hasQuote = Boolean(quote)
-                if (
-                  loadingState === 'idle' &&
-                  !isTranscribing &&
-                  (hasInput || hasDocuments || hasQuote)
-                ) {
+                if (!isTranscribing && (hasInput || hasDocuments || hasQuote)) {
                   shouldRemountOnClearRef.current = true
                   handleSubmit(e)
                 }
@@ -1006,50 +1014,59 @@ export function ChatInput({
                   )}
                 </button>
               )}
-              <button
-                id="send-button"
-                type="button"
-                onClick={(e) => {
-                  if (
-                    loadingState === 'loading' ||
-                    loadingState === 'retrying'
-                  ) {
-                    e.preventDefault()
-                    cancelGeneration()
-                  } else {
-                    shouldRemountOnClearRef.current = true
-                    handleSubmit(e)
-                    // On iOS Safari, forcing blur here can lead to a "dead" touch region
-                    // after the keyboard dismisses. Keep focus on mobile; desktop can blur.
-                    const isMobile =
-                      typeof navigator !== 'undefined' &&
-                      /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-                    if (!isMobile) {
-                      inputRef.current?.blur()
+              {(() => {
+                const isBusy =
+                  loadingState === 'loading' || loadingState === 'retrying'
+                const hasCompletedDocuments = Boolean(
+                  processedDocuments &&
+                  processedDocuments.some(
+                    (doc) => !doc.isUploading && !doc.isGeneratingDescription,
+                  ),
+                )
+                const hasSubmittableContent =
+                  Boolean(input.trim()) ||
+                  Boolean(quote) ||
+                  hasCompletedDocuments
+                const showStopAction = isBusy && !hasSubmittableContent
+
+                return (
+                  <button
+                    id="send-button"
+                    type="button"
+                    onClick={(e) => {
+                      if (showStopAction) {
+                        e.preventDefault()
+                        cancelGeneration()
+                      } else {
+                        shouldRemountOnClearRef.current = true
+                        handleSubmit(e)
+                        // On iOS Safari, forcing blur here can lead to a "dead" touch region
+                        // after the keyboard dismisses. Keep focus on mobile; desktop can blur.
+                        const isMobile =
+                          typeof navigator !== 'undefined' &&
+                          /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                        if (!isMobile) {
+                          inputRef.current?.blur()
+                        }
+                      }
+                    }}
+                    className="group ml-2 flex h-10 w-10 items-center justify-center rounded-full bg-button-send-background text-button-send-foreground transition-colors hover:bg-button-send-background/80 disabled:opacity-50 md:h-8 md:w-8"
+                    style={{ WebkitTapHighlightColor: 'transparent' }}
+                    disabled={
+                      showStopAction
+                        ? false
+                        : isTranscribing || !hasSubmittableContent
                     }
-                  }
-                }}
-                className="group ml-2 flex h-10 w-10 items-center justify-center rounded-full bg-button-send-background text-button-send-foreground transition-colors hover:bg-button-send-background/80 disabled:opacity-50 md:h-8 md:w-8"
-                style={{ WebkitTapHighlightColor: 'transparent' }}
-                disabled={
-                  loadingState !== 'loading' &&
-                  loadingState !== 'retrying' &&
-                  (isTranscribing ||
-                    (!input.trim() &&
-                      !quote &&
-                      (!processedDocuments ||
-                        !processedDocuments.some(
-                          (doc) =>
-                            !doc.isUploading && !doc.isGeneratingDescription,
-                        ))))
-                }
-              >
-                {loadingState === 'loading' || loadingState === 'retrying' ? (
-                  <div className="h-3.5 w-3.5 bg-button-send-foreground/80 transition-colors md:h-3 md:w-3" />
-                ) : (
-                  <FiArrowUp className="h-6 w-6 text-button-send-foreground transition-colors md:h-5 md:w-5" />
-                )}
-              </button>
+                    aria-label={showStopAction ? 'Stop generation' : 'Send'}
+                  >
+                    {showStopAction ? (
+                      <div className="h-3.5 w-3.5 bg-button-send-foreground/80 transition-colors md:h-3 md:w-3" />
+                    ) : (
+                      <FiArrowUp className="h-6 w-6 text-button-send-foreground transition-colors md:h-5 md:w-5" />
+                    )}
+                  </button>
+                )
+              })()}
             </div>
           </div>
         </div>

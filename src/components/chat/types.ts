@@ -157,6 +157,13 @@ export type Chat = {
 
 export type LoadingState = 'idle' | 'loading' | 'streaming' | 'retrying'
 
+export type QueuedMessage = {
+  id: string
+  text: string
+  attachments?: Attachment[]
+  quote?: string
+}
+
 export type AIModel = string
 
 export type ModelInfo = {

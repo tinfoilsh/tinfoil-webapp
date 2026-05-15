@@ -100,6 +100,7 @@ import {
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
 import { useMaxMessages } from './hooks/use-max-messages'
+import { useMessageQueue } from './hooks/use-message-queue'
 import {
   isReasoningModel,
   supportsReasoningEffort,
@@ -108,6 +109,7 @@ import {
   useThinkingEnabled,
 } from './hooks/use-reasoning-effort'
 import { useSidebarChat } from './hooks/use-sidebar-chat'
+import { MessageQueue } from './message-queue'
 import { ModelSelector } from './model-selector'
 import { QuoteSelectionPopover } from './quote-selection-popover'
 import { ReasoningEffortSelector } from './reasoning-effort-selector'
@@ -770,6 +772,44 @@ export function ChatInterface({
   })
 
   const isTemporaryMode = currentChat?.isTemporary === true
+
+  const isRateLimited = useCallback(
+    () => Boolean(rateLimit && rateLimit.remaining <= 0),
+    [rateLimit],
+  )
+
+  const handleQueueDispatch = useCallback(() => {
+    if (rateLimit) snapshotAndDecrementRemaining()
+  }, [rateLimit])
+
+  const handleQueueRateLimited = useCallback(() => {
+    if (!isSignedIn) {
+      void openSignIn()
+      return
+    }
+    setIsSidebarOpen(true)
+    window.dispatchEvent(
+      new CustomEvent('highlightSidebarBox', {
+        detail: { isPremium },
+      }),
+    )
+  }, [isSignedIn, openSignIn, setIsSidebarOpen, isPremium])
+
+  // Queue of user messages submitted while the assistant is busy. The hook
+  // observes `loadingState` and dispatches one queued message per idle
+  // window, so the user's in-progress input is never wiped.
+  const {
+    queuedMessages,
+    submit: submitMessage,
+    removeQueuedMessage,
+  } = useMessageQueue({
+    chatId: currentChat?.id ?? null,
+    loadingState,
+    handleQuery,
+    isRateLimited,
+    onBeforeDispatch: handleQueueDispatch,
+    onRateLimited: handleQueueRateLimited,
+  })
 
   // Ask sidebar - ephemeral streaming only. Nothing is persisted until the
   // user clicks "Open as chat", which creates a new real chat seeded with the
@@ -1950,17 +1990,12 @@ export function ChatInterface({
         )
       })
 
-    handleQuery(
-      messageText,
-      attachments.length > 0 ? attachments : undefined,
-      undefined,
-      undefined,
-      quote ?? undefined,
-    )
-
-    if (rateLimit) {
-      snapshotAndDecrementRemaining()
-    }
+    setInput('')
+    submitMessage({
+      text: messageText,
+      attachments,
+      quote: quote ?? undefined,
+    })
 
     // Clear the quote after submission
     if (quote) {
@@ -2961,6 +2996,10 @@ export function ChatInterface({
                       onSubmit={handleSubmit}
                       className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8"
                     >
+                      <MessageQueue
+                        queue={queuedMessages}
+                        onRemove={removeQueuedMessage}
+                      />
                       <ChatInput
                         input={input}
                         setInput={setInput}
