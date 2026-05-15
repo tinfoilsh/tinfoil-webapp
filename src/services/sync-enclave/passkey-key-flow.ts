@@ -276,6 +276,7 @@ export async function addBundleForCurrentKey(opts: {
   try {
     await enclaveAddBundle({
       keyId: opts.keyIdHex,
+      keyB64: hexToB64(opts.cekHex),
       credentialId: bundle.credentialId,
       kekIvHex: bundle.kekIvHex,
       encryptedKeysHex: bundle.wrappedKeyHex,

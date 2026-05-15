@@ -22,6 +22,13 @@ vi.mock('@/utils/error-handling', () => ({
 
 const mockKeyCurrent = vi.fn()
 const mockRemoveBundle = vi.fn()
+const mockGetKey = vi.fn()
+
+vi.mock('@/services/encryption/encryption-service', () => ({
+  encryptionService: {
+    getKey: (...args: unknown[]) => mockGetKey(...args),
+  },
+}))
 
 vi.mock('@/services/sync-enclave/sync-api', async () => {
   const real = await vi.importActual<
@@ -38,6 +45,7 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
   beforeEach(() => {
     mockKeyCurrent.mockReset()
     mockRemoveBundle.mockReset()
+    mockGetKey.mockReset().mockReturnValue('key_current')
   })
 
   afterEach(() => {
@@ -102,6 +110,7 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(mockRemoveBundle).toHaveBeenCalledOnce()
       const arg = mockRemoveBundle.mock.calls[0][0]
       expect(arg.keyId).toBe('abc')
+      expect(arg.keyB64).toBe('key_current')
       expect(arg.credentialId).toBe('cred-a')
       expect(typeof arg.idempotencyKey).toBe('string')
     })

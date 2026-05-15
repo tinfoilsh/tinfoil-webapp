@@ -955,6 +955,7 @@ export class CloudSyncService {
     }
 
     await cloudStorage.updateChatProject(chatId, projectId)
+    await this.backupChat(chatId)
   }
 
   private async paginateLocalChats(

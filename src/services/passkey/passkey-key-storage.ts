@@ -205,8 +205,11 @@ export async function deletePasskeyCredential(
     const resp = await enclaveKeyCurrent()
     if (!resp.key_id) return true
     if (!resp.bundles[credentialId]) return true
+    const primaryKey = encryptionService.getKey()
+    if (!primaryKey) return false
     await enclaveRemoveBundle({
       keyId: resp.key_id,
+      keyB64: primaryKey,
       credentialId,
       idempotencyKey: newIdempotencyKey(),
     })
@@ -321,6 +324,7 @@ export async function storeEncryptedKeys(
 
     await enclaveAddBundle({
       keyId: current.key_id,
+      keyB64: bytesToBase64(primaryBytes),
       credentialId,
       kekIvHex: b64ToHexLocal(encrypted.iv),
       encryptedKeysHex: b64ToHexLocal(encrypted.data),
