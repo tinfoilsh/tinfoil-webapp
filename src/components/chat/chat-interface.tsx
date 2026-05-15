@@ -33,6 +33,7 @@ import { IoShareOutline } from 'react-icons/io5'
 import { PiFilePlusLight, PiNotePencilLight, PiSpinner } from 'react-icons/pi'
 import { SlGhost } from 'react-icons/sl'
 
+import { truncateForCodeExec } from '@/components/chat/attachment-helpers'
 import {
   RateLimitBanner,
   shouldShowRateLimitBanner,
@@ -1729,29 +1730,46 @@ export function ChatInterface({
         file,
         async (content, documentId, imageData, hasDescription, pages) => {
           const bucketResult = await bucketUploadPromise
-          const newDocTokens = estimateTokenCount(content)
-          const contextLimit = parseContextWindowTokens(
-            selectedModelDetails?.contextWindow,
-          )
 
-          const existingTokens = processedDocuments.reduce(
-            (total, doc) => total + estimateTokenCount(doc.content),
-            0,
-          )
-
-          if (existingTokens + newDocTokens > contextLimit) {
-            setProcessedDocuments((prev) =>
-              prev.filter((doc) => doc.id !== tempDocId),
+          // Documents that landed in the buckets enclave can be capped
+          // per-file: the model reads the rest from /user-uploads via
+          // code execution. Without that fallback, fall through to the
+          // existing whole-context budget check.
+          let finalContent = content
+          let finalPages = pages
+          if (bucketResult && !imageData) {
+            const truncated = truncateForCodeExec({
+              content: content ?? '',
+              pages,
+              fileName: file.name,
+            })
+            finalContent = truncated.content
+            finalPages = truncated.pages
+          } else {
+            const newDocTokens = estimateTokenCount(content)
+            const contextLimit = parseContextWindowTokens(
+              selectedModelDetails?.contextWindow,
             )
 
-            toast({
-              title: 'Context window saturated',
-              description:
-                "The selected model's context window is full. Remove a document or choose a model with a larger context window before uploading more files.",
-              variant: 'destructive',
-              position: 'top-left',
-            })
-            return
+            const existingTokens = processedDocuments.reduce(
+              (total, doc) => total + estimateTokenCount(doc.content),
+              0,
+            )
+
+            if (existingTokens + newDocTokens > contextLimit) {
+              setProcessedDocuments((prev) =>
+                prev.filter((doc) => doc.id !== tempDocId),
+              )
+
+              toast({
+                title: 'Context window saturated',
+                description:
+                  "The selected model's context window is full. Remove a document or choose a model with a larger context window before uploading more files.",
+                variant: 'destructive',
+                position: 'top-left',
+              })
+              return
+            }
           }
 
           // Build an Attachment object from the upload result
@@ -1759,9 +1777,10 @@ export function ChatInterface({
             id: documentId,
             fileName: file.name,
             imageData: imageData ?? undefined,
-            textContent: content ?? undefined,
-            description: hasDescription && content ? content : undefined,
-            pages,
+            textContent: finalContent ?? undefined,
+            description:
+              hasDescription && finalContent ? finalContent : undefined,
+            pages: finalPages,
             fileAccessToken: bucketResult?.fileAccessToken,
             sha256: bucketResult?.sha256,
           })
@@ -1773,11 +1792,11 @@ export function ChatInterface({
                     id: documentId,
                     name: file.name,
                     time: new Date(),
-                    content,
+                    content: finalContent,
                     imageData,
                     attachment,
                     isImageDescription: !!imageData,
-                    hasDescription: hasDescription ?? !!content,
+                    hasDescription: hasDescription ?? !!finalContent,
                     isGeneratingDescription: false,
                   }
                 : doc,

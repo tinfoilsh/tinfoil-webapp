@@ -10,6 +10,12 @@ export const CONSTANTS = {
   MAX_MESSAGE_LENGTH: 4000,
   MAX_DOCUMENT_SIZE_MB: 10, // Display value for error messages
   MAX_DOCUMENT_SIZE_BYTES: 11 * 1024 * 1024, // Actual limit: 11MB to tolerate ~10.5MB files
+  // Per-file caps applied when the code-exec bucket upload has succeeded
+  // and the model can fall back to reading the rest from /user-uploads.
+  // Text cap is on md_content tokens; page cap governs multimodal docs
+  // where each rendered page-image is the dominant token cost.
+  CODE_EXEC_TEXT_TOKEN_CAP_PER_FILE: 10000,
+  CODE_EXEC_MAX_PAGES_PER_FILE: 10,
   // Maximum number of messages to include in the context window (user can override in settings)
   MAX_PROMPT_MESSAGES: 75,
   MAX_PROMPT_MESSAGES_LIMIT: 200,
