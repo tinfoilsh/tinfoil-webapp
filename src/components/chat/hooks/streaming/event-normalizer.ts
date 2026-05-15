@@ -90,8 +90,7 @@ function normalizeCodeExecEvent(
   logger?.logTinfoilEvent(event)
 
   // `item_id` is what pairs in-progress with the terminal event in
-  // process-stream. A clock-based fallback would split the pair across
-  // separate timeline calls, so drop events that arrive without one.
+  // process-stream.
   if (!event.item_id) return []
 
   const mapped: NormalizedEvent = {

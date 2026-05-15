@@ -5,9 +5,6 @@
  * - `getCodeExecutionContainerAuthTokenForChat`: per-chat container auth
  *   token, memoized in a module-level cache cleared on key change.
  *
- * Using the chat KEK as IKM means code-exec access follows the chats:
- * any device that has the chat KEK (manual entry, passkey recovery,
- * cloud sync) can derive these keys.
  */
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,

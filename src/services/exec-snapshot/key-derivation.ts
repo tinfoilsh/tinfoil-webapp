@@ -3,10 +3,7 @@
  * IKM, distinct info labels per RFC 5869 → independent outputs.
  *
  * Using the chat KEK as IKM means code-execution access travels with the
- * chats themselves: anyone who has the chat KEK (manual entry, passkey
- * recovery, etc.) can derive the code-exec encryption key and the
- * per-chat container auth token. Restoring chats to a new device also
- * restores code-exec access without a separate passkey ceremony.
+ * chats themselves
  */
 
 const HKDF_INFO_ENCRYPTION_KEY = 'tinfoil-code-execution-encryption-key-v1'
