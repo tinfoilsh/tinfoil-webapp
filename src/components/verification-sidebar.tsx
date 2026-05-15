@@ -1,4 +1,7 @@
-import { getTinfoilClient } from '@/services/inference/tinfoil-client'
+import {
+  getTinfoilClient,
+  getVerificationDocument,
+} from '@/services/inference/tinfoil-client'
 import { logError, logInfo } from '@/utils/error-handling'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -69,8 +72,7 @@ export function VerifierSidebar({
       }
 
       try {
-        const client = await getTinfoilClient()
-        const doc = await (client as any).getVerificationDocument?.()
+        const doc = await getVerificationDocument()
         if (doc) {
           setVerificationDocument(doc)
           if (isReady && iframeRef.current) {

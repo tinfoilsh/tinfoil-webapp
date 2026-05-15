@@ -15,6 +15,8 @@
  */
 import { useProject } from '@/components/project'
 import { type BaseModel } from '@/config/models'
+import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
+import { getCodeExecutionContainerAuthTokenForChat } from '@/services/exec-snapshot/use-exec-snapshot'
 import { sendChatStream } from '@/services/inference/inference-client'
 import {
   getRateLimitInfo,
@@ -52,7 +54,9 @@ interface UseChatMessagingProps {
   reasoningEffort?: ReasoningEffort
   thinkingEnabled?: boolean
   webSearchEnabled?: boolean
+  codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
+  codeExecutionEncryptionKey?: string | null
 }
 
 interface UseChatMessagingReturn {
@@ -99,7 +103,9 @@ export function useChatMessaging({
   reasoningEffort,
   thinkingEnabled,
   webSearchEnabled,
+  codeExecutionEnabled,
   piiCheckEnabled,
+  codeExecutionEncryptionKey,
 }: UseChatMessagingProps): UseChatMessagingReturn {
   const { isSignedIn } = useAuth()
   const maxMessages = useMaxMessages()
@@ -342,6 +348,7 @@ export function useChatMessaging({
         updatedChat = {
           ...currentChat,
           id: chatId,
+          codeExecutionAccessToken: generateCodeExecutionAccessToken(),
           title: 'Untitled',
           titleState: 'placeholder',
           messages: updatedMessages,
@@ -465,6 +472,10 @@ export function useChatMessaging({
         updatedChat = {
           ...updatedChat,
           messages: updatedMessages,
+          // Backfill for chats created before this field existed.
+          codeExecutionAccessToken:
+            updatedChat.codeExecutionAccessToken ??
+            generateCodeExecutionAccessToken(),
         }
 
         setCurrentChat(updatedChat)
@@ -534,6 +545,13 @@ export function useChatMessaging({
         })
 
         const baseSystemPrompt = systemPromptOverride || systemPrompt
+
+        const codeExecutionContainerAuthToken = codeExecutionEnabled
+          ? ((await getCodeExecutionContainerAuthTokenForChat(
+              updatedChat.id,
+            )) ?? undefined)
+          : undefined
+
         const response = await sendChatStream({
           model,
           systemPrompt: baseSystemPrompt,
@@ -548,8 +566,12 @@ export function useChatMessaging({
           reasoningEffort,
           thinkingEnabled,
           webSearchEnabled,
+          codeExecutionEnabled,
           piiCheckEnabled,
           genUIEnabled: true,
+          codeExecutionAccessToken: updatedChat.codeExecutionAccessToken,
+          codeExecutionEncryptionKey: codeExecutionEncryptionKey ?? undefined,
+          codeExecutionContainerAuthToken,
         })
 
         const assistantMessage = await processStreamingResponse(response, {
@@ -578,6 +600,7 @@ export function useChatMessaging({
             !!assistantMessage.webSearch ||
             !!assistantMessage.urlFetches?.length ||
             !!assistantMessage.toolCalls?.length ||
+            !!assistantMessage.codeExecCalls?.length ||
             !!assistantMessage.timeline?.length)
 
         if (assistantMessage && hasAssistantMessageToSave) {
@@ -781,7 +804,9 @@ export function useChatMessaging({
       isProjectMode,
       activeProject,
       webSearchEnabled,
+      codeExecutionEnabled,
       piiCheckEnabled,
+      codeExecutionEncryptionKey,
     ],
   )
 

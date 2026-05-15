@@ -12,6 +12,7 @@ import type {
   TimelineThinkingBlock,
   TimelineToolCallBlock,
   TimelineWebSearchBlock,
+  ToolCallState,
   URLFetchState,
   WebSearchState,
 } from '../../types'
@@ -145,7 +146,7 @@ export class TimelineBuilder {
     }
   }
 
-  // -- Tool Calls ---------------------------------------------------------
+  // -- GenUI Tool Calls ---------------------------------------------------
 
   startToolCall(toolCallId: string, name: string): void {
     this.finalizeThinkingForTool()
@@ -162,14 +163,10 @@ export class TimelineBuilder {
   appendToolCallArguments(toolCallId: string, delta: string): void {
     for (let i = this.blocks.length - 1; i >= 0; i--) {
       const block = this.blocks[i]
-      if (
-        block.type === 'tool_call' &&
-        (block as TimelineToolCallBlock).toolCallId === toolCallId
-      ) {
-        const existing = block as TimelineToolCallBlock
+      if (block.type === 'tool_call' && block.toolCallId === toolCallId) {
         this.blocks[i] = {
-          ...existing,
-          arguments: existing.arguments + delta,
+          ...block,
+          arguments: block.arguments + delta,
         }
         return
       }
@@ -182,17 +179,47 @@ export class TimelineBuilder {
   ): void {
     for (let i = this.blocks.length - 1; i >= 0; i--) {
       const block = this.blocks[i]
-      if (
-        block.type === 'tool_call' &&
-        (block as TimelineToolCallBlock).toolCallId === toolCallId
-      ) {
-        const existing = block as TimelineToolCallBlock
+      if (block.type === 'tool_call' && block.toolCallId === toolCallId) {
         this.blocks[i] = {
-          ...existing,
+          ...block,
           resolvedAt: resolution.resolvedAt,
           resolution: { text: resolution.text, data: resolution.data },
         }
         return
+      }
+    }
+  }
+
+  // -- Code Execution Tool Calls ------------------------------------------
+
+  pushCodeExecCall(call: ToolCallState): void {
+    this.finalizeThinkingForTool()
+    const lastBlock = this.blocks[this.blocks.length - 1]
+    if (lastBlock && lastBlock.type === 'code_exec') {
+      this.blocks[this.blocks.length - 1] = {
+        ...lastBlock,
+        calls: [...lastBlock.calls, call],
+      }
+    } else {
+      this.blocks.push({
+        type: 'code_exec',
+        id: `code-exec-${this.blocks.length}`,
+        calls: [call],
+      })
+    }
+  }
+
+  updateCodeExecCall(id: string, updates: Partial<ToolCallState>): void {
+    for (let i = this.blocks.length - 1; i >= 0; i--) {
+      const block = this.blocks[i]
+      if (block.type === 'code_exec' && block.calls.some((c) => c.id === id)) {
+        this.blocks[i] = {
+          ...block,
+          calls: block.calls.map((c) =>
+            c.id === id ? { ...c, ...updates } : c,
+          ),
+        }
+        break
       }
     }
   }

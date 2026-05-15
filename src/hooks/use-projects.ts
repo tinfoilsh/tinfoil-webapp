@@ -1,5 +1,8 @@
 import { projectStorage } from '@/services/cloud/project-storage'
-import { encryptionService } from '@/services/encryption/encryption-service'
+import {
+  ENCRYPTION_KEY_CHANGED_EVENT,
+  encryptionService,
+} from '@/services/encryption/encryption-service'
 import type { Project, ProjectData } from '@/types/project'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
@@ -258,9 +261,9 @@ export function useProjects(
       }
     }
 
-    window.addEventListener('encryptionKeyChanged', handleKeyChange)
+    window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, handleKeyChange)
     return () => {
-      window.removeEventListener('encryptionKeyChanged', handleKeyChange)
+      window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, handleKeyChange)
     }
   }, [projects, isSignedIn, refresh])
 

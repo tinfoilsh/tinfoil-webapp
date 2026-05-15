@@ -49,6 +49,8 @@ type ChatMessagesProps = {
   setReasoningEffort?: (effort: ReasoningEffort) => void
   thinkingEnabled?: boolean
   setThinkingEnabled?: (enabled: boolean) => void
+  codeExecutionEnabled?: boolean
+  onCodeExecutionToggle?: () => void
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
 }
@@ -221,6 +223,8 @@ export function ChatMessages({
   setReasoningEffort,
   thinkingEnabled,
   setThinkingEnabled,
+  codeExecutionEnabled,
+  onCodeExecutionToggle,
   onOpenVerifier,
   isTemporaryMode,
 }: ChatMessagesProps) {
@@ -327,6 +331,8 @@ export function ChatMessages({
             setReasoningEffort={setReasoningEffort}
             thinkingEnabled={thinkingEnabled}
             setThinkingEnabled={setThinkingEnabled}
+            codeExecutionEnabled={codeExecutionEnabled}
+            onCodeExecutionToggle={onCodeExecutionToggle}
             onOpenVerifier={onOpenVerifier}
             isTemporaryMode={isTemporaryMode}
           />

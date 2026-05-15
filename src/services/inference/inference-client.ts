@@ -113,6 +113,7 @@ export interface SendChatStreamParams {
   reasoningEffort?: ReasoningEffort
   thinkingEnabled?: boolean
   webSearchEnabled?: boolean
+  codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
   /**
    * Include GenUI tool definitions in the request so the model can emit
@@ -120,6 +121,13 @@ export interface SendChatStreamParams {
    * etc.) should pass `false` to avoid steering those paths toward tools.
    */
   genUIEnabled?: boolean
+  // The three below are required when codeExecutionEnabled.
+  /** Per-chat secret; buckets lookup key + code-exec session id. */
+  codeExecutionAccessToken?: string
+  /** AES-256 key (base64url) for buckets envelope encryption. */
+  codeExecutionEncryptionKey?: string
+  /** Per-chat hex token authenticating the code-exec container. */
+  codeExecutionContainerAuthToken?: string
 }
 
 export async function sendChatStream(
@@ -136,8 +144,12 @@ export async function sendChatStream(
     reasoningEffort,
     thinkingEnabled,
     webSearchEnabled,
+    codeExecutionEnabled,
     piiCheckEnabled,
     genUIEnabled,
+    codeExecutionAccessToken,
+    codeExecutionEncryptionKey,
+    codeExecutionContainerAuthToken,
   } = params
 
   const genUITools = genUIEnabled ? buildGenUIToolSchemas() : []
@@ -332,6 +344,23 @@ export async function sendChatStream(
       if (webSearchEnabled) {
         requestBody.web_search_options = {}
       }
+      if (codeExecutionEnabled) {
+        if (
+          !codeExecutionAccessToken ||
+          !codeExecutionEncryptionKey ||
+          !codeExecutionContainerAuthToken
+        ) {
+          throw new ChatError(
+            'Code execution requested without an accessToken, encryption key, or container auth token',
+            'FETCH_ERROR',
+          )
+        }
+        requestBody.code_execution_options = {
+          accessToken: codeExecutionAccessToken,
+          encryptionKey: codeExecutionEncryptionKey,
+          containerAuthToken: codeExecutionContainerAuthToken,
+        }
+      }
       if (piiCheckEnabled) {
         requestBody.pii_check_options = {}
       }
@@ -350,6 +379,7 @@ export async function sendChatStream(
           'signal',
           'reasoning_effort',
           'web_search_options',
+          'code_execution_options',
           'pii_check_options',
           'tools',
           'tool_choice',

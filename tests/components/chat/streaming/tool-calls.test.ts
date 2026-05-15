@@ -35,7 +35,7 @@ function buildChunk(
 }
 
 describe('event-normalizer tool_call handling', () => {
-  it('emits tool_call_start on first chunk per tool call and deltas thereafter', () => {
+  it('emits genui_tool_call_start on first chunk per tool call and deltas thereafter', () => {
     const normalizer = createEventNormalizer()
     const preprocessor = createContentPreprocessor()
 
@@ -52,8 +52,8 @@ describe('event-normalizer tool_call handling', () => {
     )
 
     expect(first).toEqual([
-      { type: 'tool_call_start', id: 'call_1', name: 'render_callout' },
-      { type: 'tool_call_delta', id: 'call_1', argumentsDelta: '{"ti' },
+      { type: 'genui_tool_call_start', id: 'call_1', name: 'render_callout' },
+      { type: 'genui_tool_call_delta', id: 'call_1', argumentsDelta: '{"ti' },
     ])
 
     const second = normalizer.processChunk(
@@ -62,7 +62,11 @@ describe('event-normalizer tool_call handling', () => {
     )
 
     expect(second).toEqual([
-      { type: 'tool_call_delta', id: 'call_1', argumentsDelta: 'tle":"Hi"}' },
+      {
+        type: 'genui_tool_call_delta',
+        id: 'call_1',
+        argumentsDelta: 'tle":"Hi"}',
+      },
     ])
   })
 
@@ -87,8 +91,16 @@ describe('event-normalizer tool_call handling', () => {
     )
 
     expect(next).toEqual([
-      { type: 'tool_call_delta', id: 'call_b', argumentsDelta: '{"data":' },
-      { type: 'tool_call_delta', id: 'call_a', argumentsDelta: '{"title":' },
+      {
+        type: 'genui_tool_call_delta',
+        id: 'call_b',
+        argumentsDelta: '{"data":',
+      },
+      {
+        type: 'genui_tool_call_delta',
+        id: 'call_a',
+        argumentsDelta: '{"title":',
+      },
     ])
   })
 
@@ -116,7 +128,7 @@ describe('event-normalizer tool_call handling', () => {
 
     expect(events[0]).toEqual({ type: 'thinking_end' })
     expect(events).toContainEqual({
-      type: 'tool_call_start',
+      type: 'genui_tool_call_start',
       id: 'call_1',
       name: 'render_callout',
     })

@@ -43,16 +43,32 @@ export type SearchReasoningEvent = {
   content: string
 }
 
-export type ToolCallStartEvent = {
-  type: 'tool_call_start'
+// GenUI: model emits standard OpenAI tool_calls deltas. We split them into
+// a `start` event (id + name) and `delta` events (accumulating JSON args).
+export type GenUIToolCallStartEvent = {
+  type: 'genui_tool_call_start'
   id: string
   name: string
 }
 
-export type ToolCallDeltaEvent = {
-  type: 'tool_call_delta'
+export type GenUIToolCallDeltaEvent = {
+  type: 'genui_tool_call_delta'
   id: string
   argumentsDelta: string
+}
+
+// Code execution: router emits `<tinfoil-event>` markers with a single
+// `in_progress` event carrying fully-formed args, then a terminal event
+// carrying the output. No mid-stream argument accumulation — args arrive
+// fully-formed because the model finished emitting them before the router
+// decided to run the tool.
+export type CodeExecToolCallEvent = {
+  type: 'code_exec_tool_call'
+  id: string
+  toolName: string
+  status: 'in_progress' | 'completed' | 'failed' | 'blocked'
+  arguments?: Record<string, unknown>
+  output?: string
 }
 
 export type NormalizedEvent =
@@ -64,8 +80,9 @@ export type NormalizedEvent =
   | URLFetchEvent
   | AnnotationEvent
   | SearchReasoningEvent
-  | ToolCallStartEvent
-  | ToolCallDeltaEvent
+  | GenUIToolCallStartEvent
+  | GenUIToolCallDeltaEvent
+  | CodeExecToolCallEvent
 
 // ---------------------------------------------------------------------------
 // Context passed by callers (unchanged from the old processor)

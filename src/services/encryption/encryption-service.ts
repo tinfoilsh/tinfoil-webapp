@@ -21,6 +21,20 @@ export interface EncryptedData {
 
 export type FallbackKeyAddedCallback = () => void
 
+/**
+ * Custom event fired whenever the primary chat encryption key changes
+ * (set, cleared, or replaced). Consumers that derive material from the
+ * chat KEK (e.g. `useExecSnapshot`, the projects refresh in
+ * `use-projects.ts`) listen for this to react without polling.
+ */
+export const ENCRYPTION_KEY_CHANGED_EVENT = 'encryptionKeyChanged'
+
+function dispatchEncryptionKeyChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(ENCRYPTION_KEY_CHANGED_EVENT))
+  }
+}
+
 export class EncryptionService {
   private encryptionKey: CryptoKey | null = null
   private currentKeyString: string | null = null
@@ -252,6 +266,7 @@ export class EncryptionService {
       this.fallbackKeyStrings = history
       this.fallbackKeyCache.delete(keyString)
       this.pruneFallbackCache(history)
+      dispatchEncryptionKeyChanged()
     } catch (error) {
       if (
         error instanceof Error &&
@@ -269,6 +284,18 @@ export class EncryptionService {
       localStorage.getItem(USER_ENCRYPTION_KEY) ??
       localStorage.getItem(LEGACY_ENCRYPTION_KEY)
     )
+  }
+
+  // Get current encryption key as raw bytes, or null if no key is set.
+  // Used as HKDF input keying material for derived keys (e.g. code execution).
+  getCurrentKeyBytes(): Uint8Array | null {
+    const keyString = this.getKey()
+    if (!keyString) return null
+    try {
+      return this.getKeyBytes(keyString)
+    } catch {
+      return null
+    }
   }
 
   // Remove encryption key
@@ -295,6 +322,7 @@ export class EncryptionService {
         })
       }
     }
+    dispatchEncryptionKeyChanged()
   }
 
   /**
@@ -443,6 +471,7 @@ export class EncryptionService {
     this.currentKeyString = primary
     this.fallbackKeyCache.clear()
     this.fallbackKeyStrings = validAlternatives
+    dispatchEncryptionKeyChanged()
   }
 
   /**

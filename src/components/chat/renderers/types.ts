@@ -46,6 +46,8 @@ export interface InputRenderProps {
   hasMessages?: boolean
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
+  codeExecutionEnabled?: boolean
+  onCodeExecutionToggle?: () => void
 }
 
 export interface MessageRenderer {

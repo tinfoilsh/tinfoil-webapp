@@ -10,6 +10,7 @@ import type {
   Annotation,
   Message,
   TimelineBlock,
+  ToolCallState,
   URLFetchState,
   WebSearchSource,
   WebSearchState,
@@ -52,7 +53,8 @@ export class MessageAssembler {
     let webSearch: WebSearchState | undefined
     let webSearchBeforeThinking: boolean | undefined
     const urlFetches: URLFetchState[] = []
-    const toolCalls: Message['toolCalls'] = []
+    const toolCalls: NonNullable<Message['toolCalls']> = []
+    const codeExecCalls: ToolCallState[] = []
     let firstThinkingIdx = -1
     let firstWebSearchIdx = -1
 
@@ -82,6 +84,9 @@ export class MessageAssembler {
             arguments: block.arguments,
           })
           break
+        case 'code_exec':
+          codeExecCalls.push(...block.calls)
+          break
       }
     }
 
@@ -103,7 +108,8 @@ export class MessageAssembler {
       annotations: this.getAnnotationsSnapshot(),
       searchReasoning: this.searchReasoning || undefined,
       timeline: [...timeline],
-      toolCalls: toolCalls && toolCalls.length > 0 ? toolCalls : undefined,
+      toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+      codeExecCalls: codeExecCalls.length > 0 ? codeExecCalls : undefined,
     }
   }
 

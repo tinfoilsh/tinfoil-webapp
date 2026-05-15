@@ -25,6 +25,7 @@ import {
   PiPlusLight,
   PiQuotes,
   PiSpinner,
+  PiTerminalWindow,
 } from 'react-icons/pi'
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
@@ -52,6 +53,8 @@ type ChatInputProps = {
   reasoningSelectorButton?: React.ReactNode
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
+  codeExecutionEnabled?: boolean
+  onCodeExecutionToggle?: () => void
   quote?: string | null
   onClearQuote?: () => void
   isTemporaryMode?: boolean
@@ -80,6 +83,8 @@ export function ChatInput({
   reasoningSelectorButton,
   webSearchEnabled,
   onWebSearchToggle,
+  codeExecutionEnabled,
+  onCodeExecutionToggle,
   quote,
   onClearQuote,
   isTemporaryMode,
@@ -928,6 +933,32 @@ export function ChatInput({
                           )}
                         </button>
                       )}
+                      {onCodeExecutionToggle && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onCodeExecutionToggle()
+                            setIsMobileMenuOpen(false)
+                          }}
+                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                        >
+                          <PiTerminalWindow className="h-5 w-5 text-content-secondary" />
+                          <span className="flex-1">Code execution</span>
+                          {codeExecutionEnabled && (
+                            <svg
+                              className="h-4 w-4 text-brand-accent-light"
+                              viewBox="0 0 20 20"
+                              fill="currentColor"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -982,6 +1013,39 @@ export function ChatInput({
                   {!webSearchEnabled && (
                     <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                       Web search
+                    </span>
+                  )}
+                </div>
+              )}
+              {onCodeExecutionToggle && (
+                <div className="group relative hidden md:block">
+                  <button
+                    type="button"
+                    onClick={onCodeExecutionToggle}
+                    aria-label="Code execution"
+                    aria-pressed={codeExecutionEnabled}
+                    className={cn(
+                      'flex h-7 items-center justify-center gap-1.5 rounded-lg transition-colors',
+                      codeExecutionEnabled
+                        ? cn(
+                            'px-2',
+                            isDarkMode
+                              ? 'bg-brand-accent-light/20 text-brand-accent-light'
+                              : 'bg-brand-accent-dark/20 text-brand-accent-dark',
+                          )
+                        : 'w-7 text-content-secondary hover:bg-surface-chat-background hover:text-content-primary',
+                    )}
+                  >
+                    <PiTerminalWindow className="h-5 w-5" />
+                    {codeExecutionEnabled && (
+                      <span className="text-xs font-medium leading-none">
+                        Code
+                      </span>
+                    )}
+                  </button>
+                  {!codeExecutionEnabled && (
+                    <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                      Code execution
                     </span>
                   )}
                 </div>

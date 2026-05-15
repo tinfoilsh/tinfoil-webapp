@@ -4,6 +4,7 @@ import {
   type BaseModel,
 } from '@/config/models'
 import {
+  SETTINGS_CODE_EXECUTION_ENABLED,
   SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_WEB_SEARCH_ENABLED,
@@ -31,7 +32,6 @@ import { GoSidebarCollapse } from 'react-icons/go'
 import { IoShareOutline } from 'react-icons/io5'
 import { PiFilePlusLight, PiNotePencilLight, PiSpinner } from 'react-icons/pi'
 import { SlGhost } from 'react-icons/sl'
-import type { TinfoilAI } from 'tinfoil'
 
 import {
   RateLimitBanner,
@@ -50,6 +50,7 @@ import { CLOUD_SYNC } from '@/config'
 import { useCloudSync } from '@/hooks/use-cloud-sync'
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
 import { useProfileSync } from '@/hooks/use-profile-sync'
+import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
 
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -291,6 +292,8 @@ export function ChatInterface({
 }: ChatInterfaceProps) {
   const { toast } = useToast()
   const { isSignedIn, isLoaded: isAuthLoaded } = useAuth()
+  // TODO: unflip this
+  const canUseCodeExecution = false
   const { user } = useUser()
   const { openSignIn } = useClerk()
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
@@ -512,6 +515,13 @@ export function ChatInterface({
     return saved === null ? true : saved === 'true'
   })
 
+  // State for code execution toggle (persisted in localStorage, defaults to off)
+  const [codeExecutionEnabled, setCodeExecutionEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const saved = localStorage.getItem(SETTINGS_CODE_EXECUTION_ENABLED)
+    return saved === null ? false : saved === 'true'
+  })
+
   // PII check setting (controlled from settings modal, defaults to on)
   const [piiCheckEnabled, setPiiCheckEnabled] = useState(() => {
     if (typeof window === 'undefined') return true
@@ -726,6 +736,7 @@ export function ChatInterface({
     hasValidatedModel,
     expandedLabel,
     windowWidth,
+    codeExecutionEncryptionKey,
 
     // Setters
     setInput,
@@ -768,6 +779,10 @@ export function ChatInterface({
     initialChatId,
     isLocalChatUrl,
     webSearchEnabled,
+    // Feature flag gates key derivation in useExecSnapshot; the toggle
+    // gates request plumbing. Both layers must be on to use code-exec.
+    canUseCodeExecution,
+    codeExecutionEnabled: canUseCodeExecution ? codeExecutionEnabled : false,
     piiCheckEnabled,
   })
 
@@ -810,6 +825,9 @@ export function ChatInterface({
     onBeforeDispatch: handleQueueDispatch,
     onRateLimited: handleQueueRateLimited,
   })
+
+  const canEnableCodeExecution =
+    canUseCodeExecution && codeExecutionEncryptionKey != null
 
   // Ask sidebar - ephemeral streaming only. Nothing is persisted until the
   // user clicks "Open as chat", which creates a new real chat seeded with the
@@ -942,11 +960,10 @@ export function ChatInterface({
   useEffect(() => {
     const initTinfoil = async () => {
       try {
-        const { getTinfoilClient } =
-          await import('@/services/inference/tinfoil-client')
-        const client = await getTinfoilClient()
-        if (!('getVerificationDocument' in client)) return
-        const doc = await (client as TinfoilAI).getVerificationDocument()
+        const { getVerificationDocument } = await import(
+          '@/services/inference/tinfoil-client'
+        )
+        const doc = await getVerificationDocument()
         if (doc) {
           setVerificationDocument(doc)
           // Set verification status based on document
@@ -1015,6 +1032,14 @@ export function ChatInterface({
   useEffect(() => {
     localStorage.setItem(SETTINGS_WEB_SEARCH_ENABLED, String(webSearchEnabled))
   }, [webSearchEnabled])
+
+  // Persist code execution toggle to localStorage
+  useEffect(() => {
+    localStorage.setItem(
+      SETTINGS_CODE_EXECUTION_ENABLED,
+      String(codeExecutionEnabled),
+    )
+  }, [codeExecutionEnabled])
 
   // Listen for PII check setting changes from settings modal
   useEffect(() => {
@@ -1306,6 +1331,23 @@ export function ChatInterface({
     reloadChats,
   ])
 
+  // Reload chats when the chat encryption key changes (manual entry,
+  // passkey recovery, etc.). Without this, previously-undecryptable chats
+  // stay hidden until the user manually refreshes.
+  useEffect(() => {
+    const handler = () => {
+      reloadChats().catch((error) => {
+        logError('Failed to reload chats after encryption key change', error, {
+          component: 'ChatInterface',
+          action: 'encryptionKeyChangedReload',
+        })
+      })
+    }
+    window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, handler)
+    return () =>
+      window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, handler)
+  }, [reloadChats])
+
   // Handler for opening verifier sidebar
   const handleOpenVerifierSidebar = () => {
     if (isVerifierSidebarOpen) {
@@ -1398,7 +1440,8 @@ export function ChatInterface({
       if (syncResult) {
         await retryProfileDecryption()
         await reloadChats()
-        window.dispatchEvent(new CustomEvent('encryptionKeyChanged'))
+        // `encryptionKeyChanged` is fired by encryptionService itself
+        // from setKey → persistKeyState; no need to dispatch here.
       }
     },
     [setEncryptionKey, retryProfileDecryption, reloadChats],
@@ -2953,6 +2996,14 @@ export function ChatInterface({
                     setReasoningEffort={setReasoningEffort}
                     thinkingEnabled={thinkingEnabled}
                     setThinkingEnabled={setThinkingEnabled}
+                    codeExecutionEnabled={
+                      canEnableCodeExecution ? codeExecutionEnabled : false
+                    }
+                    onCodeExecutionToggle={
+                      canEnableCodeExecution
+                        ? () => setCodeExecutionEnabled((prev) => !prev)
+                        : undefined
+                    }
                     onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
                     isTemporaryMode={isTemporaryMode}
                   />
@@ -3109,6 +3160,14 @@ export function ChatInterface({
                         webSearchEnabled={webSearchEnabled}
                         onWebSearchToggle={() =>
                           setWebSearchEnabled((prev) => !prev)
+                        }
+                        codeExecutionEnabled={
+                          canEnableCodeExecution ? codeExecutionEnabled : false
+                        }
+                        onCodeExecutionToggle={
+                          canEnableCodeExecution
+                            ? () => setCodeExecutionEnabled((prev) => !prev)
+                            : undefined
                         }
                       />
                     </form>
