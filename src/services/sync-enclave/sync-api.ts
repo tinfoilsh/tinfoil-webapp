@@ -163,6 +163,7 @@ export interface KeyRegisterResponse {
 
 export interface AddBundleRequest {
   keyId: string
+  keyB64: string
   credentialId: string
   kekIvHex: string
   encryptedKeysHex: string
@@ -172,6 +173,7 @@ export interface AddBundleRequest {
 
 export interface RemoveBundleRequest {
   keyId: string
+  keyB64: string
   credentialId: string
   /** Client-generated idempotency key, e.g. `newIdempotencyKey()`. */
   idempotencyKey: string
@@ -364,6 +366,7 @@ export async function addBundle(req: AddBundleRequest): Promise<OKResponse> {
   const client = await getSyncEnclaveClient()
   return client.post<OKResponse>('/v1/key/add-bundle', {
     key_id: req.keyId,
+    key: req.keyB64,
     credential_id: req.credentialId,
     kek_iv: req.kekIvHex,
     encrypted_keys: req.encryptedKeysHex,
@@ -381,6 +384,7 @@ export async function removeBundle(
   const client = await getSyncEnclaveClient()
   return client.post<OKResponse>('/v1/key/remove-bundle', {
     key_id: req.keyId,
+    key: req.keyB64,
     credential_id: req.credentialId,
     idempotency_key: req.idempotencyKey,
   })

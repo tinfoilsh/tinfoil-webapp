@@ -108,7 +108,10 @@ export async function ingestRemoteChats(
       }
 
       if (remoteChat.content) {
-        if (remoteChat.formatVersion === 1) {
+        if (remoteChat.formatVersion === 2) {
+          codecInput.plaintext = remoteChat.content
+          codecInput.formatVersion = 2
+        } else if (remoteChat.formatVersion === 1) {
           // Inline v1 content is base64-encoded binary from the list endpoint
           const bytes = base64ToUint8Array(remoteChat.content)
           codecInput.binaryContent = bytes.buffer as ArrayBuffer

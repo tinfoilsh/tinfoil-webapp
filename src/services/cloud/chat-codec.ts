@@ -28,6 +28,8 @@ export interface RemoteChatData {
   createdAt?: string
   updatedAt?: string | null
   formatVersion?: number
+  syncVersion?: number
+  projectId?: string
 }
 
 /**
@@ -157,7 +159,7 @@ export async function processRemoteChat(
       lastAccessedAt: Date.now(),
       syncedAt: Date.now(),
       locallyModified: false,
-      syncVersion: decrypted.syncVersion ?? 1,
+      syncVersion: remote.syncVersion ?? decrypted.syncVersion ?? 1,
       formatVersion: remote.formatVersion ?? 0,
       // Explicit projectId from caller is authoritative (e.g. cross-scope sync);
       // fall back to the blob's value, then the local chat's value

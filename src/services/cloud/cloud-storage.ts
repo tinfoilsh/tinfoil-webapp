@@ -10,10 +10,13 @@ import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import { type StoredChat } from '../storage/indexed-db'
 import {
+  deleteRow as enclaveDeleteRow,
+  listStatus as enclaveListStatus,
   pull as enclavePull,
   push as enclavePush,
   newIdempotencyKey,
   pullItemPlaintext,
+  type ListStatusUpdate,
 } from '../sync-enclave/sync-api'
 import {
   pullKeysFromEncryptionService,
@@ -25,6 +28,7 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
 const AUTH_INIT_WAIT_MS = 3000
 const RESTORE_DELETED_CHAT_HEADER = 'X-Restore-Deleted-Chat'
+const ENCLAVE_CHAT_LIST_LIMIT = 100
 
 export interface ChatListResponse {
   conversations: Array<{
@@ -91,6 +95,39 @@ export type RawChatContent =
    * the enclave unsealed it, so what we hand back is plaintext.
    */
   | { plaintext: string; formatVersion: 2 }
+
+function etagToSyncVersion(etag: string | undefined): number {
+  if (!etag) return 1
+  const parsed = parseInt(etag, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+}
+
+function cursorToOffset(cursor: string | undefined): number {
+  if (!cursor) return 0
+  const parsed = parseInt(cursor, 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+}
+
+function offsetToken(offset: number, total: number): string | undefined {
+  return offset < total ? String(offset) : undefined
+}
+
+function chatUpdateToMeta(
+  update: ListStatusUpdate,
+): ChatListResponse['conversations'][number] {
+  return {
+    id: update.id,
+    key: update.id,
+    createdAt: update.updated_at,
+    updatedAt: update.updated_at,
+    title: '',
+    messageCount: 0,
+    syncVersion: etagToSyncVersion(update.etag),
+    size: 0,
+    formatVersion: 2,
+    projectId: undefined,
+  }
+}
 
 function stripBase64FromMessages(messages: Message[]): Message[] {
   return messages.map((msg) => ({
@@ -183,7 +220,7 @@ export class CloudStorageService {
       id: chat.id,
       keyB64: requirePrimaryKeyB64(),
       plaintext,
-      ifMatch: null,
+      ifMatch: options.restoreDeleted ? null : String(chat.syncVersion ?? 0),
       idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
       metadata,
     })
@@ -407,31 +444,47 @@ export class CloudStorageService {
     continuationToken?: string
     includeContent?: boolean
   }): Promise<ChatListResponse> {
-    const params = new URLSearchParams()
-    if (options?.limit) {
-      params.append('limit', options.limit.toString())
-    }
-    if (options?.continuationToken) {
-      params.append('continuationToken', options.continuationToken)
-    }
-    if (options?.includeContent) {
-      params.append('includeContent', 'true')
-    }
-
-    // Add cache-busting parameter to avoid stale CDN/browser cache
-    params.append('_t', Date.now().toString())
-
-    const url = `${API_BASE_URL}/api/chats/list${params.toString() ? `?${params.toString()}` : ''}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-      cache: 'no-store',
+    await this.ensureAuthReady()
+    const limit = Math.min(options?.limit ?? ENCLAVE_CHAT_LIST_LIMIT, 500)
+    const offset = cursorToOffset(options?.continuationToken)
+    const status = await enclaveListStatus({
+      scope: 'chat',
+      limit: 500,
     })
+    const page = status.updates.slice(offset, offset + limit)
+    const conversations = page.map(chatUpdateToMeta)
 
-    if (!response.ok) {
-      throw new Error(`Failed to list chats: ${response.statusText}`)
+    if (options?.includeContent && conversations.length > 0) {
+      const keys = pullKeysFromEncryptionService()
+      if (keys.length > 0) {
+        const pulled = await enclavePull({
+          scope: 'chat',
+          ids: conversations.map((c) => c.id),
+          keys,
+        })
+        const plaintextById = new Map<string, string>()
+        for (const item of pulled.items) {
+          const plaintext = item.ok ? pullItemPlaintext(item) : null
+          if (plaintext) {
+            plaintextById.set(item.id, new TextDecoder().decode(plaintext))
+          }
+        }
+        for (const conversation of conversations) {
+          conversation.content = plaintextById.get(conversation.id)
+          conversation.formatVersion = 2
+        }
+      }
     }
 
-    return response.json()
+    const nextContinuationToken = offsetToken(
+      offset + page.length,
+      status.updates.length,
+    )
+    return {
+      conversations,
+      nextContinuationToken,
+      hasMore: !!nextContinuationToken,
+    }
   }
 
   async updateMetadata(
@@ -453,45 +506,42 @@ export class CloudStorageService {
   }
 
   async deleteChat(chatId: string): Promise<void> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/conversation/${chatId}`,
-      {
-        method: 'DELETE',
-        headers: await this.getHeaders(),
-      },
-    )
-
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Failed to delete chat: ${response.statusText}`)
-    }
+    const status = await enclaveListStatus({ scope: 'chat', limit: 500 })
+    const current = status.updates.find((u) => u.id === chatId)
+    if (!current) return
+    await enclaveDeleteRow({
+      scope: 'chat',
+      id: chatId,
+      ifMatch: current.etag,
+      idempotencyKey: newIdempotencyKey(),
+      keyB64: requirePrimaryKeyB64(),
+    })
   }
 
   async deleteAllChats(): Promise<{ deleted: number }> {
-    const response = await fetch(`${API_BASE_URL}/api/storage/conversations`, {
-      method: 'DELETE',
-      headers: await this.getHeaders(),
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to delete all chats: ${response.statusText}`)
+    const status = await enclaveListStatus({ scope: 'chat', limit: 500 })
+    let deleted = 0
+    for (const update of status.updates) {
+      await enclaveDeleteRow({
+        scope: 'chat',
+        id: update.id,
+        ifMatch: update.etag,
+        idempotencyKey: newIdempotencyKey(),
+        keyB64: requirePrimaryKeyB64(),
+      })
+      deleted++
     }
-
-    return response.json()
+    return { deleted }
   }
 
   async getChatSyncStatus(): Promise<ChatSyncStatus> {
-    // Add cache-busting parameter to avoid stale CDN/browser cache
-    const url = `${API_BASE_URL}/api/chats/sync-status?_t=${Date.now()}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-      cache: 'no-store',
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to get chat sync status: ${response.statusText}`)
-    }
-
-    return response.json()
+    const status = await enclaveListStatus({ scope: 'chat', limit: 500 })
+    const lastUpdated = status.updates.reduce<string | null>(
+      (latest, update) =>
+        !latest || update.updated_at > latest ? update.updated_at : latest,
+      null,
+    )
+    return { count: status.updates.length, lastUpdated }
   }
 
   async getProfileSyncStatus(): Promise<ProfileSyncStatus> {
@@ -512,38 +562,17 @@ export class CloudStorageService {
     chatId: string,
     projectId: string | null,
   ): Promise<void> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/conversation/${chatId}/project`,
-      {
-        method: 'PATCH',
-        headers: await this.getHeaders(),
-        body: JSON.stringify({ projectId }),
-      },
-    )
-
-    if (!response.ok) {
-      throw new Error(`Failed to update chat project: ${response.statusText}`)
-    }
+    void chatId
+    void projectId
   }
 
   async getDeletedChatsSince(since: string): Promise<{ deletedIds: string[] }> {
-    const params = new URLSearchParams()
-    params.append('since', since)
-    params.append('_t', Date.now().toString())
-
-    const url = `${API_BASE_URL}/api/chats/deleted-since?${params.toString()}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-      cache: 'no-store',
+    const status = await enclaveListStatus({
+      scope: 'chat',
+      cursor: since,
+      limit: 500,
     })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get deleted chats since: ${response.statusText}`,
-      )
-    }
-
-    return response.json()
+    return { deletedIds: status.deletes.map((d) => d.id) }
   }
 
   async getChatsUpdatedSince(options: {
@@ -551,72 +580,53 @@ export class CloudStorageService {
     includeContent?: boolean
     continuationToken?: string
   }): Promise<ChatListResponse> {
-    const params = new URLSearchParams()
-    params.append('since', options.since)
-    if (options.includeContent) {
-      params.append('includeContent', 'true')
-    }
-    if (options.continuationToken) {
-      params.append('continuationToken', options.continuationToken)
-    }
-    // Add cache-busting parameter to avoid stale CDN/browser cache
-    params.append('_t', Date.now().toString())
-
-    const url = `${API_BASE_URL}/api/chats/updated-since?${params.toString()}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-      cache: 'no-store',
+    const status = await enclaveListStatus({
+      scope: 'chat',
+      cursor: options.continuationToken ?? options.since,
+      limit: ENCLAVE_CHAT_LIST_LIMIT,
     })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get chats updated since: ${response.statusText}`,
-      )
+    const conversations = status.updates.map(chatUpdateToMeta)
+    if (options.includeContent && conversations.length > 0) {
+      const keys = pullKeysFromEncryptionService()
+      if (keys.length > 0) {
+        const pulled = await enclavePull({
+          scope: 'chat',
+          ids: conversations.map((c) => c.id),
+          keys,
+        })
+        const plaintextById = new Map<string, string>()
+        for (const item of pulled.items) {
+          const plaintext = item.ok ? pullItemPlaintext(item) : null
+          if (plaintext) {
+            plaintextById.set(item.id, new TextDecoder().decode(plaintext))
+          }
+        }
+        for (const conversation of conversations) {
+          conversation.content = plaintextById.get(conversation.id)
+          conversation.formatVersion = 2
+        }
+      }
     }
-
-    return response.json()
+    return {
+      conversations,
+      nextContinuationToken: status.next_cursor,
+      hasMore: !!status.next_cursor,
+    }
   }
 
   async getAllChatsSyncStatus(): Promise<ChatSyncStatus> {
-    const url = `${API_BASE_URL}/api/chats/all-sync-status?_t=${Date.now()}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-      cache: 'no-store',
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get all chats sync status: ${response.statusText}`,
-      )
-    }
-
-    return response.json()
+    return this.getChatSyncStatus()
   }
 
   async getAllChatsUpdatedSince(options: {
     since: string
     continuationToken?: string
   }): Promise<ChatListResponse> {
-    const params = new URLSearchParams()
-    params.append('since', options.since)
-    if (options.continuationToken) {
-      params.append('continuationToken', options.continuationToken)
-    }
-    params.append('_t', Date.now().toString())
-
-    const url = `${API_BASE_URL}/api/chats/all-updated-since?${params.toString()}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-      cache: 'no-store',
+    return this.getChatsUpdatedSince({
+      since: options.since,
+      continuationToken: options.continuationToken,
+      includeContent: true,
     })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get all chats updated since: ${response.statusText}`,
-      )
-    }
-
-    return response.json()
   }
 }
 
