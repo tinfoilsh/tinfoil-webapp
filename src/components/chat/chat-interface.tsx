@@ -1710,14 +1710,27 @@ export function ChatInterface({
         sha256: string
       } | null> = (() => {
         if (!canEnableCodeExecution || !codeExecutionEncryptionKey) {
+          const reasons: string[] = []
+          if (!isSignedIn) reasons.push('not signed in')
+          if (!codeExecutionEncryptionKey)
+            reasons.push('chat encryption key not derived')
+          const why = reasons.join('; ') || 'feature gate off'
           logInfo('Bucket upload skipped (gate off)', {
             component: 'ChatInterface',
             action: 'uploadAttachmentToBucket',
             metadata: {
               fileName: file.name,
-              canEnableCodeExecution,
+              isSignedIn,
+              canUseCodeExecution,
               hasEncryptionKey: !!codeExecutionEncryptionKey,
+              why,
             },
+          })
+          toast({
+            title: `Bucket upload skipped: ${file.name}`,
+            description: why,
+            variant: 'destructive',
+            position: 'top-left',
           })
           return Promise.resolve(null)
         }
