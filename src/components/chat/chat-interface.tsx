@@ -62,7 +62,7 @@ import {
   isCloudSyncEnabled,
   setCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
-import { logError } from '@/utils/error-handling'
+import { logError, logInfo } from '@/utils/error-handling'
 import { isSupportedFile } from '@/utils/file-types'
 import {
   getProjectUploadPreference,
@@ -1701,30 +1701,93 @@ export function ChatInterface({
       // Gated on the same condition that lets the user enable the toggle —
       // signed-in users with a derived encryption key. Failures are
       // non-fatal: the attachment still works for non-code-exec purposes.
+      //
+      // Observability: toasts + logInfo on every outcome (skipped,
+      // started, succeeded, failed) so we can see end-to-end behavior on
+      // preview without needing browser network-tab access.
       const bucketUploadPromise: Promise<{
         fileAccessToken: string
         sha256: string
-      } | null> =
-        canEnableCodeExecution && codeExecutionEncryptionKey
-          ? (async () => {
-              try {
-                const bearer = await getSessionToken()
-                if (!bearer) return null
-                return await uploadAttachmentToBucket(
-                  file,
-                  codeExecutionEncryptionKey,
-                  bearer,
-                )
-              } catch (err) {
-                logError('Bucket upload for /user-uploads failed', err, {
-                  component: 'ChatInterface',
-                  action: 'uploadAttachmentToBucket',
-                  metadata: { fileName: file.name },
-                })
-                return null
-              }
-            })()
-          : Promise.resolve(null)
+      } | null> = (() => {
+        if (!canEnableCodeExecution || !codeExecutionEncryptionKey) {
+          logInfo('Bucket upload skipped (gate off)', {
+            component: 'ChatInterface',
+            action: 'uploadAttachmentToBucket',
+            metadata: {
+              fileName: file.name,
+              canEnableCodeExecution,
+              hasEncryptionKey: !!codeExecutionEncryptionKey,
+            },
+          })
+          return Promise.resolve(null)
+        }
+
+        logInfo('Bucket upload starting', {
+          component: 'ChatInterface',
+          action: 'uploadAttachmentToBucket',
+          metadata: { fileName: file.name, fileSize: file.size },
+        })
+
+        return (async () => {
+          try {
+            const bearer = await getSessionToken()
+            if (!bearer) {
+              const msg = 'no auth bearer'
+              logError('Bucket upload aborted: no bearer', undefined, {
+                component: 'ChatInterface',
+                action: 'uploadAttachmentToBucket',
+                metadata: { fileName: file.name },
+              })
+              toast({
+                title: `Bucket upload failed: ${file.name}`,
+                description: msg,
+                variant: 'destructive',
+                position: 'top-left',
+              })
+              return null
+            }
+            const result = await uploadAttachmentToBucket(
+              file,
+              codeExecutionEncryptionKey,
+              bearer,
+            )
+            // The exact hint string chat-query-builder will inject into
+            // the user message for this attachment (text-only doc form;
+            // multimodal variants append a slight rephrasing).
+            const promptHint = `Available in code execution environment at: /user-uploads/${file.name}`
+            logInfo('Bucket upload succeeded', {
+              component: 'ChatInterface',
+              action: 'uploadAttachmentToBucket',
+              metadata: {
+                fileName: file.name,
+                fileAccessToken: result.fileAccessToken,
+                sha256: result.sha256,
+                promptHint,
+              },
+            })
+            toast({
+              title: `Bucket upload OK: ${file.name}`,
+              description: `accessToken: ${result.fileAccessToken}\nsha256: ${result.sha256}\nmodel will see: "${promptHint}"`,
+              position: 'top-left',
+            })
+            return result
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            logError('Bucket upload for /user-uploads failed', err, {
+              component: 'ChatInterface',
+              action: 'uploadAttachmentToBucket',
+              metadata: { fileName: file.name, error: msg },
+            })
+            toast({
+              title: `Bucket upload failed: ${file.name}`,
+              description: msg,
+              variant: 'destructive',
+              position: 'top-left',
+            })
+            return null
+          }
+        })()
+      })()
 
       await handleDocumentUpload(
         file,
