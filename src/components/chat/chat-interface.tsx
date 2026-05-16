@@ -300,8 +300,9 @@ export function ChatInterface({
 }: ChatInterfaceProps) {
   const { toast } = useToast()
   const { isSignedIn, isLoaded: isAuthLoaded } = useAuth()
-  // TODO: unflip this
-  const canUseCodeExecution = false
+  // Code execution requires a chat encryption key derived from the
+  // signed-in user's passkey, so it's only available to signed-in users.
+  const canUseCodeExecution = isSignedIn
   const { user } = useUser()
   const { openSignIn } = useClerk()
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
@@ -968,9 +969,8 @@ export function ChatInterface({
   useEffect(() => {
     const initTinfoil = async () => {
       try {
-        const { getVerificationDocument } = await import(
-          '@/services/inference/tinfoil-client'
-        )
+        const { getVerificationDocument } =
+          await import('@/services/inference/tinfoil-client')
         const doc = await getVerificationDocument()
         if (doc) {
           setVerificationDocument(doc)
