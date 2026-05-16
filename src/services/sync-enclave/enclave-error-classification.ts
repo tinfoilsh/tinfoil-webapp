@@ -221,7 +221,15 @@ function isNetworkError(err: unknown): boolean {
 
 function isAttestationError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
-  return /attestation|verify|enclave verification/i.test(err.message)
+  // The bare token `verify` was too broad — it matched generic
+  // strings like "failed to verify token". Match only phrases the
+  // attestation layer actually emits: anything containing
+  // "attestation", or the specific "enclave verification" /
+  // "verification document" / "verifier" phrases that the
+  // SecureClient surface uses.
+  return /attestation|enclave verification|verification document|verifier/i.test(
+    err.message,
+  )
 }
 
 function errorMessage(err: unknown): string {
