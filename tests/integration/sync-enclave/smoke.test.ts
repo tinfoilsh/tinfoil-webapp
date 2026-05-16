@@ -14,6 +14,24 @@
  * never accidentally hit the network.
  */
 
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+
+// The sync-enclave client captures its URL at module-load time from
+// `@/config`'s `SYNC_ENCLAVE_URL`. `vi.hoisted` runs the env wiring
+// BEFORE the static imports below resolve, so the client picks up
+// the integration URL on first import. Without this, the static
+// imports would resolve against the default URL and `resetSyncEnclaveClient`
+// alone would not re-read config.
+const { TEST_JWT, enabled } = vi.hoisted(() => {
+  const url = process.env.SYNC_ENCLAVE_URL
+  const jwt = process.env.SYNC_ENCLAVE_TEST_JWT
+  const on = Boolean(url && jwt)
+  if (on) {
+    process.env.NEXT_PUBLIC_SYNC_ENCLAVE_URL = url
+  }
+  return { TEST_JWT: jwt, enabled: on }
+})
+
 import {
   addBundle,
   bytesToBase64,
@@ -30,15 +48,6 @@ import {
   resetSyncEnclaveClient,
   SyncEnclaveError,
 } from '@/services/sync-enclave/sync-enclave-client'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-
-const ENCLAVE_URL = process.env.SYNC_ENCLAVE_URL
-const TEST_JWT = process.env.SYNC_ENCLAVE_TEST_JWT
-const enabled = Boolean(ENCLAVE_URL && TEST_JWT)
-
-if (enabled) {
-  process.env.NEXT_PUBLIC_SYNC_ENCLAVE_URL = ENCLAVE_URL
-}
 
 function randomCekBytes(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(32))
