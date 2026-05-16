@@ -89,15 +89,6 @@ export interface PasskeyUserInfo {
 
 type CreatedVia = 'passkey' | 'manual' | 'recovery' | 'start_fresh'
 
-function randomIdempotencyKey(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  let out = ''
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, '0')
-  }
-  return out
-}
-
 function failureFromPasskeyError(err: unknown): PasskeyFlowFailure {
   if (!err || typeof err !== 'object') return 'user_cancelled'
   const name = (err as { name?: string }).name
@@ -123,7 +114,6 @@ function failureFromEnclaveError(err: unknown): PasskeyFlowFailure {
 
 export async function registerNewKeyWithPasskey(opts: {
   user: PasskeyUserInfo
-  startFresh?: boolean
   createdVia?: CreatedVia
 }): Promise<PasskeyFlowResult> {
   let passkey: PrfPasskeyResult | null
@@ -152,9 +142,14 @@ export async function registerNewKeyWithPasskey(opts: {
   try {
     await enclaveRegisterKey({
       keyB64: hexToB64(cekHex),
-      ifMatch: opts.startFresh ? '*' : '*',
+      // The enclave's register-key endpoint requires If-Match on every
+      // request; '*' is "create if absent, otherwise CAS-fail". For the
+      // new-user flow we always want create-or-fail semantics so a
+      // concurrent registration on another device cannot silently
+      // overwrite a freshly-minted CEK.
+      ifMatch: '*',
       createdVia: opts.createdVia ?? 'passkey',
-      idempotencyKey: randomIdempotencyKey(),
+      idempotencyKey: newIdempotencyKey(),
       initialBundle: {
         credentialId: bundle.credentialId,
         kekIvHex: bundle.kekIvHex,
