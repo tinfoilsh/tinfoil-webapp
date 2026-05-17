@@ -6,10 +6,7 @@ import {
   newIdempotencyKey,
   pullItemPlaintext,
 } from '../sync-enclave/sync-api'
-import {
-  pullKeysFromEncryptionService,
-  requirePrimaryKeyB64,
-} from './cek-encoding'
+import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
 
 const API_BASE_URL =
@@ -89,7 +86,7 @@ export class ProfileSyncService {
         return null
       }
 
-      const keys = pullKeysFromEncryptionService()
+      const keys = pullKey()
       if (keys.length === 0) return null
 
       const resp = await enclavePull({

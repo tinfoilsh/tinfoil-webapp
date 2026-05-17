@@ -19,10 +19,7 @@ import {
   pullItemPlaintext,
   type ListStatusUpdate,
 } from '../sync-enclave/sync-api'
-import {
-  pullKeysFromEncryptionService,
-  requirePrimaryKeyB64,
-} from './cek-encoding'
+import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import { processRemoteChat, type RemoteChatData } from './chat-codec'
 
 const API_BASE_URL =
@@ -294,7 +291,7 @@ export class CloudStorageService {
    * Returns v0 JSON string or v1 binary ArrayBuffer based on X-Format-Version header.
    */
   async fetchRawChatContent(chatId: string): Promise<RawChatContent | null> {
-    const keys = pullKeysFromEncryptionService()
+    const keys = pullKey()
     if (keys.length === 0) return null
 
     const resp = await enclavePull({
@@ -473,7 +470,7 @@ export class CloudStorageService {
   private async attachInlineContent(
     conversations: ChatListResponse['conversations'],
   ): Promise<void> {
-    const keys = pullKeysFromEncryptionService()
+    const keys = pullKey()
     if (keys.length === 0) return
     const pulled = await enclavePull({
       scope: 'chat',

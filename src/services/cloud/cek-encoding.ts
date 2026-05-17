@@ -20,12 +20,26 @@ export function requirePrimaryKeyB64(): string {
 }
 
 /**
- * Build the `keys` array the enclave `pull` and `migrate` endpoints
- * accept: the primary CEK first, then every alternative (history)
- * key the local service still has on file, base64-encoded. The
- * enclave tries them in order when unsealing legacy v0/v1 blobs.
+ * Build the `keys` array for the steady-state read path: only the
+ * caller's current primary CEK. v2 rows are sealed under the primary
+ * and decrypt cleanly here; anything that doesn't decrypt is treated
+ * as UNKNOWN_KEY by the enclave instead of silently trying historical
+ * keys. The migration sweep is the only path that needs alternatives.
  */
-export function pullKeysFromEncryptionService(): PullKey[] {
+export function pullKey(): PullKey[] {
+  return [{ key: requirePrimaryKeyB64() }]
+}
+
+/**
+ * Build the `keys` array for the migration path: primary first, then
+ * every alternative (history) key the local service still has on
+ * file, base64-encoded. The enclave tries each in turn when
+ * unsealing legacy v0/v1 blobs and uses `keys[0]` as the rewrap
+ * target. Once the one-shot sweep reports `fullyMigrated`, the
+ * alternatives are cleared from local state and this helper
+ * collapses to the same shape as `pullKey()`.
+ */
+export function migrationKeys(): PullKey[] {
   const all = encryptionService.getAllKeys()
   const out: PullKey[] = []
   if (all.primary) {

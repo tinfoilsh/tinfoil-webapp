@@ -66,7 +66,11 @@ export interface PullRequest {
   all?: boolean
   cursor?: string
   limit?: number
-  /** One or more candidate decryption keys. The enclave tries each in order. */
+  /** Candidate decryption keys, in priority order. The enclave tries
+   *  each one when unsealing v0/v1 rows and uses `keys[0]` as the
+   *  rewrap target so legacy rows are promoted to v2 inline before
+   *  the response is returned — callers don't have to opt in.
+   */
   keys: PullKey[]
 }
 

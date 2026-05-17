@@ -21,7 +21,7 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
 
 vi.mock('@/services/cloud/cek-encoding', () => ({
   requirePrimaryKeyB64: () => mockRequirePrimaryKeyB64(),
-  pullKeysFromEncryptionService: () => mockPullKeys(),
+  migrationKeys: () => mockPullKeys(),
 }))
 
 const mockClearFallbackKeys = vi.fn()

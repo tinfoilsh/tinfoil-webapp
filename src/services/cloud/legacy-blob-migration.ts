@@ -14,11 +14,13 @@
  * client-side blast radius without papering over an infinite loop
  * on an enclave-side regression.
  *
- * The candidate-key set is exactly what `pullKeysFromEncryptionService`
- * already builds for the read path: primary first, then every
- * alternative the client still holds. The target is always the
- * current primary CEK — even when nothing rotates, the operation is
- * a no-op for rows already sealed under the primary.
+ * The candidate-key set is `migrationKeys()`: primary first, then
+ * every alternative the client still holds. The steady-state read
+ * path uses `pullKey()` (primary only) so historical CEKs are only
+ * shipped to the enclave on this one path that actually needs them.
+ * The target is always the current primary CEK — even when nothing
+ * rotates, the operation is a no-op for rows already sealed under
+ * the primary.
  */
 
 import { logError, logInfo } from '@/utils/error-handling'
@@ -29,10 +31,7 @@ import {
   type MigrateAllScopeReport,
   type Scope,
 } from '../sync-enclave/sync-api'
-import {
-  pullKeysFromEncryptionService,
-  requirePrimaryKeyB64,
-} from './cek-encoding'
+import { migrationKeys, requirePrimaryKeyB64 } from './cek-encoding'
 
 const MIGRATE_ALL_MAX_PASSES = 2
 
@@ -110,7 +109,7 @@ function toReport(scopes: Map<Scope, ScopeMigrationResult>): MigrationReport {
  */
 export async function runLegacyBlobMigration(): Promise<MigrationReport> {
   const target = { key: requirePrimaryKeyB64() }
-  const keys = pullKeysFromEncryptionService()
+  const keys = migrationKeys()
   const accumulator = new Map<Scope, ScopeMigrationResult>()
 
   let lastResp: MigrateAllResponse | undefined

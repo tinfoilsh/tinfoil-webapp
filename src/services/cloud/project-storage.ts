@@ -21,10 +21,7 @@ import {
   newIdempotencyKey,
   pullItemPlaintext,
 } from '../sync-enclave/sync-api'
-import {
-  pullKeysFromEncryptionService,
-  requirePrimaryKeyB64,
-} from './cek-encoding'
+import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import { canWriteToCloud } from './cloud-key-authorization'
 
 const API_BASE_URL =
@@ -151,7 +148,7 @@ export class ProjectStorageService {
 
   async getProject(projectId: string): Promise<Project | null> {
     try {
-      const keys = pullKeysFromEncryptionService()
+      const keys = pullKey()
       if (keys.length === 0) return null
 
       const resp = await enclavePull({
@@ -367,7 +364,7 @@ export class ProjectStorageService {
     documentId: string,
   ): Promise<ProjectDocument | null> {
     try {
-      const keys = pullKeysFromEncryptionService()
+      const keys = pullKey()
       if (keys.length === 0) return null
 
       const resp = await enclavePull({
