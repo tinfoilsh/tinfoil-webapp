@@ -64,7 +64,6 @@ export class ProfileSyncService {
     return data.data as string
   }
 
-  // Get profile from cloud
   async fetchProfile(): Promise<ProfileData | null> {
     try {
       const payload = await this.fetchEncryptedProfilePayload()
@@ -76,12 +75,10 @@ export class ProfileSyncService {
         return null
       }
 
-      // Try to decrypt the profile data
       try {
         const encrypted = JSON.parse(payload)
         const decrypted = await encryptionService.decrypt(encrypted)
 
-        // Cache the decrypted profile
         this.cachedProfile = decrypted
         this.failedDecryptionData = null
 
@@ -137,7 +134,6 @@ export class ProfileSyncService {
     }
   }
 
-  // Save profile to cloud
   async saveProfile(
     profile: ProfileData,
   ): Promise<{ success: boolean; version?: number }> {
@@ -160,14 +156,12 @@ export class ProfileSyncService {
         },
       })
 
-      // Add metadata
       const profileWithMetadata: ProfileData = {
         ...profile,
         updatedAt: new Date().toISOString(),
         version: (profile.version || 0) + 1,
       }
 
-      // Encrypt the profile data
       const encrypted = await encryptionService.encrypt(profileWithMetadata)
 
       logInfo('Encrypted profile data', {
@@ -198,7 +192,6 @@ export class ProfileSyncService {
         throw new Error(`Failed to save profile: ${response.statusText}`)
       }
 
-      // Update cache
       this.cachedProfile = profileWithMetadata
 
       logInfo('Profile saved successfully', {
@@ -233,7 +226,6 @@ export class ProfileSyncService {
     }
   }
 
-  // Retry decryption with new key
   async retryDecryptionWithNewKey(): Promise<ProfileData | null> {
     if (!this.failedDecryptionData) {
       return null
@@ -243,7 +235,6 @@ export class ProfileSyncService {
       const encrypted = JSON.parse(this.failedDecryptionData)
       const decrypted = await encryptionService.decrypt(encrypted)
 
-      // Cache the successfully decrypted profile
       this.cachedProfile = decrypted
       this.failedDecryptionData = null
 
@@ -272,7 +263,6 @@ export class ProfileSyncService {
     return this.failedDecryptionData !== null
   }
 
-  // Clear cache
   clearCache(): void {
     this.cachedProfile = null
     this.failedDecryptionData = null

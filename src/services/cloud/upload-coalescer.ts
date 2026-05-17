@@ -104,10 +104,8 @@ export class UploadCoalescer {
       this.states.set(chatId, state)
     }
 
-    // Mark as dirty (needs upload)
     state.dirty = true
 
-    // If no upload in progress, start the worker
     if (!state.inFlight) {
       this.startWorker(chatId, state)
     }
@@ -121,18 +119,15 @@ export class UploadCoalescer {
     const workerGeneration = this.generation
     const workerPromise = (async () => {
       while (state.dirty && workerGeneration === this.generation) {
-        // Clear dirty flag before upload
         state.dirty = false
 
         try {
           await this.uploadWithRetry(chatId, state)
-          // Success - reset failure count
           state.failureCount = 0
           state.lastError = null
         } catch (error) {
           const uploadError =
             error instanceof Error ? error : new Error(String(error))
-          // Upload failed after all retries
           state.failureCount++
           state.lastError = uploadError
           logError('Upload failed after retries', error, {
@@ -150,7 +145,6 @@ export class UploadCoalescer {
         }
       }
 
-      // Worker done - clear in-flight promise
       state.inFlight = null
 
       const resultWaiters = state.resultWaiters.splice(0)
@@ -206,12 +200,10 @@ export class UploadCoalescer {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error))
 
-        // Don't retry on final attempt
         if (attempt === this.config.maxRetries) {
           break
         }
 
-        // Calculate backoff delay
         const delay = Math.min(
           this.config.baseDelayMs * Math.pow(2, attempt),
           this.config.maxDelayMs,
@@ -229,10 +221,8 @@ export class UploadCoalescer {
           },
         })
 
-        // Wait before retry
         await this.sleep(delay)
 
-        // Check if new changes came in during wait
         if (state.dirty) {
           // New changes - let the outer loop handle it with fresh data
           return
@@ -240,13 +230,9 @@ export class UploadCoalescer {
       }
     }
 
-    // All retries exhausted
     throw lastError ?? new Error('Upload failed')
   }
 
-  /**
-   * Sleep for a specified duration.
-   */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }

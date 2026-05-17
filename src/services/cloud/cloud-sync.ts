@@ -64,7 +64,6 @@ export class CloudSyncService {
   private projectSyncCaches = new Map<string, SyncStatusCache<ChatSyncStatus>>()
 
   constructor() {
-    // Initialize upload coalescer with doBackupChat as the upload function
     this.uploadCoalescer = new UploadCoalescer(
       (chatId) => this.doBackupChat(chatId),
       {
@@ -77,12 +76,10 @@ export class CloudSyncService {
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', (e) => {
         if (e.key === SYNC_CHAT_STATUS) {
-          // Another tab updated sync status, invalidate our cache
           this.chatSyncCache.invalidate()
         } else if (e.key === SYNC_ALL_CHATS_STATUS) {
           this.allChatsSyncCache.invalidate()
         } else if (e.key?.startsWith(SYNC_PROJECT_CHAT_STATUS_PREFIX)) {
-          // Another tab updated project sync status, invalidate that project's cache
           const projectId = e.key.slice(SYNC_PROJECT_CHAT_STATUS_PREFIX.length)
           const existingCache = this.projectSyncCaches.get(projectId)
           if (existingCache) {
@@ -110,7 +107,6 @@ export class CloudSyncService {
    * Throws if a sync is already in progress.
    */
   private async withSyncLock<T>(fn: () => Promise<T>): Promise<T> {
-    // Check if sync is already in progress (atomic check)
     if (this.syncLock) {
       logInfo('[CloudSync] Sync already in progress, skipping', {
         component: 'CloudSync',
@@ -119,7 +115,6 @@ export class CloudSyncService {
       throw new Error('Sync already in progress')
     }
 
-    // Acquire lock
     let resolve: () => void
     this.syncLock = new Promise<void>((r) => {
       resolve = r
@@ -129,7 +124,6 @@ export class CloudSyncService {
     try {
       return await fn()
     } finally {
-      // Release lock
       this.syncLock = null
       if (this.syncLockResolve) {
         this.syncLockResolve()
@@ -148,10 +142,8 @@ export class CloudSyncService {
     }
 
     try {
-      // First check if we have local unsynced changes
       const unsyncedChats = await indexedDBStorage.getUnsyncedChats()
       const chatsNeedingUpload = unsyncedChats.filter((chat) => {
-        // Filter by project if specified
         if (projectId) {
           if (chat.projectId !== projectId) return false
         } else {
@@ -169,17 +161,14 @@ export class CloudSyncService {
         }
       }
 
-      // Fetch remote sync status
       const remoteStatus = projectId
         ? await projectStorage.getProjectChatsSyncStatus(projectId)
         : await cloudStorage.getChatSyncStatus()
 
-      // Get cached status
       const cachedStatus = projectId
         ? this.getProjectSyncCache(projectId).load()
         : this.chatSyncCache.load()
 
-      // If no cached status, we need a full sync
       if (!cachedStatus) {
         return {
           needsSync: true,
@@ -201,7 +190,6 @@ export class CloudSyncService {
         },
       })
 
-      // Compare count
       if (remoteStatus.count !== cachedStatus.count) {
         return {
           needsSync: true,
@@ -211,7 +199,6 @@ export class CloudSyncService {
         }
       }
 
-      // Compare lastUpdated timestamps
       if (remoteStatus.lastUpdated !== cachedStatus.lastUpdated) {
         return {
           needsSync: true,
@@ -221,7 +208,6 @@ export class CloudSyncService {
         }
       }
 
-      // No changes detected
       return {
         needsSync: false,
         reason: 'no_changes',
@@ -248,7 +234,6 @@ export class CloudSyncService {
 
       const remoteAllStatus = await cloudStorage.getAllChatsSyncStatus()
 
-      // If nothing changed globally, skip
       if (
         cachedAllStatus &&
         remoteAllStatus.count === cachedAllStatus.count &&
@@ -286,14 +271,12 @@ export class CloudSyncService {
           const localProjectId = localChat?.projectId ?? undefined
 
           if (localChat && remoteProjectId !== localProjectId) {
-            // Project assignment changed — update local state
             await indexedDBStorage.updateChatProject(
               remoteChat.id,
               remoteChat.projectId ?? null,
             )
             changedIds.push(remoteChat.id)
           } else if (!localChat && remoteChat.content) {
-            // New chat we don't have locally — ingest it
             const ingestResult = await ingestRemoteChats([remoteChat], {
               fetchMissingContent: true,
               projectId: remoteChat.projectId ?? undefined,
@@ -329,7 +312,6 @@ export class CloudSyncService {
     }
   }
 
-  // Perform a delta sync - only fetch chats that changed since last sync
   async syncChangedChats(): Promise<SyncResult> {
     return this.withSyncLock(() => this.doSyncChangedChats())
   }
@@ -353,7 +335,6 @@ export class CloudSyncService {
         await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncChangedChats')
       }
 
-      // Backup any unsynced local changes
       const backupResult = await this.backupUnsyncedChats()
       result.uploaded = backupResult.uploaded
       result.errors.push(...backupResult.errors)
@@ -423,7 +404,6 @@ export class CloudSyncService {
         continuationToken = updatedChats.nextContinuationToken
       }
 
-      // Update cached sync status
       try {
         const newStatus = await cloudStorage.getChatSyncStatus()
         this.chatSyncCache.save(newStatus)
@@ -457,7 +437,6 @@ export class CloudSyncService {
 
   // Backup a single chat to the cloud with coalescing and retry
   async backupChat(chatId: string): Promise<void> {
-    // Don't attempt backup if not authenticated
     if (!(await cloudStorage.isAuthenticated())) {
       return
     }
@@ -530,9 +509,7 @@ export class CloudSyncService {
         return
       }
 
-      // Check if chat is currently streaming
       if (streamingTracker.isStreaming(chatId)) {
-        // Check if we already have a callback registered for this chat
         if (this.streamingCallbacks.has(chatId)) {
           logInfo('Streaming callback already registered for chat', {
             component: 'CloudSync',
@@ -548,12 +525,9 @@ export class CloudSyncService {
           metadata: { chatId },
         })
 
-        // Mark that we have a callback registered
         this.streamingCallbacks.add(chatId)
 
-        // Register to sync once streaming ends
         streamingTracker.onStreamEnd(chatId, () => {
-          // Remove from tracking set
           this.streamingCallbacks.delete(chatId)
 
           logInfo('Streaming ended, triggering delayed sync', {
@@ -561,7 +535,6 @@ export class CloudSyncService {
             action: 'backupChat',
             metadata: { chatId },
           })
-          // Re-trigger the backup after streaming ends.
           // Errors are handled internally by the upload coalescer.
           this.backupChat(chatId)
         })
@@ -603,7 +576,6 @@ export class CloudSyncService {
 
       await cloudStorage.uploadChat(chat)
 
-      // Mark as synced with incremented version
       const newVersion = (chat.syncVersion ?? 0) + 1
       await indexedDBStorage.markAsSynced(chatId, newVersion)
     } catch (error) {
@@ -618,7 +590,6 @@ export class CloudSyncService {
     }
   }
 
-  // Backup all unsynced chats
   async backupUnsyncedChats(): Promise<SyncResult> {
     const result: SyncResult = {
       uploaded: 0,
@@ -633,7 +604,6 @@ export class CloudSyncService {
     try {
       const unsyncedChats = await indexedDBStorage.getUnsyncedChats()
 
-      // Debug logging
       logInfo(`Found unsynced chats: ${unsyncedChats.length}`, {
         component: 'CloudSync',
         action: 'backupUnsyncedChats',
@@ -756,12 +726,10 @@ export class CloudSyncService {
         await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncAllChats')
       }
 
-      // Backup any unsynced local changes
       const backupResult = await this.backupUnsyncedChats()
       result.uploaded = backupResult.uploaded
       result.errors.push(...backupResult.errors)
 
-      // Then, get list of remote chats with content
       const remoteList = await this.listChatsWithRetry({
         includeContent: true,
         limit: PAGINATION.CHATS_PER_PAGE,
@@ -792,7 +760,6 @@ export class CloudSyncService {
       result.downloaded += ingestResult.downloaded
       result.errors.push(...ingestResult.errors)
 
-      // Update cached sync status after successful sync
       try {
         const newStatus = await cloudStorage.getChatSyncStatus()
         this.chatSyncCache.save(newStatus)
@@ -864,14 +831,11 @@ export class CloudSyncService {
     return projectId ? this.syncProjectChats(projectId) : this.syncAllChats()
   }
 
-  // Check if currently syncing
   get syncing(): boolean {
     return this.syncLock !== null
   }
 
-  // Delete a chat from cloud storage
   async deleteFromCloud(chatId: string): Promise<void> {
-    // Don't attempt deletion if not authenticated
     if (!(await cloudStorage.isAuthenticated())) {
       return
     }
@@ -900,7 +864,6 @@ export class CloudSyncService {
     }
   }
 
-  // Update a chat's project association on the server
   async updateChatProject(
     chatId: string,
     projectId: string | null,
@@ -948,7 +911,6 @@ export class CloudSyncService {
   }): Promise<PaginatedChatsResult> {
     const { limit, continuationToken, loadLocal = true } = options
 
-    // If no authentication, just return local chats
     if (!(await cloudStorage.isAuthenticated())) {
       if (loadLocal) {
         return this.paginateLocalChats(limit, continuationToken)
@@ -964,13 +926,10 @@ export class CloudSyncService {
         includeContent: true,
       })
 
-      // Process the chat data from each remote chat in parallel
       const downloadedChats: StoredChat[] = []
       const chatsToProcess = remoteList.conversations || []
 
-      // Process all chats in parallel for better performance
       const processPromises = chatsToProcess.map(async (remoteChat) => {
-        // Skip if this chat was recently deleted
         if (deletedChatsTracker.isDeleted(remoteChat.id)) {
           logInfo('Skipping load for recently deleted chat', {
             component: 'CloudSync',
@@ -995,10 +954,8 @@ export class CloudSyncService {
         }
       })
 
-      // Wait for all decryptions to complete
       const results = await Promise.all(processPromises)
 
-      // Filter out nulls and add to downloadedChats
       for (const chat of results) {
         if (chat) {
           downloadedChats.push(chat)
@@ -1025,7 +982,6 @@ export class CloudSyncService {
     }
   }
 
-  // Retry decryption for chats that failed to decrypt
   async retryDecryptionWithNewKey(
     options: {
       onProgress?: (current: number, total: number) => void
@@ -1051,7 +1007,6 @@ export class CloudSyncService {
   }): Promise<{ hasMore: boolean; nextToken?: string; saved: number }> {
     const { limit, continuationToken } = options
 
-    // Only operate when authenticated
     if (!(await cloudStorage.isAuthenticated())) {
       return { hasMore: false, saved: 0 }
     }
@@ -1170,7 +1125,6 @@ export class CloudSyncService {
         },
       })
 
-      // Update cached sync status after successful sync
       try {
         const newStatus =
           await projectStorage.getProjectChatsSyncStatus(projectId)
@@ -1219,7 +1173,6 @@ export class CloudSyncService {
     }
 
     try {
-      // First, backup any unsynced local project chats
       const unsyncedChats = await indexedDBStorage.getUnsyncedChats()
       const projectChatsToSync = unsyncedChats.filter(
         (chat) =>
@@ -1278,7 +1231,6 @@ export class CloudSyncService {
             action: 'syncProjectChatsChanged',
             metadata: { projectId, since: cachedStatus.lastUpdated },
           })
-          // Update the cached status
           try {
             const newStatus =
               await projectStorage.getProjectChatsSyncStatus(projectId)
@@ -1314,13 +1266,11 @@ export class CloudSyncService {
         result.downloaded += ingestResult.downloaded
         result.errors.push(...ingestResult.errors)
 
-        // Check if there are more pages
         hasMore =
           updatedChats.hasMore === true && !!updatedChats.nextContinuationToken
         cursorId = updatedChats.nextContinuationToken
       }
 
-      // Update cached sync status
       try {
         const newStatus =
           await projectStorage.getProjectChatsSyncStatus(projectId)
