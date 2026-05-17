@@ -1,7 +1,6 @@
 import { lazy, Suspense } from 'react'
 import type { IconBaseProps } from 'react-icons'
 
-// Lazy load individual icons
 const AiOutlineCloudSyncLazy = lazy(() =>
   import('react-icons/ai').then((m) => ({ default: m.AiOutlineCloudSync })),
 )
@@ -26,7 +25,6 @@ const PiSpinnerThinLazy = lazy(() =>
   import('react-icons/pi').then((m) => ({ default: m.PiSpinnerThin })),
 )
 
-// File icons from react-icons/fa
 const FaFileLazy = lazy(() =>
   import('react-icons/fa').then((m) => ({ default: m.FaFile })),
 )
@@ -61,7 +59,6 @@ const FaFileAltLazy = lazy(() =>
   import('react-icons/fa').then((m) => ({ default: m.FaFileAlt })),
 )
 
-// Icon wrapper component
 function IconWrapper({ Icon, ...props }: { Icon: any } & IconBaseProps) {
   return (
     <Suspense
@@ -76,7 +73,6 @@ function IconWrapper({ Icon, ...props }: { Icon: any } & IconBaseProps) {
   )
 }
 
-// Export wrapped icons
 export const AiOutlineCloudSync = (props: IconBaseProps) => (
   <IconWrapper Icon={AiOutlineCloudSyncLazy} {...props} />
 )

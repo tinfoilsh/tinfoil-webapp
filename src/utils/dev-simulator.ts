@@ -545,7 +545,6 @@ export async function* simulateStream(
   yield 'data: [DONE]\n\n'
 }
 
-// Helper to chunk text
 function chunkText(text: string, chunkSize: number): string[] {
   const chunks: string[] = []
   for (let i = 0; i < text.length; i += chunkSize) {
@@ -554,7 +553,6 @@ function chunkText(text: string, chunkSize: number): string[] {
   return chunks
 }
 
-// Helper to escape JSON strings
 function escapeJson(str: string): string {
   return str
     .replace(/\\/g, '\\\\')

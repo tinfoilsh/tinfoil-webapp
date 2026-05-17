@@ -5,7 +5,6 @@ import * as React from 'react'
 
 import { cn } from './utils'
 
-// Define available toast positions
 export type ToastPosition =
   | 'top-left'
   | 'top-center'
@@ -14,11 +13,11 @@ export type ToastPosition =
   | 'bottom-center'
   | 'bottom-right'
 
-// Create a context to store and provide the position configuration
 const ToastPositionContext = React.createContext<ToastPosition>('bottom-right')
 
-interface ToastProviderProps
-  extends React.ComponentPropsWithoutRef<typeof ToastPrimitives.Provider> {
+interface ToastProviderProps extends React.ComponentPropsWithoutRef<
+  typeof ToastPrimitives.Provider
+> {
   position?: ToastPosition
   children: React.ReactNode
 }
@@ -35,7 +34,6 @@ const ToastProvider = ({
   )
 }
 
-// Hook to use the toast position
 const useToastPosition = () => React.useContext(ToastPositionContext)
 
 const ToastViewport = React.forwardRef<
@@ -44,7 +42,6 @@ const ToastViewport = React.forwardRef<
 >(({ className, ...props }, ref) => {
   const position = useToastPosition()
 
-  // Generate position-specific classes
   const positionClasses = {
     'top-left': 'top-0 left-0 flex-col-reverse',
     'top-center': 'top-0 left-1/2 -translate-x-1/2 flex-col-reverse',
@@ -68,7 +65,6 @@ const ToastViewport = React.forwardRef<
 })
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 
-// Update toast variants to handle animations based on position
 const TOAST_VARIANTS = cva(
   'group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80',
   {
@@ -92,7 +88,6 @@ const Toast = React.forwardRef<
 >(({ className, variant, ...props }, ref) => {
   const position = useToastPosition()
 
-  // Define animation classes based on position
   const animationClasses = {
     'top-left':
       'data-[state=closed]:slide-out-to-left-full data-[state=open]:slide-in-from-left-full',

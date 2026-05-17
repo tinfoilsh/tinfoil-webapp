@@ -76,7 +76,6 @@ export function useProfileSync() {
   const syncFromCloud = useCallback(async () => {
     if (!isSignedIn || !isCloudSyncEnabled()) return
 
-    // Skip sync if we have pending local changes
     if (hasLocalProfileChanges()) {
       logInfo('Skipping cloud sync - local changes pending', {
         component: 'ProfileSync',
@@ -101,9 +100,7 @@ export function useProfileSync() {
           return
         }
 
-        // Check if the cloud profile is actually different from what we have
         if (hasProfileChanged(cloudProfile, lastSyncedProfile.current)) {
-          // Apply cloud settings to localStorage
           isApplyingRemoteProfile.current = true
           try {
             applySettingsToLocal(cloudProfile)
@@ -138,13 +135,11 @@ export function useProfileSync() {
   const smartSyncFromCloud = useCallback(async () => {
     if (!isSignedIn || !isCloudSyncEnabled()) return
 
-    // Skip sync if we have pending local changes
     if (hasLocalProfileChanges()) {
       return
     }
 
     try {
-      // Get remote sync status
       const remoteStatus = await profileSync.getSyncStatus()
 
       if (!remoteStatus) {
@@ -156,10 +151,8 @@ export function useProfileSync() {
         return
       }
 
-      // Get cached status
       const cached = profileSyncCache.current.load()
 
-      // Check if we need to sync
       const needsSync =
         !cached ||
         !cached.exists ||
@@ -200,7 +193,6 @@ export function useProfileSync() {
           return
         }
 
-        // Apply if changed
         if (hasProfileChanged(cloudProfile, lastSyncedProfile.current)) {
           isApplyingRemoteProfile.current = true
           try {
@@ -228,7 +220,6 @@ export function useProfileSync() {
   const syncToCloud = useCallback(async () => {
     if (!isSignedIn || !isCloudSyncEnabled()) return
 
-    // Clear any existing debounce timer
     if (syncDebounceTimer.current) {
       clearTimeout(syncDebounceTimer.current)
     }
@@ -252,7 +243,6 @@ export function useProfileSync() {
 
         const localSettings = loadLocalSettings()
 
-        // Check if local settings are different from last synced profile
         if (!hasProfileChanged(localSettings, lastSyncedProfile.current)) {
           logInfo('Skipping cloud sync - no changes detected', {
             component: 'ProfileSync',
@@ -366,7 +356,6 @@ export function useProfileSync() {
       syncToCloud()
     }
 
-    // Listen for all settings change events
     const events = [
       'themeChanged',
       'maxPromptMessagesChanged',
@@ -384,7 +373,6 @@ export function useProfileSync() {
         window.removeEventListener(event, handleSettingsChange)
       })
 
-      // Clear debounce timer on cleanup
       if (syncDebounceTimer.current) {
         clearTimeout(syncDebounceTimer.current)
       }

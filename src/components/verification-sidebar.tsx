@@ -43,13 +43,11 @@ export function VerifierSidebar({
   const isRetryingRef = useRef(false)
 
   const fetchVerificationDocument = useCallback(async () => {
-    // Prevent concurrent retry attempts
     if (isRetryingRef.current) return
     isRetryingRef.current = true
     retryCountRef.current = 0
 
     const attemptFetch = async (): Promise<boolean> => {
-      // Check internet connection
       if (!isOnline()) {
         logInfo('No internet connection, waiting to retry verification', {
           component: 'VerifierSidebar',
@@ -82,10 +80,8 @@ export function VerifierSidebar({
       }
     }
 
-    // Try initial fetch
     let success = await attemptFetch()
 
-    // Retry with exponential backoff if initial attempt failed
     while (
       !success &&
       retryCountRef.current < CONSTANTS.VERIFICATION_MAX_RETRIES
@@ -112,7 +108,6 @@ export function VerifierSidebar({
     isRetryingRef.current = false
   }, [onVerificationUpdate, onVerificationComplete])
 
-  // Handle messages from iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== VERIFICATION_CENTER_ORIGIN) return
@@ -148,14 +143,12 @@ export function VerifierSidebar({
     return () => timers.forEach(clearTimeout)
   }, [isReady, verificationDocument])
 
-  // Fetch verification document when sidebar opens
   useEffect(() => {
     if (isOpen && isClient) {
       fetchVerificationDocument()
     }
   }, [isOpen, isClient, fetchVerificationDocument])
 
-  // Control open/close state
   useEffect(() => {
     if (isReady && iframeRef.current) {
       const message = isOpen
@@ -172,14 +165,12 @@ export function VerifierSidebar({
 
   return (
     <>
-      {/* Right Sidebar wrapper */}
       <div
         className={`${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         } fixed right-0 top-0 z-40 flex h-full w-[85vw] overflow-hidden border-l border-border-subtle bg-surface-sidebar font-aeonik transition-all duration-200 ease-in-out`}
         style={{ maxWidth: `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX}px` }}
       >
-        {/* Verification Center iframe */}
         {isClient && (
           <iframe
             ref={iframeRef}
@@ -191,7 +182,6 @@ export function VerifierSidebar({
           />
         )}
 
-        {/* Close button overlay */}
         <div className="absolute right-0 top-0 flex items-center justify-end p-4">
           <button
             onClick={() => setIsOpen(false)}
@@ -202,7 +192,6 @@ export function VerifierSidebar({
         </div>
       </div>
 
-      {/* Mobile overlay */}
       {isOpen && (
         <div
           className="fixed inset-0 z-30 bg-black/50 md:hidden"

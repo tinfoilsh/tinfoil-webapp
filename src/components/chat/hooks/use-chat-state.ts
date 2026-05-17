@@ -283,7 +283,6 @@ export function useChatState({
         // Only create a new chat if there are no chats
         createNewChat()
       } else {
-        // Just ensure loading state is cleared
         setIsInitialLoad(false)
       }
     }

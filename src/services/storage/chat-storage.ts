@@ -113,7 +113,6 @@ export class ChatStorageService {
   }
 
   async saveChatAndSync(chat: Chat): Promise<Chat> {
-    // Just use the regular saveChat method with sync enabled
     return await this.saveChat(chat, false)
   }
 

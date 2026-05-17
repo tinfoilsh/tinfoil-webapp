@@ -423,7 +423,6 @@ export function ChatInterface({
   })
   updatePasskeyBackupRef.current = updatePasskeyBackup
 
-  // Initialize profile sync
   const {
     retryDecryption: retryProfileDecryption,
     syncFromCloud: syncProfileFromCloud,
@@ -541,10 +540,8 @@ export function ChatInterface({
   // State for tracking verification document
   const [verificationDocument, setVerificationDocument] = useState<any>(null)
 
-  // Get the user's email
   const userEmail = user?.primaryEmailAddress?.emailAddress || ''
 
-  // Use subscription status from hook
   const isPremium = chat_subscription_active ?? false
 
   // Load projects for move to project functionality
@@ -566,7 +563,6 @@ export function ChatInterface({
   const modKey = isMac ? '⌘' : 'Ctrl+'
   const shiftKey = isMac ? '⇧' : 'Shift+'
 
-  // Use custom system prompt hook
   const { effectiveSystemPrompt, processedRules } = useCustomSystemPrompt(
     systemPrompt,
     rules,
@@ -601,7 +597,6 @@ export function ChatInterface({
   // Combine prop and router detection for local chat URL
   const isLocalChatUrl = isLocalChatUrlProp || isLocalChatUrlFromRouter
 
-  // Initialize renderers on mount
   useEffect(() => {
     initializeRenderers()
   }, [])
@@ -960,9 +955,8 @@ export function ChatInterface({
   useEffect(() => {
     const initTinfoil = async () => {
       try {
-        const { getVerificationDocument } = await import(
-          '@/services/inference/tinfoil-client'
-        )
+        const { getVerificationDocument } =
+          await import('@/services/inference/tinfoil-client')
         const doc = await getVerificationDocument()
         if (doc) {
           setVerificationDocument(doc)
@@ -1658,9 +1652,6 @@ export function ChatInterface({
     [reloadChats, toast],
   )
 
-  // Don't automatically create new chats - let the chat state handle initialization
-  // This effect has been removed to prevent unnecessary chat creation
-
   // Helper to process file and add to chat attachments
   const processFileForChat = useCallback(
     async (file: File) => {
@@ -2228,9 +2219,6 @@ export function ChatInterface({
       wasThinking: nowThinkingish || Boolean(prev?.wasThinking),
     }
   }, [currentChat?.messages])
-
-  // Removed all automatic scroll behaviors during streaming. Scrolling now only occurs
-  // via the explicit button or when a chat is loaded/switched.
 
   // Show loading while auth or config is still loading
   const needsAuthLoading = (initialChatId || initialProjectId) && !isAuthLoaded

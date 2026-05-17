@@ -6,13 +6,11 @@ export const DefaultInputRenderer: InputRenderer = {
   canRender: () => true,
 
   render: (props: InputRenderProps) => {
-    // Wrap the existing ChatInput component
-    // ChatInput expects handleSubmit to be (e: FormEvent) => void
-    // but our onSubmit is more complex, so we need to wrap it
+    // ChatInput expects an (e: FormEvent) => void handler, while
+    // InputRenderer.onSubmit takes the message content. Bridge the two and
+    // let the parent attach processed documents from its own state.
     const handleSubmit = (e: React.FormEvent) => {
       e.preventDefault()
-      // For now, just pass the input text
-      // The actual document handling will be done in the parent component
       props.onSubmit(props.input)
     }
 

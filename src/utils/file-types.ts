@@ -137,43 +137,36 @@ export function isPlainTextFile(filename: string): boolean {
 export function getFileIconType(filename: string): string {
   const lowerFilename = filename.toLowerCase()
 
-  // Check document types
   for (const [type, extensions] of Object.entries(DOCUMENT_EXTENSIONS)) {
     if (extensions.some((ext) => lowerFilename.endsWith(ext))) {
       return type
     }
   }
 
-  // Check if it's an image
   if (hasImageExtension(filename)) {
     return 'image'
   }
 
-  // Check media types
   for (const [type, extensions] of Object.entries(MEDIA_EXTENSIONS)) {
     if (extensions.some((ext) => lowerFilename.endsWith(ext))) {
       return type
     }
   }
 
-  // Check financial types
   if (FINANCIAL_EXTENSIONS.some((ext) => lowerFilename.endsWith(ext))) {
     return 'csv'
   }
 
-  // Check archive types
   if (ARCHIVE_EXTENSIONS.some((ext) => lowerFilename.endsWith(ext))) {
     return 'zip'
   }
 
-  // Check code types
   for (const [type, extensions] of Object.entries(CODE_EXTENSIONS)) {
     if (extensions.some((ext) => lowerFilename.endsWith(ext))) {
       return type
     }
   }
 
-  // Default
   return 'file'
 }
 

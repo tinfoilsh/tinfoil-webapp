@@ -1,4 +1,3 @@
-// This builds upon your existing hooks implementation
 import type {
   ToastActionElement,
   ToastPosition,
@@ -75,10 +74,8 @@ const addToRemoveQueue = (toastId: string) => {
   toastTimeouts.set(toastId, timeout)
 }
 
-// Initialize state with position
 let memoryState: State = { toasts: [], position: 'bottom-right' }
 
-// Update setToastPosition to update state
 export function setToastPosition(position: ToastPosition) {
   dispatch({
     type: 'UPDATE_POSITION',
@@ -86,7 +83,6 @@ export function setToastPosition(position: ToastPosition) {
   })
 }
 
-// Update reducer to handle position
 export const reducer = (state: State, action: Action): State => {
   switch (action.type) {
     case 'ADD_TOAST':
@@ -150,10 +146,8 @@ function dispatch(action: Action) {
   })
 }
 
-// Store the currently set position
 let currentPosition: ToastPosition = 'bottom-right'
 
-// Get the current position
 export function getToastPosition(): ToastPosition {
   return currentPosition
 }

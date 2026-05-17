@@ -223,7 +223,6 @@ export async function sendChatStream(
           throw err
         }
 
-        // Check if we should retry
         if (attempt < maxRetries && isRetryableError(err)) {
           const backoffDelay =
             CONSTANTS.MESSAGE_SEND_RETRY_DELAY_MS * Math.pow(2, attempt)
@@ -276,7 +275,6 @@ export async function sendChatStream(
   const maxRetries = CONSTANTS.MESSAGE_SEND_MAX_RETRIES
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    // Check if aborted before attempting
     if (signal.aborted) {
       throw new DOMException('Aborted', 'AbortError')
     }
@@ -299,7 +297,6 @@ export async function sendChatStream(
     }
 
     try {
-      // Build request body
       const requestBody: Record<string, unknown> = {
         model: model.modelName,
         messages,
@@ -439,7 +436,6 @@ export async function sendChatStream(
         throw err
       }
 
-      // Check if we should retry
       if (attempt < maxRetries && isRetryableError(err)) {
         const backoffDelay =
           CONSTANTS.MESSAGE_SEND_RETRY_DELAY_MS * Math.pow(2, attempt)
@@ -455,14 +451,12 @@ export async function sendChatStream(
           },
         })
 
-        // Notify caller that we're retrying
         onRetry?.(attempt + 1, maxRetries)
 
         await delay(backoffDelay)
         continue
       }
 
-      // Log final failure
       logError('Chat stream request failed after retries', err, {
         component: 'inference-client',
         action: 'sendChatStream',
@@ -479,7 +473,8 @@ export async function sendChatStream(
     }
   }
 
-  // This should not be reached, but just in case
+  // Fallback: every branch above should already have thrown, but if the
+  // retry loop exits without doing so we still need to surface an error.
   const anyErr = lastError as any
   const msg = anyErr?.message || 'Unknown network error'
   throw new ChatError(
