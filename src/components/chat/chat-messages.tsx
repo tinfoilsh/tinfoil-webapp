@@ -159,7 +159,6 @@ const LoadingMessage = memo(function LoadingMessage({
   )
 })
 
-// Helper to generate unique message keys
 const getMessageKey = (
   prefix: string,
   message: Message,
@@ -174,8 +173,6 @@ const getMessageKey = (
   return `${prefix}-${message.role}-${timestamp}`
 }
 
-// Removed duplicate WelcomeScreen component - using imported version from './WelcomeScreen'
-// Separator component
 const MessagesSeparator = memo(function MessagesSeparator({
   isDarkMode,
 }: {

@@ -221,7 +221,6 @@ export class CloudStorageService {
       throw new Error('Maximum 100 chats per bulk upload request')
     }
 
-    // Step 1: Upload attachments and encrypt each chat to v1 binary
     const metadata: Array<{
       conversationId: string
       messageCount: number
@@ -247,7 +246,6 @@ export class CloudStorageService {
       binaryParts.push({ id: chat.id, data: binary })
     }
 
-    // Step 2: Build multipart form — metadata JSON + one binary part per conversation
     const formData = new FormData()
     formData.append(
       'metadata',

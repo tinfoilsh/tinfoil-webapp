@@ -110,13 +110,11 @@ type ChatSidebarProps = {
   windowWidth: number
 }
 
-// Add this constant at the top of the file
 const MOBILE_BREAKPOINT = 1024 // Same as in chat-interface.tsx
 
-// Add this useEffect function to prevent zooming on mobile Safari
+// Prevent pinch-zoom on mobile Safari while the chat UI is mounted.
 function usePreventZoom() {
   useEffect(() => {
-    // Set viewport meta tag to prevent zooming
     const viewportMeta = document.createElement('meta')
     viewportMeta.name = 'viewport'
     viewportMeta.content =
@@ -124,7 +122,6 @@ function usePreventZoom() {
     document.head.appendChild(viewportMeta)
 
     return () => {
-      // Only remove if the meta tag exists and is a child of document.head
       if (viewportMeta.parentNode === document.head) {
         document.head.removeChild(viewportMeta)
       }

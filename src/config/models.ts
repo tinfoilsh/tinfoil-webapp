@@ -110,7 +110,6 @@ export type BaseModel = {
   requestParams?: Record<string, unknown>
 }
 
-// Helper function to validate if a specific model name exists in the models list
 export const isModelNameAvailable = (
   modelName: string,
   models: BaseModel[],
@@ -118,7 +117,6 @@ export const isModelNameAvailable = (
   return models.some((m) => m.modelName === modelName)
 }
 
-// Helper function to check if running in local development
 const isLocalDevelopment = (): boolean => {
   return (
     typeof window !== 'undefined' &&

@@ -160,13 +160,11 @@ export const useDocumentUploader = (
     const documentId = getDocumentId()
 
     try {
-      // Add this document to uploading state
       setUploadingDocuments((prev) => ({
         ...prev,
         [documentId]: true,
       }))
 
-      // Check file size
       if (file.size > CONSTANTS.MAX_DOCUMENT_SIZE_BYTES) {
         onError(
           new Error(
