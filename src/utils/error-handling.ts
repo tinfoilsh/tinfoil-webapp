@@ -39,31 +39,9 @@ export function logError(
     return
   }
 
-  // In production, you would send to your logging service
-  // For now, we'll silently handle errors to avoid console spam
-  const errorInfo = {
-    level: 'error' as LogLevel,
-    message,
-    error:
-      error instanceof Error
-        ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack,
-          }
-        : error,
-    context,
-    timestamp: new Date().toISOString(),
-    url:
-      typeof window !== 'undefined'
-        ? window.location.href.split('#')[0]
-        : undefined,
-    userAgent:
-      typeof window !== 'undefined' ? window.navigator.userAgent : undefined,
-  }
-
-  // TODO: Send to actual logging service (e.g., Sentry, LogRocket, etc.)
-  // logToService(errorInfo)
+  // In production, errors are silently dropped. Tinfoil's privacy model
+  // forbids shipping user data (or anything that could deanonymize a user) to
+  // a third-party logging service, so no remote logging is wired up here.
 }
 
 /**
@@ -80,10 +58,7 @@ export function logWarning(message: string, context?: ErrorContext): void {
       `[${timestamp}] [${context?.component || 'Unknown'}] ${message}`,
       context?.metadata || '',
     )
-    return
   }
-
-  // TODO: Send to logging service
 }
 
 /**
@@ -106,10 +81,7 @@ export function logInfo(message: string, context?: ErrorContext): void {
       `[${timestamp}] [${context?.component || 'Unknown'}] ${message}`,
       context?.metadata || '',
     )
-    return
   }
-
-  // TODO: Send to logging service
 }
 
 /**
