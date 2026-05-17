@@ -1,9 +1,6 @@
 import { projectStorage } from '@/services/cloud/project-storage'
-import {
-  ENCRYPTION_KEY_CHANGED_EVENT,
-  encryptionService,
-} from '@/services/encryption/encryption-service'
-import type { Project, ProjectData } from '@/types/project'
+import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
+import type { Project } from '@/types/project'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -51,41 +48,33 @@ export function useProjects(
     setError(null)
 
     try {
-      const response = await projectStorage.listProjects({
-        limit: 20,
-        includeContent: true,
-      })
+      const response = await projectStorage.listProjects({ limit: 20 })
 
       const decryptedProjects: Project[] = await Promise.all(
         response.projects.map(async (item) => {
           try {
-            if (item.content) {
-              const decrypted = (await encryptionService.decrypt(
-                JSON.parse(item.content),
-              )) as ProjectData
+            const full = await projectStorage.getProject(item.id)
+            if (!full) {
               return {
                 id: item.id,
-                name: decrypted.name,
-                description: decrypted.description,
-                systemInstructions: decrypted.systemInstructions,
-                memory: decrypted.memory || [],
+                name: 'Encrypted',
+                description: '',
+                systemInstructions: '',
+                memory: [],
                 createdAt: item.createdAt,
                 updatedAt: item.updatedAt,
                 syncVersion: item.syncVersion,
+                decryptionFailed: true,
               }
             }
             return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
+              ...full,
               createdAt: item.createdAt,
               updatedAt: item.updatedAt,
               syncVersion: item.syncVersion,
             }
-          } catch (decryptError) {
-            logError('Failed to decrypt project', decryptError, {
+          } catch (pullError) {
+            logError('Failed to pull project plaintext', pullError, {
               component: 'useProjects',
               action: 'loadProjects',
               metadata: { projectId: item.id },
@@ -149,39 +138,33 @@ export function useProjects(
       const response = await projectStorage.listProjects({
         limit: 20,
         continuationToken,
-        includeContent: true,
       })
 
       const decryptedProjects: Project[] = await Promise.all(
         response.projects.map(async (item) => {
           try {
-            if (item.content) {
-              const decrypted = (await encryptionService.decrypt(
-                JSON.parse(item.content),
-              )) as ProjectData
+            const full = await projectStorage.getProject(item.id)
+            if (!full) {
               return {
                 id: item.id,
-                name: decrypted.name,
-                description: decrypted.description,
-                systemInstructions: decrypted.systemInstructions,
-                memory: decrypted.memory || [],
+                name: 'Encrypted',
+                description: '',
+                systemInstructions: '',
+                memory: [],
                 createdAt: item.createdAt,
                 updatedAt: item.updatedAt,
                 syncVersion: item.syncVersion,
+                decryptionFailed: true,
               }
             }
             return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
+              ...full,
               createdAt: item.createdAt,
               updatedAt: item.updatedAt,
               syncVersion: item.syncVersion,
             }
-          } catch (decryptError) {
-            logError('Failed to decrypt project', decryptError, {
+          } catch (pullError) {
+            logError('Failed to pull project plaintext', pullError, {
               component: 'useProjects',
               action: 'loadMore',
               metadata: { projectId: item.id },

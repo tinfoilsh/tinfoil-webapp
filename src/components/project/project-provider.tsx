@@ -3,7 +3,6 @@
 import { UI_EXPAND_PROJECTS_ON_MOUNT } from '@/constants/storage-keys'
 import { useMemory } from '@/hooks/use-memory'
 import { projectStorage } from '@/services/cloud/project-storage'
-import { encryptionService } from '@/services/encryption/encryption-service'
 import { projectEvents } from '@/services/project/project-events'
 import type { Fact, MemoryState } from '@/types/memory'
 import type {
@@ -141,41 +140,34 @@ export function ProjectProvider({
           throw new Error('Project not found')
         }
 
-        const documentsResponse = await projectStorage.listDocuments(
-          projectId,
-          {
-            includeContent: true,
-          },
-        )
+        const documentsResponse = await projectStorage.listDocuments(projectId)
 
         const documents: ProjectDocument[] = await Promise.all(
           documentsResponse.documents.map(async (doc) => {
-            if (doc.content) {
-              try {
-                const decrypted = (await encryptionService.decrypt(
-                  JSON.parse(doc.content),
-                )) as { content: string; filename: string; contentType: string }
-                return {
-                  ...doc,
-                  content: decrypted.content,
-                  filename: decrypted.filename,
-                  contentType: decrypted.contentType,
-                }
-              } catch (decryptError) {
-                logError('Failed to decrypt document', decryptError, {
-                  component: 'ProjectProvider',
-                  action: 'enterProjectMode',
-                  metadata: { documentId: doc.id },
-                })
-                return {
-                  ...doc,
-                  content: undefined,
-                  filename: '',
-                  contentType: '',
-                }
+            try {
+              const full = await projectStorage.getDocument(projectId, doc.id)
+              if (!full) {
+                return { ...doc, filename: '', contentType: '' }
+              }
+              return {
+                ...doc,
+                content: full.content,
+                filename: full.filename,
+                contentType: full.contentType,
+              }
+            } catch (pullError) {
+              logError('Failed to pull document plaintext', pullError, {
+                component: 'ProjectProvider',
+                action: 'enterProjectMode',
+                metadata: { documentId: doc.id },
+              })
+              return {
+                ...doc,
+                content: undefined,
+                filename: '',
+                contentType: '',
               }
             }
-            return { ...doc, filename: '', contentType: '' }
           }),
         )
 
@@ -406,39 +398,37 @@ export function ProjectProvider({
     try {
       const documentsResponse = await projectStorage.listDocuments(
         activeProject.id,
-        {
-          includeContent: true,
-        },
       )
 
       const documents: ProjectDocument[] = await Promise.all(
         documentsResponse.documents.map(async (doc) => {
-          if (doc.content) {
-            try {
-              const decrypted = (await encryptionService.decrypt(
-                JSON.parse(doc.content),
-              )) as { content: string; filename: string; contentType: string }
-              return {
-                ...doc,
-                content: decrypted.content,
-                filename: decrypted.filename,
-                contentType: decrypted.contentType,
-              }
-            } catch (decryptError) {
-              logError('Failed to decrypt document', decryptError, {
-                component: 'ProjectProvider',
-                action: 'refreshDocuments',
-                metadata: { documentId: doc.id },
-              })
-              return {
-                ...doc,
-                content: undefined,
-                filename: '',
-                contentType: '',
-              }
+          try {
+            const full = await projectStorage.getDocument(
+              activeProject.id,
+              doc.id,
+            )
+            if (!full) {
+              return { ...doc, filename: '', contentType: '' }
+            }
+            return {
+              ...doc,
+              content: full.content,
+              filename: full.filename,
+              contentType: full.contentType,
+            }
+          } catch (pullError) {
+            logError('Failed to pull document plaintext', pullError, {
+              component: 'ProjectProvider',
+              action: 'refreshDocuments',
+              metadata: { documentId: doc.id },
+            })
+            return {
+              ...doc,
+              content: undefined,
+              filename: '',
+              contentType: '',
             }
           }
-          return { ...doc, filename: '', contentType: '' }
         }),
       )
 
