@@ -75,15 +75,6 @@ export function VerifierSidebar({
         const doc = await getVerificationDocument()
         if (doc) {
           setVerificationDocument(doc)
-          if (isReady && iframeRef.current) {
-            iframeRef.current.contentWindow?.postMessage(
-              {
-                type: 'TINFOIL_VERIFICATION_DOCUMENT',
-                document: doc,
-              },
-              '*',
-            )
-          }
           if (onVerificationUpdate) {
             onVerificationUpdate(doc)
           }
@@ -131,7 +122,7 @@ export function VerifierSidebar({
     }
 
     isRetryingRef.current = false
-  }, [isReady, onVerificationUpdate, onVerificationComplete])
+  }, [onVerificationUpdate, onVerificationComplete])
 
   // Handle messages from iframe
   useEffect(() => {
@@ -139,27 +130,28 @@ export function VerifierSidebar({
       // Security: You may want to check event.origin here in production
       if (event.data.type === 'TINFOIL_VERIFICATION_CENTER_READY') {
         setIsReady(true)
-        // Send verification document if we have it
-        if (verificationDocument && iframeRef.current) {
-          iframeRef.current.contentWindow?.postMessage(
-            {
-              type: 'TINFOIL_VERIFICATION_DOCUMENT',
-              document: verificationDocument,
-            },
-            '*',
-          )
-        }
       } else if (event.data.type === 'TINFOIL_VERIFICATION_CENTER_CLOSED') {
         setIsOpen(false)
       } else if (event.data.type === 'TINFOIL_REQUEST_VERIFICATION_DOCUMENT') {
-        // Refresh the verification document
         fetchVerificationDocument()
       }
     }
 
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
-  }, [verificationDocument, setIsOpen, fetchVerificationDocument])
+  }, [setIsOpen, fetchVerificationDocument])
+
+  useEffect(() => {
+    if (isReady && verificationDocument && iframeRef.current) {
+      iframeRef.current.contentWindow?.postMessage(
+        {
+          type: 'TINFOIL_VERIFICATION_DOCUMENT',
+          document: verificationDocument,
+        },
+        '*',
+      )
+    }
+  }, [isReady, verificationDocument])
 
   // Fetch verification document when sidebar opens
   useEffect(() => {
