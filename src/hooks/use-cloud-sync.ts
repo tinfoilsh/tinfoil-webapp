@@ -57,7 +57,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
   const onKeyChangedRef = useRef(options?.onKeyChanged)
   onKeyChangedRef.current = options?.onKeyChanged
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       isMountedRef.current = false
@@ -107,7 +106,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
       initializingRef.current = true
 
       try {
-        // Initialize centralized auth token manager
         authTokenManager.initialize(getToken)
 
         const existingKey = localStorage.getItem(USER_ENCRYPTION_KEY)
@@ -177,7 +175,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
 
   // Full sync chats (always fetches first page)
   const syncChats = useCallback(async () => {
-    // Check if cloud sync is enabled
     if (!isCloudSyncEnabled()) {
       logInfo('Cloud sync is disabled, skipping sync', {
         component: 'useCloudSync',
@@ -291,7 +288,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     }
   }, [])
 
-  // Backup a single chat
   const backupChat = useCallback(async (chatId: string) => {
     await cloudSync.backupChat(chatId)
   }, [])
@@ -352,7 +348,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     }
   }, [])
 
-  // Retry decryption for failed chats
   const retryDecryptionWithNewKey = useCallback(
     (opts?: { runInBackground?: boolean }) => {
       const { runInBackground = false } = opts || {}
