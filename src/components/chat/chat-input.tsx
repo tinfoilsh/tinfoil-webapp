@@ -622,7 +622,7 @@ export function ChatInput({
 
           <textarea
             id="chat-input"
-            ref={inputRef}
+            ref={inputRef as React.Ref<HTMLTextAreaElement>}
             key={textareaResetNonce}
             value={input}
             onFocus={handleInputFocus}
@@ -1083,9 +1083,9 @@ export function ChatInput({
                   loadingState === 'loading' || loadingState === 'retrying'
                 const hasCompletedDocuments = Boolean(
                   processedDocuments &&
-                  processedDocuments.some(
-                    (doc) => !doc.isUploading && !doc.isGeneratingDescription,
-                  ),
+                    processedDocuments.some(
+                      (doc) => !doc.isUploading && !doc.isGeneratingDescription,
+                    ),
                 )
                 const hasSubmittableContent =
                   Boolean(input.trim()) ||
