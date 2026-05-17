@@ -1,11 +1,11 @@
-import {
-  getTinfoilClient,
-  getVerificationDocument,
-} from '@/services/inference/tinfoil-client'
+import { getVerificationDocument } from '@/services/inference/tinfoil-client'
 import { logError, logInfo } from '@/utils/error-handling'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CONSTANTS } from './chat/constants'
+
+const VERIFICATION_CENTER_BASE_URL = 'https://verification-center.tinfoil.sh'
+const VERIFICATION_CENTER_ORIGIN = new URL(VERIFICATION_CENTER_BASE_URL).origin
 
 function isOnline(): boolean {
   return typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -52,18 +52,6 @@ export function VerifierSidebar({
       // Check internet connection
       if (!isOnline()) {
         logInfo('No internet connection, waiting to retry verification', {
-          component: 'VerifierSidebar',
-          action: 'fetchVerificationDocument',
-          metadata: { attempt: retryCountRef.current + 1 },
-        })
-        return false
-      }
-
-      try {
-        const client = await getTinfoilClient()
-        await (client as any).ready?.()
-      } catch (error) {
-        logError('Tinfoil client verification failed', error, {
           component: 'VerifierSidebar',
           action: 'fetchVerificationDocument',
           metadata: { attempt: retryCountRef.current + 1 },
@@ -127,7 +115,7 @@ export function VerifierSidebar({
   // Handle messages from iframe
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      // Security: You may want to check event.origin here in production
+      if (event.origin !== VERIFICATION_CENTER_ORIGIN) return
       if (event.data.type === 'TINFOIL_VERIFICATION_CENTER_READY') {
         setIsReady(true)
       } else if (event.data.type === 'TINFOIL_VERIFICATION_CENTER_CLOSED') {
@@ -142,15 +130,22 @@ export function VerifierSidebar({
   }, [setIsOpen, fetchVerificationDocument])
 
   useEffect(() => {
-    if (isReady && verificationDocument && iframeRef.current) {
-      iframeRef.current.contentWindow?.postMessage(
+    if (!isReady || !verificationDocument || !iframeRef.current) return
+
+    const send = () => {
+      iframeRef.current?.contentWindow?.postMessage(
         {
           type: 'TINFOIL_VERIFICATION_DOCUMENT',
           document: verificationDocument,
         },
-        '*',
+        VERIFICATION_CENTER_ORIGIN,
       )
     }
+
+    send()
+    const retryDelays = [100, 300, 800, 2000]
+    const timers = retryDelays.map((delay) => setTimeout(send, delay))
+    return () => timers.forEach(clearTimeout)
   }, [isReady, verificationDocument])
 
   // Fetch verification document when sidebar opens
@@ -166,11 +161,14 @@ export function VerifierSidebar({
       const message = isOpen
         ? { type: 'TINFOIL_VERIFICATION_CENTER_OPEN' }
         : { type: 'TINFOIL_VERIFICATION_CENTER_CLOSE' }
-      iframeRef.current.contentWindow?.postMessage(message, '*')
+      iframeRef.current.contentWindow?.postMessage(
+        message,
+        VERIFICATION_CENTER_ORIGIN,
+      )
     }
   }, [isOpen, isReady])
 
-  const iframeUrl = `https://verification-center.tinfoil.sh?darkMode=${isDarkMode}&showVerificationFlow=true&compact=false&open=true`
+  const iframeUrl = `${VERIFICATION_CENTER_BASE_URL}?darkMode=${isDarkMode}&showVerificationFlow=true&compact=false&open=true`
 
   return (
     <>
@@ -189,6 +187,7 @@ export function VerifierSidebar({
             className="h-full w-full"
             style={{ border: 'none' }}
             title="Tinfoil Verification Center"
+            onLoad={() => setIsReady(true)}
           />
         )}
 
