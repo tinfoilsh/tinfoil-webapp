@@ -371,3 +371,88 @@ export async function unlockFromServer(opts?: {
   }
   return result
 }
+
+/**
+ * Promote a CEK recovered from the legacy `/api/passkey-credentials/`
+ * JSONB into a real `user_keys` row in the enclave wire. Called after
+ * `performPasskeyRecovery` succeeds with an entry whose `source` was
+ * `'legacy'`: the caller already has the raw CEK and the KEK, so we
+ * re-wrap the CEK as a fresh bundle and call register-key with
+ * `If-Match: '*'`. After this call returns, subsequent
+ * `keyCurrent()` reads will find the bundle in `user_key_bundles` and
+ * the legacy fallback will no longer trigger.
+ *
+ * No-op if the enclave already reports a key for the user (someone
+ * else promoted concurrently).
+ */
+export async function promoteRecoveredCekToEnclave(opts: {
+  cekHex: string
+  credentialId: string
+  kek: CryptoKey
+}): Promise<{ ok: true; keyIdHex: string } | { ok: false; reason: string }> {
+  try {
+    const existing = await enclaveKeyCurrent()
+    if (existing.key_id) {
+      return { ok: true, keyIdHex: existing.key_id }
+    }
+  } catch (err) {
+    if (!(err instanceof SyncEnclaveError) || err.status !== 404) {
+      return { ok: false, reason: 'enclave_unavailable' }
+    }
+  }
+
+  const cek = cekHexToBytes(opts.cekHex)
+  const keyIdHex = await deriveKeyIdHex(cek)
+  let bundle: BundleBody
+  try {
+    bundle = await wrapCekForCredential({
+      credentialId: opts.credentialId,
+      kek: opts.kek,
+      cek,
+    })
+  } catch (err) {
+    logError(
+      'failed to wrap recovered CEK for promotion',
+      err instanceof Error ? err : new Error(String(err)),
+      { component: 'passkey-key-flow', action: 'promoteRecoveredCek' },
+    )
+    return { ok: false, reason: 'bundle_decrypt_failed' }
+  }
+
+  try {
+    await enclaveRegisterKey({
+      keyB64: hexToB64(opts.cekHex),
+      ifMatch: '*',
+      createdVia: 'recovery',
+      idempotencyKey: newIdempotencyKey(),
+      initialBundle: {
+        credentialId: bundle.credentialId,
+        kekIvHex: bundle.kekIvHex,
+        encryptedKeysHex: bundle.wrappedKeyHex,
+      },
+    })
+  } catch (err) {
+    if (
+      err instanceof SyncEnclaveError &&
+      err.code === 'EXISTING_DATA_UNDER_OTHER_KEY'
+    ) {
+      // A racing promotion or a fresh setup landed first. The recovered
+      // CEK is no longer the primary; the caller should re-run the
+      // recovery flow against whatever the enclave reports now.
+      return { ok: false, reason: 'remote_key_exists' }
+    }
+    logError(
+      'enclave registerKey failed during recovery promotion',
+      err instanceof Error ? err : new Error(String(err)),
+      { component: 'passkey-key-flow', action: 'promoteRecoveredCek' },
+    )
+    return { ok: false, reason: 'register_failed' }
+  }
+
+  logInfo('promoted legacy passkey CEK into enclave key registry', {
+    component: 'passkey-key-flow',
+    action: 'promoteRecoveredCek',
+    metadata: { keyIdHex, credentialId: opts.credentialId },
+  })
+  return { ok: true, keyIdHex }
+}
