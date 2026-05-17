@@ -1,7 +1,9 @@
 import { DEV_ENABLE_DEBUG_LOGS } from '@/constants/storage-keys'
 
 /**
- * Error handling utilities for production-ready logging
+ * Logging helpers that print to the dev console only. By design, nothing
+ * here ever leaves the user's browser — Tinfoil's privacy model forbids
+ * shipping logs, errors, or telemetry to any third party.
  */
 
 type LogLevel = 'error' | 'warn' | 'info' | 'debug'
@@ -62,13 +64,10 @@ export function logWarning(message: string, context?: ErrorContext): void {
 }
 
 /**
- * Log info - replace console.log calls with this
- *
- * To enable in production, run in browser console:
- * localStorage.setItem('tinfoil-dev-enable-debug-logs', 'true')
- *
- * To disable:
- * localStorage.removeItem('tinfoil-dev-enable-debug-logs')
+ * In a production build, info logs are off by default. Power users can opt
+ * in from their own DevTools console (the toggle is purely client-side):
+ *   localStorage.setItem('tinfoil-dev-enable-debug-logs', 'true')
+ *   localStorage.removeItem('tinfoil-dev-enable-debug-logs')
  */
 export function logInfo(message: string, context?: ErrorContext): void {
   const debugEnabled =

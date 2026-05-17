@@ -479,7 +479,8 @@ export async function sendChatStream(
     }
   }
 
-  // This should not be reached, but just in case
+  // Fallback: every branch above should already have thrown, but if the
+  // retry loop exits without doing so we still need to surface an error.
   const anyErr = lastError as any
   const msg = anyErr?.message || 'Unknown network error'
   throw new ChatError(

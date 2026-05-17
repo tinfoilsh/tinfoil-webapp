@@ -57,18 +57,12 @@ export default function Document() {
   return (
     <Html lang="en" data-theme="light" className="overflow-x-hidden">
       <Head>
-        {/* Theme initialization script - must run before first paint */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        {/* App-height initialization script - must run before first paint so the
-            bottom-anchored mobile chat input is visible on every browser */}
         <script dangerouslySetInnerHTML={{ __html: appHeightScript }} />
-        {/* Preconnect to external domains */}
         <link rel="preconnect" href="https://clerk.accounts.dev" />
 
-        {/* PWA Manifest */}
         <link rel="manifest" href="/site.webmanifest" />
 
-        {/* Theme color - adapts to light/dark mode */}
         <meta
           name="theme-color"
           content="#ffffff"
@@ -80,7 +74,6 @@ export default function Document() {
           media="(prefers-color-scheme: dark)"
         />
 
-        {/* Meta tags */}
         <meta
           name="description"
           content="Verifiably Private AI chat application supporting open source models through Tinfoil"
@@ -91,7 +84,6 @@ export default function Document() {
         />
         <meta name="author" content="Tinfoil" />
 
-        {/* Open Graph */}
         <meta property="og:title" content="Tinfoil Private Chat" />
         <meta
           property="og:description"
@@ -100,7 +92,6 @@ export default function Document() {
         <meta property="og:type" content="website" />
         <meta property="og:locale" content="en_US" />
 
-        {/* Twitter Card */}
         <meta name="twitter:card" content="summary" />
         <meta name="twitter:title" content="Tinfoil Private Chat" />
         <meta
@@ -108,10 +99,8 @@ export default function Document() {
           content="Private AI chat application supporting open source models through Tinfoil"
         />
 
-        {/* Robots */}
         <meta name="robots" content="index, follow" />
 
-        {/* Favicons */}
         <link
           rel="icon"
           href="/icon-light.png"
@@ -125,7 +114,6 @@ export default function Document() {
           type="image/png"
         />
 
-        {/* Apple Touch Icons */}
         <link
           rel="apple-touch-icon"
           href="/apple-touch-icon-light.png"
@@ -144,11 +132,9 @@ export default function Document() {
           sizes="180x180"
         />
 
-        {/* Android Chrome Icons */}
         <link rel="icon" href="/android-chrome-192x192.png" sizes="192x192" />
         <link rel="icon" href="/android-chrome-512x512.png" sizes="512x512" />
 
-        {/* Plausible Analytics */}
         <Script
           defer
           data-domain="chat.tinfoil.sh"

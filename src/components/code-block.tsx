@@ -175,18 +175,14 @@ const PREVIEWABLE_LANGUAGES = [
 const isCodeWorthPreviewing = (code: string, language: string): boolean => {
   const trimmed = code.trim()
 
-  // Too short to be meaningful
   if (trimmed.length < 20) return false
 
-  // Single line is usually just an example snippet
   if (!trimmed.includes('\n') && trimmed.length < 80) return false
 
   switch (language) {
     case 'html': {
-      // Must have actual content, not just a single tag or link/style reference
       const tagCount = (trimmed.match(/<[a-z]/gi) || []).length
       if (tagCount <= 1) return false
-      // Skip if it's just a single link/script/style/meta tag (but allow full documents)
       if (/^<(link|script|style|meta)\b/i.test(trimmed) && tagCount <= 2)
         return false
       return true
@@ -196,13 +192,11 @@ const isCodeWorthPreviewing = (code: string, language: string): boolean => {
     case 'js':
     case 'typescript':
     case 'ts': {
-      // Skip if it's just comments
       const withoutComments = trimmed
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/\/\/.*/g, '')
         .trim()
       if (withoutComments.length < 10) return false
-      // Skip simple declarations without logic
       const hasLogic =
         /\b(if|for|while|function|=>|console\.|return|\.map|\.filter|\.reduce|\.forEach|async|await|new |class )/i.test(
           trimmed,
@@ -212,36 +206,30 @@ const isCodeWorthPreviewing = (code: string, language: string): boolean => {
     }
 
     case 'css': {
-      // Must have actual rules, not just a selector or single property
       const ruleCount = (trimmed.match(/\{/g) || []).length
       if (ruleCount < 1) return false
-      // Must have actual properties
       const propertyCount = (trimmed.match(/:\s*[^;]+;/g) || []).length
       if (propertyCount < 2) return false
       return true
     }
 
     case 'svg': {
-      // Must be a complete SVG
       return /<svg[\s\S]*<\/svg>/i.test(trimmed)
     }
 
     case 'markdown':
     case 'md': {
-      // Must have some formatting or be substantial
       const hasFormatting = /[#*`\[\]|]/.test(trimmed)
       return hasFormatting || trimmed.length > 100
     }
 
     case 'mermaid': {
-      // Must have a diagram type
       return /^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|journey|gantt|pie|mindmap)/m.test(
         trimmed,
       )
     }
 
     case 'json': {
-      // Must be an object or array with content
       try {
         const parsed = JSON.parse(trimmed)
         if (typeof parsed !== 'object' || parsed === null) return false
@@ -392,27 +380,16 @@ const MarkdownPreview = ({
 )
 
 const stripModuleSyntax = (code: string): string => {
-  return (
-    code
-      // Remove import statements entirely
-      .replace(/^import\s+.*?['"];?\s*$/gm, '')
-      // Remove `export { ... }` statements entirely
-      .replace(/^export\s+\{[^}]*\}\s*(from\s+['"][^'"]*['"])?\s*;?\s*$/gm, '')
-      // Remove `export * from` statements entirely
-      .replace(/^export\s+\*\s+from\s+['"][^'"]*['"];?\s*$/gm, '')
-      // Remove `export default` (leave the declaration)
-      .replace(/^export\s+default\s+/gm, '')
-      // Remove `export` keyword from declarations (export const, export function, etc.)
-      .replace(/^export\s+/gm, '')
-      // Remove type annotations after colons (e.g., `: string`, `: number[]`, `: void`)
-      .replace(/:\s*[A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?(?=\s*[,)=;{\n])/g, '')
-      // Remove generic type parameters on functions (e.g., `<T>`, `<T, U>`)
-      .replace(/(<[A-Za-z_$][\w$]*(?:\s*,\s*[A-Za-z_$][\w$]*)*>)(?=\s*\()/g, '')
-      // Remove `as Type` assertions
-      .replace(/\s+as\s+[A-Za-z_$][\w$]*(?:<[^>]+>)?/g, '')
-      // Remove interface/type declarations
-      .replace(/^(interface|type)\s+[^{]+\{[^}]*\}\s*/gm, '')
-  )
+  return code
+    .replace(/^import\s+.*?['"];?\s*$/gm, '')
+    .replace(/^export\s+\{[^}]*\}\s*(from\s+['"][^'"]*['"])?\s*;?\s*$/gm, '')
+    .replace(/^export\s+\*\s+from\s+['"][^'"]*['"];?\s*$/gm, '')
+    .replace(/^export\s+default\s+/gm, '')
+    .replace(/^export\s+/gm, '')
+    .replace(/:\s*[A-Za-z_$][\w$]*(?:<[^>]+>)?(?:\[\])?(?=\s*[,)=;{\n])/g, '')
+    .replace(/(<[A-Za-z_$][\w$]*(?:\s*,\s*[A-Za-z_$][\w$]*)*>)(?=\s*\()/g, '')
+    .replace(/\s+as\s+[A-Za-z_$][\w$]*(?:<[^>]+>)?/g, '')
+    .replace(/^(interface|type)\s+[^{]+\{[^}]*\}\s*/gm, '')
 }
 
 const JavaScriptPreview = ({ code }: { code: string }) => {
@@ -533,7 +510,6 @@ try {
     indexURL: '${PYODIDE_CDN_BASE}'
   });
 
-  // Redirect stdout
   pyodide.runPython(\`
 import sys
 from io import StringIO
@@ -541,7 +517,6 @@ sys.stdout = StringIO()
 sys.stderr = StringIO()
 \`);
 
-  // Run user code
   const userCode = ${jsonEscapedCode};
   try {
     const result = pyodide.runPython(userCode);
@@ -937,10 +912,8 @@ export const CodeBlock = memo(function CodeBlock({
   const isMarkdown = language === 'markdown' || language === 'md'
   const isExecutable = EXECUTABLE_LANGUAGES.includes(language)
 
-  // Check if this language supports preview (static check, doesn't depend on code content)
   const languageSupportsPreview = PREVIEWABLE_LANGUAGES.includes(language)
 
-  // Check if the current code is worth previewing
   const codeIsWorthPreviewing =
     languageSupportsPreview && isCodeWorthPreviewing(code, language)
 
@@ -949,10 +922,8 @@ export const CodeBlock = memo(function CodeBlock({
   const canShowPreview =
     languageSupportsPreview && (isExecutable || !isStreaming)
 
-  // Track if user has manually changed the view mode
   const userHasToggledRef = useRef(false)
 
-  // Determine initial view mode based on current state
   const shouldStartInPreview =
     codeIsWorthPreviewing && !isExecutable && !isStreaming
 
@@ -960,7 +931,6 @@ export const CodeBlock = memo(function CodeBlock({
     shouldStartInPreview ? 'preview' : 'code',
   )
 
-  // Switch to preview mode when streaming ends (only if user hasn't manually toggled)
   const wasStreamingRef = useRef(isStreaming)
   useEffect(() => {
     const streamingJustEnded = wasStreamingRef.current && !isStreaming
@@ -981,7 +951,6 @@ export const CodeBlock = memo(function CodeBlock({
     setViewMode(mode)
   }
 
-  // Determine what to actually show: preview only if allowed and code is worth it
   const showPreview =
     canShowPreview && codeIsWorthPreviewing && viewMode === 'preview'
 

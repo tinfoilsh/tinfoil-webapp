@@ -3,7 +3,6 @@ import { SYNC_SESSION_CHATS } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 
 export const sessionChatStorage = {
-  // Get all chats from session storage
   getAllChats(): Chat[] {
     try {
       const chatsJson = sessionStorage.getItem(SYNC_SESSION_CHATS)
@@ -32,7 +31,6 @@ export const sessionChatStorage = {
     }
   },
 
-  // Save a chat to session storage
   saveChat(chat: Chat): void {
     try {
       // Validate chat parameter
@@ -80,7 +78,6 @@ export const sessionChatStorage = {
     }
   },
 
-  // Delete a chat from session storage
   deleteChat(chatId: string): void {
     try {
       const chats = this.getAllChats()
@@ -95,7 +92,6 @@ export const sessionChatStorage = {
     }
   },
 
-  // Clear all chats from session storage
   clearAll(): void {
     try {
       sessionStorage.removeItem(SYNC_SESSION_CHATS)
