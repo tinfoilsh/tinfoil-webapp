@@ -492,6 +492,65 @@ export async function attachmentDelete(req: {
   })
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Public chat share (seal + open through the enclave)                       */
+/* -------------------------------------------------------------------------- */
+
+export interface ShareSealRequest {
+  /** Plaintext JSON the owner wants to publish. */
+  plaintext: Uint8Array
+}
+
+export interface ShareSealResponse {
+  ok: true
+  /** Hex-encoded 32-byte random share key. Embed in URL fragment. */
+  share_key: string
+  /** Base64-encoded sealed ciphertext to upload to /api/shares/:chatId. */
+  ciphertext: string
+}
+
+export interface ShareOpenRequest {
+  /** Hex share key the recipient pulled out of the URL fragment. */
+  shareKeyHex: string
+  /** Ciphertext bytes fetched anonymously from /api/shares/:chatId. */
+  ciphertext: Uint8Array
+}
+
+/**
+ * Seal a chat for public sharing. The enclave generates a fresh
+ * random share key, gzips and AES-GCM-seals the plaintext, and
+ * returns the key + ciphertext. The owner uploads the ciphertext
+ * to controlplane and embeds the key in the share URL fragment.
+ * Auth: the owner's JWT (the enclave only seals for authenticated
+ * users so the share count can later be billed/limited).
+ */
+export async function shareSeal(
+  req: ShareSealRequest,
+): Promise<ShareSealResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<ShareSealResponse>('/v1/share/seal', {
+    plaintext: bytesToB64(req.plaintext),
+  })
+}
+
+/**
+ * Open a previously sealed share. Recipients pass the ciphertext
+ * they fetched from controlplane plus the URL-fragment share key;
+ * the enclave decrypts and returns plaintext. No authentication;
+ * the share key itself is the access proof.
+ */
+export async function shareOpen(req: ShareOpenRequest): Promise<Uint8Array> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.post<{ ok: true; plaintext: string }>(
+    '/v1/share/open',
+    {
+      share_key: req.shareKeyHex,
+      ciphertext: bytesToB64(req.ciphertext),
+    },
+  )
+  return b64ToBytes(resp.plaintext)
+}
+
 export async function health(): Promise<HealthResponse> {
   const client = await getSyncEnclaveClient()
   return client.get<HealthResponse>('/v1/health')
