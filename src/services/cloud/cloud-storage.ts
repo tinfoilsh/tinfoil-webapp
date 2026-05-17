@@ -3,13 +3,14 @@ import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import {
   base64ToUint8Array,
   decryptAttachment,
-  encryptAttachment,
   uint8ArrayToBase64,
 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import { type StoredChat } from '../storage/indexed-db'
 import {
+  attachmentGet as enclaveAttachmentGet,
+  attachmentPut as enclaveAttachmentPut,
   deleteRow as enclaveDeleteRow,
   listStatus as enclaveListStatus,
   pull as enclavePull,
@@ -221,41 +222,23 @@ export class CloudStorageService {
     messages: Message[],
     chatId: string,
   ): Promise<void> {
+    const keyB64 = requirePrimaryKeyB64()
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
         if (att.type === 'image' && att.base64) {
           const raw = base64ToUint8Array(att.base64)
-          const { encryptedData, key } = await encryptAttachment(raw)
-          await this.uploadAttachment(att.id, chatId, encryptedData)
-
-          att.encryptionKey = uint8ArrayToBase64(key)
+          await enclaveAttachmentPut({
+            id: att.id,
+            chatId,
+            keyB64,
+            plaintext: raw,
+          })
+          // v2 attachments derive their key from (CEK, id) inside the
+          // enclave, so the chat JSON no longer carries a per-attachment
+          // key. Clearing the field marks the row as v2 on read.
+          delete att.encryptionKey
         }
       }
-    }
-  }
-
-  private async uploadAttachment(
-    attachmentId: string,
-    chatId: string,
-    encryptedData: Uint8Array,
-  ): Promise<void> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/attachment/${attachmentId}`,
-      {
-        method: 'PUT',
-        headers: {
-          ...(await this.getHeaders()),
-          'Content-Type': 'application/octet-stream',
-          'X-Chat-Id': chatId,
-        },
-        body: encryptedData as unknown as BodyInit,
-      },
-    )
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to upload attachment ${attachmentId}: ${response.statusText}`,
-      )
     }
   }
 
@@ -385,37 +368,71 @@ export class CloudStorageService {
   }
 
   /**
-   * Fetch and decrypt all image attachments that have an encryption key but
-   * no base64 yet. Returns a map of attachmentId -> base64 string so the
-   * caller can merge results into the current (possibly updated) messages
-   * without overwriting the entire array with a stale snapshot.
+   * Fetch and decrypt all image attachments that have no base64 yet.
+   * Branches per row:
+   *   - legacy v1 (att.encryptionKey set): fetch ciphertext from
+   *     /api/storage/attachment, decrypt locally with the embedded key.
+   *   - v2 (no encryptionKey): pull plaintext through the sync enclave;
+   *     the enclave re-derives the per-attachment key from the user's
+   *     CEK and the attachment id.
+   * Returns a map of attachmentId -> base64 string so the caller can
+   * merge results into the current (possibly updated) messages without
+   * overwriting the entire array with a stale snapshot.
    */
   async loadChatImages(messages: Message[]): Promise<Record<string, string>> {
     const results: Record<string, string> = {}
     const tasks: Promise<void>[] = []
+    let cekB64: string | null = null
 
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
-        if (att.type !== 'image' || !att.encryptionKey || att.base64) {
+        if (att.type !== 'image' || att.base64) {
+          continue
+        }
+        const attId = att.id
+
+        if (att.encryptionKey) {
+          const keyB64 = att.encryptionKey
+          tasks.push(
+            (async () => {
+              try {
+                const encryptedBuf = await this.fetchAttachment(attId)
+                if (!encryptedBuf) return
+
+                const keyBytes = base64ToUint8Array(keyB64)
+                const decrypted = await decryptAttachment(
+                  new Uint8Array(encryptedBuf),
+                  keyBytes,
+                )
+                results[attId] = uint8ArrayToBase64(decrypted)
+              } catch {
+                // Silently skip failed attachments — thumbnail is still available
+              }
+            })(),
+          )
           continue
         }
 
-        const attId = att.id
-        const keyB64 = att.encryptionKey
-
+        // v2 path: only attempt if we have a CEK available. Without
+        // one we can't derive the per-attachment key, so leave the
+        // thumbnail in place and move on.
+        if (cekB64 === null) {
+          try {
+            cekB64 = requirePrimaryKeyB64()
+          } catch {
+            cekB64 = ''
+          }
+        }
+        if (!cekB64) continue
+        const keyB64 = cekB64
         tasks.push(
           (async () => {
             try {
-              const encryptedBuf = await this.fetchAttachment(attId)
-              if (!encryptedBuf) return
-
-              const keyBytes = base64ToUint8Array(keyB64)
-              const decrypted = await decryptAttachment(
-                new Uint8Array(encryptedBuf),
-                keyBytes,
-              )
-
-              results[attId] = uint8ArrayToBase64(decrypted)
+              const plaintext = await enclaveAttachmentGet({
+                id: attId,
+                keyB64,
+              })
+              results[attId] = uint8ArrayToBase64(plaintext)
             } catch {
               // Silently skip failed attachments — thumbnail is still available
             }

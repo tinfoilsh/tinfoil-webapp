@@ -432,6 +432,66 @@ export async function migrateAll(
   })
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Attachment storage (buckets.tinfoil.sh via enclave)                       */
+/* -------------------------------------------------------------------------- */
+
+export interface AttachmentPutRequest {
+  id: string
+  chatId: string
+  /** User's CEK, base64-encoded raw 32 bytes. */
+  keyB64: string
+  /** Raw attachment bytes; the enclave seals before storing. */
+  plaintext: Uint8Array
+}
+
+export interface AttachmentGetRequest {
+  id: string
+  keyB64: string
+}
+
+export interface AttachmentGetResponse {
+  ok: true
+  plaintext: string
+}
+
+/** Upload an attachment through the sync enclave. */
+export async function attachmentPut(
+  req: AttachmentPutRequest,
+): Promise<OKResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<OKResponse>('/v1/attachment/put', {
+    id: req.id,
+    chat_id: req.chatId,
+    key: req.keyB64,
+    plaintext: bytesToB64(req.plaintext),
+  })
+}
+
+/** Fetch an attachment through the sync enclave; returns raw bytes. */
+export async function attachmentGet(
+  req: AttachmentGetRequest,
+): Promise<Uint8Array> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.post<AttachmentGetResponse>('/v1/attachment/get', {
+    id: req.id,
+    key: req.keyB64,
+  })
+  return b64ToBytes(resp.plaintext)
+}
+
+/** Delete an attachment from buckets through the sync enclave. */
+export async function attachmentDelete(req: {
+  id: string
+  keyB64: string
+}): Promise<OKResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<OKResponse>('/v1/attachment/delete', {
+    id: req.id,
+    key: req.keyB64,
+  })
+}
+
 export async function health(): Promise<HealthResponse> {
   const client = await getSyncEnclaveClient()
   return client.get<HealthResponse>('/v1/health')
