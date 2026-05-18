@@ -337,6 +337,33 @@ export async function storeEncryptedKeys(
     }
 
     if (current.key_id !== localKeyId) {
+      if (keys.authorizationMode === 'explicit_start_fresh') {
+        // The user has chosen to wipe everything and bind a brand-new
+        // CEK. Route through register-key with created_via=start_fresh
+        // so the controlplane atomically drops every blob row, returns
+        // the v2 attachment ids it removed, and lets the enclave drain
+        // those from buckets — all without the cross-key conflict
+        // guard firing.
+        await enclaveRegisterKey({
+          keyB64: bytesToBase64(primaryBytes),
+          ifMatch: current.etag || '*',
+          createdVia: 'start_fresh',
+          idempotencyKey: newIdempotencyKey(),
+          initialBundle: {
+            credentialId,
+            kekIvHex: b64ToHexLocal(encrypted.iv),
+            encryptedKeysHex: b64ToHexLocal(encrypted.data),
+          },
+        })
+        const created = await enclaveKeyCurrent()
+        const bundleVersion = created.bundles[credentialId]?.bundle_version ?? 1
+        logInfo('start_fresh wipe + key register completed', {
+          component: 'PasskeyKeyStorage',
+          action: 'storeEncryptedKeys',
+          metadata: { credentialId, bundleVersion },
+        })
+        return { syncVersion: bundleVersion, bundleVersion }
+      }
       throw new PasskeyCredentialConflictError(
         "The remote key does not match this device's CEK. Recover the existing key first.",
         {

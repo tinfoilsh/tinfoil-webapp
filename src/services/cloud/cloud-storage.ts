@@ -224,15 +224,24 @@ export class CloudStorageService {
       for (const att of msg.attachments || []) {
         if (att.type === 'image' && att.base64) {
           const raw = base64ToUint8Array(att.base64)
-          await enclaveAttachmentPut({
-            id: att.id,
+          // The enclave mints the durable attachment id and returns
+          // it; the local id we used while the upload was pending
+          // (UI tracking, OCR callbacks, optimistic message list)
+          // is now retired in favor of the enclave-minted one. We
+          // overwrite att.id in place so the chat JSON we are about
+          // to seal references the same id as the buckets path and
+          // the controlplane's chat_attachments row.
+          const { id: enclaveID } = await enclaveAttachmentPut({
             chatId,
             keyB64,
             plaintext: raw,
           })
-          // v2 attachments derive their key from (CEK, id) inside the
-          // enclave, so the chat JSON no longer carries a per-attachment
-          // key. Clearing the field marks the row as v2 on read.
+          att.id = enclaveID
+          // v2 attachments are sealed inside the enclave under the
+          // user's CEK with an AAD that binds (clerk_user_id, chat_id,
+          // attachment_id), so the chat JSON no longer carries a
+          // per-attachment key. Clearing the field marks the row as v2
+          // on read.
           delete att.encryptionKey
         }
       }
@@ -370,13 +379,17 @@ export class CloudStorageService {
    *   - legacy v1 (att.encryptionKey set): fetch ciphertext from
    *     /api/storage/attachment, decrypt locally with the embedded key.
    *   - v2 (no encryptionKey): pull plaintext through the sync enclave;
-   *     the enclave re-derives the per-attachment key from the user's
-   *     CEK and the attachment id.
+   *     the enclave opens the sealed envelope under the user's CEK with
+   *     an AAD that binds (clerk_user_id, chat_id, attachment_id), so
+   *     the caller must pass the owning chat id.
    * Returns a map of attachmentId -> base64 string so the caller can
    * merge results into the current (possibly updated) messages without
    * overwriting the entire array with a stale snapshot.
    */
-  async loadChatImages(messages: Message[]): Promise<Record<string, string>> {
+  async loadChatImages(
+    chatId: string,
+    messages: Message[],
+  ): Promise<Record<string, string>> {
     const results: Record<string, string> = {}
     const tasks: Promise<void>[] = []
     let cekB64: string | null = null
@@ -411,7 +424,7 @@ export class CloudStorageService {
         }
 
         // v2 path: only attempt if we have a CEK available. Without
-        // one we can't derive the per-attachment key, so leave the
+        // one we can't open the sealed envelope, so leave the
         // thumbnail in place and move on.
         if (cekB64 === null) {
           try {
@@ -427,6 +440,7 @@ export class CloudStorageService {
             try {
               const plaintext = await enclaveAttachmentGet({
                 id: attId,
+                chatId,
                 keyB64,
               })
               results[attId] = uint8ArrayToBase64(plaintext)

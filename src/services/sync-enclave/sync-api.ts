@@ -202,6 +202,12 @@ export interface KeyCurrentBundle {
 export interface KeyCurrentResponse {
   /** Hex-encoded current KeyID, or null if the user has no key yet. */
   key_id: string | null
+  /**
+   * Opaque etag the controlplane uses to gate concurrent register-key
+   * mutations. Pass this back as `if_match` when rotating or running
+   * the start-fresh wipe. Empty string when the user has no key yet.
+   */
+  etag?: string
   /** Map of credential_id → bundle body. Empty when key_id is null. */
   bundles: Record<string, KeyCurrentBundle>
   created_via?: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
@@ -441,7 +447,6 @@ export async function migrateAll(
 /* -------------------------------------------------------------------------- */
 
 export interface AttachmentPutRequest {
-  id: string
   chatId: string
   /** User's CEK, base64-encoded raw 32 bytes. */
   keyB64: string
@@ -449,8 +454,19 @@ export interface AttachmentPutRequest {
   plaintext: Uint8Array
 }
 
+/**
+ * The enclave mints the durable attachment id server-side and
+ * returns it here. The caller must adopt this id wherever it used
+ * its local temp id before pushing the parent chat.
+ */
+export interface AttachmentPutResponse {
+  ok: true
+  id: string
+}
+
 export interface AttachmentGetRequest {
   id: string
+  chatId: string
   keyB64: string
 }
 
@@ -462,10 +478,9 @@ export interface AttachmentGetResponse {
 /** Upload an attachment through the sync enclave. */
 export async function attachmentPut(
   req: AttachmentPutRequest,
-): Promise<OKResponse> {
+): Promise<AttachmentPutResponse> {
   const client = await getSyncEnclaveClient()
-  return client.post<OKResponse>('/v1/attachment/put', {
-    id: req.id,
+  return client.post<AttachmentPutResponse>('/v1/attachment/put', {
     chat_id: req.chatId,
     key: req.keyB64,
     plaintext: bytesToB64(req.plaintext),
@@ -479,20 +494,24 @@ export async function attachmentGet(
   const client = await getSyncEnclaveClient()
   const resp = await client.post<AttachmentGetResponse>('/v1/attachment/get', {
     id: req.id,
+    chat_id: req.chatId,
     key: req.keyB64,
   })
   return b64ToBytes(resp.plaintext)
 }
 
-/** Delete an attachment from buckets through the sync enclave. */
+/**
+ * Delete an attachment from buckets through the sync enclave. No CEK
+ * is required: the buckets path is the attachment id and the
+ * controlplane's `chat_attachments` row is the source of truth for
+ * ownership; deletion is pure addressing.
+ */
 export async function attachmentDelete(req: {
   id: string
-  keyB64: string
 }): Promise<OKResponse> {
   const client = await getSyncEnclaveClient()
   return client.post<OKResponse>('/v1/attachment/delete', {
     id: req.id,
-    key: req.keyB64,
   })
 }
 
