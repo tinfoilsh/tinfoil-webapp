@@ -3,7 +3,7 @@ import {
   getMessageImages,
 } from '@/components/chat/attachment-helpers'
 import { buildGenUIPromptHint } from '@/components/chat/genui/system-prompt'
-import type { Message } from '@/components/chat/types'
+import type { Attachment, Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import type {
   ChatCompletionAssistantMessageParam,
@@ -12,6 +12,20 @@ import type {
   ChatCompletionToolMessageParam,
   ChatCompletionUserMessageParam,
 } from 'openai/resources/chat/completions'
+
+// Notes telling the model that an attachment is also reachable as a real
+// file inside the code-execution sandbox. Only emitted when the eager
+// bucket upload succeeded — `fileAccessToken` is the witness.
+function uploadPathLine(att: Attachment): string | null {
+  return att.fileAccessToken
+    ? `Available in code execution environment at: /user-uploads/${att.fileName}`
+    : null
+}
+function uploadHintInline(att: Attachment): string {
+  return att.fileAccessToken
+    ? ` — also available at /user-uploads/${att.fileName} in the code execution environment`
+    : ''
+}
 
 /**
  * Helper for building chat completion queries with model-specific system prompt injection
@@ -214,10 +228,13 @@ export class ChatQueryBuilder {
     if (textOnlyDocs.length > 0) {
       const docContent = textOnlyDocs
         .filter((a) => a.textContent)
-        .map(
-          (a) =>
-            `Document title: ${a.fileName}\nDocument contents:\n${a.textContent}`,
-        )
+        .map((a) => {
+          const path = uploadPathLine(a)
+          const header = path
+            ? `Document title: ${a.fileName}\n${path}`
+            : `Document title: ${a.fileName}`
+          return `${header}\nDocument contents:\n${a.textContent}`
+        })
         .join('\n\n')
       if (docContent) {
         textContent = `---\nDocument content:\n${docContent}\n---\n\n${textContent}`
@@ -235,9 +252,10 @@ export class ChatQueryBuilder {
       }> = []
 
       for (const doc of pagedDocs) {
+        const hint = uploadHintInline(doc)
         content.push({
           type: 'text',
-          text: `[Attached file: ${doc.fileName}]`,
+          text: `[Attached file: ${doc.fileName}${hint}]`,
         })
         for (const p of doc.pages!) {
           const label = p.is_scanned
@@ -260,6 +278,13 @@ export class ChatQueryBuilder {
 
       for (const img of imageAttachments) {
         if (img.base64 && img.mimeType) {
+          const hint = uploadHintInline(img)
+          if (hint) {
+            content.push({
+              type: 'text',
+              text: `[Image: ${img.fileName}${hint}]`,
+            })
+          }
           content.push({
             type: 'image_url',
             image_url: {
@@ -276,7 +301,10 @@ export class ChatQueryBuilder {
     if (imageAttachments.length > 0 && !multimodal) {
       const descriptions = imageAttachments
         .filter((a) => a.description)
-        .map((a) => `Image: ${a.fileName}\nDescription:\n${a.description}`)
+        .map((a) => {
+          const hint = uploadHintInline(a)
+          return `Image: ${a.fileName}${hint}\nDescription:\n${a.description}`
+        })
         .join('\n\n')
       if (descriptions) {
         textContent = `${textContent}\n\n[Treat these descriptions as if they are the raw images.]\n${descriptions}`

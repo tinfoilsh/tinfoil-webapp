@@ -552,6 +552,29 @@ export function useChatMessaging({
             )) ?? undefined)
           : undefined
 
+        // Walk every message's attachments and collect the ones that
+        // were successfully pre-uploaded to buckets at attach time.
+        // The orchestrator's protocol is a full reconciliation, so
+        // sending the chat's complete set every turn is correct;
+        // unchanged files are skipped server-side via sha match.
+        const codeExecutionUploads = codeExecutionEnabled
+          ? updatedMessages
+              .flatMap((m) => m.attachments ?? [])
+              .filter(
+                (
+                  a,
+                ): a is typeof a & {
+                  fileAccessToken: string
+                  sha256: string
+                } => !!a.fileAccessToken && !!a.sha256,
+              )
+              .map((a) => ({
+                fileAccessToken: a.fileAccessToken,
+                filename: a.fileName,
+                sha256: a.sha256,
+              }))
+          : undefined
+
         const response = await sendChatStream({
           model,
           systemPrompt: baseSystemPrompt,
@@ -572,6 +595,7 @@ export function useChatMessaging({
           codeExecutionAccessToken: updatedChat.codeExecutionAccessToken,
           codeExecutionEncryptionKey: codeExecutionEncryptionKey ?? undefined,
           codeExecutionContainerAuthToken,
+          codeExecutionUploads,
         })
 
         const assistantMessage = await processStreamingResponse(response, {
