@@ -45,14 +45,12 @@ describe('useSyncEnclaveSession', () => {
     const { result } = renderHook(() => useSyncEnclaveSession(null))
     expect(result.current.status).toBe('idle')
     expect(result.current.cekHex).toBeNull()
-    expect(result.current.opKey).toBeNull()
   })
 
-  it('becomes ready after attestation + subkey derivation', async () => {
+  it('becomes ready after attestation completes', async () => {
     const { result } = renderHook(() => useSyncEnclaveSession(cekHex))
     await waitFor(() => expect(result.current.status).toBe('ready'))
     expect(result.current.cekHex).toBe(cekHex)
-    expect(result.current.opKey).not.toBeNull()
     expect(mockReady).toHaveBeenCalledTimes(1)
   })
 
@@ -61,7 +59,6 @@ describe('useSyncEnclaveSession', () => {
     const { result } = renderHook(() => useSyncEnclaveSession(cekHex))
     await waitFor(() => expect(result.current.status).toBe('paused'))
     expect(result.current.cekHex).toBeNull()
-    expect(result.current.opKey).toBeNull()
     expect(result.current.lastError?.message).toBe('attestation flake')
   })
 
@@ -73,7 +70,7 @@ describe('useSyncEnclaveSession', () => {
     mockReady.mockResolvedValueOnce(undefined)
     act(() => result.current.retry())
     await waitFor(() => expect(result.current.status).toBe('ready'))
-    expect(result.current.opKey).not.toBeNull()
+    expect(result.current.cekHex).toBe(cekHex)
   })
 
   it('clear() drops in-memory state but does not touch storage', async () => {
@@ -83,7 +80,6 @@ describe('useSyncEnclaveSession', () => {
     act(() => result.current.clear())
     expect(result.current.status).toBe('idle')
     expect(result.current.cekHex).toBeNull()
-    expect(result.current.opKey).toBeNull()
   })
 
   it('reverts to idle when the unlocked CEK becomes null', async () => {

@@ -6,14 +6,6 @@ export {
 } from './sync-enclave-client'
 
 export {
-  buildCanonical,
-  computeOperationHash,
-  deriveOpHashKey,
-  operationHashForCek,
-} from './operation-hash'
-export type { OperationCanonicalInput } from './operation-hash'
-
-export {
   cekBytesToHex,
   cekHexToBytes,
   deriveKeyIdHex,
