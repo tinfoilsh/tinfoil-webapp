@@ -1,4 +1,5 @@
 import { type BaseModel } from '@/config/models'
+import { attachmentGetPublic } from '@/services/sync-enclave/sync-api'
 import {
   base64ToUint8Array,
   decryptAttachment,
@@ -109,6 +110,28 @@ export function SharedChatView({
           const attIdx = ai
           tasks.push(
             (async () => {
+              const apply = (base64: string) => {
+                if (cancelled) return
+                updated[msgIdx] = { ...updated[msgIdx] }
+                updated[msgIdx].attachments = [...updated[msgIdx].attachments!]
+                updated[msgIdx].attachments![attIdx] = {
+                  ...updated[msgIdx].attachments![attIdx],
+                  base64,
+                }
+                anyUpdated = true
+              }
+
+              try {
+                const plaintext = await attachmentGetPublic({
+                  id: att.id,
+                  attKeyB64: att.encryptionKey!,
+                })
+                apply(uint8ArrayToBase64(plaintext))
+                return
+              } catch {
+                // fall through to legacy controlplane BYTEA endpoint
+              }
+
               try {
                 const resp = await fetch(
                   `${apiBaseUrl}/api/storage/attachment/${att.id}`,
@@ -121,19 +144,7 @@ export function SharedChatView({
                   new Uint8Array(encryptedBuf),
                   keyBytes,
                 )
-                const base64 = uint8ArrayToBase64(await decrypted)
-
-                if (!cancelled) {
-                  updated[msgIdx] = { ...updated[msgIdx] }
-                  updated[msgIdx].attachments = [
-                    ...updated[msgIdx].attachments!,
-                  ]
-                  updated[msgIdx].attachments![attIdx] = {
-                    ...updated[msgIdx].attachments![attIdx],
-                    base64,
-                  }
-                  anyUpdated = true
-                }
+                apply(uint8ArrayToBase64(await decrypted))
               } catch {
                 // Silently skip — thumbnail is still visible
               }

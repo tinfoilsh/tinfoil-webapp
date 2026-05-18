@@ -219,30 +219,27 @@ export class CloudStorageService {
     messages: Message[],
     chatId: string,
   ): Promise<void> {
-    const keyB64 = requirePrimaryKeyB64()
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
         if (att.type === 'image' && att.base64) {
           const raw = base64ToUint8Array(att.base64)
-          // The enclave mints the durable attachment id and returns
-          // it; the local id we used while the upload was pending
-          // (UI tracking, OCR callbacks, optimistic message list)
-          // is now retired in favor of the enclave-minted one. We
-          // overwrite att.id in place so the chat JSON we are about
-          // to seal references the same id as the buckets path and
-          // the controlplane's chat_attachments row.
-          const { id: enclaveID } = await enclaveAttachmentPut({
+          // The enclave mints both the durable attachment id and a
+          // fresh per-attachment AES-256 key. It uploads the raw
+          // plaintext to buckets sealed under that key (buckets's
+          // v1 envelope), then returns the id + key here so we can
+          // (a) adopt the enclave-minted id everywhere we used a
+          // local temp id and (b) embed the key in the chat JSON
+          // as `att.encryptionKey`. The chat envelope (sealed under
+          // the user's CEK) is what keeps the per-attachment keys
+          // confidential at rest; this is also how sharing keeps
+          // working — re-sealing only the chat plaintext for a
+          // recipient hands them every attachment key transitively.
+          const { id: enclaveID, att_key } = await enclaveAttachmentPut({
             chatId,
-            keyB64,
             plaintext: raw,
           })
           att.id = enclaveID
-          // v2 attachments are sealed inside the enclave under the
-          // user's CEK with an AAD that binds (clerk_user_id, chat_id,
-          // attachment_id), so the chat JSON no longer carries a
-          // per-attachment key. Clearing the field marks the row as v2
-          // on read.
-          delete att.encryptionKey
+          att.encryptionKey = att_key
         }
       }
     }
@@ -375,24 +372,24 @@ export class CloudStorageService {
 
   /**
    * Fetch and decrypt all image attachments that have no base64 yet.
-   * Branches per row:
-   *   - legacy v1 (att.encryptionKey set): fetch ciphertext from
-   *     /api/storage/attachment, decrypt locally with the embedded key.
-   *   - v2 (no encryptionKey): pull plaintext through the sync enclave;
-   *     the enclave opens the sealed envelope under the user's CEK with
-   *     an AAD that binds (clerk_user_id, chat_id, attachment_id), so
-   *     the caller must pass the owning chat id.
-   * Returns a map of attachmentId -> base64 string so the caller can
-   * merge results into the current (possibly updated) messages without
-   * overwriting the entire array with a stale snapshot.
+   * Every attachment carries its own AES-256 key in
+   * `att.encryptionKey`. We try the buckets-backed read first
+   * (through the enclave); on 404 we fall back to the legacy
+   * controlplane public BYTEA endpoint, which still holds bytes for
+   * attachments that haven't been promoted yet. The same key
+   * unlocks both — the rewrap path reuses the per-attachment key as
+   * the buckets slot key when it promotes a legacy row.
+   *
+   * Returns a map of attachmentId -> base64 string so the caller
+   * can merge results into the current (possibly updated) messages
+   * without overwriting the entire array with a stale snapshot.
    */
   async loadChatImages(
-    chatId: string,
+    _chatId: string,
     messages: Message[],
   ): Promise<Record<string, string>> {
     const results: Record<string, string> = {}
     const tasks: Promise<void>[] = []
-    let cekB64: string | null = null
 
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
@@ -400,50 +397,31 @@ export class CloudStorageService {
           continue
         }
         const attId = att.id
-
-        if (att.encryptionKey) {
-          const keyB64 = att.encryptionKey
-          tasks.push(
-            (async () => {
-              try {
-                const encryptedBuf = await this.fetchAttachment(attId)
-                if (!encryptedBuf) return
-
-                const keyBytes = base64ToUint8Array(keyB64)
-                const decrypted = await decryptAttachment(
-                  new Uint8Array(encryptedBuf),
-                  keyBytes,
-                )
-                results[attId] = uint8ArrayToBase64(decrypted)
-              } catch {
-                // Silently skip failed attachments — thumbnail is still available
-              }
-            })(),
-          )
+        const keyB64 = att.encryptionKey
+        if (!keyB64) {
           continue
         }
-
-        // v2 path: only attempt if we have a CEK available. Without
-        // one we can't open the sealed envelope, so leave the
-        // thumbnail in place and move on.
-        if (cekB64 === null) {
-          try {
-            cekB64 = requirePrimaryKeyB64()
-          } catch {
-            cekB64 = ''
-          }
-        }
-        if (!cekB64) continue
-        const keyB64 = cekB64
         tasks.push(
           (async () => {
             try {
               const plaintext = await enclaveAttachmentGet({
                 id: attId,
-                chatId,
-                keyB64,
+                attKeyB64: keyB64,
               })
               results[attId] = uint8ArrayToBase64(plaintext)
+              return
+            } catch {
+              // fall through to legacy path
+            }
+            try {
+              const encryptedBuf = await this.fetchAttachment(attId)
+              if (!encryptedBuf) return
+              const keyBytes = base64ToUint8Array(keyB64)
+              const decrypted = await decryptAttachment(
+                new Uint8Array(encryptedBuf),
+                keyBytes,
+              )
+              results[attId] = uint8ArrayToBase64(decrypted)
             } catch {
               // Silently skip failed attachments — thumbnail is still available
             }

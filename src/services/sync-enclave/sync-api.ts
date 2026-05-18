@@ -10,22 +10,19 @@
  *     32-byte key);
  *   - choosing an idempotency key per logical operation;
  *   - passing the ETag the client believes the row is at (or null for
- *     a create) via `ifMatch`;
- *   - feeding the enclave any conflict resolution preferences via
- *     `conflictPolicy`.
+ *     a create) via `ifMatch`.
  *
  * The enclave owns:
  *   - encryption-at-rest (seal/unseal under the user's CEK);
- *   - the per-row ETag and `key_id` columns;
- *   - 412 STALE_BLOB / 409 STALE_KEY conflict semantics; and
- *   - the auto-merge resolver path (see `internal/resolver`).
+ *   - the per-row ETag and `key_id` columns; and
+ *   - 412 STALE_BLOB (surfaced as 409 SYNC_CONFLICT) / 409 STALE_KEY
+ *     conflict semantics. The enclave never merges concurrent edits;
+ *     every conflict is bubbled up to the UI to resolve.
  */
 
 import { SyncEnclaveError, getSyncEnclaveClient } from './sync-enclave-client'
 
 export type Scope = 'profile' | 'chat' | 'project' | 'project_document'
-
-export type ConflictPolicy = 'auto_merge' | 'reject' | 'replace_remote'
 
 /* -------------------------------------------------------------------------- */
 /*  Push / Pull / List / Delete                                               */
@@ -33,8 +30,13 @@ export type ConflictPolicy = 'auto_merge' | 'reject' | 'replace_remote'
 
 export interface PushRequest {
   scope: Scope
-  /** Required for non-profile scopes; ignored for profile (server fills it in). */
-  id?: string
+  /**
+   * Required for every scope. For `profile`, pass the canonical
+   * singleton id (`'profile'`) — the enclave no longer substitutes it
+   * silently, so an empty value is a 400. See `cloud/profile-sync.ts`
+   * for the constant and call site.
+   */
+  id: string
   /** User's CEK, base64-encoded raw 32 bytes. */
   keyB64: string
   /** Plaintext bytes the enclave will seal. */
@@ -42,7 +44,6 @@ export interface PushRequest {
   /** CAS guard. null = create; otherwise the ETag the caller believes the row is at. */
   ifMatch: string | null
   idempotencyKey: string
-  conflictPolicy?: ConflictPolicy
   /** Arbitrary scope-specific metadata persisted alongside the row. */
   metadata?: Record<string, unknown>
 }
@@ -300,7 +301,6 @@ export async function push(req: PushRequest): Promise<PushResponse> {
     plaintext: bytesToB64(req.plaintext),
     if_match: req.ifMatch,
     idempotency_key: req.idempotencyKey,
-    conflict_policy: req.conflictPolicy ?? 'auto_merge',
     metadata: req.metadata,
   })
 }
@@ -448,26 +448,31 @@ export async function migrateAll(
 
 export interface AttachmentPutRequest {
   chatId: string
-  /** User's CEK, base64-encoded raw 32 bytes. */
-  keyB64: string
-  /** Raw attachment bytes; the enclave seals before storing. */
+  /** Raw attachment bytes; the enclave forwards to buckets. */
   plaintext: Uint8Array
 }
 
 /**
- * The enclave mints the durable attachment id server-side and
- * returns it here. The caller must adopt this id wherever it used
- * its local temp id before pushing the parent chat.
+ * The enclave mints both the durable attachment id and the
+ * per-attachment AES-256 key, then returns them here. The caller
+ * must adopt the id wherever it used its local temp id and embed
+ * the key in the chat JSON (as `attachments[i].encryptionKey`) so
+ * future reads can use it as the buckets slot key. No CEK material
+ * is ever shipped over this hop — the per-attachment key is the
+ * only credential needed to address the bucket entry, and it is
+ * already implicitly protected by the chat envelope's CEK seal.
  */
 export interface AttachmentPutResponse {
   ok: true
   id: string
+  /** Base64-encoded 32-byte AES-256 key the enclave minted. */
+  att_key: string
 }
 
 export interface AttachmentGetRequest {
   id: string
-  chatId: string
-  keyB64: string
+  /** Per-attachment key the caller pulled from chat JSON. */
+  attKeyB64: string
 }
 
 export interface AttachmentGetResponse {
@@ -482,7 +487,6 @@ export async function attachmentPut(
   const client = await getSyncEnclaveClient()
   return client.post<AttachmentPutResponse>('/v1/attachment/put', {
     chat_id: req.chatId,
-    key: req.keyB64,
     plaintext: bytesToB64(req.plaintext),
   })
 }
@@ -494,9 +498,29 @@ export async function attachmentGet(
   const client = await getSyncEnclaveClient()
   const resp = await client.post<AttachmentGetResponse>('/v1/attachment/get', {
     id: req.id,
-    chat_id: req.chatId,
-    key: req.keyB64,
+    att_key: req.attKeyB64,
   })
+  return b64ToBytes(resp.plaintext)
+}
+
+/**
+ * Fetch an attachment through the enclave's unauthenticated route.
+ * Used by share recipients who have the per-attachment key but no
+ * JWT — same trust model as legacy /api/storage/attachment, just
+ * routed through the enclave so the buckets API key never has to
+ * be exposed to the recipient's browser.
+ */
+export async function attachmentGetPublic(
+  req: AttachmentGetRequest,
+): Promise<Uint8Array> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.post<AttachmentGetResponse>(
+    '/v1/attachment/get-public',
+    {
+      id: req.id,
+      att_key: req.attKeyB64,
+    },
+  )
   return b64ToBytes(resp.plaintext)
 }
 
