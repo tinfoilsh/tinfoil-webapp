@@ -1,10 +1,6 @@
 import type { Message } from '@/components/chat/types'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import {
-  base64ToUint8Array,
-  decryptAttachment,
-  uint8ArrayToBase64,
-} from '@/utils/binary-codec'
+import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import { type StoredChat } from '../storage/indexed-db'
@@ -41,6 +37,7 @@ export interface ChatListResponse {
   conversations: Array<{
     id: string
     updatedAt: string
+    syncVersion: number
     content?: string
     projectId?: string
   }>
@@ -86,15 +83,21 @@ export interface UploadChatOptions {
 }
 
 export type RawChatContent =
-  | { content: string; formatVersion: 0 }
-  | { binaryContent: ArrayBuffer; formatVersion: 1 }
+  | { content: string; formatVersion: 0; syncVersion?: number }
+  | { binaryContent: ArrayBuffer; formatVersion: 1; syncVersion?: number }
   /**
    * Plaintext envelope-v2 JSON returned by the sync enclave. The `2`
    * here mirrors the wire `tinfoil-sync-envelope-v2` AAD (see
    * syncplan.md §5) — the row is sealed under v2 on the controlplane,
    * the enclave unsealed it, so what we hand back is plaintext.
    */
-  | { plaintext: string; formatVersion: 2 }
+  | { plaintext: string; formatVersion: 2; syncVersion?: number }
+
+function etagToSyncVersion(etag: string | undefined): number | undefined {
+  if (!etag) return undefined
+  const parsed = parseInt(etag, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+}
 
 function chatUpdateToMeta(
   update: ListStatusUpdate,
@@ -102,6 +105,7 @@ function chatUpdateToMeta(
   return {
     id: update.id,
     updatedAt: update.updated_at,
+    syncVersion: etagToSyncVersion(update.etag) ?? 1,
     projectId: update.project_id ?? undefined,
   }
 }
@@ -171,7 +175,7 @@ export class CloudStorageService {
   async uploadChat(
     chat: StoredChat,
     options: UploadChatOptions = {},
-  ): Promise<string | null> {
+  ): Promise<number | null> {
     // §9.6 R6 — the user's opt-out is invariant: a chat marked
     // localOnly MUST NEVER reach the enclave. Throw rather than
     // silently drop so an upstream caller bug is caught instead of
@@ -202,7 +206,7 @@ export class CloudStorageService {
       metadata.restoreDeleted = true
     }
 
-    await enclavePush({
+    const pushResp = await enclavePush({
       scope: 'chat',
       id: chat.id,
       keyB64: requirePrimaryKeyB64(),
@@ -212,7 +216,7 @@ export class CloudStorageService {
       metadata,
     })
 
-    return null
+    return etagToSyncVersion(pushResp.etag) ?? null
   }
 
   private async encryptAndUploadAttachments(
@@ -315,6 +319,7 @@ export class CloudStorageService {
     return {
       plaintext: new TextDecoder().decode(plaintext),
       formatVersion: 2,
+      syncVersion: etagToSyncVersion(item.etag),
     }
   }
 
@@ -328,14 +333,25 @@ export class CloudStorageService {
 
       const remote: RemoteChatData =
         raw.formatVersion === 2
-          ? { id: chatId, plaintext: raw.plaintext, formatVersion: 2 }
+          ? {
+              id: chatId,
+              plaintext: raw.plaintext,
+              formatVersion: 2,
+              syncVersion: raw.syncVersion,
+            }
           : raw.formatVersion === 1
             ? {
                 id: chatId,
                 binaryContent: raw.binaryContent,
                 formatVersion: 1,
+                syncVersion: raw.syncVersion,
               }
-            : { id: chatId, content: raw.content, formatVersion: 0 }
+            : {
+                id: chatId,
+                content: raw.content,
+                formatVersion: 0,
+                syncVersion: raw.syncVersion,
+              }
 
       const result = await processRemoteChat(remote)
       return result.chat
@@ -350,35 +366,8 @@ export class CloudStorageService {
   }
 
   /**
-   * Fetch a single encrypted attachment blob by ID.
-   */
-  async fetchAttachment(attachmentId: string): Promise<ArrayBuffer | null> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/attachment/${attachmentId}`,
-    )
-
-    if (response.status === 404) {
-      return null
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch attachment ${attachmentId}: ${response.statusText}`,
-      )
-    }
-
-    return response.arrayBuffer()
-  }
-
-  /**
    * Fetch and decrypt all image attachments that have no base64 yet.
-   * Every attachment carries its own AES-256 key in
-   * `att.encryptionKey`. We try the buckets-backed read first
-   * (through the enclave); on 404 we fall back to the legacy
-   * controlplane public BYTEA endpoint, which still holds bytes for
-   * attachments that haven't been promoted yet. The same key
-   * unlocks both — the rewrap path reuses the per-attachment key as
-   * the buckets slot key when it promotes a legacy row.
+   * Every attachment carries its own AES-256 key in `att.encryptionKey`.
    *
    * Returns a map of attachmentId -> base64 string so the caller
    * can merge results into the current (possibly updated) messages
@@ -409,19 +398,6 @@ export class CloudStorageService {
                 attKeyB64: keyB64,
               })
               results[attId] = uint8ArrayToBase64(plaintext)
-              return
-            } catch {
-              // fall through to legacy path
-            }
-            try {
-              const encryptedBuf = await this.fetchAttachment(attId)
-              if (!encryptedBuf) return
-              const keyBytes = base64ToUint8Array(keyB64)
-              const decrypted = await decryptAttachment(
-                new Uint8Array(encryptedBuf),
-                keyBytes,
-              )
-              results[attId] = uint8ArrayToBase64(decrypted)
             } catch {
               // Silently skip failed attachments — thumbnail is still available
             }
@@ -469,15 +445,27 @@ export class CloudStorageService {
       ids: conversations.map((c) => c.id),
       keys,
     })
-    const plaintextById = new Map<string, string>()
+    const pulledById = new Map<
+      string,
+      { content: string; syncVersion?: number }
+    >()
     for (const item of pulled.items) {
       const plaintext = item.ok ? pullItemPlaintext(item) : null
       if (plaintext) {
-        plaintextById.set(item.id, new TextDecoder().decode(plaintext))
+        pulledById.set(item.id, {
+          content: new TextDecoder().decode(plaintext),
+          syncVersion: etagToSyncVersion(item.etag),
+        })
       }
     }
     for (const conversation of conversations) {
-      conversation.content = plaintextById.get(conversation.id)
+      const pulled = pulledById.get(conversation.id)
+      if (pulled) {
+        conversation.content = pulled.content
+        if (pulled.syncVersion) {
+          conversation.syncVersion = pulled.syncVersion
+        }
+      }
     }
   }
 
@@ -537,20 +525,6 @@ export class CloudStorageService {
       cursor = status.next_cursor
     } while (cursor)
     return { count, lastUpdated }
-  }
-
-  async getProfileSyncStatus(): Promise<ProfileSyncStatus> {
-    const response = await fetch(`${API_BASE_URL}/api/profile/sync-status`, {
-      headers: await this.getHeaders(),
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get profile sync status: ${response.statusText}`,
-      )
-    }
-
-    return response.json()
   }
 
   /**

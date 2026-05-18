@@ -10,9 +10,6 @@ import {
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
-
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
 
@@ -45,33 +42,8 @@ export class ProfileSyncService {
   private cachedProfile: ProfileData | null = null
   private failedDecryptionData: string | null = null
 
-  private async getHeaders(): Promise<Record<string, string>> {
-    return authTokenManager.getAuthHeaders()
-  }
-
   async isAuthenticated(): Promise<boolean> {
     return authTokenManager.isAuthenticated()
-  }
-
-  async fetchEncryptedProfilePayload(): Promise<string | null> {
-    if (!(await this.isAuthenticated())) {
-      return null
-    }
-
-    const response = await fetch(`${API_BASE_URL}/api/profile/`, {
-      headers: await this.getHeaders(),
-    })
-
-    if (response.status === 401 || response.status === 404) {
-      return null
-    }
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch profile: ${response.statusText}`)
-    }
-
-    const data = await response.json()
-    return data.data as string
   }
 
   // Get profile from cloud via the sync enclave. The enclave unseals
@@ -267,25 +239,15 @@ export class ProfileSyncService {
         return null
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/profile/sync-status`, {
-        headers: await this.getHeaders(),
-      })
-
-      if (response.status === 401) {
-        return null
+      const status = await enclaveListStatus({ scope: PROFILE_SCOPE })
+      const current = status.updates.find((u) => u.id === PROFILE_ROW_ID)
+      if (!current) return { exists: false }
+      const version = parseInt(current.etag, 10)
+      return {
+        exists: true,
+        version: Number.isFinite(version) ? version : undefined,
+        lastUpdated: current.updated_at,
       }
-
-      if (response.status === 404) {
-        return { exists: false }
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to get profile sync status: ${response.statusText}`,
-        )
-      }
-
-      return await response.json()
     } catch (error) {
       if (
         error instanceof Error &&

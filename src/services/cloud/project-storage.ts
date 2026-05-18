@@ -29,6 +29,9 @@ const API_BASE_URL =
 
 const PROJECT_SCOPE = 'project'
 const PROJECT_DOCUMENT_SCOPE = 'project_document'
+const CHAT_SCOPE = 'chat'
+const ENCLAVE_PROJECT_LIST_LIMIT = 100
+const ENCLAVE_PROJECT_CHAT_LIST_LIMIT = 100
 
 function projectDocumentId(projectId: string, documentId: string): string {
   return `${projectId}/${documentId}`
@@ -44,6 +47,54 @@ function etagToSyncVersion(etag: string | undefined): number {
   if (!etag) return 1
   const parsed = parseInt(etag, 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+}
+
+function createdAtFromReverseId(id: string): string {
+  const reverse = parseInt(id.split('_')[0] ?? '', 10)
+  if (!Number.isFinite(reverse)) {
+    return new Date().toISOString()
+  }
+  return new Date(9999999999999 - reverse).toISOString()
+}
+
+function hasNextCursor(cursor: string | undefined): boolean {
+  return typeof cursor === 'string' && cursor.length > 0
+}
+
+function projectDocumentListItemFromStatus(update: {
+  id: string
+  etag: string
+  updated_at: string
+}): ProjectDocumentListResponse['documents'][number] {
+  const slash = update.id.indexOf('/')
+  const projectId = slash >= 0 ? update.id.slice(0, slash) : ''
+  const documentId = slash >= 0 ? update.id.slice(slash + 1) : update.id
+  return {
+    id: documentId,
+    projectId,
+    sizeBytes: 0,
+    syncVersion: etagToSyncVersion(update.etag),
+    createdAt: createdAtFromReverseId(documentId),
+    updatedAt: update.updated_at,
+  }
+}
+
+function projectChatFromStatus(update: {
+  id: string
+  etag: string
+  updated_at: string
+  project_id?: string | null
+}): ProjectChatListResponse['chats'][number] {
+  return {
+    id: update.id,
+    projectId: update.project_id ?? '',
+    messageCount: 0,
+    syncVersion: etagToSyncVersion(update.etag),
+    size: 0,
+    formatVersion: 2,
+    createdAt: createdAtFromReverseId(update.id),
+    updatedAt: update.updated_at,
+  }
 }
 
 export class ProjectStorageService {
@@ -220,16 +271,27 @@ export class ProjectStorageService {
       )
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/storage/projects`, {
-      method: 'DELETE',
-      headers: await this.getHeaders(),
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to delete all projects: ${response.statusText}`)
-    }
-
-    return response.json()
+    let deleted = 0
+    let cursor: string | undefined
+    do {
+      const status = await enclaveListStatus({
+        scope: PROJECT_SCOPE,
+        cursor,
+        limit: 500,
+      })
+      for (const update of status.updates) {
+        await enclaveDeleteRow({
+          scope: PROJECT_SCOPE,
+          id: update.id,
+          ifMatch: update.etag,
+          idempotencyKey: newIdempotencyKey(),
+          keyB64: requirePrimaryKeyB64(),
+        })
+        deleted++
+      }
+      cursor = status.next_cursor
+    } while (cursor)
+    return { deleted }
   }
 
   async listProjects(options?: {
@@ -237,65 +299,84 @@ export class ProjectStorageService {
     continuationToken?: string
     includeContent?: boolean
   }): Promise<ProjectListResponse> {
-    const params = new URLSearchParams()
-    if (options?.limit) {
-      params.append('limit', options.limit.toString())
-    }
-    if (options?.continuationToken) {
-      params.append('continuationToken', options.continuationToken)
-    }
-    if (options?.includeContent) {
-      params.append('includeContent', 'true')
-    }
-
-    const url = `${API_BASE_URL}/api/projects${params.toString() ? `?${params.toString()}` : ''}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
+    const limit = Math.min(options?.limit ?? ENCLAVE_PROJECT_LIST_LIMIT, 500)
+    const status = await enclaveListStatus({
+      scope: PROJECT_SCOPE,
+      cursor: options?.continuationToken,
+      limit,
     })
-
-    if (!response.ok) {
-      throw new Error(`Failed to list projects: ${response.statusText}`)
+    return {
+      projects: status.updates.map((update) => ({
+        id: update.id,
+        key: update.id,
+        createdAt: createdAtFromReverseId(update.id),
+        updatedAt: update.updated_at,
+        syncVersion: etagToSyncVersion(update.etag),
+        size: 0,
+      })),
+      nextContinuationToken: status.next_cursor,
+      hasMore: hasNextCursor(status.next_cursor),
     }
-
-    return response.json()
   }
 
   async getProjectSyncStatus(): Promise<ProjectSyncStatus> {
-    const response = await fetch(`${API_BASE_URL}/api/projects/sync-status`, {
-      headers: await this.getHeaders(),
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get project sync status: ${response.statusText}`,
-      )
-    }
-
-    return response.json()
+    let count = 0
+    let lastUpdated: string | null = null
+    let cursor: string | undefined
+    do {
+      const status = await enclaveListStatus({
+        scope: PROJECT_SCOPE,
+        cursor,
+        limit: 500,
+      })
+      count += status.updates.length
+      for (const update of status.updates) {
+        if (!lastUpdated || update.updated_at > lastUpdated) {
+          lastUpdated = update.updated_at
+        }
+      }
+      cursor = status.next_cursor
+    } while (cursor)
+    return { count, lastUpdated }
   }
 
   async getProjectsUpdatedSince(options: {
     since: string
     continuationToken?: string
   }): Promise<ProjectListResponse> {
-    const params = new URLSearchParams()
-    params.append('since', options.since)
-    if (options.continuationToken) {
-      params.append('continuationToken', options.continuationToken)
-    }
-
-    const url = `${API_BASE_URL}/api/projects/updated-since?${params.toString()}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get projects updated since: ${response.statusText}`,
+    let cursor: string | undefined = options.continuationToken ?? options.since
+    let nextContinuationToken: string | undefined
+    const projects: ProjectListResponse['projects'] = []
+    do {
+      const status = await enclaveListStatus({
+        scope: PROJECT_SCOPE,
+        cursor,
+        limit: ENCLAVE_PROJECT_LIST_LIMIT,
+      })
+      projects.push(
+        ...status.updates
+          .filter((update) => update.updated_at > options.since)
+          .map((update) => ({
+            id: update.id,
+            key: update.id,
+            createdAt: createdAtFromReverseId(update.id),
+            updatedAt: update.updated_at,
+            syncVersion: etagToSyncVersion(update.etag),
+            size: 0,
+          })),
       )
-    }
+      cursor = status.next_cursor
+      nextContinuationToken = status.next_cursor
+    } while (
+      projects.length < ENCLAVE_PROJECT_LIST_LIMIT &&
+      hasNextCursor(cursor)
+    )
 
-    return response.json()
+    return {
+      projects,
+      nextContinuationToken,
+      hasMore: hasNextCursor(nextContinuationToken),
+    }
   }
 
   async generateDocumentId(projectId: string): Promise<{
@@ -435,107 +516,129 @@ export class ProjectStorageService {
 
   async listDocuments(
     projectId: string,
-    options?: { includeContent?: boolean },
+    _options?: { includeContent?: boolean },
   ): Promise<ProjectDocumentListResponse> {
-    const params = new URLSearchParams()
-    if (options?.includeContent) {
-      params.append('includeContent', 'true')
-    }
-
-    const url = `${API_BASE_URL}/api/projects/${projectId}/documents${params.toString() ? `?${params.toString()}` : ''}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to list documents: ${response.statusText}`)
-    }
-
-    return response.json()
+    const documents: ProjectDocumentListResponse['documents'] = []
+    let cursor: string | undefined
+    do {
+      const status = await enclaveListStatus({
+        scope: PROJECT_DOCUMENT_SCOPE,
+        cursor,
+        limit: 500,
+      })
+      documents.push(
+        ...status.updates
+          .filter((update) => update.id.startsWith(`${projectId}/`))
+          .map(projectDocumentListItemFromStatus),
+      )
+      cursor = status.next_cursor
+    } while (cursor)
+    return { documents }
   }
 
   async getDocumentSyncStatus(
     projectId: string,
   ): Promise<ProjectDocumentSyncStatus> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/projects/${projectId}/documents/sync-status`,
-      {
-        headers: await this.getHeaders(),
-      },
+    const { documents } = await this.listDocuments(projectId)
+    const lastUpdated = documents.reduce<string | null>(
+      (latest, doc) =>
+        !latest || doc.updatedAt > latest ? doc.updatedAt : latest,
+      null,
     )
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get document sync status: ${response.statusText}`,
-      )
-    }
-
-    return response.json()
+    return { count: documents.length, lastUpdated }
   }
 
   async listProjectChats(
     projectId: string,
     options?: { continuationToken?: string },
   ): Promise<ProjectChatListResponse> {
-    const params = new URLSearchParams()
-    if (options?.continuationToken) {
-      params.append('continuationToken', options.continuationToken)
+    const chats: ProjectChatListResponse['chats'] = []
+    let cursor = options?.continuationToken
+    let nextContinuationToken: string | undefined
+    do {
+      const status = await enclaveListStatus({
+        scope: CHAT_SCOPE,
+        cursor,
+        limit: ENCLAVE_PROJECT_CHAT_LIST_LIMIT,
+      })
+      chats.push(
+        ...status.updates
+          .filter((update) => update.project_id === projectId)
+          .map(projectChatFromStatus),
+      )
+      cursor = status.next_cursor
+      nextContinuationToken = status.next_cursor
+    } while (
+      chats.length < ENCLAVE_PROJECT_CHAT_LIST_LIMIT &&
+      hasNextCursor(cursor)
+    )
+
+    return {
+      chats,
+      nextContinuationToken,
+      hasMore: hasNextCursor(nextContinuationToken),
     }
-
-    const url = `${API_BASE_URL}/api/projects/${projectId}/chats${params.toString() ? `?${params.toString()}` : ''}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to list project chats: ${response.statusText}`)
-    }
-
-    return response.json()
   }
 
   async getProjectChatsSyncStatus(
     projectId: string,
   ): Promise<ProjectChatSyncStatus> {
-    const url = `${API_BASE_URL}/api/projects/${projectId}/chats/sync-status?_t=${Date.now()}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-      cache: 'no-store',
-    })
+    let count = 0
+    let lastUpdated: string | null = null
+    let cursor: string | undefined
+    do {
+      const status = await enclaveListStatus({
+        scope: CHAT_SCOPE,
+        cursor,
+        limit: 500,
+      })
+      for (const update of status.updates) {
+        if (update.project_id !== projectId) continue
+        count++
+        if (!lastUpdated || update.updated_at > lastUpdated) {
+          lastUpdated = update.updated_at
+        }
+      }
+      cursor = status.next_cursor
+    } while (cursor)
 
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get project chats sync status: ${response.statusText}`,
-      )
-    }
-
-    return response.json()
+    return { count, lastUpdated }
   }
 
   async getProjectChatsUpdatedSince(
     projectId: string,
     options: { since: string; cursorId?: string },
   ): Promise<ProjectChatListResponse> {
-    const params = new URLSearchParams()
-    params.append('since', options.since)
-    if (options.cursorId) {
-      params.append('continuationToken', options.cursorId)
-    }
-    params.append('_t', Date.now().toString())
-
-    const url = `${API_BASE_URL}/api/projects/${projectId}/chats/updated-since?${params.toString()}`
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-      cache: 'no-store',
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get project chats updated since: ${response.statusText}`,
+    const chats: ProjectChatListResponse['chats'] = []
+    let cursor: string | undefined = options.cursorId ?? options.since
+    let nextContinuationToken: string | undefined
+    do {
+      const status = await enclaveListStatus({
+        scope: CHAT_SCOPE,
+        cursor,
+        limit: ENCLAVE_PROJECT_CHAT_LIST_LIMIT,
+      })
+      chats.push(
+        ...status.updates
+          .filter(
+            (update) =>
+              update.project_id === projectId &&
+              update.updated_at > options.since,
+          )
+          .map(projectChatFromStatus),
       )
-    }
+      cursor = status.next_cursor
+      nextContinuationToken = status.next_cursor
+    } while (
+      chats.length < ENCLAVE_PROJECT_CHAT_LIST_LIMIT &&
+      hasNextCursor(cursor)
+    )
 
-    return response.json()
+    return {
+      chats,
+      nextContinuationToken,
+      hasMore: hasNextCursor(nextContinuationToken),
+    }
   }
 }
 

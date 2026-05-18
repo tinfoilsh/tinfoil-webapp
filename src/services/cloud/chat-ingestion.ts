@@ -35,6 +35,7 @@ export interface RemoteChatEntry {
   createdAt?: string
   updatedAt?: string
   formatVersion?: number
+  syncVersion?: number
 }
 
 export interface IngestOptions {
@@ -111,6 +112,7 @@ export async function ingestRemoteChats(
         createdAt: remoteChat.createdAt,
         updatedAt: remoteChat.updatedAt,
         formatVersion: remoteChat.formatVersion,
+        syncVersion: remoteChat.syncVersion,
       }
 
       if (remoteChat.content) {
@@ -134,12 +136,15 @@ export async function ingestRemoteChats(
           if (fetched.formatVersion === 2) {
             codecInput.plaintext = fetched.plaintext
             codecInput.formatVersion = 2
+            codecInput.syncVersion = fetched.syncVersion
           } else if (fetched.formatVersion === 1) {
             codecInput.binaryContent = fetched.binaryContent
             codecInput.formatVersion = 1
+            codecInput.syncVersion = fetched.syncVersion
           } else {
             codecInput.content = fetched.content
             codecInput.formatVersion = 0
+            codecInput.syncVersion = fetched.syncVersion
           }
         }
       }
