@@ -14,12 +14,12 @@
  * the same API. The internals route through `enclaveKeyCurrent`.
  */
 
-import { encryptionService } from '../encryption/encryption-service'
 import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import {
   base64ToBytes,
   keyCurrent as enclaveKeyCurrent,
 } from '../sync-enclave/sync-api'
+import { requirePrimaryKeyB64 } from './cek-encoding'
 
 export type CloudRemoteState = 'empty' | 'exists' | 'unknown'
 export type CloudKeyValidationProbe = 'none' | 'profile' | 'project' | 'chat'
@@ -62,8 +62,10 @@ export async function inspectRemoteEncryptedState(): Promise<CloudRemoteState> {
  *  - Enclave probe fails (network, 5xx)        → unknown / canWrite=false
  */
 export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationResult> {
-  const currentKey = encryptionService.getKey()
-  if (!currentKey) {
+  let primaryKeyB64: string
+  try {
+    primaryKeyB64 = requirePrimaryKeyB64()
+  } catch {
     return unknownResult('none', 'No encryption key is currently loaded.')
   }
 
@@ -87,7 +89,7 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
 
   let localKeyId: string
   try {
-    localKeyId = await deriveKeyIdHex(base64ToBytes(currentKey))
+    localKeyId = await deriveKeyIdHex(base64ToBytes(primaryKeyB64))
   } catch {
     return blockedResult('none')
   }

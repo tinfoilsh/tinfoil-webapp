@@ -6,6 +6,14 @@ const mockKeyCurrent = vi.fn()
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
     getKey: () => mockGetKey(),
+    getKeyBytesOrThrow: () => {
+      const key = mockGetKey()
+      if (!key) throw new Error('no key')
+      const bin = atob(key)
+      const out = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+      return out
+    },
   },
 }))
 

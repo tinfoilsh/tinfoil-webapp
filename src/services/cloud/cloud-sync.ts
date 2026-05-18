@@ -727,7 +727,7 @@ export class CloudSyncService {
 
   private async listProjectChatsWithRetry(
     projectId: string,
-    options: { includeContent: boolean; continuationToken?: string },
+    options: { continuationToken?: string },
   ) {
     let lastError: unknown
 
@@ -1149,10 +1149,10 @@ export class CloudSyncService {
       let isFirstPage = true
 
       while (hasMore) {
-        // Fetch project chats with content for decryption
+        // Fetch metadata only; content is pulled through the enclave by ingestRemoteChats.
         const projectChatsResponse = await this.listProjectChatsWithRetry(
           projectId,
-          { includeContent: true, continuationToken },
+          { continuationToken },
         )
 
         const remoteChats = projectChatsResponse.chats || []

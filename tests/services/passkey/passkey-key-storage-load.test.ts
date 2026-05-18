@@ -28,6 +28,11 @@ const mockFetchLegacy = vi.fn()
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
     getKey: (...args: unknown[]) => mockGetKey(...args),
+    getKeyBytesOrThrow: () => {
+      const key = mockGetKey()
+      if (!key) throw new Error('no key')
+      return new TextEncoder().encode(key)
+    },
   },
 }))
 
@@ -170,7 +175,7 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(mockRemoveBundle).toHaveBeenCalledOnce()
       const arg = mockRemoveBundle.mock.calls[0][0]
       expect(arg.keyId).toBe('abc')
-      expect(arg.keyB64).toBe('key_current')
+      expect(arg.keyB64).toBe('a2V5X2N1cnJlbnQ=')
       expect(arg.credentialId).toBe('cred-a')
       expect(typeof arg.idempotencyKey).toBe('string')
     })

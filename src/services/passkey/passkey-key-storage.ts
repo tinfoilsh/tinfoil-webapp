@@ -29,6 +29,7 @@
 
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
+import { requirePrimaryKeyB64 } from '../cloud/cek-encoding'
 import type { CloudKeyAuthorizationMode } from '../cloud/cloud-key-authorization'
 import { encryptionService } from '../encryption/encryption-service'
 import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
@@ -231,11 +232,9 @@ export async function deletePasskeyCredential(
     const resp = await enclaveKeyCurrent()
     if (!resp.key_id) return true
     if (!resp.bundles[credentialId]) return true
-    const primaryKey = encryptionService.getKey()
-    if (!primaryKey) return false
     await enclaveRemoveBundle({
       keyId: resp.key_id,
-      keyB64: primaryKey,
+      keyB64: requirePrimaryKeyB64(),
       credentialId,
       idempotencyKey: newIdempotencyKey(),
     })

@@ -475,12 +475,9 @@ export class ProjectStorageService {
 
   async listProjectChats(
     projectId: string,
-    options?: { includeContent?: boolean; continuationToken?: string },
+    options?: { continuationToken?: string },
   ): Promise<ProjectChatListResponse> {
     const params = new URLSearchParams()
-    if (options?.includeContent) {
-      params.append('includeContent', 'true')
-    }
     if (options?.continuationToken) {
       params.append('continuationToken', options.continuationToken)
     }
