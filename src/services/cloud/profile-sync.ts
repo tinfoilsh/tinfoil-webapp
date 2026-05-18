@@ -1,6 +1,7 @@
 import { logError, logInfo } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import {
+  listStatus as enclaveListStatus,
   pull as enclavePull,
   push as enclavePush,
   newIdempotencyKey,
@@ -176,13 +177,15 @@ export class ProfileSyncService {
       const plaintext = new TextEncoder().encode(
         JSON.stringify(profileWithMetadata),
       )
+      const status = await enclaveListStatus({ scope: PROFILE_SCOPE })
+      const current = status.updates[0]
 
       await enclavePush({
         scope: PROFILE_SCOPE,
         id: PROFILE_ROW_ID,
         keyB64: requirePrimaryKeyB64(),
         plaintext,
-        ifMatch: null,
+        ifMatch: current?.etag ?? null,
         idempotencyKey: newIdempotencyKey(),
         metadata: {
           version: profileWithMetadata.version,

@@ -70,6 +70,18 @@ describe('SyncEnclaveClient', () => {
     expect(headers.get('Accept')).toBe('application/json')
   })
 
+  it('can issue public enclave requests without a JWT', async () => {
+    const { getSyncEnclaveClient } = await import(
+      '@/services/sync-enclave/sync-enclave-client'
+    )
+    mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true }))
+    const client = await getSyncEnclaveClient()
+    await client.postPublic('/v1/share/open', { ciphertext: 'abc' })
+    const headers = mockFetch.mock.calls[0][1]?.headers as Headers
+    expect(headers.has('Authorization')).toBe(false)
+    expect(headers.get('Accept')).toBe('application/json')
+  })
+
   it('parses non-2xx responses into SyncEnclaveError with code + details', async () => {
     const { getSyncEnclaveClient } = await import(
       '@/services/sync-enclave/sync-enclave-client'

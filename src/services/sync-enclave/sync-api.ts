@@ -514,7 +514,7 @@ export async function attachmentGetPublic(
   req: AttachmentGetRequest,
 ): Promise<Uint8Array> {
   const client = await getSyncEnclaveClient()
-  const resp = await client.post<AttachmentGetResponse>(
+  const resp = await client.postPublic<AttachmentGetResponse>(
     '/v1/attachment/get-public',
     {
       id: req.id,
@@ -588,7 +588,7 @@ export async function shareSeal(
  */
 export async function shareOpen(req: ShareOpenRequest): Promise<Uint8Array> {
   const client = await getSyncEnclaveClient()
-  const resp = await client.post<{ ok: true; plaintext: string }>(
+  const resp = await client.postPublic<{ ok: true; plaintext: string }>(
     '/v1/share/open',
     {
       share_key: req.shareKeyHex,

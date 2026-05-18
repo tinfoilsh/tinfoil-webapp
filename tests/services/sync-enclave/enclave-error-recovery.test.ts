@@ -36,7 +36,7 @@ describe('decideRecovery', () => {
 
   it.each<[EnclaveErrorCode, RecoveryAction['type']]>([
     ['STALE_KEY', 'refresh-current-key-and-retry'],
-    ['STALE_BLOB', 'pull-and-retry'],
+    ['STALE_BLOB', 'surface-conflict'],
     ['SYNC_CONFLICT', 'surface-conflict'],
     ['IDEMPOTENCY_CONFLICT', 'abort'],
     ['EXISTING_DATA_UNDER_OTHER_KEY', 'surface-existing-data-under-other-key'],

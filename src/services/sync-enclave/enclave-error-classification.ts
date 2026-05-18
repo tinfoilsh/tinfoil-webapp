@@ -23,14 +23,18 @@ import { SyncEnclaveError } from './sync-enclave-client'
  *   RETRYABLE_TRANSIENT — Network blip, 5xx, expired-JWT-with-refresh.
  *                         Caller should retry under the SAME idempotency
  *                         key with the §9.6 R3 backoff helper.
- *   RETRYABLE_REFRESH   — STALE_KEY, STALE_BLOB. The canonical tuple is
- *                         outdated; caller should refresh local state
- *                         (current_key_id, blob etag) and retry with a
- *                         NEW idempotency key.
- *   USER_DECISION       — SYNC_CONFLICT, EXISTING_DATA_UNDER_OTHER_KEY.
- *                         Server cannot decide automatically; surface to
- *                         the recovery / conflict UI and wait for
- *                         explicit user input.
+ *   RETRYABLE_REFRESH   — STALE_KEY. The canonical key tuple is
+ *                         outdated; caller should refresh
+ *                         current_key_id and retry with a NEW
+ *                         idempotency key.
+ *   USER_DECISION       — SYNC_CONFLICT, STALE_BLOB,
+ *                         EXISTING_DATA_UNDER_OTHER_KEY. Server cannot
+ *                         decide automatically; surface to the
+ *                         recovery / conflict UI and wait for explicit
+ *                         user input. (STALE_BLOB should normally be
+ *                         re-mapped to SYNC_CONFLICT by the enclave;
+ *                         the entry here is defensive in case a raw
+ *                         code escapes.)
  *   TERMINAL            — FORBIDDEN, IDEMPOTENCY_CONFLICT, UNKNOWN_KEY,
  *                         ATTESTATION_FAILED, malformed responses, and
  *                         every otherwise-unmapped error. The caller
@@ -119,7 +123,6 @@ function classifySyncEnclaveError(
   if (code) {
     switch (code) {
       case 'STALE_KEY':
-      case 'STALE_BLOB':
         return {
           kind: 'RETRYABLE_REFRESH',
           code,
@@ -128,6 +131,7 @@ function classifySyncEnclaveError(
           cause: err,
         }
       case 'SYNC_CONFLICT':
+      case 'STALE_BLOB':
       case 'EXISTING_DATA_UNDER_OTHER_KEY':
       case 'NOT_FOUND':
         return { kind: 'USER_DECISION', code, status, message, cause: err }

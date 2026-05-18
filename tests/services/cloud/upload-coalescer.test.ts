@@ -3,6 +3,7 @@
  */
 
 import { UploadCoalescer } from '@/services/cloud/upload-coalescer'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock error handling
@@ -246,6 +247,27 @@ describe('UploadCoalescer', () => {
       await vi.runAllTimersAsync()
 
       await expectation
+    })
+
+    it('surfaces sync conflicts without retrying under the same idempotency key', async () => {
+      const uploadFn = vi
+        .fn()
+        .mockRejectedValue(
+          new SyncEnclaveError('SYNC_CONFLICT', 409, 'SYNC_CONFLICT'),
+        )
+      const coalescer = new UploadCoalescer(uploadFn, {
+        baseDelayMs: 100,
+        maxRetries: 3,
+      })
+
+      const uploadPromise = coalescer.enqueueAndWait('chat-1')
+      const expectation = expect(uploadPromise).rejects.toMatchObject({
+        code: 'SYNC_CONFLICT',
+      })
+      await vi.runAllTimersAsync()
+
+      await expectation
+      expect(uploadFn).toHaveBeenCalledTimes(1)
     })
   })
 

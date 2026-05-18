@@ -9,12 +9,14 @@
  */
 
 import { logError, logInfo } from '@/utils/error-handling'
+import { decideRecovery } from '../sync-enclave/enclave-error-recovery'
 import {
   computeBackoffDelay,
   realScheduler,
   type RetryScheduler,
 } from '../sync-enclave/retry-policy'
 import { newIdempotencyKey } from '../sync-enclave/sync-api'
+import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
 
 const DEFAULT_BASE_DELAY_MS = 1000
 const DEFAULT_MAX_DELAY_MS = 8000
@@ -233,6 +235,9 @@ export class UploadCoalescer {
         return // Success
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error))
+        if (!shouldRetryUploadError(lastError)) {
+          throw lastError
+        }
 
         // Don't retry on final attempt
         if (attempt === this.config.maxRetries) {
@@ -345,6 +350,17 @@ export class UploadCoalescer {
     }
     await Promise.all(promises)
   }
+}
+
+function shouldRetryUploadError(error: Error): boolean {
+  const decision = decideRecovery(error)
+  if (decision.action.type === 'retry') {
+    return true
+  }
+  if (decision.classification.code || error instanceof SyncEnclaveError) {
+    return false
+  }
+  return true
 }
 
 /**
