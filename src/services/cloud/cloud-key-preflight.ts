@@ -1,9 +1,25 @@
-import { CLOUD_SYNC } from '@/config'
-import { base64ToUint8Array } from '@/utils/binary-codec'
-import { encryptionService } from '../encryption/encryption-service'
-import { cloudStorage } from './cloud-storage'
-import { profileSync } from './profile-sync'
-import { projectStorage } from './project-storage'
+/**
+ * Cloud key preflight — checks whether the local CEK is consistent
+ * with what the sync enclave reports as the user's current key.
+ *
+ * Phase 2 of the sync-enclave refactor: this module previously did
+ * client-side decrypt probes against legacy /api/* endpoints to
+ * detect a key mismatch. The enclave now owns key identity — the
+ * authoritative answer is "does the local CEK derive the same KeyID
+ * the enclave is reporting?".
+ *
+ * The exported surface (`inspectRemoteEncryptedState`,
+ * `validateCurrentPrimaryKey`, and their result types) is preserved
+ * so the `usePasskeyBackup` hook and recovery modal continue to call
+ * the same API. The internals route through `enclaveKeyCurrent`.
+ */
+
+import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
+import {
+  base64ToBytes,
+  keyCurrent as enclaveKeyCurrent,
+} from '../sync-enclave/sync-api'
+import { requirePrimaryKeyB64 } from './cek-encoding'
 
 export type CloudRemoteState = 'empty' | 'exists' | 'unknown'
 export type CloudKeyValidationProbe = 'none' | 'profile' | 'project' | 'chat'
@@ -15,48 +31,47 @@ export interface CloudKeyValidationResult {
   message?: string
 }
 
+/**
+ * Probe the enclave for the user's current key. A registered key id
+ * implies the user already has cloud data (the controlplane created
+ * the row when the first piece of sealed data was written, and the
+ * enclave refuses register-key with EXISTING_DATA_UNDER_OTHER_KEY
+ * unless created_via=start_fresh). The legacy chat/project/profile
+ * fan-out is no longer needed because the enclave consolidates the
+ * answer.
+ */
 export async function inspectRemoteEncryptedState(): Promise<CloudRemoteState> {
-  const profileStatus = await profileSync.getSyncStatus()
-  if (!profileStatus) return 'unknown'
-  if (profileStatus.exists) return 'exists'
-
   try {
-    const projectStatus = await projectStorage.getProjectSyncStatus()
-    if (projectStatus.count > 0) return 'exists'
-  } catch {
-    return 'unknown'
-  }
-
-  try {
-    const chatStatus = await cloudStorage.getChatSyncStatus()
-    return chatStatus.count > 0 ? 'exists' : 'empty'
+    const resp = await enclaveKeyCurrent()
+    return resp.key_id ? 'exists' : 'empty'
   } catch {
     return 'unknown'
   }
 }
 
+/**
+ * Validate the local CEK against the enclave's current KeyID.
+ *
+ * Behavior matches the legacy probe at the API boundary:
+ *
+ *  - No local key loaded                       → unknown / canWrite=false
+ *  - No remote key registered                  → empty   / canWrite=true
+ *  - Local KeyID matches enclave KeyID         → exists  / canWrite=true
+ *  - Local KeyID differs from enclave KeyID    → exists  / canWrite=false
+ *                                                + "doesn't match" message
+ *  - Enclave probe fails (network, 5xx)        → unknown / canWrite=false
+ */
 export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationResult> {
-  if (!encryptionService.getKey()) {
+  let primaryKeyB64: string
+  try {
+    primaryKeyB64 = requirePrimaryKeyB64()
+  } catch {
     return unknownResult('none', 'No encryption key is currently loaded.')
   }
 
-  const profileStatus = await profileSync.getSyncStatus()
-  if (!profileStatus) {
-    return unknownResult(
-      'none',
-      "We couldn't verify whether encrypted cloud data already exists.",
-    )
-  }
-
-  if (profileStatus.exists) {
-    return validateProfileProbe()
-  }
-
+  let resp: Awaited<ReturnType<typeof enclaveKeyCurrent>>
   try {
-    const projectStatus = await projectStorage.getProjectSyncStatus()
-    if (projectStatus.count > 0) {
-      return validateProjectProbe()
-    }
+    resp = await enclaveKeyCurrent()
   } catch {
     return unknownResult(
       'none',
@@ -64,173 +79,30 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
     )
   }
 
+  if (!resp.key_id) {
+    return {
+      remoteState: 'empty',
+      canWrite: true,
+      probe: 'none',
+    }
+  }
+
+  let localKeyId: string
   try {
-    const chatStatus = await cloudStorage.getChatSyncStatus()
-    if (chatStatus.count > 0) {
-      return validateChatProbe()
-    }
+    localKeyId = await deriveKeyIdHex(base64ToBytes(primaryKeyB64))
   } catch {
-    return unknownResult(
-      'none',
-      "We couldn't verify whether encrypted cloud data already exists.",
-    )
+    return blockedResult('none')
   }
 
-  return {
-    remoteState: 'empty',
-    canWrite: true,
-    probe: 'none',
-  }
-}
-
-async function validateProfileProbe(): Promise<CloudKeyValidationResult> {
-  let payload: string | null
-  try {
-    payload = await profileSync.fetchEncryptedProfilePayload()
-    if (!payload) {
-      return unknownResult(
-        'profile',
-        "We couldn't verify your existing cloud profile.",
-      )
+  if (localKeyId === resp.key_id) {
+    return {
+      remoteState: 'exists',
+      canWrite: true,
+      probe: 'none',
     }
-  } catch {
-    return unknownResult(
-      'profile',
-      "We couldn't verify your existing cloud profile.",
-    )
   }
 
-  try {
-    const encrypted = JSON.parse(payload)
-    const result = await encryptionService.decryptWithFallbackInfo(encrypted)
-
-    return result.usedFallbackKey
-      ? blockedResult('profile')
-      : {
-          remoteState: 'exists',
-          canWrite: true,
-          probe: 'profile',
-        }
-  } catch {
-    return blockedResult('profile')
-  }
-}
-
-async function validateProjectProbe(): Promise<CloudKeyValidationResult> {
-  try {
-    const response = await projectStorage.listProjects({
-      limit: CLOUD_SYNC.KEY_VALIDATION_PROBE_LIMIT,
-      includeContent: true,
-    })
-
-    if (!response.projects.length) {
-      return unknownResult(
-        'project',
-        "We couldn't verify your existing cloud projects.",
-      )
-    }
-
-    let sawMismatch = false
-
-    for (const project of response.projects.slice(
-      0,
-      CLOUD_SYNC.KEY_VALIDATION_PROBE_LIMIT,
-    )) {
-      if (!project.content) continue
-
-      try {
-        const encrypted = JSON.parse(project.content)
-        const result =
-          await encryptionService.decryptWithFallbackInfo(encrypted)
-        if (!result.usedFallbackKey) {
-          return {
-            remoteState: 'exists',
-            canWrite: true,
-            probe: 'project',
-          }
-        }
-        sawMismatch = true
-      } catch {
-        sawMismatch = true
-      }
-    }
-
-    return sawMismatch
-      ? blockedResult('project')
-      : unknownResult(
-          'project',
-          "We couldn't verify your existing cloud projects.",
-        )
-  } catch {
-    return unknownResult(
-      'project',
-      "We couldn't verify your existing cloud projects.",
-    )
-  }
-}
-
-async function validateChatProbe(): Promise<CloudKeyValidationResult> {
-  try {
-    const response = await cloudStorage.listChats({
-      limit: CLOUD_SYNC.KEY_VALIDATION_PROBE_LIMIT,
-      includeContent: true,
-    })
-
-    if (!response.conversations.length) {
-      return unknownResult(
-        'chat',
-        "We couldn't verify your existing cloud chats.",
-      )
-    }
-
-    let sawMismatch = false
-
-    for (const chat of response.conversations.slice(
-      0,
-      CLOUD_SYNC.KEY_VALIDATION_PROBE_LIMIT,
-    )) {
-      if (!chat.content) continue
-
-      try {
-        if (chat.formatVersion === 1) {
-          const result = await encryptionService.decryptV1WithFallbackInfo(
-            base64ToUint8Array(chat.content),
-          )
-          if (!result.usedFallbackKey) {
-            return {
-              remoteState: 'exists',
-              canWrite: true,
-              probe: 'chat',
-            }
-          }
-        } else {
-          const encrypted = JSON.parse(chat.content)
-          const result =
-            await encryptionService.decryptWithFallbackInfo(encrypted)
-          if (!result.usedFallbackKey) {
-            return {
-              remoteState: 'exists',
-              canWrite: true,
-              probe: 'chat',
-            }
-          }
-        }
-
-        sawMismatch = true
-      } catch {
-        sawMismatch = true
-      }
-    }
-
-    return sawMismatch
-      ? blockedResult('chat')
-      : unknownResult('chat', "We couldn't verify your existing cloud chats.")
-  } catch {
-    return unknownResult(
-      'chat',
-      "We couldn't verify your existing cloud chats.",
-    )
-  }
+  return blockedResult('none')
 }
 
 function unknownResult(
@@ -241,7 +113,7 @@ function unknownResult(
 }
 
 function blockedResult(
-  probe: Exclude<CloudKeyValidationProbe, 'none'>,
+  probe: CloudKeyValidationProbe,
 ): CloudKeyValidationResult {
   return {
     remoteState: 'exists',

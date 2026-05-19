@@ -512,7 +512,10 @@ export function useChatStorage({
     let cancelled = false
 
     async function loadImages() {
-      const imageMap = await cloudStorage.loadChatImages(messages)
+      const imageMap = await cloudStorage.loadChatImages(
+        currentChatId,
+        messages,
+      )
       if (cancelled || Object.keys(imageMap).length === 0) return
 
       // Merge loaded base64 data into the current messages by attachment ID,

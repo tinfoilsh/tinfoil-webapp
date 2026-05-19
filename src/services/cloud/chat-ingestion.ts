@@ -20,15 +20,22 @@ import { cloudStorage } from './cloud-storage'
 import { shouldIngestRemoteChat } from './sync-predicates'
 
 /**
- * A remote chat from any API response that carries at least an id and timestamps.
- * The `content` field may be absent if the listing didn't include inline content.
+ * A remote chat from any API response that carries at least an id.
+ * The `content` field may be absent if the listing didn't include
+ * inline content. `createdAt` is optional because the enclave's
+ * list-status surface only emits `updated_at`; the codec falls back
+ * to deriving `createdAt` from the reverse-timestamp encoded in
+ * `id`. `formatVersion` is optional because the post-cutover enclave
+ * path always returns plaintext v2 — legacy v0/v1 callers still
+ * supply it explicitly.
  */
 export interface RemoteChatEntry {
   id: string
   content?: string | null
-  createdAt: string
+  createdAt?: string
   updatedAt?: string
   formatVersion?: number
+  syncVersion?: number
 }
 
 export interface IngestOptions {
@@ -105,11 +112,18 @@ export async function ingestRemoteChats(
         createdAt: remoteChat.createdAt,
         updatedAt: remoteChat.updatedAt,
         formatVersion: remoteChat.formatVersion,
+        syncVersion: remoteChat.syncVersion,
       }
 
       if (remoteChat.content) {
-        if (remoteChat.formatVersion === 1) {
-          // Inline v1 content is base64-encoded binary from the list endpoint
+        // Default to v2 plaintext when the caller didn't tag a format.
+        // The enclave path always returns plaintext via attachInlineContent;
+        // only legacy v0/v1 callers ever set formatVersion explicitly.
+        const fv = remoteChat.formatVersion ?? 2
+        if (fv === 2) {
+          codecInput.plaintext = remoteChat.content
+          codecInput.formatVersion = 2
+        } else if (fv === 1) {
           const bytes = base64ToUint8Array(remoteChat.content)
           codecInput.binaryContent = bytes.buffer as ArrayBuffer
           codecInput.formatVersion = 1
@@ -119,18 +133,28 @@ export async function ingestRemoteChats(
       } else if (fetchMissingContent) {
         const fetched = await cloudStorage.fetchRawChatContent(remoteChat.id)
         if (fetched) {
-          if (fetched.formatVersion === 1) {
+          if (fetched.formatVersion === 2) {
+            codecInput.plaintext = fetched.plaintext
+            codecInput.formatVersion = 2
+            codecInput.syncVersion = fetched.syncVersion
+          } else if (fetched.formatVersion === 1) {
             codecInput.binaryContent = fetched.binaryContent
             codecInput.formatVersion = 1
+            codecInput.syncVersion = fetched.syncVersion
           } else {
             codecInput.content = fetched.content
             codecInput.formatVersion = 0
+            codecInput.syncVersion = fetched.syncVersion
           }
         }
       }
 
       // Skip if no content available (either not requested or fetch returned nothing)
-      if (!codecInput.content && !codecInput.binaryContent) {
+      if (
+        !codecInput.content &&
+        !codecInput.binaryContent &&
+        !codecInput.plaintext
+      ) {
         continue
       }
 

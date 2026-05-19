@@ -1,9 +1,6 @@
 import { projectStorage } from '@/services/cloud/project-storage'
-import {
-  ENCRYPTION_KEY_CHANGED_EVENT,
-  encryptionService,
-} from '@/services/encryption/encryption-service'
-import type { Project, ProjectData } from '@/types/project'
+import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
+import type { Project } from '@/types/project'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -51,59 +48,34 @@ export function useProjects(
     setError(null)
 
     try {
-      const response = await projectStorage.listProjects({
-        limit: 20,
-        includeContent: true,
-      })
+      const response = await projectStorage.listProjects({ limit: 20 })
 
-      const decryptedProjects: Project[] = await Promise.all(
-        response.projects.map(async (item) => {
-          try {
-            if (item.content) {
-              const decrypted = (await encryptionService.decrypt(
-                JSON.parse(item.content),
-              )) as ProjectData
-              return {
-                id: item.id,
-                name: decrypted.name,
-                description: decrypted.description,
-                systemInstructions: decrypted.systemInstructions,
-                memory: decrypted.memory || [],
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-                syncVersion: item.syncVersion,
-              }
-            }
-            return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-            }
-          } catch (decryptError) {
-            logError('Failed to decrypt project', decryptError, {
-              component: 'useProjects',
-              action: 'loadProjects',
-              metadata: { projectId: item.id },
-            })
-            return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-              decryptionFailed: true,
-            }
-          }
-        }),
+      const decryptedById = await projectStorage.getProjects(
+        response.projects.map((item) => item.id),
       )
+
+      const decryptedProjects: Project[] = response.projects.map((item) => {
+        const full = decryptedById.get(item.id)
+        if (!full) {
+          return {
+            id: item.id,
+            name: 'Encrypted',
+            description: '',
+            systemInstructions: '',
+            memory: [],
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            syncVersion: item.syncVersion,
+            decryptionFailed: true,
+          }
+        }
+        return {
+          ...full,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          syncVersion: item.syncVersion,
+        }
+      })
 
       // Re-check auth state after async operations - user may have logged out
       if (!isSignedInRef.current) {
@@ -149,57 +121,34 @@ export function useProjects(
       const response = await projectStorage.listProjects({
         limit: 20,
         continuationToken,
-        includeContent: true,
       })
 
-      const decryptedProjects: Project[] = await Promise.all(
-        response.projects.map(async (item) => {
-          try {
-            if (item.content) {
-              const decrypted = (await encryptionService.decrypt(
-                JSON.parse(item.content),
-              )) as ProjectData
-              return {
-                id: item.id,
-                name: decrypted.name,
-                description: decrypted.description,
-                systemInstructions: decrypted.systemInstructions,
-                memory: decrypted.memory || [],
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-                syncVersion: item.syncVersion,
-              }
-            }
-            return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-            }
-          } catch (decryptError) {
-            logError('Failed to decrypt project', decryptError, {
-              component: 'useProjects',
-              action: 'loadMore',
-              metadata: { projectId: item.id },
-            })
-            return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-              decryptionFailed: true,
-            }
-          }
-        }),
+      const decryptedById = await projectStorage.getProjects(
+        response.projects.map((item) => item.id),
       )
+
+      const decryptedProjects: Project[] = response.projects.map((item) => {
+        const full = decryptedById.get(item.id)
+        if (!full) {
+          return {
+            id: item.id,
+            name: 'Encrypted',
+            description: '',
+            systemInstructions: '',
+            memory: [],
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            syncVersion: item.syncVersion,
+            decryptionFailed: true,
+          }
+        }
+        return {
+          ...full,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          syncVersion: item.syncVersion,
+        }
+      })
 
       // Re-check auth state after async operations - user may have logged out
       if (!isSignedInRef.current) {

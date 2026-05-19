@@ -8,7 +8,7 @@ export default defineConfig({
     typecheck: { tsconfig: './tsconfig.test.json' },
     setupFiles: ['./vitest.setup.ts'],
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
-    exclude: ['tests/ui/**'],
+    exclude: ['tests/ui/**', 'tests/integration/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

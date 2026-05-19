@@ -6,7 +6,12 @@ const mockGetAuthHeaders = vi.fn()
 const mockIsAuthenticated = vi.fn()
 const mockIsInitialized = vi.fn()
 const mockWaitForInit = vi.fn()
-const mockEncryptV1 = vi.fn()
+const mockGetKey = vi.fn()
+const mockGetAllKeys = vi.fn()
+const mockGetKeyBytesOrThrow = vi.fn()
+const mockGetAlternativeKeyBytes = vi.fn()
+const mockEnclavePush = vi.fn()
+const mockListStatus = vi.fn()
 
 vi.mock('@/services/auth', () => ({
   authTokenManager: {
@@ -19,9 +24,22 @@ vi.mock('@/services/auth', () => ({
 
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
-    encryptV1: (...args: any[]) => mockEncryptV1(...args),
+    getKey: (...args: any[]) => mockGetKey(...args),
+    getAllKeys: (...args: any[]) => mockGetAllKeys(...args),
+    getKeyBytesOrThrow: (...args: any[]) => mockGetKeyBytesOrThrow(...args),
+    getAlternativeKeyBytes: (...args: any[]) =>
+      mockGetAlternativeKeyBytes(...args),
   },
 }))
+
+vi.mock('@/services/sync-enclave/sync-api', async () => {
+  const actual: any = await vi.importActual('@/services/sync-enclave/sync-api')
+  return {
+    ...actual,
+    push: (...args: any[]) => mockEnclavePush(...args),
+    listStatus: (...args: any[]) => mockListStatus(...args),
+  }
+})
 
 describe('CloudStorageService auth readiness', () => {
   beforeEach(() => {
@@ -31,7 +49,21 @@ describe('CloudStorageService auth readiness', () => {
     mockIsAuthenticated.mockResolvedValue(true)
     mockIsInitialized.mockReturnValue(true)
     mockWaitForInit.mockResolvedValue(true)
-    mockEncryptV1.mockResolvedValue(new Uint8Array([1, 2, 3]))
+    // Real keys are `key_<base36-encoded 32-byte CEK>` per
+    // encryption-service. Mock the shape end-to-end so the helpers
+    // in `cek-encoding.ts` resolve to predictable bytes without
+    // re-implementing the base36 decoder in the test.
+    const TEST_KEY = `key_${'a'.repeat(64)}`
+    const TEST_BYTES = new Uint8Array(32)
+    mockGetKey.mockReturnValue(TEST_KEY)
+    mockGetAllKeys.mockReturnValue({
+      primary: TEST_KEY,
+      alternatives: [TEST_KEY],
+    })
+    mockGetKeyBytesOrThrow.mockReturnValue(TEST_BYTES)
+    mockGetAlternativeKeyBytes.mockReturnValue(TEST_BYTES)
+    mockEnclavePush.mockResolvedValue({ ok: true, etag: '1', keyId: 'kid' })
+    mockListStatus.mockResolvedValue({ updates: [], deletes: [] })
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -56,7 +88,11 @@ describe('CloudStorageService auth readiness', () => {
     await service.listChats()
 
     expect(mockWaitForInit).toHaveBeenCalledWith(3000)
-    expect(mockGetAuthHeaders).toHaveBeenCalledTimes(1)
+    expect(mockListStatus).toHaveBeenCalledWith({
+      scope: 'chat',
+      cursor: undefined,
+      limit: 100,
+    })
   })
 
   it('waits for auth token manager initialization before checking auth state', async () => {
@@ -71,7 +107,7 @@ describe('CloudStorageService auth readiness', () => {
     expect(mockIsAuthenticated).toHaveBeenCalledTimes(1)
   })
 
-  it('marks restore uploads so the backend can clear stale tombstones', async () => {
+  it('marks restore uploads so the enclave can clear stale tombstones', async () => {
     const service = new CloudStorageService()
     await service.uploadChat(
       {
@@ -85,9 +121,10 @@ describe('CloudStorageService auth readiness', () => {
       { restoreDeleted: true },
     )
 
-    const fetchCall = vi.mocked(fetch).mock.calls[0]
-    expect(fetchCall?.[1]?.headers).toMatchObject({
-      'X-Restore-Deleted-Chat': 'true',
-    })
+    expect(mockEnclavePush).toHaveBeenCalledTimes(1)
+    const pushArg = mockEnclavePush.mock.calls[0][0]
+    expect(pushArg.scope).toBe('chat')
+    expect(pushArg.id).toBe('chat-1')
+    expect(pushArg.metadata).toMatchObject({ restoreDeleted: true })
   })
 })

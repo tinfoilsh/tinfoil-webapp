@@ -298,6 +298,34 @@ export class EncryptionService {
     }
   }
 
+  /**
+   * Return the raw CEK bytes for the current key, decoded from the
+   * `key_<base36>` storage shape. Throws when no key is set or the
+   * stored value fails format validation. Used by the enclave wire
+   * adapters that need the CEK in base64 — `getKey()` alone is the
+   * user-facing key string, not the raw bytes.
+   */
+  getKeyBytesOrThrow(): Uint8Array {
+    const key = this.getKey()
+    if (!key) {
+      throw new Error('encryption-service: no encryption key available')
+    }
+    return this.getKeyBytes(key)
+  }
+
+  /**
+   * Return the raw bytes for one of the alternative (history) keys, or
+   * null when the index is out of range. Same `key_<base36>` decoding
+   * as `getKeyBytesOrThrow`.
+   */
+  getAlternativeKeyBytes(keyString: string): Uint8Array | null {
+    try {
+      return this.getKeyBytes(keyString)
+    } catch {
+      return null
+    }
+  }
+
   // Remove encryption key
   clearKey(options: { persist?: boolean } = {}): void {
     const { persist = true } = options
@@ -378,6 +406,24 @@ export class EncryptionService {
    */
   getFallbackKeyCount(): number {
     return this.fallbackKeyStrings.length
+  }
+
+  /**
+   * Drop every alternative (history) key from memory and from the
+   * persisted key-history bucket. Used by the Layer C cleanup once
+   * the legacy-blob migration loop reports `fullyMigrated`. Safe to
+   * call when there are no fallbacks — clears the cache and
+   * localStorage entries without disturbing the primary CEK.
+   */
+  clearFallbackKeys(): void {
+    if (this.fallbackKeyStrings.length === 0) {
+      this.fallbackKeyCache.clear()
+      this.saveKeyHistoryToStorage([])
+      return
+    }
+    this.fallbackKeyStrings = []
+    this.fallbackKeyCache.clear()
+    this.saveKeyHistoryToStorage([])
   }
 
   /**

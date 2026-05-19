@@ -1,9 +1,6 @@
 import { type BaseModel } from '@/config/models'
-import {
-  base64ToUint8Array,
-  decryptAttachment,
-  uint8ArrayToBase64,
-} from '@/utils/binary-codec'
+import { attachmentGetPublic } from '@/services/sync-enclave/sync-api'
+import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import type { ShareableChatData } from '@/utils/compression'
 import 'katex/dist/katex.min.css'
 import { memo, useEffect, useMemo, useState } from 'react'
@@ -86,9 +83,6 @@ export function SharedChatView({
 
   // Lazy-load full-resolution images from the public attachment endpoint
   useEffect(() => {
-    const apiBaseUrl =
-      process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
-
     let cancelled = false
 
     async function loadFullResImages() {
@@ -109,31 +103,23 @@ export function SharedChatView({
           const attIdx = ai
           tasks.push(
             (async () => {
-              try {
-                const resp = await fetch(
-                  `${apiBaseUrl}/api/storage/attachment/${att.id}`,
-                )
-                if (!resp.ok) return
-
-                const encryptedBuf = await resp.arrayBuffer()
-                const keyBytes = base64ToUint8Array(att.encryptionKey!)
-                const decrypted = decryptAttachment(
-                  new Uint8Array(encryptedBuf),
-                  keyBytes,
-                )
-                const base64 = uint8ArrayToBase64(await decrypted)
-
-                if (!cancelled) {
-                  updated[msgIdx] = { ...updated[msgIdx] }
-                  updated[msgIdx].attachments = [
-                    ...updated[msgIdx].attachments!,
-                  ]
-                  updated[msgIdx].attachments![attIdx] = {
-                    ...updated[msgIdx].attachments![attIdx],
-                    base64,
-                  }
-                  anyUpdated = true
+              const apply = (base64: string) => {
+                if (cancelled) return
+                updated[msgIdx] = { ...updated[msgIdx] }
+                updated[msgIdx].attachments = [...updated[msgIdx].attachments!]
+                updated[msgIdx].attachments![attIdx] = {
+                  ...updated[msgIdx].attachments![attIdx],
+                  base64,
                 }
+                anyUpdated = true
+              }
+
+              try {
+                const plaintext = await attachmentGetPublic({
+                  id: att.id,
+                  attKeyB64: att.encryptionKey!,
+                })
+                apply(uint8ArrayToBase64(plaintext))
               } catch {
                 // Silently skip — thumbnail is still visible
               }
