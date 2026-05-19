@@ -142,33 +142,24 @@ export function ProjectProvider({
 
         const documentsResponse = await projectStorage.listDocuments(projectId)
 
-        const documents: ProjectDocument[] = await Promise.all(
-          documentsResponse.documents.map(async (doc) => {
-            try {
-              const full = await projectStorage.getDocument(projectId, doc.id)
-              if (!full) {
-                return { ...doc, filename: '', contentType: '' }
-              }
-              return {
-                ...doc,
-                content: full.content,
-                filename: full.filename,
-                contentType: full.contentType,
-              }
-            } catch (pullError) {
-              logError('Failed to pull document plaintext', pullError, {
-                component: 'ProjectProvider',
-                action: 'enterProjectMode',
-                metadata: { documentId: doc.id },
-              })
-              return {
-                ...doc,
-                content: undefined,
-                filename: '',
-                contentType: '',
-              }
+        const fullById = await projectStorage.getDocuments(
+          projectId,
+          documentsResponse.documents.map((doc) => doc.id),
+        )
+
+        const documents: ProjectDocument[] = documentsResponse.documents.map(
+          (doc) => {
+            const full = fullById.get(doc.id)
+            if (!full) {
+              return { ...doc, filename: '', contentType: '' }
             }
-          }),
+            return {
+              ...doc,
+              content: full.content,
+              filename: full.filename,
+              contentType: full.contentType,
+            }
+          },
         )
 
         setActiveProject(project)

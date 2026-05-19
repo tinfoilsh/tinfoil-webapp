@@ -50,49 +50,32 @@ export function useProjects(
     try {
       const response = await projectStorage.listProjects({ limit: 20 })
 
-      const decryptedProjects: Project[] = await Promise.all(
-        response.projects.map(async (item) => {
-          try {
-            const full = await projectStorage.getProject(item.id)
-            if (!full) {
-              return {
-                id: item.id,
-                name: 'Encrypted',
-                description: '',
-                systemInstructions: '',
-                memory: [],
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-                syncVersion: item.syncVersion,
-                decryptionFailed: true,
-              }
-            }
-            return {
-              ...full,
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-            }
-          } catch (pullError) {
-            logError('Failed to pull project plaintext', pullError, {
-              component: 'useProjects',
-              action: 'loadProjects',
-              metadata: { projectId: item.id },
-            })
-            return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-              decryptionFailed: true,
-            }
-          }
-        }),
+      const decryptedById = await projectStorage.getProjects(
+        response.projects.map((item) => item.id),
       )
+
+      const decryptedProjects: Project[] = response.projects.map((item) => {
+        const full = decryptedById.get(item.id)
+        if (!full) {
+          return {
+            id: item.id,
+            name: 'Encrypted',
+            description: '',
+            systemInstructions: '',
+            memory: [],
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            syncVersion: item.syncVersion,
+            decryptionFailed: true,
+          }
+        }
+        return {
+          ...full,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          syncVersion: item.syncVersion,
+        }
+      })
 
       // Re-check auth state after async operations - user may have logged out
       if (!isSignedInRef.current) {
@@ -140,49 +123,32 @@ export function useProjects(
         continuationToken,
       })
 
-      const decryptedProjects: Project[] = await Promise.all(
-        response.projects.map(async (item) => {
-          try {
-            const full = await projectStorage.getProject(item.id)
-            if (!full) {
-              return {
-                id: item.id,
-                name: 'Encrypted',
-                description: '',
-                systemInstructions: '',
-                memory: [],
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-                syncVersion: item.syncVersion,
-                decryptionFailed: true,
-              }
-            }
-            return {
-              ...full,
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-            }
-          } catch (pullError) {
-            logError('Failed to pull project plaintext', pullError, {
-              component: 'useProjects',
-              action: 'loadMore',
-              metadata: { projectId: item.id },
-            })
-            return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-              decryptionFailed: true,
-            }
-          }
-        }),
+      const decryptedById = await projectStorage.getProjects(
+        response.projects.map((item) => item.id),
       )
+
+      const decryptedProjects: Project[] = response.projects.map((item) => {
+        const full = decryptedById.get(item.id)
+        if (!full) {
+          return {
+            id: item.id,
+            name: 'Encrypted',
+            description: '',
+            systemInstructions: '',
+            memory: [],
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+            syncVersion: item.syncVersion,
+            decryptionFailed: true,
+          }
+        }
+        return {
+          ...full,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          syncVersion: item.syncVersion,
+        }
+      })
 
       // Re-check auth state after async operations - user may have logged out
       if (!isSignedInRef.current) {

@@ -245,6 +245,62 @@ export class ProjectStorageService {
     }
   }
 
+  // Batch variant of getProject: pulls every requested project in a
+  // single enclave round-trip and returns the decoded Project objects
+  // keyed by id. Missing or decryption-failed ids are simply absent
+  // from the result Map, so callers can fall back as needed.
+  async getProjects(projectIds: string[]): Promise<Map<string, Project>> {
+    const result = new Map<string, Project>()
+    if (projectIds.length === 0) return result
+
+    try {
+      const keys = pullKey()
+      if (keys.length === 0) return result
+
+      const resp = await enclavePull({
+        scope: PROJECT_SCOPE,
+        ids: projectIds,
+        keys,
+      })
+
+      for (const item of resp.items) {
+        if (!item.ok) continue
+        const plaintextBytes = pullItemPlaintext(item)
+        if (!plaintextBytes) continue
+        try {
+          const decoded = JSON.parse(
+            new TextDecoder().decode(plaintextBytes),
+          ) as ProjectData
+          const now = new Date().toISOString()
+          result.set(item.id, {
+            id: item.id,
+            name: decoded.name,
+            description: decoded.description,
+            systemInstructions: decoded.systemInstructions,
+            memory: decoded.memory || [],
+            createdAt: now,
+            updatedAt: now,
+            syncVersion: etagToSyncVersion(item.etag),
+          })
+        } catch (decodeErr) {
+          logError(`Failed to decode project ${item.id}`, decodeErr, {
+            component: 'ProjectStorage',
+            action: 'getProjects',
+            metadata: { projectId: item.id },
+          })
+        }
+      }
+      return result
+    } catch (error) {
+      logError('Failed to batch-get projects', error, {
+        component: 'ProjectStorage',
+        action: 'getProjects',
+        metadata: { count: projectIds.length },
+      })
+      return result
+    }
+  }
+
   async deleteProject(projectId: string): Promise<void> {
     if (!(await canWriteToCloud())) {
       throw new Error(
@@ -488,6 +544,80 @@ export class ProjectStorageService {
         metadata: { projectId, documentId },
       })
       return null
+    }
+  }
+
+  // Batch variant of getDocument: pulls every requested document for a
+  // project in a single enclave round-trip and returns the decoded
+  // ProjectDocument objects keyed by id. Missing ids are simply absent
+  // from the result Map.
+  async getDocuments(
+    projectId: string,
+    documentIds: string[],
+  ): Promise<Map<string, ProjectDocument>> {
+    const result = new Map<string, ProjectDocument>()
+    if (documentIds.length === 0) return result
+
+    try {
+      const keys = pullKey()
+      if (keys.length === 0) return result
+
+      const compositeIds = documentIds.map((id) =>
+        projectDocumentId(projectId, id),
+      )
+      const compositeToOriginal = new Map<string, string>()
+      compositeIds.forEach((composite, idx) => {
+        compositeToOriginal.set(composite, documentIds[idx])
+      })
+
+      const resp = await enclavePull({
+        scope: PROJECT_DOCUMENT_SCOPE,
+        ids: compositeIds,
+        keys,
+      })
+
+      for (const item of resp.items) {
+        if (!item.ok) continue
+        const originalId = compositeToOriginal.get(item.id)
+        if (!originalId) continue
+        const plaintextBytes = pullItemPlaintext(item)
+        if (!plaintextBytes) continue
+        try {
+          const decoded = JSON.parse(
+            new TextDecoder().decode(plaintextBytes),
+          ) as {
+            content: string
+            filename?: string
+            contentType?: string
+          }
+          const now = new Date().toISOString()
+          result.set(originalId, {
+            id: originalId,
+            projectId,
+            filename: decoded.filename || '',
+            contentType: decoded.contentType || '',
+            sizeBytes: new TextEncoder().encode(decoded.content).length,
+            syncVersion: etagToSyncVersion(item.etag),
+            createdAt: now,
+            updatedAt: now,
+            content: decoded.content,
+          })
+        } catch (decodeErr) {
+          logError(`Failed to decode document ${originalId}`, decodeErr, {
+            component: 'ProjectStorage',
+            action: 'getDocuments',
+            metadata: { projectId, documentId: originalId },
+          })
+        }
+      }
+      return result
+    } catch (error) {
+      logError('Failed to batch-get documents', error, {
+        component: 'ProjectStorage',
+        action: 'getDocuments',
+        metadata: { projectId, count: documentIds.length },
+      })
+      return result
     }
   }
 
