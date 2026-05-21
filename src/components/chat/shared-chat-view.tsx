@@ -78,6 +78,11 @@ export function SharedChatView({
             base64: a.thumbnailBase64,
           }),
         ),
+        timeline: m.timeline,
+        annotations: m.annotations,
+        webSearch: m.webSearch,
+        webSearchBeforeThinking: m.webSearchBeforeThinking,
+        urlFetches: m.urlFetches,
       })),
     [chatData],
   )

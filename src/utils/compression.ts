@@ -1,3 +1,9 @@
+import type {
+  Annotation,
+  TimelineBlock,
+  URLFetchState,
+  WebSearchState,
+} from '@/components/chat/types'
 import { logError, logWarning } from '@/utils/error-handling'
 import pako from 'pako'
 
@@ -28,6 +34,15 @@ export type ShareableChatData = {
     thinkingDuration?: number
     isError?: boolean
     attachments?: ShareableAttachment[]
+    // Timeline is the source of truth for assistant messages; preserving it
+    // keeps web searches, URL fetches, tool widgets, and code execution
+    // results visible in shared views. Optional for back-compat with shares
+    // created before the timeline was included.
+    timeline?: TimelineBlock[]
+    annotations?: Annotation[]
+    webSearch?: WebSearchState
+    webSearchBeforeThinking?: boolean
+    urlFetches?: URLFetchState[]
   }>
   createdAt: number
 }
