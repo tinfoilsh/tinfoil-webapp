@@ -116,10 +116,37 @@ export default function App({ Component, pageProps }: AppProps) {
   return (
     <>
       <Head>
-        <title>Tinfoil Private Chat</title>
+        <title key="page-title">Tinfoil Private Chat</title>
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+        />
+        <meta
+          key="description"
+          name="description"
+          content="Verifiably Private AI chat application supporting open source models through Tinfoil"
+        />
+        <meta
+          key="og:title"
+          property="og:title"
+          content="Tinfoil Private Chat"
+        />
+        <meta
+          key="og:description"
+          property="og:description"
+          content="Private AI chat application supporting open source models through Tinfoil"
+        />
+        <meta key="og:type" property="og:type" content="website" />
+        <meta key="twitter:card" name="twitter:card" content="summary" />
+        <meta
+          key="twitter:title"
+          name="twitter:title"
+          content="Tinfoil Private Chat"
+        />
+        <meta
+          key="twitter:description"
+          name="twitter:description"
+          content="Private AI chat application supporting open source models through Tinfoil"
         />
       </Head>
       <style jsx global>{`
