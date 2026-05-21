@@ -137,11 +137,6 @@ export default function App({ Component, pageProps }: AppProps) {
           content="Private AI chat application supporting open source models through Tinfoil"
         />
         <meta key="og:type" property="og:type" content="website" />
-        <meta
-          key="og:image"
-          property="og:image"
-          content="/android-chrome-512x512.png"
-        />
         <meta key="twitter:card" name="twitter:card" content="summary" />
         <meta
           key="twitter:title"
@@ -152,11 +147,6 @@ export default function App({ Component, pageProps }: AppProps) {
           key="twitter:description"
           name="twitter:description"
           content="Private AI chat application supporting open source models through Tinfoil"
-        />
-        <meta
-          key="twitter:image"
-          name="twitter:image"
-          content="/android-chrome-512x512.png"
         />
       </Head>
       <style jsx global>{`
