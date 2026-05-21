@@ -244,6 +244,11 @@ export function ShareModal({
                 description: a.description,
               }))
             : undefined,
+          timeline: m.timeline,
+          annotations: m.annotations,
+          webSearch: m.webSearch,
+          webSearchBeforeThinking: m.webSearchBeforeThinking,
+          urlFetches: m.urlFetches,
         })),
         createdAt: chatCreatedAt ? chatCreatedAt.getTime() : Date.now(),
       }
