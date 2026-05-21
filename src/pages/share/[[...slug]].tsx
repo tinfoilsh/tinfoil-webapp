@@ -10,9 +10,14 @@ import {
   type ShareableChatData,
 } from '@/utils/compression'
 import { decryptShare, importKeyFromBase64url } from '@/utils/share-encryption'
+import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
+
+const SHARE_PREVIEW_TITLE = 'Shared Chat \u2022 Tinfoil'
+const SHARE_PREVIEW_DESCRIPTION =
+  'Open this link to view a privately shared AI conversation on Tinfoil.'
 
 type LoadingState = 'loading' | 'error' | 'success'
 
@@ -140,44 +145,107 @@ export default function SharePage() {
     })
   }
 
+  const sharePreviewHead = (
+    <Head>
+      <title key="page-title">{SHARE_PREVIEW_TITLE}</title>
+      <meta
+        key="description"
+        name="description"
+        content={SHARE_PREVIEW_DESCRIPTION}
+      />
+      <meta key="og:title" property="og:title" content={SHARE_PREVIEW_TITLE} />
+      <meta
+        key="og:description"
+        property="og:description"
+        content={SHARE_PREVIEW_DESCRIPTION}
+      />
+      <meta key="og:type" property="og:type" content="article" />
+      <meta
+        key="twitter:title"
+        name="twitter:title"
+        content={SHARE_PREVIEW_TITLE}
+      />
+      <meta
+        key="twitter:description"
+        name="twitter:description"
+        content={SHARE_PREVIEW_DESCRIPTION}
+      />
+    </Head>
+  )
+
   if (loadingState === 'loading') {
     return (
-      <div
-        className={`flex min-h-screen items-center justify-center font-aeonik ${isDarkMode ? 'bg-surface-chat-background' : 'bg-white'}`}
-      >
-        <div className="text-content-secondary">Loading shared chat...</div>
-      </div>
+      <>
+        {sharePreviewHead}
+        <div
+          className={`flex min-h-screen items-center justify-center font-aeonik ${isDarkMode ? 'bg-surface-chat-background' : 'bg-white'}`}
+        >
+          <div className="text-content-secondary">Loading shared chat...</div>
+        </div>
+      </>
     )
   }
 
   if (loadingState === 'error' || !chatData || !model) {
     return (
-      <div
-        className={`flex min-h-screen items-center justify-center font-aeonik ${isDarkMode ? 'bg-surface-chat-background' : 'bg-white'}`}
-      >
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-content-primary">
-            Invalid Share Link
-          </h1>
-          <p className="mt-2 text-content-secondary">
-            {errorMessage ||
-              'This share link is invalid or has been corrupted.'}
-          </p>
-          <Link
-            href="/"
-            className="mt-4 inline-block rounded-lg bg-button-send-background px-4 py-2 text-button-send-foreground transition-opacity hover:opacity-90"
-          >
-            Start a new chat
-          </Link>
+      <>
+        {sharePreviewHead}
+        <div
+          className={`flex min-h-screen items-center justify-center font-aeonik ${isDarkMode ? 'bg-surface-chat-background' : 'bg-white'}`}
+        >
+          <div className="text-center">
+            <h1 className="text-2xl font-bold text-content-primary">
+              Invalid Share Link
+            </h1>
+            <p className="mt-2 text-content-secondary">
+              {errorMessage ||
+                'This share link is invalid or has been corrupted.'}
+            </p>
+            <Link
+              href="/"
+              className="mt-4 inline-block rounded-lg bg-button-send-background px-4 py-2 text-button-send-foreground transition-opacity hover:opacity-90"
+            >
+              Start a new chat
+            </Link>
+          </div>
         </div>
-      </div>
+      </>
     )
   }
+
+  const successHead = (
+    <Head>
+      <title key="page-title">{`${chatData.title} \u2022 Tinfoil`}</title>
+      <meta
+        key="description"
+        name="description"
+        content={SHARE_PREVIEW_DESCRIPTION}
+      />
+      <meta key="og:title" property="og:title" content={SHARE_PREVIEW_TITLE} />
+      <meta
+        key="og:description"
+        property="og:description"
+        content={SHARE_PREVIEW_DESCRIPTION}
+      />
+      <meta key="og:type" property="og:type" content="article" />
+      <meta
+        key="twitter:title"
+        name="twitter:title"
+        content={SHARE_PREVIEW_TITLE}
+      />
+      <meta
+        key="twitter:description"
+        name="twitter:description"
+        content={SHARE_PREVIEW_DESCRIPTION}
+      />
+    </Head>
+  )
 
   return (
     <div
       className={`flex min-h-screen flex-col font-aeonik ${isDarkMode ? 'bg-surface-chat-background' : 'bg-white'}`}
     >
+      {successHead}
       <header className="border-b border-border-subtle px-6 py-4">
         <div className="mx-auto max-w-3xl">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

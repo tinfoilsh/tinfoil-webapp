@@ -75,30 +75,11 @@ export default function Document() {
         />
 
         <meta
-          name="description"
-          content="Verifiably Private AI chat application supporting open source models through Tinfoil"
-        />
-        <meta
           name="keywords"
           content="AI chat, private AI, privacy, confidential computing, open source, secure AI, private chat"
         />
         <meta name="author" content="Tinfoil" />
-
-        <meta property="og:title" content="Tinfoil Private Chat" />
-        <meta
-          property="og:description"
-          content="Private AI chat application supporting open source models through Tinfoil"
-        />
-        <meta property="og:type" content="website" />
         <meta property="og:locale" content="en_US" />
-
-        <meta name="twitter:card" content="summary" />
-        <meta name="twitter:title" content="Tinfoil Private Chat" />
-        <meta
-          name="twitter:description"
-          content="Private AI chat application supporting open source models through Tinfoil"
-        />
-
         <meta name="robots" content="index, follow" />
 
         <link
