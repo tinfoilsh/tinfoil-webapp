@@ -5,6 +5,7 @@ import {
 } from '@/config/models'
 import {
   SETTINGS_CODE_EXECUTION_ENABLED,
+  SETTINGS_COMPUTER_USE_ENABLED,
   SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_WEB_SEARCH_ENABLED,
@@ -81,6 +82,10 @@ import {
 const useLayoutEffect =
   typeof window !== 'undefined' ? reactUseLayoutEffect : useEffect
 
+import {
+  useComputerUseSession,
+  type CapabilityManifest,
+} from '@/services/computer-use'
 import { UrlHashMessageHandler } from '../url-hash-message-handler'
 import { UrlHashSettingsHandler } from '../url-hash-settings-handler'
 import { ArtifactSidebar } from './artifact-sidebar'
@@ -88,6 +93,8 @@ import { AskSidebar } from './ask-sidebar'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import { ChatSidebar } from './chat-sidebar'
+import { ComputerUseSessionDialog } from './ComputerUseSessionDialog'
+import { ComputerUseSessionThread } from './ComputerUseSessionThread'
 import { CONSTANTS } from './constants'
 import { useDocumentUploader } from './document-uploader'
 import { DragProvider } from './drag-context'
@@ -521,6 +528,15 @@ export function ChatInterface({
     return saved === null ? false : saved === 'true'
   })
 
+  // State for computer use toggle (persisted in localStorage, defaults to off).
+  // Whether it's actually exposed to the model also depends on broker readiness
+  // and model vision-capability (resolved at request build time).
+  const [computerUseEnabled, setComputerUseEnabled] = useState(() => {
+    if (typeof window === 'undefined') return false
+    const saved = localStorage.getItem(SETTINGS_COMPUTER_USE_ENABLED)
+    return saved === null ? false : saved === 'true'
+  })
+
   // PII check setting (controlled from settings modal, defaults to on)
   const [piiCheckEnabled, setPiiCheckEnabled] = useState(() => {
     if (typeof window === 'undefined') return true
@@ -706,6 +722,20 @@ export function ChatInterface({
     scrollToBottom(true)
   }, [scrollToBottom])
 
+  // Bridge for model-initiated computer-use: useChatState (below) needs the
+  // callback, but the session hook it targets needs `selectedModel` (returned by
+  // useChatState). A stable ref breaks the cycle; it's populated once the
+  // session hook exists, well before any `computer_begin` can fire.
+  const onComputerBeginRef = useRef<
+    | ((manifest: CapabilityManifest, task: string, reason?: string) => void)
+    | null
+  >(null)
+  const onComputerBegin = useCallback(
+    (manifest: CapabilityManifest, task: string, reason?: string) =>
+      onComputerBeginRef.current?.(manifest, task, reason),
+    [],
+  )
+
   const {
     // State
     chats,
@@ -779,6 +809,8 @@ export function ChatInterface({
     canUseCodeExecution,
     codeExecutionEnabled: canUseCodeExecution ? codeExecutionEnabled : false,
     piiCheckEnabled,
+    computerUseEnabled,
+    onComputerBegin,
   })
 
   const isTemporaryMode = currentChat?.isTemporary === true
@@ -1035,6 +1067,14 @@ export function ChatInterface({
     )
   }, [codeExecutionEnabled])
 
+  // Persist computer use toggle to localStorage
+  useEffect(() => {
+    localStorage.setItem(
+      SETTINGS_COMPUTER_USE_ENABLED,
+      String(computerUseEnabled),
+    )
+  }, [computerUseEnabled])
+
   // Listen for PII check setting changes from settings modal
   useEffect(() => {
     const handlePiiCheckChange = (event: CustomEvent<{ enabled: boolean }>) => {
@@ -1176,7 +1216,16 @@ export function ChatInterface({
   // Get the selected model details
   const selectedModelDetails = models.find(
     (model) => model.modelName === selectedModel,
-  ) as BaseModel | undefined
+  )
+
+  // In-chat computer-use session (pairing → consent → agentic loop). Opened when
+  // the model emits `computer_begin` (see onComputerBegin / use-chat-messaging).
+  const computerUseSession = useComputerUseSession(selectedModel)
+  useEffect(() => {
+    onComputerBeginRef.current = (manifest, task, reason) => {
+      void computerUseSession.start(task, manifest, reason)
+    }
+  }, [computerUseSession.start])
 
   // Initialize document uploader hook
   const { handleDocumentUpload, describeImageWithMultimodal } =
@@ -2775,6 +2824,8 @@ export function ChatInterface({
         isDarkMode={isDarkMode}
       />
 
+      <ComputerUseSessionDialog session={computerUseSession} />
+
       <ArtifactSidebar
         isOpen={isArtifactSidebarOpen}
         onClose={() => setIsArtifactSidebarOpen(false)}
@@ -2956,6 +3007,9 @@ export function ChatInterface({
                     chatId={currentChat.id}
                     isWaitingForResponse={isWaitingForResponse}
                     isStreamingResponse={isStreaming}
+                    computerUseSession={
+                      <ComputerUseSessionThread session={computerUseSession} />
+                    }
                     isPremium={isPremium}
                     models={models}
                     onSubmit={handleSubmit}
@@ -2992,6 +3046,11 @@ export function ChatInterface({
                         ? () => setCodeExecutionEnabled((prev) => !prev)
                         : undefined
                     }
+                    computerUseEnabled={computerUseEnabled}
+                    onComputerUseToggle={() =>
+                      setComputerUseEnabled((prev) => !prev)
+                    }
+                    computerUseModel={selectedModelDetails}
                     onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
                     isTemporaryMode={isTemporaryMode}
                   />
@@ -3157,6 +3216,11 @@ export function ChatInterface({
                             ? () => setCodeExecutionEnabled((prev) => !prev)
                             : undefined
                         }
+                        computerUseEnabled={computerUseEnabled}
+                        onComputerUseToggle={() =>
+                          setComputerUseEnabled((prev) => !prev)
+                        }
+                        computerUseModel={selectedModelDetails}
                       />
                     </form>
                   )}

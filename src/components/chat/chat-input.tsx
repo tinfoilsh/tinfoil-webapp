@@ -2,6 +2,11 @@ import { FiArrowUp } from '@/components/icons/lazy-icons'
 import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { useToast } from '@/hooks/use-toast'
+import {
+  computerUseSupport,
+  isMacOS,
+  useBrokerStatus,
+} from '@/services/computer-use'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
 import { isImageFile } from '@/utils/preprocessing'
@@ -27,6 +32,7 @@ import {
   PiSpinner,
   PiTerminalWindow,
 } from 'react-icons/pi'
+import { ComputerUseToolButton } from './ComputerUseToolButton'
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
 import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
@@ -55,6 +61,10 @@ type ChatInputProps = {
   onWebSearchToggle?: () => void
   codeExecutionEnabled?: boolean
   onCodeExecutionToggle?: () => void
+  computerUseEnabled?: boolean
+  onComputerUseToggle?: () => void
+  /** Current model, for the computer-use vision-capability gate. */
+  computerUseModel?: { modelName: string; multimodal?: boolean }
   quote?: string | null
   onClearQuote?: () => void
   isTemporaryMode?: boolean
@@ -85,6 +95,9 @@ export function ChatInput({
   onWebSearchToggle,
   codeExecutionEnabled,
   onCodeExecutionToggle,
+  computerUseEnabled,
+  onComputerUseToggle,
+  computerUseModel,
   quote,
   onClearQuote,
   isTemporaryMode,
@@ -94,6 +107,41 @@ export function ChatInput({
   const { toast } = useToast()
   const chatFont = useChatFont()
   const { isProjectMode, activeProject } = useProject()
+
+  // Computer-use tool: the MVP only supports a macOS host, so the whole tool is
+  // hidden off-macOS. Resolved in an effect (not during render) so SSR and the
+  // first client render agree, avoiding a hydration mismatch.
+  const [computerUseHostOk, setComputerUseHostOk] = useState(false)
+  useEffect(() => {
+    setComputerUseHostOk(isMacOS())
+  }, [])
+
+  // The button is shown when the toggle is wired, the host is macOS, and a model
+  // is known. Whether it can actually be enabled depends on vision support AND a
+  // reachable broker with a ready image — otherwise it's disabled with a tooltip
+  // explaining the current state.
+  const computerUseSupportInfo = computerUseModel
+    ? computerUseSupport(computerUseModel)
+    : null
+  const computerUseVisible =
+    !!onComputerUseToggle && !!computerUseModel && computerUseHostOk
+
+  // Poll the broker only when the button is shown and the model is vision-capable
+  // (no point probing for non-vision models).
+  const brokerStatus = useBrokerStatus({
+    enabled: computerUseVisible && !!computerUseSupportInfo?.supported,
+  })
+
+  const computerUseCanEnable =
+    !!computerUseSupportInfo?.supported && brokerStatus.readiness === 'ready'
+  const computerUseReason = !computerUseSupportInfo?.supported
+    ? computerUseSupportInfo?.reasons[0]
+    : brokerStatus.readiness === 'ready'
+      ? undefined
+      : brokerStatus.readiness === 'no_images'
+        ? 'No sandbox image is ready — run `tinfoil-broker image setup` first.'
+        : 'Broker not connected — start to enable computer use.'
+
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
   const shouldRemountOnClearRef = useRef(false)
@@ -959,6 +1007,19 @@ export function ChatInput({
                           )}
                         </button>
                       )}
+                      {computerUseVisible && onComputerUseToggle && (
+                        <ComputerUseToolButton
+                          variant="mobile"
+                          enabled={!!computerUseEnabled}
+                          onToggle={() => {
+                            onComputerUseToggle()
+                            setIsMobileMenuOpen(false)
+                          }}
+                          isDarkMode={isDarkMode}
+                          supported={computerUseCanEnable}
+                          reason={computerUseReason}
+                        />
+                      )}
                     </div>
                   </>
                 )}
@@ -1049,6 +1110,15 @@ export function ChatInput({
                     </span>
                   )}
                 </div>
+              )}
+              {computerUseVisible && onComputerUseToggle && (
+                <ComputerUseToolButton
+                  enabled={!!computerUseEnabled}
+                  onToggle={onComputerUseToggle}
+                  isDarkMode={isDarkMode}
+                  supported={computerUseCanEnable}
+                  reason={computerUseReason}
+                />
               )}
             </div>
 

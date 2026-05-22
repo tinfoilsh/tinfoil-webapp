@@ -15,6 +15,11 @@
  */
 import { useProject } from '@/components/project'
 import { type BaseModel } from '@/config/models'
+import type { CapabilityManifest } from '@/services/computer-use'
+import {
+  computerUseRequestTools,
+  extractComputerBegin,
+} from '@/services/computer-use'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { getCodeExecutionContainerAuthTokenForChat } from '@/services/exec-snapshot/use-exec-snapshot'
 import { sendChatStream } from '@/services/inference/inference-client'
@@ -57,6 +62,14 @@ interface UseChatMessagingProps {
   codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
   codeExecutionEncryptionKey?: string | null
+  /** Expose `computer_begin` to the model so it can choose to drive the sandbox. */
+  computerUseEnabled?: boolean
+  /** Called when the model emits `computer_begin` — hands off to the session UI. */
+  onComputerBegin?: (
+    manifest: CapabilityManifest,
+    task: string,
+    reason?: string,
+  ) => void
 }
 
 interface UseChatMessagingReturn {
@@ -106,6 +119,8 @@ export function useChatMessaging({
   codeExecutionEnabled,
   piiCheckEnabled,
   codeExecutionEncryptionKey,
+  computerUseEnabled,
+  onComputerBegin,
 }: UseChatMessagingProps): UseChatMessagingReturn {
   const { isSignedIn } = useAuth()
   const maxMessages = useMaxMessages()
@@ -552,6 +567,20 @@ export function useChatMessaging({
             )) ?? undefined)
           : undefined
 
+        // Model-initiated computer-use: offer `computer_begin` when enabled +
+        // the model is vision-capable + the broker is reachable with a ready
+        // image. Never throws (broker problems just mean no tool offered).
+        const computerUseTools =
+          computerUseEnabled && model.multimodal
+            ? await computerUseRequestTools({
+                model: {
+                  modelName: model.modelName,
+                  multimodal: model.multimodal,
+                },
+                signal: controller.signal,
+              })
+            : []
+
         const response = await sendChatStream({
           model,
           systemPrompt: baseSystemPrompt,
@@ -572,6 +601,7 @@ export function useChatMessaging({
           codeExecutionAccessToken: updatedChat.codeExecutionAccessToken,
           codeExecutionEncryptionKey: codeExecutionEncryptionKey ?? undefined,
           codeExecutionContainerAuthToken,
+          computerUseTools,
         })
 
         const assistantMessage = await processStreamingResponse(response, {
@@ -592,6 +622,14 @@ export function useChatMessaging({
           storeHistory,
           startingChatId,
         })
+
+        // Model-initiated computer-use: if the model called `computer_begin`,
+        // hand off to the consent + agentic-loop session. The assistant message
+        // is still saved normally (its prose + the tool call).
+        if (computerUseEnabled && assistantMessage && onComputerBegin) {
+          const begin = extractComputerBegin(assistantMessage)
+          if (begin) onComputerBegin(begin.manifest, query, begin.reason)
+        }
 
         const hasAssistantMessageToSave =
           !!assistantMessage &&
@@ -807,6 +845,8 @@ export function useChatMessaging({
       codeExecutionEnabled,
       piiCheckEnabled,
       codeExecutionEncryptionKey,
+      computerUseEnabled,
+      onComputerBegin,
     ],
   )
 

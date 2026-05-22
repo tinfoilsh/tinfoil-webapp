@@ -95,6 +95,8 @@ export function useChatState({
   canUseCodeExecution = false,
   codeExecutionEnabled,
   piiCheckEnabled,
+  computerUseEnabled,
+  onComputerBegin,
 }: {
   systemPrompt: string
   rules?: string
@@ -112,6 +114,12 @@ export function useChatState({
   canUseCodeExecution?: boolean
   codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
+  computerUseEnabled?: boolean
+  onComputerBegin?: (
+    manifest: import('@/services/computer-use').CapabilityManifest,
+    task: string,
+    reason?: string,
+  ) => void
 }): UseChatStateReturn {
   const hasCreatedInitialChatRef = useRef(false)
 
@@ -221,6 +229,8 @@ export function useChatState({
       codeExecutionEnabled && codeExecutionEncryptionKey != null,
     piiCheckEnabled,
     codeExecutionEncryptionKey,
+    computerUseEnabled,
+    onComputerBegin,
   })
 
   // Update ref with cancelGeneration function

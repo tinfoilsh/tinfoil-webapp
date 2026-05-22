@@ -9,6 +9,7 @@ import {
 } from '@/components/chat/hooks/use-reasoning-effort'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import type { ToolSchema } from '@/services/computer-use'
 import { shouldRetryTestFail } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
 import { ChatQueryBuilder } from './chat-query-builder'
@@ -128,6 +129,12 @@ export interface SendChatStreamParams {
   codeExecutionEncryptionKey?: string
   /** Per-chat hex token authenticating the code-exec container. */
   codeExecutionContainerAuthToken?: string
+  /**
+   * Model-initiated computer-use: the `computer_begin` tool schema, added to the
+   * request so the model can choose to drive the sandbox. Built per-request (the
+   * `session.image` enum tracks the broker's ready images).
+   */
+  computerUseTools?: ToolSchema[]
 }
 
 export async function sendChatStream(
@@ -150,6 +157,7 @@ export async function sendChatStream(
     codeExecutionAccessToken,
     codeExecutionEncryptionKey,
     codeExecutionContainerAuthToken,
+    computerUseTools,
   } = params
 
   const genUITools = genUIEnabled ? buildGenUIToolSchemas() : []
@@ -269,6 +277,7 @@ export async function sendChatStream(
     messages: updatedMessages,
     maxMessages,
     includeGenUIHint: genUIEnabled,
+    includeComputerUseHint: (computerUseTools?.length ?? 0) > 0,
   })
 
   let lastError: unknown = null
@@ -361,8 +370,9 @@ export async function sendChatStream(
       if (piiCheckEnabled) {
         requestBody.pii_check_options = {}
       }
-      if (genUITools.length > 0) {
-        requestBody.tools = genUITools
+      const allTools = [...genUITools, ...(computerUseTools ?? [])]
+      if (allTools.length > 0) {
+        requestBody.tools = allTools
         requestBody.tool_choice = 'auto'
       }
       // Apply model-specific params first, then let our explicit fields win.

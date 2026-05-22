@@ -1,0 +1,129 @@
+/**
+ * The `computer_begin` tool schema — i.e. the capability manifest as a tool
+ * parameter schema, built via Zod→JSONSchema (the same path GenUI widgets use,
+ * so tool definitions and runtime validation never drift).
+ *
+ * The manifest IS the parameter schema (architecture → "Capabilities manifest"):
+ * the model receives it every turn, the broker re-validates server-side, and
+ * everything is default-deny. The one dynamic piece is `session.image`, built
+ * per-request as an enum of the broker's currently-ready images (from `/status`)
+ * — so the model can only pick a real, ready sandbox and *sees* what exists.
+ *
+ * This declares the session-opening tool. The model's *actions* inside the
+ * session use the separate `computer` tool from `adapter.ts`.
+ */
+
+import { z } from 'zod'
+import { zodToJsonSchema } from 'zod-to-json-schema'
+import type { ToolSchema } from './chat-protocol'
+
+export const COMPUTER_BEGIN_TOOL_NAME = 'computer_begin'
+
+const COMPUTER_BEGIN_DESCRIPTION = [
+  'Provision an isolated, sandboxed desktop session under a least-privilege',
+  'capability manifest, and return the first screenshot. Everything is',
+  'default-deny: request only the mounts/network/devices the task needs. The',
+  'user must approve the manifest. Call this once before driving the desktop',
+  'with the `computer` tool.',
+].join(' ')
+
+/** Build the Zod schema for the manifest, with `image` constrained to `images`. */
+function manifestZodSchema(images: string[]) {
+  // z.enum needs a non-empty tuple; with no ready images fall back to a string
+  // (the `no_images` state — the broker will reject begin until one is ready).
+  const imageSchema =
+    images.length > 0
+      ? z
+          .enum(images as [string, ...string[]])
+          .describe('Which ready sandbox image to clone.')
+      : z
+          .string()
+          .describe(
+            'Sandbox image name (none are ready yet — set one up first).',
+          )
+
+  return z.object({
+    version: z.literal(1),
+    reason: z
+      .string()
+      .describe(
+        'A very brief summary, in your own words, of what you intend to do in the sandbox and why. Shown to the user to approve before the session starts.',
+      ),
+    entrypoint: z
+      .array(z.string())
+      .optional()
+      .describe('Optional command run once at session start.'),
+    session: z.object({
+      os: z.enum(['mac', 'linux']).describe('Guest OS for the chosen image.'),
+      image: imageSchema,
+      clone: z
+        .boolean()
+        .optional()
+        .describe('Run an ephemeral fork of the image (recommended).'),
+      headless: z
+        .boolean()
+        .optional()
+        .describe(
+          'Omit for the default (no host window). Set false only to keep a window for seamless takeover.',
+        ),
+      idle_timeout: z
+        .string()
+        .optional()
+        .describe('Tear down after inactivity, e.g. "15m".'),
+    }),
+    mounts: z
+      .array(
+        z.object({
+          src: z
+            .string()
+            .describe('Host path to share (absolute or ~-relative).'),
+          dst: z.string().describe('Guest mount point, e.g. /Volumes/x.'),
+          mode: z.enum(['ro', 'rw']).describe('Read-only or read-write.'),
+        }),
+      )
+      .optional()
+      .describe(
+        'Host folders to expose into the guest. Front-load everything the task needs.',
+      ),
+    network: z
+      .object({
+        egress: z
+          .array(z.string())
+          .optional()
+          .describe(
+            'Default-deny domain allowlist, e.g. ["*.irs.gov","mail.google.com"].',
+          ),
+        ingress: z.array(z.number().int()).optional(),
+      })
+      .optional(),
+    devices: z
+      .object({ clipboard: z.boolean().optional() })
+      .optional()
+      .describe('Host↔guest device bridges (all off by default).'),
+    display: z
+      .object({
+        width: z.number().int().optional(),
+        height: z.number().int().optional(),
+        scale: z.number().int().optional(),
+      })
+      .optional(),
+  })
+}
+
+/**
+ * Build the `computer_begin` tool schema for the current set of ready images.
+ * Rebuild per request so the `session.image` enum tracks `/status`.
+ */
+export function buildComputerBeginSchema(images: string[]): ToolSchema {
+  return {
+    type: 'function',
+    function: {
+      name: COMPUTER_BEGIN_TOOL_NAME,
+      description: COMPUTER_BEGIN_DESCRIPTION,
+      parameters: zodToJsonSchema(manifestZodSchema(images), {
+        target: 'openApi3',
+        $refStrategy: 'none',
+      }) as Record<string, unknown>,
+    },
+  }
+}

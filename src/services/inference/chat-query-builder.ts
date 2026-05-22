@@ -5,6 +5,7 @@ import {
 import { buildGenUIPromptHint } from '@/components/chat/genui/system-prompt'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import { COMPUTER_USE_PROMPT_HINT } from '@/services/computer-use/request-tools'
 import type {
   ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
@@ -36,6 +37,8 @@ export interface ChatQueryBuilderParams {
    * so non-chat callers (title gen, memory) stay unaffected.
    */
   includeGenUIHint?: boolean
+  /** Append the computer-use nudge (when `computer_begin` is offered this turn). */
+  includeComputerUseHint?: boolean
 }
 
 export class ChatQueryBuilder {
@@ -52,10 +55,18 @@ export class ChatQueryBuilder {
       messages: conversationMessages,
       maxMessages,
       includeGenUIHint,
+      includeComputerUseHint,
     } = params
     const modelId = model.modelName
 
-    const genUIHint = includeGenUIHint ? buildGenUIPromptHint() : null
+    // Combine the optional guidance blocks into one appended hint section.
+    const genUIHint =
+      [
+        includeGenUIHint ? buildGenUIPromptHint() : null,
+        includeComputerUseHint ? COMPUTER_USE_PROMPT_HINT : null,
+      ]
+        .filter(Boolean)
+        .join('\n\n') || null
 
     const processedSystemPrompt = systemPrompt.replaceAll(
       '{MODEL_NAME}',

@@ -210,6 +210,9 @@ interface WelcomeScreenProps {
   setThinkingEnabled?: (enabled: boolean) => void
   codeExecutionEnabled?: boolean
   onCodeExecutionToggle?: () => void
+  computerUseEnabled?: boolean
+  onComputerUseToggle?: () => void
+  computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
 }
@@ -243,6 +246,9 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   setThinkingEnabled,
   codeExecutionEnabled,
   onCodeExecutionToggle,
+  computerUseEnabled,
+  onComputerUseToggle,
+  computerUseModel,
   onOpenVerifier,
   isTemporaryMode,
 }: WelcomeScreenProps) {
@@ -562,6 +568,9 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   onWebSearchToggle={onWebSearchToggle}
                   codeExecutionEnabled={codeExecutionEnabled}
                   onCodeExecutionToggle={onCodeExecutionToggle}
+                  computerUseEnabled={computerUseEnabled}
+                  onComputerUseToggle={onComputerUseToggle}
+                  computerUseModel={computerUseModel}
                   isTemporaryMode={isTemporaryMode}
                 />
               </motion.div>

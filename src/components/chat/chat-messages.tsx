@@ -20,6 +20,8 @@ type ChatMessagesProps = {
   messagesEndRef?: React.RefObject<HTMLDivElement | null>
   isWaitingForResponse?: boolean
   isStreamingResponse?: boolean
+  /** Inline computer-use session thread, rendered after the live messages. */
+  computerUseSession?: React.ReactNode
   isPremium?: boolean
   models?: BaseModel[]
   onSubmit?: (e: React.FormEvent) => void
@@ -51,6 +53,9 @@ type ChatMessagesProps = {
   setThinkingEnabled?: (enabled: boolean) => void
   codeExecutionEnabled?: boolean
   onCodeExecutionToggle?: () => void
+  computerUseEnabled?: boolean
+  onComputerUseToggle?: () => void
+  computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
 }
@@ -194,6 +199,7 @@ export function ChatMessages({
   chatId,
   isWaitingForResponse = false,
   isStreamingResponse = false,
+  computerUseSession,
   isPremium,
   models,
   onSubmit,
@@ -222,6 +228,9 @@ export function ChatMessages({
   setThinkingEnabled,
   codeExecutionEnabled,
   onCodeExecutionToggle,
+  computerUseEnabled,
+  onComputerUseToggle,
+  computerUseModel,
   onOpenVerifier,
   isTemporaryMode,
 }: ChatMessagesProps) {
@@ -330,6 +339,9 @@ export function ChatMessages({
             setThinkingEnabled={setThinkingEnabled}
             codeExecutionEnabled={codeExecutionEnabled}
             onCodeExecutionToggle={onCodeExecutionToggle}
+            computerUseEnabled={computerUseEnabled}
+            onComputerUseToggle={onComputerUseToggle}
+            computerUseModel={computerUseModel}
             onOpenVerifier={onOpenVerifier}
             isTemporaryMode={isTemporaryMode}
           />
@@ -401,6 +413,8 @@ export function ChatMessages({
           retryInfo={retryInfo}
         />
       )}
+      {/* Live computer-use session, interleaved into the conversation. */}
+      {computerUseSession}
       {/* Spacer allows scrollIntoView to bring user message to top of viewport.
           Subtracts the composer height (set on the scroll container as
           --input-area-height) so the total over-scroll is just enough for the

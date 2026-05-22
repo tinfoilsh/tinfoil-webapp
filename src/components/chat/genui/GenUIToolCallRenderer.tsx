@@ -84,6 +84,13 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
   return (
     <React.Fragment>
       {toolCalls.map((tc) => {
+        // Computer-use tool calls (e.g. computer_begin) are handled by the
+        // computer-use session dialog, not the GenUI widget system — don't
+        // render an "unavailable widget" card for them.
+        if (tc.name.startsWith('computer_')) {
+          return null
+        }
+
         const widget = getGenUIWidget(tc.name)
 
         // Input-surface widgets render inside ChatInput, not in the chat
