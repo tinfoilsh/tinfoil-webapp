@@ -1,43 +1,50 @@
-import { getFaviconUrl } from '@/services/inference/metadata-client'
+import { fetchLinkMetadata } from '@/services/inference/metadata-client'
 import { useEffect, useState } from 'react'
 
-// Module-level memory of favicon URLs that have already loaded (or failed)
-// during this session. Keeps remounts — for example, when react-markdown
-// re-parses a streaming message and recreates citation pills — from
-// flashing back through the loading placeholder before re-resolving an
-// image the browser already has cached.
-const RESOLVED_FAVICONS = new Set<string>()
+// Module-level cache of favicon object URLs keyed by page URL. Keeps
+// remounts — for example, when react-markdown re-parses a streaming
+// message and recreates citation pills — from flashing back through
+// the loading placeholder before re-resolving an icon the browser has
+// already decoded.
+const RESOLVED_FAVICON_URLS = new Map<string, string>()
 const FAILED_FAVICONS = new Set<string>()
+
+function releaseCachedFavicon(url: string) {
+  const cached = RESOLVED_FAVICON_URLS.get(url)
+  if (!cached) return
+  URL.revokeObjectURL(cached)
+  RESOLVED_FAVICON_URLS.delete(url)
+}
 
 type FaviconState = 'loading' | 'ready' | 'error'
 
-function initialFaviconState(src: string | null): FaviconState {
-  if (!src) return 'error'
-  if (FAILED_FAVICONS.has(src)) return 'error'
-  if (RESOLVED_FAVICONS.has(src)) return 'ready'
-  return 'loading'
+interface ResolvedFavicon {
+  src: string
+  state: FaviconState
+}
+
+function initialResolved(url: string): ResolvedFavicon {
+  if (FAILED_FAVICONS.has(url)) return { src: '', state: 'error' }
+  const existing = RESOLVED_FAVICON_URLS.get(url)
+  if (existing) return { src: existing, state: 'ready' }
+  return { src: '', state: 'loading' }
 }
 
 /**
- * Favicon <img> that loads the icon through the enclave's `/favicon`
- * endpoint. Call sites previously pointed directly at
- * `icons.duckduckgo.com/ip3/<host>.ico`, which leaked every viewed link
- * to a third party. This component targets the enclave instead; the
- * enclave proxies to DuckDuckGo server-side and streams back bytes.
- *
- * Rendered state is local (load/error) because the browser fetches the
- * image directly — there is no JSON round-trip to manage.
+ * Favicon <img> that loads the icon through the attested metadata
+ * enclave. The bytes are fetched as part of the standard `/metadata`
+ * response, decoded into a Blob, and exposed as an object URL so the
+ * browser never reaches an external icon host directly.
  */
-interface FaviconProps
-  extends Omit<
-    React.ImgHTMLAttributes<HTMLImageElement>,
-    'src' | 'onError' | 'onLoad'
-  > {
-  /** Page URL; only the hostname is used for the lookup. */
+interface FaviconProps extends Omit<
+  React.ImgHTMLAttributes<HTMLImageElement>,
+  'src' | 'onError' | 'onLoad'
+> {
+  /** Page URL; metadata is fetched against this. */
   url: string
-  /** Rendered until the enclave response starts decoding. */
+  /** Rendered until the favicon bytes resolve. */
   placeholder?: React.ReactNode
-  /** Rendered when the image fails to load. */
+  /** Rendered when no bytes are available. */
   fallback?: React.ReactNode
   /** Called once the image has fully loaded. */
   onResolve?: () => void
@@ -55,45 +62,67 @@ export function Favicon({
   className,
   ...imgProps
 }: FaviconProps) {
-  const src = getFaviconUrl(url)
-  const [state, setState] = useState<FaviconState>(() =>
-    initialFaviconState(src),
+  const [resolved, setResolved] = useState<ResolvedFavicon>(() =>
+    initialResolved(url),
   )
 
-  // Reset state when the resolved URL changes so a previously-failed
-  // favicon does not lock this component into the fallback for a
-  // freshly-mounted URL.
   useEffect(() => {
-    setState(initialFaviconState(src))
-  }, [src])
+    let cancelled = false
+    setResolved(initialResolved(url))
 
-  if (!src) return <>{fallback}</>
-  if (state === 'error') return <>{fallback}</>
+    if (FAILED_FAVICONS.has(url) || RESOLVED_FAVICON_URLS.has(url)) {
+      return () => {
+        cancelled = true
+      }
+    }
+
+    fetchLinkMetadata(url)
+      .then((metadata) => {
+        if (cancelled) return
+        if (!metadata.faviconBytes) {
+          FAILED_FAVICONS.add(url)
+          setResolved({ src: '', state: 'error' })
+          return
+        }
+        const contentType = metadata.faviconContentType ?? 'image/x-icon'
+        const blob = new Blob([metadata.faviconBytes], { type: contentType })
+        const objectURL = URL.createObjectURL(blob)
+        const previous = RESOLVED_FAVICON_URLS.get(url)
+        if (previous && previous !== objectURL) {
+          URL.revokeObjectURL(previous)
+        }
+        RESOLVED_FAVICON_URLS.set(url, objectURL)
+        setResolved({ src: objectURL, state: 'ready' })
+      })
+      .catch(() => {
+        if (cancelled) return
+        FAILED_FAVICONS.add(url)
+        setResolved({ src: '', state: 'error' })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [url])
+
+  if (resolved.state === 'error') return <>{fallback}</>
+  if (resolved.state === 'loading') return <>{placeholder}</>
 
   return (
-    <>
-      {state === 'loading' && placeholder}
-      <img
-        {...imgProps}
-        src={src}
-        alt={alt}
-        className={className}
-        style={
-          state === 'loading'
-            ? { display: 'none', ...imgProps.style }
-            : imgProps.style
-        }
-        onLoad={() => {
-          RESOLVED_FAVICONS.add(src)
-          setState('ready')
-          onResolve?.()
-        }}
-        onError={() => {
-          FAILED_FAVICONS.add(src)
-          setState('error')
-          onResolveError?.()
-        }}
-      />
-    </>
+    <img
+      {...imgProps}
+      src={resolved.src}
+      alt={alt}
+      className={className}
+      onLoad={() => {
+        onResolve?.()
+      }}
+      onError={() => {
+        FAILED_FAVICONS.add(url)
+        releaseCachedFavicon(url)
+        setResolved({ src: '', state: 'error' })
+        onResolveError?.()
+      }}
+    />
   )
 }
