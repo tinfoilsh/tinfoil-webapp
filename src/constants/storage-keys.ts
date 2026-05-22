@@ -93,6 +93,8 @@ export const USER_PREFS_CUSTOM_PROMPT_ENABLED =
   'tinfoil-user-prefs-custom-prompt-enabled'
 export const USER_PREFS_CUSTOM_SYSTEM_PROMPT =
   'tinfoil-user-prefs-custom-system-prompt'
+export const USER_PREFS_CUSTOM_PROMPT_PRESETS =
+  'tinfoil-user-prefs-custom-prompt-presets'
 export const USER_PREFS_PROJECT_UPLOAD = 'tinfoil-user-prefs-project-upload'
 
 // --- localStorage: Sync/data state -----------------------------------------

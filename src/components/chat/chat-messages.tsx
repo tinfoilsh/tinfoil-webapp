@@ -8,6 +8,7 @@ import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
 import { useMaxMessages } from './hooks/use-max-messages'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
 import { PrintableChat } from './PrintableChat'
+import type { PromptPreset } from './prompts/types'
 import { getRendererRegistry } from './renderers/client'
 import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
 import type { LabelType, Message } from './types'
@@ -53,6 +54,9 @@ type ChatMessagesProps = {
   onCodeExecutionToggle?: () => void
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
+  activePromptPreset?: PromptPreset | null
+  onOpenPromptLibrary?: () => void
+  onSelectPromptPreset?: (presetId: string | null) => void
 }
 
 // Optimized wrapper component that receives expanded state from parent
@@ -224,6 +228,9 @@ export function ChatMessages({
   onCodeExecutionToggle,
   onOpenVerifier,
   isTemporaryMode,
+  activePromptPreset,
+  onOpenPromptLibrary,
+  onSelectPromptPreset,
 }: ChatMessagesProps) {
   const [mounted, setMounted] = useState(false)
   const maxMessages = useMaxMessages()
@@ -332,6 +339,9 @@ export function ChatMessages({
             onCodeExecutionToggle={onCodeExecutionToggle}
             onOpenVerifier={onOpenVerifier}
             isTemporaryMode={isTemporaryMode}
+            activePromptPreset={activePromptPreset}
+            onOpenPromptLibrary={onOpenPromptLibrary}
+            onSelectPromptPreset={onSelectPromptPreset}
           />
         </div>
       </div>

@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import React, { memo, useEffect, useRef, useState } from 'react'
 import { BiSolidLock } from 'react-icons/bi'
 import { ChatInput } from './chat-input'
+import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DataFlowDiagram } from './DataFlowDiagram'
 import {
@@ -15,6 +16,7 @@ import {
   type ReasoningEffort,
 } from './hooks/use-reasoning-effort'
 import { ModelSelector } from './model-selector'
+import type { PromptPreset } from './prompts/types'
 import { ReasoningEffortSelector } from './reasoning-effort-selector'
 import type { ProcessedDocument } from './renderers/types'
 import type { LabelType, LoadingState } from './types'
@@ -212,6 +214,9 @@ interface WelcomeScreenProps {
   onCodeExecutionToggle?: () => void
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
+  activePromptPreset?: PromptPreset | null
+  onOpenPromptLibrary?: () => void
+  onSelectPromptPreset?: (presetId: string | null) => void
 }
 
 // isTemporaryMode is forwarded to the embedded ChatInput so the input can
@@ -245,6 +250,9 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   onCodeExecutionToggle,
   onOpenVerifier,
   isTemporaryMode,
+  activePromptPreset,
+  onOpenPromptLibrary,
+  onSelectPromptPreset,
 }: WelcomeScreenProps) {
   const { user } = useUser()
   const [nickname, setNickname] = useState<string>('')
@@ -563,6 +571,25 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   codeExecutionEnabled={codeExecutionEnabled}
                   onCodeExecutionToggle={onCodeExecutionToggle}
                   isTemporaryMode={isTemporaryMode}
+                />
+              </motion.div>
+            )}
+
+            {onOpenPromptLibrary && onSelectPromptPreset && (
+              <motion.div
+                className="mt-3 hidden md:block"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{
+                  duration: 0.5,
+                  ease: 'easeOut',
+                  delay: 0.45,
+                }}
+              >
+                <PromptPresetSuggestions
+                  activePreset={activePromptPreset ?? null}
+                  onSetActive={onSelectPromptPreset}
+                  onOpenLibrary={onOpenPromptLibrary}
                 />
               </motion.div>
             )}
