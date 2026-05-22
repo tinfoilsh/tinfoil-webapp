@@ -3129,6 +3129,9 @@ export function ChatInterface({
                         quote={quote}
                         onClearQuote={() => setQuote(null)}
                         isTemporaryMode={isTemporaryMode}
+                        activePromptPreset={activePreset}
+                        onOpenPromptLibrary={handleOpenPromptLibrary}
+                        onClearPromptPreset={() => handleSetActivePreset(null)}
                         hasMessages={
                           currentChat?.messages &&
                           currentChat.messages.length > 0
