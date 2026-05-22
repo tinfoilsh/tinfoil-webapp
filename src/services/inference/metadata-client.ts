@@ -4,10 +4,12 @@ import { SecureClient } from 'tinfoil'
 /**
  * Opengraph-metadata client.
  *
- * Fetches title/description/site_name/image/favicon for a URL from the
- * attested `opengraph-metadata.tinfoil.sh` enclave. Used by the GenUI
- * link-preview widget to replace model-generated fields with verified
- * values scraped server-side inside a Tinfoil CVM.
+ * Fetches title/description/site_name/image/favicon-bytes for a URL
+ * from the attested `opengraph-metadata.tinfoil.sh` enclave. Used by
+ * the GenUI link-preview widget to replace model-generated fields with
+ * verified values scraped server-side inside a Tinfoil CVM. Favicon
+ * bytes are inlined in the response so the browser never has to make a
+ * follow-up GET to an external icon host.
  */
 
 const METADATA_ENCLAVE = 'https://opengraph-metadata.tinfoil.sh'
@@ -31,7 +33,8 @@ export interface LinkMetadata {
   description: string | null
   siteName: string | null
   image: string | null
-  favicon: string | null
+  faviconBytes: ArrayBuffer | null
+  faviconContentType: string | null
   cached: boolean
 }
 
@@ -41,7 +44,8 @@ interface MetadataResponse {
   description: string | null
   site_name: string | null
   image: string | null
-  favicon: string | null
+  favicon_bytes?: string | null
+  favicon_content_type?: string | null
   cached: boolean
 }
 
@@ -112,31 +116,25 @@ async function doFetchLinkMetadata(url: string): Promise<LinkMetadata> {
     description: data.description,
     siteName: data.site_name,
     image: data.image,
-    favicon: data.favicon,
+    faviconBytes: decodeBase64Bytes(data.favicon_bytes),
+    faviconContentType: data.favicon_content_type ?? null,
     cached: data.cached,
   }
 }
 
-function getHostKey(url: string): string | null {
+function decodeBase64Bytes(
+  value: string | null | undefined,
+): ArrayBuffer | null {
+  if (!value) return null
   try {
-    return new URL(url).hostname.toLowerCase()
+    const binary = atob(value)
+    const buffer = new ArrayBuffer(binary.length)
+    const bytes = new Uint8Array(buffer)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+    return buffer
   } catch {
     return null
   }
-}
-
-/**
- * Build a direct `<img src>` URL pointing at the enclave's lightweight
- * `GET /favicon?host=...` endpoint.
- *
- * The browser loads the bytes in a single request. No JSON round-trip,
- * no async state in the UI. The enclave proxies to DuckDuckGo's icon
- * service server-side so the browser never talks to DuckDuckGo directly.
- *
- * Returns `null` for URLs whose hostname cannot be parsed.
- */
-export function getFaviconUrl(url: string): string | null {
-  const host = getHostKey(url)
-  if (!host) return null
-  return `${METADATA_ENCLAVE}/favicon?host=${encodeURIComponent(host)}`
 }
