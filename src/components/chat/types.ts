@@ -1,3 +1,5 @@
+import type { CapabilityManifest, LoopEvent } from '@/services/computer-use'
+
 export type URLCitation = {
   title: string
   url: string
@@ -153,6 +155,19 @@ export type Message = {
   }>
   // Code-execution tool calls (derived from timeline)
   codeExecCalls?: ToolCallState[]
+  // Computer-use session this message captures: the frame trail (screenshots +
+  // action prose) gathered during a finished or errored run. The live, in-flight
+  // session is rendered separately by ComputerUseSessionThread; once the run
+  // reaches a terminal phase, chat-interface commits the frames here so the
+  // session sits at its chronological place in history and survives reload.
+  computerUseFrames?: LoopEvent[]
+  // Error text from the session, when the run ended in failure. Implies the
+  // message also has `isError: true`.
+  computerUseError?: string
+  // The capability manifest the user approved at the start of the session.
+  // Rendered inline by `ComputerUseSessionRenderer` so the audit trail in
+  // chat history shows what privileges the run was actually granted.
+  computerUseManifest?: CapabilityManifest
 }
 
 export type TitleState = 'placeholder' | 'generated' | 'manual'

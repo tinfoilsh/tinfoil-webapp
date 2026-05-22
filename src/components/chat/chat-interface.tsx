@@ -428,7 +428,13 @@ export function ChatInterface({
       [setEncryptionKey],
     ),
   })
-  updatePasskeyBackupRef.current = updatePasskeyBackup
+  // Sync the latest callback into the ref via an effect so we don't mutate a
+  // ref during render (React Compiler advisory: `react-hooks/refs`). The ref
+  // is used from callbacks fired after commit, so an effect is the right
+  // place to wire it.
+  useEffect(() => {
+    updatePasskeyBackupRef.current = updatePasskeyBackup
+  }, [updatePasskeyBackup])
 
   const {
     retryDecryption: retryProfileDecryption,
@@ -447,10 +453,15 @@ export function ChatInterface({
     setLogoAnimDone(true)
   }, [])
 
-  // Show onboarding once models are loaded for new users
+  // Show onboarding once models are loaded for new users.
+  // The Compiler-aware lint flags the setState-in-effect, but the open state
+  // is also toggled by user action (dismiss/finish) — pure derivation would
+  // require a separate dismiss tracker for no behavioural gain, and the
+  // open-on-condition pattern is the right shape here.
   useEffect(() => {
     if (suppressIntroModals) return
     if (onboardingNeeded && models.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowOnboarding(true)
     }
   }, [onboardingNeeded, models.length, suppressIntroModals])
@@ -483,6 +494,7 @@ export function ChatInterface({
     // through the sidebar warning instead of an auto-popup, so the user can
     // act on them at their own pace.
     if (passkeyRecoveryNeeded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShowCloudSyncSetupModal(true)
     }
   }, [passkeyRecoveryNeeded, suppressIntroModals])
@@ -1105,7 +1117,12 @@ export function ChatInterface({
           isAskSidebarOpen ||
           isArtifactSidebarOpen)
       ) {
-        // Close right sidebars to prioritize left sidebar
+        // Close right sidebars to prioritize left sidebar. The cascade is
+        // intentional (imperative cleanup on a viewport-class change) and
+        // doesn't trigger a render loop — each setter sees the same effect
+        // run, and the resulting state stops the predicate above from being
+        // true on the next pass.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsVerifierSidebarOpen(false)
         setIsSettingsModalOpen(false)
         setIsAskSidebarOpen(false)
@@ -1221,11 +1238,64 @@ export function ChatInterface({
   // In-chat computer-use session (pairing → consent → agentic loop). Opened when
   // the model emits `computer_begin` (see onComputerBegin / use-chat-messaging).
   const computerUseSession = useComputerUseSession(selectedModel)
+  // Destructure the stable handle the effect actually needs so exhaustive-deps
+  // doesn't pull in the whole session (which is a fresh object each render).
+  const { start: startComputerUseSession } = computerUseSession
   useEffect(() => {
     onComputerBeginRef.current = (manifest, task, reason) => {
-      void computerUseSession.start(task, manifest, reason)
+      void startComputerUseSession(task, manifest, reason)
     }
-  }, [computerUseSession.start])
+  }, [startComputerUseSession])
+
+  // Fold a finished/errored session into chat history at its chronological
+  // position: commit a synthetic assistant message carrying the frame trail
+  // (and, on error, an error string) — then reset the session so the live
+  // thread component stops rendering. The committed message picks
+  // `ComputerUseSessionRenderer` and visually reads like the live thread.
+  //
+  // Without this, the live `ComputerUseSessionThread` keeps rendering after
+  // `done` / `error` and pins under the messages array, breaking chronological
+  // order if the user sends another message. It also means the run vanishes on
+  // reload (frames live only in `useComputerUseSession` state).
+  const committedSessionTaskRef = useRef<string | null>(null)
+  useEffect(() => {
+    const { phase, task, frames, finalText, error, manifest } =
+      computerUseSession.state
+    if (phase !== 'done' && phase !== 'error') return
+    // Guard against double-commit across re-renders. Using the task string +
+    // phase as a coarse session key — `task` is captured fresh by `start()`
+    // and cleared by `cancel()`.
+    const key = `${task}::${phase}`
+    if (committedSessionTaskRef.current === key) return
+    committedSessionTaskRef.current = key
+
+    setCurrentChat((c) => ({
+      ...c,
+      messages: [
+        ...c.messages,
+        {
+          role: 'assistant',
+          content: finalText ?? '',
+          timestamp: new Date(),
+          computerUseFrames: frames,
+          ...(manifest ? { computerUseManifest: manifest } : {}),
+          ...(phase === 'error'
+            ? { isError: true, computerUseError: error ?? 'Session failed.' }
+            : {}),
+        },
+      ],
+    }))
+    // Reset the session so the live thread stops rendering and a future
+    // computer_begin starts fresh.
+    computerUseSession.cancel()
+    // The cancel itself zeroes `state.task`, so reset the dedupe key too.
+    committedSessionTaskRef.current = null
+  }, [
+    computerUseSession.state.phase,
+    computerUseSession.state.task,
+    computerUseSession,
+    setCurrentChat,
+  ])
 
   // Initialize document uploader hook
   const { handleDocumentUpload, describeImageWithMultimodal } =
@@ -1246,7 +1316,11 @@ export function ChatInterface({
 
     if (imagesNeedingDescriptions.length === 0) return
 
-    // Mark images as generating descriptions
+    // Mark images as generating descriptions. The setState-in-effect is the
+    // right pattern here: we're reacting to a model switch (prop change) by
+    // kicking off async work, and the flag in the state IS the kickoff (the
+    // rendering branch reads it to spawn the description job).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setProcessedDocuments((prev) =>
       prev.map((doc) =>
         imagesNeedingDescriptions.some((img) => img.id === doc.id)
@@ -1524,8 +1598,13 @@ export function ChatInterface({
     exitProjectMode()
   }, [createNewChat, exitProjectMode])
 
+  // Extract optional-chain values to local consts so the React Compiler can
+  // recognize the memoization (`preserve-manual-memoization` doesn't see
+  // through `currentChat?.id`-style deps).
+  const currentChatId = currentChat?.id
+  const isCurrentChatTemporary = currentChat?.isTemporary
   const handleToggleTemporaryMode = useCallback(() => {
-    if (currentChat?.isTemporary) {
+    if (isCurrentChatTemporary) {
       const previousId = previousChatIdRef.current
       previousChatIdRef.current = null
       const restored = previousId
@@ -1539,7 +1618,7 @@ export function ChatInterface({
       return
     }
 
-    previousChatIdRef.current = currentChat?.id ?? null
+    previousChatIdRef.current = currentChatId ?? null
     const tempChat: Chat = {
       id: `temp-${Date.now()}`,
       title: 'Temporary Chat',
@@ -1553,8 +1632,8 @@ export function ChatInterface({
   }, [
     chats,
     createNewChat,
-    currentChat?.id,
-    currentChat?.isTemporary,
+    currentChatId,
+    isCurrentChatTemporary,
     setCurrentChat,
   ])
 
@@ -2190,10 +2269,19 @@ export function ChatInterface({
   // When new content appears below the viewport (e.g., thoughts start streaming),
   // some mobile browsers may jump the scroll position. This saves scrollTop
   // before React commits DOM changes and restores it after.
+  //
+  // Reading/writing the ref during render is intentional here: by the time a
+  // useLayoutEffect fires the DOM has already been mutated, so capturing the
+  // pre-commit scrollTop has to happen during render. The companion
+  // useLayoutEffect below restores. (react-hooks/refs flags this as advisory;
+  // it is the correct pattern for scroll preservation.)
   const savedScrollTopRef = useRef<number | null>(null)
+  // eslint-disable-next-line react-hooks/refs
   if (showScrollButton && scrollContainerRef.current) {
+    // eslint-disable-next-line react-hooks/refs
     savedScrollTopRef.current = scrollContainerRef.current.scrollTop
   } else {
+    // eslint-disable-next-line react-hooks/refs
     savedScrollTopRef.current = null
   }
   useLayoutEffect(() => {

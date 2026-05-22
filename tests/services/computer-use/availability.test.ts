@@ -3,6 +3,7 @@ import {
   computerUseAvailability,
   connectionIndicator,
   readyImageNames,
+  readyImages,
 } from '@/services/computer-use/availability'
 import type { BrokerStatus } from '@/services/computer-use/types'
 import { describe, expect, it } from 'vitest'
@@ -47,6 +48,27 @@ describe('readyImageNames', () => {
         ]),
       ),
     ).toEqual(['a', 'c'])
+  })
+})
+
+describe('readyImages', () => {
+  it('returns ready images with their OS (so consent UI can derive session.os)', () => {
+    expect(
+      readyImages(
+        status([
+          { name: 'a', os: 'mac', ready: true },
+          { name: 'b', os: 'linux', ready: false },
+          { name: 'c', os: 'linux', ready: true },
+        ]),
+      ),
+    ).toEqual([
+      { name: 'a', os: 'mac', ready: true },
+      { name: 'c', os: 'linux', ready: true },
+    ])
+  })
+
+  it('returns [] when status is null (broker absent)', () => {
+    expect(readyImages(null)).toEqual([])
   })
 })
 

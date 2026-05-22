@@ -104,6 +104,7 @@ const computerActionSchema = z
         'launch_app',
         'exec',
         'request_handoff',
+        'request_capability',
       ])
       .describe('The action to perform on the sandboxed desktop.'),
     x: z
@@ -130,6 +131,12 @@ const computerActionSchema = z
       .optional()
       .describe('App name or bundle id, for launch_app.'),
     command: z.string().optional().describe('Shell command, for exec.'),
+    egress: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Additional egress domains to request at runtime, for request_capability. The full desired allowlist (existing + new), in domain form (e.g. "example.com", "*.example.com"). The user must approve before it is applied.',
+      ),
   })
   .describe(
     'A single computer-use action. Emit one action per tool call, then wait for the resulting screenshot before the next.',
@@ -141,6 +148,9 @@ const COMPUTER_TOOL_DESCRIPTION = [
   'pixel coordinates from the most recent screenshot. Prefer `exec` for anything',
   'scriptable (far more reliable than clicking). When you hit a login or 2FA',
   'wall you cannot pass, emit `request_handoff` to let the user take over.',
+  'If a page or network request fails because a domain is not in your egress',
+  'allowlist, emit `request_capability` with the full desired domain list',
+  '(existing + new) to ask the user to widen the allowlist.',
 ].join(' ')
 
 /**
@@ -157,6 +167,10 @@ const OPENAI_CU_SYSTEM_PROMPT = [
   'Prefer the `exec` action for anything scriptable — it is far more reliable than clicking.',
   'You are already signed in to the apps you need; never ask for or type passwords.',
   'If you reach a login or 2FA wall you cannot pass, emit `request_handoff` so the user can take over.',
+  'If a page or network call fails because the domain is blocked by the sandbox egress allowlist,',
+  'emit `request_capability` with `egress` set to the FULL desired allowlist (the existing domains',
+  'plus the new ones you need). The user will be asked to approve; do not retry the same request',
+  'after a denial. Only ask for domains strictly needed to complete the task.',
   'Only when the task is fully complete, reply with a short summary in prose and DO NOT call the tool.',
 ].join(' ')
 
@@ -216,7 +230,7 @@ function maybeScale(
 }
 
 const SUPPORTED_TYPES =
-  'click, double_click, right_click, scroll, type, keypress, screenshot, launch_app, exec, request_handoff'
+  'click, double_click, right_click, scroll, type, keypress, screenshot, launch_app, exec, request_handoff, request_capability'
 
 /** Map a normalized OpenAI-CU action object to a canonical broker action. */
 function buildAction(
@@ -345,6 +359,27 @@ function buildAction(
     case 'handoff':
     case 'human_takeover':
       return ok('request_handoff', {})
+    case 'request_capability':
+    case 'escalate':
+    case 'request_egress': {
+      // Only egress is live-escalatable today. The egress array is the full
+      // desired allowlist (the broker replaces, not merges, so the model
+      // should include both the existing and the new domains).
+      const egress = Array.isArray(a.egress)
+        ? a.egress
+            .filter((d): d is string => typeof d === 'string')
+            .map((d) => d.trim())
+            .filter(Boolean)
+        : []
+      if (egress.length === 0) {
+        return {
+          ok: false,
+          reason:
+            'request_capability requires `egress` — an array of one or more domains.',
+        }
+      }
+      return ok('request_capability', { egress })
+    }
     case 'move':
     case 'mouse_move':
     case 'drag':

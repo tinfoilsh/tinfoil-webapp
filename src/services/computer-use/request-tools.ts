@@ -25,10 +25,17 @@ export const COMPUTER_USE_PROMPT_HINT = [
   'You can operate a real, isolated sandboxed computer when a task needs it.',
   'If the user asks you to *do* something on a computer — browse the web, fill a',
   'form, use a desktop or GUI app, run software, or work with files inside apps —',
-  'call the `computer_begin` tool to start a sandboxed session, then drive it.',
+  'call the `computer_begin` tool once to start a sandboxed session.',
   'Request a least-privilege manifest: the chosen image, plus only the mounts and',
-  'network egress the task genuinely needs (default to none). Do NOT call it for',
-  'questions you can answer directly in text.',
+  'network egress the task genuinely needs (default to none).',
+  'AFTER `computer_begin` returns and the user approves, you will be presented',
+  'with a `computer` action tool (click, type, screenshot, scroll, keypress, etc.)',
+  'in a follow-on interactive session — that is the tool you actually drive the',
+  'desktop with. The `computer` tool is not visible to you before that point;',
+  'do not try to script the work via the `computer_begin` entrypoint or assume',
+  '`computer` is missing — just call `computer_begin` and drive interactively',
+  'when the session opens. Do NOT call `computer_begin` for questions you can',
+  'answer directly in text.',
 ].join(' ')
 
 /**

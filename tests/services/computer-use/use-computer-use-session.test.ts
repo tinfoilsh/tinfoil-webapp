@@ -1,11 +1,18 @@
 import type { BrokerConnection } from '@/services/computer-use/access-token'
 import type { LoopResult } from '@/services/computer-use/loop-controller'
-import { BrokerError } from '@/services/computer-use/types'
+import { BrokerError, type BrokerImage } from '@/services/computer-use/types'
 import { useComputerUseSession } from '@/services/computer-use/use-computer-use-session'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const fakeConn = {} as BrokerConnection
+
+const mac = (name: string): BrokerImage => ({ name, os: 'mac', ready: true })
+const linuxImg = (name: string): BrokerImage => ({
+  name,
+  os: 'linux',
+  ready: true,
+})
 
 function loopResult(over: Partial<LoopResult> = {}): LoopResult {
   return {
@@ -23,7 +30,7 @@ describe('useComputerUseSession', () => {
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => fakeConn,
-        fetchStatusImages: async () => ['tahoe', 'linux-box'],
+        fetchStatusImages: async () => [mac('tahoe'), linuxImg('linux-box')],
         runLoop: vi.fn(),
       }),
     )
@@ -34,8 +41,57 @@ describe('useComputerUseSession', () => {
 
     expect(result.current.state.phase).toBe('consent')
     expect(result.current.state.task).toBe('research X')
-    expect(result.current.state.images).toEqual(['tahoe', 'linux-box'])
+    expect(result.current.state.images).toEqual([
+      mac('tahoe'),
+      linuxImg('linux-box'),
+    ])
     expect(result.current.state.manifest?.session.image).toBe('tahoe')
+    // Proposed manifest takes the OS of the chosen image, NOT a hardcoded default.
+    expect(result.current.state.manifest?.session.os).toBe('mac')
+  })
+
+  it('overrides session.os from the chosen image when the model emitted a mismatched value', async () => {
+    // Regression: a model picked `os:"linux"` for a macOS image. The webapp
+    // must replace it with the image's actual OS — model doesn't get to disagree.
+    const proposed = {
+      version: 1 as const,
+      session: { os: 'linux' as const, image: 'tahoe' },
+    }
+    const { result } = renderHook(() =>
+      useComputerUseSession('kimi-k2-6', {
+        getConnection: () => fakeConn,
+        fetchStatusImages: async () => [mac('tahoe')],
+        runLoop: vi.fn(),
+      }),
+    )
+    await act(async () => {
+      await result.current.start('go', proposed)
+    })
+    expect(result.current.state.manifest?.session.os).toBe('mac')
+    expect(result.current.state.manifest?.session.image).toBe('tahoe')
+  })
+
+  it('approve also re-applies image OS to defeat a mid-edit OS field', async () => {
+    const runLoop = vi.fn(async () => loopResult())
+    const { result } = renderHook(() =>
+      useComputerUseSession('kimi-k2-6', {
+        getConnection: () => fakeConn,
+        fetchStatusImages: async () => [mac('tahoe')],
+        runLoop,
+      }),
+    )
+    await act(async () => {
+      await result.current.start('go')
+    })
+    // Caller (or a buggy editor) supplies an explicit wrong OS.
+    const tampered = {
+      version: 1 as const,
+      session: { os: 'linux' as const, image: 'tahoe' },
+    }
+    await act(async () => {
+      await result.current.approve(tampered)
+    })
+    expect(runLoop.mock.calls[0][0].manifest.session.os).toBe('mac')
   })
 
   it('not paired: runs pairing (surfacing the code) before consent', async () => {
@@ -48,7 +104,7 @@ describe('useComputerUseSession', () => {
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => null,
         pair,
-        fetchStatusImages: async () => ['tahoe'],
+        fetchStatusImages: async () => [mac('tahoe')],
         runLoop: vi.fn(),
       }),
     )
@@ -75,7 +131,7 @@ describe('useComputerUseSession', () => {
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => staleConn,
         pair,
-        fetchStatusImages: async () => ['tahoe'],
+        fetchStatusImages: async () => [mac('tahoe')],
         runLoop: vi.fn(),
       }),
     )
@@ -101,7 +157,7 @@ describe('useComputerUseSession', () => {
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => downConn,
         pair,
-        fetchStatusImages: async () => ['tahoe'],
+        fetchStatusImages: async () => [mac('tahoe')],
         runLoop: vi.fn(),
       }),
     )
@@ -127,7 +183,7 @@ describe('useComputerUseSession', () => {
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => fakeConn,
-        fetchStatusImages: async () => ['tahoe'],
+        fetchStatusImages: async () => [mac('tahoe')],
         runLoop,
       }),
     )
@@ -150,7 +206,7 @@ describe('useComputerUseSession', () => {
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => fakeConn,
-        fetchStatusImages: async () => ['tahoe'],
+        fetchStatusImages: async () => [mac('tahoe')],
         runLoop: vi.fn(async () =>
           loopResult({ reason: 'handoff', ended: false }),
         ),
@@ -181,11 +237,135 @@ describe('useComputerUseSession', () => {
     expect(result.current.state.error).toMatch(/exploded/)
   })
 
+  it('capability escalation: pause → approve → broker.escalate is called + manifest egress updates', async () => {
+    // The loop, on detecting `request_capability`, awaits the hook's
+    // `requestCapabilityApproval` injection. Once we click Approve, the
+    // promise resolves and the loop continues; on a successful approval
+    // we also expect the displayed manifest's `network.egress` to reflect
+    // the new list (so the config widget shows current state).
+    let runLoopPromiseResolve: (value: any) => void = () => {}
+    const escalateCalls: Array<{ session: string; egress: string[] }> = []
+    const runLoop = vi.fn(async (p: any) => {
+      // Simulate the loop emitting begin, then asking for capability.
+      p.onEvent({ type: 'begin', session: 's', screenshot: { content: [] } })
+      const approval = await p.requestCapabilityApproval({
+        egress: ['www.reddit.com'],
+      })
+      if (approval.approved) {
+        const { egress } = await p.broker.escalate('sess_abc', approval.egress)
+        escalateCalls.push({ session: 'sess_abc', egress })
+        p.onEvent({
+          type: 'capability_result',
+          callId: 'c1',
+          approved: true,
+          egress,
+        })
+      }
+      p.onEvent({
+        type: 'stopped',
+        reason: 'model_finished',
+        finalText: 'done',
+      })
+      return runLoopPromiseResolve({
+        session: 's',
+        reason: 'model_finished',
+        finalText: 'done',
+        steps: 1,
+        ended: true,
+      })
+    })
+    const conn = {
+      client: {
+        escalate: async (s: string, egress: string[]) => ({ egress }),
+      },
+    } as unknown as BrokerConnection
+    const { result } = renderHook(() =>
+      useComputerUseSession('kimi-k2-6', {
+        getConnection: () => conn,
+        fetchStatusImages: async () => [mac('tahoe')],
+        runLoop: runLoop as any,
+      }),
+    )
+    await act(async () => {
+      await result.current.start('go')
+    })
+    // Kick off approve in a separate act block so the loop can spin up.
+    let approvePromise: Promise<any> | undefined
+    await act(async () => {
+      approvePromise = result.current.approve(result.current.state.manifest!)
+      // Yield so the loop runs to the requestCapabilityApproval await.
+      await new Promise((r) => setTimeout(r, 10))
+    })
+    expect(result.current.state.capabilityRequest?.egress).toEqual([
+      'www.reddit.com',
+    ])
+    // User approves with an edit (added '*.redditstatic.com').
+    await act(async () => {
+      result.current.approveCapability(['www.reddit.com', '*.redditstatic.com'])
+      // Let the loop continue to finish.
+      await new Promise((r) => setTimeout(r, 10))
+      await approvePromise
+    })
+    expect(escalateCalls).toHaveLength(1)
+    expect(escalateCalls[0].egress).toEqual([
+      'www.reddit.com',
+      '*.redditstatic.com',
+    ])
+    expect(result.current.state.manifest?.network?.egress).toEqual([
+      'www.reddit.com',
+      '*.redditstatic.com',
+    ])
+    expect(result.current.state.capabilityRequest).toBeUndefined()
+  })
+
+  it('capability escalation: deny resolves the promise without calling escalate', async () => {
+    let denied = false
+    const runLoop = vi.fn(async (p: any) => {
+      const approval = await p.requestCapabilityApproval({
+        egress: ['evil.com'],
+      })
+      denied = !approval.approved
+      return {
+        session: 's',
+        reason: 'model_finished',
+        finalText: '',
+        steps: 0,
+        ended: true,
+      }
+    })
+    const escalate = vi.fn()
+    const conn = { client: { escalate } } as unknown as BrokerConnection
+    const { result } = renderHook(() =>
+      useComputerUseSession('kimi-k2-6', {
+        getConnection: () => conn,
+        fetchStatusImages: async () => [mac('tahoe')],
+        runLoop: runLoop as any,
+      }),
+    )
+    await act(async () => {
+      await result.current.start('go')
+    })
+    let approvePromise: Promise<any> | undefined
+    await act(async () => {
+      approvePromise = result.current.approve(result.current.state.manifest!)
+      await new Promise((r) => setTimeout(r, 10))
+    })
+    expect(result.current.state.capabilityRequest?.egress).toEqual(['evil.com'])
+    await act(async () => {
+      result.current.denyCapability('test deny')
+      await new Promise((r) => setTimeout(r, 10))
+      await approvePromise
+    })
+    expect(denied).toBe(true)
+    expect(escalate).not.toHaveBeenCalled()
+    expect(result.current.state.capabilityRequest).toBeUndefined()
+  })
+
   it('cancel resets to idle', async () => {
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => fakeConn,
-        fetchStatusImages: async () => ['tahoe'],
+        fetchStatusImages: async () => [mac('tahoe')],
         runLoop: vi.fn(),
       }),
     )

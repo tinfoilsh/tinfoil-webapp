@@ -50,4 +50,13 @@ describe('buildComputerBeginSchema', () => {
     expect(network.properties.egress.type).toBe('array')
     expect(network.properties.egress.items.type).toBe('string')
   })
+
+  it('does not let the model pick session.os — derived from the chosen image instead', () => {
+    // Letting the model pick `os` makes it easy to disagree with the image
+    // (e.g. emit os:"linux" against a macOS image). The webapp injects
+    // session.os from the chosen image's /status entry — not a model field.
+    const session = props(buildComputerBeginSchema(['tahoe'])).session
+    expect(session.properties).not.toHaveProperty('os')
+    expect(session.required ?? []).not.toContain('os')
+  })
 })

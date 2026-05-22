@@ -23,6 +23,7 @@ export {
   computerUseAvailability,
   connectionIndicator,
   readyImageNames,
+  readyImages,
   type BrokerReadiness,
   type ComputerUseAvailability,
   type ConnectionIndicator,

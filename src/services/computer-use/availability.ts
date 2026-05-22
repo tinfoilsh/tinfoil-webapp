@@ -15,7 +15,7 @@ import {
   type ComputerUseSupport,
   type ModelLike,
 } from './model-support'
-import type { BrokerStatus } from './types'
+import type { BrokerImage, BrokerStatus } from './types'
 
 /** Broker readiness, derived solely from `/status` (or its absence). */
 export type BrokerReadiness =
@@ -34,7 +34,15 @@ export function brokerReadiness(status: BrokerStatus | null): BrokerReadiness {
 
 /** Ready image names — the source for the `computer_begin` `session.image` enum. */
 export function readyImageNames(status: BrokerStatus | null): string[] {
-  return (status?.images ?? []).filter((i) => i.ready).map((i) => i.name)
+  return readyImages(status).map((i) => i.name)
+}
+
+/**
+ * Ready images with their OS — the source consent UI and the manifest-OS
+ * derivation use to fill in `session.os` (which the model does NOT choose).
+ */
+export function readyImages(status: BrokerStatus | null): BrokerImage[] {
+  return (status?.images ?? []).filter((i) => i.ready)
 }
 
 export interface ComputerUseAvailability {

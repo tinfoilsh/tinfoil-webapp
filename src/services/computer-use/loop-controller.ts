@@ -104,7 +104,38 @@ export interface BrokerLike {
     signal?: AbortSignal,
   ): Promise<ActionResult>
   end(session: string, signal?: AbortSignal): Promise<void>
+  /**
+   * Live capability escalation — today only egress, supplied as the full
+   * desired allowlist. Called after user consent.
+   */
+  escalate(
+    session: string,
+    egress: string[],
+    signal?: AbortSignal,
+  ): Promise<{ egress: string[] }>
 }
+
+/** Result of asking the user to approve a model-requested capability change. */
+export type CapabilityApproval =
+  | {
+      /** User approved. May have edited the requested list. */
+      approved: true
+      egress: string[]
+    }
+  | {
+      /** User denied. The loop continues but tells the model. */
+      approved: false
+      reason?: string
+    }
+
+/**
+ * Surface a capability-escalation request from the model and await the user's
+ * decision. Provided by the session orchestration hook; the loop pauses while
+ * the promise is in flight. Omit to deny all escalation requests automatically.
+ */
+export type RequestCapabilityApproval = (req: {
+  egress: string[]
+}) => Promise<CapabilityApproval>
 
 const DEFAULT_MAX_STEPS = 30
 
@@ -144,6 +175,17 @@ export type LoopEvent =
     }
   | { type: 'unsupported'; callId: string; reason: string }
   | { type: 'handoff'; response: HandoffResponse }
+  /** Model asked for additional capabilities; user consent is pending. */
+  | { type: 'capability_request'; callId: string; egress: string[] }
+  /** User resolved the capability request (approved or denied). */
+  | {
+      type: 'capability_result'
+      callId: string
+      approved: boolean
+      /** Final egress allowlist applied to the session (approved only). */
+      egress?: string[]
+      reason?: string
+    }
   | { type: 'stopped'; reason: LoopStopReason; finalText: string }
 
 export interface RunComputerUseLoopParams {
@@ -170,6 +212,12 @@ export interface RunComputerUseLoopParams {
   reduceImage?: ImageReducer
   signal?: AbortSignal
   onEvent?: (event: LoopEvent) => void
+  /**
+   * Pause the loop and ask the user to approve/deny a model-requested capability
+   * change. The loop only honors this for egress (the only live-escalatable
+   * axis). Omit to auto-deny every escalation request.
+   */
+  requestCapabilityApproval?: RequestCapabilityApproval
 }
 
 export interface LoopResult {
@@ -200,6 +248,7 @@ export async function runComputerUseLoop(
     reduceImage,
     signal,
     onEvent,
+    requestCapabilityApproval,
   } = params
 
   const adapter = adapterForModel(modelName)
@@ -290,6 +339,69 @@ export async function runComputerUseLoop(
           })
           handedOff = true
           break
+        }
+
+        if (action.op === 'request_capability') {
+          // Don't dispatch through /action — capability changes are a session-
+          // level config swap, not a guest action. Ask the user for consent,
+          // then call /escalate when approved.
+          const requested = Array.isArray(action.payload?.egress)
+            ? (action.payload.egress as unknown[]).filter(
+                (d): d is string => typeof d === 'string' && d.length > 0,
+              )
+            : []
+          emit({
+            type: 'capability_request',
+            callId: call.id,
+            egress: requested,
+          })
+          const approval: CapabilityApproval = requestCapabilityApproval
+            ? await requestCapabilityApproval({ egress: requested })
+            : { approved: false, reason: 'no approver wired' }
+          if (approval.approved) {
+            try {
+              const applied = await broker.escalate(
+                session,
+                approval.egress,
+                signal,
+              )
+              emit({
+                type: 'capability_result',
+                callId: call.id,
+                approved: true,
+                egress: applied.egress,
+              })
+              messages.push({
+                role: 'tool',
+                tool_call_id: call.id,
+                content: `Capability granted. Egress allowlist now: ${applied.egress.join(', ')}. Retry the action that needed it.`,
+              })
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err)
+              emit({
+                type: 'capability_result',
+                callId: call.id,
+                approved: false,
+                reason: `escalation failed: ${message}`,
+              })
+              messages.push(
+                adapter.formatToolError(call, `escalation failed: ${message}`),
+              )
+            }
+          } else {
+            emit({
+              type: 'capability_result',
+              callId: call.id,
+              approved: false,
+              reason: approval.reason,
+            })
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: `Capability request denied${approval.reason ? `: ${approval.reason}` : '.'} Try another approach — do not re-request the same capability.`,
+            })
+          }
+          continue
         }
 
         emit({ type: 'action', callId: call.id, action })

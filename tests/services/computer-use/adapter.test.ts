@@ -114,6 +114,42 @@ describe('openAICUAdapter.normalizeCall — happy paths', () => {
     })
   })
 
+  it('maps request_capability to a broker op carrying the egress list', () => {
+    expect(
+      norm('computer', {
+        type: 'request_capability',
+        egress: ['www.reddit.com', '*.redditstatic.com'],
+      }),
+    ).toEqual({
+      ok: true,
+      action: {
+        op: 'request_capability',
+        payload: { egress: ['www.reddit.com', '*.redditstatic.com'] },
+      },
+    })
+  })
+
+  it('also accepts the `escalate` / `request_egress` aliases', () => {
+    const a = norm('computer', { type: 'escalate', egress: ['a.com'] })
+    expect(a.ok && a.action.op).toBe('request_capability')
+    const b = norm('computer', { type: 'request_egress', egress: ['b.com'] })
+    expect(b.ok && b.action.op).toBe('request_capability')
+  })
+
+  it('rejects request_capability when egress is empty / missing', () => {
+    expect(norm('computer', { type: 'request_capability' }).ok).toBe(false)
+    expect(
+      norm('computer', { type: 'request_capability', egress: [] }).ok,
+    ).toBe(false)
+    // Trims and drops empty strings.
+    const a = norm('computer', {
+      type: 'request_capability',
+      egress: ['  ', 'x.com'],
+    })
+    if (!a.ok) throw new Error('expected ok')
+    expect(a.action.payload).toEqual({ egress: ['x.com'] })
+  })
+
   it('prefers element-addressed clicks when an element_index is given', () => {
     const r = norm('computer', {
       type: 'click',

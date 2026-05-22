@@ -46,8 +46,10 @@ export interface FakeBrokerCall {
  */
 export class FakeBroker implements BrokerLike {
   readonly calls: FakeBrokerCall[] = []
+  readonly escalateCalls: Array<{ session: string; egress: string[] }> = []
   beginCount = 0
   endedSessions: string[] = []
+  escalateError?: Error
 
   constructor(
     private readonly opts: {
@@ -84,6 +86,15 @@ export class FakeBroker implements BrokerLike {
 
   async end(session: string): Promise<void> {
     this.endedSessions.push(session)
+  }
+
+  async escalate(
+    session: string,
+    egress: string[],
+  ): Promise<{ egress: string[] }> {
+    if (this.escalateError) throw this.escalateError
+    this.escalateCalls.push({ session, egress })
+    return { egress }
   }
 }
 

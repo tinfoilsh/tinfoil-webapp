@@ -167,6 +167,24 @@ export class BrokerClient {
     })
   }
 
+  /**
+   * `POST /escalate`. Runtime egress allowlist change — additive (today only).
+   * `egress` is the FULL desired set, replacing the current allowlist. Other
+   * capability axes (mounts, clipboard, display) can't be live-escalated.
+   * The user must approve in the consent UI before this is called.
+   */
+  async escalate(
+    session: string,
+    egress: string[],
+    signal?: AbortSignal,
+  ): Promise<{ egress: string[] }> {
+    return this.request<{ egress: string[] }>('POST', '/escalate', {
+      body: { session, egress },
+      jwt: true,
+      signal,
+    })
+  }
+
   // -- internals ------------------------------------------------------------
 
   private async request<T>(

@@ -1,40 +1,33 @@
 /**
- * Inline computer-use session — rendered *in the chat scroll* (not a modal) once
- * the user has approved consent. Shows the live agent activity (model notes,
- * actions, screenshot frames) and the final summary, interleaved with the
- * conversation. The discrete frames double as the audit trail.
+ * Inline computer-use session — rendered *in the chat scroll* (not a modal)
+ * while the run is in flight (`running` or paused for `handoff`). The pairing +
+ * consent steps stay in `ComputerUseSessionDialog`.
  *
- * The pairing + consent steps (which need focused interaction) stay in
- * `ComputerUseSessionDialog`; this renders everything from `running` onward.
+ * On terminal phases (`done` / `error`), chat-interface commits the session's
+ * frames + summary as a synthetic assistant message and the
+ * `ComputerUseSessionRenderer` takes over the visual — so the run takes its
+ * chronological place in history and survives reload. While that handoff is
+ * happening this component returns `null` to avoid double-rendering.
  */
 
 'use client'
 
-import {
-  dataUrl,
-  firstImagePart,
-  isExecResult,
-  perceptionText,
-  type LoopEvent,
-  type useComputerUseSession,
-} from '@/services/computer-use'
+import { type useComputerUseSession } from '@/services/computer-use'
+import { useState } from 'react'
+import { SandboxConfigSummary, SessionFrame } from './ComputerUseSessionMessage'
 
 type SessionApi = ReturnType<typeof useComputerUseSession>
 
 const STATUS_LABEL: Record<string, string> = {
   running: 'Working…',
-  done: 'Done',
   handoff: 'Paused — your turn',
-  error: 'Error',
 }
 
 export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
   const { state, cancel } = session
-  const live =
-    state.phase === 'running' ||
-    state.phase === 'done' ||
-    state.phase === 'handoff' ||
-    state.phase === 'error'
+  // Render ONLY while the run is in flight. `done` / `error` are folded into
+  // chat history by chat-interface and rendered by `ComputerUseSessionRenderer`.
+  const live = state.phase === 'running' || state.phase === 'handoff'
   if (!live) return null
 
   return (
@@ -65,20 +58,35 @@ export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
           </div>
 
           <div className="space-y-3 px-3 py-3">
+            {state.manifest && (
+              <SandboxConfigSummary manifest={state.manifest} />
+            )}
             {state.phase === 'handoff' && (
               <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-600">
                 Paused for you to take over in the sandbox window. Resume from
                 the tray when done.
               </p>
             )}
-            {state.phase === 'error' && (
-              <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
-                {state.error}
-              </p>
+            {/* Skeleton placeholder while the VM boots: `running` is set as
+                soon as the user approves, but the first frame doesn't arrive
+                until `/begin` returns its screenshot (clone + boot + first
+                capture can be ~10-30s). Without this, the card shows just the
+                header for that whole window, which reads as "stuck". */}
+            {state.phase === 'running' && state.frames.length === 0 && (
+              <BootingSkeleton />
             )}
             {state.frames.map((f, i) => (
-              <Frame key={i} event={f} />
+              <SessionFrame key={i} event={f} />
             ))}
+            {/* Pending capability ask: the loop is paused awaiting user consent.
+                Approve / Deny resolve the promise the loop is sitting on. */}
+            {state.capabilityRequest && (
+              <CapabilityRequestPrompt
+                egress={state.capabilityRequest.egress}
+                onApprove={(edited) => session.approveCapability(edited)}
+                onDeny={() => session.denyCapability()}
+              />
+            )}
             {state.finalText && (
               <p className="text-sm text-content-primary">{state.finalText}</p>
             )}
@@ -89,40 +97,85 @@ export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
   )
 }
 
-function Frame({ event }: { event: LoopEvent }) {
-  if (event.type === 'model_message' && event.content) {
-    return <p className="text-sm text-content-secondary">{event.content}</p>
-  }
-  if (event.type === 'action') {
-    return (
-      <p className="font-mono text-xs text-content-muted">
-        → {event.action.op} {JSON.stringify(event.action.payload)}
+/**
+ * Placeholder shown while the VM is booting and no screenshot has arrived yet.
+ * 4:3 aspect approximates the macOS sandbox display (1024×768 logical) so the
+ * card doesn't visibly resize when the real frame replaces it. Uses Tailwind
+ * `animate-pulse` for a subtle shimmer.
+ */
+function BootingSkeleton() {
+  return (
+    <div className="space-y-2">
+      <div className="aspect-[4/3] w-full animate-pulse rounded-lg border border-border-subtle bg-surface-chat" />
+      <p className="text-center text-xs text-content-muted">
+        Booting sandbox — first screenshot in a few seconds…
       </p>
-    )
-  }
-  if (event.type === 'action_result' || event.type === 'begin') {
-    const result = event.type === 'begin' ? event.screenshot : event.result
-    const img = firstImagePart(result)
-    if (img) {
-      return (
-        <img
-          src={dataUrl(img.data, img.mimeType)}
-          alt="agent screen"
-          className="w-full rounded-lg border border-border-subtle"
-        />
-      )
-    }
-    if (isExecResult(result)) {
-      return (
-        <pre className="overflow-x-auto rounded-lg bg-surface-chat p-2 text-xs text-content-primary">
-          {perceptionText(result) || `exit ${result.exit_code}`}
-        </pre>
-      )
-    }
-  }
-  if (event.type === 'action_error' || event.type === 'unsupported') {
-    const msg = event.type === 'action_error' ? event.message : event.reason
-    return <p className="text-xs text-red-500">{msg}</p>
-  }
-  return null
+    </div>
+  )
+}
+
+/**
+ * Inline consent prompt rendered when the model has called `request_capability`
+ * and the loop is paused awaiting the user's decision. The user can edit the
+ * domain list (e.g. trim something the model overreached on) before approving;
+ * the edited list becomes the new egress allowlist.
+ */
+function CapabilityRequestPrompt({
+  egress,
+  onApprove,
+  onDeny,
+}: {
+  egress: string[]
+  onApprove: (edited: string[]) => void
+  onDeny: () => void
+}) {
+  const [edited, setEdited] = useState<string[]>(egress)
+  return (
+    <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+      <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
+        Agent wants additional network access
+      </p>
+      <p className="text-xs text-content-secondary">
+        The model asked to widen the egress allowlist. Approve will replace the
+        current allowlist with the list below.
+      </p>
+      <ul className="space-y-1">
+        {edited.map((d, i) => (
+          <li key={i} className="flex items-center gap-2">
+            <input
+              value={d}
+              onChange={(e) =>
+                setEdited(edited.map((x, j) => (j === i ? e.target.value : x)))
+              }
+              className="flex-1 rounded-md border border-border-subtle bg-surface-chat px-2 py-1 font-mono text-xs text-content-primary"
+            />
+            <button
+              type="button"
+              onClick={() => setEdited(edited.filter((_, j) => j !== i))}
+              className="rounded-md px-2 py-0.5 text-xs text-content-secondary hover:text-content-primary"
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onClick={onDeny}
+          className="rounded-lg px-3 py-1 text-xs text-content-secondary hover:bg-surface-chat hover:text-content-primary"
+        >
+          Deny
+        </button>
+        <button
+          type="button"
+          onClick={() => onApprove(edited.map((d) => d.trim()).filter(Boolean))}
+          disabled={edited.every((d) => !d.trim())}
+          className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+        >
+          Approve
+        </button>
+      </div>
+    </div>
+  )
 }

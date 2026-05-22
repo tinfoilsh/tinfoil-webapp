@@ -12,12 +12,14 @@
 
 import { cn } from '@/components/ui/utils'
 import {
+  type BrokerImage,
   type CapabilityManifest,
   type GuestOS,
   type ManifestMount,
   type useComputerUseSession,
 } from '@/services/computer-use'
 import { useState } from 'react'
+import { OSBadge } from './ComputerUseSessionMessage'
 
 type SessionApi = ReturnType<typeof useComputerUseSession>
 
@@ -92,20 +94,27 @@ function ManifestEditor({
   onCancel,
 }: {
   reason: string
-  images: string[]
+  images: BrokerImage[]
   initial: CapabilityManifest
   onApprove: (m: CapabilityManifest) => void
   onCancel: () => void
 }) {
-  const [os, setOs] = useState<GuestOS>(initial.session.os ?? 'mac')
   // Offer ready images plus the model's choice (even if not currently ready).
+  // For the model's own image (if not in the ready set), fall back to mac
+  // as the OS display — the broker will reject the manifest at /begin if the
+  // OS doesn't match the image anyway.
+  const imageMap = new Map(images.map((i) => [i.name, i.os] as const))
+  const initialOS =
+    initial.session.os ?? imageMap.get(initial.session.image) ?? 'mac'
   const imageOptions = Array.from(
     new Set([
       ...(initial.session.image ? [initial.session.image] : []),
-      ...images,
+      ...images.map((i) => i.name),
     ]),
   )
-  const [image, setImage] = useState(initial.session.image ?? images[0] ?? '')
+  const [image, setImage] = useState(
+    initial.session.image ?? images[0]?.name ?? '',
+  )
   const [clone, setClone] = useState(initial.session.clone ?? true)
   const [headless, setHeadless] = useState(initial.session.headless ?? true)
   const [idleTimeout, setIdleTimeout] = useState(
@@ -115,6 +124,10 @@ function ManifestEditor({
   const [egress, setEgress] = useState<string[]>(initial.network?.egress ?? [])
 
   const hasImage = imageOptions.length > 0
+  // Derived OS: looked up from the currently-selected image, falling back to
+  // the initial value so an image the broker doesn't (yet) report still has
+  // something sensible to display.
+  const derivedOS: GuestOS = imageMap.get(image) ?? initialOS
 
   const build = (): CapabilityManifest => {
     const cleanMounts = mounts.filter((m) => m.src.trim() && m.dst.trim())
@@ -122,7 +135,7 @@ function ManifestEditor({
     return {
       version: 1,
       session: {
-        os,
+        os: derivedOS,
         image,
         clone,
         // `headless` defaults to true; only send it when the user wants a window.
@@ -147,32 +160,25 @@ function ManifestEditor({
       <Section title="Sandbox">
         <Field label="Image">
           {hasImage ? (
-            <select
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
-              className={fieldCls}
-            >
-              {imageOptions.map((img) => (
-                <option key={img} value={img}>
-                  {img}
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={image}
+                onChange={(e) => setImage(e.target.value)}
+                className={fieldCls}
+              >
+                {imageOptions.map((img) => (
+                  <option key={img} value={img}>
+                    {img}
+                  </option>
+                ))}
+              </select>
+              <OSBadge os={derivedOS} />
+            </div>
           ) : (
             <span className="text-sm text-red-500">
               No ready image — run `tinfoil-broker image setup` first.
             </span>
           )}
-        </Field>
-        <Field label="OS">
-          <select
-            value={os}
-            onChange={(e) => setOs(e.target.value as GuestOS)}
-            className={fieldCls}
-          >
-            <option value="mac">mac</option>
-            <option value="linux">linux</option>
-          </select>
         </Field>
         <Field label="Idle timeout">
           <input

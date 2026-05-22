@@ -23,8 +23,18 @@ const COMPUTER_BEGIN_DESCRIPTION = [
   'Provision an isolated, sandboxed desktop session under a least-privilege',
   'capability manifest, and return the first screenshot. Everything is',
   'default-deny: request only the mounts/network/devices the task needs. The',
-  'user must approve the manifest. Call this once before driving the desktop',
-  'with the `computer` tool.',
+  'user must approve the manifest before the session starts.',
+  '',
+  'Call this EXACTLY ONCE per task to open the sandbox. Do NOT try to drive',
+  'the desktop with this tool — `computer_begin` only opens the session and',
+  'returns the first frame. AFTER you call it and the user approves, you',
+  'will be presented with a `computer` action tool (click / type / screenshot',
+  '/ scroll / keypress / etc.) in a follow-on interactive session, and that',
+  'is what you use to actually drive the sandbox. The `computer` tool is not',
+  'available before this call — that is expected; it appears once the session',
+  'is open. Do not try to script things via an `entrypoint`; just `computer_begin`',
+  'with the minimal manifest and drive interactively with `computer` once the',
+  'session is up.',
 ].join(' ')
 
 /** Build the Zod schema for the manifest, with `image` constrained to `images`. */
@@ -54,7 +64,10 @@ function manifestZodSchema(images: string[]) {
       .optional()
       .describe('Optional command run once at session start.'),
     session: z.object({
-      os: z.enum(['mac', 'linux']).describe('Guest OS for the chosen image.'),
+      // `os` is intentionally NOT a model choice: the chosen image already has
+      // an OS, and letting the model pick lets it disagree with the image (e.g.
+      // pick `linux` for a macOS image). The webapp derives `session.os` from
+      // the image's `/status` entry before sealing the manifest.
       image: imageSchema,
       clone: z
         .boolean()

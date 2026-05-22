@@ -210,6 +210,10 @@ export interface HandoffResponse {
  * The curated op vocabulary the broker accepts on `/action`. `request_handoff`
  * is the model's yield-at-a-login-wall escape hatch (not gated). Everything
  * else outside this set is rejected server-side.
+ *
+ * Note: `request_capability` is NOT routed through `/action` — the loop
+ * intercepts it client-side, asks the user, and calls `/escalate` on approve.
+ * It lives in this union so the adapter can normalize the action shape.
  */
 export type BrokerOp =
   | 'screenshot'
@@ -220,6 +224,7 @@ export type BrokerOp =
   | 'launch_app'
   | 'exec'
   | 'request_handoff'
+  | 'request_capability'
 
 /** A normalized action ready to POST to `/action`. */
 export interface BrokerAction {

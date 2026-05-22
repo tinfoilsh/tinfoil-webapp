@@ -333,3 +333,174 @@ describe('runComputerUseLoop — events', () => {
     expect(types[types.length - 1]).toBe('stopped')
   })
 })
+
+describe('runComputerUseLoop — capability escalation', () => {
+  it('intercepts request_capability: asks for approval, calls broker.escalate on approve, continues loop', async () => {
+    // Model: 1st turn requests a capability, 2nd turn says done.
+    const broker = new FakeBroker()
+    const events: LoopEvent[] = []
+    const { streamChat, invocations } = scriptedStreamChat([
+      {
+        toolCalls: [
+          {
+            name: 'computer',
+            arguments: JSON.stringify({
+              type: 'request_capability',
+              egress: ['www.reddit.com', '*.redditstatic.com'],
+            }),
+          },
+        ],
+      },
+      { content: 'thanks, all set' },
+    ])
+    const approver = vi.fn(async (req: { egress: string[] }) => ({
+      approved: true as const,
+      // Simulate the user editing the list before approving.
+      egress: [...req.egress, 'extra.example.com'],
+    }))
+    await runComputerUseLoop({
+      task: 't',
+      manifest: MANIFEST,
+      broker,
+      streamChat,
+      modelName: 'qwen3-vl',
+      onEvent: (e) => events.push(e),
+      requestCapabilityApproval: approver,
+    })
+
+    // Approver was asked with the exact egress list the model requested.
+    expect(approver).toHaveBeenCalledOnce()
+    expect(approver.mock.calls[0][0].egress).toEqual([
+      'www.reddit.com',
+      '*.redditstatic.com',
+    ])
+    // broker.escalate was called with the (possibly edited) list.
+    expect(broker.escalateCalls).toHaveLength(1)
+    expect(broker.escalateCalls[0].egress).toEqual([
+      'www.reddit.com',
+      '*.redditstatic.com',
+      'extra.example.com',
+    ])
+    // The request_capability op was NOT sent through /action — it's a session-
+    // config change, not a guest action.
+    expect(broker.calls.map((c) => c.action.op)).not.toContain(
+      'request_capability',
+    )
+    // Both lifecycle events appear in the audit trail.
+    const types = events.map((e) => e.type)
+    expect(types).toContain('capability_request')
+    expect(types).toContain('capability_result')
+    const result = events.find((e) => e.type === 'capability_result')!
+    expect(result).toMatchObject({ approved: true })
+    // Model gets a tool message describing the granted capability, then runs.
+    const secondCall = invocations[1].messages
+    const granted = secondCall.find(
+      (m) => m.role === 'tool' && /Capability granted/.test(String(m.content)),
+    )
+    expect(granted).toBeDefined()
+  })
+
+  it('on denial, loop continues and tells the model NOT to retry', async () => {
+    const broker = new FakeBroker()
+    const events: LoopEvent[] = []
+    const { streamChat, invocations } = scriptedStreamChat([
+      {
+        toolCalls: [
+          {
+            name: 'computer',
+            arguments: JSON.stringify({
+              type: 'request_capability',
+              egress: ['evil.com'],
+            }),
+          },
+        ],
+      },
+      { content: 'understood' },
+    ])
+    const approver = vi.fn(async () => ({
+      approved: false as const,
+      reason: 'user denied',
+    }))
+    await runComputerUseLoop({
+      task: 't',
+      manifest: MANIFEST,
+      broker,
+      streamChat,
+      modelName: 'qwen3-vl',
+      onEvent: (e) => events.push(e),
+      requestCapabilityApproval: approver,
+    })
+    expect(broker.escalateCalls).toHaveLength(0)
+    const result = events.find((e) => e.type === 'capability_result')!
+    expect(result).toMatchObject({ approved: false, reason: 'user denied' })
+    // The tool message back to the model contains the denial + the "don't
+    // re-request" guidance.
+    const denialMsg = invocations[1].messages.find(
+      (m) => m.role === 'tool' && /denied/.test(String(m.content)),
+    )
+    expect(denialMsg).toBeDefined()
+    expect(String(denialMsg!.content)).toMatch(/do not re-request/i)
+  })
+
+  it('without an approver wired, auto-denies (no broker.escalate)', async () => {
+    const broker = new FakeBroker()
+    const { streamChat } = scriptedStreamChat([
+      {
+        toolCalls: [
+          {
+            name: 'computer',
+            arguments: JSON.stringify({
+              type: 'request_capability',
+              egress: ['x.com'],
+            }),
+          },
+        ],
+      },
+      { content: 'ok' },
+    ])
+    await runComputerUseLoop({
+      task: 't',
+      manifest: MANIFEST,
+      broker,
+      streamChat,
+      modelName: 'qwen3-vl',
+      // No `requestCapabilityApproval` injected.
+    })
+    expect(broker.escalateCalls).toHaveLength(0)
+  })
+
+  it('escalate failure: surfaces as capability_result(approved:false) + tool error to the model', async () => {
+    const broker = new FakeBroker()
+    broker.escalateError = new Error('session started with no egress')
+    const events: LoopEvent[] = []
+    const { streamChat } = scriptedStreamChat([
+      {
+        toolCalls: [
+          {
+            name: 'computer',
+            arguments: JSON.stringify({
+              type: 'request_capability',
+              egress: ['x.com'],
+            }),
+          },
+        ],
+      },
+      { content: 'noted' },
+    ])
+    await runComputerUseLoop({
+      task: 't',
+      manifest: MANIFEST,
+      broker,
+      streamChat,
+      modelName: 'qwen3-vl',
+      onEvent: (e) => events.push(e),
+      requestCapabilityApproval: async () => ({
+        approved: true,
+        egress: ['x.com'],
+      }),
+    })
+    const result = events.find((e) => e.type === 'capability_result')!
+    expect(result).toMatchObject({ approved: false })
+    expect(String((result as any).reason)).toMatch(/escalation failed/)
+  })
+})
