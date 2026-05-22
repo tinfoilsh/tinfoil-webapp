@@ -64,8 +64,11 @@ export function ComputerUseConnectBanner({
   return (
     <div
       role="status"
+      // Width fits content, anchored to the left of the input column so the
+      // banner reads as an inline cue rather than a chat-width chrome strip.
+      // `max-w-3xl` caps it so a future longer message can't grow forever.
       className={cn(
-        'mx-auto mb-2 flex max-w-3xl items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-sm',
+        'mb-2 mr-auto inline-flex max-w-3xl items-center gap-2 rounded-lg border px-3 py-2 text-sm shadow-sm',
         isDarkMode
           ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
           : 'border-amber-300 bg-amber-50 text-amber-900',

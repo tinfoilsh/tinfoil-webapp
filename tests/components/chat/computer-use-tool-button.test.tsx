@@ -155,7 +155,7 @@ describe('ComputerUseToolButton (ask mode — first-touch, broker absent)', () =
       <ComputerUseToolButton
         {...base}
         supported={false}
-        reason="Computer driver not installed — click to ask Tin about computer use."
+        reason="Computer driver not detected — click to ask Tin about computer use."
         paired={false}
         onConnect={onConnect}
         onToggle={onToggle}
@@ -178,7 +178,7 @@ describe('ComputerUseToolButton (ask mode — first-touch, broker absent)', () =
       <ComputerUseToolButton
         {...base}
         supported={false}
-        reason="Computer driver not installed — click to ask Tin about computer use."
+        reason="Computer driver not detected — click to ask Tin about computer use."
         paired={false}
         onAsk={() => {}}
         onToggle={() => {}}
@@ -196,7 +196,7 @@ describe('ComputerUseToolButton (ask mode — first-touch, broker absent)', () =
         {...base}
         variant="mobile"
         supported={false}
-        reason="Computer driver not installed"
+        reason="Computer driver not detected"
         paired={false}
         onAsk={onAsk}
         onToggle={() => {}}

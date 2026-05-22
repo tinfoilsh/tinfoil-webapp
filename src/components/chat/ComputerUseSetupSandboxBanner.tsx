@@ -122,8 +122,10 @@ export function ComputerUseSetupSandboxBanner({
   return (
     <div
       role="status"
+      // Left-anchored, content-width — same shape as the Connect banner. The
+      // inner column expands to accommodate the progress bar.
       className={cn(
-        'mx-auto mb-2 flex max-w-3xl items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-sm',
+        'mb-2 mr-auto flex max-w-3xl items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-sm',
         isError
           ? isDarkMode
             ? 'border-red-500/40 bg-red-950/60 text-red-200'

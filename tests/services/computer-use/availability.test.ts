@@ -35,6 +35,19 @@ describe('brokerReadiness', () => {
       ),
     ).toBe('ready')
   })
+  it('no_images when running with images=null (Go nil-slice → JSON null)', () => {
+    // Regression: the Go broker can serialise a nil slice as JSON `null`
+    // rather than `[]`. Earlier this crashed `images.some()` and broke
+    // every subsequent poll.
+    expect(
+      brokerReadiness({
+        installed: true,
+        running: true,
+        version: '0.1',
+        images: null as unknown as BrokerStatus['images'],
+      }),
+    ).toBe('no_images')
+  })
 })
 
 describe('readyImageNames', () => {

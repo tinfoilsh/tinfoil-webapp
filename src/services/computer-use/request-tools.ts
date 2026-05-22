@@ -49,19 +49,29 @@ export const COMPUTER_USE_PROMPT_HINT = [
 
 /**
  * System-prompt nudge used when the broker is absent. Tells the model to use
- * the install-funnel tool when the user asks for a desktop task. Added only
- * when `suggest_installing_computer_use` is offered — by exposure the
- * `computer_begin` / `computer` tools are mutually exclusive, so there is
- * nothing to "avoid" calling; this hint just describes what IS available.
+ * the install-funnel tool whenever the user shows interest in computer use,
+ * including direct "how do I enable this" questions — not just task requests.
+ * Added only when `suggest_installing_computer_use` is offered; by exposure
+ * the `computer_begin` / `computer` tools are mutually exclusive, so there is
+ * nothing to "avoid" calling — this hint just describes what IS available.
  */
 export const SUGGEST_INSTALL_PROMPT_HINT = [
-  'The user is on macOS. If they ask you to *do* something on a computer —',
-  'browse the web, click, type, drive a desktop or GUI app — call the',
-  '`suggest_installing_computer_use` tool once with a one-sentence `reason`',
-  'describing what they wanted to do. The webapp will surface an inline',
-  'install card. Briefly tell the user, in text, that they need to install',
-  'the local computer driver to enable this. Do NOT call this tool for',
-  'tasks you can answer directly in text.',
+  'The user is on macOS but has NOT installed the Tinfoil computer driver yet.',
+  'You have a single tool for this turn: `suggest_installing_computer_use`,',
+  'which surfaces the inline install card carrying the canonical install',
+  'command + download link. Call it (with a brief `reason`) in ANY of these',
+  'cases:',
+  '(1) the user asks you to *do* something on a computer (browse, click,',
+  'type, fill a form, drive a desktop or GUI app);',
+  '(2) the user asks how to enable, install, set up, or turn on computer use',
+  '/ the local driver / desktop control;',
+  '(3) the user asks what computer use is or how to get it;',
+  '(4) the user otherwise expresses interest in the feature.',
+  'The install card IS the answer in all four cases — do NOT just describe',
+  'install steps in text, because you do not know the exact command/link.',
+  'After calling the tool, you may add a short follow-up line in text',
+  '("once installed, ask me to do X"). Skip the tool only for questions',
+  'genuinely unrelated to computer use.',
 ].join(' ')
 
 /**

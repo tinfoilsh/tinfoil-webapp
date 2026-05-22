@@ -98,6 +98,10 @@ import {
   ComputerUseConsentContext,
   type ComputerUseConsentContextValue,
 } from './computer-use-context'
+import {
+  ComputerUseFunnelContext,
+  type ComputerUseFunnelContextValue,
+} from './computer-use-funnel-context'
 import { ComputerUseSessionDialog } from './ComputerUseSessionDialog'
 import { ComputerUseSessionThread } from './ComputerUseSessionThread'
 import { CONSTANTS } from './constants'
@@ -1422,6 +1426,14 @@ export function ChatInterface({
       cancelConsentForChat,
       computerUseSession.state.images,
     ],
+  )
+
+  // Context for the install-funnel widget (SuggestInstallingComputerUse) so
+  // its in-card "Connect" button can drive the same pairing flow as the
+  // banner/toggle. Stable; doesn't need any session state.
+  const funnelContextValue = useMemo<ComputerUseFunnelContextValue>(
+    () => ({ connect: handleComputerUseConnect }),
+    [handleComputerUseConnect],
   )
 
   // Fold a finished/errored session into chat history at its chronological
@@ -3332,64 +3344,68 @@ export function ChatInterface({
                   <ComputerUseConsentContext.Provider
                     value={consentContextValue}
                   >
-                    <ChatMessages
-                      messages={currentChat?.messages || []}
-                      isDarkMode={isDarkMode}
-                      chatId={currentChat.id}
-                      isWaitingForResponse={isWaitingForResponse}
-                      isStreamingResponse={isStreaming}
-                      computerUseSession={
-                        <ComputerUseSessionThread
-                          session={computerUseSession}
-                        />
-                      }
-                      isPremium={isPremium}
-                      models={models}
-                      onSubmit={handleSubmit}
-                      input={input}
-                      setInput={setInput}
-                      loadingState={loadingState}
-                      retryInfo={retryInfo}
-                      cancelGeneration={cancelGeneration}
-                      inputRef={inputRef}
-                      handleInputFocus={handleInputFocus}
-                      handleDocumentUpload={handleFileUpload}
-                      processedDocuments={processedDocuments}
-                      removeDocument={removeDocument}
-                      selectedModel={selectedModel}
-                      handleModelSelect={handleModelSelect}
-                      expandedLabel={expandedLabel}
-                      handleLabelClick={handleLabelClick}
-                      onEditMessage={editMessage}
-                      onRegenerateMessage={regenerateMessage}
-                      showScrollButton={showScrollButton}
-                      webSearchEnabled={webSearchEnabled}
-                      onWebSearchToggle={() =>
-                        setWebSearchEnabled((prev) => !prev)
-                      }
-                      reasoningEffort={reasoningEffort}
-                      setReasoningEffort={setReasoningEffort}
-                      thinkingEnabled={thinkingEnabled}
-                      setThinkingEnabled={setThinkingEnabled}
-                      codeExecutionEnabled={
-                        canEnableCodeExecution ? codeExecutionEnabled : false
-                      }
-                      onCodeExecutionToggle={
-                        canEnableCodeExecution
-                          ? () => setCodeExecutionEnabled((prev) => !prev)
-                          : undefined
-                      }
-                      computerUseEnabled={computerUseEnabled}
-                      onComputerUseToggle={() =>
-                        setComputerUseEnabled((prev) => !prev)
-                      }
-                      onComputerUseConnect={handleComputerUseConnect}
-                      onComputerUseSetup={handleComputerUseSetup}
-                      onComputerUseAsk={handleComputerUseAsk}
-                      computerUseModel={selectedModelDetails}
-                      onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
-                      isTemporaryMode={isTemporaryMode}
-                    />
+                    <ComputerUseFunnelContext.Provider
+                      value={funnelContextValue}
+                    >
+                      <ChatMessages
+                        messages={currentChat?.messages || []}
+                        isDarkMode={isDarkMode}
+                        chatId={currentChat.id}
+                        isWaitingForResponse={isWaitingForResponse}
+                        isStreamingResponse={isStreaming}
+                        computerUseSession={
+                          <ComputerUseSessionThread
+                            session={computerUseSession}
+                          />
+                        }
+                        isPremium={isPremium}
+                        models={models}
+                        onSubmit={handleSubmit}
+                        input={input}
+                        setInput={setInput}
+                        loadingState={loadingState}
+                        retryInfo={retryInfo}
+                        cancelGeneration={cancelGeneration}
+                        inputRef={inputRef}
+                        handleInputFocus={handleInputFocus}
+                        handleDocumentUpload={handleFileUpload}
+                        processedDocuments={processedDocuments}
+                        removeDocument={removeDocument}
+                        selectedModel={selectedModel}
+                        handleModelSelect={handleModelSelect}
+                        expandedLabel={expandedLabel}
+                        handleLabelClick={handleLabelClick}
+                        onEditMessage={editMessage}
+                        onRegenerateMessage={regenerateMessage}
+                        showScrollButton={showScrollButton}
+                        webSearchEnabled={webSearchEnabled}
+                        onWebSearchToggle={() =>
+                          setWebSearchEnabled((prev) => !prev)
+                        }
+                        reasoningEffort={reasoningEffort}
+                        setReasoningEffort={setReasoningEffort}
+                        thinkingEnabled={thinkingEnabled}
+                        setThinkingEnabled={setThinkingEnabled}
+                        codeExecutionEnabled={
+                          canEnableCodeExecution ? codeExecutionEnabled : false
+                        }
+                        onCodeExecutionToggle={
+                          canEnableCodeExecution
+                            ? () => setCodeExecutionEnabled((prev) => !prev)
+                            : undefined
+                        }
+                        computerUseEnabled={computerUseEnabled}
+                        onComputerUseToggle={() =>
+                          setComputerUseEnabled((prev) => !prev)
+                        }
+                        onComputerUseConnect={handleComputerUseConnect}
+                        onComputerUseSetup={handleComputerUseSetup}
+                        onComputerUseAsk={handleComputerUseAsk}
+                        computerUseModel={selectedModelDetails}
+                        onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
+                        isTemporaryMode={isTemporaryMode}
+                      />
+                    </ComputerUseFunnelContext.Provider>
                   </ComputerUseConsentContext.Provider>
                 </div>
               </div>

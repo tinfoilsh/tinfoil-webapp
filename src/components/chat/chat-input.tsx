@@ -211,8 +211,8 @@ export function ChatInput({
           : undefined // unpaired + no_images: see button's `paired=false` tooltip
         : discovered
           ? 'Computer driver not connected — start it to enable computer use.'
-          : 'Computer driver not installed — click to ask Tin about computer use.'
-  // Ask-mode activation: same predicate as the "Computer driver not installed"
+          : 'Computer driver not detected — click to ask Tin about computer use.'
+  // Ask-mode activation: same predicate as the "Computer driver not detected"
   // tooltip. Passing `onAsk` to the button toggles the help cursor + lets the
   // click submit a synthetic user message to the model. We deliberately only
   // wire it in this exact state — once the user has engaged before, the

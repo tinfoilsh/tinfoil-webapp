@@ -29,7 +29,12 @@ export type ConnectionIndicator = 'connected' | 'connecting' | 'disconnected'
 /** Derive readiness from a `/status` result (`null` ⇒ fetch failed ⇒ absent). */
 export function brokerReadiness(status: BrokerStatus | null): BrokerReadiness {
   if (!status || !status.running) return 'absent'
-  return status.images.some((i) => i.ready) ? 'ready' : 'no_images'
+  // The Go broker can serialise a nil image slice as JSON `null` rather than
+  // `[]` (the zero value of a Go slice). Treat null + missing the same as
+  // an empty array so we don't crash with "Cannot read properties of null
+  // (reading 'some')" on a fresh broker that has no images yet.
+  const images = status.images ?? []
+  return images.some((i) => i.ready) ? 'ready' : 'no_images'
 }
 
 /** Ready image names — the source for the `computer_begin` `session.image` enum. */
@@ -40,6 +45,7 @@ export function readyImageNames(status: BrokerStatus | null): string[] {
 /**
  * Ready images with their OS — the source consent UI and the manifest-OS
  * derivation use to fill in `session.os` (which the model does NOT choose).
+ * Tolerates a null `status.images` (Go nil-slice → JSON null).
  */
 export function readyImages(status: BrokerStatus | null): BrokerImage[] {
   return (status?.images ?? []).filter((i) => i.ready)
