@@ -59,6 +59,8 @@ type ChatMessagesProps = {
   onComputerUseConnect?: () => Promise<boolean> | void
   /** Broker-driven default-image setup handler, for the setup-sandbox banner. */
   onComputerUseSetup?: () => void | Promise<void>
+  /** First-touch ask handler — toggle click in the broker-absent state. */
+  onComputerUseAsk?: () => void
   computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
@@ -236,6 +238,7 @@ export function ChatMessages({
   onComputerUseToggle,
   onComputerUseConnect,
   onComputerUseSetup,
+  onComputerUseAsk,
   computerUseModel,
   onOpenVerifier,
   isTemporaryMode,
@@ -357,6 +360,7 @@ export function ChatMessages({
             onComputerUseToggle={onComputerUseToggle}
             onComputerUseConnect={onComputerUseConnect}
             onComputerUseSetup={onComputerUseSetup}
+            onComputerUseAsk={onComputerUseAsk}
             computerUseModel={computerUseModel}
             onOpenVerifier={onOpenVerifier}
             isTemporaryMode={isTemporaryMode}

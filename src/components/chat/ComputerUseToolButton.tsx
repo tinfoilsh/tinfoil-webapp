@@ -36,6 +36,16 @@ export interface ComputerUseToolButtonProps {
    * to actually launch the pairing flow; ignored otherwise.
    */
   onConnect?: () => void
+  /**
+   * Discovery-mode click handler: fires when the user is in the "first-touch"
+   * state — broker absent, never engaged with computer-use — so the button
+   * acts as a "Ask Tin about this feature" affordance. When set, the button
+   * is clickable in that otherwise-disabled state, uses the help cursor (?),
+   * and a click dispatches `onAsk` instead of `onToggle` / `onConnect`.
+   * Mutually exclusive with the pair / toggle actions; the parent decides
+   * which mode is current based on broker readiness + the `discovered` flag.
+   */
+  onAsk?: () => void
 }
 
 export function ComputerUseToolButton({
@@ -47,18 +57,33 @@ export function ComputerUseToolButton({
   reason,
   paired = true,
   onConnect,
+  onAsk,
 }: ComputerUseToolButtonProps) {
   const active = enabled && supported && paired
-  // Three click states resolved here:
-  //   - !supported → button disabled (tooltip explains why)
+  // Ask mode wins when wired: the parent sets `onAsk` only in the
+  // "broker absent + never-engaged" first-touch state, where the button
+  // would otherwise be disabled. In that state a click is "ask the model
+  // to suggest installing computer-use", visually cued by the help cursor.
+  const askMode = !supported && !!onAsk
+  // Click states resolved here:
+  //   - askMode → fires onAsk (first-touch / ask Tin)
+  //   - !supported (and no askMode) → button disabled (tooltip explains why)
   //   - supported && !paired → fires onConnect (one-time pair)
   //   - supported && paired → fires onToggle (per-conversation enable)
-  const handleClick = !supported ? undefined : !paired ? onConnect : onToggle
-  const tooltip = !supported
-    ? (reason ?? 'Computer use is unavailable for this model.')
-    : !paired
-      ? 'Click to pair to computer driver'
-      : 'Computer use'
+  const handleClick = askMode
+    ? onAsk
+    : !supported
+      ? undefined
+      : !paired
+        ? onConnect
+        : onToggle
+  const tooltip = askMode
+    ? (reason ?? 'Ask about computer use')
+    : !supported
+      ? (reason ?? 'Computer use is unavailable for this model.')
+      : !paired
+        ? 'Click to pair to computer driver'
+        : 'Computer use'
 
   // Visual cue for the "supported but not paired" state: a small amber dot on
   // the icon, telling the user "this needs a one-time setup action" without
@@ -71,12 +96,15 @@ export function ComputerUseToolButton({
       <button
         type="button"
         onClick={handleClick}
-        disabled={!supported}
+        disabled={!supported && !askMode}
         aria-pressed={enabled}
         title={tooltip}
         className={cn(
           'flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background',
-          !supported && 'cursor-not-allowed opacity-50',
+          !supported && !askMode && 'cursor-not-allowed opacity-50',
+          // Ask mode: render half-bright (the feature isn't installed) but
+          // clickable, with the help cursor so the affordance is obvious.
+          askMode && 'cursor-help opacity-70',
         )}
       >
         <span className="relative">
@@ -89,7 +117,11 @@ export function ComputerUseToolButton({
           )}
         </span>
         <span className="flex-1">
-          {needsPair ? 'Pair computer driver' : 'Computer use'}
+          {askMode
+            ? 'Ask about computer use'
+            : needsPair
+              ? 'Pair computer driver'
+              : 'Computer use'}
         </span>
         {active && (
           <svg
@@ -115,8 +147,14 @@ export function ComputerUseToolButton({
         id="computer-use-button"
         type="button"
         onClick={handleClick}
-        disabled={!supported}
-        aria-label={needsPair ? 'Pair computer driver' : 'Computer use'}
+        disabled={!supported && !askMode}
+        aria-label={
+          askMode
+            ? 'Ask about computer use'
+            : needsPair
+              ? 'Pair computer driver'
+              : 'Computer use'
+        }
         aria-pressed={enabled}
         className={cn(
           'flex h-7 items-center justify-center gap-1.5 rounded-lg transition-colors',
@@ -128,7 +166,12 @@ export function ComputerUseToolButton({
                   : 'bg-brand-accent-dark/20 text-brand-accent-dark',
               )
             : 'w-7 text-content-secondary hover:bg-surface-chat-background hover:text-content-primary',
-          !supported && 'cursor-not-allowed opacity-40 hover:bg-transparent',
+          !supported &&
+            !askMode &&
+            'cursor-not-allowed opacity-40 hover:bg-transparent',
+          // Ask mode: half-bright but clickable, with the help cursor so the
+          // user reads it as "I can ask about this," not "broken."
+          askMode && 'cursor-help opacity-60',
         )}
       >
         <span className="relative">

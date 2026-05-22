@@ -62,6 +62,49 @@ const STATE_LABEL: Record<BrokerSetupJob['state'], string> = {
   error: 'Setup failed',
 }
 
+/**
+ * Slim progress bar. `fraction` undefined → indeterminate shimmer (a
+ * looping translate animation); otherwise a filled bar at that ratio.
+ * Tailwind handles colors so light/dark agree without a JS prop drill.
+ */
+function ProgressBar({
+  fraction,
+  isDarkMode,
+}: {
+  fraction: number | undefined
+  isDarkMode: boolean
+}) {
+  const trackCls = isDarkMode ? 'bg-amber-500/20' : 'bg-amber-500/15'
+  const fillCls = isDarkMode ? 'bg-amber-300' : 'bg-amber-600'
+  if (fraction === undefined) {
+    // Indeterminate: a 30%-wide bar that translates across the track. The
+    // animation is a plain Tailwind utility (animate-pulse) plus a fixed
+    // width — good enough as a "something's happening" cue without bringing
+    // in a custom keyframe.
+    return (
+      <div className={cn('mt-1 h-1 w-full overflow-hidden rounded', trackCls)}>
+        <div
+          className={cn(
+            'h-full w-1/3 rounded transition-all',
+            fillCls,
+            'animate-pulse',
+          )}
+        />
+      </div>
+    )
+  }
+  // Clamp defensively in case the broker reports >100% (which it shouldn't).
+  const clamped = Math.min(1, Math.max(0, fraction))
+  return (
+    <div className={cn('mt-1 h-1 w-full overflow-hidden rounded', trackCls)}>
+      <div
+        className={cn('h-full rounded transition-all duration-200', fillCls)}
+        style={{ width: `${(clamped * 100).toFixed(1)}%` }}
+      />
+    </div>
+  )
+}
+
 export function ComputerUseSetupSandboxBanner({
   show,
   job,
@@ -102,9 +145,21 @@ export function ComputerUseSetupSandboxBanner({
         />
       )}
       <div className="flex flex-1 flex-col gap-0.5">
-        <span className="font-medium">
-          {job ? STATE_LABEL[job.state] : 'Set up your sandbox'}
-        </span>
+        <div className="flex items-center justify-between gap-2">
+          <span className="font-medium">
+            {job ? STATE_LABEL[job.state] : 'Set up your sandbox'}
+          </span>
+          {/* Show the percentage to the right of the label when we have a
+              determinate fraction. Stays empty on `provisioning` (no source
+              of percent) so the row doesn't lie about progress. */}
+          {job?.state === 'pulling' &&
+            typeof job.progress === 'number' &&
+            job.progress > 0 && (
+              <span className="font-mono text-xs tabular-nums opacity-80">
+                {Math.round(job.progress * 100)}%
+              </span>
+            )}
+        </div>
         {job?.message && !isError && (
           <span className="text-xs opacity-80">{job.message}</span>
         )}
@@ -116,6 +171,23 @@ export function ComputerUseSetupSandboxBanner({
             Pulls a base macOS image (~21 GB) and gets it ready to drive. Runs
             in the background — no CLI needed.
           </span>
+        )}
+        {/* Progress bar. Determinate when we have a fraction; an
+            indeterminate "shimmer" for the percentless phases (pre-pull
+            "Resolving…" and the provisioning step). Both stop rendering on
+            terminal states so the banner reads as a result, not a process. */}
+        {job?.state === 'pulling' && (
+          <ProgressBar
+            fraction={
+              typeof job.progress === 'number' && job.progress > 0
+                ? job.progress
+                : undefined
+            }
+            isDarkMode={isDarkMode}
+          />
+        )}
+        {job?.state === 'provisioning' && (
+          <ProgressBar fraction={undefined} isDarkMode={isDarkMode} />
         )}
       </div>
       {!job && (

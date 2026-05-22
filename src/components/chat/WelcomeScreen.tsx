@@ -216,6 +216,8 @@ interface WelcomeScreenProps {
   onComputerUseConnect?: () => Promise<boolean> | void
   /** Broker-driven default-image setup handler, for the setup-sandbox banner. */
   onComputerUseSetup?: () => void | Promise<void>
+  /** First-touch ask handler, for the broker-absent toggle click. */
+  onComputerUseAsk?: () => void
   computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
@@ -254,6 +256,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   onComputerUseToggle,
   onComputerUseConnect,
   onComputerUseSetup,
+  onComputerUseAsk,
   computerUseModel,
   onOpenVerifier,
   isTemporaryMode,
@@ -579,6 +582,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   onComputerUseToggle={onComputerUseToggle}
                   onComputerUseConnect={onComputerUseConnect}
                   onComputerUseSetup={onComputerUseSetup}
+                  onComputerUseAsk={onComputerUseAsk}
                   computerUseModel={computerUseModel}
                   isTemporaryMode={isTemporaryMode}
                 />

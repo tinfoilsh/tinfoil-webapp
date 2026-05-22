@@ -1287,6 +1287,16 @@ export function ChatInterface({
     }
   }, [])
 
+  // First-touch "ask Tin about computer use" handler. Fires when the user
+  // clicks the toggle in the broker-absent + never-engaged state — same
+  // predicate that switches the tooltip cursor to a question mark. We
+  // submit a fixed user message; the model sees the install-funnel tool
+  // (`suggest_installing_computer_use`) on this turn (broker absent + macOS
+  // + vision), and emits the inline install card.
+  const handleComputerUseAsk = useCallback(() => {
+    submitMessage({ text: 'How do I enable Tinfoil computer use?' })
+  }, [submitMessage])
+
   // Commit a consent-prompt message the moment the session enters `consent`,
   // so the agent's "I'd like permission" appears chronologically in chat
   // (right after its computer_begin tool-call message) instead of as a
@@ -3375,6 +3385,7 @@ export function ChatInterface({
                       }
                       onComputerUseConnect={handleComputerUseConnect}
                       onComputerUseSetup={handleComputerUseSetup}
+                      onComputerUseAsk={handleComputerUseAsk}
                       computerUseModel={selectedModelDetails}
                       onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
                       isTemporaryMode={isTemporaryMode}
@@ -3548,6 +3559,7 @@ export function ChatInterface({
                         }
                         onComputerUseConnect={handleComputerUseConnect}
                         onComputerUseSetup={handleComputerUseSetup}
+                        onComputerUseAsk={handleComputerUseAsk}
                         computerUseModel={selectedModelDetails}
                       />
                     </form>

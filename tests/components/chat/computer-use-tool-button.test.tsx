@@ -145,3 +145,85 @@ describe('ComputerUseToolButton (unpaired state)', () => {
     expect(onToggle).not.toHaveBeenCalled()
   })
 })
+
+describe('ComputerUseToolButton (ask mode — first-touch, broker absent)', () => {
+  it('desktop: when supported=false + onAsk is wired, click calls onAsk (not disabled)', () => {
+    const onAsk = vi.fn()
+    const onConnect = vi.fn()
+    const onToggle = vi.fn()
+    render(
+      <ComputerUseToolButton
+        {...base}
+        supported={false}
+        reason="Computer driver not installed — click to ask Tin about computer use."
+        paired={false}
+        onConnect={onConnect}
+        onToggle={onToggle}
+        onAsk={onAsk}
+      />,
+    )
+    const btn = screen.getByRole('button', {
+      name: 'Ask about computer use',
+    }) as HTMLButtonElement
+    expect(btn.disabled).toBe(false)
+    expect(btn.className).toMatch(/cursor-help/)
+    fireEvent.click(btn)
+    expect(onAsk).toHaveBeenCalledOnce()
+    expect(onConnect).not.toHaveBeenCalled()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('desktop: shows the parent-provided reason as the tooltip', () => {
+    render(
+      <ComputerUseToolButton
+        {...base}
+        supported={false}
+        reason="Computer driver not installed — click to ask Tin about computer use."
+        paired={false}
+        onAsk={() => {}}
+        onToggle={() => {}}
+      />,
+    )
+    expect(
+      screen.getByText(/click to ask Tin about computer use/i),
+    ).toBeTruthy()
+  })
+
+  it('mobile: ask-mode click calls onAsk, button is enabled + cursor-help', () => {
+    const onAsk = vi.fn()
+    render(
+      <ComputerUseToolButton
+        {...base}
+        variant="mobile"
+        supported={false}
+        reason="Computer driver not installed"
+        paired={false}
+        onAsk={onAsk}
+        onToggle={() => {}}
+      />,
+    )
+    const btn = screen.getByRole('button', {
+      name: /Ask about computer use/i,
+    }) as HTMLButtonElement
+    expect(btn.disabled).toBe(false)
+    expect(btn.className).toMatch(/cursor-help/)
+    fireEvent.click(btn)
+    expect(onAsk).toHaveBeenCalledOnce()
+  })
+
+  it('without onAsk, supported=false still disables the button (no funnel)', () => {
+    render(
+      <ComputerUseToolButton
+        {...base}
+        supported={false}
+        reason="needs vision"
+        paired={false}
+        onToggle={() => {}}
+      />,
+    )
+    const btn = screen.getByRole('button', {
+      name: 'Computer use',
+    }) as HTMLButtonElement
+    expect(btn.disabled).toBe(true)
+  })
+})

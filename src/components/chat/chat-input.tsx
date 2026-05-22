@@ -82,6 +82,13 @@ type ChatInputProps = {
    * existing "no image" tooltip.
    */
   onComputerUseSetup?: () => void | Promise<void>
+  /**
+   * First-touch "ask about computer use" handler — submits a synthetic user
+   * message that prompts the model to call `suggest_installing_computer_use`.
+   * Used when the user clicks the toggle in the broker-absent + never-engaged
+   * state (the same state where the tooltip says "ask Tin about computer use").
+   */
+  onComputerUseAsk?: () => void
   /** Current model, for the computer-use vision-capability gate. */
   computerUseModel?: { modelName: string; multimodal?: boolean }
   quote?: string | null
@@ -118,6 +125,7 @@ export function ChatInput({
   onComputerUseToggle,
   onComputerUseConnect,
   onComputerUseSetup,
+  onComputerUseAsk,
   computerUseModel,
   quote,
   onClearQuote,
@@ -203,7 +211,18 @@ export function ChatInput({
           : undefined // unpaired + no_images: see button's `paired=false` tooltip
         : discovered
           ? 'Computer driver not connected — start it to enable computer use.'
-          : 'Computer driver not installed — ask Tin about computer use.'
+          : 'Computer driver not installed — click to ask Tin about computer use.'
+  // Ask-mode activation: same predicate as the "Computer driver not installed"
+  // tooltip. Passing `onAsk` to the button toggles the help cursor + lets the
+  // click submit a synthetic user message to the model. We deliberately only
+  // wire it in this exact state — once the user has engaged before, the
+  // reconnect cue is more actionable than another funnel through the model.
+  const computerUseAskMode =
+    computerUseVisible &&
+    !!computerUseSupportInfo?.supported &&
+    brokerStatus.readiness === 'absent' &&
+    !discovered &&
+    !!onComputerUseAsk
 
   // The Connect banner shows when the broker is reachable + this browser
   // has not paired yet + the model can drive it + we have a handler. Once
@@ -1155,6 +1174,14 @@ export function ChatInput({
                                 }
                               : undefined
                           }
+                          onAsk={
+                            computerUseAskMode
+                              ? () => {
+                                  onComputerUseAsk?.()
+                                  setIsMobileMenuOpen(false)
+                                }
+                              : undefined
+                          }
                         />
                       )}
                     </div>
@@ -1263,6 +1290,7 @@ export function ChatInput({
                         }
                       : undefined
                   }
+                  onAsk={computerUseAskMode ? onComputerUseAsk : undefined}
                 />
               )}
             </div>

@@ -37,6 +37,14 @@ export interface BrokerSetupJob {
   image: string
   /** Optional one-line progress detail. Pure UI; no parse contract. */
   message?: string
+  /**
+   * Fractional progress in [0, 1] when known. Omitted (or 0 via JSON
+   * omitempty) when the current phase doesn't report percent — e.g. the
+   * "Resolving manifest" sub-step before `tart pull` knows the byte total,
+   * or the `provisioning` phase which is non-percentized. Treat `undefined`
+   * as "indeterminate" (render a spinner instead of a bar).
+   */
+  progress?: number
   /** Final error string on `state === 'error'`. */
   error?: string
 }
