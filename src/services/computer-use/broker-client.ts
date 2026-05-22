@@ -185,6 +185,22 @@ export class BrokerClient {
     })
   }
 
+  /**
+   * `POST /images/setup-default`. Kicks off the broker-driven first-time image
+   * setup (pull default base from CDN + provision autostart/TCC). Returns 202
+   * with the chosen image name; the broker runs the work in the background
+   * and reflects progress via `/status`'s `setup_job` field, which the chat's
+   * `useBrokerStatus` poll already surfaces. Idempotent: calling while a setup
+   * is in flight returns the in-flight job's image name.
+   */
+  async setupDefaultImage(signal?: AbortSignal): Promise<{ image: string }> {
+    return this.request<{ image: string }>('POST', '/images/setup-default', {
+      body: {},
+      jwt: true,
+      signal,
+    })
+  }
+
   // -- internals ------------------------------------------------------------
 
   private async request<T>(

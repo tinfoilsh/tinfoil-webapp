@@ -567,19 +567,24 @@ export function useChatMessaging({
             )) ?? undefined)
           : undefined
 
-        // Model-initiated computer-use: offer `computer_begin` when enabled +
-        // the model is vision-capable + the broker is reachable with a ready
-        // image. Never throws (broker problems just mean no tool offered).
-        const computerUseTools =
-          computerUseEnabled && model.multimodal
-            ? await computerUseRequestTools({
-                model: {
-                  modelName: model.modelName,
-                  multimodal: model.multimodal,
-                },
-                signal: controller.signal,
-              })
-            : []
+        // Model-initiated computer-use, two paths:
+        //   1) Broker reachable + toggle on → `computer_begin` exposed.
+        //   2) Broker absent + macOS + vision → `suggest_installing_computer_use`
+        //      exposed (the install-funnel CTA tool). Independent of the toggle:
+        //      we want the user to discover the feature even before opting in.
+        // The toggle gate (enabled) is passed through and respected only for
+        // the computer_begin path inside computerUseRequestTools.
+        // Never throws (broker problems just mean no tool offered).
+        const computerUseTools = model.multimodal
+          ? await computerUseRequestTools({
+              model: {
+                modelName: model.modelName,
+                multimodal: model.multimodal,
+              },
+              enabled: !!computerUseEnabled,
+              signal: controller.signal,
+            })
+          : []
 
         const response = await sendChatStream({
           model,

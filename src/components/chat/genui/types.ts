@@ -71,7 +71,7 @@ export interface GenUIInputContext extends GenUIRenderContext {
 export type GenUIWidgetSurface = 'inline' | 'input' | 'artifact'
 
 export interface GenUIWidget<Schema extends ZodTypeAny = ZodTypeAny> {
-  /** Tool name sent to the model. Must be unique and `render_*` snake_case. */
+  /** Tool name sent to the model. Must be unique. Convention: `render_*` snake_case. */
   name: string
   /** Description sent to the model as the tool's description. */
   description: string
@@ -84,6 +84,15 @@ export interface GenUIWidget<Schema extends ZodTypeAny = ZodTypeAny> {
    * model knows when to reach for this widget.
    */
   promptHint?: string
+  /**
+   * Whether to include this widget in the default per-request tool schema set
+   * (`buildGenUIToolSchemas`). Default `true`. Set `false` for widgets that
+   * are renderable but only exposed to the model from a non-GenUI code path
+   * (e.g. `suggest_installing_computer_use`, which is gated by broker state).
+   * The rendering side (`getGenUIWidget` lookup, `GenUIToolCallRenderer`)
+   * works regardless — `defaultExpose` only governs auto-inclusion in tools.
+   */
+  defaultExpose?: boolean
 
   /** Inline render (default surface). */
   render?: (

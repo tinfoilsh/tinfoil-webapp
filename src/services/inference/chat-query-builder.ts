@@ -5,7 +5,10 @@ import {
 import { buildGenUIPromptHint } from '@/components/chat/genui/system-prompt'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
-import { COMPUTER_USE_PROMPT_HINT } from '@/services/computer-use/request-tools'
+import {
+  COMPUTER_USE_PROMPT_HINT,
+  SUGGEST_INSTALL_PROMPT_HINT,
+} from '@/services/computer-use/request-tools'
 import type {
   ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
@@ -37,8 +40,17 @@ export interface ChatQueryBuilderParams {
    * so non-chat callers (title gen, memory) stay unaffected.
    */
   includeGenUIHint?: boolean
-  /** Append the computer-use nudge (when `computer_begin` is offered this turn). */
-  includeComputerUseHint?: boolean
+  /**
+   * Append a computer-use nudge to the system prompt. Two flavors keyed to
+   * which computer-use tool is offered this turn:
+   *   - `'begin'` (or legacy `true`): broker reachable; `computer_begin` is
+   *     available — the model is told how to drive a sandbox.
+   *   - `'install'`: broker absent; only `suggest_installing_computer_use`
+   *     is available — the model is told to surface the install funnel
+   *     instead of faking computer-use.
+   *   - `false`/undefined: no hint (no tool offered this turn).
+   */
+  includeComputerUseHint?: boolean | 'begin' | 'install'
 }
 
 export class ChatQueryBuilder {
@@ -60,11 +72,16 @@ export class ChatQueryBuilder {
     const modelId = model.modelName
 
     // Combine the optional guidance blocks into one appended hint section.
+    // Legacy `true` → 'begin'; explicit 'install' → install funnel hint; any
+    // other falsy value → no computer-use hint at all.
+    const computerUseHint =
+      includeComputerUseHint === 'install'
+        ? SUGGEST_INSTALL_PROMPT_HINT
+        : includeComputerUseHint === 'begin' || includeComputerUseHint === true
+          ? COMPUTER_USE_PROMPT_HINT
+          : null
     const genUIHint =
-      [
-        includeGenUIHint ? buildGenUIPromptHint() : null,
-        includeComputerUseHint ? COMPUTER_USE_PROMPT_HINT : null,
-      ]
+      [includeGenUIHint ? buildGenUIPromptHint() : null, computerUseHint]
         .filter(Boolean)
         .join('\n\n') || null
 

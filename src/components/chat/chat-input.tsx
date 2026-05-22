@@ -6,6 +6,7 @@ import {
   computerUseSupport,
   isMacOS,
   useBrokerStatus,
+  useComputerUseDiscovered,
   usePaired,
 } from '@/services/computer-use'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
@@ -34,6 +35,7 @@ import {
   PiTerminalWindow,
 } from 'react-icons/pi'
 import { ComputerUseConnectBanner } from './ComputerUseConnectBanner'
+import { ComputerUseSetupSandboxBanner } from './ComputerUseSetupSandboxBanner'
 import { ComputerUseToolButton } from './ComputerUseToolButton'
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
@@ -73,6 +75,13 @@ type ChatInputProps = {
    * its toggle-only behavior).
    */
   onComputerUseConnect?: () => Promise<boolean> | void
+  /**
+   * Trigger broker-driven default-image setup. Wired only when the broker is
+   * paired but has no ready image (the post-pair onboarding hop). When
+   * absent the setup banner doesn't render — the user is left with the
+   * existing "no image" tooltip.
+   */
+  onComputerUseSetup?: () => void | Promise<void>
   /** Current model, for the computer-use vision-capability gate. */
   computerUseModel?: { modelName: string; multimodal?: boolean }
   quote?: string | null
@@ -108,6 +117,7 @@ export function ChatInput({
   computerUseEnabled,
   onComputerUseToggle,
   onComputerUseConnect,
+  onComputerUseSetup,
   computerUseModel,
   quote,
   onClearQuote,
@@ -124,6 +134,10 @@ export function ChatInput({
   // first client render agree, avoiding a hydration mismatch.
   const [computerUseHostOk, setComputerUseHostOk] = useState(false)
   useEffect(() => {
+    // Hydration-mismatch avoidance: the server must render the false branch
+    // and the client flips it on mount once `window` is available. There is
+    // no pure-derivation alternative — `isMacOS()` reads `navigator`.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setComputerUseHostOk(isMacOS())
   }, [])
 
@@ -147,27 +161,79 @@ export function ChatInput({
   // "Click to pair" to "Computer use" the moment pairing completes, and
   // back to "Click to pair" if a 401 clears the credential.
   const paired = usePaired()
+  // Sticky "user has ever engaged with computer-use" flag — used to pick a
+  // first-touch vs. returning-user tooltip when the broker is absent.
+  // Flipped on first pairing (see credential-store); we also flip it here
+  // the moment the user clicks the toggle, so the next render's tooltip
+  // tracks intent.
+  const discovered = useComputerUseDiscovered()
 
+  // The broker is "reachable" (responding on /status) when it's not absent.
+  // Pairing only needs the broker to be reachable — it's independent of
+  // whether any sandbox image is ready yet, since pairing just establishes
+  // the per-browser refresh credential.
+  const brokerReachable = brokerStatus.readiness !== 'absent'
+  // Toggling the feature for the conversation requires a usable image too;
+  // until then the toggle stays disabled with a "no image" tooltip.
   const computerUseCanEnable =
     !!computerUseSupportInfo?.supported && brokerStatus.readiness === 'ready'
+  // The toggle is clickable when:
+  //  - model can do vision AND
+  //  - we can either enable it (paired + ready) OR pair it (reachable, !paired)
+  // i.e., once paired with no image, click is meaningless until an image is set up.
+  const computerUseClickable =
+    !!computerUseSupportInfo?.supported &&
+    (computerUseCanEnable || (!paired && brokerReachable))
+  // Tooltip for the disabled / unconnected states. Context-aware:
+  //   - never engaged + broker absent → nudge toward the model so the user
+  //     can discover the feature via the install funnel ("Ask Tin about
+  //     computer use" — Tin is the assistant persona).
+  //   - engaged but broker absent → actionable reconnect cue.
+  //   - paired + no_images → tell the user an image is needed.
+  //   - unpaired + reachable → tooltip is owned by `ComputerUseToolButton`
+  //     (it shows "Click to pair to computer driver" from the `paired=false`
+  //     state), so we return `undefined` here to not override it.
   const computerUseReason = !computerUseSupportInfo?.supported
     ? computerUseSupportInfo?.reasons[0]
     : brokerStatus.readiness === 'ready'
       ? undefined
       : brokerStatus.readiness === 'no_images'
-        ? 'No sandbox image is ready — run `tinfoil-broker image setup` first.'
-        : 'Broker not connected — start to enable computer use.'
+        ? paired
+          ? 'No sandbox image is ready yet — set one up to enable computer use.'
+          : undefined // unpaired + no_images: see button's `paired=false` tooltip
+        : discovered
+          ? 'Computer driver not connected — start it to enable computer use.'
+          : 'Computer driver not installed — ask Tin about computer use.'
 
-  // The Connect banner shows when the broker is detected + this browser has
-  // not paired yet + the model can drive it + we have a handler. Once the
-  // banner exists in a stable place (above the input form), discovery
-  // doesn't depend on the user noticing the toggle's amber dot.
+  // The Connect banner shows when the broker is reachable + this browser
+  // has not paired yet + the model can drive it + we have a handler. Once
+  // the banner exists in a stable place (above the input form), discovery
+  // doesn't depend on the user noticing the toggle's amber dot. Note: we
+  // intentionally show this even in `no_images` — pairing is the first
+  // setup step, and the post-pair UX can tell the user about image setup
+  // separately.
   const showConnectBanner =
     computerUseVisible &&
     !!computerUseSupportInfo?.supported &&
-    brokerStatus.readiness === 'ready' &&
+    brokerReachable &&
     !paired &&
     !!onComputerUseConnect
+  // Setup-sandbox banner: post-pair, pre-image. Shows after the user pairs
+  // but before any image is ready, OR while an in-flight setup job is
+  // running (so the progress UI stays visible across `pulling` →
+  // `provisioning` → `done`). Once a ready image exists and no job is
+  // active, the gate flips off — the toggle is now actually usable.
+  const setupJob = brokerStatus.status?.setup_job
+  const showSetupBanner =
+    computerUseVisible &&
+    !!computerUseSupportInfo?.supported &&
+    paired &&
+    !!onComputerUseSetup &&
+    (brokerStatus.readiness === 'no_images' ||
+      // Keep the banner visible during the brief "done" window before /status
+      // picks up the new ready image, so the user sees the success state.
+      setupJob?.state === 'done' ||
+      setupJob?.state === 'error')
 
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
@@ -240,6 +306,10 @@ export function ChatInput({
   )
 
   useEffect(() => {
+    // Randomized placeholder is post-mount only — SSR must render a stable
+    // value (constants[0]) so the server/client HTML match. There is no
+    // pure-derivation alternative.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPlaceholder(
       CONSTANTS.INPUT_PLACEHOLDERS[
         Math.floor(Math.random() * CONSTANTS.INPUT_PLACEHOLDERS.length)
@@ -257,6 +327,9 @@ export function ChatInput({
 
   // Auto-resize textarea as content changes (typing, transcription, paste, etc.)
   // Layout effect avoids iOS Safari cases where `scrollHeight` lags a paint.
+  // Reading inputRef.current inside the effect is the correct pattern — the
+  // ref is forwarded from the parent and changes can race with prop updates.
+  /* eslint-disable react-hooks/refs */
   useIsomorphicLayoutEffect(() => {
     resizeTextarea(inputRef.current)
 
@@ -266,6 +339,7 @@ export function ChatInput({
     return () => cancelAnimationFrame(raf)
     // Include `textareaResetNonce` so a remount recalculates height immediately.
   }, [input, inputRef, resizeTextarea, textareaResetNonce])
+  /* eslint-enable react-hooks/refs */
 
   // Focus textarea on initial mount only (not on remounts after sending)
   useEffect(() => {
@@ -539,6 +613,19 @@ export function ChatInput({
           show={showConnectBanner}
           onConnect={() => {
             void onComputerUseConnect()
+          }}
+          isDarkMode={isDarkMode}
+        />
+      )}
+      {/* "Set up a sandbox" banner — post-pair onboarding step. Same shape
+          as the connect banner, but drives `POST /images/setup-default` and
+          surfaces the broker's setup-job progress while it runs. */}
+      {onComputerUseSetup && (
+        <ComputerUseSetupSandboxBanner
+          show={showSetupBanner}
+          job={setupJob}
+          onStart={() => {
+            void onComputerUseSetup()
           }}
           isDarkMode={isDarkMode}
         />
@@ -1057,7 +1144,7 @@ export function ChatInput({
                             setIsMobileMenuOpen(false)
                           }}
                           isDarkMode={isDarkMode}
-                          supported={computerUseCanEnable}
+                          supported={computerUseClickable}
                           reason={computerUseReason}
                           paired={paired}
                           onConnect={
@@ -1166,7 +1253,7 @@ export function ChatInput({
                   enabled={!!computerUseEnabled}
                   onToggle={onComputerUseToggle}
                   isDarkMode={isDarkMode}
-                  supported={computerUseCanEnable}
+                  supported={computerUseClickable}
                   reason={computerUseReason}
                   paired={paired}
                   onConnect={

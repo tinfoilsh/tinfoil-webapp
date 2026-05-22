@@ -57,6 +57,8 @@ type ChatMessagesProps = {
   onComputerUseToggle?: () => void
   /** One-time pairing handler, for the connect banner + unpaired toggle. */
   onComputerUseConnect?: () => Promise<boolean> | void
+  /** Broker-driven default-image setup handler, for the setup-sandbox banner. */
+  onComputerUseSetup?: () => void | Promise<void>
   computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
@@ -233,6 +235,7 @@ export function ChatMessages({
   computerUseEnabled,
   onComputerUseToggle,
   onComputerUseConnect,
+  onComputerUseSetup,
   computerUseModel,
   onOpenVerifier,
   isTemporaryMode,
@@ -266,6 +269,10 @@ export function ChatMessages({
 
   // Reset spacer when chat changes
   React.useEffect(() => {
+    // Cross-chat reset: a chatId change is the canonical trigger for clearing
+    // the spacer-on-send affordance, since the previous chat's "user just
+    // sent" state is no longer relevant. No pure-derivation alternative.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setShowSpacer(false)
     prevMessageCountRef.current = messages.length
     messageCountWhenSpacerSetRef.current = null
@@ -305,6 +312,10 @@ export function ChatMessages({
   }, [messages, maxMessages])
 
   useEffect(() => {
+    // Defer the mount flag to post-hydration so SSR and the first client
+    // render produce identical HTML; flipping it during the effect is the
+    // canonical "I'm now in the browser" signal.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true)
   }, [])
 
@@ -345,6 +356,7 @@ export function ChatMessages({
             computerUseEnabled={computerUseEnabled}
             onComputerUseToggle={onComputerUseToggle}
             onComputerUseConnect={onComputerUseConnect}
+            onComputerUseSetup={onComputerUseSetup}
             computerUseModel={computerUseModel}
             onOpenVerifier={onOpenVerifier}
             isTemporaryMode={isTemporaryMode}

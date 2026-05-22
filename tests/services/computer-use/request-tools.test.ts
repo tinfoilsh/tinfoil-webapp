@@ -19,12 +19,13 @@ const READY_STATUS = {
 }
 
 describe('computerUseRequestTools', () => {
-  it('returns the computer_begin tool for a vision model + ready broker', async () => {
+  it('returns the computer_begin tool for a vision model + ready broker + enabled toggle', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(READY_STATUS),
     ) as unknown as typeof fetch
     const tools = await computerUseRequestTools({
       model: { modelName: 'kimi-k2-6', multimodal: true },
+      enabled: true,
       fetchImpl,
     })
     expect(tools).toHaveLength(1)
@@ -35,23 +36,55 @@ describe('computerUseRequestTools', () => {
     expect(image.enum).toEqual(['tahoe'])
   })
 
-  it('returns [] for a non-vision model', async () => {
+  it('returns [] when the toggle is off and the broker is ready (computer_begin is gated)', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(READY_STATUS),
     ) as unknown as typeof fetch
     const tools = await computerUseRequestTools({
-      model: { modelName: 'gpt-oss', multimodal: false },
+      model: { modelName: 'kimi-k2-6', multimodal: true },
+      enabled: false,
       fetchImpl,
     })
     expect(tools).toEqual([])
   })
 
-  it('returns [] (no throw) when the broker is unreachable', async () => {
+  it('returns suggest_installing_computer_use when broker is absent + macOS + vision (toggle ignored)', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError('Failed to fetch')
+    }) as unknown as typeof fetch
+    // Note: when fetch throws, `getStatus` resolves to null and brokerReadiness
+    // returns 'absent' → showInstallCTA=true. With macOS=true, we expose the
+    // install funnel — regardless of `enabled`.
+    const tools = await computerUseRequestTools({
+      model: { modelName: 'kimi-k2-6', multimodal: true },
+      enabled: false,
+      isMacOSImpl: () => true,
+      fetchImpl,
+    })
+    expect(tools).toHaveLength(1)
+    expect(tools[0].function.name).toBe('suggest_installing_computer_use')
+  })
+
+  it('returns [] off-macOS even with broker absent (install funnel is mac-only)', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError('Failed to fetch')
     }) as unknown as typeof fetch
     const tools = await computerUseRequestTools({
       model: { modelName: 'kimi-k2-6', multimodal: true },
+      enabled: true,
+      isMacOSImpl: () => false,
+      fetchImpl,
+    })
+    expect(tools).toEqual([])
+  })
+
+  it('returns [] for a non-vision model regardless of broker/enabled state', async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(READY_STATUS),
+    ) as unknown as typeof fetch
+    const tools = await computerUseRequestTools({
+      model: { modelName: 'gpt-oss', multimodal: false },
+      enabled: true,
       fetchImpl,
     })
     expect(tools).toEqual([])

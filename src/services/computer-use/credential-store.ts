@@ -39,8 +39,21 @@ export function getRefreshCredential(): string | null {
   return storage()?.getItem(STORAGE_KEY) ?? null
 }
 
+/**
+ * Sticky flag: "user has engaged with computer-use at any point on this
+ * browser." Lives next to the refresh credential because the credential
+ * setter is the canonical first-engagement signal — see `use-discovered.ts`
+ * for the reactive read side. Kept here to avoid a circular import.
+ */
+const DISCOVERED_KEY = 'tinfoil-computer-use-discovered'
+
 export function setRefreshCredential(credential: string): void {
   storage()?.setItem(STORAGE_KEY, credential)
+  // First successful pairing also flips the sticky "user has engaged with
+  // computer-use" flag. Done here (not at the call site) so every path that
+  // stores a credential — pairing, future re-pair flows — sets it without
+  // having to remember.
+  storage()?.setItem(DISCOVERED_KEY, '1')
   emitPairChange()
 }
 

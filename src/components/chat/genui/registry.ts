@@ -23,6 +23,7 @@ import { widget as MessageCompose } from './widgets/MessageCompose'
 import { widget as RecipeCard } from './widgets/RecipeCard'
 import { widget as SportsData } from './widgets/SportsData'
 import { widget as StatCards } from './widgets/StatCards'
+import { widget as SuggestInstallingComputerUse } from './widgets/SuggestInstallingComputerUse'
 import { widget as Timeline } from './widgets/Timeline'
 
 /**
@@ -42,6 +43,10 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   MessageCompose,
   SportsData,
   Map,
+  // Conditionally-exposed: defaultExpose: false. Renders via the registry but
+  // tool-schema inclusion is driven by `computerUseRequestTools` (broker
+  // absent + macOS + vision model).
+  SuggestInstallingComputerUse,
 ]
 
 /**
@@ -71,18 +76,20 @@ const ROUTER_AUTO_CONTINUE_FLAG = 'x-tinfoil-tool-auto-continue' as const
  * cut off mid-thought.
  */
 export function buildGenUIToolSchemas() {
-  return resolveEnabledWidgets().map((w) => ({
-    type: 'function' as const,
-    function: {
-      name: w.name,
-      description: w.description,
-      parameters: zodToJsonSchema(w.schema, {
-        target: 'openApi3',
-        $refStrategy: 'none',
-      }) as Record<string, unknown>,
-      [ROUTER_AUTO_CONTINUE_FLAG]: true,
-    },
-  }))
+  return resolveEnabledWidgets()
+    .filter((w) => w.defaultExpose !== false)
+    .map((w) => ({
+      type: 'function' as const,
+      function: {
+        name: w.name,
+        description: w.description,
+        parameters: zodToJsonSchema(w.schema, {
+          target: 'openApi3',
+          $refStrategy: 'none',
+        }) as Record<string, unknown>,
+        [ROUTER_AUTO_CONTINUE_FLAG]: true,
+      },
+    }))
 }
 
 /**

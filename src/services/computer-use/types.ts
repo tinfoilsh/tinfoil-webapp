@@ -22,12 +22,33 @@ export interface BrokerImage {
   last_setup?: string
 }
 
+/**
+ * In-progress (or recently-finished) broker-driven default-image setup. The
+ * broker runs the pull + provision in a background goroutine; the snapshot is
+ * pinned to `setup_job` on `/status` so the chat's existing poll picks it up
+ * for the inline progress UI. Once the job hits a terminal state (`done` /
+ * `error`), the broker holds the snapshot ~30s so the next poll sees the
+ * outcome, then clears the field.
+ */
+export interface BrokerSetupJob {
+  /** `pulling` | `provisioning` | `done` | `error`. */
+  state: 'pulling' | 'provisioning' | 'done' | 'error'
+  /** Local image name the setup is creating (e.g. `tinfoil-default`). */
+  image: string
+  /** Optional one-line progress detail. Pure UI; no parse contract. */
+  message?: string
+  /** Final error string on `state === 'error'`. */
+  error?: string
+}
+
 /** `GET /status` response — drives conditional tool exposure + the indicator. */
 export interface BrokerStatus {
   installed: boolean
   running: boolean
   version: string
   images: BrokerImage[]
+  /** Snapshot of an active default-image setup, if any. */
+  setup_job?: BrokerSetupJob
 }
 
 // ---------------------------------------------------------------------------

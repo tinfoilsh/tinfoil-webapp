@@ -188,6 +188,26 @@ export type LoopEvent =
     }
   | { type: 'stopped'; reason: LoopStopReason; finalText: string }
 
+/**
+ * Sliding-window policy that keeps the loop's model-facing context bounded as
+ * the run extends across many screenshots. Image-bearing user messages outside
+ * the window are replaced (in place) with a small text-only placeholder, so the
+ * model still sees the turn happened but the bytes are released. The audit
+ * trail (`onEvent`) keeps every full frame regardless.
+ *
+ * `first` is how many of the earliest screenshots to retain (typically 1, the
+ * initial screen — useful for grounding). `recent` is how many of the most-
+ * recent screenshots to retain (typically 2–3 — what the model is acting on
+ * now). Set `false` to disable windowing entirely.
+ */
+export type ScreenshotWindow = { first: number; recent: number } | false
+
+/** Default screenshot window: keep the initial screen + the last 2 frames. */
+export const DEFAULT_SCREENSHOT_WINDOW: ScreenshotWindow = {
+  first: 1,
+  recent: 2,
+}
+
 export interface RunComputerUseLoopParams {
   /** The user's task / instruction for the agent. */
   task: string
@@ -210,6 +230,13 @@ export interface RunComputerUseLoopParams {
    * frame). Omit to send the full frame to the model too.
    */
   reduceImage?: ImageReducer
+  /**
+   * Sliding-window policy for screenshots in the model-facing context. Default
+   * keeps the initial screen + the last 2 frames; older screenshots are
+   * replaced with a text placeholder so the loop's RAM footprint and the
+   * per-turn token cost stay bounded. Pass `false` to disable.
+   */
+  screenshotWindow?: ScreenshotWindow
   signal?: AbortSignal
   onEvent?: (event: LoopEvent) => void
   /**
@@ -246,6 +273,7 @@ export async function runComputerUseLoop(
     maxSteps = DEFAULT_MAX_STEPS,
     tokens,
     reduceImage,
+    screenshotWindow = DEFAULT_SCREENSHOT_WINDOW,
     signal,
     onEvent,
     requestCapabilityApproval,
@@ -420,6 +448,13 @@ export async function runComputerUseLoop(
             messages.push(m)
           // Track the newest frame (as the model saw it) for coordinate scaling.
           screen = screenFrom(resultForModel) ?? screen
+          // Slide the screenshot window forward: older image-bearing user
+          // messages are replaced with a text placeholder in place, freeing
+          // the base64 bytes and bounding per-turn token cost. No-op when
+          // disabled or when we haven't accumulated past the window yet.
+          if (screenshotWindow !== false) {
+            applyScreenshotWindow(messages, screenshotWindow)
+          }
         } catch (err) {
           if (err instanceof DOMException && err.name === 'AbortError')
             throw err
@@ -507,4 +542,57 @@ function assistantMessage(content: string, toolCalls: ToolCall[]): ChatMessage {
     content: content || null,
     ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
   }
+}
+
+/**
+ * Replace older image-bearing user messages with a text-only placeholder so the
+ * model-facing context stays bounded across a long run. Mutates `messages` in
+ * place — the audit trail (`onEvent`) keeps every full frame regardless.
+ *
+ * Identifies screenshots structurally (any `user` message whose `content` is an
+ * array containing an `image_url` part); keeps the first `first` of them and
+ * the last `recent`. Messages outside that union are rewritten to a short
+ * string `user` message. Tool-result `tool` messages and assistant turns are
+ * left untouched, so the action↔result pairing the model sees is preserved.
+ *
+ * Idempotent: re-running on the same array after appending more screenshots
+ * narrows the kept set monotonically. No-op while the count is within the
+ * window or when `first + recent` is zero.
+ */
+export function applyScreenshotWindow(
+  messages: ChatMessage[],
+  policy: { first: number; recent: number },
+): void {
+  const first = Math.max(0, policy.first | 0)
+  const recent = Math.max(0, policy.recent | 0)
+  if (first + recent === 0) return
+
+  const imageIdxs: number[] = []
+  for (let i = 0; i < messages.length; i++) {
+    if (isImageBearingUserMessage(messages[i])) imageIdxs.push(i)
+  }
+  if (imageIdxs.length <= first + recent) return
+
+  const keep = new Set<number>([
+    ...imageIdxs.slice(0, first),
+    ...imageIdxs.slice(imageIdxs.length - recent),
+  ])
+  for (const i of imageIdxs) {
+    if (keep.has(i)) continue
+    // Replace with a text-only user message so structural turn ordering (and
+    // the model's awareness that a screenshot was here) stays intact, but the
+    // base64 bytes are released and the token cost drops to ~10 tokens.
+    messages[i] = {
+      role: 'user',
+      content: '[earlier screenshot elided to save context]',
+    }
+  }
+}
+
+function isImageBearingUserMessage(m: ChatMessage): boolean {
+  if (m.role !== 'user' || !Array.isArray(m.content)) return false
+  for (const part of m.content) {
+    if (part.type === 'image_url') return true
+  }
+  return false
 }

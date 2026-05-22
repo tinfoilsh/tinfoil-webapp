@@ -214,6 +214,8 @@ interface WelcomeScreenProps {
   onComputerUseToggle?: () => void
   /** One-time pairing handler, forwarded to ChatInput for the connect banner. */
   onComputerUseConnect?: () => Promise<boolean> | void
+  /** Broker-driven default-image setup handler, for the setup-sandbox banner. */
+  onComputerUseSetup?: () => void | Promise<void>
   computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
@@ -251,6 +253,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   computerUseEnabled,
   onComputerUseToggle,
   onComputerUseConnect,
+  onComputerUseSetup,
   computerUseModel,
   onOpenVerifier,
   isTemporaryMode,
@@ -266,6 +269,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
     if (typeof window !== 'undefined') {
       // Clear nickname when user changes or is not authenticated
       if (!user?.id) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setNickname('')
         return
       }
@@ -574,6 +578,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   computerUseEnabled={computerUseEnabled}
                   onComputerUseToggle={onComputerUseToggle}
                   onComputerUseConnect={onComputerUseConnect}
+                  onComputerUseSetup={onComputerUseSetup}
                   computerUseModel={computerUseModel}
                   isTemporaryMode={isTemporaryMode}
                 />

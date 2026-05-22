@@ -57,6 +57,8 @@ export {
 export { imageSize, type ImageSize } from './image-size'
 export { createTinfoilStreamChat } from './inference'
 export {
+  DEFAULT_SCREENSHOT_WINDOW,
+  applyScreenshotWindow,
   runComputerUseLoop,
   type BrokerLike,
   type ImageReducer,
@@ -64,6 +66,7 @@ export {
   type LoopResult,
   type LoopStopReason,
   type RunComputerUseLoopParams,
+  type ScreenshotWindow,
 } from './loop-controller'
 export {
   COMPUTER_BEGIN_TOOL_NAME,
@@ -84,6 +87,7 @@ export {
 } from './pairing'
 export {
   COMPUTER_USE_PROMPT_HINT,
+  SUGGEST_INSTALL_PROMPT_HINT,
   computerUseRequestTools,
   extractComputerBegin,
   type ComputerBeginCall,
@@ -105,4 +109,8 @@ export {
   type ComputerUseSessionState,
   type SessionPhase,
 } from './use-computer-use-session'
+export {
+  markComputerUseDiscovered,
+  useComputerUseDiscovered,
+} from './use-discovered'
 export { usePaired } from './use-paired'

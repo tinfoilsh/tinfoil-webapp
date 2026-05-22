@@ -270,6 +270,19 @@ export async function sendChatStream(
     )
   }
 
+  // Pick the right system-prompt hint based on which computer-use tool is
+  // offered this turn. `computerUseRequestTools` returns exactly one of
+  // {computer_begin, suggest_installing_computer_use, ∅}, so the first match
+  // is unambiguous.
+  const computerUseHintKind: 'begin' | 'install' | false =
+    computerUseTools?.some((t) => t.function.name === 'computer_begin')
+      ? 'begin'
+      : computerUseTools?.some(
+            (t) => t.function.name === 'suggest_installing_computer_use',
+          )
+        ? 'install'
+        : false
+
   const messages = ChatQueryBuilder.buildMessages({
     model,
     systemPrompt,
@@ -277,7 +290,7 @@ export async function sendChatStream(
     messages: updatedMessages,
     maxMessages,
     includeGenUIHint: genUIEnabled,
-    includeComputerUseHint: (computerUseTools?.length ?? 0) > 0,
+    includeComputerUseHint: computerUseHintKind,
   })
 
   let lastError: unknown = null

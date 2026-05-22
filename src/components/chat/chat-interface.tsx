@@ -83,6 +83,7 @@ const useLayoutEffect =
   typeof window !== 'undefined' ? reactUseLayoutEffect : useEffect
 
 import {
+  getStoredConnection,
   useComputerUseSession,
   type CapabilityManifest,
 } from '@/services/computer-use'
@@ -1262,6 +1263,29 @@ export function ChatInterface({
     if (ok) setComputerUseEnabled(true)
     return ok
   }, [connectComputerUseSession])
+
+  // Setup-sandbox handler: drives `POST /images/setup-default` on the broker.
+  // The broker runs pull + provision in the background; progress shows up in
+  // the next /status poll's setup_job field (surfaced by `useBrokerStatus`
+  // inside ChatInput, which then feeds it into the setup banner). Errors
+  // here are also reflected via setup_job.state="error", so the banner's
+  // "Retry" path covers them — the console.error below is dev-side only.
+  const handleComputerUseSetup = useCallback(async () => {
+    const conn = getStoredConnection()
+    if (!conn) {
+      // Defensive: the setup banner only renders when paired, so a missing
+      // connection here means the credential just got cleared. Bail silently.
+      return
+    }
+    try {
+      await conn.client.setupDefaultImage()
+    } catch (err) {
+      logError('image setup-default failed', err, {
+        component: 'ChatInterface',
+        action: 'computerUseSetup',
+      })
+    }
+  }, [])
 
   // Commit a consent-prompt message the moment the session enters `consent`,
   // so the agent's "I'd like permission" appears chronologically in chat
@@ -3350,6 +3374,7 @@ export function ChatInterface({
                         setComputerUseEnabled((prev) => !prev)
                       }
                       onComputerUseConnect={handleComputerUseConnect}
+                      onComputerUseSetup={handleComputerUseSetup}
                       computerUseModel={selectedModelDetails}
                       onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
                       isTemporaryMode={isTemporaryMode}
@@ -3522,6 +3547,7 @@ export function ChatInterface({
                           setComputerUseEnabled((prev) => !prev)
                         }
                         onComputerUseConnect={handleComputerUseConnect}
+                        onComputerUseSetup={handleComputerUseSetup}
                         computerUseModel={selectedModelDetails}
                       />
                     </form>

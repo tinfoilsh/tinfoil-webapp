@@ -20,14 +20,25 @@ describe('GenUI registry', () => {
     }
   })
 
-  it('builds OpenAI tool schemas for every widget', () => {
+  it('builds OpenAI tool schemas for every default-exposed widget', () => {
     const schemas = buildGenUIToolSchemas()
-    expect(schemas).toHaveLength(GENUI_WIDGETS.length)
+    const defaultExposed = GENUI_WIDGETS.filter(
+      (w) => w.defaultExpose !== false,
+    )
+    expect(schemas).toHaveLength(defaultExposed.length)
     for (const entry of schemas) {
       expect(entry.type).toBe('function')
       expect(typeof entry.function.name).toBe('string')
       expect(typeof entry.function.description).toBe('string')
       expect(entry.function.parameters).toBeTruthy()
+    }
+  })
+
+  it('skips widgets with defaultExpose: false (conditionally-exposed tools)', () => {
+    const skipped = GENUI_WIDGETS.filter((w) => w.defaultExpose === false)
+    const names = new Set(buildGenUIToolSchemas().map((s) => s.function.name))
+    for (const w of skipped) {
+      expect(names.has(w.name)).toBe(false)
     }
   })
 
