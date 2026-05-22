@@ -38,6 +38,7 @@ import { collectTurn } from './turn-collector'
 import {
   BrokerError,
   firstImagePart,
+  isPerceptionResult,
   perceptionText,
   type ActionResult,
   type BeginResponse,
@@ -45,6 +46,47 @@ import {
   type CapabilityManifest,
   type HandoffResponse,
 } from './types'
+
+/**
+ * Derives the **reduced** copy of a screenshot that is sent to the model (saving
+ * inference tokens/context). Returns the reduced image's base64 + mime + pixel
+ * dimensions. The full frame still goes to the chat/audit; only the model turn
+ * gets this. Injected by the browser (canvas-based); absent in node/tests, where
+ * the model gets the full frame unchanged.
+ */
+export type ImageReducer = (
+  base64: string,
+  mimeType: string,
+) => Promise<{
+  base64: string
+  mimeType: string
+  width: number
+  height: number
+}>
+
+/**
+ * Build the model-facing copy of an action result: same content, but the image
+ * part swapped for the reduced JPEG. No-op when there's no reducer or no image.
+ * Critically, the loop derives `screenFrom` from THIS (reduced) result, so the
+ * coordinate normalizer scales clicks against the exact frame the model saw.
+ */
+async function reduceResultForModel(
+  result: ActionResult,
+  reduce: ImageReducer | undefined,
+): Promise<ActionResult> {
+  if (!reduce || !isPerceptionResult(result)) return result
+  const img = firstImagePart(result)
+  if (!img) return result
+  const r = await reduce(img.data, img.mimeType)
+  return {
+    ...result,
+    content: result.content.map((p) =>
+      p.type === 'image'
+        ? { type: 'image', data: r.base64, mimeType: r.mimeType }
+        : p,
+    ),
+  }
+}
 
 /**
  * The slice of the broker client the loop needs. Typed structurally so the loop
@@ -121,6 +163,11 @@ export interface RunComputerUseLoopParams {
   maxSteps?: number
   /** Token manager, so a surprise 401 mid-loop can invalidate + re-mint once. */
   tokens?: AccessTokenManager
+  /**
+   * Reduce screenshots before they go to the model (chat/audit keep the full
+   * frame). Omit to send the full frame to the model too.
+   */
+  reduceImage?: ImageReducer
   signal?: AbortSignal
   onEvent?: (event: LoopEvent) => void
 }
@@ -150,6 +197,7 @@ export async function runComputerUseLoop(
     modelName,
     maxSteps = DEFAULT_MAX_STEPS,
     tokens,
+    reduceImage,
     signal,
     onEvent,
   } = params
@@ -163,18 +211,24 @@ export async function runComputerUseLoop(
   // 1) Provision the session and get the first screen.
   const begin = await broker.begin(manifest, signal)
   const session = begin.session
+  // Full frame → chat/audit; reduced copy → model.
   emit({ type: 'begin', session, screenshot: begin.screenshot })
+  const beginForModel = await reduceResultForModel(
+    begin.screenshot,
+    reduceImage,
+  )
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: task },
-    screenMessage('Initial screen:', begin.screenshot),
+    screenMessage('Initial screen:', beginForModel),
   ]
 
   // The pixel size of the latest screenshot the model has seen. Coordinates the
   // model emits are relative to this frame, so the normalizer uses it to rescue
-  // any normalized [0,1] coordinates back into pixels.
-  let screen: NormalizeContext | undefined = screenFrom(begin.screenshot)
+  // any normalized [0,1] coordinates back into pixels — derived from the REDUCED
+  // frame, since that's what the model actually saw.
+  let screen: NormalizeContext | undefined = screenFrom(beginForModel)
 
   let stop: LoopStopReason = 'max_steps'
   let finalText = ''
@@ -248,10 +302,12 @@ export async function runComputerUseLoop(
             signal,
           )) as ActionResult
           emit({ type: 'action_result', callId: call.id, action, result })
-          for (const m of adapter.formatToolResult(call, result))
+          // Full frame → chat/audit (emit above); reduced copy → model below.
+          const resultForModel = await reduceResultForModel(result, reduceImage)
+          for (const m of adapter.formatToolResult(call, resultForModel))
             messages.push(m)
-          // Track the newest frame so subsequent coordinates scale against it.
-          screen = screenFrom(result) ?? screen
+          // Track the newest frame (as the model saw it) for coordinate scaling.
+          screen = screenFrom(resultForModel) ?? screen
         } catch (err) {
           if (err instanceof DOMException && err.name === 'AbortError')
             throw err

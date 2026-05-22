@@ -9,9 +9,14 @@ import type {
   BrokerAction,
   CapabilityManifest,
 } from '@/services/computer-use/types'
-import { BrokerError } from '@/services/computer-use/types'
+import { BrokerError, firstImagePart } from '@/services/computer-use/types'
 import { describe, expect, it, vi } from 'vitest'
-import { FakeBroker, screenshotResult, scriptedStreamChat } from './fixtures'
+import {
+  FakeBroker,
+  TINY_PNG,
+  screenshotResult,
+  scriptedStreamChat,
+} from './fixtures'
 
 const MANIFEST: CapabilityManifest = {
   version: 1,
@@ -159,6 +164,85 @@ describe('runComputerUseLoop — handoff', () => {
     expect(result.ended).toBe(false)
     expect(broker.endedSessions).toEqual([]) // not torn down
     expect(events.some((e) => e.type === 'handoff')).toBe(true)
+  })
+})
+
+describe('runComputerUseLoop — reduced image to the model', () => {
+  function imageUrlParts(messages: any[]): string[] {
+    return messages
+      .filter((m) => Array.isArray(m.content))
+      .flatMap((m) => m.content as any[])
+      .filter((p) => p.type === 'image_url')
+      .map((p) => p.image_url.url as string)
+  }
+
+  it('sends the reduced JPEG to the model but keeps the full frame in events', async () => {
+    const broker = new FakeBroker()
+    const reduceImage = vi.fn(async () => ({
+      base64: 'REDUCEDDATA',
+      mimeType: 'image/jpeg',
+      width: 1,
+      height: 1,
+    }))
+    const events: LoopEvent[] = []
+    const { streamChat, invocations } = scriptedStreamChat([
+      {
+        toolCalls: [
+          {
+            name: 'computer',
+            arguments: JSON.stringify({ type: 'click', x: 1, y: 1 }),
+          },
+        ],
+      },
+      { content: 'done' },
+    ])
+
+    await runComputerUseLoop({
+      task: 'go',
+      manifest: MANIFEST,
+      broker,
+      streamChat,
+      modelName: 'kimi-k2-6',
+      reduceImage,
+      onEvent: (e) => events.push(e),
+    })
+
+    // The model only ever sees the reduced JPEG (initial screen + action result).
+    const urls = invocations.flatMap((inv) => imageUrlParts(inv.messages))
+    expect(urls.length).toBeGreaterThan(0)
+    expect(
+      urls.every((u) => u.includes('REDUCEDDATA') && u.includes('image/jpeg')),
+    ).toBe(true)
+
+    // The emitted events (chat/audit) keep the FULL original PNG.
+    const begin = events.find((e) => e.type === 'begin') as Extract<
+      LoopEvent,
+      { type: 'begin' }
+    >
+    expect(firstImagePart(begin.screenshot)?.data).toBe(TINY_PNG)
+    const result = events.find((e) => e.type === 'action_result') as Extract<
+      LoopEvent,
+      { type: 'action_result' }
+    >
+    expect(firstImagePart(result.result)?.data).toBe(TINY_PNG)
+
+    expect(reduceImage).toHaveBeenCalled()
+  })
+
+  it('sends the full frame to the model when no reducer is provided', async () => {
+    const broker = new FakeBroker()
+    const { streamChat, invocations } = scriptedStreamChat([
+      { content: 'done' },
+    ])
+    await runComputerUseLoop({
+      task: 'go',
+      manifest: MANIFEST,
+      broker,
+      streamChat,
+      modelName: 'kimi-k2-6',
+    })
+    const urls = invocations.flatMap((inv) => imageUrlParts(inv.messages))
+    expect(urls.some((u) => u.includes(TINY_PNG))).toBe(true)
   })
 })
 

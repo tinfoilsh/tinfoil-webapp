@@ -46,11 +46,18 @@ export {
   setRefreshCredential,
 } from './credential-store'
 export { isMacOS } from './host'
+export {
+  DEFAULT_IMAGE_QUALITY,
+  createCanvasImageReducer,
+  getComputerUseImageQuality,
+  type ReduceOpts,
+} from './image-reduce'
 export { imageSize, type ImageSize } from './image-size'
 export { createTinfoilStreamChat } from './inference'
 export {
   runComputerUseLoop,
   type BrokerLike,
+  type ImageReducer,
   type LoopEvent,
   type LoopResult,
   type LoopStopReason,

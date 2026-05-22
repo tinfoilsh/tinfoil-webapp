@@ -24,9 +24,14 @@ import {
   getStoredConnection,
   pairAndConnect,
 } from './connection'
+import {
+  createCanvasImageReducer,
+  getComputerUseImageQuality,
+} from './image-reduce'
 import { createTinfoilStreamChat } from './inference'
 import {
   runComputerUseLoop,
+  type ImageReducer,
   type LoopEvent,
   type LoopResult,
 } from './loop-controller'
@@ -72,6 +77,8 @@ export interface ComputerUseSessionDeps {
   fetchStatusImages?: (conn: BrokerConnection) => Promise<string[]>
   runLoop?: typeof runComputerUseLoop
   makeStreamChat?: (modelName: string) => StreamChat
+  /** Build the model-facing screenshot reducer (default: canvas JPEG @ quality setting). */
+  makeReduceImage?: () => ImageReducer
 }
 
 const INITIAL: ComputerUseSessionState = {
@@ -100,6 +107,9 @@ export function useComputerUseSession(
 
   const runLoop = deps.runLoop ?? runComputerUseLoop
   const makeStreamChat = deps.makeStreamChat ?? createTinfoilStreamChat
+  const makeReduceImage =
+    deps.makeReduceImage ??
+    (() => createCanvasImageReducer({ quality: getComputerUseImageQuality() }))
   const baseUrl = deps.baseUrl
 
   const getConnection = useMemo(
@@ -207,6 +217,8 @@ export function useComputerUseSession(
           tokens: conn.tokens,
           streamChat: makeStreamChat(modelName),
           modelName,
+          // Chat/audit keep the full PNG; the model gets a reduced JPEG.
+          reduceImage: makeReduceImage(),
           signal: ac.signal,
           onEvent: (event) =>
             setState((s) => ({ ...s, frames: [...s.frames, event] })),
@@ -223,7 +235,7 @@ export function useComputerUseSession(
         })
       }
     },
-    [state.task, runLoop, makeStreamChat, modelName, patch],
+    [state.task, runLoop, makeStreamChat, makeReduceImage, modelName, patch],
   )
 
   /** Cancel the session (abort any in-flight work) and reset. */

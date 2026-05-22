@@ -35,6 +35,9 @@ export const SETTINGS_CODE_EXECUTION_ENABLED =
   'tinfoil-settings-code-execution-enabled'
 export const SETTINGS_COMPUTER_USE_ENABLED =
   'tinfoil-settings-computer-use-enabled'
+/** JPEG quality (0–1) for the reduced screenshot sent to the model. */
+export const SETTINGS_COMPUTER_USE_IMAGE_QUALITY =
+  'tinfoil-settings-computer-use-image-quality'
 export const SETTINGS_PII_CHECK_ENABLED = 'tinfoil-settings-pii-check-enabled'
 export const SETTINGS_THEME_MODE = 'tinfoil-settings-theme-mode'
 export const SETTINGS_THEME = 'tinfoil-settings-theme'
