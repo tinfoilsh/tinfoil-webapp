@@ -43,11 +43,13 @@ describe('ComputerUseSessionRenderer.canRender', () => {
 })
 
 describe('ComputerUseSessionRenderer.render', () => {
-  it('shows the "Done" header + final summary when frames are present', () => {
-    const { getByText } = render(
+  it('shows the "Done" header + the frame trail (final answer lives in its own message)', () => {
+    const { getByText, queryByText } = render(
       ComputerUseSessionRenderer.render({
         message: msg({
-          content: 'all set',
+          // Post-split: the record message has empty content; the final
+          // answer is committed as a separate assistant message.
+          content: '',
           computerUseFrames: [
             {
               type: 'model_message',
@@ -63,8 +65,10 @@ describe('ComputerUseSessionRenderer.render', () => {
       }),
     )
     expect(getByText(/Done/)).toBeDefined()
-    expect(getByText('all set')).toBeDefined()
     expect(getByText('opening Safari')).toBeDefined()
+    // The card no longer renders message.content as the final answer; that
+    // moved to the standalone assistant message that follows.
+    expect(queryByText('all set')).toBeNull()
   })
 
   it('shows the "Error" header + error banner when computerUseError is set', () => {

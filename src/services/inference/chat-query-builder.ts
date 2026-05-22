@@ -97,8 +97,26 @@ export class ChatQueryBuilder {
       }
     }
 
+    // Filter out chat-only artifacts that aren't real assistant turns. These
+    // are UI scaffolding the model never produced and should never see back:
+    //
+    //   - computerUseProposedManifest: the inline consent prompt (the agent
+    //     asking the user for permission). Round-tripping this would echo
+    //     "I'm asking for consent" to the model and get it confused.
+    //   - computerUseFrames + empty content: the session-record audit trail
+    //     (frames + manifest). The model already saw every frame during the
+    //     loop; this record is for the user's history, not the model's
+    //     context. The companion final-answer message (a sibling assistant
+    //     message with `content: finalText` and NO frames) IS sent — that's
+    //     the model's actual response.
+    const modelVisible = conversationMessages.filter((msg) => {
+      if (msg.computerUseProposedManifest) return false
+      if (msg.computerUseFrames && !msg.content) return false
+      return true
+    })
+
     // Add conversation history
-    const recentMessages = conversationMessages.slice(-maxMessages)
+    const recentMessages = modelVisible.slice(-maxMessages)
     let addedSystemInstructions = useSystemRole
 
     for (let index = 0; index < recentMessages.length; index++) {

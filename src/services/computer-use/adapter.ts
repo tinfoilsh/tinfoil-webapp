@@ -174,6 +174,65 @@ const OPENAI_CU_SYSTEM_PROMPT = [
   'Only when the task is fully complete, reply with a short summary in prose and DO NOT call the tool.',
 ].join(' ')
 
+/**
+ * Try strict JSON first, then progressively-repaired variants for the model
+ * emission quirks we see in practice: unquoted keys (`{coordinates: ...}`),
+ * single-quoted strings (`{'x': 1}`), and trailing commas. Returns the parsed
+ * value and (when a repair was needed) the *canonical* JSON string the caller
+ * should write back into `tool_call.function.arguments` — that way the next
+ * turn echoes valid JSON to the upstream inference server, which often
+ * re-parses the arguments string and 400s on malformed payloads even though
+ * the OpenAI spec says it's opaque.
+ *
+ * The regex-based repairs are conservative; on any uncertainty they fail and
+ * we degrade to "unsupported tool call" rather than risk warping a real string
+ * value containing a `:` or `'` inside its content.
+ */
+function lenientParseToolArgs(
+  input: string,
+): { ok: true; value: unknown; repairedString: string | null } | { ok: false } {
+  const trimmed = input.trim()
+  if (trimmed === '') {
+    return { ok: true, value: {}, repairedString: null }
+  }
+  try {
+    return { ok: true, value: JSON.parse(trimmed), repairedString: null }
+  } catch {
+    /* fall through to repair attempts */
+  }
+
+  const attempts: string[] = []
+  // 1) Quote unquoted JSON-ish keys: `{ foo: ... }` or `{ foo : ... }`.
+  attempts.push(
+    trimmed.replace(
+      /([{,]\s*)([A-Za-z_$][\w$]*)\s*:/g,
+      (_m, lead: string, key: string) => `${lead}"${key}":`,
+    ),
+  )
+  // 2) On top of that, swap single-quoted strings for double-quoted (best-
+  //    effort: skips quotes inside what already looks like a double-quoted
+  //    string by only matching whole-token single-quoted runs that don't
+  //    contain bare double quotes).
+  attempts.push(
+    attempts[0].replace(/'([^'"\\\n]*)'/g, (_m, body: string) => `"${body}"`),
+  )
+  // 3) On top of that, strip trailing commas before `}` / `]`.
+  attempts.push(attempts[1].replace(/,(\s*[}\]])/g, '$1'))
+
+  for (const candidate of attempts) {
+    try {
+      return {
+        ok: true,
+        value: JSON.parse(candidate),
+        repairedString: candidate,
+      }
+    } catch {
+      /* try next */
+    }
+  }
+  return { ok: false }
+}
+
 /** Read a numeric value that may arrive as a number or numeric string. */
 function num(v: unknown): number | undefined {
   if (typeof v === 'number' && Number.isFinite(v)) return v
@@ -416,12 +475,19 @@ export const openAICUAdapter: ModelAdapter = {
   },
 
   normalizeCall(call, ctx): NormalizeResult {
-    let parsed: unknown
-    try {
-      parsed = call.arguments.trim() === '' ? {} : JSON.parse(call.arguments)
-    } catch {
+    const repair = lenientParseToolArgs(call.arguments)
+    if (!repair.ok) {
       return { ok: false, reason: 'tool call arguments were not valid JSON' }
     }
+    // CRITICAL: write the repaired JSON back into the tool call so the
+    // assistant message echoed in the NEXT turn ships valid JSON to inference.
+    // Without this, a model that emits `{coordinates: ...}` (unquoted key)
+    // turns into a 400 from the upstream chat-completions endpoint when it
+    // re-parses tool_calls[].function.arguments on its side.
+    if (repair.repairedString !== null) {
+      ;(call as { arguments: string }).arguments = repair.repairedString
+    }
+    const parsed = repair.value
     if (typeof parsed !== 'object' || parsed === null) {
       return { ok: false, reason: 'tool call arguments must be a JSON object' }
     }

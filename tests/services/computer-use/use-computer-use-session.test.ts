@@ -375,4 +375,114 @@ describe('useComputerUseSession', () => {
     act(() => result.current.cancel())
     expect(result.current.state.phase).toBe('idle')
   })
+
+  describe('connect (eager pairing)', () => {
+    it('paired already (valid stored credential): returns true without re-pairing', async () => {
+      const tokenConn = {
+        tokens: { getAccessToken: async () => 'jwt' },
+      } as unknown as BrokerConnection
+      const pair = vi.fn(async () => fakeConn)
+      const { result } = renderHook(() =>
+        useComputerUseSession('kimi-k2-6', {
+          getConnection: () => tokenConn,
+          pair,
+          fetchStatusImages: async () => [mac('tahoe')],
+          runLoop: vi.fn(),
+        }),
+      )
+
+      let ok: boolean | undefined
+      await act(async () => {
+        ok = await result.current.connect()
+      })
+      expect(ok).toBe(true)
+      expect(pair).not.toHaveBeenCalled()
+      expect(result.current.state.phase).toBe('idle')
+    })
+
+    it('not paired: surfaces the code via pairingCode and resolves to true on success', async () => {
+      const pair = vi.fn(async (opts: any) => {
+        opts.onCode('XK19')
+        return fakeConn
+      })
+      const { result } = renderHook(() =>
+        useComputerUseSession('kimi-k2-6', {
+          getConnection: () => null,
+          pair,
+          fetchStatusImages: async () => [mac('tahoe')],
+          runLoop: vi.fn(),
+        }),
+      )
+
+      let ok: boolean | undefined
+      await act(async () => {
+        ok = await result.current.connect()
+      })
+      expect(ok).toBe(true)
+      expect(pair).toHaveBeenCalledOnce()
+      expect(result.current.state.phase).toBe('idle')
+    })
+
+    it('stale credential (401): re-pairs and succeeds', async () => {
+      const staleConn = {
+        tokens: {
+          getAccessToken: async () => {
+            throw new BrokerError('invalid refresh credential', 401)
+          },
+        },
+      } as unknown as BrokerConnection
+      const pair = vi.fn(async () => fakeConn)
+      const { result } = renderHook(() =>
+        useComputerUseSession('kimi-k2-6', {
+          getConnection: () => staleConn,
+          pair,
+          fetchStatusImages: async () => [mac('tahoe')],
+          runLoop: vi.fn(),
+        }),
+      )
+      let ok: boolean | undefined
+      await act(async () => {
+        ok = await result.current.connect()
+      })
+      expect(pair).toHaveBeenCalledOnce()
+      expect(ok).toBe(true)
+    })
+
+    it('pairing fails: returns false and surfaces the error', async () => {
+      const pair = vi.fn(async () => {
+        throw new Error('pairing denied')
+      })
+      const { result } = renderHook(() =>
+        useComputerUseSession('kimi-k2-6', {
+          getConnection: () => null,
+          pair,
+          fetchStatusImages: async () => [mac('tahoe')],
+          runLoop: vi.fn(),
+        }),
+      )
+      let ok: boolean | undefined
+      await act(async () => {
+        ok = await result.current.connect()
+      })
+      expect(ok).toBe(false)
+      expect(result.current.state.phase).toBe('error')
+      expect(result.current.state.error).toMatch(/denied/)
+    })
+
+    it('does not invoke runLoop (distinct from start)', async () => {
+      const runLoop = vi.fn()
+      const { result } = renderHook(() =>
+        useComputerUseSession('kimi-k2-6', {
+          getConnection: () => null,
+          pair: async () => fakeConn,
+          fetchStatusImages: async () => [mac('tahoe')],
+          runLoop,
+        }),
+      )
+      await act(async () => {
+        await result.current.connect()
+      })
+      expect(runLoop).not.toHaveBeenCalled()
+    })
+  })
 })

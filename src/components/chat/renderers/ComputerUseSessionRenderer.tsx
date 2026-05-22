@@ -20,7 +20,6 @@ export const ComputerUseSessionRenderer: MessageRenderer = {
   render: ({ message }) => (
     <ComputerUseSessionCard
       frames={message.computerUseFrames ?? []}
-      finalText={message.content || undefined}
       error={message.computerUseError}
       manifest={message.computerUseManifest}
     />

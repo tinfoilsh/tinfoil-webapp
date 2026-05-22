@@ -374,5 +374,70 @@ export function useComputerUseSession(
     setState(INITIAL)
   }, [])
 
-  return { state, start, approve, approveCapability, denyCapability, cancel }
+  /**
+   * Eagerly establish a refresh credential with the broker — runs the pairing
+   * flow on its own, without a task or consent. Used by the "Connect" banner
+   * and the unpaired-toggle click so users can prove the local broker is
+   * reachable before they bother phrasing a computer-use request.
+   *
+   * Returns `true` on a fresh or already-valid pairing, `false` on failure
+   * (the user can read the surfaced error from `state.error`).
+   *
+   * Distinct from `start()`: that opens a full session (pair → consent →
+   * loop); `connect()` returns to `idle` once paired, leaving the next
+   * `start()` to find the credential and skip pairing.
+   */
+  const connect = useCallback(async (): Promise<boolean> => {
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+    // Drop into pairing phase so ComputerUseSessionDialog surfaces the code
+    // modal automatically — same UI primitive used by start().
+    setState({ ...INITIAL, phase: 'pairing' })
+    try {
+      let conn = getConnection()
+      // If a stored credential exists, validate it cheaply before declaring
+      // success. A stale/revoked one forces a re-pair.
+      if (conn && typeof conn.tokens?.getAccessToken === 'function') {
+        try {
+          await conn.tokens.getAccessToken(ac.signal)
+        } catch (err) {
+          if (err instanceof BrokerError && err.isAuthError) {
+            forgetPairing()
+            conn = null
+          } else {
+            throw err
+          }
+        }
+      }
+      if (!conn) {
+        conn = await pair({
+          onCode: (code) => patch({ pairingCode: code }),
+          onState: (pairingState) => patch({ pairingState }),
+          signal: ac.signal,
+        })
+      }
+      connRef.current = conn
+      // Back to idle — the next start() will reuse the credential.
+      setState(INITIAL)
+      return true
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return false
+      patch({
+        phase: 'error',
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return false
+    }
+  }, [getConnection, pair, patch])
+
+  return {
+    state,
+    start,
+    approve,
+    approveCapability,
+    denyCapability,
+    cancel,
+    connect,
+  }
 }

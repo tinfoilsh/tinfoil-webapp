@@ -212,6 +212,8 @@ interface WelcomeScreenProps {
   onCodeExecutionToggle?: () => void
   computerUseEnabled?: boolean
   onComputerUseToggle?: () => void
+  /** One-time pairing handler, forwarded to ChatInput for the connect banner. */
+  onComputerUseConnect?: () => Promise<boolean> | void
   computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
@@ -248,6 +250,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   onCodeExecutionToggle,
   computerUseEnabled,
   onComputerUseToggle,
+  onComputerUseConnect,
   computerUseModel,
   onOpenVerifier,
   isTemporaryMode,
@@ -570,6 +573,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   onCodeExecutionToggle={onCodeExecutionToggle}
                   computerUseEnabled={computerUseEnabled}
                   onComputerUseToggle={onComputerUseToggle}
+                  onComputerUseConnect={onComputerUseConnect}
                   computerUseModel={computerUseModel}
                   isTemporaryMode={isTemporaryMode}
                 />

@@ -13,8 +13,12 @@
 'use client'
 
 import { type useComputerUseSession } from '@/services/computer-use'
-import { useState } from 'react'
-import { SandboxConfigSummary, SessionFrame } from './ComputerUseSessionMessage'
+import { useEffect, useState } from 'react'
+import {
+  SandboxConfigSummary,
+  SessionFrame,
+  SessionToolbar,
+} from './ComputerUseSessionMessage'
 
 type SessionApi = ReturnType<typeof useComputerUseSession>
 
@@ -28,6 +32,21 @@ export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
   // Render ONLY while the run is in flight. `done` / `error` are folded into
   // chat history by chat-interface and rendered by `ComputerUseSessionRenderer`.
   const live = state.phase === 'running' || state.phase === 'handoff'
+
+  // Yellow-light minimize: hide the card body, leaving only the toolbar.
+  // The toolbar visual is small and unobtrusive, so the user still sees that
+  // a session is running but doesn't have its frames in their face.
+  const [collapsed, setCollapsed] = useState(false)
+
+  // Keep the booting skeleton on screen for at least ~900ms after entering
+  // `running`, even if the first frame arrives almost immediately (warm host /
+  // pre-pulled image). Otherwise the placeholder flashes for one paint and the
+  // user perceives the card as having "skipped" the loading state.
+  const showSkeleton = useBootingSkeletonVisible(
+    state.phase === 'running',
+    state.frames.length,
+  )
+
   if (!live) return null
 
   return (
@@ -36,61 +55,52 @@ export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
     <div className="relative mx-auto mb-6 flex w-full max-w-3xl flex-col items-start">
       <div className="w-full px-4 py-2">
         <div className="overflow-hidden rounded-2xl border border-border-subtle bg-surface-chat-background">
-          <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
-            <span className="flex items-center gap-2 text-xs font-medium text-content-secondary">
-              <span className="text-content-primary">Computer use</span>
-              <span className="text-content-muted">
-                · {STATUS_LABEL[state.phase]}
-              </span>
-              {state.phase === 'running' && (
-                <span className="inline-block size-2 animate-pulse rounded-full bg-green-500" />
-              )}
-            </span>
-            {state.phase === 'running' && (
-              <button
-                type="button"
-                onClick={cancel}
-                className="rounded-md px-2 py-0.5 text-xs text-content-secondary hover:bg-surface-chat hover:text-content-primary"
-              >
-                Stop
-              </button>
-            )}
-          </div>
+          <SessionToolbar
+            status={STATUS_LABEL[state.phase]}
+            pulse={state.phase === 'running'}
+            // Red = stop. `cancel()` aborts the in-flight loop AND tears down
+            // the session via broker.end() in the loop's finally-block.
+            onClose={state.phase === 'running' ? cancel : undefined}
+            // Yellow = collapse to just the toolbar.
+            onMinimize={() => setCollapsed((c) => !c)}
+          />
 
-          <div className="space-y-3 px-3 py-3">
-            {state.manifest && (
-              <SandboxConfigSummary manifest={state.manifest} />
-            )}
-            {state.phase === 'handoff' && (
-              <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-600">
-                Paused for you to take over in the sandbox window. Resume from
-                the tray when done.
-              </p>
-            )}
-            {/* Skeleton placeholder while the VM boots: `running` is set as
-                soon as the user approves, but the first frame doesn't arrive
-                until `/begin` returns its screenshot (clone + boot + first
-                capture can be ~10-30s). Without this, the card shows just the
-                header for that whole window, which reads as "stuck". */}
-            {state.phase === 'running' && state.frames.length === 0 && (
-              <BootingSkeleton />
-            )}
-            {state.frames.map((f, i) => (
-              <SessionFrame key={i} event={f} />
-            ))}
-            {/* Pending capability ask: the loop is paused awaiting user consent.
-                Approve / Deny resolve the promise the loop is sitting on. */}
-            {state.capabilityRequest && (
-              <CapabilityRequestPrompt
-                egress={state.capabilityRequest.egress}
-                onApprove={(edited) => session.approveCapability(edited)}
-                onDeny={() => session.denyCapability()}
-              />
-            )}
-            {state.finalText && (
-              <p className="text-sm text-content-primary">{state.finalText}</p>
-            )}
-          </div>
+          {!collapsed && (
+            <div className="space-y-3 px-3 py-3">
+              {state.manifest && (
+                <SandboxConfigSummary manifest={state.manifest} />
+              )}
+              {state.phase === 'handoff' && (
+                <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-600">
+                  Paused for you to take over in the sandbox window. Resume from
+                  the tray when done.
+                </p>
+              )}
+              {/* Skeleton placeholder while the VM boots: `running` is set as
+                  soon as the user approves, but the first frame doesn't arrive
+                  until `/begin` returns its screenshot (clone + boot + first
+                  capture can be ~10-30s). Without this, the card shows just
+                  the header for that whole window, which reads as "stuck".
+                  Stays visible for a minimum duration even on warm boots — see
+                  useBootingSkeletonVisible. */}
+              {showSkeleton && <BootingSkeleton />}
+              {/* Only render frames after the skeleton has cleared, otherwise
+                  the user momentarily sees the first screenshot stacked under
+                  the placeholder during the minimum-display window. */}
+              {!showSkeleton &&
+                state.frames.map((f, i) => <SessionFrame key={i} event={f} />)}
+              {/* Pending capability ask: the loop is paused awaiting user
+                  consent. Approve / Deny resolve the promise the loop is
+                  sitting on. */}
+              {state.capabilityRequest && (
+                <CapabilityRequestPrompt
+                  egress={state.capabilityRequest.egress}
+                  onApprove={(edited) => session.approveCapability(edited)}
+                  onDeny={() => session.denyCapability()}
+                />
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -100,18 +110,63 @@ export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
 /**
  * Placeholder shown while the VM is booting and no screenshot has arrived yet.
  * 4:3 aspect approximates the macOS sandbox display (1024×768 logical) so the
- * card doesn't visibly resize when the real frame replaces it. Uses Tailwind
- * `animate-pulse` for a subtle shimmer.
+ * card doesn't visibly resize when the real frame replaces it.
+ *
+ * Visuals: an `animate-pulse` rectangle as the screenshot stand-in, plus a
+ * spinning ring + status text centered on top so the user reads the box as
+ * "loading" rather than "broken". The spinner is plain Tailwind — no extra
+ * dependency.
  */
 function BootingSkeleton() {
   return (
-    <div className="space-y-2">
+    <div className="relative">
       <div className="aspect-[4/3] w-full animate-pulse rounded-lg border border-border-subtle bg-surface-chat" />
-      <p className="text-center text-xs text-content-muted">
-        Booting sandbox — first screenshot in a few seconds…
-      </p>
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+        <span
+          aria-hidden
+          className="size-8 animate-spin rounded-full border-2 border-border-subtle border-t-content-primary"
+        />
+        <p className="text-sm text-content-secondary">
+          Booting sandbox — first screenshot in a few seconds…
+        </p>
+      </div>
     </div>
   )
+}
+
+/**
+ * Hook that returns `true` while the booting placeholder should be on screen.
+ * The placeholder shows when:
+ *   - we're in `running` AND no frames yet, OR
+ *   - we've been in `running` for less than ~900ms (the minimum-display window,
+ *     for the warm-host case where the first frame arrives in < 1 paint).
+ *
+ * Hiding happens when BOTH the minimum window has elapsed AND at least one
+ * frame has arrived. Resets whenever `running` exits.
+ */
+function useBootingSkeletonVisible(running: boolean, frameCount: number) {
+  const MIN_MS = 900
+  // `minimumElapsed` flips false→true after MIN_MS once `running` starts, and
+  // resets to false on every transition out of `running`.
+  const [minimumElapsed, setMinimumElapsed] = useState(false)
+  useEffect(() => {
+    // The setState-in-effect is the entire point of this hook: a boolean
+    // phase change (running false→true) needs to drive a *delayed* state
+    // transition that isn't observable from the inputs alone. There is no
+    // pure-derivation alternative for "show this for at least N ms."
+    if (!running) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMinimumElapsed(false)
+      return
+    }
+    setMinimumElapsed(false)
+    const id = setTimeout(() => setMinimumElapsed(true), MIN_MS)
+    return () => clearTimeout(id)
+  }, [running])
+
+  if (!running) return false
+  if (!minimumElapsed) return true
+  return frameCount === 0
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   computerUseSupport,
   isMacOS,
   useBrokerStatus,
+  usePaired,
 } from '@/services/computer-use'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
@@ -32,6 +33,7 @@ import {
   PiSpinner,
   PiTerminalWindow,
 } from 'react-icons/pi'
+import { ComputerUseConnectBanner } from './ComputerUseConnectBanner'
 import { ComputerUseToolButton } from './ComputerUseToolButton'
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
@@ -63,6 +65,14 @@ type ChatInputProps = {
   onCodeExecutionToggle?: () => void
   computerUseEnabled?: boolean
   onComputerUseToggle?: () => void
+  /**
+   * One-time pairing handler. Called by the inline "Connect" banner and the
+   * unpaired-state toggle click. Resolves to whether pairing succeeded.
+   * Required for the banner to render and for the toggle to be useful when
+   * unpaired — when absent both fall back gracefully (no banner; toggle in
+   * its toggle-only behavior).
+   */
+  onComputerUseConnect?: () => Promise<boolean> | void
   /** Current model, for the computer-use vision-capability gate. */
   computerUseModel?: { modelName: string; multimodal?: boolean }
   quote?: string | null
@@ -97,6 +107,7 @@ export function ChatInput({
   onCodeExecutionToggle,
   computerUseEnabled,
   onComputerUseToggle,
+  onComputerUseConnect,
   computerUseModel,
   quote,
   onClearQuote,
@@ -131,6 +142,11 @@ export function ChatInput({
   const brokerStatus = useBrokerStatus({
     enabled: computerUseVisible && !!computerUseSupportInfo?.supported,
   })
+  // Pair state of this browser, reactive across the same-tab `setRefresh-
+  // Credential` / `clearRefreshCredential` calls — flips the toggle from
+  // "Click to pair" to "Computer use" the moment pairing completes, and
+  // back to "Click to pair" if a 401 clears the credential.
+  const paired = usePaired()
 
   const computerUseCanEnable =
     !!computerUseSupportInfo?.supported && brokerStatus.readiness === 'ready'
@@ -141,6 +157,17 @@ export function ChatInput({
       : brokerStatus.readiness === 'no_images'
         ? 'No sandbox image is ready — run `tinfoil-broker image setup` first.'
         : 'Broker not connected — start to enable computer use.'
+
+  // The Connect banner shows when the broker is detected + this browser has
+  // not paired yet + the model can drive it + we have a handler. Once the
+  // banner exists in a stable place (above the input form), discovery
+  // doesn't depend on the user noticing the toggle's amber dot.
+  const showConnectBanner =
+    computerUseVisible &&
+    !!computerUseSupportInfo?.supported &&
+    brokerStatus.readiness === 'ready' &&
+    !paired &&
+    !!onComputerUseConnect
 
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
@@ -502,6 +529,20 @@ export function ChatInput({
 
   return (
     <div className="flex flex-col gap-2">
+      {/* One-time "pair the local computer driver" banner. Sits above the
+          input box, in the same flex column as the rest of the form, so it
+          uses the same width and disappears cleanly without layout shift.
+          Visibility is fully derived from broker status + pair state, so we
+          render it unconditionally and let the component itself decide. */}
+      {onComputerUseConnect && (
+        <ComputerUseConnectBanner
+          show={showConnectBanner}
+          onConnect={() => {
+            void onComputerUseConnect()
+          }}
+          isDarkMode={isDarkMode}
+        />
+      )}
       <div className="relative">
         {/* Project tab - manila folder style, absolutely positioned */}
         {isProjectMode && activeProject && (
@@ -1018,6 +1059,15 @@ export function ChatInput({
                           isDarkMode={isDarkMode}
                           supported={computerUseCanEnable}
                           reason={computerUseReason}
+                          paired={paired}
+                          onConnect={
+                            onComputerUseConnect
+                              ? () => {
+                                  void onComputerUseConnect()
+                                  setIsMobileMenuOpen(false)
+                                }
+                              : undefined
+                          }
                         />
                       )}
                     </div>
@@ -1118,6 +1168,14 @@ export function ChatInput({
                   isDarkMode={isDarkMode}
                   supported={computerUseCanEnable}
                   reason={computerUseReason}
+                  paired={paired}
+                  onConnect={
+                    onComputerUseConnect
+                      ? () => {
+                          void onComputerUseConnect()
+                        }
+                      : undefined
+                  }
                 />
               )}
             </div>

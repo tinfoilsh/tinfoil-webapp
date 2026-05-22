@@ -60,3 +60,88 @@ describe('ComputerUseToolButton (mobile)', () => {
     expect(onToggle).toHaveBeenCalledOnce()
   })
 })
+
+describe('ComputerUseToolButton (unpaired state)', () => {
+  it('desktop: click calls onConnect instead of onToggle when paired=false', () => {
+    const onToggle = vi.fn()
+    const onConnect = vi.fn()
+    render(
+      <ComputerUseToolButton
+        {...base}
+        paired={false}
+        onConnect={onConnect}
+        onToggle={onToggle}
+      />,
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: /Pair computer driver/i }),
+    )
+    expect(onConnect).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('desktop: shows the "Click to pair" tooltip when paired=false', () => {
+    render(
+      <ComputerUseToolButton
+        {...base}
+        paired={false}
+        onConnect={() => {}}
+        onToggle={() => {}}
+      />,
+    )
+    expect(screen.getByText('Click to pair to computer driver')).toBeTruthy()
+  })
+
+  it('desktop: paired=true keeps the original toggle behavior', () => {
+    const onToggle = vi.fn()
+    const onConnect = vi.fn()
+    render(
+      <ComputerUseToolButton
+        {...base}
+        paired={true}
+        onConnect={onConnect}
+        onToggle={onToggle}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Computer use' }))
+    expect(onToggle).toHaveBeenCalledOnce()
+    expect(onConnect).not.toHaveBeenCalled()
+  })
+
+  it('mobile: click calls onConnect when paired=false', () => {
+    const onToggle = vi.fn()
+    const onConnect = vi.fn()
+    render(
+      <ComputerUseToolButton
+        {...base}
+        variant="mobile"
+        paired={false}
+        onConnect={onConnect}
+        onToggle={onToggle}
+      />,
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: /Pair computer driver/i }),
+    )
+    expect(onConnect).toHaveBeenCalledOnce()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('not supported: clicking does nothing even when unpaired', () => {
+    const onToggle = vi.fn()
+    const onConnect = vi.fn()
+    render(
+      <ComputerUseToolButton
+        {...base}
+        supported={false}
+        reason="needs vision"
+        paired={false}
+        onConnect={onConnect}
+        onToggle={onToggle}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Computer use' }))
+    expect(onConnect).not.toHaveBeenCalled()
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+})

@@ -15,6 +15,7 @@ export { MessageContent } from './components/MessageContent'
 export { ThoughtProcess } from './components/ThoughtProcess'
 
 // Initialization function that uses client components
+import { ComputerUseConsentRenderer } from './ComputerUseConsentRenderer'
 import { ComputerUseSessionRenderer } from './ComputerUseSessionRenderer'
 import { DefaultInputRenderer } from './default/DefaultInputRenderer'
 import { DefaultMessageRenderer } from './default/DefaultMessageRenderer'
@@ -24,6 +25,8 @@ export function initializeRenderers(): void {
   const registry = getRendererRegistry()
   registry.setDefaultMessageRenderer(DefaultMessageRenderer)
   registry.setDefaultInputRenderer(DefaultInputRenderer)
+  // Inline consent prompt — the agent's "I'd like permission to ___" turn.
+  registry.registerMessageRenderer(ComputerUseConsentRenderer)
   // Override for messages carrying a finished/errored computer-use session.
   registry.registerMessageRenderer(ComputerUseSessionRenderer)
 }

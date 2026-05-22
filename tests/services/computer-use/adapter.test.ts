@@ -150,6 +150,59 @@ describe('openAICUAdapter.normalizeCall — happy paths', () => {
     expect(a.action.payload).toEqual({ egress: ['x.com'] })
   })
 
+  it('lenient JSON: accepts unquoted keys (a common model emission quirk)', () => {
+    // Models periodically emit Python/JS-literal style: `{type: "click", x: 100, y: 200}`
+    // — i.e. unquoted keys. Strict JSON.parse rejects, so the adapter repairs.
+    const r = openAICUAdapter.normalizeCall({
+      name: 'computer',
+      arguments: '{type: "click", x: 100, y: 200}',
+    })
+    expect(r).toEqual({
+      ok: true,
+      action: { op: 'click', payload: { x: 100, y: 200, count: 1 } },
+    })
+  })
+
+  it('lenient JSON: rewrites tool_call.arguments in place after repair', () => {
+    // Downstream the loop pushes the assistant message back to the upstream
+    // inference server, which re-validates `tool_calls[].function.arguments`
+    // and 400s on malformed JSON. The repair must overwrite the raw string so
+    // we never echo invalid JSON upstream.
+    const call: ToolCall['function'] = {
+      name: 'computer',
+      arguments: '{type: "click", x: 1, y: 2}',
+    }
+    openAICUAdapter.normalizeCall(call)
+    expect(() => JSON.parse(call.arguments)).not.toThrow()
+    expect(JSON.parse(call.arguments)).toMatchObject({
+      type: 'click',
+      x: 1,
+      y: 2,
+    })
+  })
+
+  it('lenient JSON: accepts single-quoted strings + trailing commas', () => {
+    const r = openAICUAdapter.normalizeCall({
+      name: 'computer',
+      arguments: "{'type': 'click', x: 10, y: 20,}",
+    })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.action).toEqual({
+        op: 'click',
+        payload: { x: 10, y: 20, count: 1 },
+      })
+    }
+  })
+
+  it('lenient JSON: still rejects truly unparseable input', () => {
+    const r = openAICUAdapter.normalizeCall({
+      name: 'computer',
+      arguments: '{this is not json at all',
+    })
+    expect(r.ok).toBe(false)
+  })
+
   it('prefers element-addressed clicks when an element_index is given', () => {
     const r = norm('computer', {
       type: 'click',

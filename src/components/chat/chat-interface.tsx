@@ -93,6 +93,10 @@ import { AskSidebar } from './ask-sidebar'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import { ChatSidebar } from './chat-sidebar'
+import {
+  ComputerUseConsentContext,
+  type ComputerUseConsentContextValue,
+} from './computer-use-context'
 import { ComputerUseSessionDialog } from './ComputerUseSessionDialog'
 import { ComputerUseSessionThread } from './ComputerUseSessionThread'
 import { CONSTANTS } from './constants'
@@ -1240,12 +1244,151 @@ export function ChatInterface({
   const computerUseSession = useComputerUseSession(selectedModel)
   // Destructure the stable handle the effect actually needs so exhaustive-deps
   // doesn't pull in the whole session (which is a fresh object each render).
-  const { start: startComputerUseSession } = computerUseSession
+  const { start: startComputerUseSession, connect: connectComputerUseSession } =
+    computerUseSession
   useEffect(() => {
     onComputerBeginRef.current = (manifest, task, reason) => {
       void startComputerUseSession(task, manifest, reason)
     }
   }, [startComputerUseSession])
+
+  // One-time pairing trigger for the connect banner + unpaired-toggle click.
+  // Drives session.connect() (which just runs pairing, no consent/loop), and
+  // on success auto-flips the per-conversation toggle ON: the user already
+  // demonstrated intent by clicking Connect, so making them click the
+  // toggle separately would be needless friction.
+  const handleComputerUseConnect = useCallback(async () => {
+    const ok = await connectComputerUseSession()
+    if (ok) setComputerUseEnabled(true)
+    return ok
+  }, [connectComputerUseSession])
+
+  // Commit a consent-prompt message the moment the session enters `consent`,
+  // so the agent's "I'd like permission" appears chronologically in chat
+  // (right after its computer_begin tool-call message) instead of as a
+  // context-stealing modal. The renderer for these messages reads the live
+  // session's approve/cancel via `ComputerUseConsentContext` (provided
+  // below) and falls back to a read-only history view on reload.
+  //
+  // Each consent message is identified by `task`; the approve/cancel
+  // wrappers below update the SAME message in-place. Without this dedupe
+  // ref, transient phase oscillations would commit duplicates.
+  const committedConsentTaskRef = useRef<string | null>(null)
+  // Lift the sub-state read out of the effect so exhaustive-deps sees plain
+  // primitive deps (not `computerUseSession.state.*` chains) and the lint
+  // matches the way the done/error commit effect below depends on the
+  // session.
+  const consentPhase = computerUseSession.state.phase
+  const consentTask = computerUseSession.state.task
+  const consentManifest = computerUseSession.state.manifest
+  const consentReason = computerUseSession.state.reason
+  useEffect(() => {
+    if (consentPhase !== 'consent' || !consentTask || !consentManifest) return
+    if (committedConsentTaskRef.current === consentTask) return
+    committedConsentTaskRef.current = consentTask
+    setCurrentChat((c) => ({
+      ...c,
+      messages: [
+        ...c.messages,
+        {
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          computerUseProposedManifest: consentManifest,
+          computerUseTaskReason: consentReason,
+          computerUseConsentStatus: 'pending',
+        },
+      ],
+    }))
+  }, [
+    consentPhase,
+    consentTask,
+    consentManifest,
+    consentReason,
+    setCurrentChat,
+  ])
+
+  // Approve wrapper: mutates the matching pending consent message to
+  // `approved` + the approved manifest, then delegates to the session's
+  // approve. Mutation must happen FIRST so the message reflects the
+  // approved manifest even if approve() throws.
+  const approveConsentForChat = useCallback(
+    (m: CapabilityManifest) => {
+      setCurrentChat((c) => {
+        // Find the most recent pending consent message and mark it approved.
+        const idx = c.messages
+          .map((msg, i) => ({ msg, i }))
+          .filter((x) => x.msg.computerUseConsentStatus === 'pending')
+          .pop()?.i
+        if (idx === undefined) return c
+        const next = c.messages.slice()
+        next[idx] = {
+          ...next[idx],
+          computerUseConsentStatus: 'approved',
+          computerUseManifest: m,
+          // Drop the proposed manifest — the editor's already gone; what
+          // matters now is what was approved.
+          computerUseProposedManifest: undefined,
+        }
+        return { ...c, messages: next }
+      })
+      void computerUseSession.approve(m)
+    },
+    [computerUseSession, setCurrentChat],
+  )
+
+  // Cancel wrapper for the consent UI: marks the pending consent message as
+  // cancelled (so the chronological record reflects the user's choice), then
+  // tears the session down. Used when the user clicks "Cancel" in the
+  // editor; other cancellation paths (tray reject, broker error) go through
+  // the session's own error path and clear committedConsentTaskRef below.
+  const cancelConsentForChat = useCallback(() => {
+    setCurrentChat((c) => {
+      const idx = c.messages
+        .map((msg, i) => ({ msg, i }))
+        .filter((x) => x.msg.computerUseConsentStatus === 'pending')
+        .pop()?.i
+      if (idx === undefined) return c
+      const next = c.messages.slice()
+      next[idx] = {
+        ...next[idx],
+        computerUseConsentStatus: 'cancelled',
+      }
+      return { ...c, messages: next }
+    })
+    computerUseSession.cancel()
+  }, [computerUseSession, setCurrentChat])
+
+  // Once the session leaves the consent phase we should be willing to commit
+  // a fresh consent message for the next computer_begin. The dedupe ref is
+  // keyed on `task`, which `cancel()` zeroes — so this also catches the
+  // `cancel`-from-tray path that skips approveConsentForChat /
+  // cancelConsentForChat. We do NOT touch the chat history here (it's the
+  // approve/cancel wrappers' job); this is purely about future runs.
+  useEffect(() => {
+    if (consentPhase !== 'consent') {
+      // Keep the ref in lockstep with `task`: once task clears (after
+      // cancel()) the next start() can commit a new consent message.
+      if (!consentTask) {
+        committedConsentTaskRef.current = null
+      }
+    }
+  }, [consentPhase, consentTask])
+
+  // Context value for the consent renderer: stable across renders, so the
+  // renderer doesn't tear down its inputs on every parent re-render.
+  const consentContextValue = useMemo<ComputerUseConsentContextValue>(
+    () => ({
+      approve: approveConsentForChat,
+      cancel: cancelConsentForChat,
+      images: computerUseSession.state.images,
+    }),
+    [
+      approveConsentForChat,
+      cancelConsentForChat,
+      computerUseSession.state.images,
+    ],
+  )
 
   // Fold a finished/errored session into chat history at its chronological
   // position: commit a synthetic assistant message carrying the frame trail
@@ -1269,20 +1412,67 @@ export function ChatInterface({
     if (committedSessionTaskRef.current === key) return
     committedSessionTaskRef.current = key
 
+    // Split into TWO messages so the final answer reads as a normal assistant
+    // chat bubble (not buried inside the session card):
+    //
+    //   1) Session-record message — frames + manifest + (on error) the error
+    //      banner. content stays empty so the chat-query builder skips it on
+    //      future turns (it's an audit-trail, not something the model needs
+    //      to re-read; the model already saw every frame in the loop).
+    //   2) Final answer — a plain assistant turn whose `content` is the
+    //      model's last message. Picks the default renderer and round-trips
+    //      to the model on follow-up turns (it WAS the model's response, so
+    //      the model should see it back).
+    //
+    // Strip the trailing model_message that matches finalText from frames so
+    // the card doesn't render the answer a second time (the loop emits a
+    // model_message event for every turn including the last no-tool-calls
+    // one, which IS the final answer).
+    //
+    // Timestamps are ordered (record first, then answer 1ms later) so chat
+    // sorting is unambiguous and the scroll-to-bottom lands on the answer.
+    const trimmedFrames =
+      finalText && frames.length > 0
+        ? (() => {
+            const last = frames[frames.length - 1]
+            if (
+              last &&
+              last.type === 'model_message' &&
+              last.content === finalText
+            ) {
+              return frames.slice(0, -1)
+            }
+            return frames
+          })()
+        : frames
+    const recordTs = new Date()
+    const answerTs = new Date(recordTs.getTime() + 1)
     setCurrentChat((c) => ({
       ...c,
       messages: [
         ...c.messages,
         {
           role: 'assistant',
-          content: finalText ?? '',
-          timestamp: new Date(),
-          computerUseFrames: frames,
+          content: '',
+          timestamp: recordTs,
+          computerUseFrames: trimmedFrames,
           ...(manifest ? { computerUseManifest: manifest } : {}),
           ...(phase === 'error'
             ? { isError: true, computerUseError: error ?? 'Session failed.' }
             : {}),
         },
+        // Only emit the answer message when the model produced one. On error
+        // (or when the model finished silently) we omit it — the error banner
+        // on the record carries the user-facing signal already.
+        ...(finalText
+          ? [
+              {
+                role: 'assistant' as const,
+                content: finalText,
+                timestamp: answerTs,
+              },
+            ]
+          : []),
       ],
     }))
     // Reset the session so the live thread stops rendering and a future
@@ -1290,6 +1480,17 @@ export function ChatInterface({
     computerUseSession.cancel()
     // The cancel itself zeroes `state.task`, so reset the dedupe key too.
     committedSessionTaskRef.current = null
+
+    // Scroll to bottom so the newly-committed final answer is the first
+    // thing the user sees. Without this the viewport stays anchored to
+    // wherever the user was during the session (typically the top of the
+    // card, courtesy of `scrollUserMessageToTop`), which buries the answer
+    // off-screen. The 60ms delay covers the DOM commit + the synthetic
+    // message's image frames laying out.
+    setTimeout(() => {
+      const el = scrollContainerRef.current
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    }, 60)
   }, [
     computerUseSession.state.phase,
     computerUseSession.state.task,
@@ -3089,59 +3290,71 @@ export function ChatInterface({
                 }
               >
                 <div className="flex min-h-full min-w-0 flex-1 [container-type:inline-size]">
-                  <ChatMessages
-                    messages={currentChat?.messages || []}
-                    isDarkMode={isDarkMode}
-                    chatId={currentChat.id}
-                    isWaitingForResponse={isWaitingForResponse}
-                    isStreamingResponse={isStreaming}
-                    computerUseSession={
-                      <ComputerUseSessionThread session={computerUseSession} />
-                    }
-                    isPremium={isPremium}
-                    models={models}
-                    onSubmit={handleSubmit}
-                    input={input}
-                    setInput={setInput}
-                    loadingState={loadingState}
-                    retryInfo={retryInfo}
-                    cancelGeneration={cancelGeneration}
-                    inputRef={inputRef}
-                    handleInputFocus={handleInputFocus}
-                    handleDocumentUpload={handleFileUpload}
-                    processedDocuments={processedDocuments}
-                    removeDocument={removeDocument}
-                    selectedModel={selectedModel}
-                    handleModelSelect={handleModelSelect}
-                    expandedLabel={expandedLabel}
-                    handleLabelClick={handleLabelClick}
-                    onEditMessage={editMessage}
-                    onRegenerateMessage={regenerateMessage}
-                    showScrollButton={showScrollButton}
-                    webSearchEnabled={webSearchEnabled}
-                    onWebSearchToggle={() =>
-                      setWebSearchEnabled((prev) => !prev)
-                    }
-                    reasoningEffort={reasoningEffort}
-                    setReasoningEffort={setReasoningEffort}
-                    thinkingEnabled={thinkingEnabled}
-                    setThinkingEnabled={setThinkingEnabled}
-                    codeExecutionEnabled={
-                      canEnableCodeExecution ? codeExecutionEnabled : false
-                    }
-                    onCodeExecutionToggle={
-                      canEnableCodeExecution
-                        ? () => setCodeExecutionEnabled((prev) => !prev)
-                        : undefined
-                    }
-                    computerUseEnabled={computerUseEnabled}
-                    onComputerUseToggle={() =>
-                      setComputerUseEnabled((prev) => !prev)
-                    }
-                    computerUseModel={selectedModelDetails}
-                    onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
-                    isTemporaryMode={isTemporaryMode}
-                  />
+                  {/* Expose the live session's approve/cancel + ready images
+                      to ComputerUseConsentRenderer, which sits inside the
+                      ChatMessages tree. Without this provider a consent
+                      message renders as a read-only history record (the
+                      reload-mid-prompt case). */}
+                  <ComputerUseConsentContext.Provider
+                    value={consentContextValue}
+                  >
+                    <ChatMessages
+                      messages={currentChat?.messages || []}
+                      isDarkMode={isDarkMode}
+                      chatId={currentChat.id}
+                      isWaitingForResponse={isWaitingForResponse}
+                      isStreamingResponse={isStreaming}
+                      computerUseSession={
+                        <ComputerUseSessionThread
+                          session={computerUseSession}
+                        />
+                      }
+                      isPremium={isPremium}
+                      models={models}
+                      onSubmit={handleSubmit}
+                      input={input}
+                      setInput={setInput}
+                      loadingState={loadingState}
+                      retryInfo={retryInfo}
+                      cancelGeneration={cancelGeneration}
+                      inputRef={inputRef}
+                      handleInputFocus={handleInputFocus}
+                      handleDocumentUpload={handleFileUpload}
+                      processedDocuments={processedDocuments}
+                      removeDocument={removeDocument}
+                      selectedModel={selectedModel}
+                      handleModelSelect={handleModelSelect}
+                      expandedLabel={expandedLabel}
+                      handleLabelClick={handleLabelClick}
+                      onEditMessage={editMessage}
+                      onRegenerateMessage={regenerateMessage}
+                      showScrollButton={showScrollButton}
+                      webSearchEnabled={webSearchEnabled}
+                      onWebSearchToggle={() =>
+                        setWebSearchEnabled((prev) => !prev)
+                      }
+                      reasoningEffort={reasoningEffort}
+                      setReasoningEffort={setReasoningEffort}
+                      thinkingEnabled={thinkingEnabled}
+                      setThinkingEnabled={setThinkingEnabled}
+                      codeExecutionEnabled={
+                        canEnableCodeExecution ? codeExecutionEnabled : false
+                      }
+                      onCodeExecutionToggle={
+                        canEnableCodeExecution
+                          ? () => setCodeExecutionEnabled((prev) => !prev)
+                          : undefined
+                      }
+                      computerUseEnabled={computerUseEnabled}
+                      onComputerUseToggle={() =>
+                        setComputerUseEnabled((prev) => !prev)
+                      }
+                      onComputerUseConnect={handleComputerUseConnect}
+                      computerUseModel={selectedModelDetails}
+                      onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
+                      isTemporaryMode={isTemporaryMode}
+                    />
+                  </ComputerUseConsentContext.Provider>
                 </div>
               </div>
             </div>
@@ -3308,6 +3521,7 @@ export function ChatInterface({
                         onComputerUseToggle={() =>
                           setComputerUseEnabled((prev) => !prev)
                         }
+                        onComputerUseConnect={handleComputerUseConnect}
                         computerUseModel={selectedModelDetails}
                       />
                     </form>

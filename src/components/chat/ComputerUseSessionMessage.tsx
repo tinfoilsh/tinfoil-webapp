@@ -27,6 +27,135 @@ import {
 } from '@/services/computer-use'
 import { FaApple, FaLinux } from 'react-icons/fa'
 
+// ---------------------------------------------------------------------------
+// SessionToolbar — macOS-style window-chrome header shared by the live thread
+// and the history card. Three circular controls on the left (close / minimize /
+// maximize) match the visual macOS users expect; status text + the pulsing dot
+// sit to the right.
+//
+// Behaviors per circle:
+//   • Red    → onClose (live: cancel + tear down VM; history: disabled)
+//   • Yellow → onMinimize (live: collapse card body to just the toolbar)
+//   • Green  → reserved (future "open live view" / "maximize"); no handler.
+//
+// Hover affordances follow macOS: the ×/−/+ glyphs only show on hover of the
+// control group. When `disabled` is true the lights render at half opacity and
+// no glyphs appear — used by the history card where there's nothing to stop.
+// ---------------------------------------------------------------------------
+
+interface SessionToolbarProps {
+  /** Right-aligned status text, e.g. "Working…" or "Done". */
+  status: string
+  /** Show a pulsing green dot next to the status (live "running" only). */
+  pulse?: boolean
+  /** Click handler for the red light. Omit/disable to render non-interactive. */
+  onClose?: () => void
+  /** Click handler for the yellow light. */
+  onMinimize?: () => void
+  /**
+   * When true, lights render at half opacity and don't react to hover/click.
+   * Used by the history card (the session is over — nothing to stop/collapse).
+   */
+  disabled?: boolean
+}
+
+export function SessionToolbar({
+  status,
+  pulse,
+  onClose,
+  onMinimize,
+  disabled,
+}: SessionToolbarProps) {
+  return (
+    <div
+      className={
+        'group/lights flex items-center justify-between border-b border-border-subtle px-3 py-2'
+      }
+    >
+      <div className="flex items-center gap-1.5">
+        <TrafficLight
+          color="red"
+          symbol="×"
+          onClick={onClose}
+          disabled={disabled}
+          aria-label="Stop session"
+        />
+        <TrafficLight
+          color="yellow"
+          symbol="−"
+          onClick={onMinimize}
+          disabled={disabled}
+          aria-label="Minimize session card"
+        />
+        {/* Green: reserved for a future "open live view" / maximize. Render
+            the circle for visual parity, but don't wire a handler today. */}
+        <TrafficLight
+          color="green"
+          symbol="+"
+          disabled
+          aria-label="Maximize (reserved)"
+        />
+      </div>
+      <span className="flex items-center gap-2 text-xs font-medium text-content-secondary">
+        <span className="text-content-primary">Computer use</span>
+        <span className="text-content-muted">· {status}</span>
+        {pulse && (
+          <span className="inline-block size-2 animate-pulse rounded-full bg-green-500" />
+        )}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * One macOS-style traffic-light dot. The `×`/`−`/`+` glyph is only visible
+ * when the parent `.group/lights` is hovered (the whole light cluster reveals
+ * symbols together, matching macOS). Non-interactive when `disabled` (lower
+ * opacity, no cursor, no symbol on hover).
+ */
+function TrafficLight({
+  color,
+  symbol,
+  onClick,
+  disabled,
+  'aria-label': ariaLabel,
+}: {
+  color: 'red' | 'yellow' | 'green'
+  symbol: string
+  onClick?: () => void
+  disabled?: boolean
+  'aria-label': string
+}) {
+  const palette = {
+    red: 'bg-[#ff5f57] text-black/70',
+    yellow: 'bg-[#febc2e] text-black/70',
+    green: 'bg-[#28c840] text-black/70',
+  }[color]
+  const interactive = !disabled && Boolean(onClick)
+  return (
+    <button
+      type="button"
+      onClick={interactive ? onClick : undefined}
+      disabled={!interactive}
+      aria-label={ariaLabel}
+      className={`relative inline-flex size-3 items-center justify-center rounded-full ${palette} ${
+        interactive
+          ? 'cursor-pointer hover:brightness-95'
+          : 'cursor-default opacity-50'
+      }`}
+    >
+      {interactive && (
+        <span
+          aria-hidden
+          className="pointer-events-none text-[10px] font-bold leading-none opacity-0 group-hover/lights:opacity-100"
+        >
+          {symbol}
+        </span>
+      )}
+    </button>
+  )
+}
+
 /**
  * Render one loop event the way the live thread does: model prose, action
  * call summary, screenshot image, exec output, or error line.
@@ -98,17 +227,16 @@ export function SessionFrame({ event }: { event: LoopEvent }) {
  * Static card matching the live `ComputerUseSessionThread` shell, used by the
  * `ComputerUseSessionRenderer` to render a finished/errored session embedded
  * as a regular chat message. `error` switches the header label and shows the
- * error banner; otherwise renders the frame audit trail + (optional) final
- * summary the model produced.
+ * error banner; otherwise renders the frame audit trail (the model's final
+ * answer lives in its own assistant message right after — see the commit
+ * effect in chat-interface.tsx).
  */
 export function ComputerUseSessionCard({
   frames,
-  finalText,
   error,
   manifest,
 }: {
   frames: LoopEvent[]
-  finalText?: string
   error?: string
   /** Sandbox configuration the run was approved with; hidden when absent. */
   manifest?: CapabilityManifest
@@ -118,14 +246,9 @@ export function ComputerUseSessionCard({
     <div className="relative mx-auto mb-6 flex w-full max-w-3xl flex-col items-start">
       <div className="w-full px-4 py-2">
         <div className="overflow-hidden rounded-2xl border border-border-subtle bg-surface-chat-background">
-          <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
-            <span className="flex items-center gap-2 text-xs font-medium text-content-secondary">
-              <span className="text-content-primary">Computer use</span>
-              <span className="text-content-muted">
-                · {isError ? 'Error' : 'Done'}
-              </span>
-            </span>
-          </div>
+          {/* History card: the session is done, so the lights are decorative
+              (disabled). The user can no longer stop or collapse it. */}
+          <SessionToolbar status={isError ? 'Error' : 'Done'} disabled />
           <div className="space-y-3 px-3 py-3">
             {manifest && <SandboxConfigSummary manifest={manifest} />}
             {isError && (
@@ -136,9 +259,6 @@ export function ComputerUseSessionCard({
             {frames.map((f, i) => (
               <SessionFrame key={i} event={f} />
             ))}
-            {finalText && (
-              <p className="text-sm text-content-primary">{finalText}</p>
-            )}
           </div>
         </div>
       </div>
@@ -149,8 +269,8 @@ export function ComputerUseSessionCard({
 /**
  * Compact, collapsible read-only summary of the capability manifest the run
  * was approved with — image (with OS icon), ephemeral/persistent, windowed/
- * headless, idle timeout, mount table, egress allowlist. Default-open so the
- * user can see what was granted at a glance.
+ * headless, idle timeout, mount table, egress allowlist. Default-collapsed
+ * to keep the session card visually quiet; users click to expand.
  */
 function ConfigRow({
   label,
@@ -175,10 +295,7 @@ export function SandboxConfigSummary({
   const { session, mounts, network } = manifest
   const egress = network?.egress ?? []
   return (
-    <details
-      open
-      className="rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs"
-    >
+    <details className="rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs">
       <summary className="cursor-pointer select-none font-medium text-content-secondary">
         Sandbox config
       </summary>

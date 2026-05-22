@@ -168,6 +168,21 @@ export type Message = {
   // Rendered inline by `ComputerUseSessionRenderer` so the audit trail in
   // chat history shows what privileges the run was actually granted.
   computerUseManifest?: CapabilityManifest
+  // Computer-use consent prompt: emitted between the assistant's
+  // `computer_begin` tool call and the session card, this is the agent
+  // asking the user to approve a manifest. The chat-query builder MUST
+  // filter messages with `computerUseProposedManifest` out before sending
+  // history to the model (it's a UI artifact, not a real assistant turn —
+  // round-tripping it would have the model see its own "I'm asking for
+  // consent" turn back and get confused).
+  computerUseProposedManifest?: CapabilityManifest
+  // The model's blurb explaining why it wants the sandbox (shown above the
+  // editable manifest in the consent prompt).
+  computerUseTaskReason?: string
+  // Lifecycle of the consent prompt. `pending` means the editor is live and
+  // wired to the session's `approve()`/`cancel()`. The terminal states
+  // capture the outcome so a reload renders a static record of the choice.
+  computerUseConsentStatus?: 'pending' | 'approved' | 'cancelled'
 }
 
 export type TitleState = 'placeholder' | 'generated' | 'manual'

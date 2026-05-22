@@ -55,6 +55,8 @@ type ChatMessagesProps = {
   onCodeExecutionToggle?: () => void
   computerUseEnabled?: boolean
   onComputerUseToggle?: () => void
+  /** One-time pairing handler, for the connect banner + unpaired toggle. */
+  onComputerUseConnect?: () => Promise<boolean> | void
   computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void
   isTemporaryMode?: boolean
@@ -230,6 +232,7 @@ export function ChatMessages({
   onCodeExecutionToggle,
   computerUseEnabled,
   onComputerUseToggle,
+  onComputerUseConnect,
   computerUseModel,
   onOpenVerifier,
   isTemporaryMode,
@@ -341,6 +344,7 @@ export function ChatMessages({
             onCodeExecutionToggle={onCodeExecutionToggle}
             computerUseEnabled={computerUseEnabled}
             onComputerUseToggle={onComputerUseToggle}
+            onComputerUseConnect={onComputerUseConnect}
             computerUseModel={computerUseModel}
             onOpenVerifier={onOpenVerifier}
             isTemporaryMode={isTemporaryMode}

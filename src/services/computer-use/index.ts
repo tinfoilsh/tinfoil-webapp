@@ -41,6 +41,7 @@ export {
   type ConnectionOptions,
 } from './connection'
 export {
+  PAIR_CHANGE_EVENT,
   clearRefreshCredential,
   getRefreshCredential,
   isPaired,
@@ -104,3 +105,4 @@ export {
   type ComputerUseSessionState,
   type SessionPhase,
 } from './use-computer-use-session'
+export { usePaired } from './use-paired'

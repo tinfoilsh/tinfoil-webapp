@@ -22,17 +22,32 @@ function storage(): Storage | null {
   }
 }
 
+/**
+ * Same-tab pair-state change event. `storage` events don't fire in the tab
+ * that mutated localStorage, so we dispatch this alongside set/clear to give
+ * banner / toggle UX a single subscription that catches both paths
+ * (pairing + 401-driven clear), cross-tab and same-tab.
+ */
+export const PAIR_CHANGE_EVENT = 'tinfoil-pair-change'
+
+function emitPairChange(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new Event(PAIR_CHANGE_EVENT))
+}
+
 export function getRefreshCredential(): string | null {
   return storage()?.getItem(STORAGE_KEY) ?? null
 }
 
 export function setRefreshCredential(credential: string): void {
   storage()?.setItem(STORAGE_KEY, credential)
+  emitPairChange()
 }
 
 /** Forget the credential (revoked / re-pair). */
 export function clearRefreshCredential(): void {
   storage()?.removeItem(STORAGE_KEY)
+  emitPairChange()
 }
 
 export function isPaired(): boolean {
