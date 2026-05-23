@@ -1,12 +1,12 @@
 import { fetchLinkMetadata } from '@/services/inference/metadata-client'
 import { useEffect, useState } from 'react'
 
-// Module-level cache of favicon object URLs keyed by page URL. Keeps
-// remounts — for example, when react-markdown re-parses a streaming
-// message and recreates citation pills — from flashing back through
-// the loading placeholder before re-resolving an icon the browser has
-// already decoded.
-const RESOLVED_FAVICON_URLS = new Map<string, string>()
+// Module-level cache of resolved favicon data URLs keyed by page URL.
+// Keeps remounts — for example, when react-markdown re-parses a
+// streaming message and recreates citation pills — from flashing back
+// through the loading placeholder once the icon has already been
+// fetched.
+const RESOLVED_FAVICON_DATA_URLS = new Map<string, string>()
 const FAILED_FAVICONS = new Set<string>()
 
 type FaviconState = 'loading' | 'ready' | 'error'
@@ -17,17 +17,20 @@ interface ResolvedFavicon {
 }
 
 function initialResolved(url: string): ResolvedFavicon {
-  if (FAILED_FAVICONS.has(url)) return { src: '', state: 'error' }
-  const existing = RESOLVED_FAVICON_URLS.get(url)
+  const existing = RESOLVED_FAVICON_DATA_URLS.get(url)
   if (existing) return { src: existing, state: 'ready' }
+  if (FAILED_FAVICONS.has(url)) return { src: '', state: 'error' }
   return { src: '', state: 'loading' }
 }
 
 /**
  * Favicon <img> that loads the icon through the attested metadata
- * enclave. The bytes are fetched as part of the standard `/metadata`
- * response, decoded into a Blob, and exposed as an object URL so the
- * browser never reaches an external icon host directly.
+ * enclave. The bytes come back inlined in the `/metadata` response and
+ * are rendered as a `data:` URL so the browser never reaches an
+ * external icon host directly. Using a `data:` URL keeps the lifecycle
+ * trivial: there's no Blob to allocate and no `URL.createObjectURL`
+ * handle to revoke, so two concurrent components rendering the same
+ * favicon can never invalidate each other's source.
  */
 interface FaviconProps extends Omit<
   React.ImgHTMLAttributes<HTMLImageElement>,
@@ -63,7 +66,7 @@ export function Favicon({
     let cancelled = false
     setResolved(initialResolved(url))
 
-    if (FAILED_FAVICONS.has(url) || RESOLVED_FAVICON_URLS.has(url)) {
+    if (RESOLVED_FAVICON_DATA_URLS.has(url) || FAILED_FAVICONS.has(url)) {
       return () => {
         cancelled = true
       }
@@ -72,24 +75,13 @@ export function Favicon({
     fetchLinkMetadata(url)
       .then((metadata) => {
         if (cancelled) return
-        if (!metadata.faviconBytes) {
+        if (!metadata.faviconDataUrl) {
           FAILED_FAVICONS.add(url)
           setResolved({ src: '', state: 'error' })
           return
         }
-        // Reuse a cached object URL when one already exists for this
-        // page. Two concurrent Favicon instances (for example a preview
-        // and the dialog list) would otherwise each create a fresh
-        // object URL and revoke the other's, leaving one of them
-        // pointing at an invalid blob.
-        let objectURL = RESOLVED_FAVICON_URLS.get(url)
-        if (!objectURL) {
-          const contentType = metadata.faviconContentType ?? 'image/x-icon'
-          const blob = new Blob([metadata.faviconBytes], { type: contentType })
-          objectURL = URL.createObjectURL(blob)
-          RESOLVED_FAVICON_URLS.set(url, objectURL)
-        }
-        setResolved({ src: objectURL, state: 'ready' })
+        RESOLVED_FAVICON_DATA_URLS.set(url, metadata.faviconDataUrl)
+        setResolved({ src: metadata.faviconDataUrl, state: 'ready' })
       })
       .catch(() => {
         if (cancelled) return
