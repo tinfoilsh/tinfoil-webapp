@@ -280,6 +280,22 @@ export async function getSessionToken(): Promise<string> {
 }
 
 /**
+ * Returns a fetch bound to the shared attested SecureClient so callers
+ * outside the OpenAI SDK (e.g. document upload) can reuse the same
+ * verified channel instead of running attestation a second time.
+ *
+ * Falls back to the global fetch in dev mode, where requests are routed
+ * through the local proxy and SecureClient is intentionally not created.
+ */
+export async function getSecureFetch(): Promise<typeof fetch> {
+  await ensureInitialized()
+  if (!secureClient) {
+    return fetch
+  }
+  return secureClient.fetch
+}
+
+/**
  * Lazily build the OpenAI client (and SecureClient on prod) the first
  * time anything needs them, and rebuild on session-token rotation.
  */
