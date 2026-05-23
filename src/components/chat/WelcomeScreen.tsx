@@ -317,7 +317,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
 
   return (
     <motion.div
-      className={`flex w-full justify-center ${privacyExpanded ? 'items-start' : 'min-h-[60vh] items-center md:min-h-0 md:items-start'}`}
+      className="flex w-full items-start justify-center"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{
