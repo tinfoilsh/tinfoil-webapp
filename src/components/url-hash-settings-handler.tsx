@@ -40,6 +40,7 @@ export function UrlHashSettingsHandler({
         'general',
         'chat',
         'personalization',
+        'prompts',
         'cloud-sync',
         'import',
         'export',

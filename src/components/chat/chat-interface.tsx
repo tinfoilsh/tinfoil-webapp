@@ -88,6 +88,7 @@ import { AskSidebar } from './ask-sidebar'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import { ChatSidebar } from './chat-sidebar'
+import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { useDocumentUploader } from './document-uploader'
 import { DragProvider } from './drag-context'
@@ -102,6 +103,7 @@ import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
 import { useMaxMessages } from './hooks/use-max-messages'
 import { useMessageQueue } from './hooks/use-message-queue'
+import { usePromptLibrary } from './hooks/use-prompt-library'
 import {
   isReasoningModel,
   supportsReasoningEffort,
@@ -151,6 +153,10 @@ const SettingsModalLazy = dynamic(
 )
 const ShareModalLazy = dynamic(
   () => import('./share-modal').then((m) => m.ShareModal),
+  { ssr: false },
+)
+const PromptLibraryModalLazy = dynamic(
+  () => import('./prompt-library-modal').then((m) => m.PromptLibraryModal),
   { ssr: false },
 )
 
@@ -563,9 +569,19 @@ export function ChatInterface({
   const modKey = isMac ? '⌘' : 'Ctrl+'
   const shiftKey = isMac ? '⇧' : 'Shift+'
 
+  // Prompt library: per-chat preset that overrides the default system prompt.
+  // activePresetId mirrors currentChat.presetId and is kept in sync via an
+  // effect after useChatState resolves currentChat below.
+  const [activePresetId, setActivePresetId] = useState<string | null>(null)
+  const [isPromptLibraryModalOpen, setIsPromptLibraryModalOpen] =
+    useState(false)
+  const { getPresetById } = usePromptLibrary()
+  const activePreset = getPresetById(activePresetId)
+
   const { effectiveSystemPrompt, processedRules } = useCustomSystemPrompt(
     systemPrompt,
     rules,
+    activePreset?.systemPrompt ?? null,
   )
 
   // Use project system prompt hook to inject project context
@@ -782,6 +798,43 @@ export function ChatInterface({
   })
 
   const isTemporaryMode = currentChat?.isTemporary === true
+
+  useEffect(() => {
+    setActivePresetId(currentChat?.presetId ?? null)
+  }, [currentChat?.id, currentChat?.presetId])
+
+  const handleSetActivePreset = useCallback(
+    (presetId: string | null) => {
+      setActivePresetId(presetId)
+      if (!currentChat) return
+      const updatedChat: Chat = {
+        ...currentChat,
+        presetId: presetId ?? undefined,
+      }
+      setCurrentChat(updatedChat)
+      setChats((prev) =>
+        prev.map((c) => (c.id === currentChat.id ? updatedChat : c)),
+      )
+      const storeHistory = isSignedIn || !isCloudSyncEnabled()
+      if (!updatedChat.isTemporary && storeHistory) {
+        chatStorage.saveChat(updatedChat).catch((err) => {
+          logError('Failed to persist prompt preset selection', err, {
+            component: 'ChatInterface',
+            metadata: { chatId: updatedChat.id, presetId },
+          })
+        })
+      }
+    },
+    [currentChat, setCurrentChat, setChats, isSignedIn],
+  )
+
+  const handleOpenPromptLibrary = useCallback(() => {
+    setIsPromptLibraryModalOpen(true)
+  }, [])
+
+  const handleClosePromptLibrary = useCallback(() => {
+    setIsPromptLibraryModalOpen(false)
+  }, [])
 
   const isRateLimited = useCallback(
     () => Boolean(rateLimit && rateLimit.remaining <= 0),
@@ -1499,6 +1552,7 @@ export function ChatInterface({
       createdAt: new Date(),
       isBlankChat: true,
       isTemporary: true,
+      presetId: currentChat?.presetId,
     }
     setCurrentChat(tempChat)
   }, [
@@ -2806,6 +2860,24 @@ export function ChatInterface({
         chatId={currentChat?.id}
       />
 
+      {/* Prompt Library Modal */}
+      <PromptLibraryModalLazy
+        isOpen={isPromptLibraryModalOpen}
+        onClose={handleClosePromptLibrary}
+        activePresetId={activePresetId}
+        onSelectPreset={handleSetActivePreset}
+        isSidebarOpen={
+          isSidebarOpen && windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
+        }
+        isRightSidebarOpen={
+          (isVerifierSidebarOpen ||
+            isSettingsModalOpen ||
+            isAskSidebarOpen ||
+            isArtifactSidebarOpen) &&
+          windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
+        }
+      />
+
       {/* Settings Modal */}
       <SettingsModalLazy
         isOpen={isSettingsModalOpen}
@@ -2994,6 +3066,9 @@ export function ChatInterface({
                     }
                     onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
                     isTemporaryMode={isTemporaryMode}
+                    activePromptPreset={activePreset}
+                    onOpenPromptLibrary={handleOpenPromptLibrary}
+                    onSelectPromptPreset={handleSetActivePreset}
                   />
                 </div>
               </div>
@@ -3035,6 +3110,15 @@ export function ChatInterface({
                       onSubmit={handleSubmit}
                       className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8"
                     >
+                      {!currentChat?.messages?.length && (
+                        <div className="mb-3 md:hidden">
+                          <PromptPresetSuggestions
+                            activePreset={activePreset}
+                            onSetActive={handleSetActivePreset}
+                            onOpenLibrary={handleOpenPromptLibrary}
+                          />
+                        </div>
+                      )}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
@@ -3056,6 +3140,9 @@ export function ChatInterface({
                         quote={quote}
                         onClearQuote={() => setQuote(null)}
                         isTemporaryMode={isTemporaryMode}
+                        activePromptPreset={activePreset}
+                        onOpenPromptLibrary={handleOpenPromptLibrary}
+                        onClearPromptPreset={() => handleSetActivePreset(null)}
                         hasMessages={
                           currentChat?.messages &&
                           currentChat.messages.length > 0

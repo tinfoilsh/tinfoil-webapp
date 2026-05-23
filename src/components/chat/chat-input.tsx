@@ -9,6 +9,7 @@ import {
   FolderIcon,
   MicrophoneIcon,
   StopIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline'
 import type { FormEvent, RefObject } from 'react'
 import {
@@ -30,6 +31,7 @@ import {
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
 import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
+import type { PromptPreset } from './prompts/types'
 import type { ProcessedDocument } from './renderers/types'
 import type { LoadingState } from './types'
 
@@ -58,6 +60,9 @@ type ChatInputProps = {
   quote?: string | null
   onClearQuote?: () => void
   isTemporaryMode?: boolean
+  activePromptPreset?: PromptPreset | null
+  onOpenPromptLibrary?: () => void
+  onClearPromptPreset?: () => void
 }
 
 // Maximum number of characters displayed in the collapsed quote preview.
@@ -88,6 +93,9 @@ export function ChatInput({
   quote,
   onClearQuote,
   isTemporaryMode,
+  activePromptPreset,
+  onOpenPromptLibrary,
+  onClearPromptPreset,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsScrollRef = useRef<HTMLDivElement>(null)
@@ -466,6 +474,39 @@ export function ChatInput({
             </div>
           </div>
         )}
+        {/* Prompt preset tab - shows the active prompt for this chat */}
+        {activePromptPreset &&
+          (() => {
+            const ActivePresetIcon = activePromptPreset.Icon
+            return (
+              <div className="pointer-events-none absolute left-8 top-px z-10 -translate-y-full">
+                <div className="pointer-events-auto inline-flex items-center gap-1 rounded-t-lg border border-b-0 border-border-subtle bg-surface-chat px-2.5 py-1 text-content-secondary">
+                  <button
+                    type="button"
+                    onClick={onOpenPromptLibrary}
+                    disabled={!onOpenPromptLibrary}
+                    className="flex items-center gap-1.5 transition-colors hover:text-content-primary"
+                    aria-label={`Change prompt (currently ${activePromptPreset.name})`}
+                  >
+                    <ActivePresetIcon className="h-3 w-3" />
+                    <span className="text-xs font-medium">
+                      {activePromptPreset.name}
+                    </span>
+                  </button>
+                  {onClearPromptPreset && (
+                    <button
+                      type="button"
+                      onClick={onClearPromptPreset}
+                      aria-label="Stop using this prompt"
+                      className="ml-0.5 rounded-full p-0.5 transition-colors hover:text-content-primary"
+                    >
+                      <XMarkIcon className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
         <div
           className={cn(
             'rounded-3xl border bg-surface-chat px-3 py-3 shadow-md transition-colors md:rounded-4xl md:px-6 md:py-4',

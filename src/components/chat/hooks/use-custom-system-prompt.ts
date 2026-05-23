@@ -28,6 +28,7 @@ type UseCustomSystemPromptReturn = {
 export const useCustomSystemPrompt = (
   defaultSystemPrompt: string,
   rules: string = '',
+  activePresetPrompt?: string | null,
 ): UseCustomSystemPromptReturn => {
   const [personalization, setPersonalization] =
     useState<PersonalizationSettings>({
@@ -232,9 +233,15 @@ export const useCustomSystemPrompt = (
 
   // Generate the effective system prompt by replacing the placeholder
   const generatePersonalizedPrompt = (): string => {
-    // Use custom prompt if enabled
-    const basePrompt =
-      isUsingCustomPrompt && customPrompt ? customPrompt : defaultSystemPrompt
+    // Precedence: per-chat preset override > custom prompt toggle > default
+    let basePrompt: string
+    if (activePresetPrompt && activePresetPrompt.trim()) {
+      basePrompt = activePresetPrompt
+    } else if (isUsingCustomPrompt && customPrompt) {
+      basePrompt = customPrompt
+    } else {
+      basePrompt = defaultSystemPrompt
+    }
     return replacePlaceholders(basePrompt)
   }
 

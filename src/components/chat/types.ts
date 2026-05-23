@@ -177,6 +177,9 @@ export type Chat = {
   pendingSave?: boolean
   // Project association - when set, chat belongs to a project
   projectId?: string
+  // Prompt library preset association - when set, this preset's system
+  // prompt overrides the default for this chat.
+  presetId?: string
   // For code execution.
   codeExecutionAccessToken?: string
 }
