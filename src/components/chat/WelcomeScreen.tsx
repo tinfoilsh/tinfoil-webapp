@@ -571,6 +571,13 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   codeExecutionEnabled={codeExecutionEnabled}
                   onCodeExecutionToggle={onCodeExecutionToggle}
                   isTemporaryMode={isTemporaryMode}
+                  activePromptPreset={activePromptPreset}
+                  onOpenPromptLibrary={onOpenPromptLibrary}
+                  onClearPromptPreset={
+                    onSelectPromptPreset
+                      ? () => onSelectPromptPreset(null)
+                      : undefined
+                  }
                 />
               </motion.div>
             )}
