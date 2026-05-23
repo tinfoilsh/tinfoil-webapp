@@ -1551,6 +1551,7 @@ export function ChatInterface({
       createdAt: new Date(),
       isBlankChat: true,
       isTemporary: true,
+      presetId: currentChat?.presetId,
     }
     setCurrentChat(tempChat)
   }, [
