@@ -39,9 +39,11 @@ import {
   keyCurrent as enclaveKeyCurrent,
   registerKey as enclaveRegisterKey,
   removeBundle as enclaveRemoveBundle,
+  hexToB64,
   newIdempotencyKey,
 } from '../sync-enclave/sync-api'
 import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
+import { IF_MATCH_SENTINELS, WIRE_CODES } from '../sync-enclave/wire-contract'
 import { fetchLegacyPasskeyCredentials } from './legacy-passkey-credentials'
 
 const AES_GCM_IV_BYTES = 12
@@ -165,10 +167,16 @@ function reshapeBundleToEntry(bundle: {
   created_at?: string
 }): PasskeyCredentialEntry {
   const bundleVersion = bundle.bundle_version ?? 1
+  // The enclave wire carries kek_iv / encrypted_keys as hex
+  // (matching BundleBody), but PasskeyCredentialEntry is the legacy
+  // base64-flavoured shape that decryptKeyBundle / use-passkey-backup
+  // consume. Convert at this boundary so the entry contract stays
+  // uniform with the values coming back from
+  // fetchLegacyPasskeyCredentials.
   return {
     id: bundle.credential_id,
-    iv: bundle.kek_iv,
-    encrypted_keys: bundle.encrypted_keys,
+    iv: hexToB64(bundle.kek_iv),
+    encrypted_keys: hexToB64(bundle.encrypted_keys),
     created_at: bundle.created_at ?? new Date(0).toISOString(),
     version: CURRENT_CREDENTIAL_VERSION,
     sync_version: bundleVersion,
@@ -302,7 +310,7 @@ export async function storeEncryptedKeys(
       try {
         await enclaveRegisterKey({
           keyB64: bytesToBase64(primaryBytes),
-          ifMatch: '*',
+          ifMatch: IF_MATCH_SENTINELS.AnyKey,
           createdVia:
             keys.authorizationMode === 'explicit_start_fresh'
               ? 'start_fresh'
@@ -317,7 +325,7 @@ export async function storeEncryptedKeys(
       } catch (err) {
         if (
           err instanceof SyncEnclaveError &&
-          err.code === 'EXISTING_DATA_UNDER_OTHER_KEY'
+          err.code === WIRE_CODES.ExistingDataUnderOtherKey
         ) {
           throw new PasskeyCredentialConflictError(
             'Remote key already exists under a different CEK; recover first.',
@@ -346,7 +354,7 @@ export async function storeEncryptedKeys(
         // guard firing.
         await enclaveRegisterKey({
           keyB64: bytesToBase64(primaryBytes),
-          ifMatch: current.etag || '*',
+          ifMatch: current.etag || IF_MATCH_SENTINELS.AnyKey,
           createdVia: 'start_fresh',
           idempotencyKey: newIdempotencyKey(),
           initialBundle: {
@@ -432,8 +440,8 @@ async function tryRetrieveFromEnclave(
     const bundle = resp.bundles[credentialId]
     if (!bundle) return null
     return await decryptKeyBundle(kek, {
-      iv: bundle.kek_iv,
-      data: bundle.encrypted_keys,
+      iv: hexToB64(bundle.kek_iv),
+      data: hexToB64(bundle.encrypted_keys),
     })
   } catch (err) {
     if (err instanceof SyncEnclaveError && err.status === 404) return null

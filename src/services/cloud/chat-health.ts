@@ -35,15 +35,17 @@ export type ChatHealth = 'HEALTHY' | 'UNREACHABLE' | 'LOST'
  *
  * - A chat with `dataCorrupted: true` is permanently LOST: the server
  *   bytes do not decrypt under any known key.
- * - A chat with `decryptionFailed: true` and preserved `encryptedData`
- *   is UNREACHABLE: we have the ciphertext, the user may yet recover
- *   the key (passkey unlock, manual key entry), so the right move is
- *   to retry, not to surface as terminal.
+ * - A chat with `decryptionFailed: true` OR preserved `encryptedData`
+ *   (without plaintext) is UNREACHABLE: we have the ciphertext, the
+ *   user may yet recover the key (passkey unlock, manual key entry),
+ *   so the right move is to retry, not to surface as terminal. The
+ *   `encryptedData` check catches rows rehydrated from storage where
+ *   the boolean flag was never persisted but the ciphertext blob was.
  * - Everything else (decoded title, decoded messages) is HEALTHY.
  */
 export function chatHealth(chat: StoredChat): ChatHealth {
   if (chat.dataCorrupted) return 'LOST'
-  if (chat.decryptionFailed) return 'UNREACHABLE'
+  if (chat.decryptionFailed || chat.encryptedData) return 'UNREACHABLE'
   return 'HEALTHY'
 }
 

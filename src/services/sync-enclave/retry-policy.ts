@@ -78,10 +78,7 @@ export async function runWithRetry<T>(
   // Clamp to at least one attempt so a caller passing 0 (or a
   // negative override) cannot skip execution entirely and end up
   // throwing `undefined` from the empty for-loop tail.
-  const maxAttempts = Math.max(
-    1,
-    config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
-  )
+  const maxAttempts = Math.max(1, config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)
   const scheduler = config.scheduler ?? realScheduler
 
   let lastError: unknown
@@ -91,14 +88,20 @@ export async function runWithRetry<T>(
     } catch (err) {
       lastError = err
       const isLast = attempt === maxAttempts - 1
-      if (isLast || !shouldRetry(err, attempt)) break
-      const delayMs = computeBackoffDelay(
-        attempt,
-        baseDelayMs,
-        maxDelayMs,
-        scheduler.random(),
-      )
+      const willRetry = !isLast && shouldRetry(err, attempt)
+      const delayMs = willRetry
+        ? computeBackoffDelay(
+            attempt,
+            baseDelayMs,
+            maxDelayMs,
+            scheduler.random(),
+          )
+        : 0
+      // Hook fires on every observed failure, retriable or not, so
+      // callers can count terminal/final errors in the same metric
+      // stream as the transient ones.
       config.onAttemptFailed?.({ attempt, delayMs, error: err })
+      if (!willRetry) break
       await scheduler.sleep(delayMs)
     }
   }

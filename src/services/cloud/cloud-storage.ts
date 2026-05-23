@@ -19,14 +19,17 @@ import {
   pullItemPlaintext,
   type ListStatusUpdate,
 } from '../sync-enclave/sync-api'
+import { RESTORE_DELETED_HEADERS } from '../sync-enclave/wire-contract'
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import { processRemoteChat, type RemoteChatData } from './chat-codec'
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
 const AUTH_INIT_WAIT_MS = 3000
-const RESTORE_DELETED_CHAT_HEADER = 'X-Restore-Deleted-Chat'
+const RESTORE_DELETED_CHAT_HEADER = RESTORE_DELETED_HEADERS.Chat
 const ENCLAVE_CHAT_LIST_LIMIT = 100
+const LEGACY_ATTACHMENT_GONE_STATUS = 410
+const ATTACHMENT_IDEMPOTENCY_KEY_BYTES = 16
 
 /**
  * Lean chat list entry. Anything the caller needs beyond (id,
@@ -41,6 +44,7 @@ export interface ChatListResponse {
   conversations: Array<{
     id: string
     updatedAt: string
+    syncVersion: number
     content?: string
     projectId?: string
   }>
@@ -57,6 +61,7 @@ export interface ProfileSyncStatus {
   exists: boolean
   version?: number
   lastUpdated?: string
+  deleted?: boolean
 }
 
 export interface BulkConversationResult {
@@ -86,15 +91,21 @@ export interface UploadChatOptions {
 }
 
 export type RawChatContent =
-  | { content: string; formatVersion: 0 }
-  | { binaryContent: ArrayBuffer; formatVersion: 1 }
+  | { content: string; formatVersion: 0; syncVersion?: number }
+  | { binaryContent: ArrayBuffer; formatVersion: 1; syncVersion?: number }
   /**
    * Plaintext envelope-v2 JSON returned by the sync enclave. The `2`
    * here mirrors the wire `tinfoil-sync-envelope-v2` AAD (see
    * syncplan.md §5) — the row is sealed under v2 on the controlplane,
    * the enclave unsealed it, so what we hand back is plaintext.
    */
-  | { plaintext: string; formatVersion: 2 }
+  | { plaintext: string; formatVersion: 2; syncVersion?: number }
+
+function etagToSyncVersion(etag: string | undefined): number | undefined {
+  if (!etag) return undefined
+  const parsed = parseInt(etag, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+}
 
 function chatUpdateToMeta(
   update: ListStatusUpdate,
@@ -102,6 +113,7 @@ function chatUpdateToMeta(
   return {
     id: update.id,
     updatedAt: update.updated_at,
+    syncVersion: etagToSyncVersion(update.etag) ?? 1,
     projectId: update.project_id ?? undefined,
   }
 }
@@ -112,6 +124,25 @@ function chatUpdateToMeta(
 // field as carefully as today's `pickNextCursor` does.
 function hasNextCursor(cursor: string | undefined): boolean {
   return typeof cursor === 'string' && cursor.length > 0
+}
+
+async function attachmentIdempotencyKey(
+  uploadIdempotencyKey: string,
+  attachmentIndex: number,
+): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(
+        `attachment:${uploadIdempotencyKey}:${attachmentIndex}`,
+      ),
+    ),
+  )
+  let out = ''
+  for (let i = 0; i < ATTACHMENT_IDEMPOTENCY_KEY_BYTES; i++) {
+    out += digest[i].toString(16).padStart(2, '0')
+  }
+  return out
 }
 
 function stripBase64FromMessages(messages: Message[]): Message[] {
@@ -171,7 +202,7 @@ export class CloudStorageService {
   async uploadChat(
     chat: StoredChat,
     options: UploadChatOptions = {},
-  ): Promise<string | null> {
+  ): Promise<number | null> {
     // §9.6 R6 — the user's opt-out is invariant: a chat marked
     // localOnly MUST NEVER reach the enclave. Throw rather than
     // silently drop so an upstream caller bug is caught instead of
@@ -183,7 +214,8 @@ export class CloudStorageService {
     }
     const messages: Message[] = (chat.messages as Message[]) || []
 
-    await this.encryptAndUploadAttachments(messages, chat.id)
+    const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
+    await this.encryptAndUploadAttachments(messages, chat.id, idempotencyKey)
     const strippedChat = {
       ...chat,
       messages: stripBase64FromMessages(messages),
@@ -202,26 +234,28 @@ export class CloudStorageService {
       metadata.restoreDeleted = true
     }
 
-    await enclavePush({
+    const pushResp = await enclavePush({
       scope: 'chat',
       id: chat.id,
       keyB64: requirePrimaryKeyB64(),
       plaintext,
       ifMatch: options.restoreDeleted ? null : String(chat.syncVersion ?? 0),
-      idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
+      idempotencyKey,
       metadata,
     })
 
-    return null
+    return etagToSyncVersion(pushResp.etag) ?? null
   }
 
   private async encryptAndUploadAttachments(
     messages: Message[],
     chatId: string,
+    idempotencyKey: string,
   ): Promise<void> {
+    let attachmentIndex = 0
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
-        if (att.type === 'image' && att.base64) {
+        if (att.type === 'image' && att.base64 && !att.encryptionKey) {
           const raw = base64ToUint8Array(att.base64)
           // The enclave mints both the durable attachment id and a
           // fresh per-attachment AES-256 key. It uploads the raw
@@ -234,13 +268,19 @@ export class CloudStorageService {
           // confidential at rest; this is also how sharing keeps
           // working — re-sealing only the chat plaintext for a
           // recipient hands them every attachment key transitively.
+          const attachmentIdemKey = await attachmentIdempotencyKey(
+            idempotencyKey,
+            attachmentIndex,
+          )
           const { id: enclaveID, att_key } = await enclaveAttachmentPut({
             chatId,
             plaintext: raw,
+            idempotencyKey: attachmentIdemKey,
           })
           att.id = enclaveID
           att.encryptionKey = att_key
         }
+        attachmentIndex++
       }
     }
   }
@@ -308,13 +348,14 @@ export class CloudStorageService {
     const item = resp.items[0]
     if (!item || !item.ok) {
       if (item && item.code === 'NOT_FOUND') return null
-      return null
+      throw new Error(item?.code || 'Failed to pull chat from sync enclave')
     }
     const plaintext = pullItemPlaintext(item)
     if (!plaintext) return null
     return {
       plaintext: new TextDecoder().decode(plaintext),
       formatVersion: 2,
+      syncVersion: etagToSyncVersion(item.etag),
     }
   }
 
@@ -328,14 +369,25 @@ export class CloudStorageService {
 
       const remote: RemoteChatData =
         raw.formatVersion === 2
-          ? { id: chatId, plaintext: raw.plaintext, formatVersion: 2 }
+          ? {
+              id: chatId,
+              plaintext: raw.plaintext,
+              formatVersion: 2,
+              syncVersion: raw.syncVersion,
+            }
           : raw.formatVersion === 1
             ? {
                 id: chatId,
                 binaryContent: raw.binaryContent,
                 formatVersion: 1,
+                syncVersion: raw.syncVersion,
               }
-            : { id: chatId, content: raw.content, formatVersion: 0 }
+            : {
+                id: chatId,
+                content: raw.content,
+                formatVersion: 0,
+                syncVersion: raw.syncVersion,
+              }
 
       const result = await processRemoteChat(remote)
       return result.chat
@@ -345,40 +397,15 @@ export class CloudStorageService {
         action: 'downloadChat',
         metadata: { chatId },
       })
-      return null
+      throw error
     }
-  }
-
-  /**
-   * Fetch a single encrypted attachment blob by ID.
-   */
-  async fetchAttachment(attachmentId: string): Promise<ArrayBuffer | null> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/attachment/${attachmentId}`,
-    )
-
-    if (response.status === 404) {
-      return null
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to fetch attachment ${attachmentId}: ${response.statusText}`,
-      )
-    }
-
-    return response.arrayBuffer()
   }
 
   /**
    * Fetch and decrypt all image attachments that have no base64 yet.
-   * Every attachment carries its own AES-256 key in
-   * `att.encryptionKey`. We try the buckets-backed read first
-   * (through the enclave); on 404 we fall back to the legacy
-   * controlplane public BYTEA endpoint, which still holds bytes for
-   * attachments that haven't been promoted yet. The same key
-   * unlocks both — the rewrap path reuses the per-attachment key as
-   * the buckets slot key when it promotes a legacy row.
+   * V2 attachments carry their own AES-256 key in `att.encryptionKey`;
+   * legacy attachments use the public storage route plus the same key
+   * material from older chat JSON.
    *
    * Returns a map of attachmentId -> base64 string so the caller
    * can merge results into the current (possibly updated) messages
@@ -398,30 +425,27 @@ export class CloudStorageService {
         }
         const attId = att.id
         const keyB64 = att.encryptionKey
-        if (!keyB64) {
+        const legacyKeyB64 = (att as { key?: string }).key
+        if (!keyB64 && !legacyKeyB64) {
           continue
         }
         tasks.push(
           (async () => {
             try {
-              const plaintext = await enclaveAttachmentGet({
-                id: attId,
-                attKeyB64: keyB64,
-              })
+              let plaintext: Uint8Array | null = null
+              if (keyB64) {
+                plaintext = await enclaveAttachmentGet({
+                  id: attId,
+                  attKeyB64: keyB64,
+                })
+              } else if (legacyKeyB64) {
+                plaintext = await this.fetchLegacyAttachment(
+                  attId,
+                  legacyKeyB64,
+                )
+              }
+              if (!plaintext) return
               results[attId] = uint8ArrayToBase64(plaintext)
-              return
-            } catch {
-              // fall through to legacy path
-            }
-            try {
-              const encryptedBuf = await this.fetchAttachment(attId)
-              if (!encryptedBuf) return
-              const keyBytes = base64ToUint8Array(keyB64)
-              const decrypted = await decryptAttachment(
-                new Uint8Array(encryptedBuf),
-                keyBytes,
-              )
-              results[attId] = uint8ArrayToBase64(decrypted)
             } catch {
               // Silently skip failed attachments — thumbnail is still available
             }
@@ -432,6 +456,20 @@ export class CloudStorageService {
 
     await Promise.all(tasks)
     return results
+  }
+
+  private async fetchLegacyAttachment(
+    attachmentId: string,
+    keyB64: string,
+  ): Promise<Uint8Array> {
+    const response = await fetch(
+      `${API_BASE_URL}/api/storage/attachment/${attachmentId}`,
+    )
+    if (!response.ok || response.status === LEGACY_ATTACHMENT_GONE_STATUS) {
+      throw new Error(`Failed to fetch legacy attachment: ${response.status}`)
+    }
+    const encrypted = new Uint8Array(await response.arrayBuffer())
+    return decryptAttachment(encrypted, base64ToUint8Array(keyB64))
   }
 
   async listChats(options?: {
@@ -469,15 +507,33 @@ export class CloudStorageService {
       ids: conversations.map((c) => c.id),
       keys,
     })
-    const plaintextById = new Map<string, string>()
+    const pulledById = new Map<
+      string,
+      { content: string; syncVersion?: number }
+    >()
     for (const item of pulled.items) {
+      if (!item.ok) {
+        if (item.code === 'NOT_FOUND') {
+          continue
+        }
+        throw new Error(item.code || 'Failed to pull chat from sync enclave')
+      }
       const plaintext = item.ok ? pullItemPlaintext(item) : null
       if (plaintext) {
-        plaintextById.set(item.id, new TextDecoder().decode(plaintext))
+        pulledById.set(item.id, {
+          content: new TextDecoder().decode(plaintext),
+          syncVersion: etagToSyncVersion(item.etag),
+        })
       }
     }
     for (const conversation of conversations) {
-      conversation.content = plaintextById.get(conversation.id)
+      const pulled = pulledById.get(conversation.id)
+      if (pulled) {
+        conversation.content = pulled.content
+        if (pulled.syncVersion) {
+          conversation.syncVersion = pulled.syncVersion
+        }
+      }
     }
   }
 
@@ -504,10 +560,16 @@ export class CloudStorageService {
         limit: 500,
       })
       for (const update of status.updates) {
+        // Unconditional delete (ifMatch: null) matches single-chat
+        // `deleteChat` and the "nuke everything" semantic of this
+        // entry point. A CAS-guarded delete would 412 on any chat
+        // that was concurrently written between the listStatus page
+        // and the delete, aborting the whole loop and leaving the
+        // tail of pending pages un-deleted.
         await enclaveDeleteRow({
           scope: 'chat',
           id: update.id,
-          ifMatch: update.etag,
+          ifMatch: null,
           idempotencyKey: newIdempotencyKey(),
           keyB64: requirePrimaryKeyB64(),
         })
@@ -540,20 +602,6 @@ export class CloudStorageService {
       cursor = status.next_cursor
     } while (cursor)
     return { count, lastUpdated }
-  }
-
-  async getProfileSyncStatus(): Promise<ProfileSyncStatus> {
-    const response = await fetch(`${API_BASE_URL}/api/profile/sync-status`, {
-      headers: await this.getHeaders(),
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to get profile sync status: ${response.statusText}`,
-      )
-    }
-
-    return response.json()
   }
 
   /**

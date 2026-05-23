@@ -82,13 +82,14 @@ describe('sync-api (enclave JSON-RPC)', () => {
     expect(body.keys).toHaveLength(1)
   })
 
-  it('listStatus posts /v1/sync/list-status with scope', async () => {
+  it('listStatus posts /v1/sync/list-status with scope and project filter', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
     mockFetch.mockResolvedValueOnce(ok({ updates: [], deletes: [] }))
-    await api.listStatus({ scope: 'chat' })
+    await api.listStatus({ scope: 'chat', projectId: 'proj_1' })
     expect(lastRequest()[0]).toBe('/v1/sync/list-status')
-    const body = lastBody<{ scope: string }>()
+    const body = lastBody<{ scope: string; project_id: string }>()
     expect(body.scope).toBe('chat')
+    expect(body.project_id).toBe('proj_1')
   })
 
   it('deleteRow posts /v1/sync/delete with key + idempotency', async () => {
@@ -105,6 +106,27 @@ describe('sync-api (enclave JSON-RPC)', () => {
     const body = lastBody<{ if_match: string; idempotency_key: string }>()
     expect(body.if_match).toBe('7')
     expect(body.idempotency_key).toBe('del-1')
+  })
+
+  it('attachmentPut posts idempotency key', async () => {
+    const api = await import('@/services/sync-enclave/sync-api')
+    mockFetch.mockResolvedValueOnce(
+      ok({ ok: true, id: 'att-1', att_key: 'att-key' }),
+    )
+    await api.attachmentPut({
+      chatId: 'chat-1',
+      plaintext: new Uint8Array([1, 2, 3]),
+      idempotencyKey: 'att-idem-1',
+    })
+    expect(lastRequest()[0]).toBe('/v1/attachment/put')
+    const body = lastBody<{
+      chat_id: string
+      plaintext: string
+      idempotency_key: string
+    }>()
+    expect(body.chat_id).toBe('chat-1')
+    expect(body.plaintext).toBe(api.bytesToBase64(new Uint8Array([1, 2, 3])))
+    expect(body.idempotency_key).toBe('att-idem-1')
   })
 
   it('registerKey posts /v1/key/register with initial bundle', async () => {
@@ -134,14 +156,20 @@ describe('sync-api (enclave JSON-RPC)', () => {
     mockFetch.mockResolvedValueOnce(ok({ ok: true }))
     await api.addBundle({
       keyId: 'aa'.repeat(16),
+      keyB64: api.hexToB64('aa'.repeat(32)),
       credentialId: 'cred-2',
       kekIvHex: 'bb'.repeat(12),
       encryptedKeysHex: 'cc'.repeat(32),
       idempotencyKey: 'idem-add-1',
     })
     expect(lastRequest()[0]).toBe('/v1/key/add-bundle')
-    const body = lastBody<{ key_id: string; credential_id: string }>()
+    const body = lastBody<{
+      key_id: string
+      key: string
+      credential_id: string
+    }>()
     expect(body.key_id).toBe('aa'.repeat(16))
+    expect(body.key).toBe(api.hexToB64('aa'.repeat(32)))
     expect(body.credential_id).toBe('cred-2')
   })
 
@@ -178,6 +206,7 @@ describe('sync-api (enclave JSON-RPC)', () => {
     const bytes = new Uint8Array([1, 2, 3, 4, 5])
     const b64 = api.bytesToBase64(bytes)
     expect(api.base64ToBytes(b64)).toEqual(bytes)
+    expect(() => api.hexToB64('')).toThrow(/empty hex/)
 
     const item = api.pullItemPlaintext({
       id: 'x',

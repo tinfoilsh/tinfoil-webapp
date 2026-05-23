@@ -218,7 +218,7 @@ function isNetworkError(err: unknown): boolean {
   if (err instanceof TypeError) {
     // The browser's fetch surface throws TypeError on transport
     // failures (DNS, TLS, ECONNREFUSED, offline).
-    return /network|fetch|failed to fetch/i.test(err.message)
+    return /network|fetch|failed to fetch|load failed/i.test(err.message)
   }
   return false
 }

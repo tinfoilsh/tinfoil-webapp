@@ -85,8 +85,15 @@ export async function processRemoteChat(
     remote.id,
   )
 
-  // If no content at all, return a placeholder
-  if (!remote.content && !remote.binaryContent && !remote.plaintext) {
+  // If no content at all, return a placeholder. V2 rows must always
+  // go through the plaintext parser below so malformed enclave output
+  // surfaces as an error instead of an encrypted placeholder.
+  if (
+    remote.formatVersion !== 2 &&
+    !remote.content &&
+    !remote.binaryContent &&
+    !remote.plaintext
+  ) {
     logInfo('Remote chat has no content', {
       component: 'ChatCodec',
       action: 'processRemoteChat',
@@ -110,7 +117,7 @@ export async function processRemoteChat(
     let decrypted: any
     let usedFallbackKey = false
 
-    if (remote.formatVersion === 2 && remote.plaintext) {
+    if (remote.formatVersion === 2) {
       // Enclave already unsealed the row server-side. The plaintext is
       // the JSON-serialized StoredChat shape uploadChat() persisted.
       // §9.6 R5: the v2 path must NOT fall through to the legacy
@@ -121,7 +128,7 @@ export async function processRemoteChat(
       // instead of polluting the chat list with an `Encrypted`
       // placeholder.
       try {
-        decrypted = JSON.parse(remote.plaintext)
+        decrypted = JSON.parse(remote.plaintext ?? '')
       } catch (parseErr) {
         throw new Error(
           `v2_plaintext_invalid: ${

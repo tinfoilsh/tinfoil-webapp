@@ -10,9 +10,6 @@ import {
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
-
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
 
@@ -44,33 +41,8 @@ export class ProfileSyncService {
   private cachedProfile: ProfileData | null = null
   private failedDecryptionData: string | null = null
 
-  private async getHeaders(): Promise<Record<string, string>> {
-    return authTokenManager.getAuthHeaders()
-  }
-
   async isAuthenticated(): Promise<boolean> {
     return authTokenManager.isAuthenticated()
-  }
-
-  async fetchEncryptedProfilePayload(): Promise<string | null> {
-    if (!(await this.isAuthenticated())) {
-      return null
-    }
-
-    const response = await fetch(`${API_BASE_URL}/api/profile/`, {
-      headers: await this.getHeaders(),
-    })
-
-    if (response.status === 401 || response.status === 404) {
-      return null
-    }
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch profile: ${response.statusText}`)
-    }
-
-    const data = await response.json()
-    return data.data as string
   }
 
   // Get profile from cloud via the sync enclave. The enclave unseals
@@ -97,7 +69,9 @@ export class ProfileSyncService {
       const item = resp.items[0]
       if (!item || !item.ok) {
         if (item && item.code === 'NOT_FOUND') return null
-        return null
+        throw new Error(
+          item?.code || 'Failed to pull profile from sync enclave',
+        )
       }
       const plaintextBytes = pullItemPlaintext(item)
       if (!plaintextBytes) return null
@@ -105,6 +79,10 @@ export class ProfileSyncService {
       const decoded = JSON.parse(
         new TextDecoder().decode(plaintextBytes),
       ) as ProfileData
+      const etagVersion = item.etag ? parseInt(item.etag, 10) : NaN
+      if (Number.isFinite(etagVersion)) {
+        decoded.version = etagVersion
+      }
 
       this.cachedProfile = decoded
       this.failedDecryptionData = null
@@ -139,7 +117,7 @@ export class ProfileSyncService {
         action: 'fetchProfile',
       })
 
-      return null
+      throw error
     }
   }
 
@@ -176,20 +154,26 @@ export class ProfileSyncService {
       const plaintext = new TextEncoder().encode(
         JSON.stringify(profileWithMetadata),
       )
-      const status = await enclaveListStatus({ scope: PROFILE_SCOPE })
-      const current = status.updates[0]
+      const ifMatch =
+        profile.version !== undefined && profile.version > 0
+          ? String(profile.version)
+          : null
 
-      await enclavePush({
+      const pushResp = await enclavePush({
         scope: PROFILE_SCOPE,
         id: PROFILE_ROW_ID,
         keyB64: requirePrimaryKeyB64(),
         plaintext,
-        ifMatch: current?.etag ?? null,
+        ifMatch,
         idempotencyKey: newIdempotencyKey(),
         metadata: {
           version: profileWithMetadata.version,
         },
       })
+      const pushedVersion = parseInt(pushResp.etag, 10)
+      if (Number.isFinite(pushedVersion)) {
+        profileWithMetadata.version = pushedVersion
+      }
 
       // Update cache
       this.cachedProfile = profileWithMetadata
@@ -266,25 +250,24 @@ export class ProfileSyncService {
         return null
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/profile/sync-status`, {
-        headers: await this.getHeaders(),
-      })
-
-      if (response.status === 401) {
-        return null
+      const status = await enclaveListStatus({ scope: PROFILE_SCOPE })
+      const current = status.updates.find((u) => u.id === PROFILE_ROW_ID)
+      const deleted = status.deletes.find(
+        (d) => d.scope === PROFILE_SCOPE && d.id === PROFILE_ROW_ID,
+      )
+      if (!current) {
+        return {
+          exists: false,
+          deleted: !!deleted,
+          lastUpdated: deleted?.deleted_at,
+        }
       }
-
-      if (response.status === 404) {
-        return { exists: false }
+      const version = parseInt(current.etag, 10)
+      return {
+        exists: true,
+        version: Number.isFinite(version) ? version : undefined,
+        lastUpdated: current.updated_at,
       }
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to get profile sync status: ${response.statusText}`,
-        )
-      }
-
-      return await response.json()
     } catch (error) {
       if (
         error instanceof Error &&

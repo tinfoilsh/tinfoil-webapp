@@ -1,9 +1,4 @@
-import {
-  cekHexToBytes,
-  deriveOpHashKey,
-  getSyncEnclaveClient,
-  SyncEnclaveError,
-} from '@/services/sync-enclave'
+import { getSyncEnclaveClient, SyncEnclaveError } from '@/services/sync-enclave'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -13,8 +8,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  * (which reads/writes blobs):
  *
  *   - `cek`        — the raw 32-byte content encryption key.
- *   - `opKey`      — HKDF-derived subkey used to MAC X-Operation-Hash
- *                    per syncplan.md §7.0.
  *   - `keyIdHex`   — the user's current key_id as confirmed by the
  *                    enclave (or `null` until first register).
  *   - `status`     — "idle" | "attesting" | "ready" | "paused".
@@ -22,10 +15,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
  *                    failing; UI surfaces this as a quiet "Cloud sync
  *                    paused — retrying" line in the sidebar.
  *
- * The CEK is derived eagerly after passkey unlock so attestation and
- * HKDF errors surface up front rather than at first write. The hook
- * never deletes localStorage CEK material; only bookkeeping is touched
- * elsewhere, and only after a successful register call.
+ * The CEK is held in memory after passkey unlock so the enclave can
+ * receive it on push/pull calls. Attestation errors surface up front
+ * rather than at first write. The hook never deletes localStorage CEK
+ * material; only bookkeeping is touched elsewhere, and only after a
+ * successful register call.
  */
 
 export type SyncEnclaveSessionStatus =
@@ -38,15 +32,13 @@ export interface SyncEnclaveSession {
   status: SyncEnclaveSessionStatus
   /** Hex-encoded CEK, or null when not unlocked. */
   cekHex: string | null
-  /** Operation-hash subkey, or null when not unlocked. */
-  opKey: CryptoKey | null
   /** Current key_id as confirmed by the enclave, or null. */
   keyIdHex: string | null
   /** Last error surfaced (used for diagnostics, not user copy). */
   lastError: Error | null
   /**
-   * Force a re-attestation + subkey derivation. Useful after sign-in,
-   * after passkey recovery, and from the quiet retry loop.
+   * Force a re-attestation. Useful after sign-in, after passkey
+   * recovery, and from the quiet retry loop.
    */
   retry: () => void
   /**
@@ -71,7 +63,6 @@ export function useSyncEnclaveSession(
 ): SyncEnclaveSession {
   const [status, setStatus] = useState<SyncEnclaveSessionStatus>('idle')
   const [cekHex, setCekHex] = useState<string | null>(null)
-  const [opKey, setOpKey] = useState<CryptoKey | null>(null)
   const [keyIdHex, setKeyIdHex] = useState<string | null>(null)
   const [lastError, setLastError] = useState<Error | null>(null)
 
@@ -79,6 +70,15 @@ export function useSyncEnclaveSession(
   const isMountedRef = useRef(true)
   const onReadyRef = useRef(options?.onReady)
   onReadyRef.current = options?.onReady
+  // Mirror keyIdHex into a ref so attestAndDerive can read the
+  // current value without depending on it. Including keyIdHex in the
+  // useCallback deps would change the callback's identity whenever
+  // setKeyIdHex is called externally (use-passkey-backup, rotation
+  // paths) and the eager-re-attest useEffect below would then fire a
+  // full re-attestation on every kid publish — contradicting the
+  // documented "without forcing a full re-derive" contract.
+  const keyIdHexRef = useRef(keyIdHex)
+  keyIdHexRef.current = keyIdHex
 
   useEffect(() => {
     return () => {
@@ -86,55 +86,48 @@ export function useSyncEnclaveSession(
     }
   }, [])
 
-  const attestAndDerive = useCallback(
-    async (cekHexValue: string) => {
-      const gen = ++generationRef.current
-      setStatus('attesting')
-      setLastError(null)
+  const attestAndDerive = useCallback(async (cekHexValue: string) => {
+    const gen = ++generationRef.current
+    setStatus('attesting')
+    setLastError(null)
+    try {
+      await getSyncEnclaveClient()
+      if (!isMountedRef.current || gen !== generationRef.current) return
+      setCekHex(cekHexValue)
+      setStatus('ready')
+      logInfo('sync enclave session ready', {
+        component: 'useSyncEnclaveSession',
+        action: 'attestAndDerive',
+      })
       try {
-        await getSyncEnclaveClient()
-        const cek = cekHexToBytes(cekHexValue)
-        const subkey = await deriveOpHashKey(cek)
-        if (!isMountedRef.current || gen !== generationRef.current) return
-        setCekHex(cekHexValue)
-        setOpKey(subkey)
-        setStatus('ready')
-        logInfo('sync enclave session ready', {
-          component: 'useSyncEnclaveSession',
-          action: 'attestAndDerive',
-        })
-        try {
-          onReadyRef.current?.(keyIdHex)
-        } catch (err) {
-          logError(
-            'onReady callback threw',
-            err instanceof Error ? err : new Error(String(err)),
-            { component: 'useSyncEnclaveSession', action: 'onReady' },
-          )
-        }
+        onReadyRef.current?.(keyIdHexRef.current)
       } catch (err) {
-        if (!isMountedRef.current || gen !== generationRef.current) return
-        const e = err instanceof Error ? err : new Error(String(err))
-        setLastError(e)
-        setStatus('paused')
-        const code = err instanceof SyncEnclaveError ? err.code : undefined
-        logError('sync enclave session paused', e, {
-          component: 'useSyncEnclaveSession',
-          action: 'attestAndDerive',
-          metadata: { code },
-        })
+        logError(
+          'onReady callback threw',
+          err instanceof Error ? err : new Error(String(err)),
+          { component: 'useSyncEnclaveSession', action: 'onReady' },
+        )
       }
-    },
-    [keyIdHex],
-  )
+    } catch (err) {
+      if (!isMountedRef.current || gen !== generationRef.current) return
+      const e = err instanceof Error ? err : new Error(String(err))
+      setLastError(e)
+      setStatus('paused')
+      const code = err instanceof SyncEnclaveError ? err.code : undefined
+      logError('sync enclave session paused', e, {
+        component: 'useSyncEnclaveSession',
+        action: 'attestAndDerive',
+        metadata: { code },
+      })
+    }
+  }, [])
 
-  // Eager (re)-derive when the unlocked CEK changes.
+  // Eager (re)-attest when the unlocked CEK changes.
   useEffect(() => {
     if (!unlockedCekHex) {
       generationRef.current++
       setStatus('idle')
       setCekHex(null)
-      setOpKey(null)
       setKeyIdHex(null)
       setLastError(null)
       return
@@ -160,7 +153,6 @@ export function useSyncEnclaveSession(
     generationRef.current++
     setStatus('idle')
     setCekHex(null)
-    setOpKey(null)
     setKeyIdHex(null)
     setLastError(null)
   }, [])
@@ -175,7 +167,6 @@ export function useSyncEnclaveSession(
   const session: SyncEnclaveSession = {
     status,
     cekHex,
-    opKey,
     keyIdHex,
     lastError,
     retry,

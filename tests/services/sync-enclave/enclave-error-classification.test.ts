@@ -23,6 +23,7 @@ describe('classifyEnclaveError', () => {
       ATTESTATION_FAILED: 'TERMINAL',
       AUTH: 'RETRYABLE_TRANSIENT',
       NETWORK: 'RETRYABLE_TRANSIENT',
+      NOT_FOUND: 'USER_DECISION',
       LEGACY_BLOB_NOT_MIGRATED: 'RETRYABLE_REFRESH',
     }
     for (const [code, kind] of Object.entries(expectations)) {
@@ -57,6 +58,12 @@ describe('classifyEnclaveError', () => {
 
   it('maps TypeError "Failed to fetch" to RETRYABLE_TRANSIENT/NETWORK', () => {
     const result = classifyEnclaveError(new TypeError('Failed to fetch'))
+    expect(result.kind).toBe('RETRYABLE_TRANSIENT')
+    expect(result.code).toBe('NETWORK')
+  })
+
+  it('maps Safari TypeError "Load failed" to RETRYABLE_TRANSIENT/NETWORK', () => {
+    const result = classifyEnclaveError(new TypeError('Load failed'))
     expect(result.kind).toBe('RETRYABLE_TRANSIENT')
     expect(result.code).toBe('NETWORK')
   })

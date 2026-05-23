@@ -1,9 +1,11 @@
 import { projectStorage } from '@/services/cloud/project-storage'
 import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
-import type { Project } from '@/types/project'
+import type { Project, ProjectListResponse } from '@/types/project'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
+
+const PROJECT_PAGE_LIMIT = 20
 
 interface UseProjectsOptions {
   autoLoad?: boolean
@@ -17,6 +19,51 @@ interface UseProjectsReturn {
   loadProjects: () => Promise<void>
   loadMore: () => Promise<void>
   refresh: () => Promise<void>
+}
+
+type ProjectListItem = ProjectListResponse['projects'][number]
+
+function projectFromListItem(
+  item: ProjectListItem,
+  full: Project | undefined,
+): Project {
+  if (!full) {
+    return {
+      id: item.id,
+      name: 'Encrypted',
+      description: '',
+      systemInstructions: '',
+      memory: [],
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      syncVersion: item.syncVersion,
+      decryptionFailed: true,
+    }
+  }
+  return {
+    ...full,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+    syncVersion: item.syncVersion,
+  }
+}
+
+async function loadProjectPage(
+  continuationToken?: string,
+): Promise<{ response: ProjectListResponse; projects: Project[] }> {
+  const response = await projectStorage.listProjects({
+    limit: PROJECT_PAGE_LIMIT,
+    continuationToken,
+  })
+  const decryptedById = await projectStorage.getProjects(
+    response.projects.map((item) => item.id),
+  )
+  return {
+    response,
+    projects: response.projects.map((item) =>
+      projectFromListItem(item, decryptedById.get(item.id)),
+    ),
+  }
 }
 
 export function useProjects(
@@ -48,51 +95,7 @@ export function useProjects(
     setError(null)
 
     try {
-      const response = await projectStorage.listProjects({ limit: 20 })
-
-      const decryptedProjects: Project[] = await Promise.all(
-        response.projects.map(async (item) => {
-          try {
-            const full = await projectStorage.getProject(item.id)
-            if (!full) {
-              return {
-                id: item.id,
-                name: 'Encrypted',
-                description: '',
-                systemInstructions: '',
-                memory: [],
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-                syncVersion: item.syncVersion,
-                decryptionFailed: true,
-              }
-            }
-            return {
-              ...full,
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-            }
-          } catch (pullError) {
-            logError('Failed to pull project plaintext', pullError, {
-              component: 'useProjects',
-              action: 'loadProjects',
-              metadata: { projectId: item.id },
-            })
-            return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-              decryptionFailed: true,
-            }
-          }
-        }),
-      )
+      const { response, projects: decryptedProjects } = await loadProjectPage()
 
       // Re-check auth state after async operations - user may have logged out
       if (!isSignedInRef.current) {
@@ -135,54 +138,8 @@ export function useProjects(
     setError(null)
 
     try {
-      const response = await projectStorage.listProjects({
-        limit: 20,
-        continuationToken,
-      })
-
-      const decryptedProjects: Project[] = await Promise.all(
-        response.projects.map(async (item) => {
-          try {
-            const full = await projectStorage.getProject(item.id)
-            if (!full) {
-              return {
-                id: item.id,
-                name: 'Encrypted',
-                description: '',
-                systemInstructions: '',
-                memory: [],
-                createdAt: item.createdAt,
-                updatedAt: item.updatedAt,
-                syncVersion: item.syncVersion,
-                decryptionFailed: true,
-              }
-            }
-            return {
-              ...full,
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-            }
-          } catch (pullError) {
-            logError('Failed to pull project plaintext', pullError, {
-              component: 'useProjects',
-              action: 'loadMore',
-              metadata: { projectId: item.id },
-            })
-            return {
-              id: item.id,
-              name: 'Encrypted',
-              description: '',
-              systemInstructions: '',
-              memory: [],
-              createdAt: item.createdAt,
-              updatedAt: item.updatedAt,
-              syncVersion: item.syncVersion,
-              decryptionFailed: true,
-            }
-          }
-        }),
-      )
+      const { response, projects: decryptedProjects } =
+        await loadProjectPage(continuationToken)
 
       // Re-check auth state after async operations - user may have logged out
       if (!isSignedInRef.current) {

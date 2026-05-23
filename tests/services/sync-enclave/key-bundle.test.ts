@@ -103,6 +103,7 @@ describe('key-bundle', () => {
     const bytes = new Uint8Array([0xde, 0xad, 0xbe, 0xef])
     expect(cekHexToBytes(cekBytesToHex(bytes))).toEqual(bytes)
     expect(() => cekHexToBytes('abc')).toThrow(/odd-length/)
+    expect(() => cekHexToBytes('0g')).toThrow(/invalid hex/)
   })
 
   it('deriveKeyIdHex matches the enclave reference vector', async () => {

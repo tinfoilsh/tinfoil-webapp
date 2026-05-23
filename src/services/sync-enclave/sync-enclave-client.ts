@@ -15,6 +15,8 @@ import { SecureClient } from 'tinfoil'
  */
 
 let clientPromise: Promise<SyncEnclaveClient> | null = null
+const SYNC_ENCLAVE_REQUIRED_PROTOCOL = 'https:'
+const ABSOLUTE_URL_PROTOCOL_PATTERN = /^[a-z][a-z\d+\-.]*:/i
 
 export class SyncEnclaveError extends Error {
   constructor(
@@ -38,6 +40,7 @@ export class SyncEnclaveClient {
    * errors are retried by SecureClient internally.
    */
   static async create(): Promise<SyncEnclaveClient> {
+    assertSecureSyncEnclaveUrl(SYNC_ENCLAVE_URL)
     const secure = new SecureClient({
       enclaveURL: SYNC_ENCLAVE_URL,
       configRepo: SYNC_ENCLAVE_REPO,
@@ -72,6 +75,7 @@ export class SyncEnclaveClient {
     path: string,
     init: RequestInit & { skipAuth?: boolean } = {},
   ): Promise<T> {
+    assertRelativeSyncEnclavePath(path)
     const headers = new Headers(init.headers)
     headers.set('Accept', 'application/json')
 
@@ -158,6 +162,41 @@ export class SyncEnclaveClient {
 
   delete<T>(path: string, headers?: Record<string, string>) {
     return this.request<T>(path, { method: 'DELETE', headers })
+  }
+}
+
+function assertSecureSyncEnclaveUrl(enclaveURL: string): void {
+  let parsed: URL
+  try {
+    parsed = new URL(enclaveURL)
+  } catch {
+    throw new SyncEnclaveError(
+      'sync enclave URL must be an absolute HTTPS URL',
+      undefined,
+      'INVALID_SYNC_ENCLAVE_URL',
+    )
+  }
+
+  if (parsed.protocol !== SYNC_ENCLAVE_REQUIRED_PROTOCOL || !parsed.hostname) {
+    throw new SyncEnclaveError(
+      'sync enclave URL must use HTTPS',
+      undefined,
+      'INVALID_SYNC_ENCLAVE_URL',
+    )
+  }
+}
+
+function assertRelativeSyncEnclavePath(path: string): void {
+  if (
+    !path.startsWith('/') ||
+    path.startsWith('//') ||
+    ABSOLUTE_URL_PROTOCOL_PATTERN.test(path)
+  ) {
+    throw new SyncEnclaveError(
+      'sync enclave request path must be relative',
+      undefined,
+      'INVALID_SYNC_ENCLAVE_PATH',
+    )
   }
 }
 

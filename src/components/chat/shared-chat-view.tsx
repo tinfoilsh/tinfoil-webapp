@@ -1,10 +1,6 @@
 import { type BaseModel } from '@/config/models'
 import { attachmentGetPublic } from '@/services/sync-enclave/sync-api'
-import {
-  base64ToUint8Array,
-  decryptAttachment,
-  uint8ArrayToBase64,
-} from '@/utils/binary-codec'
+import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import type { ShareableChatData } from '@/utils/compression'
 import 'katex/dist/katex.min.css'
 import { memo, useEffect, useMemo, useState } from 'react'
@@ -92,9 +88,6 @@ export function SharedChatView({
 
   // Lazy-load full-resolution images from the public attachment endpoint
   useEffect(() => {
-    const apiBaseUrl =
-      process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
-
     let cancelled = false
 
     async function loadFullResImages() {
@@ -132,24 +125,6 @@ export function SharedChatView({
                   attKeyB64: att.encryptionKey!,
                 })
                 apply(uint8ArrayToBase64(plaintext))
-                return
-              } catch {
-                // fall through to legacy controlplane BYTEA endpoint
-              }
-
-              try {
-                const resp = await fetch(
-                  `${apiBaseUrl}/api/storage/attachment/${att.id}`,
-                )
-                if (!resp.ok) return
-
-                const encryptedBuf = await resp.arrayBuffer()
-                const keyBytes = base64ToUint8Array(att.encryptionKey!)
-                const decrypted = decryptAttachment(
-                  new Uint8Array(encryptedBuf),
-                  keyBytes,
-                )
-                apply(uint8ArrayToBase64(await decrypted))
               } catch {
                 // Silently skip — thumbnail is still visible
               }

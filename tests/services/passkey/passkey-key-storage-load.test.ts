@@ -79,13 +79,22 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
     })
 
     it('reshapes wire bundles into legacy PasskeyCredentialEntry shape', async () => {
+      // 12-byte IV (24 hex chars) and 16-byte ciphertext (32 hex chars)
+      // are the smallest realistic shapes; the entry contract is
+      // base64, so the reshape must convert from the enclave's hex
+      // wire form to match what decryptKeyBundle / use-passkey-backup
+      // expect (see passkey-key-storage hexToB64 boundary).
+      const ivHex = '000102030405060708090a0b'
+      const wrappedHex = '0a'.repeat(16)
+      const ivB64 = Buffer.from(ivHex, 'hex').toString('base64')
+      const wrappedB64 = Buffer.from(wrappedHex, 'hex').toString('base64')
       mockKeyCurrent.mockResolvedValue({
         key_id: 'abc',
         bundles: {
           'cred-a': {
             credential_id: 'cred-a',
-            kek_iv: 'iv-base64',
-            encrypted_keys: '***********',
+            kek_iv: ivHex,
+            encrypted_keys: wrappedHex,
             bundle_version: 3,
             created_at: '2026-05-12T00:00:00.000Z',
           },
@@ -95,8 +104,8 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(entries).toHaveLength(1)
       expect(entries[0]).toMatchObject({
         id: 'cred-a',
-        iv: 'iv-base64',
-        encrypted_keys: '***********',
+        iv: ivB64,
+        encrypted_keys: wrappedB64,
         sync_version: 3,
         bundle_version: 3,
         version: 1,
@@ -213,8 +222,8 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
         bundles: {
           'cred-a': {
             credential_id: 'cred-a',
-            kek_iv: 'iv',
-            encrypted_keys: 'data',
+            kek_iv: '000102030405060708090a0b',
+            encrypted_keys: '0a'.repeat(16),
           },
         },
       })

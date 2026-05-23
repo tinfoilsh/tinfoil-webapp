@@ -46,7 +46,6 @@ import {
 } from './key-bundle'
 import {
   SyncEnclaveError,
-  b64ToHex,
   addBundle as enclaveAddBundle,
   keyCurrent as enclaveKeyCurrent,
   registerKey as enclaveRegisterKey,
@@ -54,10 +53,12 @@ import {
   newIdempotencyKey,
   type KeyCurrentResponse,
 } from './sync-api'
+import { IF_MATCH_SENTINELS, WIRE_CODES } from './wire-contract'
 
 export type PasskeyFlowFailure =
   | 'user_cancelled'
   | 'prf_unsupported'
+  | 'passkey_timeout'
   | 'no_remote_bundle'
   | 'no_remote_key'
   | 'bundle_decrypt_failed'
@@ -93,13 +94,19 @@ function failureFromPasskeyError(err: unknown): PasskeyFlowFailure {
   if (!err || typeof err !== 'object') return 'user_cancelled'
   const name = (err as { name?: string }).name
   if (name === 'PrfNotSupportedError') return 'prf_unsupported'
-  if (name === 'PasskeyTimeoutError') return 'prf_unsupported'
+  // A timeout is a transient retriable failure (slow authenticator or
+  // user). Reporting `prf_unsupported` would tell the state machine
+  // PRF is permanently unavailable on this device and block recovery.
+  if (name === 'PasskeyTimeoutError') return 'passkey_timeout'
   return 'user_cancelled'
 }
 
 function failureFromEnclaveError(err: unknown): PasskeyFlowFailure {
   if (err instanceof SyncEnclaveError) {
-    if (err.code === 'EXISTING_DATA_UNDER_OTHER_KEY' || err.status === 409) {
+    if (
+      err.code === WIRE_CODES.ExistingDataUnderOtherKey ||
+      err.status === 409
+    ) {
       return 'remote_key_exists'
     }
     if (err.status && err.status >= 500) return 'enclave_unavailable'
@@ -132,12 +139,23 @@ export async function registerNewKeyWithPasskey(opts: {
   const cekHex = cekBytesToHex(cek)
   const keyIdHex = await deriveKeyIdHex(cek)
 
-  const kek = await deriveKeyEncryptionKey(passkey.prfOutput)
-  const bundle = await wrapCekForCredential({
-    credentialId: passkey.credentialId,
-    kek,
-    cek,
-  })
+  let kek: CryptoKey
+  let bundle: Awaited<ReturnType<typeof wrapCekForCredential>>
+  try {
+    kek = await deriveKeyEncryptionKey(passkey.prfOutput)
+    bundle = await wrapCekForCredential({
+      credentialId: passkey.credentialId,
+      kek,
+      cek,
+    })
+  } catch (err) {
+    logError(
+      'failed to wrap sync enclave bundle during register-key',
+      err instanceof Error ? err : new Error(String(err)),
+      { component: 'passkey-key-flow', action: 'registerNewKeyWithPasskey' },
+    )
+    return { ok: false, reason: 'bundle_decrypt_failed', cause: err }
+  }
 
   try {
     await enclaveRegisterKey({
@@ -147,7 +165,7 @@ export async function registerNewKeyWithPasskey(opts: {
       // new-user flow we always want create-or-fail semantics so a
       // concurrent registration on another device cannot silently
       // overwrite a freshly-minted CEK.
-      ifMatch: '*',
+      ifMatch: IF_MATCH_SENTINELS.AnyKey,
       createdVia: opts.createdVia ?? 'passkey',
       idempotencyKey: newIdempotencyKey(),
       initialBundle: {
@@ -261,12 +279,22 @@ export async function addBundleForCurrentKey(opts: {
   }
   if (!passkey) return { ok: false, reason: 'user_cancelled' }
 
-  const kek = await deriveKeyEncryptionKey(passkey.prfOutput)
-  const bundle = await wrapCekForCredential({
-    credentialId: passkey.credentialId,
-    kek,
-    cek: cekHexToBytes(opts.cekHex),
-  })
+  let bundle: Awaited<ReturnType<typeof wrapCekForCredential>>
+  try {
+    const kek = await deriveKeyEncryptionKey(passkey.prfOutput)
+    bundle = await wrapCekForCredential({
+      credentialId: passkey.credentialId,
+      kek,
+      cek: cekHexToBytes(opts.cekHex),
+    })
+  } catch (err) {
+    logError(
+      'failed to wrap sync enclave bundle during add-bundle',
+      err instanceof Error ? err : new Error(String(err)),
+      { component: 'passkey-key-flow', action: 'addBundleForCurrentKey' },
+    )
+    return { ok: false, reason: 'bundle_decrypt_failed', cause: err }
+  }
 
   try {
     await enclaveAddBundle({
@@ -295,13 +323,13 @@ export async function addBundleForCurrentKey(opts: {
 /**
  * Re-shape the enclave's `/v1/key/current` response into a list of
  * BundleBody candidates suitable for `unlockWithPasskey`. The wire
- * carries kek_iv / encrypted_keys as base64; BundleBody expects hex.
+ * carries kek_iv / encrypted_keys as hex, matching BundleBody.
  */
 export function bundlesFromKeyCurrent(resp: KeyCurrentResponse): BundleBody[] {
   return Object.values(resp.bundles).map((b) => ({
     credentialId: b.credential_id,
-    kekIvHex: b64ToHex(b.kek_iv),
-    wrappedKeyHex: b64ToHex(b.encrypted_keys),
+    kekIvHex: b.kek_iv,
+    wrappedKeyHex: b.encrypted_keys,
     saltHex: '',
     info: 'tinfoil-chat-kek-v1',
   }))
@@ -422,7 +450,7 @@ export async function promoteRecoveredCekToEnclave(opts: {
   try {
     await enclaveRegisterKey({
       keyB64: hexToB64(opts.cekHex),
-      ifMatch: '*',
+      ifMatch: IF_MATCH_SENTINELS.AnyKey,
       createdVia: 'recovery',
       idempotencyKey: newIdempotencyKey(),
       initialBundle: {
@@ -434,7 +462,7 @@ export async function promoteRecoveredCekToEnclave(opts: {
   } catch (err) {
     if (
       err instanceof SyncEnclaveError &&
-      err.code === 'EXISTING_DATA_UNDER_OTHER_KEY'
+      err.code === WIRE_CODES.ExistingDataUnderOtherKey
     ) {
       // A racing promotion or a fresh setup landed first. The recovered
       // CEK is no longer the primary; the caller should re-run the

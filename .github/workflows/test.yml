@@ -52,9 +52,28 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - run: npm ci
+      # GitHub does not evaluate `secrets.*` inside an `if:` expression,
+      # so a job-level secret check would always be true. Probe the
+      # secret here and expose a plain boolean output the later steps
+      # can gate on, otherwise the integration test would run with an
+      # empty JWT and the workflow would pass without actually hitting
+      # the enclave.
+      - id: jwt-guard
+        run: |
+          if [ -n "$SYNC_ENCLAVE_TEST_JWT" ]; then
+            echo "have_jwt=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_jwt=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SYNC_ENCLAVE_TEST_JWT not set; skipping integration tests"
+          fi
+        env:
+          SYNC_ENCLAVE_TEST_JWT: ${{ secrets.SYNC_ENCLAVE_TEST_JWT }}
 
-      - run: npm run test:integration
+      - if: steps.jwt-guard.outputs.have_jwt == 'true'
+        run: npm ci
+
+      - if: steps.jwt-guard.outputs.have_jwt == 'true'
+        run: npm run test:integration
         env:
           SYNC_ENCLAVE_URL: ${{ vars.SYNC_ENCLAVE_URL }}
           SYNC_ENCLAVE_TEST_JWT: ${{ secrets.SYNC_ENCLAVE_TEST_JWT }}

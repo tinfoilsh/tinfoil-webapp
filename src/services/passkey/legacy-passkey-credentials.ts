@@ -52,6 +52,9 @@ function isPasskeyCredentialEntry(
   return (
     typeof obj.id === 'string' &&
     typeof obj.encrypted_keys === 'string' &&
-    typeof obj.iv === 'string'
+    typeof obj.iv === 'string' &&
+    typeof obj.created_at === 'string' &&
+    typeof obj.version === 'number' &&
+    typeof obj.sync_version === 'number'
   )
 }

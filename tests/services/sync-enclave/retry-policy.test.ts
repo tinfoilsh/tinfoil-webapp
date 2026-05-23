@@ -111,6 +111,54 @@ describe('runWithRetry', () => {
     expect(onAttemptFailed).toHaveBeenCalledTimes(1)
   })
 
+  it('fires onAttemptFailed on a non-retriable failure', async () => {
+    const err = new Error('terminal')
+    const fn = vi.fn().mockRejectedValue(err)
+    const onAttemptFailed = vi.fn()
+    const { scheduler, sleeps } = makeScheduler()
+
+    await expect(
+      runWithRetry(fn, () => false, {
+        baseDelayMs: 5,
+        maxDelayMs: 5,
+        maxAttempts: 4,
+        scheduler,
+        onAttemptFailed,
+      }),
+    ).rejects.toBe(err)
+
+    expect(onAttemptFailed).toHaveBeenCalledTimes(1)
+    expect(onAttemptFailed).toHaveBeenCalledWith({
+      attempt: 0,
+      delayMs: 0,
+      error: err,
+    })
+    expect(sleeps.length).toBe(0)
+  })
+
+  it('fires onAttemptFailed on the final exhausted attempt', async () => {
+    const err = new Error('always')
+    const fn = vi.fn().mockRejectedValue(err)
+    const onAttemptFailed = vi.fn()
+    const { scheduler } = makeScheduler()
+
+    await expect(
+      runWithRetry(fn, () => true, {
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+        maxAttempts: 3,
+        scheduler,
+        onAttemptFailed,
+      }),
+    ).rejects.toBe(err)
+
+    expect(onAttemptFailed).toHaveBeenCalledTimes(3)
+    expect(onAttemptFailed.mock.calls[2][0]).toMatchObject({
+      attempt: 2,
+      delayMs: 0,
+    })
+  })
+
   it('does not leak real setTimeout calls', async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
     const fn = vi

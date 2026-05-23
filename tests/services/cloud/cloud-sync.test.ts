@@ -6,6 +6,7 @@ const mockGetAllChats = vi.fn()
 const mockGetUnsyncedChats = vi.fn()
 const mockGetChat = vi.fn()
 const mockSaveChat = vi.fn()
+const mockSaveExistingChat = vi.fn()
 const mockMarkAsSynced = vi.fn()
 const mockDeleteChat = vi.fn()
 
@@ -40,6 +41,7 @@ vi.mock('@/services/storage/indexed-db', () => ({
     getAllChats: (...args: any[]) => mockGetAllChats(...args),
     getUnsyncedChats: (...args: any[]) => mockGetUnsyncedChats(...args),
     saveChat: (...args: any[]) => mockSaveChat(...args),
+    saveExistingChat: (...args: any[]) => mockSaveExistingChat(...args),
     markAsSynced: (...args: any[]) => mockMarkAsSynced(...args),
     getChat: (...args: any[]) => mockGetChat(...args),
     deleteChat: (...args: any[]) => mockDeleteChat(...args),
@@ -100,6 +102,7 @@ describe('CloudSyncService', () => {
     vi.clearAllMocks()
     localStorage.removeItem(SYNC_CHAT_STATUS)
     mockSaveChat.mockResolvedValue(undefined)
+    mockSaveExistingChat.mockResolvedValue(undefined)
     mockMarkAsSynced.mockResolvedValue(undefined)
     mockDeleteChat.mockResolvedValue(undefined)
     mockIsAuthenticated.mockResolvedValue(true)

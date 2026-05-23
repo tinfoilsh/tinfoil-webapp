@@ -204,7 +204,28 @@ export class IndexedDBStorage {
     return this.saveQueue
   }
 
-  private async saveChatInternal(chat: Chat): Promise<void> {
+  async saveExistingChat(chat: Chat): Promise<void> {
+    const chatSnapshot = JSON.parse(JSON.stringify(chat))
+    this.saveQueue = this.saveQueue
+      .catch((error) => {
+        logError('Previous save operation failed, recovering queue', error, {
+          component: 'IndexedDBStorage',
+          action: 'saveExistingChat.queueRecovery',
+        })
+      })
+      .then(() =>
+        this.saveChatInternal(chatSnapshot, { requireExisting: true }),
+      )
+    return this.saveQueue
+  }
+
+  private async saveChatInternal(
+    chat: Chat,
+    options: {
+      requireExisting?: boolean
+      markContentChangesAsLocal?: boolean
+    } = {},
+  ): Promise<void> {
     const db = await this.ensureDB()
 
     // Don't save blank chats to IndexedDB
@@ -253,6 +274,10 @@ export class IndexedDBStorage {
 
       getRequest.onsuccess = () => {
         const existingChat = getRequest.result as StoredChat | undefined
+        if (options.requireExisting && !existingChat) {
+          resolve()
+          return
+        }
 
         const messagesForStorage = chat.messages.map((msg) => ({
           ...msg,
@@ -297,7 +322,10 @@ export class IndexedDBStorage {
           locallyModified: computeLocallyModified({
             isFailedDecryption,
             existingChat,
-            hasContentChanges,
+            hasContentChanges:
+              options.markContentChangesAsLocal === false
+                ? false
+                : hasContentChanges,
             callerValue: (chat as StoredChat).locallyModified,
           }),
           syncVersion:
@@ -660,6 +688,17 @@ export class IndexedDBStorage {
       chat.locallyModified = true
       chat.updatedAt = new Date().toISOString()
       await this.saveChatInternal(chat)
+    }
+  }
+
+  async applyRemoteChatProject(
+    chatId: string,
+    projectId: string | null,
+  ): Promise<void> {
+    const chat = await this.getChatInternal(chatId)
+    if (chat) {
+      chat.projectId = projectId ?? undefined
+      await this.saveChatInternal(chat, { markContentChangesAsLocal: false })
     }
   }
 

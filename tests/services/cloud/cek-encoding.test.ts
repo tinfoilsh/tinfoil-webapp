@@ -73,6 +73,7 @@ describe('cek-encoding', () => {
 
   describe('migrationKeys', () => {
     it('emits primary first, then unique alternatives, each base64-encoded', () => {
+      mockGetKey.mockReturnValue('key_primary')
       mockGetAllKeys.mockReturnValue({
         primary: 'key_primary',
         alternatives: ['key_alt1', 'key_alt2', 'key_primary'],
@@ -94,6 +95,7 @@ describe('cek-encoding', () => {
     })
 
     it('drops keys that fail the format decoder', () => {
+      mockGetKey.mockReturnValue('key_primary')
       mockGetAllKeys.mockReturnValue({
         primary: 'key_primary',
         alternatives: ['key_bad'],
@@ -106,9 +108,24 @@ describe('cek-encoding', () => {
     })
 
     it('returns an empty array when no primary key is loaded', () => {
+      mockGetKey.mockReturnValue(null)
       mockGetAllKeys.mockReturnValue({ primary: null, alternatives: [] })
       const keys = migrationKeys()
       expect(keys).toEqual([])
+    })
+
+    it('falls back to localStorage when in-memory primary is null', () => {
+      mockGetKey.mockReturnValue('key_primary')
+      mockGetAllKeys.mockReturnValue({
+        primary: null,
+        alternatives: [],
+      })
+      mockGetAlternativeKeyBytes.mockImplementation((k) =>
+        k === 'key_primary' ? new Uint8Array(32).fill(0x42) : null,
+      )
+      const keys = migrationKeys()
+      expect(keys).toHaveLength(1)
+      expect(atob(keys[0].key).charCodeAt(0)).toBe(0x42)
     })
   })
 })

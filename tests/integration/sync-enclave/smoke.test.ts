@@ -33,10 +33,8 @@ const { TEST_JWT, enabled } = vi.hoisted(() => {
 })
 
 import {
-  addBundle,
   bytesToBase64,
   health,
-  hexToB64,
   keyCurrent,
   newIdempotencyKey,
   pull,
@@ -86,6 +84,7 @@ describe.skipIf(!enabled)('sync-enclave live smoke', () => {
       try {
         await removeBundle({
           keyId: registeredKeyId,
+          keyB64: cekB64,
           credentialId,
           idempotencyKey: newIdempotencyKey(),
         })
@@ -102,25 +101,10 @@ describe.skipIf(!enabled)('sync-enclave live smoke', () => {
 
   it('registers a fresh key + initial bundle', async () => {
     const before = await keyCurrent()
-    if (before.key_id) {
-      // The test user already has a key from a prior run. Reuse it so
-      // we exercise add-bundle instead of register-key — both paths
-      // are part of the §10 contract.
-      registeredKeyId = before.key_id
-      await addBundle({
-        keyId: before.key_id,
-        credentialId,
-        kekIvHex: '00'.repeat(12),
-        encryptedKeysHex: '00'.repeat(48),
-        idempotencyKey: newIdempotencyKey(),
-      })
-      return
-    }
-
     const resp = await registerKey({
       keyB64: cekB64,
-      ifMatch: '*',
-      createdVia: 'passkey',
+      ifMatch: before.key_id ? (before.etag ?? '') : '*',
+      createdVia: before.key_id ? 'start_fresh' : 'passkey',
       idempotencyKey: newIdempotencyKey(),
       initialBundle: {
         credentialId,
@@ -136,6 +120,7 @@ describe.skipIf(!enabled)('sync-enclave live smoke', () => {
   it('round-trips a profile blob through push and pull', async () => {
     const pushResp = await push({
       scope: 'profile',
+      id: 'profile',
       keyB64: cekB64,
       plaintext: profilePayload,
       ifMatch: null,
@@ -182,6 +167,3 @@ describe.skipIf(!enabled)('sync-enclave live smoke', () => {
     expect(resp.bundles[credentialId]).toBeDefined()
   })
 })
-
-// Suppress the unused-imports warning when SKIP path is taken.
-void hexToB64

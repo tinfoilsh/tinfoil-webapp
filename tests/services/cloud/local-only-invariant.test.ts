@@ -9,7 +9,11 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockEnclavePush = vi.fn()
+// vi.hoisted runs before vi.mock factory evaluation, which is the only
+// safe place to declare variables that the factory closes over.
+const { mockEnclavePush } = vi.hoisted(() => ({
+  mockEnclavePush: vi.fn(),
+}))
 
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {

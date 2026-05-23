@@ -124,10 +124,8 @@ export class UploadCoalescer {
       this.states.set(chatId, state)
     }
 
-    // Mark as dirty (needs upload)
     state.dirty = true
 
-    // If no upload in progress, start the worker
     if (!state.inFlight) {
       this.startWorker(chatId, state)
     }

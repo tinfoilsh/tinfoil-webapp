@@ -12,6 +12,8 @@ const mockGetKeyBytesOrThrow = vi.fn()
 const mockGetAlternativeKeyBytes = vi.fn()
 const mockEnclavePush = vi.fn()
 const mockListStatus = vi.fn()
+const mockAttachmentPut = vi.fn()
+const mockAttachmentGet = vi.fn()
 
 vi.mock('@/services/auth', () => ({
   authTokenManager: {
@@ -38,6 +40,8 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
     ...actual,
     push: (...args: any[]) => mockEnclavePush(...args),
     listStatus: (...args: any[]) => mockListStatus(...args),
+    attachmentPut: (...args: any[]) => mockAttachmentPut(...args),
+    attachmentGet: (...args: any[]) => mockAttachmentGet(...args),
   }
 })
 
@@ -64,6 +68,12 @@ describe('CloudStorageService auth readiness', () => {
     mockGetAlternativeKeyBytes.mockReturnValue(TEST_BYTES)
     mockEnclavePush.mockResolvedValue({ ok: true, etag: '1', keyId: 'kid' })
     mockListStatus.mockResolvedValue({ updates: [], deletes: [] })
+    mockAttachmentPut.mockResolvedValue({
+      ok: true,
+      id: 'att-v2',
+      att_key: 'k',
+    })
+    mockAttachmentGet.mockResolvedValue(new Uint8Array([1, 2, 3]))
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -126,5 +136,131 @@ describe('CloudStorageService auth readiness', () => {
     expect(pushArg.scope).toBe('chat')
     expect(pushArg.id).toBe('chat-1')
     expect(pushArg.metadata).toMatchObject({ restoreDeleted: true })
+  })
+
+  it('reuses stable attachment idempotency keys across upload retries', async () => {
+    const service = new CloudStorageService()
+    const chat = {
+      id: 'chat-1',
+      title: 'Local chat',
+      messages: [
+        {
+          role: 'user',
+          content: 'hi',
+          attachments: [
+            {
+              id: 'local-att',
+              type: 'image',
+              fileName: 'image.png',
+              base64: 'AQID',
+            },
+          ],
+        },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      lastAccessedAt: 0,
+    } as any
+
+    await service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' })
+    const firstKey = mockAttachmentPut.mock.calls[0][0].idempotencyKey
+
+    chat.messages[0].attachments[0].id = 'local-att'
+    chat.messages[0].attachments[0].base64 = 'AQID'
+    chat.messages[0].attachments[0].encryptionKey = undefined
+    await service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' })
+
+    expect(mockAttachmentPut).toHaveBeenCalledTimes(2)
+    expect(mockAttachmentPut.mock.calls[1][0].idempotencyKey).toBe(firstKey)
+  })
+
+  it('does not re-upload attachments that already have enclave keys', async () => {
+    const service = new CloudStorageService()
+    const chat = {
+      id: 'chat-1',
+      title: 'Local chat',
+      messages: [
+        {
+          role: 'user',
+          content: 'hi',
+          attachments: [
+            {
+              id: 'att-v2',
+              type: 'image',
+              fileName: 'image.png',
+              base64: 'AQID',
+              encryptionKey: 'existing-key',
+            },
+          ],
+        },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      lastAccessedAt: 0,
+    } as any
+
+    await service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' })
+
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+  })
+
+  it('keeps uploaded attachments when chat push fails so retries can commit safely', async () => {
+    mockEnclavePush.mockRejectedValueOnce(new Error('push failed'))
+    const service = new CloudStorageService()
+    const chat = {
+      id: 'chat-1',
+      title: 'Local chat',
+      messages: [
+        {
+          role: 'user',
+          content: 'hi',
+          attachments: [
+            {
+              id: 'local-att',
+              type: 'image',
+              fileName: 'image.png',
+              base64: 'AQID',
+            },
+          ],
+        },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      lastAccessedAt: 0,
+    } as any
+
+    await expect(
+      service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' }),
+    ).rejects.toThrow('push failed')
+
+    expect(chat.messages[0].attachments[0]).toMatchObject({
+      id: 'att-v2',
+      encryptionKey: 'k',
+    })
+  })
+
+  it('does not downgrade v2 attachment reads to legacy fetch on enclave failure', async () => {
+    mockAttachmentGet.mockRejectedValueOnce(new Error('attestation failed'))
+    const service = new CloudStorageService()
+    const images = await service.loadChatImages('chat-1', [
+      {
+        role: 'user',
+        content: 'image',
+        attachments: [
+          {
+            id: 'att-v2',
+            type: 'image',
+            encryptionKey: 'att-key',
+          },
+        ],
+      },
+    ] as any)
+
+    expect(images).toEqual({})
+    expect(mockAttachmentGet).toHaveBeenCalledWith({
+      id: 'att-v2',
+      attKeyB64: 'att-key',
+    })
+    expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 })

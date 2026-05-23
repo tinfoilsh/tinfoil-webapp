@@ -40,14 +40,20 @@ export function pullKey(): PullKey[] {
  * collapses to the same shape as `pullKey()`.
  */
 export function migrationKeys(): PullKey[] {
-  const all = encryptionService.getAllKeys()
   const out: PullKey[] = []
-  if (all.primary) {
-    const bytes = encryptionService.getAlternativeKeyBytes(all.primary)
+  // Source the primary from the same path `requirePrimaryKeyB64()` uses
+  // so a freshly-loaded service (page refresh before `setKey()` runs)
+  // still surfaces the primary CEK on the migration sweep. The
+  // in-memory `getAllKeys().primary` field can lag the persisted key
+  // immediately after startup.
+  const primary = encryptionService.getKey()
+  if (primary) {
+    const bytes = encryptionService.getAlternativeKeyBytes(primary)
     if (bytes) out.push({ key: bytesToBase64(bytes) })
   }
-  for (const alt of all.alternatives) {
-    if (alt === all.primary) continue
+  const { alternatives } = encryptionService.getAllKeys()
+  for (const alt of alternatives) {
+    if (alt === primary) continue
     const bytes = encryptionService.getAlternativeKeyBytes(alt)
     if (bytes) out.push({ key: bytesToBase64(bytes) })
   }

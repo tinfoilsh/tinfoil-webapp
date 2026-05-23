@@ -113,6 +113,17 @@ describe('passkey-key-flow', () => {
       expect(result.reason).toBe('prf_unsupported')
     })
 
+    it('maps PasskeyTimeoutError to passkey_timeout', async () => {
+      const err = Object.assign(new Error('timed out'), {
+        name: 'PasskeyTimeoutError',
+      })
+      mockCreatePrfPasskey.mockRejectedValue(err)
+      const result = await flow.registerNewKeyWithPasskey({ user: USER })
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.reason).toBe('passkey_timeout')
+    })
+
     it('maps a 409 from the enclave to remote_key_exists', async () => {
       mockCreatePrfPasskey.mockResolvedValue({
         credentialId: 'cred-x',
@@ -231,8 +242,8 @@ describe('passkey-key-flow', () => {
         bundles: {
           'cred-a': {
             credential_id: 'cred-a',
-            kek_iv: 'AAEC', // 0x000102
-            encrypted_keys: 'AwQF', // 0x030405
+            kek_iv: '000102',
+            encrypted_keys: '030405',
             bundle_version: 1,
           },
         },
@@ -264,24 +275,13 @@ describe('passkey-key-flow', () => {
         kek,
         cek,
       })
-      // Convert hex bundle fields back to base64 to fit the wire shape.
-      const hexToBase64 = (hex: string) => {
-        const bytes = new Uint8Array(hex.length / 2)
-        for (let i = 0; i < bytes.length; i++) {
-          bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
-        }
-        let s = ''
-        for (let i = 0; i < bytes.length; i++)
-          s += String.fromCharCode(bytes[i])
-        return btoa(s)
-      }
       mockKeyCurrent.mockResolvedValue({
         key_id: 'deadbeef'.repeat(4),
         bundles: {
           'cred-mismatch': {
             credential_id: 'cred-mismatch',
-            kek_iv: hexToBase64(bundle.kekIvHex),
-            encrypted_keys: hexToBase64(bundle.wrappedKeyHex),
+            kek_iv: bundle.kekIvHex,
+            encrypted_keys: bundle.wrappedKeyHex,
           },
         },
       })

@@ -131,6 +131,15 @@ export async function runLegacyBlobMigration(): Promise<MigrationReport> {
   }
 
   const report = toReport(accumulator)
+  // If the pass budget was exhausted before the enclave reported
+  // `partial:false`, scopes the enclave did not get to are missing
+  // from the accumulator entirely. `totalRemaining === 0` then means
+  // "no remaining rows in the scopes we observed" — not "no remaining
+  // rows anywhere" — so Layer C must NOT drop alternatives.
+  const enclaveStillPartial = lastResp?.partial === true
+  if (enclaveStillPartial) {
+    report.fullyMigrated = false
+  }
   logInfo('legacy-blob-migration complete', {
     component: 'LegacyBlobMigration',
     action: 'runLegacyBlobMigration',

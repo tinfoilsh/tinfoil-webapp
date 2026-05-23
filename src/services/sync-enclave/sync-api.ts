@@ -97,6 +97,8 @@ export interface ListStatusRequest {
   scope: Scope
   cursor?: string
   limit?: number
+  /** Optional server-side project filter for chat scope. */
+  projectId?: string
 }
 
 export interface ListStatusUpdate {
@@ -189,7 +191,7 @@ export interface RemoveBundleRequest {
 /**
  * Bundle entry shape returned by /v1/key/current. Mirrors the
  * controlplane `user_key_bundles` row layout (kek_iv + encrypted_keys
- * are base64 strings on the wire).
+ * are hex strings on the wire).
  */
 export interface KeyCurrentBundle {
   credential_id: string
@@ -340,6 +342,7 @@ export async function listStatus(
     scope: req.scope,
     cursor: req.cursor,
     limit: req.limit,
+    project_id: req.projectId,
   })
 }
 
@@ -450,6 +453,7 @@ export interface AttachmentPutRequest {
   chatId: string
   /** Raw attachment bytes; the enclave forwards to buckets. */
   plaintext: Uint8Array
+  idempotencyKey: string
 }
 
 /**
@@ -488,6 +492,7 @@ export async function attachmentPut(
   return client.post<AttachmentPutResponse>('/v1/attachment/put', {
     chat_id: req.chatId,
     plaintext: bytesToB64(req.plaintext),
+    idempotency_key: req.idempotencyKey,
   })
 }
 
@@ -615,7 +620,16 @@ export { SyncEnclaveError }
  * format), and base64 plaintext → bytes.
  */
 export function hexToB64(hex: string): string {
+  if (hex.length === 0) throw new Error('sync-api: empty hex')
   if (hex.length % 2 !== 0) throw new Error('sync-api: odd-length hex')
+  // `parseInt` accepts non-hex characters (returning NaN) and
+  // assigning NaN to a Uint8Array cell silently coerces to 0. Without
+  // this guard a CEK string containing any non-hex char would be
+  // converted to a zero-byte buffer and used to encrypt user data
+  // under what is effectively a known constant key.
+  if (!/^[0-9a-fA-F]+$/.test(hex)) {
+    throw new Error('sync-api: invalid hex')
+  }
   const bytes = new Uint8Array(hex.length / 2)
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(hex.substr(i * 2, 2), 16)
@@ -629,20 +643,6 @@ export function bytesToBase64(b: Uint8Array): string {
 
 export function base64ToBytes(s: string): Uint8Array {
   return b64ToBytes(s)
-}
-
-/**
- * Convert a base64 string to lowercase hex. Used to map the wire's
- * `kek_iv` / `encrypted_keys` (base64) into the hex shape `BundleBody`
- * expects.
- */
-export function b64ToHex(s: string): string {
-  const bytes = b64ToBytes(s)
-  let out = ''
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, '0')
-  }
-  return out
 }
 
 /**

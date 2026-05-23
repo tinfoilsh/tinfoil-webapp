@@ -41,12 +41,12 @@ describe('ProfileSyncService', () => {
     mockPush.mockResolvedValue({ ok: true, etag: '8', key_id: 'aa'.repeat(16) })
   })
 
-  it('saves profile updates with the current enclave etag', async () => {
+  it('saves profile updates with the caller last-synced etag', async () => {
     const service = new ProfileSyncService()
     const result = await service.saveProfile({ nickname: 'Sacha', version: 7 })
 
     expect(result.success).toBe(true)
-    expect(mockListStatus).toHaveBeenCalledWith({ scope: 'profile' })
+    expect(mockListStatus).not.toHaveBeenCalled()
     expect(mockPush).toHaveBeenCalledWith(
       expect.objectContaining({
         scope: 'profile',
@@ -54,5 +54,27 @@ describe('ProfileSyncService', () => {
         ifMatch: '7',
       }),
     )
+  })
+
+  it('reports profile delete tombstones from list status', async () => {
+    mockListStatus.mockResolvedValueOnce({
+      updates: [],
+      deletes: [
+        {
+          id: 'profile',
+          scope: 'profile',
+          deleted_at: '2026-05-20T12:00:00.000Z',
+        },
+      ],
+    })
+
+    const service = new ProfileSyncService()
+    const status = await service.getSyncStatus()
+
+    expect(status).toEqual({
+      exists: false,
+      deleted: true,
+      lastUpdated: '2026-05-20T12:00:00.000Z',
+    })
   })
 })

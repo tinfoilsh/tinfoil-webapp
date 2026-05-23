@@ -157,18 +157,12 @@ export async function reencryptAndUploadChats(): Promise<{
           continue
         }
 
-        // Re-encrypt the chat with the new key by forcing a sync
-        // The sync process will automatically encrypt with the current key
-        // Increment sync version to force upload
-        const newVersion = (chat.syncVersion ?? 0) + 1
-        const chatToUpload = { ...chat, syncVersion: newVersion }
+        const syncVersion =
+          (await cloudStorage.uploadChat(chat)) ?? (chat.syncVersion ?? 0) + 1
 
-        // Upload first — only persist the new version locally on success
-        await cloudStorage.uploadChat(chatToUpload)
-
-        chat.syncVersion = newVersion
+        chat.syncVersion = syncVersion
         await indexedDBStorage.saveChat(chat)
-        await indexedDBStorage.markAsSynced(chat.id, newVersion)
+        await indexedDBStorage.markAsSynced(chat.id, syncVersion)
         result.uploaded++
         result.reencrypted++
 

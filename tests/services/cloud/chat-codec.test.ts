@@ -172,6 +172,19 @@ describe('Chat Codec - processRemoteChat', () => {
 
       expect(result.status).toBe('no_content')
     })
+
+    it('rejects empty v2 plaintext instead of creating a placeholder', async () => {
+      const remoteChat: RemoteChatData = {
+        id: 'empty-v2-chat',
+        plaintext: '',
+        formatVersion: 2,
+        createdAt: '2024-01-01T00:00:00.000Z',
+      }
+
+      await expect(processRemoteChat(remoteChat)).rejects.toThrow(
+        /v2_plaintext_invalid/,
+      )
+    })
   })
 
   describe('Project ID handling', () => {
