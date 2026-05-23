@@ -6,6 +6,15 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || ''
 export const IS_DEV = process.env.NEXT_PUBLIC_DEV === 'true'
 export const DEV_API_KEY = process.env.NEXT_PUBLIC_DEV_API_KEY || ''
 
+// Sync enclave URL. The web client speaks only to this attested enclave
+// for blob reads/writes; the enclave is the only encryptor.
+export const SYNC_ENCLAVE_URL =
+  process.env.NEXT_PUBLIC_SYNC_ENCLAVE_URL || 'https://sync.tinfoil.sh'
+
+// GitHub repo used for sync-enclave code-measurement verification.
+export const SYNC_ENCLAVE_REPO =
+  process.env.NEXT_PUBLIC_SYNC_ENCLAVE_REPO || 'tinfoilsh/confidential-sync'
+
 // Pagination settings
 export const PAGINATION = {
   CHATS_PER_PAGE: 20,

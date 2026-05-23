@@ -31,7 +31,7 @@ describe('UploadCoalescer', () => {
       // Let the async worker run
       await vi.runAllTimersAsync()
 
-      expect(uploadFn).toHaveBeenCalledWith('chat-1')
+      expect(uploadFn).toHaveBeenCalledWith('chat-1', expect.any(String))
       expect(uploadFn).toHaveBeenCalledTimes(1)
     })
 
@@ -46,9 +46,59 @@ describe('UploadCoalescer', () => {
       await vi.runAllTimersAsync()
 
       expect(uploadFn).toHaveBeenCalledTimes(3)
-      expect(uploadFn).toHaveBeenCalledWith('chat-1')
-      expect(uploadFn).toHaveBeenCalledWith('chat-2')
-      expect(uploadFn).toHaveBeenCalledWith('chat-3')
+      expect(uploadFn).toHaveBeenCalledWith('chat-1', expect.any(String))
+      expect(uploadFn).toHaveBeenCalledWith('chat-2', expect.any(String))
+      expect(uploadFn).toHaveBeenCalledWith('chat-3', expect.any(String))
+    })
+  })
+
+  describe('§9.6 R1 — idempotency key ownership', () => {
+    it('reuses the same idempotency key across retries of one logical write', async () => {
+      const uploadFn = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('flake'))
+        .mockRejectedValueOnce(new Error('flake'))
+        .mockResolvedValueOnce(undefined)
+
+      const coalescer = new UploadCoalescer(uploadFn, {
+        baseDelayMs: 10,
+        maxDelayMs: 40,
+        maxRetries: 3,
+      })
+
+      coalescer.enqueue('chat-1')
+      await vi.runAllTimersAsync()
+
+      expect(uploadFn).toHaveBeenCalledTimes(3)
+      const keys = uploadFn.mock.calls.map((c) => c[1])
+      expect(new Set(keys).size).toBe(1)
+    })
+
+    it('mints a fresh idempotency key for each new logical write', async () => {
+      let resolveFirst: () => void
+      const uploadFn = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              resolveFirst = resolve
+            }),
+        )
+        .mockResolvedValueOnce(undefined)
+
+      const coalescer = new UploadCoalescer(uploadFn)
+
+      coalescer.enqueue('chat-1')
+      // Dirty during in-flight — second logical write.
+      coalescer.enqueue('chat-1')
+
+      resolveFirst!()
+      await vi.runAllTimersAsync()
+
+      expect(uploadFn).toHaveBeenCalledTimes(2)
+      const firstKey = uploadFn.mock.calls[0][1]
+      const secondKey = uploadFn.mock.calls[1][1]
+      expect(firstKey).not.toBe(secondKey)
     })
   })
 
@@ -134,10 +184,18 @@ describe('UploadCoalescer', () => {
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce(undefined)
 
+      // Pin the jitter to its upper bound so the retry windows are
+      // deterministic. With full-jitter exponential backoff
+      // delay = floor(random() * min(maxDelay, baseDelay * 2**attempt)),
+      // random()=0.9999 gives the worst-case wait per attempt.
       const coalescer = new UploadCoalescer(uploadFn, {
         baseDelayMs: 100,
         maxDelayMs: 400,
         maxRetries: 3,
+        scheduler: {
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          random: () => 0.9999,
+        },
       })
 
       coalescer.enqueue('chat-1')
@@ -146,11 +204,11 @@ describe('UploadCoalescer', () => {
       await vi.advanceTimersByTimeAsync(0)
       expect(uploadFn).toHaveBeenCalledTimes(1)
 
-      // Wait for first retry (100ms)
+      // Wait for first retry: max delay window = baseDelay * 2**0 = 100ms.
       await vi.advanceTimersByTimeAsync(100)
       expect(uploadFn).toHaveBeenCalledTimes(2)
 
-      // Wait for second retry (200ms)
+      // Wait for second retry: max delay window = baseDelay * 2**1 = 200ms.
       await vi.advanceTimersByTimeAsync(200)
       expect(uploadFn).toHaveBeenCalledTimes(3)
 

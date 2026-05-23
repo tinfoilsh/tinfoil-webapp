@@ -19,6 +19,12 @@ export interface RemoteChatData {
   content?: string | null
   /** v1 binary content (gzip+AES-GCM encrypted). Mutually exclusive with content. */
   binaryContent?: ArrayBuffer | null
+  /**
+   * Plaintext JSON returned by the sync enclave after server-side
+   * unsealing. When set, `processRemoteChat` decodes it directly and
+   * does NOT invoke the legacy `encryptionService.decrypt*` path.
+   */
+  plaintext?: string | null
   createdAt?: string
   updatedAt?: string | null
   formatVersion?: number
@@ -78,7 +84,7 @@ export async function processRemoteChat(
   )
 
   // If no content at all, return a placeholder
-  if (!remote.content && !remote.binaryContent) {
+  if (!remote.content && !remote.binaryContent && !remote.plaintext) {
     logInfo('Remote chat has no content', {
       component: 'ChatCodec',
       action: 'processRemoteChat',
@@ -102,7 +108,26 @@ export async function processRemoteChat(
     let decrypted: any
     let usedFallbackKey = false
 
-    if (remote.formatVersion === 1 && remote.binaryContent) {
+    if (remote.formatVersion === 2 && remote.plaintext) {
+      // Enclave already unsealed the row server-side. The plaintext is
+      // the JSON-serialized StoredChat shape uploadChat() persisted.
+      // §9.6 R5: the v2 path must NOT fall through to the legacy
+      // placeholder branch on JSON.parse failure — malformed plaintext
+      // here is a server bug, not a "wrong key" outcome. Re-throw a
+      // typed error tagged with `v2_plaintext_invalid` so callers can
+      // route it through `decideRecovery` and surface it appropriately,
+      // instead of polluting the chat list with an `Encrypted`
+      // placeholder.
+      try {
+        decrypted = JSON.parse(remote.plaintext)
+      } catch (parseErr) {
+        throw new Error(
+          `v2_plaintext_invalid: ${
+            parseErr instanceof Error ? parseErr.message : String(parseErr)
+          }`,
+        )
+      }
+    } else if (remote.formatVersion === 1 && remote.binaryContent) {
       const info = await encryptionService.decryptV1WithFallbackInfo(
         new Uint8Array(remote.binaryContent),
       )
@@ -145,6 +170,15 @@ export async function processRemoteChat(
       needsReencryption: usedFallbackKey,
     }
   } catch (decryptError) {
+    // §9.6 R5: the v2 enclave path does not generate placeholders. A
+    // failure here is the enclave returning bytes that aren't valid
+    // JSON, which is a server-side bug — surface it to the caller
+    // through the normal recovery path instead of pretending it is a
+    // legacy "wrong key" decryption failure.
+    if (remote.formatVersion === 2) {
+      throw decryptError
+    }
+
     // Determine if this is data corruption vs wrong key
     const isCorrupted =
       decryptError instanceof Error &&

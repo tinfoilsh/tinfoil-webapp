@@ -1,6 +1,7 @@
 export {
   PasskeyCredentialConflictError,
   decryptKeyBundle,
+  deletePasskeyCredential,
   encryptKeyBundle,
   getPasskeyCredentialState,
   hasPasskeyCredentials,

@@ -393,6 +393,7 @@ export function ChatInterface({
     manualRecoveryNeeded,
     passkeySetupAvailable,
     passkeySetupFailed,
+    passkeyRecoveryFailure,
     passkeyFirstTimePromptAvailable,
     setupPasskey,
     setupFirstTimePasskey,
@@ -3334,6 +3335,7 @@ export function ChatInterface({
           }
           passkeyRecoveryNeeded={passkeyRecoveryNeeded}
           manualRecoveryNeeded={manualRecoveryNeeded}
+          passkeyRecoveryFailure={passkeyRecoveryFailure}
           onSkipRecovery={() => {
             skipPasskeyRecovery()
             setShowCloudSyncSetupModal(false)

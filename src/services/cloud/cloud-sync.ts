@@ -8,6 +8,8 @@ import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { chatEvents } from '../storage/chat-events'
 import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
 import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
+import { decideRecovery } from '../sync-enclave/enclave-error-recovery'
+import { newIdempotencyKey } from '../sync-enclave/sync-api'
 import { processRemoteChat } from './chat-codec'
 import { ingestRemoteChats, syncRemoteDeletions } from './chat-ingestion'
 import { canWriteToCloud } from './cloud-key-authorization'
@@ -65,7 +67,7 @@ export class CloudSyncService {
 
   constructor() {
     this.uploadCoalescer = new UploadCoalescer(
-      (chatId) => this.doBackupChat(chatId),
+      (chatId, idempotencyKey) => this.doBackupChat(chatId, idempotencyKey),
       {
         baseDelayMs: UPLOAD_BASE_DELAY_MS,
         maxDelayMs: UPLOAD_MAX_DELAY_MS,
@@ -445,6 +447,19 @@ export class CloudSyncService {
       return
     }
 
+    // §9.6 R6 — local-only chats MUST NEVER enter the enclave write
+    // path. Refuse the enqueue here so the user's opt-out is honored
+    // even if a caller passes a local-only chat id by mistake.
+    const chat = await indexedDBStorage.getChat(chatId)
+    if (chat?.isLocalOnly) {
+      logInfo('Skipping enqueue for local-only chat', {
+        component: 'CloudSync',
+        action: 'backupChat',
+        metadata: { chatId },
+      })
+      return
+    }
+
     // Use the upload coalescer - it handles:
     // - Coalescing rapid edits into a single upload
     // - Exponential backoff retry on failure
@@ -497,13 +512,19 @@ export class CloudSyncService {
       throw new Error('Cannot sync chat while it is streaming')
     }
 
-    await cloudStorage.uploadChat(chat, options)
+    await cloudStorage.uploadChat(chat, {
+      ...options,
+      idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
+    })
 
     const newVersion = (chat.syncVersion ?? 0) + 1
     await indexedDBStorage.markAsSynced(chatId, newVersion)
   }
 
-  private async doBackupChat(chatId: string): Promise<void> {
+  private async doBackupChat(
+    chatId: string,
+    idempotencyKey: string,
+  ): Promise<void> {
     try {
       if (!(await canWriteToCloud())) {
         return
@@ -574,7 +595,7 @@ export class CloudSyncService {
         return
       }
 
-      await cloudStorage.uploadChat(chat)
+      await cloudStorage.uploadChat(chat, { idempotencyKey })
 
       const newVersion = (chat.syncVersion ?? 0) + 1
       await indexedDBStorage.markAsSynced(chatId, newVersion)
@@ -586,6 +607,22 @@ export class CloudSyncService {
       ) {
         return
       }
+      // §9.6 R4 — emit the typed recovery decision so the surrounding
+      // state machine (and any operator dashboards) can observe which
+      // Appendix B code we tripped and which recovery the spec
+      // mandates. The error itself is still re-thrown so the
+      // coalescer's retry path keeps its current semantics.
+      const decision = decideRecovery(error)
+      logInfo('upload-chat recovery decision', {
+        component: 'CloudSync',
+        action: 'backupChat',
+        metadata: {
+          chatId,
+          action: decision.action.type,
+          code: decision.classification.code ?? null,
+          kind: decision.classification.kind,
+        },
+      })
       throw error
     }
   }
