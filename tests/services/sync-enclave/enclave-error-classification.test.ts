@@ -14,7 +14,7 @@ describe('classifyEnclaveError', () => {
   it('returns one of the four §9.6 R2 buckets for every Appendix B code', () => {
     const expectations: Record<EnclaveErrorCode, string> = {
       STALE_KEY: 'RETRYABLE_REFRESH',
-      STALE_BLOB: 'RETRYABLE_REFRESH',
+      STALE_BLOB: 'USER_DECISION',
       SYNC_CONFLICT: 'USER_DECISION',
       EXISTING_DATA_UNDER_OTHER_KEY: 'USER_DECISION',
       IDEMPOTENCY_CONFLICT: 'TERMINAL',

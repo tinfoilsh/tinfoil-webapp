@@ -14,15 +14,14 @@ import type {
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import {
+  deleteRow as enclaveDeleteRow,
+  listStatus as enclaveListStatus,
   pull as enclavePull,
   push as enclavePush,
   newIdempotencyKey,
   pullItemPlaintext,
 } from '../sync-enclave/sync-api'
-import {
-  pullKeysFromEncryptionService,
-  requirePrimaryKeyB64,
-} from './cek-encoding'
+import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import { canWriteToCloud } from './cloud-key-authorization'
 
 const API_BASE_URL =
@@ -149,7 +148,7 @@ export class ProjectStorageService {
 
   async getProject(projectId: string): Promise<Project | null> {
     try {
-      const keys = pullKeysFromEncryptionService()
+      const keys = pullKey()
       if (keys.length === 0) return null
 
       const resp = await enclavePull({
@@ -202,17 +201,16 @@ export class ProjectStorageService {
       )
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/api/storage/project/${projectId}`,
-      {
-        method: 'DELETE',
-        headers: await this.getHeaders(),
-      },
-    )
-
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Failed to delete project: ${response.statusText}`)
-    }
+    const status = await enclaveListStatus({ scope: PROJECT_SCOPE, limit: 500 })
+    const current = status.updates.find((u) => u.id === projectId)
+    if (!current) return
+    await enclaveDeleteRow({
+      scope: PROJECT_SCOPE,
+      id: projectId,
+      ifMatch: current.etag,
+      idempotencyKey: newIdempotencyKey(),
+      keyB64: requirePrimaryKeyB64(),
+    })
   }
 
   async deleteAllProjects(): Promise<{
@@ -372,7 +370,7 @@ export class ProjectStorageService {
     documentId: string,
   ): Promise<ProjectDocument | null> {
     try {
-      const keys = pullKeysFromEncryptionService()
+      const keys = pullKey()
       if (keys.length === 0) return null
 
       const resp = await enclavePull({
@@ -425,17 +423,20 @@ export class ProjectStorageService {
       )
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/api/projects/${projectId}/documents/${documentId}`,
-      {
-        method: 'DELETE',
-        headers: await this.getHeaders(),
-      },
-    )
-
-    if (!response.ok && response.status !== 404) {
-      throw new Error(`Failed to delete document: ${response.statusText}`)
-    }
+    const id = projectDocumentId(projectId, documentId)
+    const status = await enclaveListStatus({
+      scope: PROJECT_DOCUMENT_SCOPE,
+      limit: 500,
+    })
+    const current = status.updates.find((u) => u.id === id)
+    if (!current) return
+    await enclaveDeleteRow({
+      scope: PROJECT_DOCUMENT_SCOPE,
+      id,
+      ifMatch: current.etag,
+      idempotencyKey: newIdempotencyKey(),
+      keyB64: requirePrimaryKeyB64(),
+    })
   }
 
   async listDocuments(
@@ -480,12 +481,9 @@ export class ProjectStorageService {
 
   async listProjectChats(
     projectId: string,
-    options?: { includeContent?: boolean; continuationToken?: string },
+    options?: { continuationToken?: string },
   ): Promise<ProjectChatListResponse> {
     const params = new URLSearchParams()
-    if (options?.includeContent) {
-      params.append('includeContent', 'true')
-    }
     if (options?.continuationToken) {
       params.append('continuationToken', options.continuationToken)
     }

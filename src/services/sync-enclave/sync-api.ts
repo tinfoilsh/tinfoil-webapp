@@ -10,22 +10,19 @@
  *     32-byte key);
  *   - choosing an idempotency key per logical operation;
  *   - passing the ETag the client believes the row is at (or null for
- *     a create) via `ifMatch`;
- *   - feeding the enclave any conflict resolution preferences via
- *     `conflictPolicy`.
+ *     a create) via `ifMatch`.
  *
  * The enclave owns:
  *   - encryption-at-rest (seal/unseal under the user's CEK);
- *   - the per-row ETag and `key_id` columns;
- *   - 412 STALE_BLOB / 409 STALE_KEY conflict semantics; and
- *   - the auto-merge resolver path (see `internal/resolver`).
+ *   - the per-row ETag and `key_id` columns; and
+ *   - 412 STALE_BLOB (surfaced as 409 SYNC_CONFLICT) / 409 STALE_KEY
+ *     conflict semantics. The enclave never merges concurrent edits;
+ *     every conflict is bubbled up to the UI to resolve.
  */
 
 import { SyncEnclaveError, getSyncEnclaveClient } from './sync-enclave-client'
 
 export type Scope = 'profile' | 'chat' | 'project' | 'project_document'
-
-export type ConflictPolicy = 'auto_merge' | 'reject' | 'replace_remote'
 
 /* -------------------------------------------------------------------------- */
 /*  Push / Pull / List / Delete                                               */
@@ -33,8 +30,13 @@ export type ConflictPolicy = 'auto_merge' | 'reject' | 'replace_remote'
 
 export interface PushRequest {
   scope: Scope
-  /** Required for non-profile scopes; ignored for profile (server fills it in). */
-  id?: string
+  /**
+   * Required for every scope. For `profile`, pass the canonical
+   * singleton id (`'profile'`) — the enclave no longer substitutes it
+   * silently, so an empty value is a 400. See `cloud/profile-sync.ts`
+   * for the constant and call site.
+   */
+  id: string
   /** User's CEK, base64-encoded raw 32 bytes. */
   keyB64: string
   /** Plaintext bytes the enclave will seal. */
@@ -42,7 +44,6 @@ export interface PushRequest {
   /** CAS guard. null = create; otherwise the ETag the caller believes the row is at. */
   ifMatch: string | null
   idempotencyKey: string
-  conflictPolicy?: ConflictPolicy
   /** Arbitrary scope-specific metadata persisted alongside the row. */
   metadata?: Record<string, unknown>
 }
@@ -66,7 +67,11 @@ export interface PullRequest {
   all?: boolean
   cursor?: string
   limit?: number
-  /** One or more candidate decryption keys. The enclave tries each in order. */
+  /** Candidate decryption keys, in priority order. The enclave tries
+   *  each one when unsealing v0/v1 rows and uses `keys[0]` as the
+   *  rewrap target so legacy rows are promoted to v2 inline before
+   *  the response is returned — callers don't have to opt in.
+   */
   keys: PullKey[]
 }
 
@@ -98,6 +103,8 @@ export interface ListStatusUpdate {
   id: string
   etag: string
   key_id: string
+  /** Server-supplied project membership for chat rows; absent for other scopes. */
+  project_id?: string | null
   updated_at: string
   cursor?: string
 }
@@ -163,14 +170,20 @@ export interface KeyRegisterResponse {
 
 export interface AddBundleRequest {
   keyId: string
+  keyB64: string
   credentialId: string
   kekIvHex: string
   encryptedKeysHex: string
+  /** Client-generated idempotency key, e.g. `newIdempotencyKey()`. */
+  idempotencyKey: string
 }
 
 export interface RemoveBundleRequest {
   keyId: string
+  keyB64: string
   credentialId: string
+  /** Client-generated idempotency key, e.g. `newIdempotencyKey()`. */
+  idempotencyKey: string
 }
 
 /**
@@ -190,6 +203,12 @@ export interface KeyCurrentBundle {
 export interface KeyCurrentResponse {
   /** Hex-encoded current KeyID, or null if the user has no key yet. */
   key_id: string | null
+  /**
+   * Opaque etag the controlplane uses to gate concurrent register-key
+   * mutations. Pass this back as `if_match` when rotating or running
+   * the start-fresh wipe. Empty string when the user has no key yet.
+   */
+  etag?: string
   /** Map of credential_id → bundle body. Empty when key_id is null. */
   bundles: Record<string, KeyCurrentBundle>
   created_via?: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
@@ -214,6 +233,37 @@ export interface MigrateResponse {
   retryable_remaining: number
   blocked_unmigrated: number
   blocked: string[]
+}
+
+/**
+ * MigrateAllRequest tells the enclave to drain every scope under the
+ * supplied target CEK in one call. The enclave handles per-scope
+ * pagination internally; clients do not iterate.
+ */
+export interface MigrateAllRequest {
+  keys: PullKey[]
+  target: { key: string /* base64 raw 32-byte target CEK */ }
+}
+
+export interface MigrateAllScopeReport {
+  scope: Scope
+  migrated: number
+  retryable_remaining: number
+  blocked_unmigrated: number
+  blocked?: string[]
+}
+
+export interface MigrateAllResponse {
+  migrated: number
+  retryable_remaining: number
+  blocked_unmigrated: number
+  /**
+   * True when the enclave hit its wall-clock budget before every
+   * scope was drained. The client should re-invoke migrate-all to
+   * pick up where it left off.
+   */
+  partial: boolean
+  scopes: MigrateAllScopeReport[]
 }
 
 /* -------------------------------------------------------------------------- */
@@ -251,7 +301,6 @@ export async function push(req: PushRequest): Promise<PushResponse> {
     plaintext: bytesToB64(req.plaintext),
     if_match: req.ifMatch,
     idempotency_key: req.idempotencyKey,
-    conflict_policy: req.conflictPolicy ?? 'auto_merge',
     metadata: req.metadata,
   })
 }
@@ -329,9 +378,11 @@ export async function addBundle(req: AddBundleRequest): Promise<OKResponse> {
   const client = await getSyncEnclaveClient()
   return client.post<OKResponse>('/v1/key/add-bundle', {
     key_id: req.keyId,
+    key: req.keyB64,
     credential_id: req.credentialId,
     kek_iv: req.kekIvHex,
     encrypted_keys: req.encryptedKeysHex,
+    idempotency_key: req.idempotencyKey,
   })
 }
 
@@ -345,7 +396,9 @@ export async function removeBundle(
   const client = await getSyncEnclaveClient()
   return client.post<OKResponse>('/v1/key/remove-bundle', {
     key_id: req.keyId,
+    key: req.keyB64,
     credential_id: req.credentialId,
+    idempotency_key: req.idempotencyKey,
   })
 }
 
@@ -377,6 +430,172 @@ export async function migrate(req: MigrateRequest): Promise<MigrateResponse> {
     keys: req.keys,
     target: req.target,
   })
+}
+
+export async function migrateAll(
+  req: MigrateAllRequest,
+): Promise<MigrateAllResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<MigrateAllResponse>('/v1/blobs/migrate-all', {
+    keys: req.keys,
+    target: req.target,
+  })
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Attachment storage (buckets.tinfoil.sh via enclave)                       */
+/* -------------------------------------------------------------------------- */
+
+export interface AttachmentPutRequest {
+  chatId: string
+  /** Raw attachment bytes; the enclave forwards to buckets. */
+  plaintext: Uint8Array
+}
+
+/**
+ * The enclave mints both the durable attachment id and the
+ * per-attachment AES-256 key, then returns them here. The caller
+ * must adopt the id wherever it used its local temp id and embed
+ * the key in the chat JSON (as `attachments[i].encryptionKey`) so
+ * future reads can use it as the buckets slot key. No CEK material
+ * is ever shipped over this hop — the per-attachment key is the
+ * only credential needed to address the bucket entry, and it is
+ * already implicitly protected by the chat envelope's CEK seal.
+ */
+export interface AttachmentPutResponse {
+  ok: true
+  id: string
+  /** Base64-encoded 32-byte AES-256 key the enclave minted. */
+  att_key: string
+}
+
+export interface AttachmentGetRequest {
+  id: string
+  /** Per-attachment key the caller pulled from chat JSON. */
+  attKeyB64: string
+}
+
+export interface AttachmentGetResponse {
+  ok: true
+  plaintext: string
+}
+
+/** Upload an attachment through the sync enclave. */
+export async function attachmentPut(
+  req: AttachmentPutRequest,
+): Promise<AttachmentPutResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<AttachmentPutResponse>('/v1/attachment/put', {
+    chat_id: req.chatId,
+    plaintext: bytesToB64(req.plaintext),
+  })
+}
+
+/** Fetch an attachment through the sync enclave; returns raw bytes. */
+export async function attachmentGet(
+  req: AttachmentGetRequest,
+): Promise<Uint8Array> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.post<AttachmentGetResponse>('/v1/attachment/get', {
+    id: req.id,
+    att_key: req.attKeyB64,
+  })
+  return b64ToBytes(resp.plaintext)
+}
+
+/**
+ * Fetch an attachment through the enclave's unauthenticated route.
+ * Used by share recipients who have the per-attachment key but no
+ * JWT — same trust model as legacy /api/storage/attachment, just
+ * routed through the enclave so the buckets API key never has to
+ * be exposed to the recipient's browser.
+ */
+export async function attachmentGetPublic(
+  req: AttachmentGetRequest,
+): Promise<Uint8Array> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.postPublic<AttachmentGetResponse>(
+    '/v1/attachment/get-public',
+    {
+      id: req.id,
+      att_key: req.attKeyB64,
+    },
+  )
+  return b64ToBytes(resp.plaintext)
+}
+
+/**
+ * Delete an attachment from buckets through the sync enclave. No CEK
+ * is required: the buckets path is the attachment id and the
+ * controlplane's `chat_attachments` row is the source of truth for
+ * ownership; deletion is pure addressing.
+ */
+export async function attachmentDelete(req: {
+  id: string
+}): Promise<OKResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<OKResponse>('/v1/attachment/delete', {
+    id: req.id,
+  })
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Public chat share (seal + open through the enclave)                       */
+/* -------------------------------------------------------------------------- */
+
+export interface ShareSealRequest {
+  /** Plaintext JSON the owner wants to publish. */
+  plaintext: Uint8Array
+}
+
+export interface ShareSealResponse {
+  ok: true
+  /** Hex-encoded 32-byte random share key. Embed in URL fragment. */
+  share_key: string
+  /** Base64-encoded sealed ciphertext to upload to /api/shares/:chatId. */
+  ciphertext: string
+}
+
+export interface ShareOpenRequest {
+  /** Hex share key the recipient pulled out of the URL fragment. */
+  shareKeyHex: string
+  /** Ciphertext bytes fetched anonymously from /api/shares/:chatId. */
+  ciphertext: Uint8Array
+}
+
+/**
+ * Seal a chat for public sharing. The enclave generates a fresh
+ * random share key, gzips and AES-GCM-seals the plaintext, and
+ * returns the key + ciphertext. The owner uploads the ciphertext
+ * to controlplane and embeds the key in the share URL fragment.
+ * Auth: the owner's JWT (the enclave only seals for authenticated
+ * users so the share count can later be billed/limited).
+ */
+export async function shareSeal(
+  req: ShareSealRequest,
+): Promise<ShareSealResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<ShareSealResponse>('/v1/share/seal', {
+    plaintext: bytesToB64(req.plaintext),
+  })
+}
+
+/**
+ * Open a previously sealed share. Recipients pass the ciphertext
+ * they fetched from controlplane plus the URL-fragment share key;
+ * the enclave decrypts and returns plaintext. No authentication;
+ * the share key itself is the access proof.
+ */
+export async function shareOpen(req: ShareOpenRequest): Promise<Uint8Array> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.postPublic<{ ok: true; plaintext: string }>(
+    '/v1/share/open',
+    {
+      share_key: req.shareKeyHex,
+      ciphertext: bytesToB64(req.ciphertext),
+    },
+  )
+  return b64ToBytes(resp.plaintext)
 }
 
 export async function health(): Promise<HealthResponse> {

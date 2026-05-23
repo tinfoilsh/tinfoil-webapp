@@ -16,7 +16,8 @@ vi.mock('@/services/encryption/encryption-service', () => ({
 }))
 
 import {
-  pullKeysFromEncryptionService,
+  migrationKeys,
+  pullKey,
   requirePrimaryKeyB64,
 } from '@/services/cloud/cek-encoding'
 
@@ -54,7 +55,23 @@ describe('cek-encoding', () => {
     })
   })
 
-  describe('pullKeysFromEncryptionService', () => {
+  describe('pullKey', () => {
+    it('returns only the primary CEK so steady-state reads never ship history', () => {
+      mockGetKeyBytesOrThrow.mockReturnValue(new Uint8Array(32).fill(0x10))
+      const keys = pullKey()
+      expect(keys).toHaveLength(1)
+      expect(atob(keys[0].key).charCodeAt(0)).toBe(0x10)
+    })
+
+    it('propagates errors from the encryption service', () => {
+      mockGetKeyBytesOrThrow.mockImplementation(() => {
+        throw new Error('no key')
+      })
+      expect(() => pullKey()).toThrow(/no key/)
+    })
+  })
+
+  describe('migrationKeys', () => {
     it('emits primary first, then unique alternatives, each base64-encoded', () => {
       mockGetAllKeys.mockReturnValue({
         primary: 'key_primary',
@@ -68,12 +85,10 @@ describe('cek-encoding', () => {
         }
         return map[k] ?? null
       })
-      const keys = pullKeysFromEncryptionService()
+      const keys = migrationKeys()
       expect(keys).toHaveLength(3)
-      // First entry is the primary.
       const primaryDecoded = atob(keys[0].key)
       expect(primaryDecoded.charCodeAt(0)).toBe(0x10)
-      // Alternatives follow in declared order.
       expect(atob(keys[1].key).charCodeAt(0)).toBe(0x20)
       expect(atob(keys[2].key).charCodeAt(0)).toBe(0x30)
     })
@@ -86,13 +101,13 @@ describe('cek-encoding', () => {
       mockGetAlternativeKeyBytes.mockImplementation((k) =>
         k === 'key_primary' ? new Uint8Array(32) : null,
       )
-      const keys = pullKeysFromEncryptionService()
+      const keys = migrationKeys()
       expect(keys).toHaveLength(1)
     })
 
     it('returns an empty array when no primary key is loaded', () => {
       mockGetAllKeys.mockReturnValue({ primary: null, alternatives: [] })
-      const keys = pullKeysFromEncryptionService()
+      const keys = migrationKeys()
       expect(keys).toEqual([])
     })
   })

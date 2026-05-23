@@ -409,6 +409,24 @@ export class EncryptionService {
   }
 
   /**
+   * Drop every alternative (history) key from memory and from the
+   * persisted key-history bucket. Used by the Layer C cleanup once
+   * the legacy-blob migration loop reports `fullyMigrated`. Safe to
+   * call when there are no fallbacks — clears the cache and
+   * localStorage entries without disturbing the primary CEK.
+   */
+  clearFallbackKeys(): void {
+    if (this.fallbackKeyStrings.length === 0) {
+      this.fallbackKeyCache.clear()
+      this.saveKeyHistoryToStorage([])
+      return
+    }
+    this.fallbackKeyStrings = []
+    this.fallbackKeyCache.clear()
+    this.saveKeyHistoryToStorage([])
+  }
+
+  /**
    * Get all keys (primary + alternatives) for external backup.
    * Used by passkey key storage to encrypt the full key bundle.
    */

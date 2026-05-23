@@ -461,4 +461,45 @@ describe('EncryptionService', () => {
       expect(parsed).toContain(fallbackKey)
     })
   })
+
+  describe('clearFallbackKeys', () => {
+    it('is a no-op when no fallback keys are registered', async () => {
+      const primaryKey = await service.generateKey()
+      await service.setKey(primaryKey)
+
+      service.clearFallbackKeys()
+      expect(service.getFallbackKeyCount()).toBe(0)
+      expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(primaryKey)
+      const stored = localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)
+      expect(stored === null || stored === '[]').toBe(true)
+    })
+
+    it('drops every fallback key from memory and persists the empty history', async () => {
+      const primaryKey = await service.generateKey()
+      await service.setKey(primaryKey)
+      service.addDecryptionKey(await service.generateKey())
+      service.addDecryptionKey(await service.generateKey())
+      expect(service.getFallbackKeyCount()).toBe(2)
+
+      service.clearFallbackKeys()
+
+      expect(service.getFallbackKeyCount()).toBe(0)
+      const stored = localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)
+      expect(stored).toBe('[]')
+    })
+
+    it('leaves the primary key untouched', async () => {
+      const primaryKey = await service.generateKey()
+      await service.setKey(primaryKey)
+      service.addDecryptionKey(await service.generateKey())
+
+      service.clearFallbackKeys()
+
+      expect(service.getKey()).toBe(primaryKey)
+      // The primary should still be usable for encrypt/decrypt.
+      const enc = await service.encrypt({ msg: 'hello' })
+      const dec = await service.decrypt(enc)
+      expect(dec).toEqual({ msg: 'hello' })
+    })
+  })
 })

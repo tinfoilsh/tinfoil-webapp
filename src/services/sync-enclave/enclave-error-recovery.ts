@@ -43,13 +43,12 @@ export type RecoveryAction =
    */
   | { type: 'retry'; reason: 'NETWORK' | 'TRANSIENT_5XX' | 'AUTH_REFRESH' }
   /**
-   * Local state is stale. Refresh the local view of either the
-   * current key id or the row etag, then retry the write as a NEW
-   * logical write (new idempotency key) because the canonical tuple
-   * has changed.
+   * Local key id is stale. Refresh `current_key_id` and retry the
+   * write as a NEW logical write (new idempotency key) because the
+   * canonical tuple has changed. Only used for STALE_KEY; stale-blob
+   * conflicts surface to the UI instead.
    */
   | { type: 'refresh-current-key-and-retry' }
-  | { type: 'pull-and-retry'; reason: 'STALE_BLOB' | 'NEEDS_REWRAP' }
   /**
    * Targeted blob migration before the read can succeed. The
    * recovery driver runs `/v1/blobs/migrate` for the scope and then
@@ -58,10 +57,19 @@ export type RecoveryAction =
   | { type: 'migrate-legacy-and-retry'; scope?: string }
   /**
    * User input required. Surface the conflict UI / register-key
-   * arbitration; no automatic retry.
+   * arbitration; no automatic retry. STALE_BLOB is mapped here as a
+   * defensive catch — the enclave normally translates 412 into 409
+   * SYNC_CONFLICT before the client sees it.
    */
-  | { type: 'surface-conflict'; reason: 'SYNC_CONFLICT' }
+  | { type: 'surface-conflict'; reason: 'SYNC_CONFLICT' | 'STALE_BLOB' }
   | { type: 'surface-existing-data-under-other-key' }
+  /**
+   * The row was deleted on another device while we were writing or
+   * reading. The user cannot resolve this automatically — surface a
+   * "this item no longer exists on another device" prompt and let
+   * them choose to recreate it or discard their local copy.
+   */
+  | { type: 'surface-not-found' }
   /**
    * Local key is wrong. Trigger the recovery wizard (passkey /
    * manual-key / start-fresh).
@@ -107,7 +115,7 @@ function actionFor(c: EnclaveErrorClassification): RecoveryAction {
     case 'RETRYABLE_REFRESH':
       // Unreachable in practice (RETRYABLE_REFRESH only arises with a
       // code), but the type system wants exhaustiveness.
-      return { type: 'pull-and-retry', reason: 'STALE_BLOB' }
+      return { type: 'refresh-current-key-and-retry' }
     case 'USER_DECISION':
     case 'TERMINAL':
       return { type: 'abort', reason: 'UNKNOWN' }
@@ -124,7 +132,7 @@ const ACTIONS: Record<
   (_: EnclaveErrorClassification) => RecoveryAction
 > = {
   STALE_KEY: () => ({ type: 'refresh-current-key-and-retry' }),
-  STALE_BLOB: () => ({ type: 'pull-and-retry', reason: 'STALE_BLOB' }),
+  STALE_BLOB: () => ({ type: 'surface-conflict', reason: 'STALE_BLOB' }),
   SYNC_CONFLICT: () => ({
     type: 'surface-conflict',
     reason: 'SYNC_CONFLICT',
@@ -150,6 +158,7 @@ const ACTIONS: Record<
   AUTH: () => ({ type: 'retry', reason: 'AUTH_REFRESH' }),
   FORBIDDEN: () => ({ type: 'abort', reason: 'FORBIDDEN' }),
   NETWORK: () => ({ type: 'retry', reason: 'NETWORK' }),
+  NOT_FOUND: () => ({ type: 'surface-not-found' }),
 }
 
 /**

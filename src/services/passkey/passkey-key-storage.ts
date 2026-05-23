@@ -29,6 +29,7 @@
 
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
+import { requirePrimaryKeyB64 } from '../cloud/cek-encoding'
 import type { CloudKeyAuthorizationMode } from '../cloud/cloud-key-authorization'
 import { encryptionService } from '../encryption/encryption-service'
 import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
@@ -41,6 +42,7 @@ import {
   newIdempotencyKey,
 } from '../sync-enclave/sync-api'
 import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
+import { fetchLegacyPasskeyCredentials } from './legacy-passkey-credentials'
 
 const AES_GCM_IV_BYTES = 12
 
@@ -65,6 +67,15 @@ export interface PasskeyCredentialEntry {
   version: number
   sync_version: number
   bundle_version?: number
+  /**
+   * Set on entries that came from the legacy
+   * `/api/passkey-credentials/` JSONB rather than the enclave's
+   * `user_key_bundles` table. Used by the recovery flow to know
+   * whether the unwrapped CEK needs to be promoted into a real
+   * `user_keys` row after unlock. Not persisted; populated only on
+   * the in-memory list returned by `loadPasskeyCredentials`.
+   */
+  source?: 'enclave' | 'legacy'
 }
 
 const CURRENT_CREDENTIAL_VERSION = 1
@@ -172,14 +183,30 @@ export async function loadPasskeyCredentials(): Promise<
 > {
   try {
     const resp = await enclaveKeyCurrent()
-    if (!resp.key_id) return []
-    return Object.values(resp.bundles).map(reshapeBundleToEntry)
+    if (resp.key_id) {
+      return Object.values(resp.bundles).map((bundle) => ({
+        ...reshapeBundleToEntry(bundle),
+        source: 'enclave' as const,
+      }))
+    }
+    return await loadLegacyFallback()
   } catch (err) {
     if (err instanceof SyncEnclaveError && err.status === 404) {
-      return []
+      return loadLegacyFallback()
     }
     throw err
   }
+}
+
+async function loadLegacyFallback(): Promise<PasskeyCredentialEntry[]> {
+  const legacy = await fetchLegacyPasskeyCredentials()
+  if (legacy.length === 0) return []
+  logInfo('falling back to legacy passkey credentials for recovery', {
+    component: 'PasskeyKeyStorage',
+    action: 'loadLegacyFallback',
+    metadata: { count: legacy.length },
+  })
+  return legacy.map((entry) => ({ ...entry, source: 'legacy' as const }))
 }
 
 /**
@@ -207,7 +234,9 @@ export async function deletePasskeyCredential(
     if (!resp.bundles[credentialId]) return true
     await enclaveRemoveBundle({
       keyId: resp.key_id,
+      keyB64: requirePrimaryKeyB64(),
       credentialId,
+      idempotencyKey: newIdempotencyKey(),
     })
     return true
   } catch (error) {
@@ -308,6 +337,33 @@ export async function storeEncryptedKeys(
     }
 
     if (current.key_id !== localKeyId) {
+      if (keys.authorizationMode === 'explicit_start_fresh') {
+        // The user has chosen to wipe everything and bind a brand-new
+        // CEK. Route through register-key with created_via=start_fresh
+        // so the controlplane atomically drops every blob row, returns
+        // the v2 attachment ids it removed, and lets the enclave drain
+        // those from buckets — all without the cross-key conflict
+        // guard firing.
+        await enclaveRegisterKey({
+          keyB64: bytesToBase64(primaryBytes),
+          ifMatch: current.etag || '*',
+          createdVia: 'start_fresh',
+          idempotencyKey: newIdempotencyKey(),
+          initialBundle: {
+            credentialId,
+            kekIvHex: b64ToHexLocal(encrypted.iv),
+            encryptedKeysHex: b64ToHexLocal(encrypted.data),
+          },
+        })
+        const created = await enclaveKeyCurrent()
+        const bundleVersion = created.bundles[credentialId]?.bundle_version ?? 1
+        logInfo('start_fresh wipe + key register completed', {
+          component: 'PasskeyKeyStorage',
+          action: 'storeEncryptedKeys',
+          metadata: { credentialId, bundleVersion },
+        })
+        return { syncVersion: bundleVersion, bundleVersion }
+      }
       throw new PasskeyCredentialConflictError(
         "The remote key does not match this device's CEK. Recover the existing key first.",
         {
@@ -320,9 +376,11 @@ export async function storeEncryptedKeys(
 
     await enclaveAddBundle({
       keyId: current.key_id,
+      keyB64: bytesToBase64(primaryBytes),
       credentialId,
       kekIvHex: b64ToHexLocal(encrypted.iv),
       encryptedKeysHex: b64ToHexLocal(encrypted.data),
+      idempotencyKey: newIdempotencyKey(),
     })
 
     const refreshed = await enclaveKeyCurrent()
@@ -352,6 +410,23 @@ export async function retrieveEncryptedKeys(
   kek: CryptoKey,
 ): Promise<KeyBundle | null> {
   try {
+    const enclaveBundle = await tryRetrieveFromEnclave(credentialId, kek)
+    if (enclaveBundle) return enclaveBundle
+    return await tryRetrieveFromLegacy(credentialId, kek)
+  } catch (err) {
+    logError('Failed to retrieve encrypted keys', err, {
+      component: 'PasskeyKeyStorage',
+      action: 'retrieveEncryptedKeys',
+    })
+    return null
+  }
+}
+
+async function tryRetrieveFromEnclave(
+  credentialId: string,
+  kek: CryptoKey,
+): Promise<KeyBundle | null> {
+  try {
     const resp = await enclaveKeyCurrent()
     if (!resp.key_id) return null
     const bundle = resp.bundles[credentialId]
@@ -361,12 +436,22 @@ export async function retrieveEncryptedKeys(
       data: bundle.encrypted_keys,
     })
   } catch (err) {
-    logError('Failed to retrieve encrypted keys', err, {
-      component: 'PasskeyKeyStorage',
-      action: 'retrieveEncryptedKeys',
-    })
-    return null
+    if (err instanceof SyncEnclaveError && err.status === 404) return null
+    throw err
   }
+}
+
+async function tryRetrieveFromLegacy(
+  credentialId: string,
+  kek: CryptoKey,
+): Promise<KeyBundle | null> {
+  const legacy = await fetchLegacyPasskeyCredentials()
+  const entry = legacy.find((e) => e.id === credentialId)
+  if (!entry) return null
+  return await decryptKeyBundle(kek, {
+    iv: entry.iv,
+    data: entry.encrypted_keys,
+  })
 }
 
 // --- Helpers ---------------------------------------------------------------

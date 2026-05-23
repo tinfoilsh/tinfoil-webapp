@@ -68,18 +68,24 @@ export class SyncEnclaveClient {
    * present. Throws SyncEnclaveError on non-2xx responses with the
    * parsed `{error, code, ...details}` envelope.
    */
-  async request<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
+  async request<T = unknown>(
+    path: string,
+    init: RequestInit & { skipAuth?: boolean } = {},
+  ): Promise<T> {
     const headers = new Headers(init.headers)
     headers.set('Accept', 'application/json')
 
-    const token = await authTokenManager.getValidToken()
-    headers.set('Authorization', `Bearer ${token}`)
+    if (!init.skipAuth) {
+      const token = await authTokenManager.getValidToken()
+      headers.set('Authorization', `Bearer ${token}`)
+    }
 
     if (init.body && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
 
-    const resp = await this.secure.fetch(path, { ...init, headers })
+    const { skipAuth: _skipAuth, ...fetchInit } = init
+    const resp = await this.secure.fetch(path, { ...fetchInit, headers })
 
     if (!resp.ok) {
       let body: Record<string, unknown> = {}
@@ -126,6 +132,19 @@ export class SyncEnclaveClient {
       method: 'POST',
       body: body !== undefined ? JSON.stringify(body) : undefined,
       headers,
+    })
+  }
+
+  postPublic<T>(
+    path: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ) {
+    return this.request<T>(path, {
+      method: 'POST',
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      headers,
+      skipAuth: true,
     })
   }
 

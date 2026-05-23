@@ -11,6 +11,7 @@ const mockGetAllKeys = vi.fn()
 const mockGetKeyBytesOrThrow = vi.fn()
 const mockGetAlternativeKeyBytes = vi.fn()
 const mockEnclavePush = vi.fn()
+const mockListStatus = vi.fn()
 
 vi.mock('@/services/auth', () => ({
   authTokenManager: {
@@ -36,6 +37,7 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
   return {
     ...actual,
     push: (...args: any[]) => mockEnclavePush(...args),
+    listStatus: (...args: any[]) => mockListStatus(...args),
   }
 })
 
@@ -61,6 +63,7 @@ describe('CloudStorageService auth readiness', () => {
     mockGetKeyBytesOrThrow.mockReturnValue(TEST_BYTES)
     mockGetAlternativeKeyBytes.mockReturnValue(TEST_BYTES)
     mockEnclavePush.mockResolvedValue({ ok: true, etag: '1', keyId: 'kid' })
+    mockListStatus.mockResolvedValue({ updates: [], deletes: [] })
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -85,7 +88,11 @@ describe('CloudStorageService auth readiness', () => {
     await service.listChats()
 
     expect(mockWaitForInit).toHaveBeenCalledWith(3000)
-    expect(mockGetAuthHeaders).toHaveBeenCalledTimes(1)
+    expect(mockListStatus).toHaveBeenCalledWith({
+      scope: 'chat',
+      cursor: undefined,
+      limit: 100,
+    })
   })
 
   it('waits for auth token manager initialization before checking auth state', async () => {

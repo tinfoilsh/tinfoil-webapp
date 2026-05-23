@@ -22,6 +22,7 @@ import {
   reencryptAndUploadChats as doReencryptAndUpload,
   retryDecryptionWithNewKey as doRetryDecryption,
 } from './encryption-recovery'
+import { runLegacyBlobMigrationAndFinalize } from './legacy-blob-migration'
 import { projectStorage } from './project-storage'
 import { streamingTracker } from './streaming-tracker'
 import { isUploadableChat } from './sync-predicates'
@@ -59,6 +60,14 @@ export class CloudSyncService {
   private syncLockResolve: (() => void) | null = null
   private uploadCoalescer: UploadCoalescer
   private streamingCallbacks: Set<string> = new Set()
+  /**
+   * Set once per session after the first successful syncAllChats so
+   * the enclave-driven legacy-blob migration (§8.7.2 trigger 1) runs
+   * exactly once per app load. Re-running on every sync would cost a
+   * round trip per scope with nothing left to do; the migration is
+   * idempotent on the enclave side but the chatter is wasteful.
+   */
+  private legacyMigrationKicked = false
   private chatSyncCache = new SyncStatusCache<ChatSyncStatus>(SYNC_CHAT_STATUS)
   private allChatsSyncCache = new SyncStatusCache<ChatSyncStatus>(
     SYNC_ALL_CHATS_STATUS,
@@ -718,7 +727,7 @@ export class CloudSyncService {
 
   private async listProjectChatsWithRetry(
     projectId: string,
-    options: { includeContent: boolean; continuationToken?: string },
+    options: { continuationToken?: string },
   ) {
     let lastError: unknown
 
@@ -810,11 +819,43 @@ export class CloudSyncService {
 
       // Detect cross-scope moves (chats moving between projects)
       await this.syncCrossScope(result)
+      this.kickLegacyBlobMigration()
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error))
     }
 
     return result
+  }
+
+  /**
+   * Fire-and-forget the enclave-driven legacy-blob migration loop
+   * (§8.7.2 trigger 1). The enclave does all unsealing + re-sealing
+   * inside the TEE; the client only paginates and surfaces blocked
+   * rows. Runs at most once per session — any subsequent foreground
+   * trigger is a no-op on the enclave side anyway.
+   */
+  private kickLegacyBlobMigration(): void {
+    if (this.legacyMigrationKicked) return
+    this.legacyMigrationKicked = true
+    void runLegacyBlobMigrationAndFinalize()
+      .then((report) => {
+        logInfo('Legacy blob migration completed', {
+          component: 'CloudSync',
+          action: 'kickLegacyBlobMigration',
+          metadata: {
+            fullyMigrated: report.fullyMigrated,
+            totalMigrated: report.totalMigrated,
+            totalRemaining: report.totalRemaining,
+            totalBlocked: report.totalBlocked,
+          },
+        })
+      })
+      .catch((err) => {
+        logError('Legacy blob migration kickoff failed', err, {
+          component: 'CloudSync',
+          action: 'kickLegacyBlobMigration',
+        })
+      })
   }
 
   /**
@@ -914,6 +955,7 @@ export class CloudSyncService {
     }
 
     await cloudStorage.updateChatProject(chatId, projectId)
+    await this.backupChat(chatId)
   }
 
   private async paginateLocalChats(
@@ -1107,10 +1149,10 @@ export class CloudSyncService {
       let isFirstPage = true
 
       while (hasMore) {
-        // Fetch project chats with content for decryption
+        // Fetch metadata only; content is pulled through the enclave by ingestRemoteChats.
         const projectChatsResponse = await this.listProjectChatsWithRetry(
           projectId,
-          { includeContent: true, continuationToken },
+          { continuationToken },
         )
 
         const remoteChats = projectChatsResponse.chats || []

@@ -22,6 +22,19 @@ vi.mock('@/utils/error-handling', () => ({
 
 const mockKeyCurrent = vi.fn()
 const mockRemoveBundle = vi.fn()
+const mockGetKey = vi.fn()
+const mockFetchLegacy = vi.fn()
+
+vi.mock('@/services/encryption/encryption-service', () => ({
+  encryptionService: {
+    getKey: (...args: unknown[]) => mockGetKey(...args),
+    getKeyBytesOrThrow: () => {
+      const key = mockGetKey()
+      if (!key) throw new Error('no key')
+      return new TextEncoder().encode(key)
+    },
+  },
+}))
 
 vi.mock('@/services/sync-enclave/sync-api', async () => {
   const real = await vi.importActual<
@@ -34,10 +47,17 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
   }
 })
 
+vi.mock('@/services/passkey/legacy-passkey-credentials', () => ({
+  fetchLegacyPasskeyCredentials: (...args: unknown[]) =>
+    mockFetchLegacy(...args),
+}))
+
 describe('passkey-key-storage load + delete (enclave wire)', () => {
   beforeEach(() => {
     mockKeyCurrent.mockReset()
     mockRemoveBundle.mockReset()
+    mockGetKey.mockReset().mockReturnValue('key_current')
+    mockFetchLegacy.mockReset().mockResolvedValue([])
   })
 
   afterEach(() => {
@@ -50,10 +70,11 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(await loadPasskeyCredentials()).toEqual([])
     })
 
-    it('returns empty on 404 from the enclave probe', async () => {
+    it('returns empty on 404 from the enclave probe when legacy is empty', async () => {
       mockKeyCurrent.mockRejectedValue(
         new SyncEnclaveError('not found', 404, undefined),
       )
+      mockFetchLegacy.mockResolvedValue([])
       expect(await loadPasskeyCredentials()).toEqual([])
     })
 
@@ -64,7 +85,7 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
           'cred-a': {
             credential_id: 'cred-a',
             kek_iv: 'iv-base64',
-            encrypted_keys: 'data-base64',
+            encrypted_keys: '***********',
             bundle_version: 3,
             created_at: '2026-05-12T00:00:00.000Z',
           },
@@ -75,11 +96,63 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(entries[0]).toMatchObject({
         id: 'cred-a',
         iv: 'iv-base64',
-        encrypted_keys: 'data-base64',
+        encrypted_keys: '***********',
         sync_version: 3,
         bundle_version: 3,
         version: 1,
+        source: 'enclave',
       })
+    })
+
+    it('falls back to the legacy passkey-credentials API on 404 from the enclave', async () => {
+      mockKeyCurrent.mockRejectedValue(
+        new SyncEnclaveError('not found', 404, undefined),
+      )
+      mockFetchLegacy.mockResolvedValue([
+        {
+          id: 'legacy-cred',
+          encrypted_keys: 'legacy-data',
+          iv: 'legacy-iv',
+          created_at: '2024-01-01T00:00:00.000Z',
+          version: 1,
+          sync_version: 7,
+        },
+      ])
+
+      const entries = await loadPasskeyCredentials()
+      expect(entries).toHaveLength(1)
+      expect(entries[0]).toMatchObject({
+        id: 'legacy-cred',
+        iv: 'legacy-iv',
+        encrypted_keys: 'legacy-data',
+        sync_version: 7,
+        source: 'legacy',
+      })
+      expect(mockFetchLegacy).toHaveBeenCalledOnce()
+    })
+
+    it('falls back to legacy credentials when the enclave reports no key', async () => {
+      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+      mockFetchLegacy.mockResolvedValue([
+        {
+          id: 'legacy-cred',
+          encrypted_keys: 'legacy-data',
+          iv: 'legacy-iv',
+          created_at: '2024-01-01T00:00:00.000Z',
+          version: 1,
+          sync_version: 1,
+        },
+      ])
+
+      const entries = await loadPasskeyCredentials()
+      expect(entries).toHaveLength(1)
+      expect(entries[0].source).toBe('legacy')
+    })
+
+    it('returns empty when both the enclave and the legacy fallback are empty', async () => {
+      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+      mockFetchLegacy.mockResolvedValue([])
+      expect(await loadPasskeyCredentials()).toEqual([])
     })
   })
 
@@ -102,7 +175,9 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(mockRemoveBundle).toHaveBeenCalledOnce()
       const arg = mockRemoveBundle.mock.calls[0][0]
       expect(arg.keyId).toBe('abc')
+      expect(arg.keyB64).toBe('a2V5X2N1cnJlbnQ=')
       expect(arg.credentialId).toBe('cred-a')
+      expect(typeof arg.idempotencyKey).toBe('string')
     })
 
     it('no-ops when the credential is already gone', async () => {

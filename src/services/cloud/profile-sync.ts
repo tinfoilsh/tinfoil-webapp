@@ -1,15 +1,13 @@
 import { logError, logInfo } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import {
+  listStatus as enclaveListStatus,
   pull as enclavePull,
   push as enclavePush,
   newIdempotencyKey,
   pullItemPlaintext,
 } from '../sync-enclave/sync-api'
-import {
-  pullKeysFromEncryptionService,
-  requirePrimaryKeyB64,
-} from './cek-encoding'
+import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
 
 const API_BASE_URL =
@@ -88,7 +86,7 @@ export class ProfileSyncService {
         return null
       }
 
-      const keys = pullKeysFromEncryptionService()
+      const keys = pullKey()
       if (keys.length === 0) return null
 
       const resp = await enclavePull({
@@ -178,13 +176,15 @@ export class ProfileSyncService {
       const plaintext = new TextEncoder().encode(
         JSON.stringify(profileWithMetadata),
       )
+      const status = await enclaveListStatus({ scope: PROFILE_SCOPE })
+      const current = status.updates[0]
 
       await enclavePush({
         scope: PROFILE_SCOPE,
         id: PROFILE_ROW_ID,
         keyB64: requirePrimaryKeyB64(),
         plaintext,
-        ifMatch: null,
+        ifMatch: current?.etag ?? null,
         idempotencyKey: newIdempotencyKey(),
         metadata: {
           version: profileWithMetadata.version,

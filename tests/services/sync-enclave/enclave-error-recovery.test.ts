@@ -26,6 +26,7 @@ describe('decideRecovery', () => {
       'AUTH',
       'FORBIDDEN',
       'NETWORK',
+      'NOT_FOUND',
     ]
     for (const code of required) {
       expect(COVERED_CODES, code).toContain(code)
@@ -35,7 +36,7 @@ describe('decideRecovery', () => {
 
   it.each<[EnclaveErrorCode, RecoveryAction['type']]>([
     ['STALE_KEY', 'refresh-current-key-and-retry'],
-    ['STALE_BLOB', 'pull-and-retry'],
+    ['STALE_BLOB', 'surface-conflict'],
     ['SYNC_CONFLICT', 'surface-conflict'],
     ['IDEMPOTENCY_CONFLICT', 'abort'],
     ['EXISTING_DATA_UNDER_OTHER_KEY', 'surface-existing-data-under-other-key'],
@@ -45,6 +46,7 @@ describe('decideRecovery', () => {
     ['AUTH', 'retry'],
     ['FORBIDDEN', 'abort'],
     ['NETWORK', 'retry'],
+    ['NOT_FOUND', 'surface-not-found'],
   ])('maps %s → %s', (code, type) => {
     const decision = decideRecovery(err(code))
     expect(decision.action.type).toBe(type)

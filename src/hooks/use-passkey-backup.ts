@@ -34,6 +34,8 @@ import {
   storeEncryptedKeys,
 } from '@/services/passkey'
 import { isPrfSupported } from '@/services/passkey/prf-support'
+import { cekBytesToHex } from '@/services/sync-enclave/key-bundle'
+import { promoteRecoveredCekToEnclave } from '@/services/sync-enclave/passkey-key-flow'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import type { useUser } from '@clerk/nextjs'
@@ -405,6 +407,13 @@ export function usePasskeyBackup({
    * Core passkey recovery: load credentials, authenticate, derive KEK, decrypt bundle.
    * Returns the recovered KeyBundle on success, null on failure/cancellation.
    * Throws on unexpected errors (callers decide how to handle).
+   *
+   * When the matched credential came from the legacy
+   * `/api/passkey-credentials/` JSONB (rather than the enclave's
+   * `user_key_bundles`), the recovered CEK is also returned along
+   * with the KEK so the caller can promote it to a real `user_keys`
+   * row via `promoteRecoveredCekToEnclave`. Without that promotion
+   * the next session would fall back to the legacy endpoint again.
    */
   const performPasskeyRecovery = async (): Promise<{
     keyBundle: {
@@ -415,6 +424,7 @@ export function usePasskeyBackup({
     credentialId: string
     syncVersion: number | null
     bundleVersion: number
+    legacyKek?: CryptoKey
   } | null> => {
     const entries = await loadPasskeyCredentials()
     if (entries.length === 0) return null
@@ -428,11 +438,13 @@ export function usePasskeyBackup({
     if (!keyBundle) return null
 
     const entry = entries.find((e) => e.id === result.credentialId)
+    const isLegacy = entry?.source === 'legacy'
     return {
       keyBundle,
       credentialId: result.credentialId,
       syncVersion: entry?.sync_version ?? null,
       bundleVersion: entry?.bundle_version ?? 0,
+      legacyKek: isLegacy ? kek : undefined,
     }
   }
 
@@ -465,6 +477,54 @@ export function usePasskeyBackup({
         manualRecoveryNeeded: false,
         passkeyRecoveryFailure: null,
       }))
+    }
+  }
+
+  /**
+   * If the recovered bundle came from the legacy
+   * `/api/passkey-credentials/` JSONB (no `user_keys` row on the
+   * enclave yet), promote the recovered CEK by writing a real
+   * `user_keys` row + initial bundle through the enclave wire.
+   * Subsequent sessions will then find the user via the new wire
+   * and the legacy fallback won't trigger again.
+   *
+   * Failure is non-fatal — the user is already unlocked locally and
+   * will simply hit the legacy fallback on the next session. The
+   * structured log line surfaces the failure so we can investigate.
+   */
+  const maybePromoteLegacyKey = async (recovery: {
+    keyBundle: { primary: string }
+    credentialId: string
+    legacyKek?: CryptoKey
+  }): Promise<void> => {
+    if (!recovery.legacyKek) return
+    const cekBytes = encryptionService.getAlternativeKeyBytes(
+      recovery.keyBundle.primary,
+    )
+    if (!cekBytes) {
+      logError(
+        'cannot promote legacy passkey CEK: primary key bytes unavailable',
+        new Error('missing cek bytes'),
+        { component: 'usePasskeyBackup', action: 'maybePromoteLegacyKey' },
+      )
+      return
+    }
+    const cekHex = cekBytesToHex(cekBytes)
+    const result = await promoteRecoveredCekToEnclave({
+      cekHex,
+      credentialId: recovery.credentialId,
+      kek: recovery.legacyKek,
+    })
+    if (!result.ok) {
+      logError(
+        'failed to promote legacy passkey credential to enclave',
+        new Error(result.reason),
+        {
+          component: 'usePasskeyBackup',
+          action: 'maybePromoteLegacyKey',
+          metadata: { reason: result.reason },
+        },
+      )
     }
   }
 
@@ -828,6 +888,7 @@ export function usePasskeyBackup({
       }
 
       applyRecoveredKeys(recovery)
+      await maybePromoteLegacyKey(recovery)
       passkeyRecoveryDismissedFlag.clear()
 
       logInfo('Recovered encryption keys via passkey retry', {

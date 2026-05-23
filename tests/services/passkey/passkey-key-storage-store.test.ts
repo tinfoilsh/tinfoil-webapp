@@ -138,6 +138,7 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     const arg = mockAddBundle.mock.calls[0][0]
     expect(arg.keyId).toBe(expectedKeyId)
     expect(arg.credentialId).toBe('cred-2')
+    expect(typeof arg.idempotencyKey).toBe('string')
   })
 
   it('throws PasskeyCredentialConflictError when the enclave KeyID differs from the local CEK', async () => {

@@ -52,7 +52,6 @@ export type { RetryConfig, RetryScheduler } from './retry-policy'
 export * as syncApi from './sync-api'
 export type {
   AddBundleRequest,
-  ConflictPolicy,
   DeleteRequest,
   KeyCurrentBundle,
   KeyCurrentResponse,
@@ -63,6 +62,9 @@ export type {
   ListStatusRequest,
   ListStatusResponse,
   ListStatusUpdate,
+  MigrateAllRequest,
+  MigrateAllResponse,
+  MigrateAllScopeReport,
   MigrateRequest,
   MigrateResponse,
   OKResponse,

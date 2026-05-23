@@ -23,14 +23,18 @@ import { SyncEnclaveError } from './sync-enclave-client'
  *   RETRYABLE_TRANSIENT — Network blip, 5xx, expired-JWT-with-refresh.
  *                         Caller should retry under the SAME idempotency
  *                         key with the §9.6 R3 backoff helper.
- *   RETRYABLE_REFRESH   — STALE_KEY, STALE_BLOB. The canonical tuple is
- *                         outdated; caller should refresh local state
- *                         (current_key_id, blob etag) and retry with a
- *                         NEW idempotency key.
- *   USER_DECISION       — SYNC_CONFLICT, EXISTING_DATA_UNDER_OTHER_KEY.
- *                         Server cannot decide automatically; surface to
- *                         the recovery / conflict UI and wait for
- *                         explicit user input.
+ *   RETRYABLE_REFRESH   — STALE_KEY. The canonical key tuple is
+ *                         outdated; caller should refresh
+ *                         current_key_id and retry with a NEW
+ *                         idempotency key.
+ *   USER_DECISION       — SYNC_CONFLICT, STALE_BLOB,
+ *                         EXISTING_DATA_UNDER_OTHER_KEY. Server cannot
+ *                         decide automatically; surface to the
+ *                         recovery / conflict UI and wait for explicit
+ *                         user input. (STALE_BLOB should normally be
+ *                         re-mapped to SYNC_CONFLICT by the enclave;
+ *                         the entry here is defensive in case a raw
+ *                         code escapes.)
  *   TERMINAL            — FORBIDDEN, IDEMPOTENCY_CONFLICT, UNKNOWN_KEY,
  *                         ATTESTATION_FAILED, malformed responses, and
  *                         every otherwise-unmapped error. The caller
@@ -60,6 +64,7 @@ export type EnclaveErrorCode =
   | 'AUTH'
   | 'FORBIDDEN'
   | 'NETWORK'
+  | 'NOT_FOUND'
 
 export interface EnclaveErrorClassification {
   kind: EnclaveErrorKind
@@ -118,7 +123,6 @@ function classifySyncEnclaveError(
   if (code) {
     switch (code) {
       case 'STALE_KEY':
-      case 'STALE_BLOB':
         return {
           kind: 'RETRYABLE_REFRESH',
           code,
@@ -127,7 +131,9 @@ function classifySyncEnclaveError(
           cause: err,
         }
       case 'SYNC_CONFLICT':
+      case 'STALE_BLOB':
       case 'EXISTING_DATA_UNDER_OTHER_KEY':
+      case 'NOT_FOUND':
         return { kind: 'USER_DECISION', code, status, message, cause: err }
       case 'IDEMPOTENCY_CONFLICT':
       case 'UNKNOWN_KEY':
@@ -194,6 +200,15 @@ function classifySyncEnclaveError(
         cause: err,
       }
     }
+    if (status === 404) {
+      return {
+        kind: 'USER_DECISION',
+        code: 'NOT_FOUND',
+        status,
+        message,
+        cause: err,
+      }
+    }
   }
 
   return { kind: 'TERMINAL', status, message, cause: err }
@@ -210,7 +225,15 @@ function isNetworkError(err: unknown): boolean {
 
 function isAttestationError(err: unknown): boolean {
   if (!(err instanceof Error)) return false
-  return /attestation|verify|enclave verification/i.test(err.message)
+  // The bare token `verify` was too broad — it matched generic
+  // strings like "failed to verify token". Match only phrases the
+  // attestation layer actually emits: anything containing
+  // "attestation", or the specific "enclave verification" /
+  // "verification document" / "verifier" phrases that the
+  // SecureClient surface uses.
+  return /attestation|enclave verification|verification document|verifier/i.test(
+    err.message,
+  )
 }
 
 function errorMessage(err: unknown): string {
