@@ -23,7 +23,6 @@ import { widget as MessageCompose } from './widgets/MessageCompose'
 import { widget as RecipeCard } from './widgets/RecipeCard'
 import { widget as SportsData } from './widgets/SportsData'
 import { widget as StatCards } from './widgets/StatCards'
-import { widget as SuggestInstallingComputerUse } from './widgets/SuggestInstallingComputerUse'
 import { widget as Timeline } from './widgets/Timeline'
 
 /**
@@ -43,10 +42,6 @@ export const GENUI_WIDGETS: GenUIWidget[] = [
   MessageCompose,
   SportsData,
   Map,
-  // Conditionally-exposed: defaultExpose: false. Renders via the registry but
-  // tool-schema inclusion is driven by `computerUseRequestTools` (broker
-  // absent + macOS + vision model).
-  SuggestInstallingComputerUse,
 ]
 
 /**

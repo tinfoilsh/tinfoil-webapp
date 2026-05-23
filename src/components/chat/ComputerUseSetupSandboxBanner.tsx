@@ -62,6 +62,18 @@ const STATE_LABEL: Record<BrokerSetupJob['state'], string> = {
   error: 'Setup failed',
 }
 
+// Keyframes for the indeterminate progress bar. Slides the 35%-wide fill
+// from off-screen-left to off-screen-right and back. Namespaced
+// ("tinfoil-…") so it can't collide with other animations. Inlined via a
+// <style> tag inside the component to avoid touching tailwind.config.
+const INDETERMINATE_KEYFRAMES = `
+@keyframes tinfoil-indeterminate-bar {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(220%); }
+  100% { transform: translateX(220%); }
+}
+`
+
 /**
  * Slim progress bar. `fraction` undefined → indeterminate shimmer (a
  * looping translate animation); otherwise a filled bar at that ratio.
@@ -77,18 +89,20 @@ function ProgressBar({
   const trackCls = isDarkMode ? 'bg-amber-500/20' : 'bg-amber-500/15'
   const fillCls = isDarkMode ? 'bg-amber-300' : 'bg-amber-600'
   if (fraction === undefined) {
-    // Indeterminate: a 30%-wide bar that translates across the track. The
-    // animation is a plain Tailwind utility (animate-pulse) plus a fixed
-    // width — good enough as a "something's happening" cue without bringing
-    // in a custom keyframe.
+    // Indeterminate: a 35%-wide bar that slides back and forth across the
+    // track. Earlier we used `animate-pulse` (opacity-only) at a fixed 1/3
+    // width, which read as "static 30%" rather than "indeterminate".
+    // The keyframes are inlined via a <style> tag so we don't have to touch
+    // tailwind.config; namespaced so there's no risk of clobbering.
     return (
       <div className={cn('mt-1 h-1 w-full overflow-hidden rounded', trackCls)}>
+        <style>{INDETERMINATE_KEYFRAMES}</style>
         <div
-          className={cn(
-            'h-full w-1/3 rounded transition-all',
-            fillCls,
-            'animate-pulse',
-          )}
+          className={cn('h-full w-[35%] rounded', fillCls)}
+          style={{
+            animation:
+              'tinfoil-indeterminate-bar 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+          }}
         />
       </div>
     )

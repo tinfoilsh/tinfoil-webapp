@@ -5,9 +5,13 @@
  *
  * Renders the frames + final summary (or error banner) in the same shell the
  * live `ComputerUseSessionThread` uses, so the transition from in-flight to
- * archived is visually seamless.
+ * archived is visually seamless. The red light is wired to remove THIS
+ * message from chat (via `ComputerUseFunnelContext.removeMessage`) so users
+ * can drop a failed/stale run from history; without a context (e.g. on
+ * reloaded historical chats) the red light degrades to inert.
  */
 
+import { useComputerUseFunnelContext } from '../computer-use-funnel-context'
 import { ComputerUseSessionCard } from '../ComputerUseSessionMessage'
 import type { MessageRenderer } from './types'
 
@@ -17,11 +21,25 @@ export const ComputerUseSessionRenderer: MessageRenderer = {
     message.computerUseFrames !== undefined ||
     message.computerUseError !== undefined ||
     message.computerUseManifest !== undefined,
-  render: ({ message }) => (
+  render: ({ message, messageIndex }) => (
+    <ComputerUseSessionRecord message={message} messageIndex={messageIndex} />
+  ),
+}
+
+function ComputerUseSessionRecord({
+  message,
+  messageIndex,
+}: {
+  message: import('../types').Message
+  messageIndex: number
+}) {
+  const funnel = useComputerUseFunnelContext()
+  return (
     <ComputerUseSessionCard
       frames={message.computerUseFrames ?? []}
       error={message.computerUseError}
       manifest={message.computerUseManifest}
+      onRemove={funnel ? () => funnel.removeMessage(messageIndex) : undefined}
     />
-  ),
+  )
 }

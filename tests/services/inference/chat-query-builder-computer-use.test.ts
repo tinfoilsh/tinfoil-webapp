@@ -116,6 +116,37 @@ describe('ChatQueryBuilder filters computer-use artifacts', () => {
     expect(out.filter((m) => m.role === 'assistant')[0].content).toBe('done')
   })
 
+  it('drops inline pairing-handshake messages (webapp-side UI)', () => {
+    const out = ChatQueryBuilder.buildMessages({
+      model,
+      systemPrompt: 'helpful',
+      messages: [
+        userMsg('start a sandbox'),
+        assistantMsg({
+          computerUsePairingCode: 'AB12',
+          computerUsePairingStatus: 'approved',
+        }),
+        userMsg('cool'),
+      ],
+      maxMessages: 10,
+    })
+    expect(out.map((m) => m.role)).toEqual(['system', 'user', 'user'])
+  })
+
+  it('drops the static install-funnel card (webapp-side UI, not a model turn)', () => {
+    const out = ChatQueryBuilder.buildMessages({
+      model,
+      systemPrompt: 'helpful',
+      messages: [
+        userMsg('how do I enable computer use?'),
+        assistantMsg({ computerUseInstallSuggestion: {} }),
+        userMsg('thanks'),
+      ],
+      maxMessages: 10,
+    })
+    expect(out.map((m) => m.role)).toEqual(['system', 'user', 'user'])
+  })
+
   it('approved consent record (no proposed manifest) still gets filtered if it carries one', () => {
     // After approval the manifest moves from `computerUseProposedManifest` to
     // `computerUseManifest` and the proposed field is cleared. That record

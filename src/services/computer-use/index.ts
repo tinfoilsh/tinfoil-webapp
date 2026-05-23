@@ -87,7 +87,6 @@ export {
 } from './pairing'
 export {
   COMPUTER_USE_PROMPT_HINT,
-  SUGGEST_INSTALL_PROMPT_HINT,
   computerUseRequestTools,
   extractComputerBegin,
   type ComputerBeginCall,

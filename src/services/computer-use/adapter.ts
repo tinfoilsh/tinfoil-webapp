@@ -218,6 +218,20 @@ function lenientParseToolArgs(
   )
   // 3) On top of that, strip trailing commas before `}` / `]`.
   attempts.push(attempts[1].replace(/,(\s*[}\]])/g, '$1'))
+  // 4) On top of that, repair a missing OPENING quote on a string value:
+  //    `:click"` (observed live from Kimi) → `:"click"`. Without this the
+  //    next-turn re-emit also fails. We only match when the value chars are
+  //    a single identifier-ish token followed by a stray closing quote, and
+  //    the colon isn't immediately preceded by an opening quote. The token
+  //    can't contain spaces or punctuation, so `:hello world"` stays
+  //    untouched (safer to fail than maul a real string).
+  attempts.push(
+    attempts[2].replace(
+      /([:,]\s*)([A-Za-z_][\w-]*)"(\s*[,}\]])/g,
+      (_m, lead: string, value: string, tail: string) =>
+        `${lead}"${value}"${tail}`,
+    ),
+  )
 
   for (const candidate of attempts) {
     try {

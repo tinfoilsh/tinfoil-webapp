@@ -325,9 +325,15 @@ export function useChatMessaging({
         earlyTitlePromiseRef.current = null
       }
 
-      // Handle blank chat conversion: create chat immediately with server-valid ID
+      // Handle blank chat conversion: create chat immediately with server-valid ID.
+      // We `[...currentChat.messages, userMessage]` (instead of just
+      // `[userMessage]`) so webapp-committed assistant scaffolding (e.g.
+      // the install-funnel card from the toggle's "Ask Tin" click) survives
+      // the conversion. For a truly-empty blank chat this is a no-op.
       if (isBlankChat && currentChat.isTemporary) {
-        updatedMessages = userMessage ? [userMessage] : []
+        updatedMessages = userMessage
+          ? [...currentChat.messages, userMessage]
+          : [...currentChat.messages]
         updatedChat = {
           ...currentChat,
           title: 'Temporary Chat',
@@ -358,8 +364,12 @@ export function useChatMessaging({
 
         // Generate an ID that matches backend expectations: {reverseTimestamp}_{uuid}
         // This avoids temp→server ID rewrite races (URL/currentChat mismatches).
+        // Preserve prior webapp-committed messages (e.g. the install-funnel
+        // card) — see the temp-chat branch above.
         const { id: chatId } = generateReverseId()
-        updatedMessages = userMessage ? [userMessage] : []
+        updatedMessages = userMessage
+          ? [...currentChat.messages, userMessage]
+          : [...currentChat.messages]
         updatedChat = {
           ...currentChat,
           id: chatId,
@@ -434,8 +444,12 @@ export function useChatMessaging({
             )
           })
       } else if (isBlankChat && !storeHistory) {
-        // For non-signed-in users, create a session chat with a temporary ID
-        updatedMessages = userMessage ? [userMessage] : []
+        // For non-signed-in users, create a session chat with a temporary ID.
+        // Preserve prior webapp-committed messages — see the temp-chat
+        // branch above for context.
+        updatedMessages = userMessage
+          ? [...currentChat.messages, userMessage]
+          : [...currentChat.messages]
         updatedChat = {
           ...currentChat,
           id: `session-${Date.now()}`,

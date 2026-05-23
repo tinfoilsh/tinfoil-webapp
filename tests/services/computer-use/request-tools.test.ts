@@ -48,31 +48,17 @@ describe('computerUseRequestTools', () => {
     expect(tools).toEqual([])
   })
 
-  it('returns suggest_installing_computer_use when broker is absent + macOS + vision (toggle ignored)', async () => {
-    const fetchImpl = vi.fn(async () => {
-      throw new TypeError('Failed to fetch')
-    }) as unknown as typeof fetch
-    // Note: when fetch throws, `getStatus` resolves to null and brokerReadiness
-    // returns 'absent' → showInstallCTA=true. With macOS=true, we expose the
-    // install funnel — regardless of `enabled`.
-    const tools = await computerUseRequestTools({
-      model: { modelName: 'kimi-k2-6', multimodal: true },
-      enabled: false,
-      isMacOSImpl: () => true,
-      fetchImpl,
-    })
-    expect(tools).toHaveLength(1)
-    expect(tools[0].function.name).toBe('suggest_installing_computer_use')
-  })
-
-  it('returns [] off-macOS even with broker absent (install funnel is mac-only)', async () => {
+  it('returns [] when broker is unreachable (install funnel is webapp-side now)', async () => {
+    // The webapp commits a static install card from the toggle's "Ask Tin"
+    // handler instead of going through a model tool — see
+    // ComputerUseInstallCard + chat-interface.handleComputerUseAsk. So
+    // an unreachable broker should yield no tool here.
     const fetchImpl = vi.fn(async () => {
       throw new TypeError('Failed to fetch')
     }) as unknown as typeof fetch
     const tools = await computerUseRequestTools({
       model: { modelName: 'kimi-k2-6', multimodal: true },
       enabled: true,
-      isMacOSImpl: () => false,
       fetchImpl,
     })
     expect(tools).toEqual([])

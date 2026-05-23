@@ -16,9 +16,23 @@ import { createContext, useContext } from 'react'
 export interface ComputerUseFunnelContextValue {
   /**
    * Run the pairing handshake against the local broker. Returns `true` on a
-   * successful pairing (the pairing modal handles the code-display flow).
+   * successful pairing. The pairing card in chat (or, in fallback mode,
+   * the dialog) shows the code while this is in flight.
    */
   connect: () => Promise<boolean>
+  /**
+   * Cancel an in-flight pairing handshake — aborts the session's
+   * pairing-phase work + tears down any pending tray request. Drives the
+   * "Cancel pairing" button on the inline pairing card.
+   */
+  cancelPairing: () => void
+  /**
+   * Remove the message at `messageIndex` from the current chat. Used by the
+   * session-record card's red light so users can drop a failed or stale run
+   * from history. Removing the message also implicitly removes it from the
+   * model's context — `chat-query-builder` reads from the same array.
+   */
+  removeMessage: (messageIndex: number) => void
 }
 
 export const ComputerUseFunnelContext =

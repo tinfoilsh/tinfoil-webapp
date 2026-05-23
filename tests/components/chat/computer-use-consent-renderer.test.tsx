@@ -122,7 +122,7 @@ describe('ComputerUseConsentRenderer.render', () => {
     expect(cancel).toHaveBeenCalledOnce()
   })
 
-  it('approved: shows the approved sandbox config (not the editor)', () => {
+  it('approved: shows a minimal approval record (no duplicated config)', () => {
     const { getByText, queryByText } = renderWithContext(
       msg({
         computerUseConsentStatus: 'approved',
@@ -135,6 +135,11 @@ describe('ComputerUseConsentRenderer.render', () => {
     expect(getByText('research X')).toBeDefined()
     // The approve button is gone (editor isn't rendered).
     expect(queryByText(/Approve & run/)).toBeNull()
+    // Regression: the SandboxConfigSummary (rendered inside the session
+    // record below) used to appear here too — same content, twice. It
+    // should be absent from the approved-consent message now.
+    expect(queryByText(/Sandbox config/)).toBeNull()
+    expect(queryByText(/Image$/)).toBeNull()
   })
 
   it('cancelled: shows the declined record', () => {

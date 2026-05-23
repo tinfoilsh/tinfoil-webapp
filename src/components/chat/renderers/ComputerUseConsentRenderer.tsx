@@ -10,10 +10,7 @@
  */
 
 import { ManifestEditor } from '@/components/chat/ComputerUseManifestEditor'
-import {
-  OSBadge,
-  SandboxConfigSummary,
-} from '@/components/chat/ComputerUseSessionMessage'
+import { OSBadge } from '@/components/chat/ComputerUseSessionMessage'
 import { useComputerUseConsentContext } from '@/components/chat/computer-use-context'
 import type { MessageRenderer } from './types'
 
@@ -68,11 +65,7 @@ function ConsentBlock({ message }: { message: import('../types').Message }) {
                 onCancel={ctx.cancel}
               />
             ) : (
-              <ReadOnlyConsent
-                status={status}
-                manifest={approved ?? proposed}
-                reason={reason}
-              />
+              <ReadOnlyConsent status={status} reason={reason} />
             )}
           </div>
         </div>
@@ -83,13 +76,16 @@ function ConsentBlock({ message }: { message: import('../types').Message }) {
 
 function ReadOnlyConsent({
   status,
-  manifest,
   reason,
 }: {
   status: import('../types').Message['computerUseConsentStatus']
-  manifest?: import('@/services/computer-use').CapabilityManifest
   reason: string
 }) {
+  // Approved state intentionally omits the sandbox-config summary — the
+  // session-record message (committed by chat-interface after the run)
+  // carries that, and showing it twice in a row read as duplicate UI.
+  // Cancelled is the only state where the consent message stands alone,
+  // so it gets a brief explanation line.
   return (
     <>
       {reason && (
@@ -99,10 +95,15 @@ function ReadOnlyConsent({
       )}
       {status === 'cancelled' && (
         <p className="text-xs text-content-secondary">
-          You declined this sandbox.
+          You declined this sandbox — nothing was started.
         </p>
       )}
-      {manifest && <SandboxConfigSummary manifest={manifest} />}
+      {status === 'approved' && (
+        <p className="text-xs text-content-secondary">
+          You approved the sandbox. The session’s configuration and trail are in
+          the next message.
+        </p>
+      )}
     </>
   )
 }

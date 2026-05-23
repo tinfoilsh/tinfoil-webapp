@@ -25,6 +25,7 @@ import {
   type GuestOS,
   type LoopEvent,
 } from '@/services/computer-use'
+import { useState } from 'react'
 import { FaApple, FaLinux } from 'react-icons/fa'
 
 // ---------------------------------------------------------------------------
@@ -33,14 +34,18 @@ import { FaApple, FaLinux } from 'react-icons/fa'
 // maximize) match the visual macOS users expect; status text + the pulsing dot
 // sit to the right.
 //
-// Behaviors per circle:
-//   • Red    → onClose (live: cancel + tear down VM; history: disabled)
-//   • Yellow → onMinimize (live: collapse card body to just the toolbar)
+// Behaviors per circle (caller decides via handlers):
+//   • Red    → onClose
+//       - live thread: cancel + tear down VM
+//       - history card: drop the message from chat (+ from model context)
+//   • Yellow → onMinimize
+//       - both surfaces: collapse the card body to just the toolbar
 //   • Green  → reserved (future "open live view" / "maximize"); no handler.
 //
 // Hover affordances follow macOS: the ×/−/+ glyphs only show on hover of the
-// control group. When `disabled` is true the lights render at half opacity and
-// no glyphs appear — used by the history card where there's nothing to stop.
+// control group. A light without an `onClick` (or with `disabled=true`)
+// renders at lower opacity, no cursor, no glyph — used by historical chats
+// that pre-date the on-record handlers.
 // ---------------------------------------------------------------------------
 
 interface SessionToolbarProps {
@@ -235,31 +240,50 @@ export function ComputerUseSessionCard({
   frames,
   error,
   manifest,
+  onRemove,
 }: {
   frames: LoopEvent[]
   error?: string
   /** Sandbox configuration the run was approved with; hidden when absent. */
   manifest?: CapabilityManifest
+  /**
+   * Wired by the parent renderer (via `ComputerUseFunnelContext.removeMessage`)
+   * to let the user drop this record from chat history. The session is
+   * already torn down by the time the card renders, so the red light's
+   * only meaningful action here is to clear the audit trail.
+   */
+  onRemove?: () => void
 }) {
   const isError = Boolean(error)
+  // Local collapse — same behavior as the live thread's yellow light.
+  const [collapsed, setCollapsed] = useState(false)
   return (
     <div className="relative mx-auto mb-6 flex w-full max-w-3xl flex-col items-start">
       <div className="w-full px-4 py-2">
         <div className="overflow-hidden rounded-2xl border border-border-subtle bg-surface-chat-background">
-          {/* History card: the session is done, so the lights are decorative
-              (disabled). The user can no longer stop or collapse it. */}
-          <SessionToolbar status={isError ? 'Error' : 'Done'} disabled />
-          <div className="space-y-3 px-3 py-3">
-            {manifest && <SandboxConfigSummary manifest={manifest} />}
-            {isError && (
-              <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
-                {error}
-              </p>
-            )}
-            {frames.map((f, i) => (
-              <SessionFrame key={i} event={f} />
-            ))}
-          </div>
+          {/* History card lights are now interactive when handlers are
+              wired: red drops the record from chat (and from model context,
+              since both read the same array); yellow collapses the body.
+              When no onRemove handler is provided (older callers), the red
+              light degrades to disabled. */}
+          <SessionToolbar
+            status={isError ? 'Error' : 'Done'}
+            onClose={onRemove}
+            onMinimize={() => setCollapsed((c) => !c)}
+          />
+          {!collapsed && (
+            <div className="space-y-3 px-3 py-3">
+              {manifest && <SandboxConfigSummary manifest={manifest} />}
+              {isError && (
+                <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
+                  {error}
+                </p>
+              )}
+              {frames.map((f, i) => (
+                <SessionFrame key={i} event={f} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

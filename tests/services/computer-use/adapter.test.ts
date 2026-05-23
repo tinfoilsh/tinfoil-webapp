@@ -203,6 +203,26 @@ describe('openAICUAdapter.normalizeCall — happy paths', () => {
     expect(r.ok).toBe(false)
   })
 
+  it('lenient JSON: repairs a missing opening quote on a value (`:click"`)', () => {
+    // Regression: observed live from Kimi —
+    // ` {"type":click", "x": 502, "y": 129} `
+    // missing the opening quote on "click". Before repair, this would 400
+    // upstream on the next turn's re-emit.
+    const call = {
+      name: 'computer',
+      arguments: ' {"type":click", "x": 502, "y": 129} ',
+    }
+    const r = openAICUAdapter.normalizeCall(call)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.action.op).toBe('click')
+    expect(r.action.payload).toMatchObject({ x: 502, y: 129 })
+    // The original arguments must be canonicalised in place so the next
+    // upstream turn doesn't see the broken payload.
+    expect(() => JSON.parse(call.arguments)).not.toThrow()
+    expect(JSON.parse(call.arguments)).toMatchObject({ type: 'click' })
+  })
+
   it('prefers element-addressed clicks when an element_index is given', () => {
     const r = norm('computer', {
       type: 'click',

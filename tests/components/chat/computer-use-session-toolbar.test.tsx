@@ -87,20 +87,53 @@ describe('SessionToolbar', () => {
   })
 })
 
-describe('ComputerUseSessionCard (history) toolbar lights are decorative', () => {
-  it('renders the three lights as disabled', () => {
+describe('ComputerUseSessionCard (history) toolbar lights', () => {
+  it('without onRemove: red is decorative (no funnel context)', () => {
     render(<ComputerUseSessionCard frames={[]} />)
     const red = screen.getByRole('button', {
       name: 'Stop session',
     }) as HTMLButtonElement
-    const yellow = screen.getByRole('button', {
-      name: 'Minimize session card',
+    // No onRemove → red has no onClick → falls back to disabled.
+    expect(red.disabled).toBe(true)
+  })
+
+  it('with onRemove: red fires the remove handler (drop record from chat)', () => {
+    const onRemove = vi.fn()
+    render(<ComputerUseSessionCard frames={[]} onRemove={onRemove} />)
+    const red = screen.getByRole('button', {
+      name: 'Stop session',
     }) as HTMLButtonElement
+    expect(red.disabled).toBe(false)
+    fireEvent.click(red)
+    expect(onRemove).toHaveBeenCalledOnce()
+  })
+
+  it('yellow always collapses the card body', () => {
+    const { getByText, queryByText } = render(
+      <ComputerUseSessionCard
+        frames={[
+          {
+            type: 'model_message',
+            content: 'driving Safari',
+            reasoning: '',
+            toolCalls: [],
+          },
+        ]}
+      />,
+    )
+    // Frames initially visible.
+    expect(getByText('driving Safari')).toBeDefined()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Minimize session card' }),
+    )
+    expect(queryByText('driving Safari')).toBeNull()
+  })
+
+  it('green is always non-interactive (reserved)', () => {
+    render(<ComputerUseSessionCard frames={[]} onRemove={() => {}} />)
     const green = screen.getByRole('button', {
       name: 'Maximize (reserved)',
     }) as HTMLButtonElement
-    expect(red.disabled).toBe(true)
-    expect(yellow.disabled).toBe(true)
     expect(green.disabled).toBe(true)
   })
 })

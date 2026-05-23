@@ -183,6 +183,27 @@ export type Message = {
   // wired to the session's `approve()`/`cancel()`. The terminal states
   // capture the outcome so a reload renders a static record of the choice.
   computerUseConsentStatus?: 'pending' | 'approved' | 'cancelled'
+  // Static install-funnel card committed by the webapp (NOT by the model) —
+  // currently driven by the toggle's "Ask Tin" button. Carries an optional
+  // `reason` (a one-sentence note about why the funnel is appearing) so we
+  // can later wire the model to generate it; today the card stands on its
+  // own. Filtered out by the chat-query builder so the model never sees
+  // its own "suggest install" turn echoed back.
+  computerUseInstallSuggestion?: {
+    reason?: string
+  }
+  // Inline pairing-handshake prompt — the long-form code the user has to
+  // match in the system tray. Committed by the webapp when the session
+  // enters the `pairing` phase, mutated to a terminal state when the user
+  // approves/denies in the tray or cancels in chat. Replaces the previous
+  // modal. Filtered out of the model's context (chat-query-builder).
+  computerUsePairingCode?: string
+  computerUsePairingStatus?:
+    | 'pending'
+    | 'approved'
+    | 'denied'
+    | 'cancelled'
+    | 'timeout'
 }
 
 export type TitleState = 'placeholder' | 'generated' | 'manual'

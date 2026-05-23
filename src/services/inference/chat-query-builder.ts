@@ -5,10 +5,7 @@ import {
 import { buildGenUIPromptHint } from '@/components/chat/genui/system-prompt'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
-import {
-  COMPUTER_USE_PROMPT_HINT,
-  SUGGEST_INSTALL_PROMPT_HINT,
-} from '@/services/computer-use/request-tools'
+import { COMPUTER_USE_PROMPT_HINT } from '@/services/computer-use/request-tools'
 import type {
   ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
@@ -41,16 +38,11 @@ export interface ChatQueryBuilderParams {
    */
   includeGenUIHint?: boolean
   /**
-   * Append a computer-use nudge to the system prompt. Two flavors keyed to
-   * which computer-use tool is offered this turn:
-   *   - `'begin'` (or legacy `true`): broker reachable; `computer_begin` is
-   *     available — the model is told how to drive a sandbox.
-   *   - `'install'`: broker absent; only `suggest_installing_computer_use`
-   *     is available — the model is told to surface the install funnel
-   *     instead of faking computer-use.
-   *   - `false`/undefined: no hint (no tool offered this turn).
+   * Append the computer-use nudge to the system prompt when `computer_begin`
+   * is offered this turn. The install funnel runs webapp-side, not as a
+   * model tool, so there's no "install" variant — just on/off.
    */
-  includeComputerUseHint?: boolean | 'begin' | 'install'
+  includeComputerUseHint?: boolean
 }
 
 export class ChatQueryBuilder {
@@ -72,16 +64,11 @@ export class ChatQueryBuilder {
     const modelId = model.modelName
 
     // Combine the optional guidance blocks into one appended hint section.
-    // Legacy `true` → 'begin'; explicit 'install' → install funnel hint; any
-    // other falsy value → no computer-use hint at all.
-    const computerUseHint =
-      includeComputerUseHint === 'install'
-        ? SUGGEST_INSTALL_PROMPT_HINT
-        : includeComputerUseHint === 'begin' || includeComputerUseHint === true
-          ? COMPUTER_USE_PROMPT_HINT
-          : null
     const genUIHint =
-      [includeGenUIHint ? buildGenUIPromptHint() : null, computerUseHint]
+      [
+        includeGenUIHint ? buildGenUIPromptHint() : null,
+        includeComputerUseHint ? COMPUTER_USE_PROMPT_HINT : null,
+      ]
         .filter(Boolean)
         .join('\n\n') || null
 
@@ -129,6 +116,17 @@ export class ChatQueryBuilder {
     const modelVisible = conversationMessages.filter((msg) => {
       if (msg.computerUseProposedManifest) return false
       if (msg.computerUseFrames && !msg.content) return false
+      // Static install-funnel card committed by the webapp (not by the
+      // model). The model never produced it; echoing it back as an
+      // assistant turn would confuse the model on the next prompt.
+      if (msg.computerUseInstallSuggestion) return false
+      // Inline pairing-handshake card — also webapp-side scaffolding.
+      if (
+        msg.computerUsePairingCode !== undefined ||
+        msg.computerUsePairingStatus !== undefined
+      ) {
+        return false
+      }
       return true
     })
 

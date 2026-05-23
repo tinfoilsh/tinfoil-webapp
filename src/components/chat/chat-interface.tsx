@@ -1293,13 +1293,25 @@ export function ChatInterface({
 
   // First-touch "ask Tin about computer use" handler. Fires when the user
   // clicks the toggle in the broker-absent + never-engaged state — same
-  // predicate that switches the tooltip cursor to a question mark. We
-  // submit a fixed user message; the model sees the install-funnel tool
-  // (`suggest_installing_computer_use`) on this turn (broker absent + macOS
-  // + vision), and emits the inline install card.
+  // predicate that switches the tooltip cursor to a question mark. Commits
+  // a static install-funnel assistant message directly (no model involvement);
+  // the install card is a deterministic onboarding step, not a model-driven
+  // suggestion. The message is filtered out of the model's context by
+  // chat-query-builder so future turns aren't confused by it.
   const handleComputerUseAsk = useCallback(() => {
-    submitMessage({ text: 'How do I enable Tinfoil computer use?' })
-  }, [submitMessage])
+    setCurrentChat((c) => ({
+      ...c,
+      messages: [
+        ...c.messages,
+        {
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          computerUseInstallSuggestion: {},
+        },
+      ],
+    }))
+  }, [setCurrentChat])
 
   // Commit a consent-prompt message the moment the session enters `consent`,
   // so the agent's "I'd like permission" appears chronologically in chat
@@ -1312,6 +1324,7 @@ export function ChatInterface({
   // wrappers below update the SAME message in-place. Without this dedupe
   // ref, transient phase oscillations would commit duplicates.
   const committedConsentTaskRef = useRef<string | null>(null)
+  const committedPairingRef = useRef<string | null>(null)
   // Lift the sub-state read out of the effect so exhaustive-deps sees plain
   // primitive deps (not `computerUseSession.state.*` chains) and the lint
   // matches the way the done/error commit effect below depends on the
@@ -1320,6 +1333,92 @@ export function ChatInterface({
   const consentTask = computerUseSession.state.task
   const consentManifest = computerUseSession.state.manifest
   const consentReason = computerUseSession.state.reason
+  const pairingCode = computerUseSession.state.pairingCode
+  const pairingState = computerUseSession.state.pairingState
+
+  // Commit an inline pairing-prompt message the moment the session enters
+  // `pairing`, so the user sees the code in the chat (matching what the tray
+  // shows) instead of a modal. The same key-by-task dedupe pattern as the
+  // consent commit. Code may be undefined on the first render — we still
+  // commit so the layout doesn't jump when the code arrives; the renderer
+  // shows "····" placeholder.
+  useEffect(() => {
+    if (consentPhase !== 'pairing' || !consentTask) return
+    if (committedPairingRef.current === consentTask) {
+      // Already committed — keep `pairingCode` in sync on the matching
+      // message if the code arrived after the initial commit.
+      if (pairingCode) {
+        setCurrentChat((c) => {
+          const idx = c.messages
+            .map((msg, i) => ({ msg, i }))
+            .filter(
+              (x) =>
+                x.msg.computerUsePairingStatus === 'pending' &&
+                !x.msg.computerUsePairingCode,
+            )
+            .pop()?.i
+          if (idx === undefined) return c
+          const next = c.messages.slice()
+          next[idx] = {
+            ...next[idx],
+            computerUsePairingCode: pairingCode,
+          }
+          return { ...c, messages: next }
+        })
+      }
+      return
+    }
+    committedPairingRef.current = consentTask
+    setCurrentChat((c) => ({
+      ...c,
+      messages: [
+        ...c.messages,
+        {
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          computerUsePairingCode: pairingCode,
+          computerUsePairingStatus: 'pending',
+        },
+      ],
+    }))
+  }, [consentPhase, consentTask, pairingCode, setCurrentChat])
+
+  // When the pairing phase ends, resolve the pending pairing message. On
+  // a SUCCESSFUL pairing the message is REMOVED — the session-record card
+  // below carries the audit trail and "pairing complete + ready" is
+  // implicit. On denial / cancel / timeout we leave a terminal record so
+  // the user can see what happened.
+  useEffect(() => {
+    if (consentPhase === 'pairing') return
+    setCurrentChat((c) => {
+      const idx = c.messages
+        .map((msg, i) => ({ msg, i }))
+        .filter((x) => x.msg.computerUsePairingStatus === 'pending')
+        .pop()?.i
+      if (idx === undefined) return c
+      // `pairingState === 'denied'` is authoritative for the denial case;
+      // otherwise infer from the phase transition. Phases consent / running
+      // / done / handoff all mean "pairing succeeded" → drop the message.
+      const succeeded =
+        pairingState !== 'denied' &&
+        (consentPhase === 'consent' ||
+          consentPhase === 'running' ||
+          consentPhase === 'done' ||
+          consentPhase === 'handoff')
+      if (succeeded) {
+        return { ...c, messages: c.messages.filter((_, i) => i !== idx) }
+      }
+      const status: 'denied' | 'cancelled' =
+        pairingState === 'denied' ? 'denied' : 'cancelled'
+      const next = c.messages.slice()
+      next[idx] = { ...next[idx], computerUsePairingStatus: status }
+      return { ...c, messages: next }
+    })
+    if (!consentTask) {
+      committedPairingRef.current = null
+    }
+  }, [consentPhase, consentTask, pairingState, setCurrentChat])
   useEffect(() => {
     if (consentPhase !== 'consent' || !consentTask || !consentManifest) return
     if (committedConsentTaskRef.current === consentTask) return
@@ -1346,29 +1445,24 @@ export function ChatInterface({
     setCurrentChat,
   ])
 
-  // Approve wrapper: mutates the matching pending consent message to
-  // `approved` + the approved manifest, then delegates to the session's
-  // approve. Mutation must happen FIRST so the message reflects the
-  // approved manifest even if approve() throws.
+  // Approve wrapper: REMOVES the pending consent message from chat (rather
+  // than mutating it to an "approved" record) so the chat doesn't show two
+  // computer-use cards in a row — the session-record committed below carries
+  // the approved manifest + the frame trail. The user's click on Approve is
+  // ack enough; we don't need a separate "✓ Sandbox approved" tombstone.
+  // (Cancel still leaves a record — see cancelConsentForChat below.)
   const approveConsentForChat = useCallback(
     (m: CapabilityManifest) => {
       setCurrentChat((c) => {
-        // Find the most recent pending consent message and mark it approved.
         const idx = c.messages
           .map((msg, i) => ({ msg, i }))
           .filter((x) => x.msg.computerUseConsentStatus === 'pending')
           .pop()?.i
         if (idx === undefined) return c
-        const next = c.messages.slice()
-        next[idx] = {
-          ...next[idx],
-          computerUseConsentStatus: 'approved',
-          computerUseManifest: m,
-          // Drop the proposed manifest — the editor's already gone; what
-          // matters now is what was approved.
-          computerUseProposedManifest: undefined,
+        return {
+          ...c,
+          messages: c.messages.filter((_, i) => i !== idx),
         }
-        return { ...c, messages: next }
       })
       void computerUseSession.approve(m)
     },
@@ -1428,12 +1522,39 @@ export function ChatInterface({
     ],
   )
 
-  // Context for the install-funnel widget (SuggestInstallingComputerUse) so
-  // its in-card "Connect" button can drive the same pairing flow as the
-  // banner/toggle. Stable; doesn't need any session state.
+  // Drop a message at `index` from chat history. Used by the session-record
+  // card's red light (and the install-funnel context) to let the user clear
+  // a failed/stale run. Because the model context is built from the same
+  // `currentChat.messages` array, removing here also removes from context.
+  const handleRemoveMessage = useCallback(
+    (index: number) => {
+      setCurrentChat((c) =>
+        index < 0 || index >= c.messages.length
+          ? c
+          : { ...c, messages: c.messages.filter((_, i) => i !== index) },
+      )
+    },
+    [setCurrentChat],
+  )
+
+  // Wrap session.cancel() for the inline pairing card's "Cancel pairing"
+  // button. Cancelling the session is enough — the pairing-commit effect
+  // above watches the phase transition and flips the message to
+  // `cancelled` automatically.
+  const handleCancelPairing = useCallback(() => {
+    computerUseSession.cancel()
+  }, [computerUseSession])
+
+  // Context for in-chat computer-use cards (install funnel + session record
+  // + pairing card) to drive whole-session actions. Stable; doesn't depend
+  // on session state.
   const funnelContextValue = useMemo<ComputerUseFunnelContextValue>(
-    () => ({ connect: handleComputerUseConnect }),
-    [handleComputerUseConnect],
+    () => ({
+      connect: handleComputerUseConnect,
+      cancelPairing: handleCancelPairing,
+      removeMessage: handleRemoveMessage,
+    }),
+    [handleComputerUseConnect, handleCancelPairing, handleRemoveMessage],
   )
 
   // Fold a finished/errored session into chat history at its chronological
