@@ -156,6 +156,17 @@ export function PromptLibraryModal({
     setPresetPendingDelete(null)
   }
 
+  const handleRename = (preset: PromptPreset, nextName: string) => {
+    if (preset.isBuiltIn) return
+    const trimmed = nextName.trim()
+    if (!trimmed || trimmed === preset.name) return
+    updateUserPreset(preset.id, {
+      name: trimmed,
+      description: preset.description,
+      systemPrompt: preset.systemPrompt,
+    })
+  }
+
   const handleEditorSave = () => {
     if (!editor) return
     const name = editor.name.trim()
@@ -335,6 +346,7 @@ export function PromptLibraryModal({
               />
             ) : selectedPreset ? (
               <PresetDetail
+                key={selectedPreset.id}
                 preset={selectedPreset}
                 isActive={activePresetId === selectedPreset.id}
                 onUseThis={handleUseThis}
@@ -342,6 +354,7 @@ export function PromptLibraryModal({
                 onEdit={() => startEdit(selectedPreset)}
                 onDuplicate={() => handleDuplicate(selectedPreset)}
                 onDelete={() => handleDelete(selectedPreset)}
+                onRename={(name) => handleRename(selectedPreset, name)}
               />
             ) : (
               <div className="flex flex-1 items-center justify-center p-6">
@@ -379,6 +392,7 @@ type PresetDetailProps = {
   onEdit: () => void
   onDuplicate: () => void
   onDelete: () => void
+  onRename: (name: string) => void
 }
 
 function PresetDetail({
@@ -389,8 +403,22 @@ function PresetDetail({
   onEdit,
   onDuplicate,
   onDelete,
+  onRename,
 }: PresetDetailProps) {
   const Icon = preset.Icon
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(preset.name)
+
+  const commitRename = () => {
+    setIsEditingName(false)
+    const trimmed = nameDraft.trim()
+    if (!trimmed || trimmed === preset.name) {
+      setNameDraft(preset.name)
+      return
+    }
+    onRename(trimmed)
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-none items-start justify-between gap-4 border-b border-border-subtle px-6 py-4">
@@ -399,15 +427,47 @@ function PresetDetail({
             <Icon className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <h3 className="truncate text-base font-semibold text-content-primary">
-              {preset.name}
-            </h3>
+            {isEditingName && !preset.isBuiltIn ? (
+              <input
+                type="text"
+                value={nameDraft}
+                autoFocus
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    e.currentTarget.blur()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setNameDraft(preset.name)
+                    setIsEditingName(false)
+                  }
+                }}
+                className="w-full rounded-md border border-border-subtle bg-surface-chat-background px-2 py-0.5 text-base font-semibold text-content-primary outline-none focus:border-brand-accent-dark/40 dark:focus:border-brand-accent-light/40"
+              />
+            ) : (
+              <h3
+                className={cn(
+                  'truncate rounded-md px-1.5 py-0.5 text-base font-semibold text-content-primary',
+                  !preset.isBuiltIn && 'cursor-text hover:bg-surface-chat',
+                )}
+                title={preset.isBuiltIn ? undefined : 'Click to rename'}
+                onClick={() => {
+                  if (preset.isBuiltIn) return
+                  setNameDraft(preset.name)
+                  setIsEditingName(true)
+                }}
+              >
+                {preset.name}
+              </h3>
+            )}
             {preset.description && (
-              <p className="mt-0.5 text-sm text-content-secondary">
+              <p className="mt-0.5 px-1.5 text-sm text-content-secondary">
                 {preset.description}
               </p>
             )}
-            <span className="mt-1 inline-block text-[11px] uppercase tracking-wide text-content-muted">
+            <span className="mt-1 inline-block px-1.5 text-[11px] uppercase tracking-wide text-content-muted">
               {preset.isBuiltIn ? 'Built-in' : 'Custom'}
             </span>
           </div>
