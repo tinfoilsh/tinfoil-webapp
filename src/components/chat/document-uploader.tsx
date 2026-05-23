@@ -1,5 +1,6 @@
 import { getAIModels } from '@/config/models'
 import {
+  getSecureFetch,
   getSessionToken,
   getTinfoilClient,
 } from '@/services/inference/tinfoil-client'
@@ -15,7 +16,6 @@ import {
   scaleAndEncodeImage,
 } from '@/utils/preprocessing'
 import { useState } from 'react'
-import { SecureClient } from 'tinfoil'
 import { CONSTANTS } from './constants'
 import type { DocumentPage, DocumentProcessingResult } from './types'
 
@@ -303,23 +303,21 @@ export const useDocumentUploader = (
         : endpoint
 
       const apiKey = await getSessionToken()
-      const client = new SecureClient()
+      const secureFetch = await getSecureFetch()
       const controller = new AbortController()
       const timeoutId = setTimeout(
         () => controller.abort(),
         CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS,
       )
 
-      const response = await client
-        .fetch(fetchEndpoint, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
-          body: formData,
-          signal: controller.signal,
-        })
-        .finally(() => clearTimeout(timeoutId))
+      const response = await secureFetch(fetchEndpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: formData,
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId))
 
       // Handle 204 No Content response
       if (response.status === 204) {
