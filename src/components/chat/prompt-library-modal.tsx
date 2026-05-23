@@ -10,6 +10,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
 import { usePromptLibrary } from './hooks/use-prompt-library'
 import {
@@ -53,6 +54,8 @@ export function PromptLibraryModal({
   )
   const [editor, setEditor] = useState<PresetEditorState | null>(null)
   const [mobileView, setMobileView] = useState<'list' | 'detail'>('list')
+  const [presetPendingDelete, setPresetPendingDelete] =
+    useState<PromptPreset | null>(null)
   const wasOpenRef = useRef(false)
 
   useEffect(() => {
@@ -137,12 +140,12 @@ export function PromptLibraryModal({
 
   const handleDelete = (preset: PromptPreset) => {
     if (preset.isBuiltIn) return
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm(`Delete "${preset.name}"? This cannot be undone.`)
-    ) {
-      return
-    }
+    setPresetPendingDelete(preset)
+  }
+
+  const handleConfirmDelete = () => {
+    const preset = presetPendingDelete
+    if (!preset) return
     deleteUserPreset(preset.id)
     if (selectedId === preset.id) {
       setSelectedId(builtInPresets[0]?.id ?? null)
@@ -150,6 +153,7 @@ export function PromptLibraryModal({
     if (activePresetId === preset.id) {
       onSelectPreset(null)
     }
+    setPresetPendingDelete(null)
   }
 
   const handleEditorSave = () => {
@@ -349,6 +353,20 @@ export function PromptLibraryModal({
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        isOpen={presetPendingDelete !== null}
+        title="Delete prompt?"
+        description={
+          presetPendingDelete
+            ? `"${presetPendingDelete.name}" will be permanently removed. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPresetPendingDelete(null)}
+      />
     </div>
   )
 }

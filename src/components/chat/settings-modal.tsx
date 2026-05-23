@@ -78,6 +78,7 @@ import { IoShieldCheckmark } from 'react-icons/io5'
 import { PiSignIn } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
+import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -303,6 +304,8 @@ export function SettingsModal({
   const [promptEditor, setPromptEditor] = useState<PresetEditorState | null>(
     null,
   )
+  const [presetPendingDelete, setPresetPendingDelete] =
+    useState<PromptPreset | null>(null)
 
   // Active tab state
   const [activeTab, setActiveTab] = useState<SettingsTab>(
@@ -834,13 +837,14 @@ export function SettingsModal({
 
   const handleDeletePreset = (preset: PromptPreset) => {
     if (preset.isBuiltIn) return
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm(`Delete "${preset.name}"? This cannot be undone.`)
-    ) {
-      return
-    }
+    setPresetPendingDelete(preset)
+  }
+
+  const handleConfirmDeletePreset = () => {
+    const preset = presetPendingDelete
+    if (!preset) return
     deleteUserPreset(preset.id)
+    setPresetPendingDelete(null)
   }
 
   const handleSavePromptEditor = () => {
@@ -4316,6 +4320,20 @@ ${encryptionKey.replace('key_', '')}
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={presetPendingDelete !== null}
+        title="Delete prompt?"
+        description={
+          presetPendingDelete
+            ? `"${presetPendingDelete.name}" will be permanently removed. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleConfirmDeletePreset}
+        onCancel={() => setPresetPendingDelete(null)}
+      />
     </div>
   )
 }
