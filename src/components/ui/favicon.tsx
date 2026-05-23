@@ -9,13 +9,6 @@ import { useEffect, useState } from 'react'
 const RESOLVED_FAVICON_URLS = new Map<string, string>()
 const FAILED_FAVICONS = new Set<string>()
 
-function releaseCachedFavicon(url: string) {
-  const cached = RESOLVED_FAVICON_URLS.get(url)
-  if (!cached) return
-  URL.revokeObjectURL(cached)
-  RESOLVED_FAVICON_URLS.delete(url)
-}
-
 type FaviconState = 'loading' | 'ready' | 'error'
 
 interface ResolvedFavicon {
@@ -84,14 +77,18 @@ export function Favicon({
           setResolved({ src: '', state: 'error' })
           return
         }
-        const contentType = metadata.faviconContentType ?? 'image/x-icon'
-        const blob = new Blob([metadata.faviconBytes], { type: contentType })
-        const objectURL = URL.createObjectURL(blob)
-        const previous = RESOLVED_FAVICON_URLS.get(url)
-        if (previous && previous !== objectURL) {
-          URL.revokeObjectURL(previous)
+        // Reuse a cached object URL when one already exists for this
+        // page. Two concurrent Favicon instances (for example a preview
+        // and the dialog list) would otherwise each create a fresh
+        // object URL and revoke the other's, leaving one of them
+        // pointing at an invalid blob.
+        let objectURL = RESOLVED_FAVICON_URLS.get(url)
+        if (!objectURL) {
+          const contentType = metadata.faviconContentType ?? 'image/x-icon'
+          const blob = new Blob([metadata.faviconBytes], { type: contentType })
+          objectURL = URL.createObjectURL(blob)
+          RESOLVED_FAVICON_URLS.set(url, objectURL)
         }
-        RESOLVED_FAVICON_URLS.set(url, objectURL)
         setResolved({ src: objectURL, state: 'ready' })
       })
       .catch(() => {
@@ -119,7 +116,6 @@ export function Favicon({
       }}
       onError={() => {
         FAILED_FAVICONS.add(url)
-        releaseCachedFavicon(url)
         setResolved({ src: '', state: 'error' })
         onResolveError?.()
       }}
