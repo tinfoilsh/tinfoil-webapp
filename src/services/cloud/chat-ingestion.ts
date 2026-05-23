@@ -50,6 +50,13 @@ export interface IngestOptions {
   setLoadedAt?: boolean
   /** Event reason emitted via chatEvents when chats are saved */
   eventReason?: ChatChangeReason
+  /**
+   * Last-write-wins conflict resolution (§C5): write the remote chat
+   * even if the local copy is `locallyModified` or moved since the
+   * snapshot. Default false enforces the §H6 CAS so routine ingest
+   * never silently overwrites in-progress local edits.
+   */
+  forceOverwriteLocal?: boolean
 }
 
 export interface IngestResult {
@@ -76,6 +83,7 @@ export async function ingestRemoteChats(
     fetchMissingContent = false,
     setLoadedAt = false,
     eventReason = 'sync',
+    forceOverwriteLocal = false,
   } = options
 
   const result: IngestResult = {
@@ -95,7 +103,11 @@ export async function ingestRemoteChats(
       ? (localChatMap.get(remoteChat.id) ?? null)
       : await indexedDBStorage.getChat(remoteChat.id)
 
-    if (checkShouldIngest && !shouldIngestRemoteChat(remoteChat, localChat)) {
+    if (
+      !forceOverwriteLocal &&
+      checkShouldIngest &&
+      !shouldIngestRemoteChat(remoteChat, localChat)
+    ) {
       continue
     }
 
@@ -131,14 +143,22 @@ export async function ingestRemoteChats(
       const chat = codecResult.chat
 
       if (chat) {
-        if (setLoadedAt) {
-          chat.loadedAt = Date.now()
+        // §H6 CAS: only apply the remote write when the on-disk row
+        // still matches the snapshot we observed. `forceOverwriteLocal`
+        // bypasses the CAS for conflict resolution (§C5 last-write-wins).
+        const expectedLocalUpdatedAt = forceOverwriteLocal
+          ? undefined
+          : (localChat?.updatedAt ?? null)
+        const applyResult = await indexedDBStorage.applyRemoteChatIfFresh({
+          chat,
+          syncVersion: chat.syncVersion ?? 0,
+          expectedLocalUpdatedAt,
+          setLoadedAt,
+        })
+        if (applyResult.applied) {
+          result.savedIds.push(chat.id)
+          result.downloaded++
         }
-
-        await indexedDBStorage.saveChat(chat)
-        await indexedDBStorage.markAsSynced(chat.id, chat.syncVersion ?? 0)
-        result.savedIds.push(chat.id)
-        result.downloaded++
       }
     } catch (error) {
       result.errors.push(

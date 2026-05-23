@@ -8,6 +8,9 @@ const mockGetChat = vi.fn()
 const mockSaveChat = vi.fn()
 const mockSaveExistingChat = vi.fn()
 const mockMarkAsSynced = vi.fn()
+const mockFinalizeUpload = vi.fn()
+const mockApplyRemoteChatIfFresh = vi.fn()
+const mockResetSyncMetadataForAllChats = vi.fn()
 const mockDeleteChat = vi.fn()
 
 const mockIsAuthenticated = vi.fn()
@@ -43,6 +46,11 @@ vi.mock('@/services/storage/indexed-db', () => ({
     saveChat: (...args: any[]) => mockSaveChat(...args),
     saveExistingChat: (...args: any[]) => mockSaveExistingChat(...args),
     markAsSynced: (...args: any[]) => mockMarkAsSynced(...args),
+    finalizeUpload: (...args: any[]) => mockFinalizeUpload(...args),
+    applyRemoteChatIfFresh: (...args: any[]) =>
+      mockApplyRemoteChatIfFresh(...args),
+    resetSyncMetadataForAllChats: (...args: any[]) =>
+      mockResetSyncMetadataForAllChats(...args),
     getChat: (...args: any[]) => mockGetChat(...args),
     deleteChat: (...args: any[]) => mockDeleteChat(...args),
   },
@@ -104,9 +112,12 @@ describe('CloudSyncService', () => {
     mockSaveChat.mockResolvedValue(undefined)
     mockSaveExistingChat.mockResolvedValue(undefined)
     mockMarkAsSynced.mockResolvedValue(undefined)
+    mockFinalizeUpload.mockResolvedValue(undefined)
+    mockApplyRemoteChatIfFresh.mockResolvedValue({ applied: true })
+    mockResetSyncMetadataForAllChats.mockResolvedValue(undefined)
     mockDeleteChat.mockResolvedValue(undefined)
     mockIsAuthenticated.mockResolvedValue(true)
-    mockUploadChat.mockResolvedValue(null)
+    mockUploadChat.mockResolvedValue({ syncVersion: null, rewrites: [] })
     mockGetChatSyncStatus.mockResolvedValue({ count: 0, lastUpdated: null })
     mockGetAllChatsSyncStatus.mockResolvedValue({
       count: 0,
@@ -158,7 +169,7 @@ describe('CloudSyncService', () => {
       await service.backupChat('local-only-1')
 
       expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(mockMarkAsSynced).not.toHaveBeenCalled()
+      expect(mockFinalizeUpload).not.toHaveBeenCalled()
     })
 
     it('skips blank chats', async () => {
@@ -178,7 +189,7 @@ describe('CloudSyncService', () => {
       await service.backupChat('blank-1')
 
       expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(mockMarkAsSynced).not.toHaveBeenCalled()
+      expect(mockFinalizeUpload).not.toHaveBeenCalled()
     })
 
     it('marks chat as synced with incremented version on success', async () => {
@@ -200,8 +211,14 @@ describe('CloudSyncService', () => {
       await service.waitForUpload('cloud-1')
 
       expect(mockUploadChat).toHaveBeenCalledTimes(1)
-      expect(mockMarkAsSynced).toHaveBeenCalledTimes(1)
-      expect(mockMarkAsSynced).toHaveBeenCalledWith('cloud-1', 8)
+      expect(mockFinalizeUpload).toHaveBeenCalledTimes(1)
+      expect(mockFinalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: 'cloud-1',
+          syncVersion: 8,
+          rewrites: [],
+        }),
+      )
     })
   })
 
@@ -240,7 +257,9 @@ describe('CloudSyncService', () => {
 
       expect(mockUploadChat).toHaveBeenCalledTimes(1)
       expect(mockUploadChat.mock.calls[0]?.[0]?.id).toBe('cloud-1')
-      expect(mockMarkAsSynced).toHaveBeenCalledWith('cloud-1', 4)
+      expect(mockFinalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: 'cloud-1', syncVersion: 4 }),
+      )
       expect(result.uploaded).toBe(1)
       expect(result.errors).toEqual([])
     })
@@ -485,7 +504,9 @@ describe('CloudSyncService', () => {
       mockGetChat.mockResolvedValue(chat)
 
       // Make uploadChat slow so we can queue multiple calls
-      const resolvers: Array<(value: null) => void> = []
+      const resolvers: Array<
+        (value: { syncVersion: number | null; rewrites: never[] }) => void
+      > = []
       mockUploadChat.mockImplementation(
         () =>
           new Promise((resolve) => {
@@ -503,13 +524,13 @@ describe('CloudSyncService', () => {
 
       // Resolve first upload
       await new Promise((resolve) => setTimeout(resolve, 10))
-      resolvers[0]?.(null)
+      resolvers[0]?.({ syncVersion: null, rewrites: [] })
 
       await backup1
 
       // Wait and resolve second
       await new Promise((resolve) => setTimeout(resolve, 10))
-      resolvers[1]?.(null)
+      resolvers[1]?.({ syncVersion: null, rewrites: [] })
 
       await backup2
 
@@ -674,7 +695,9 @@ describe('CloudSyncService', () => {
       // Wait for the coalesced upload to complete
       await service.waitForUpload('cloud-1')
 
-      expect(mockMarkAsSynced).toHaveBeenCalledWith('cloud-1', 6)
+      expect(mockFinalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: 'cloud-1', syncVersion: 6 }),
+      )
     })
 
     it('defaults syncVersion to 1 when not present', async () => {
@@ -696,7 +719,9 @@ describe('CloudSyncService', () => {
       await service.waitForUpload('cloud-1')
 
       // Should increment from default 0 to 1
-      expect(mockMarkAsSynced).toHaveBeenCalledWith('cloud-1', 1)
+      expect(mockFinalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: 'cloud-1', syncVersion: 1 }),
+      )
     })
   })
 })

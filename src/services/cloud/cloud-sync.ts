@@ -52,51 +52,6 @@ const REMOTE_LIST_MAX_ATTEMPTS = 2
 
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
 
-function mergeAttachmentMetadata(from: StoredChat, into: StoredChat): void {
-  const fromMessages = from.messages ?? []
-  const intoMessages = into.messages ?? []
-  const limit = Math.min(fromMessages.length, intoMessages.length)
-  for (let i = 0; i < limit; i++) {
-    const fromAtts = fromMessages[i]?.attachments ?? []
-    const intoAtts = intoMessages[i]?.attachments ?? []
-    const attLimit = Math.min(fromAtts.length, intoAtts.length)
-    for (let j = 0; j < attLimit; j++) {
-      const src = fromAtts[j]
-      const dst = intoAtts[j]
-      if (!src || !dst) continue
-      if (src.id && !dst.id) dst.id = src.id
-      if (src.encryptionKey && !dst.encryptionKey) {
-        dst.encryptionKey = src.encryptionKey
-      }
-    }
-  }
-}
-
-async function persistUploadResult(
-  chatId: string,
-  uploadedSnapshot: StoredChat,
-  preUploadUpdatedAt: string | undefined,
-  syncVersion: number,
-): Promise<void> {
-  const latest = await indexedDBStorage.getChat(chatId)
-  if (!latest) {
-    await indexedDBStorage.markAsSynced(chatId, syncVersion)
-    return
-  }
-  const concurrentEdit = latest.updatedAt !== preUploadUpdatedAt
-  mergeAttachmentMetadata(uploadedSnapshot, latest)
-  await indexedDBStorage.saveExistingChat(latest)
-  if (concurrentEdit) {
-    // Local edits happened during the upload; preserve them by
-    // bumping syncVersion only and leaving `locallyModified` set so
-    // the next pass uploads the newer content.
-    latest.syncVersion = syncVersion
-    await indexedDBStorage.saveExistingChat(latest)
-    return
-  }
-  await indexedDBStorage.markAsSynced(chatId, syncVersion)
-}
-
 export class CloudSyncService {
   private syncLock: Promise<void> | null = null
   private syncLockResolve: (() => void) | null = null
@@ -606,17 +561,17 @@ export class CloudSyncService {
 
     const preUploadUpdatedAt = chat.updatedAt
     const preUploadVersion = chat.syncVersion ?? 0
-    const syncVersion = await cloudStorage.uploadChat(chat, {
+    const { syncVersion, rewrites } = await cloudStorage.uploadChat(chat, {
       ...options,
       idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
     })
 
-    await persistUploadResult(
+    await indexedDBStorage.finalizeUpload({
       chatId,
-      chat,
+      rewrites,
       preUploadUpdatedAt,
-      syncVersion ?? preUploadVersion + 1,
-    )
+      syncVersion: syncVersion ?? preUploadVersion + 1,
+    })
   }
 
   private async doBackupChat(
@@ -700,16 +655,16 @@ export class CloudSyncService {
 
       const preUploadUpdatedAt = chat.updatedAt
       const preUploadVersion = chat.syncVersion ?? 0
-      const syncVersion = await cloudStorage.uploadChat(chat, {
+      const { syncVersion, rewrites } = await cloudStorage.uploadChat(chat, {
         idempotencyKey,
       })
 
-      await persistUploadResult(
+      await indexedDBStorage.finalizeUpload({
         chatId,
-        chat,
+        rewrites,
         preUploadUpdatedAt,
-        syncVersion ?? preUploadVersion + 1,
-      )
+        syncVersion: syncVersion ?? preUploadVersion + 1,
+      })
     } catch (error) {
       // Silently fail if no auth token set
       if (
@@ -718,11 +673,14 @@ export class CloudSyncService {
       ) {
         return
       }
-      // §9.6 R4 — emit the typed recovery decision so the surrounding
-      // state machine (and any operator dashboards) can observe which
-      // Appendix B code we tripped and which recovery the spec
-      // mandates. The error itself is still re-thrown so the
-      // coalescer's retry path keeps its current semantics.
+      // §9.6 R4 — surface the typed decision and ACT on the codes
+      // that have a defined client-side recovery (§C5). For STALE_BLOB
+      // / SYNC_CONFLICT, last-write-wins by pulling the remote and
+      // replacing the local row so the chat exits `locallyModified`
+      // and stops re-attempting. For STALE_KEY / UNKNOWN_KEY, fire
+      // the rotation-check signal and abort without retrying. Other
+      // codes still bubble up so the coalescer can retry where the
+      // recovery table says transient.
       const decision = decideRecovery(error)
       logInfo('upload-chat recovery decision', {
         component: 'CloudSync',
@@ -734,8 +692,68 @@ export class CloudSyncService {
           kind: decision.classification.kind,
         },
       })
+      if (decision.action.type === 'surface-conflict') {
+        await this.resolveConflictByPullingRemote(chatId)
+        return
+      }
+      if (decision.action.type === 'refresh-current-key-and-retry') {
+        this.notifyKeyRefreshNeeded()
+        return
+      }
+      if (decision.action.type === 'trigger-recovery-wizard') {
+        this.notifyRecoveryNeeded()
+        return
+      }
+      if (decision.action.type === 'block-all-sync') {
+        this.notifyAttestationFailure()
+        return
+      }
       throw error
     }
+  }
+
+  /**
+   * Last-write-wins conflict resolution (§C5). Pulls the remote chat
+   * fresh from the enclave and overwrites the local copy, clearing
+   * `locallyModified` so the chat exits the stuck-row retry loop. If
+   * the pull itself fails, the chat stays `locallyModified` and the
+   * next sync cycle will retry — but at least we are no longer
+   * burning enclave calls in a tight retry storm.
+   */
+  private async resolveConflictByPullingRemote(chatId: string): Promise<void> {
+    try {
+      const result = await ingestRemoteChats([{ id: chatId }], {
+        fetchMissingContent: true,
+        eventReason: 'sync',
+        forceOverwriteLocal: true,
+      })
+      logInfo('Conflict resolved by pulling remote', {
+        component: 'CloudSync',
+        action: 'resolveConflictByPullingRemote',
+        metadata: { chatId, applied: result.savedIds.length > 0 },
+      })
+    } catch (err) {
+      logError('Failed to resolve conflict by pulling remote', err, {
+        component: 'CloudSync',
+        action: 'resolveConflictByPullingRemote',
+        metadata: { chatId },
+      })
+    }
+  }
+
+  private notifyKeyRefreshNeeded(): void {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new CustomEvent('tinfoil:sync-key-refresh-needed'))
+  }
+
+  private notifyRecoveryNeeded(): void {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new CustomEvent('tinfoil:sync-recovery-needed'))
+  }
+
+  private notifyAttestationFailure(): void {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(new CustomEvent('tinfoil:sync-attestation-failed'))
   }
 
   // Backup all unsynced chats

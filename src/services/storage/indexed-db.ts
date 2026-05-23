@@ -21,6 +21,20 @@ export interface StoredChat extends Chat {
   isBlankChat?: boolean
 }
 
+/**
+ * Rewrite emitted by the upload path when the enclave mints a fresh
+ * attachment id + per-attachment key. `clientId` is what the local
+ * attachment used before the upload; `serverId` and `encryptionKey`
+ * are what the chat envelope was sealed with. `finalizeUpload`
+ * applies these against the freshest local copy so we never mutate
+ * the wrong attachment after a concurrent edit.
+ */
+export interface AttachmentRewrite {
+  clientId: string
+  serverId: string
+  encryptionKey: string
+}
+
 const DB_NAME = 'tinfoil-chat'
 export const DB_VERSION = 1
 const CHATS_STORE = 'chats'
@@ -627,6 +641,200 @@ export class IndexedDBStorage {
               reject(new Error('Failed to mark as synced'))
           })
         }
+      })
+    return this.saveQueue
+  }
+
+  /**
+   * Atomic upload finalization (§C6 / §H5).
+   *
+   * Runs inside `saveQueue` so it is serialized with any concurrent
+   * user saves. Re-reads the chat fresh, applies attachment id/key
+   * rewrites by stable client id (not by position), and only clears
+   * `locallyModified` if no edit happened since `preUploadUpdatedAt`.
+   *
+   * If a concurrent edit is detected, the new sync version is still
+   * persisted but the chat stays `locallyModified=true` so the next
+   * sync cycle uploads the new content.
+   */
+  async finalizeUpload(opts: {
+    chatId: string
+    rewrites: AttachmentRewrite[]
+    preUploadUpdatedAt: string | undefined
+    syncVersion: number
+  }): Promise<void> {
+    this.saveQueue = this.saveQueue
+      .catch((error) => {
+        logError('Previous save operation failed, recovering queue', error, {
+          component: 'IndexedDBStorage',
+          action: 'finalizeUpload.queueRecovery',
+        })
+      })
+      .then(async () => {
+        const db = await this.ensureDB()
+        const chat = await this.getChatInternal(opts.chatId)
+        if (!chat) {
+          return
+        }
+
+        if (opts.rewrites.length > 0) {
+          const rewriteByClient = new Map(
+            opts.rewrites.map((r) => [r.clientId, r]),
+          )
+          for (const msg of chat.messages ?? []) {
+            for (const att of msg.attachments ?? []) {
+              const rewrite = rewriteByClient.get(att.id)
+              if (rewrite) {
+                att.id = rewrite.serverId
+                att.encryptionKey = rewrite.encryptionKey
+              }
+            }
+          }
+        }
+
+        const concurrentEdit =
+          opts.preUploadUpdatedAt !== undefined &&
+          chat.updatedAt !== opts.preUploadUpdatedAt
+
+        chat.syncVersion = opts.syncVersion
+        if (!concurrentEdit) {
+          chat.locallyModified = false
+          chat.syncedAt = Date.now()
+        }
+
+        return new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction([CHATS_STORE], 'readwrite')
+          const store = transaction.objectStore(CHATS_STORE)
+          transaction.oncomplete = () => resolve()
+          transaction.onerror = () =>
+            reject(new Error('Failed to finalize upload'))
+
+          const request = store.put(chat)
+          request.onerror = () => reject(new Error('Failed to finalize upload'))
+        })
+      })
+    return this.saveQueue
+  }
+
+  /**
+   * CAS ingest (§H6). Apply a remote chat locally only when the
+   * on-disk row still matches the snapshot the caller observed.
+   * Returns `{ applied: true }` on write and `{ applied: false }`
+   * when an interleaved local edit means the remote would clobber
+   * the user's in-progress work.
+   *
+   * Pass `expectedLocalUpdatedAt: undefined` to force the write
+   * (e.g. last-write-wins conflict resolution).
+   */
+  async applyRemoteChatIfFresh(opts: {
+    chat: Chat
+    syncVersion: number
+    expectedLocalUpdatedAt: string | null | undefined
+    setLoadedAt?: boolean
+  }): Promise<{ applied: boolean }> {
+    let outcome: { applied: boolean } = { applied: false }
+    this.saveQueue = this.saveQueue
+      .catch((error) => {
+        logError('Previous save operation failed, recovering queue', error, {
+          component: 'IndexedDBStorage',
+          action: 'applyRemoteChatIfFresh.queueRecovery',
+        })
+      })
+      .then(async () => {
+        const db = await this.ensureDB()
+        const existing = await this.getChatInternal(opts.chat.id)
+
+        if (opts.expectedLocalUpdatedAt !== undefined) {
+          if (opts.expectedLocalUpdatedAt === null) {
+            if (existing) {
+              outcome = { applied: false }
+              return
+            }
+          } else if (
+            !existing ||
+            existing.updatedAt !== opts.expectedLocalUpdatedAt ||
+            existing.locallyModified === true
+          ) {
+            outcome = { applied: false }
+            return
+          }
+        }
+
+        const messagesForStorage = opts.chat.messages.map((msg) => ({
+          ...msg,
+          timestamp:
+            msg.timestamp instanceof Date
+              ? msg.timestamp.toISOString()
+              : msg.timestamp,
+        }))
+
+        const storedChat: StoredChat = {
+          ...opts.chat,
+          messages: messagesForStorage as any,
+          lastAccessedAt: Date.now(),
+          syncedAt: Date.now(),
+          locallyModified: false,
+          syncVersion: opts.syncVersion,
+          version: 1,
+          loadedAt: opts.setLoadedAt
+            ? Date.now()
+            : ((opts.chat as StoredChat).loadedAt ?? existing?.loadedAt),
+          isLocalOnly: (opts.chat as any).isLocalOnly ?? false,
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction([CHATS_STORE], 'readwrite')
+          const store = transaction.objectStore(CHATS_STORE)
+          transaction.oncomplete = () => resolve()
+          transaction.onerror = () =>
+            reject(new Error('Failed to apply remote chat'))
+          const request = store.put(storedChat)
+          request.onerror = () =>
+            reject(new Error('Failed to apply remote chat'))
+        })
+        outcome = { applied: true }
+      })
+    await this.saveQueue
+    return outcome
+  }
+
+  /**
+   * Wipe sync metadata for every chat (§H4). Called after a
+   * `start_fresh` rotation so subsequent pushes go up as fresh
+   * creates instead of failing the next ETag CAS forever.
+   */
+  async resetSyncMetadataForAllChats(): Promise<void> {
+    this.saveQueue = this.saveQueue
+      .catch((error) => {
+        logError('Previous save operation failed, recovering queue', error, {
+          component: 'IndexedDBStorage',
+          action: 'resetSyncMetadataForAllChats.queueRecovery',
+        })
+      })
+      .then(async () => {
+        const db = await this.ensureDB()
+        await new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction([CHATS_STORE], 'readwrite')
+          const store = transaction.objectStore(CHATS_STORE)
+          transaction.oncomplete = () => resolve()
+          transaction.onerror = () =>
+            reject(new Error('Failed to reset sync metadata'))
+
+          const request = store.openCursor()
+          request.onsuccess = (event) => {
+            const cursor = (event.target as IDBRequest<IDBCursorWithValue>)
+              .result
+            if (!cursor) return
+            const chat = cursor.value as StoredChat
+            chat.syncVersion = 0
+            chat.syncedAt = undefined
+            chat.locallyModified = true
+            cursor.update(chat)
+            cursor.continue()
+          }
+          request.onerror = () =>
+            reject(new Error('Failed to iterate chats for sync reset'))
+        })
       })
     return this.saveQueue
   }

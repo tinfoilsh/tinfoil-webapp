@@ -7,7 +7,7 @@ import {
 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
-import { type StoredChat } from '../storage/indexed-db'
+import { type AttachmentRewrite, type StoredChat } from '../storage/indexed-db'
 import {
   attachmentGet as enclaveAttachmentGet,
   attachmentPut as enclaveAttachmentPut,
@@ -88,6 +88,19 @@ export interface UploadChatOptions {
    * fire-and-forget uploads that have no retry caller above them.
    */
   idempotencyKey?: string
+}
+
+/**
+ * Result of a chat upload. `syncVersion` is the new ETag (decoded as
+ * a monotonic integer); `rewrites` lists every attachment whose id
+ * and per-attachment key were minted by the enclave during this
+ * upload so the caller can apply them to the freshest local copy
+ * via `indexedDBStorage.finalizeUpload`. The input chat is NOT
+ * mutated — the rewrites are emitted as a side channel.
+ */
+export interface UploadChatResult {
+  syncVersion: number | null
+  rewrites: AttachmentRewrite[]
 }
 
 /**
@@ -203,7 +216,7 @@ export class CloudStorageService {
   async uploadChat(
     chat: StoredChat,
     options: UploadChatOptions = {},
-  ): Promise<number | null> {
+  ): Promise<UploadChatResult> {
     // §9.6 R6 — the user's opt-out is invariant: a chat marked
     // localOnly MUST NEVER reach the enclave. Throw rather than
     // silently drop so an upstream caller bug is caught instead of
@@ -213,10 +226,26 @@ export class CloudStorageService {
         'cloud-storage: refusing to upload a local-only chat (§9.6 R6)',
       )
     }
-    const messages: Message[] = (chat.messages as Message[]) || []
+    // Deep-clone messages so attachment id/key rewrites land in the
+    // outgoing envelope only — never in the caller's chat object.
+    // The `finalizeUpload` path applies the rewrites against the
+    // FRESHEST local copy by stable client id, so an interleaved
+    // user edit can't carry the wrong server id back to disk (§H5).
+    const messages: Message[] = ((chat.messages as Message[]) || []).map(
+      (msg) => ({
+        ...msg,
+        attachments: msg.attachments
+          ? msg.attachments.map((a) => ({ ...a }))
+          : undefined,
+      }),
+    )
 
     const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
-    await this.encryptAndUploadAttachments(messages, chat.id, idempotencyKey)
+    const rewrites = await this.encryptAndUploadAttachments(
+      messages,
+      chat.id,
+      idempotencyKey,
+    )
     const strippedChat = {
       ...chat,
       messages: stripBase64FromMessages(messages),
@@ -245,14 +274,18 @@ export class CloudStorageService {
       metadata,
     })
 
-    return etagToSyncVersion(pushResp.etag) ?? null
+    return {
+      syncVersion: etagToSyncVersion(pushResp.etag) ?? null,
+      rewrites,
+    }
   }
 
   private async encryptAndUploadAttachments(
     messages: Message[],
     chatId: string,
     idempotencyKey: string,
-  ): Promise<void> {
+  ): Promise<AttachmentRewrite[]> {
+    const rewrites: AttachmentRewrite[] = []
     let attachmentIndex = 0
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
@@ -278,12 +311,19 @@ export class CloudStorageService {
             plaintext: raw,
             idempotencyKey: attachmentIdemKey,
           })
+          const clientId = att.id
           att.id = enclaveID
           att.encryptionKey = att_key
+          rewrites.push({
+            clientId,
+            serverId: enclaveID,
+            encryptionKey: att_key,
+          })
         }
         attachmentIndex++
       }
     }
+    return rewrites
   }
 
   async bulkUploadChats(

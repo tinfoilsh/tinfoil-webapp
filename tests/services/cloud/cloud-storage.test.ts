@@ -204,7 +204,7 @@ describe('CloudStorageService auth readiness', () => {
     expect(mockAttachmentPut).not.toHaveBeenCalled()
   })
 
-  it('keeps uploaded attachments when chat push fails so retries can commit safely', async () => {
+  it('uploads attachments before chat push so retries reuse enclave-minted ids', async () => {
     mockEnclavePush.mockRejectedValueOnce(new Error('push failed'))
     const service = new CloudStorageService()
     const chat = {
@@ -233,9 +233,11 @@ describe('CloudStorageService auth readiness', () => {
       service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' }),
     ).rejects.toThrow('push failed')
 
+    expect(mockAttachmentPut).toHaveBeenCalledTimes(1)
+    // The caller's chat object is intentionally NOT mutated; rewrites
+    // travel as a side channel and are applied by finalizeUpload.
     expect(chat.messages[0].attachments[0]).toMatchObject({
-      id: 'att-v2',
-      encryptionKey: 'k',
+      id: 'local-att',
     })
   })
 

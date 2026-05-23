@@ -11,6 +11,7 @@ import {
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
   isCloudSyncEnabled,
   setCloudSyncEnabled,
@@ -463,6 +464,24 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
             await rollbackToPreviousKeys(previousKeys)
             rolledBack = true
             throw authorizationError
+          }
+          // §H4 — `start_fresh` wipes the cloud, so any local
+          // `syncVersion` numbers no longer match a row anywhere.
+          // Reset them all so the next push goes up as a fresh
+          // create instead of failing the next ETag CAS in a forever
+          // 409 loop.
+          try {
+            await indexedDBStorage.resetSyncMetadataForAllChats()
+            cloudSync.clearSyncStatus()
+          } catch (resetError) {
+            logError(
+              'Failed to reset local sync metadata after start_fresh',
+              resetError,
+              {
+                component: 'useCloudSync',
+                action: 'setEncryptionKey.resetSyncMetadata',
+              },
+            )
           }
         }
 
