@@ -15,7 +15,6 @@ import type { StoredChat } from '@/services/storage/indexed-db'
  * - isLocalOnly === true (user explicitly chose local storage)
  * - isBlankChat === true (empty placeholder chat)
  * - decryptionFailed === true (would overwrite server data with placeholder)
- * - encryptedData is present (not yet decrypted, same risk as above)
  * - currently streaming (incomplete data)
  *
  * @param chat The chat to check
@@ -26,29 +25,18 @@ export function isUploadableChat(
   chat: StoredChat,
   isStreaming?: (chatId: string) => boolean,
 ): boolean {
-  // Local-only chats are never uploaded
   if (chat.isLocalOnly === true) {
     return false
   }
 
-  // Blank chats (empty placeholders) are never uploaded
   if (chat.isBlankChat === true) {
     return false
   }
 
-  // Chats that failed decryption should never be uploaded
-  // (would overwrite real data with empty placeholder)
   if (chat.decryptionFailed === true) {
     return false
   }
 
-  // Chats with encrypted data that hasn't been decrypted yet
-  // should never be uploaded (same risk as above)
-  if (chat.encryptedData) {
-    return false
-  }
-
-  // Chats currently streaming have incomplete data
   if (isStreaming && isStreaming(chat.id)) {
     return false
   }
@@ -78,8 +66,8 @@ export function shouldIngestRemoteChat(
   }
 
   // If local chat failed decryption, retry with remote data
-  // (user may have added a new decryption key)
-  if (local.decryptionFailed || local.encryptedData) {
+  // (the enclave may now serve a freshly-rewrapped row).
+  if (local.decryptionFailed) {
     return true
   }
 

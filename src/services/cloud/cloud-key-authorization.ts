@@ -93,6 +93,11 @@ export async function canWriteToCloud(): Promise<boolean> {
  * Returns false (without throwing) if the enclave currently disagrees
  * — the caller's local CEK does not match the registered KeyID and
  * no amount of localStorage writes will let it pass `canWriteToCloud`.
+ *
+ * The mode hint itself is non-authoritative (the enclave is the
+ * source of truth for "can write"), so a persistence failure must
+ * not block the caller: it would force a recovery ceremony even
+ * though the enclave already accepted the key.
  */
 export async function authorizeCurrentPrimaryKey(
   mode: CloudKeyAuthorizationMode,
@@ -101,7 +106,8 @@ export async function authorizeCurrentPrimaryKey(
   if (!userId) return false
   const validation = await validateCurrentPrimaryKey()
   if (!validation.canWrite) return false
-  return saveModeHint(userId, mode)
+  saveModeHint(userId, mode)
+  return true
 }
 
 export async function authorizeCurrentPrimaryKeyOrThrow(

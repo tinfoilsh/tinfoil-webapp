@@ -6,18 +6,7 @@ import {
   USER_ENCRYPTION_KEY,
   USER_ENCRYPTION_KEY_HISTORY,
 } from '@/constants/storage-keys'
-import {
-  base64ToUint8Array,
-  compressAndEncrypt,
-  decryptAndDecompress,
-  uint8ArrayToBase64,
-} from '@/utils/binary-codec'
 import { logInfo } from '@/utils/error-handling'
-
-export interface EncryptedData {
-  iv: string // Base64 encoded initialization vector
-  data: string // Base64 encoded encrypted data
-}
 
 export type FallbackKeyAddedCallback = () => void
 
@@ -29,6 +18,11 @@ export type FallbackKeyAddedCallback = () => void
  */
 export const ENCRYPTION_KEY_CHANGED_EVENT = 'encryptionKeyChanged'
 
+// Every CEK in this codebase is a 256-bit AES key. The enclave wire
+// contract and the legacy WebCrypto path both reject anything else,
+// so persisting a wrong-length key here would silently break sync.
+const CEK_BYTE_LENGTH = 32
+
 function dispatchEncryptionKeyChanged(): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(ENCRYPTION_KEY_CHANGED_EVENT))
@@ -36,12 +30,9 @@ function dispatchEncryptionKeyChanged(): void {
 }
 
 export class EncryptionService {
-  private encryptionKey: CryptoKey | null = null
   private currentKeyString: string | null = null
   private fallbackKeyStrings: string[] = []
-  private fallbackKeyCache: Map<string, CryptoKey> = new Map()
   private fallbackKeyAddedCallbacks: Set<FallbackKeyAddedCallback> = new Set()
-  private initPromise: Promise<unknown> | null = null
 
   // Helper to convert bytes to alphanumeric string (a-z, 0-9)
   // Always produces even-length strings (2 characters per byte)
@@ -100,22 +91,13 @@ export class EncryptionService {
       )
     }
 
-    return this.alphanumericToBytes(processedKey)
-  }
-
-  private async importCryptoKey(keyString: string): Promise<CryptoKey> {
-    const keyData = this.getKeyBytes(keyString)
-
-    return await crypto.subtle.importKey(
-      'raw',
-      keyData.buffer.slice(
-        keyData.byteOffset,
-        keyData.byteOffset + keyData.byteLength,
-      ) as ArrayBuffer,
-      { name: 'AES-GCM' },
-      false,
-      ['encrypt', 'decrypt'],
-    )
+    const bytes = this.alphanumericToBytes(processedKey)
+    if (bytes.byteLength !== CEK_BYTE_LENGTH) {
+      throw new Error(
+        `Key must decode to ${CEK_BYTE_LENGTH} bytes (got ${bytes.byteLength})`,
+      )
+    }
+    return bytes
   }
 
   private loadKeyHistoryFromStorage(): string[] {
@@ -153,38 +135,6 @@ export class EncryptionService {
     localStorage.setItem(USER_ENCRYPTION_KEY_HISTORY, JSON.stringify(history))
   }
 
-  private pruneFallbackCache(validKeys: string[]): void {
-    for (const key of Array.from(this.fallbackKeyCache.keys())) {
-      if (!validKeys.includes(key)) {
-        this.fallbackKeyCache.delete(key)
-      }
-    }
-  }
-
-  private async getFallbackCryptoKey(
-    keyString: string,
-  ): Promise<CryptoKey | null> {
-    const cached = this.fallbackKeyCache.get(keyString)
-    if (cached) {
-      return cached
-    }
-
-    try {
-      const cryptoKey = await this.importCryptoKey(keyString)
-      this.fallbackKeyCache.set(keyString, cryptoKey)
-      return cryptoKey
-    } catch (error) {
-      logInfo('Failed to import fallback encryption key', {
-        component: 'EncryptionService',
-        action: 'getFallbackCryptoKey',
-        metadata: {
-          error: error instanceof Error ? error.message : String(error),
-        },
-      })
-      return null
-    }
-  }
-
   // Generate a new encryption key
   async generateKey(): Promise<string> {
     const key = await crypto.subtle.generateKey(
@@ -209,7 +159,6 @@ export class EncryptionService {
       localStorage.getItem(USER_ENCRYPTION_KEY) ??
       localStorage.getItem(LEGACY_ENCRYPTION_KEY)
     this.fallbackKeyStrings = this.loadKeyHistoryFromStorage()
-    this.pruneFallbackCache(this.fallbackKeyStrings)
 
     if (storedKey) {
       await this.setKey(storedKey)
@@ -229,10 +178,8 @@ export class EncryptionService {
 
       const previousHistory = this.loadKeyHistoryFromStorage()
 
-      // Import as CryptoKey - ensure we have a proper ArrayBuffer
-      const importedKey = await this.importCryptoKey(keyString)
+      this.getKeyBytes(keyString)
 
-      // Prepare new history (excluding the key we are setting)
       let history = previousHistory.filter(
         (storedKey) => storedKey !== keyString,
       )
@@ -261,11 +208,8 @@ export class EncryptionService {
         },
       )
 
-      this.encryptionKey = importedKey
       this.currentKeyString = keyString
       this.fallbackKeyStrings = history
-      this.fallbackKeyCache.delete(keyString)
-      this.pruneFallbackCache(history)
       dispatchEncryptionKeyChanged()
     } catch (error) {
       if (
@@ -326,12 +270,21 @@ export class EncryptionService {
     }
   }
 
+  /**
+   * Read the persisted key history directly from localStorage. The
+   * migration sweep needs the alternatives even when the service
+   * has not been initialized yet (e.g. an early page-load path) —
+   * the in-memory `fallbackKeyStrings` cache lags `setKey()` and
+   * would silently report no history before init.
+   */
+  getStoredAlternatives(): string[] {
+    return this.loadKeyHistoryFromStorage()
+  }
+
   // Remove encryption key
   clearKey(options: { persist?: boolean } = {}): void {
     const { persist = true } = options
-    this.encryptionKey = null
     this.currentKeyString = null
-    this.fallbackKeyCache.clear()
     this.fallbackKeyStrings = []
     this.fallbackKeyAddedCallbacks.clear()
     if (persist) {
@@ -412,17 +365,11 @@ export class EncryptionService {
    * Drop every alternative (history) key from memory and from the
    * persisted key-history bucket. Used by the Layer C cleanup once
    * the legacy-blob migration loop reports `fullyMigrated`. Safe to
-   * call when there are no fallbacks — clears the cache and
-   * localStorage entries without disturbing the primary CEK.
+   * call when there are no fallbacks — clears the localStorage
+   * entries without disturbing the primary CEK.
    */
   clearFallbackKeys(): void {
-    if (this.fallbackKeyStrings.length === 0) {
-      this.fallbackKeyCache.clear()
-      this.saveKeyHistoryToStorage([])
-      return
-    }
     this.fallbackKeyStrings = []
-    this.fallbackKeyCache.clear()
     this.saveKeyHistoryToStorage([])
   }
 
@@ -475,7 +422,7 @@ export class EncryptionService {
       return
     }
 
-    const importedKey = await this.importCryptoKey(primary)
+    this.getKeyBytes(primary)
     const previousKey =
       this.currentKeyString ??
       localStorage.getItem(USER_ENCRYPTION_KEY) ??
@@ -513,9 +460,7 @@ export class EncryptionService {
       },
     )
 
-    this.encryptionKey = importedKey
     this.currentKeyString = primary
-    this.fallbackKeyCache.clear()
     this.fallbackKeyStrings = validAlternatives
     dispatchEncryptionKeyChanged()
   }
@@ -614,229 +559,6 @@ export class EncryptionService {
         }`,
       )
     }
-  }
-
-  private async ensureInitialized(): Promise<void> {
-    if (!this.encryptionKey) {
-      if (!this.initPromise) {
-        this.initPromise = this.initialize().finally(() => {
-          this.initPromise = null
-        })
-      }
-      await this.initPromise
-    }
-    if (!this.encryptionKey) {
-      throw new Error('Encryption key not initialized')
-    }
-  }
-
-  // Encrypt data
-  async encrypt(data: any): Promise<EncryptedData> {
-    await this.ensureInitialized()
-
-    // Convert data to string
-    const dataString = JSON.stringify(data)
-
-    // Encrypt the data directly
-    const encoder = new TextEncoder()
-    const dataBytes = encoder.encode(dataString)
-
-    // Generate random IV
-    const iv = crypto.getRandomValues(new Uint8Array(12))
-
-    // Encrypt
-    const encryptedData = await crypto.subtle.encrypt(
-      {
-        name: 'AES-GCM',
-        iv: iv,
-      },
-      this.encryptionKey!,
-      dataBytes.buffer.slice(
-        dataBytes.byteOffset,
-        dataBytes.byteOffset + dataBytes.byteLength,
-      ) as ArrayBuffer,
-    )
-
-    // Convert to base64 safely for large data
-    const ivBase64 = uint8ArrayToBase64(iv)
-    const dataBase64 = uint8ArrayToBase64(new Uint8Array(encryptedData))
-
-    return {
-      iv: ivBase64,
-      data: dataBase64,
-    }
-  }
-
-  // Decrypt data
-  async decrypt(encryptedData: EncryptedData): Promise<any> {
-    const { result } = await this.decryptRaw(encryptedData)
-    return result
-  }
-
-  // Decrypt data with fallback key tracking (for re-encryption decisions)
-  async decryptWithFallbackInfo(
-    encryptedData: EncryptedData,
-  ): Promise<{ data: any; usedFallbackKey: boolean }> {
-    const { result, usedFallbackKey } = await this.decryptRaw(encryptedData)
-    return { data: result, usedFallbackKey }
-  }
-
-  private async decryptRaw(
-    encryptedData: EncryptedData,
-  ): Promise<{ result: any; usedFallbackKey: boolean }> {
-    await this.ensureInitialized()
-
-    try {
-      // Validate input data
-      if (!encryptedData.iv || !encryptedData.data) {
-        throw new Error('Missing IV or data in encrypted data')
-      }
-
-      // Convert base64 back to bytes with validation
-      let iv: Uint8Array
-      let data: Uint8Array
-
-      try {
-        iv = base64ToUint8Array(encryptedData.iv)
-        data = base64ToUint8Array(encryptedData.data)
-      } catch (error) {
-        throw new Error(`Invalid base64 encoding: ${error}`)
-      }
-
-      return await this.decryptWithFallback(
-        (key) => this.decryptWithKey(key, iv, data),
-        'decrypt',
-      )
-    } catch (error) {
-      throw new Error(`Decryption failed: ${error}`)
-    }
-  }
-
-  // Encrypt data using v1 binary format (gzip + AES-GCM, raw binary output)
-  async encryptV1(data: unknown): Promise<Uint8Array> {
-    await this.ensureInitialized()
-    return compressAndEncrypt(data, this.encryptionKey!)
-  }
-
-  // Decrypt v1 binary format with fallback key support
-  async decryptV1(binary: Uint8Array): Promise<unknown> {
-    const { result } = await this.decryptV1Raw(binary)
-    return result
-  }
-
-  // Decrypt v1 binary format with fallback key tracking (for re-encryption decisions)
-  async decryptV1WithFallbackInfo(
-    binary: Uint8Array,
-  ): Promise<{ data: unknown; usedFallbackKey: boolean }> {
-    const { result, usedFallbackKey } = await this.decryptV1Raw(binary)
-    return { data: result, usedFallbackKey }
-  }
-
-  private async decryptV1Raw(
-    binary: Uint8Array,
-  ): Promise<{ result: unknown; usedFallbackKey: boolean }> {
-    await this.ensureInitialized()
-    try {
-      return await this.decryptWithFallback(
-        (key) => decryptAndDecompress(binary, key),
-        'decryptV1',
-      )
-    } catch (error) {
-      throw new Error(`Decryption failed: ${error}`)
-    }
-  }
-
-  private async decryptWithFallback<T>(
-    decryptFn: (key: CryptoKey) => Promise<T>,
-    action: string,
-  ): Promise<{ result: T; usedFallbackKey: boolean }> {
-    try {
-      const result = await decryptFn(this.encryptionKey!)
-      return { result, usedFallbackKey: false }
-    } catch (primaryError) {
-      let lastError: unknown = primaryError
-
-      for (const [index, keyString] of this.fallbackKeyStrings.entries()) {
-        const fallbackKey = await this.getFallbackCryptoKey(keyString)
-        if (!fallbackKey) {
-          continue
-        }
-
-        try {
-          const result = await decryptFn(fallbackKey)
-          logInfo('Decryption succeeded with fallback key', {
-            component: 'EncryptionService',
-            action,
-            metadata: { fallbackIndex: index },
-          })
-          return { result, usedFallbackKey: true }
-        } catch (fallbackError) {
-          lastError = fallbackError
-        }
-      }
-
-      if (lastError instanceof Error) {
-        throw lastError
-      }
-
-      throw new Error(String(lastError ?? 'No valid encryption keys'))
-    }
-  }
-
-  private async decryptWithKey(
-    cryptoKey: CryptoKey,
-    iv: Uint8Array,
-    data: Uint8Array,
-  ): Promise<any> {
-    const decryptedData = await crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv: iv.buffer.slice(
-          iv.byteOffset,
-          iv.byteOffset + iv.byteLength,
-        ) as ArrayBuffer,
-      },
-      cryptoKey,
-      data.buffer.slice(
-        data.byteOffset,
-        data.byteOffset + data.byteLength,
-      ) as ArrayBuffer,
-    )
-
-    return await this.parseDecryptedPayload(decryptedData)
-  }
-
-  private async parseDecryptedPayload(
-    decryptedData: ArrayBuffer,
-  ): Promise<any> {
-    const decoder = new TextDecoder()
-    const decryptedString = decoder.decode(decryptedData)
-
-    if (decryptedString.startsWith('H4sI')) {
-      const { isGzippedData, safeDecompress } = await import(
-        '@/utils/compression'
-      )
-
-      if (isGzippedData(decryptedString)) {
-        logInfo('Decompressing gzipped data', {
-          component: 'EncryptionService',
-          action: 'decrypt',
-          metadata: { dataLength: decryptedString.length },
-        })
-
-        const decompressedString = safeDecompress(decryptedString)
-
-        if (!decompressedString) {
-          throw new Error(
-            'DATA_CORRUPTED: Failed to decompress data - may be corrupted or malformed',
-          )
-        }
-
-        return JSON.parse(decompressedString)
-      }
-    }
-
-    return JSON.parse(decryptedString)
   }
 }
 

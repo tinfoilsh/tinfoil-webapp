@@ -39,7 +39,9 @@ This guarantees that only the attested enclave possessing the corresponding priv
 
 ### Encrypted Chat Storage
 
-Your saved chats are encrypted on your device using AES-GCM-256 encryption, with a key only you control. If you lose this key, your chat history cannot be recovered.
+Saved chats are encrypted with AES-GCM-256 using a key only you control before being uploaded to the cloud sync service. The cloud copy is opaque to our servers — only the holder of the key can decrypt it. If you lose this key, your cloud-stored chat history cannot be recovered.
+
+On-device caches (IndexedDB, sessionStorage) hold chat content in plaintext while you are signed in so the app can read and render messages without round-tripping the cloud. Anyone with access to the browser profile while signed in can read those caches; sign out (or use the in-app "Clear all data" flow) to evict them.
 
 Learn more: [Private Chat Backups](https://tinfoil.sh/blog/2025-09-24-private-chat-backups-local-first)
 

@@ -7,7 +7,6 @@
  * - isLocalOnly !== true
  * - isBlankChat !== true
  * - decryptionFailed !== true
- * - encryptedData is undefined/null
  * - not currently streaming
  */
 
@@ -36,7 +35,6 @@ describe('Sync Predicates', () => {
     isBlankChat: false,
     isLocalOnly: false,
     decryptionFailed: false,
-    encryptedData: undefined,
     syncVersion: 1,
   } as StoredChat
 
@@ -58,14 +56,6 @@ describe('Sync Predicates', () => {
     it('returns false for chats that failed decryption', () => {
       const failedChat = { ...baseChat, decryptionFailed: true }
       expect(isUploadableChat(failedChat)).toBe(false)
-    })
-
-    it('returns false for chats with encryptedData (not yet decrypted)', () => {
-      const encryptedChat = {
-        ...baseChat,
-        encryptedData: '{"iv":"abc","data":"xyz"}',
-      }
-      expect(isUploadableChat(encryptedChat)).toBe(false)
     })
 
     it('returns false for chats currently streaming', () => {
@@ -129,18 +119,6 @@ describe('Sync Predicates', () => {
         updatedAt: '2024-01-01T00:00:00.000Z',
       }
       const local = { ...baseChat, decryptionFailed: true } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(true)
-    })
-
-    it('returns true when local chat has encryptedData', () => {
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-      const local = {
-        ...baseChat,
-        encryptedData: '{"encrypted":"data"}',
-      } as StoredChat
       expect(shouldIngestRemoteChat(remote, local)).toBe(true)
     })
 
@@ -239,7 +217,6 @@ describe('Sync Predicates', () => {
       const failedChat = {
         ...baseChat,
         decryptionFailed: true,
-        encryptedData: '{"encrypted":"data"}',
       }
 
       // Should not upload (would overwrite server data with placeholder)

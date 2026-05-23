@@ -1244,14 +1244,29 @@ export function usePasskeyBackup({
 
     try {
       const remoteState = await inspectRemoteEncryptedState()
-      if (remoteState !== 'empty') {
+      if (remoteState === 'exists') {
         if (isMountedRef.current) {
           setState((prev) => ({
             ...prev,
-            manualRecoveryNeeded: remoteState === 'exists',
+            manualRecoveryNeeded: true,
             passkeyFirstTimePromptAvailable: false,
             passkeySetupFailed: true,
             passkeyRetryAvailable: false,
+          }))
+        }
+        return false
+      }
+      if (remoteState === 'unknown') {
+        // The probe failed (network, transient enclave error). The
+        // remote may be empty or already have a key — we cannot tell
+        // safely. Surface as retriable so the user can try again
+        // instead of locking them out of setup.
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            passkeyFirstTimePromptAvailable: false,
+            passkeySetupFailed: true,
+            passkeyRetryAvailable: true,
           }))
         }
         return false

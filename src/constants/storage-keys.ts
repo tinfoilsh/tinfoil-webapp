@@ -104,6 +104,13 @@ export const SYNC_PROJECT_CHAT_STATUS_PREFIX =
 export const SYNC_PROFILE_STATUS = 'tinfoil-sync-profile-status'
 export const SYNC_PROFILE_DIRTY = 'tinfoil-sync-profile-dirty'
 
+// --- localStorage: Migration flags -----------------------------------------
+// Set the first time a build evicts locally-cached cloud chats that the
+// legacy v0/v1 client decrypt path used to handle. The enclave rewraps any
+// orphan rows server-side; the next sync repopulates fresh plaintext.
+export const MIGRATION_LEGACY_CLOUD_CHATS_EVICTED =
+  'tinfoil-migration-legacy-cloud-chats-evicted'
+
 // --- localStorage: Development ---------------------------------------------
 export const DEV_ENABLE_DEBUG_LOGS = 'tinfoil-dev-enable-debug-logs'
 

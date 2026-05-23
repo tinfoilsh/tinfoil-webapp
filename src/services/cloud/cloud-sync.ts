@@ -18,11 +18,8 @@ import {
   type ChatSyncStatus,
   type UploadChatOptions,
 } from './cloud-storage'
-import {
-  reencryptAndUploadChats as doReencryptAndUpload,
-  retryDecryptionWithNewKey as doRetryDecryption,
-} from './encryption-recovery'
 import { runLegacyBlobMigrationAndFinalize } from './legacy-blob-migration'
+import { runLegacyChatEvictionIfNeeded } from './legacy-chat-eviction'
 import { projectStorage } from './project-storage'
 import { streamingTracker } from './streaming-tracker'
 import { isUploadableChat } from './sync-predicates'
@@ -54,6 +51,51 @@ const UPLOAD_MAX_RETRIES = 3
 const REMOTE_LIST_MAX_ATTEMPTS = 2
 
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
+
+function mergeAttachmentMetadata(from: StoredChat, into: StoredChat): void {
+  const fromMessages = from.messages ?? []
+  const intoMessages = into.messages ?? []
+  const limit = Math.min(fromMessages.length, intoMessages.length)
+  for (let i = 0; i < limit; i++) {
+    const fromAtts = fromMessages[i]?.attachments ?? []
+    const intoAtts = intoMessages[i]?.attachments ?? []
+    const attLimit = Math.min(fromAtts.length, intoAtts.length)
+    for (let j = 0; j < attLimit; j++) {
+      const src = fromAtts[j]
+      const dst = intoAtts[j]
+      if (!src || !dst) continue
+      if (src.id && !dst.id) dst.id = src.id
+      if (src.encryptionKey && !dst.encryptionKey) {
+        dst.encryptionKey = src.encryptionKey
+      }
+    }
+  }
+}
+
+async function persistUploadResult(
+  chatId: string,
+  uploadedSnapshot: StoredChat,
+  preUploadUpdatedAt: string | undefined,
+  syncVersion: number,
+): Promise<void> {
+  const latest = await indexedDBStorage.getChat(chatId)
+  if (!latest) {
+    await indexedDBStorage.markAsSynced(chatId, syncVersion)
+    return
+  }
+  const concurrentEdit = latest.updatedAt !== preUploadUpdatedAt
+  mergeAttachmentMetadata(uploadedSnapshot, latest)
+  await indexedDBStorage.saveExistingChat(latest)
+  if (concurrentEdit) {
+    // Local edits happened during the upload; preserve them by
+    // bumping syncVersion only and leaving `locallyModified` set so
+    // the next pass uploads the newer content.
+    latest.syncVersion = syncVersion
+    await indexedDBStorage.saveExistingChat(latest)
+    return
+  }
+  await indexedDBStorage.markAsSynced(chatId, syncVersion)
+}
 
 export class CloudSyncService {
   private syncLock: Promise<void> | null = null
@@ -472,6 +514,20 @@ export class CloudSyncService {
     this.legacyMigrationKicked = false
   }
 
+  /**
+   * Wipe every chat-scope sync-status cache (regular + per-project).
+   * Used after a local eviction sweep so the next `smartSync` cannot
+   * short-circuit on a stale `(count, lastUpdated)` snapshot and
+   * leave the just-evicted rows missing on disk.
+   */
+  private invalidateChatSyncCaches(): void {
+    this.chatSyncCache.clear()
+    this.allChatsSyncCache.clear()
+    for (const cache of this.projectSyncCaches.values()) {
+      cache.clear()
+    }
+  }
+
   // Backup a single chat to the cloud with coalescing and retry
   async backupChat(chatId: string): Promise<void> {
     // Don't attempt backup if not authenticated
@@ -548,15 +604,18 @@ export class CloudSyncService {
       throw new Error('Cannot sync chat while it is streaming')
     }
 
+    const preUploadUpdatedAt = chat.updatedAt
+    const preUploadVersion = chat.syncVersion ?? 0
     const syncVersion = await cloudStorage.uploadChat(chat, {
       ...options,
       idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
     })
 
-    await indexedDBStorage.saveExistingChat(chat)
-    await indexedDBStorage.markAsSynced(
+    await persistUploadResult(
       chatId,
-      syncVersion ?? (chat.syncVersion ?? 0) + 1,
+      chat,
+      preUploadUpdatedAt,
+      syncVersion ?? preUploadVersion + 1,
     )
   }
 
@@ -624,7 +683,6 @@ export class CloudSyncService {
             isBlankChat: chat.isBlankChat,
             isLocalOnly: chat.isLocalOnly,
             decryptionFailed: chat.decryptionFailed,
-            hasEncryptedData: !!chat.encryptedData,
           },
         })
         return
@@ -640,14 +698,17 @@ export class CloudSyncService {
         return
       }
 
+      const preUploadUpdatedAt = chat.updatedAt
+      const preUploadVersion = chat.syncVersion ?? 0
       const syncVersion = await cloudStorage.uploadChat(chat, {
         idempotencyKey,
       })
 
-      await indexedDBStorage.saveExistingChat(chat)
-      await indexedDBStorage.markAsSynced(
+      await persistUploadResult(
         chatId,
-        syncVersion ?? (chat.syncVersion ?? 0) + 1,
+        chat,
+        preUploadUpdatedAt,
+        syncVersion ?? preUploadVersion + 1,
       )
     } catch (error) {
       // Silently fail if no auth token set
@@ -884,7 +945,7 @@ export class CloudSyncService {
     if (this.legacyMigrationKicked) return
     this.legacyMigrationKicked = true
     void runLegacyBlobMigrationAndFinalize()
-      .then((report) => {
+      .then(async (report) => {
         logInfo('Legacy blob migration completed', {
           component: 'CloudSync',
           action: 'kickLegacyBlobMigration',
@@ -895,6 +956,12 @@ export class CloudSyncService {
             totalBlocked: report.totalBlocked,
           },
         })
+        await runLegacyChatEvictionIfNeeded()
+        // Eviction deletes local rows but the server still has them,
+        // so the cached `(count, lastUpdated)` snapshot now lies. Drop
+        // it so the next `smartSync` falls back to a full pull and
+        // repopulates the evicted chats from the enclave.
+        this.invalidateChatSyncCaches()
       })
       .catch((err) => {
         logError('Legacy blob migration kickoff failed', err, {
@@ -1075,8 +1142,12 @@ export class CloudSyncService {
         if (!remoteChat.content) return null
 
         try {
-          // Use centralized chat codec for decryption/placeholder logic
-          const result = await processRemoteChat(remoteChat)
+          const result = await processRemoteChat({
+            id: remoteChat.id,
+            plaintext: remoteChat.content,
+            syncVersion: remoteChat.syncVersion,
+            formatVersion: 2,
+          })
           return result.chat
         } catch (error) {
           logError(`Failed to process chat ${remoteChat.id}`, error, {
@@ -1117,23 +1188,62 @@ export class CloudSyncService {
     }
   }
 
-  // Retry decryption for chats that failed to decrypt
+  /**
+   * Drop locally-cached placeholders for chats that previously failed
+   * to decrypt and re-pull them from the enclave. The legacy-blob
+   * migration runner is expected to have already rewrapped any
+   * server-side rows that were stuck on a key the client no longer
+   * has, so the next sync repopulates clean plaintext.
+   */
   async retryDecryptionWithNewKey(
     options: {
       onProgress?: (current: number, total: number) => void
       batchSize?: number
     } = {},
   ): Promise<number> {
-    return doRetryDecryption(options)
-  }
+    const { onProgress } = options
+    const batchSize = Math.max(1, Math.floor(options.batchSize || 5))
 
-  // Re-encrypt all local chats with new key and upload to cloud
-  async reencryptAndUploadChats(): Promise<{
-    reencrypted: number
-    uploaded: number
-    errors: string[]
-  }> {
-    return doReencryptAndUpload()
+    const allChats = await indexedDBStorage.getAllChats()
+    const failed = allChats.filter((chat) => chat.decryptionFailed)
+    if (failed.length === 0) return 0
+
+    for (let i = 0; i < failed.length; i++) {
+      try {
+        await indexedDBStorage.deleteChat(failed[i].id)
+      } catch (error) {
+        logError(`Failed to evict placeholder chat ${failed[i].id}`, error, {
+          component: 'CloudSync',
+          action: 'retryDecryptionWithNewKey',
+        })
+      }
+      if ((i + 1) % batchSize === 0 || i === failed.length - 1) {
+        onProgress?.(i + 1, failed.length)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+    }
+
+    // The just-evicted chats still exist on the server, so the cached
+    // sync-status snapshot would match remote and `smartSync` would
+    // no-op. Drop the cache before resyncing so the next pass takes
+    // the full-sync path and repopulates them.
+    this.invalidateChatSyncCaches()
+
+    try {
+      await this.smartSync()
+    } catch (error) {
+      logError('Resync after eviction failed', error, {
+        component: 'CloudSync',
+        action: 'retryDecryptionWithNewKey',
+      })
+      return 0
+    }
+
+    const remaining = (await indexedDBStorage.getAllChats()).filter(
+      (chat) => chat.decryptionFailed,
+    ).length
+
+    return Math.max(0, failed.length - remaining)
   }
 
   // Fetch a page of remote chats, decrypt, persist to IndexedDB, and return pagination info

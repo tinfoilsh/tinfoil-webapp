@@ -12,14 +12,13 @@ export interface StoredChat extends Chat {
   syncedAt?: number
   locallyModified?: boolean
   syncVersion?: number
-  formatVersion?: number // 0=legacy JSON, 1=gzip+binary
+  formatVersion?: number
   decryptionFailed?: boolean
-  dataCorrupted?: boolean // True if data appears to be corrupted (e.g., compressed with wrong key)
-  encryptedData?: string
-  version?: number // Storage format version
-  loadedAt?: number // Timestamp when chat was loaded from pagination
-  isLocalOnly?: boolean // True if chat should never be synced to cloud (created when sync was disabled)
-  isBlankChat?: boolean // True for new chats that haven't been used yet (empty placeholders)
+  dataCorrupted?: boolean
+  version?: number
+  loadedAt?: number
+  isLocalOnly?: boolean
+  isBlankChat?: boolean
 }
 
 const DB_NAME = 'tinfoil-chat'
@@ -306,8 +305,7 @@ export class IndexedDBStorage {
         // These are placeholder chats with empty messages that should NOT be uploaded.
         // If we set locallyModified: true, they would overwrite real encrypted data on the server.
         const isFailedDecryption =
-          (chat as StoredChat).decryptionFailed === true ||
-          !!(chat as StoredChat).encryptedData
+          (chat as StoredChat).decryptionFailed === true
 
         const storedChat: StoredChat = {
           ...chat,
@@ -332,7 +330,6 @@ export class IndexedDBStorage {
             existingChat?.syncVersion ?? (chat as StoredChat).syncVersion,
           decryptionFailed: (chat as StoredChat).decryptionFailed,
           dataCorrupted: (chat as StoredChat).dataCorrupted,
-          encryptedData: (chat as StoredChat).encryptedData,
           version: 1,
           loadedAt:
             (chat as StoredChat).loadedAt ??
@@ -632,13 +629,6 @@ export class IndexedDBStorage {
         }
       })
     return this.saveQueue
-  }
-
-  async getChatsWithEncryptedData(): Promise<StoredChat[]> {
-    const allChats = await this.getAllChats()
-    return allChats.filter(
-      (chat) => chat.decryptionFailed && chat.encryptedData,
-    )
   }
 
   async resetChatTimestamps(chatId: string): Promise<void> {

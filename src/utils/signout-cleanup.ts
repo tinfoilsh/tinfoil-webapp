@@ -11,6 +11,7 @@ import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
 import { projectEvents } from '@/services/project/project-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { resetSyncEnclaveClient } from '@/services/sync-enclave'
 import { logError, logInfo } from '@/utils/error-handling'
 
 interface ClearUserDataOptions {
@@ -36,6 +37,10 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
 
   // Reset tinfoil client to clear cached API key
   resetTinfoilClient()
+
+  // Drop the verified sync-enclave SecureClient so the next signed-in
+  // user re-runs attestation from scratch.
+  resetSyncEnclaveClient()
 
   // Clear profile sync cache
   profileSync.clearCache()

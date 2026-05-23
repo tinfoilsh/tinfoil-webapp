@@ -418,8 +418,14 @@ export async function retrieveEncryptedKeys(
   kek: CryptoKey,
 ): Promise<KeyBundle | null> {
   try {
-    const enclaveBundle = await tryRetrieveFromEnclave(credentialId, kek)
-    if (enclaveBundle) return enclaveBundle
+    const lookup = await tryRetrieveFromEnclave(credentialId, kek)
+    if (lookup.bundle) return lookup.bundle
+    // Only fall back to a legacy bundle when the enclave has no
+    // registered key yet. Once an enclave-side key exists, a missing
+    // bundle for this credentialId means the passkey is not paired
+    // with the current CEK — reviving a stale legacy bundle here
+    // would unwrap an old CEK that's already been rotated away.
+    if (lookup.enclaveKeyExists) return null
     return await tryRetrieveFromLegacy(credentialId, kek)
   } catch (err) {
     logError('Failed to retrieve encrypted keys', err, {
@@ -430,21 +436,29 @@ export async function retrieveEncryptedKeys(
   }
 }
 
+interface EnclaveBundleLookup {
+  bundle: KeyBundle | null
+  enclaveKeyExists: boolean
+}
+
 async function tryRetrieveFromEnclave(
   credentialId: string,
   kek: CryptoKey,
-): Promise<KeyBundle | null> {
+): Promise<EnclaveBundleLookup> {
   try {
     const resp = await enclaveKeyCurrent()
-    if (!resp.key_id) return null
+    if (!resp.key_id) return { bundle: null, enclaveKeyExists: false }
     const bundle = resp.bundles[credentialId]
-    if (!bundle) return null
-    return await decryptKeyBundle(kek, {
+    if (!bundle) return { bundle: null, enclaveKeyExists: true }
+    const decrypted = await decryptKeyBundle(kek, {
       iv: hexToB64(bundle.kek_iv),
       data: hexToB64(bundle.encrypted_keys),
     })
+    return { bundle: decrypted, enclaveKeyExists: true }
   } catch (err) {
-    if (err instanceof SyncEnclaveError && err.status === 404) return null
+    if (err instanceof SyncEnclaveError && err.status === 404) {
+      return { bundle: null, enclaveKeyExists: false }
+    }
     throw err
   }
 }

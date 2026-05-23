@@ -41,17 +41,17 @@ export function pullKey(): PullKey[] {
  */
 export function migrationKeys(): PullKey[] {
   const out: PullKey[] = []
-  // Source the primary from the same path `requirePrimaryKeyB64()` uses
-  // so a freshly-loaded service (page refresh before `setKey()` runs)
-  // still surfaces the primary CEK on the migration sweep. The
-  // in-memory `getAllKeys().primary` field can lag the persisted key
-  // immediately after startup.
+  // Source both primary and alternatives from localStorage so a
+  // freshly-loaded service (page refresh before `initialize()` runs)
+  // still surfaces every historical key on the migration sweep. The
+  // in-memory `getAllKeys()` cache lags `setKey()` and would drop
+  // alternatives that the persisted history has on file.
   const primary = encryptionService.getKey()
   if (primary) {
     const bytes = encryptionService.getAlternativeKeyBytes(primary)
     if (bytes) out.push({ key: bytesToBase64(bytes) })
   }
-  const { alternatives } = encryptionService.getAllKeys()
+  const alternatives = encryptionService.getStoredAlternatives()
   for (const alt of alternatives) {
     if (alt === primary) continue
     const bytes = encryptionService.getAlternativeKeyBytes(alt)

@@ -330,7 +330,8 @@ export async function pullOne(
 }
 
 export function pullItemPlaintext(item: PullItem): Uint8Array | null {
-  if (!item.ok || !item.plaintext) return null
+  if (!item.ok) return null
+  if (item.plaintext === null || item.plaintext === undefined) return null
   return b64ToBytes(item.plaintext)
 }
 

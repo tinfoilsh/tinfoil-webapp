@@ -217,8 +217,12 @@ function classifySyncEnclaveError(
 function isNetworkError(err: unknown): boolean {
   if (err instanceof TypeError) {
     // The browser's fetch surface throws TypeError on transport
-    // failures (DNS, TLS, ECONNREFUSED, offline).
-    return /network|fetch|failed to fetch|load failed/i.test(err.message)
+    // failures (DNS, TLS, ECONNREFUSED, offline). Match only the
+    // phrases browsers actually emit — a bare "fetch" token would
+    // misclassify generic TypeErrors like "x.fetch is not a function".
+    return /network error|networkerror|failed to fetch|load failed/i.test(
+      err.message,
+    )
   }
   return false
 }

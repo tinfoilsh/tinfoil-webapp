@@ -1,15 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetKey = vi.fn<() => string | null>()
-const mockGetAllKeys =
-  vi.fn<() => { primary: string | null; alternatives: string[] }>()
+const mockGetStoredAlternatives = vi.fn<() => string[]>()
 const mockGetKeyBytesOrThrow = vi.fn<() => Uint8Array>()
 const mockGetAlternativeKeyBytes = vi.fn<(k: string) => Uint8Array | null>()
 
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
     getKey: () => mockGetKey(),
-    getAllKeys: () => mockGetAllKeys(),
+    getStoredAlternatives: () => mockGetStoredAlternatives(),
     getKeyBytesOrThrow: () => mockGetKeyBytesOrThrow(),
     getAlternativeKeyBytes: (k: string) => mockGetAlternativeKeyBytes(k),
   },
@@ -24,7 +23,8 @@ import {
 describe('cek-encoding', () => {
   beforeEach(() => {
     mockGetKey.mockReset()
-    mockGetAllKeys.mockReset()
+    mockGetStoredAlternatives.mockReset()
+    mockGetStoredAlternatives.mockReturnValue([])
     mockGetKeyBytesOrThrow.mockReset()
     mockGetAlternativeKeyBytes.mockReset()
   })
@@ -74,10 +74,11 @@ describe('cek-encoding', () => {
   describe('migrationKeys', () => {
     it('emits primary first, then unique alternatives, each base64-encoded', () => {
       mockGetKey.mockReturnValue('key_primary')
-      mockGetAllKeys.mockReturnValue({
-        primary: 'key_primary',
-        alternatives: ['key_alt1', 'key_alt2', 'key_primary'],
-      })
+      mockGetStoredAlternatives.mockReturnValue([
+        'key_alt1',
+        'key_alt2',
+        'key_primary',
+      ])
       mockGetAlternativeKeyBytes.mockImplementation((k) => {
         const map: Record<string, Uint8Array> = {
           key_primary: new Uint8Array(32).fill(0x10),
@@ -96,10 +97,7 @@ describe('cek-encoding', () => {
 
     it('drops keys that fail the format decoder', () => {
       mockGetKey.mockReturnValue('key_primary')
-      mockGetAllKeys.mockReturnValue({
-        primary: 'key_primary',
-        alternatives: ['key_bad'],
-      })
+      mockGetStoredAlternatives.mockReturnValue(['key_bad'])
       mockGetAlternativeKeyBytes.mockImplementation((k) =>
         k === 'key_primary' ? new Uint8Array(32) : null,
       )
@@ -109,17 +107,14 @@ describe('cek-encoding', () => {
 
     it('returns an empty array when no primary key is loaded', () => {
       mockGetKey.mockReturnValue(null)
-      mockGetAllKeys.mockReturnValue({ primary: null, alternatives: [] })
+      mockGetStoredAlternatives.mockReturnValue([])
       const keys = migrationKeys()
       expect(keys).toEqual([])
     })
 
     it('falls back to localStorage when in-memory primary is null', () => {
       mockGetKey.mockReturnValue('key_primary')
-      mockGetAllKeys.mockReturnValue({
-        primary: null,
-        alternatives: [],
-      })
+      mockGetStoredAlternatives.mockReturnValue([])
       mockGetAlternativeKeyBytes.mockImplementation((k) =>
         k === 'key_primary' ? new Uint8Array(32).fill(0x42) : null,
       )

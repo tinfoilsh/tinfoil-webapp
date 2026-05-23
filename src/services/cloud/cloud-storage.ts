@@ -90,16 +90,17 @@ export interface UploadChatOptions {
   idempotencyKey?: string
 }
 
-export type RawChatContent =
-  | { content: string; formatVersion: 0; syncVersion?: number }
-  | { binaryContent: ArrayBuffer; formatVersion: 1; syncVersion?: number }
-  /**
-   * Plaintext envelope-v2 JSON returned by the sync enclave. The `2`
-   * here mirrors the wire `tinfoil-sync-envelope-v2` AAD (see
-   * syncplan.md §5) — the row is sealed under v2 on the controlplane,
-   * the enclave unsealed it, so what we hand back is plaintext.
-   */
-  | { plaintext: string; formatVersion: 2; syncVersion?: number }
+/**
+ * Plaintext envelope-v2 JSON returned by the sync enclave. The `2`
+ * here mirrors the wire `tinfoil-sync-envelope-v2` AAD (see
+ * syncplan.md §5) — the row is sealed under v2 on the controlplane,
+ * the enclave unsealed it, so what we hand back is plaintext.
+ */
+export type RawChatContent = {
+  plaintext: string
+  formatVersion: 2
+  syncVersion?: number
+}
 
 function etagToSyncVersion(etag: string | undefined): number | undefined {
   if (!etag) return undefined
@@ -367,27 +368,12 @@ export class CloudStorageService {
         return null
       }
 
-      const remote: RemoteChatData =
-        raw.formatVersion === 2
-          ? {
-              id: chatId,
-              plaintext: raw.plaintext,
-              formatVersion: 2,
-              syncVersion: raw.syncVersion,
-            }
-          : raw.formatVersion === 1
-            ? {
-                id: chatId,
-                binaryContent: raw.binaryContent,
-                formatVersion: 1,
-                syncVersion: raw.syncVersion,
-              }
-            : {
-                id: chatId,
-                content: raw.content,
-                formatVersion: 0,
-                syncVersion: raw.syncVersion,
-              }
+      const remote: RemoteChatData = {
+        id: chatId,
+        plaintext: raw.plaintext,
+        formatVersion: 2,
+        syncVersion: raw.syncVersion,
+      }
 
       const result = await processRemoteChat(remote)
       return result.chat

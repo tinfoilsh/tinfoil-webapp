@@ -6,7 +6,6 @@
  * appears in every sync method.
  */
 
-import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { chatEvents, type ChatChangeReason } from '../storage/chat-events'
 import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
@@ -21,20 +20,18 @@ import { shouldIngestRemoteChat } from './sync-predicates'
 
 /**
  * A remote chat from any API response that carries at least an id.
- * The `content` field may be absent if the listing didn't include
- * inline content. `createdAt` is optional because the enclave's
- * list-status surface only emits `updated_at`; the codec falls back
- * to deriving `createdAt` from the reverse-timestamp encoded in
- * `id`. `formatVersion` is optional because the post-cutover enclave
- * path always returns plaintext v2 — legacy v0/v1 callers still
- * supply it explicitly.
+ * The enclave only ever returns plaintext v2 rows. `content` carries
+ * that plaintext when present; otherwise the ingestion loop fetches
+ * it via `cloudStorage.fetchRawChatContent`. `createdAt` is optional
+ * because the list-status surface only emits `updated_at` — the
+ * codec derives `createdAt` from the reverse-timestamp encoded in
+ * `id` when needed.
  */
 export interface RemoteChatEntry {
   id: string
   content?: string | null
   createdAt?: string
   updatedAt?: string
-  formatVersion?: number
   syncVersion?: number
 }
 
@@ -59,8 +56,6 @@ export interface IngestResult {
   savedIds: string[]
   downloaded: number
   errors: string[]
-  /** IDs of chats that were decrypted with a fallback key and should be re-encrypted with the current key */
-  needsReencryption: string[]
 }
 
 /**
@@ -87,7 +82,6 @@ export async function ingestRemoteChats(
     savedIds: [],
     downloaded: 0,
     errors: [],
-    needsReencryption: [],
   }
 
   for (const remoteChat of remoteChats) {
@@ -106,55 +100,25 @@ export async function ingestRemoteChats(
     }
 
     try {
-      // Resolve content: use inline if present, otherwise optionally fetch
-      let codecInput: RemoteChatData = {
+      const codecInput: RemoteChatData = {
         id: remoteChat.id,
         createdAt: remoteChat.createdAt,
         updatedAt: remoteChat.updatedAt,
-        formatVersion: remoteChat.formatVersion,
+        formatVersion: 2,
         syncVersion: remoteChat.syncVersion,
       }
 
       if (remoteChat.content) {
-        // Default to v2 plaintext when the caller didn't tag a format.
-        // The enclave path always returns plaintext via attachInlineContent;
-        // only legacy v0/v1 callers ever set formatVersion explicitly.
-        const fv = remoteChat.formatVersion ?? 2
-        if (fv === 2) {
-          codecInput.plaintext = remoteChat.content
-          codecInput.formatVersion = 2
-        } else if (fv === 1) {
-          const bytes = base64ToUint8Array(remoteChat.content)
-          codecInput.binaryContent = bytes.buffer as ArrayBuffer
-          codecInput.formatVersion = 1
-        } else {
-          codecInput.content = remoteChat.content
-        }
+        codecInput.plaintext = remoteChat.content
       } else if (fetchMissingContent) {
         const fetched = await cloudStorage.fetchRawChatContent(remoteChat.id)
         if (fetched) {
-          if (fetched.formatVersion === 2) {
-            codecInput.plaintext = fetched.plaintext
-            codecInput.formatVersion = 2
-            codecInput.syncVersion = fetched.syncVersion
-          } else if (fetched.formatVersion === 1) {
-            codecInput.binaryContent = fetched.binaryContent
-            codecInput.formatVersion = 1
-            codecInput.syncVersion = fetched.syncVersion
-          } else {
-            codecInput.content = fetched.content
-            codecInput.formatVersion = 0
-            codecInput.syncVersion = fetched.syncVersion
-          }
+          codecInput.plaintext = fetched.plaintext
+          codecInput.syncVersion = fetched.syncVersion
         }
       }
 
-      // Skip if no content available (either not requested or fetch returned nothing)
-      if (
-        !codecInput.content &&
-        !codecInput.binaryContent &&
-        !codecInput.plaintext
-      ) {
+      if (!codecInput.plaintext) {
         continue
       }
 
@@ -175,10 +139,6 @@ export async function ingestRemoteChats(
         await indexedDBStorage.markAsSynced(chat.id, chat.syncVersion ?? 0)
         result.savedIds.push(chat.id)
         result.downloaded++
-
-        if (codecResult.needsReencryption) {
-          result.needsReencryption.push(chat.id)
-        }
       }
     } catch (error) {
       result.errors.push(

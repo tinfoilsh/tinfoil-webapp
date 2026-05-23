@@ -55,17 +55,15 @@ describe('§9.6 R5 — v2 plaintext path never produces placeholders', () => {
     expect(result.status).toBe('decrypted')
     expect(result.chat.decryptionFailed).toBeUndefined()
     expect(result.chat.dataCorrupted).toBeUndefined()
-    expect(result.chat.encryptedData).toBeUndefined()
     expect(chatHealth(result.chat)).toBe('HEALTHY')
   })
 
   it('throws on malformed v2 plaintext instead of producing a placeholder', async () => {
     // Malformed plaintext from the enclave is a server bug, not a
-    // client-side decryption failure. The legacy fallback path would
-    // store the bytes as `encryptedData` and surface an "Encrypted"
-    // placeholder; the new contract says the v2 path must throw so
-    // the caller can route the error through decideRecovery and the
-    // chat list never receives a polluting placeholder row.
+    // client-side decryption failure. The new contract is the v2
+    // path must throw so the caller can route the error through
+    // decideRecovery and the chat list never receives a polluting
+    // placeholder row.
     await expect(
       processRemoteChat({
         id: 'chat-1',

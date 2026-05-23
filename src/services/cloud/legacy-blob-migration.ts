@@ -39,6 +39,7 @@ export interface ScopeMigrationResult {
   scope: Scope
   migrated: number
   remaining: number
+  blockedUnmigrated: number
   blocked: string[]
 }
 
@@ -76,12 +77,14 @@ function mergeScopeReports(
       scope: s.scope,
       migrated: 0,
       remaining: 0,
+      blockedUnmigrated: 0,
       blocked: [],
     }
     acc.set(s.scope, {
       scope: s.scope,
       migrated: prev.migrated + s.migrated,
       remaining: s.retryable_remaining,
+      blockedUnmigrated: s.blocked_unmigrated,
       blocked: s.blocked ? [...prev.blocked, ...s.blocked] : prev.blocked,
     })
   }
@@ -91,7 +94,7 @@ function toReport(scopes: Map<Scope, ScopeMigrationResult>): MigrationReport {
   const list = [...scopes.values()]
   const totalMigrated = list.reduce((sum, r) => sum + r.migrated, 0)
   const totalRemaining = list.reduce((sum, r) => sum + r.remaining, 0)
-  const totalBlocked = list.reduce((sum, r) => sum + r.blocked.length, 0)
+  const totalBlocked = list.reduce((sum, r) => sum + r.blockedUnmigrated, 0)
   return {
     scopes: list,
     totalMigrated,

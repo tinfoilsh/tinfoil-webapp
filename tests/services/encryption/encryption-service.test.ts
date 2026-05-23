@@ -2,10 +2,7 @@ import {
   USER_ENCRYPTION_KEY,
   USER_ENCRYPTION_KEY_HISTORY,
 } from '@/constants/storage-keys'
-import {
-  EncryptionService,
-  type EncryptedData,
-} from '@/services/encryption/encryption-service'
+import { EncryptionService } from '@/services/encryption/encryption-service'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 describe('EncryptionService', () => {
@@ -24,8 +21,7 @@ describe('EncryptionService', () => {
 
     it('should generate keys of consistent length (64 chars after prefix for 256-bit)', async () => {
       const key = await service.generateKey()
-      // 256 bits = 32 bytes, each byte becomes 2 chars in alphanumeric encoding
-      expect(key.length).toBe(4 + 64) // 'key_' + 64 chars
+      expect(key.length).toBe(4 + 64)
     })
 
     it('should generate unique keys each time', async () => {
@@ -59,6 +55,21 @@ describe('EncryptionService', () => {
       )
     })
 
+    it('should reject odd-length keys', async () => {
+      await expect(service.setKey('key_abc')).rejects.toThrow(
+        'Key length must be even',
+      )
+    })
+
+    it('should reject keys that decode to the wrong byte length', async () => {
+      // 8 valid chars decode to 4 bytes — far short of the 32 a CEK
+      // needs. Without the byte-length guard this would persist and
+      // break every downstream crypto/sync operation.
+      await expect(service.setKey('key_abcdefgh')).rejects.toThrow(
+        /must decode to 32 bytes/,
+      )
+    })
+
     it('should persist key to localStorage', async () => {
       const key = await service.generateKey()
       await service.setKey(key)
@@ -79,7 +90,7 @@ describe('EncryptionService', () => {
     })
   })
 
-  describe('getKey', () => {
+  describe('getKey / getKeyBytesOrThrow', () => {
     it('should return null when no key is set', () => {
       expect(service.getKey()).toBeNull()
     })
@@ -88,6 +99,20 @@ describe('EncryptionService', () => {
       const key = await service.generateKey()
       await service.setKey(key)
       expect(service.getKey()).toBe(key)
+    })
+
+    it('getKeyBytesOrThrow throws when no key is set', () => {
+      expect(() => service.getKeyBytesOrThrow()).toThrow(
+        /no encryption key available/,
+      )
+    })
+
+    it('getKeyBytesOrThrow returns raw bytes for the current key', async () => {
+      const key = await service.generateKey()
+      await service.setKey(key)
+      const bytes = service.getKeyBytesOrThrow()
+      expect(bytes).toBeInstanceOf(Uint8Array)
+      expect(bytes.byteLength).toBe(32)
     })
   })
 
@@ -119,7 +144,6 @@ describe('EncryptionService', () => {
 
       service.clearKey({ persist: false })
 
-      // Key should still be in localStorage
       expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(key)
     })
   })
@@ -134,253 +158,10 @@ describe('EncryptionService', () => {
       const key = await service.generateKey()
       await service.setKey(key)
 
-      // Create new service instance to simulate page reload
       const newService = new EncryptionService()
       const restoredKey = await newService.initialize()
 
       expect(restoredKey).toBe(key)
-    })
-  })
-
-  describe('encrypt/decrypt roundtrip', () => {
-    it('should roundtrip simple object', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const data = { message: 'Hello, World!' }
-      const encrypted = await service.encrypt(data)
-      const decrypted = await service.decrypt(encrypted)
-
-      expect(decrypted).toEqual(data)
-    })
-
-    it('should roundtrip complex chat data', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const chatData = {
-        id: 'chat-123',
-        title: 'Test Chat',
-        messages: [
-          { role: 'user', content: 'Hello' },
-          { role: 'assistant', content: 'Hi there!' },
-        ],
-        createdAt: '2024-01-01T00:00:00Z',
-        updatedAt: '2024-01-01T00:01:00Z',
-      }
-
-      const encrypted = await service.encrypt(chatData)
-      const decrypted = await service.decrypt(encrypted)
-
-      expect(decrypted).toEqual(chatData)
-    })
-
-    it('should roundtrip data with unicode characters', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const data = { content: '你好世界 🌍 émojis and spëcial chars' }
-      const encrypted = await service.encrypt(data)
-      const decrypted = await service.decrypt(encrypted)
-
-      expect(decrypted).toEqual(data)
-    })
-
-    it('should roundtrip empty object', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const data = {}
-      const encrypted = await service.encrypt(data)
-      const decrypted = await service.decrypt(encrypted)
-
-      expect(decrypted).toEqual(data)
-    })
-
-    it('should roundtrip array data', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const data = [1, 2, 3, 'test', { nested: true }]
-      const encrypted = await service.encrypt(data)
-      const decrypted = await service.decrypt(encrypted)
-
-      expect(decrypted).toEqual(data)
-    })
-  })
-
-  describe('encrypt', () => {
-    it('should throw when key not initialized', async () => {
-      await expect(service.encrypt({ data: 'test' })).rejects.toThrow(
-        'Encryption key not initialized',
-      )
-    })
-
-    it('should produce different ciphertext for same plaintext (random IV)', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const data = { message: 'same content' }
-      const encrypted1 = await service.encrypt(data)
-      const encrypted2 = await service.encrypt(data)
-
-      // IVs should be different
-      expect(encrypted1.iv).not.toBe(encrypted2.iv)
-      // Ciphertext should be different due to different IVs
-      expect(encrypted1.data).not.toBe(encrypted2.data)
-    })
-
-    it('should produce valid EncryptedData structure', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const encrypted = await service.encrypt({ test: true })
-
-      expect(encrypted).toHaveProperty('iv')
-      expect(encrypted).toHaveProperty('data')
-      expect(typeof encrypted.iv).toBe('string')
-      expect(typeof encrypted.data).toBe('string')
-    })
-  })
-
-  describe('decrypt', () => {
-    it('should throw when key not initialized', async () => {
-      const fakeEncrypted: EncryptedData = { iv: 'abc', data: 'def' }
-      await expect(service.decrypt(fakeEncrypted)).rejects.toThrow(
-        'Encryption key not initialized',
-      )
-    })
-
-    it('should fail with completely unknown key', async () => {
-      const key1 = await service.generateKey()
-      const key2 = await service.generateKey()
-
-      await service.setKey(key1)
-      const encrypted = await service.encrypt({ secret: 'data' })
-
-      // Create fresh service with no key history and set a different key
-      const freshService = new EncryptionService()
-      localStorage.clear() // Clear all key history
-      await freshService.setKey(key2)
-
-      await expect(freshService.decrypt(encrypted)).rejects.toThrow()
-    })
-
-    it('should fail with invalid base64', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const invalidEncrypted: EncryptedData = {
-        iv: '!!!invalid-base64!!!',
-        data: 'also-invalid',
-      }
-
-      await expect(service.decrypt(invalidEncrypted)).rejects.toThrow(
-        'Invalid base64 encoding',
-      )
-    })
-
-    it('should fail with missing iv', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const invalidEncrypted = { data: 'some-data' } as EncryptedData
-
-      await expect(service.decrypt(invalidEncrypted)).rejects.toThrow(
-        'Missing IV or data',
-      )
-    })
-
-    it('should fail with missing data', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      const invalidEncrypted = { iv: 'some-iv' } as EncryptedData
-
-      await expect(service.decrypt(invalidEncrypted)).rejects.toThrow(
-        'Missing IV or data',
-      )
-    })
-  })
-
-  describe('fallback key decryption', () => {
-    it('should decrypt with previous key after key rotation', async () => {
-      const key1 = await service.generateKey()
-      const key2 = await service.generateKey()
-
-      // Encrypt with first key
-      await service.setKey(key1)
-      const encrypted = await service.encrypt({ message: 'secret' })
-
-      // Rotate to new key
-      await service.setKey(key2)
-
-      // Should still decrypt using fallback
-      const decrypted = await service.decrypt(encrypted)
-      expect(decrypted).toEqual({ message: 'secret' })
-    })
-
-    it('should maintain key history across reinitializations', async () => {
-      const key1 = await service.generateKey()
-      const key2 = await service.generateKey()
-
-      // Set up key history
-      await service.setKey(key1)
-      const encrypted = await service.encrypt({ data: 'test' })
-      await service.setKey(key2)
-
-      // Simulate page reload with new service instance
-      const newService = new EncryptionService()
-      await newService.initialize()
-
-      // Should still be able to decrypt with fallback key
-      const decrypted = await newService.decrypt(encrypted)
-      expect(decrypted).toEqual({ data: 'test' })
-    })
-  })
-
-  describe('alphanumeric encoding', () => {
-    it('should reject odd-length keys', async () => {
-      // key_ prefix + odd number of chars
-      await expect(service.setKey('key_abc')).rejects.toThrow(
-        'Key length must be even',
-      )
-    })
-
-    it('should handle all valid alphanumeric characters', async () => {
-      // Generate and verify several keys to ensure encoding handles all chars
-      for (let i = 0; i < 10; i++) {
-        const key = await service.generateKey()
-        // Should only contain key_ prefix and lowercase alphanumeric
-        expect(key).toMatch(/^key_[a-z0-9]+$/)
-
-        // Should be able to set and use the key
-        await service.setKey(key)
-        const data = { test: i }
-        const encrypted = await service.encrypt(data)
-        const decrypted = await service.decrypt(encrypted)
-        expect(decrypted).toEqual(data)
-      }
-    })
-  })
-
-  describe('large data handling', () => {
-    it('should handle large payloads', async () => {
-      const key = await service.generateKey()
-      await service.setKey(key)
-
-      // Create a large message array
-      const largeData = {
-        messages: Array.from({ length: 100 }, (_, i) => ({
-          role: i % 2 === 0 ? 'user' : 'assistant',
-          content: 'x'.repeat(1000), // 1KB per message
-        })),
-      }
-
-      const encrypted = await service.encrypt(largeData)
-      const decrypted = await service.decrypt(encrypted)
-
-      expect(decrypted).toEqual(largeData)
     })
   })
 
@@ -393,27 +174,6 @@ describe('EncryptionService', () => {
       service.addDecryptionKey(fallbackKey)
 
       expect(service.getFallbackKeyCount()).toBe(1)
-    })
-
-    it('should allow decrypting data encrypted with a fallback key', async () => {
-      // Create service 1 with key1 and encrypt data
-      const service1 = new EncryptionService()
-      const key1 = await service1.generateKey()
-      await service1.setKey(key1)
-      const testData = { message: 'encrypted with key1' }
-      const encrypted = await service1.encrypt(testData)
-
-      // Create service 2 with key2 as primary
-      const service2 = new EncryptionService()
-      const key2 = await service2.generateKey()
-      await service2.setKey(key2)
-
-      // Add key1 as fallback
-      service2.addDecryptionKey(key1)
-
-      // Should be able to decrypt data encrypted with key1
-      const decrypted = await service2.decrypt(encrypted)
-      expect(decrypted).toEqual(testData)
     })
 
     it('should reject invalid key format', async () => {
@@ -429,7 +189,6 @@ describe('EncryptionService', () => {
       const key = await service.generateKey()
       await service.setKey(key)
 
-      // Try to add the current primary key
       service.addDecryptionKey(key)
 
       expect(service.getFallbackKeyCount()).toBe(0)
@@ -441,7 +200,7 @@ describe('EncryptionService', () => {
 
       const fallbackKey = await service.generateKey()
       service.addDecryptionKey(fallbackKey)
-      service.addDecryptionKey(fallbackKey) // Add again
+      service.addDecryptionKey(fallbackKey)
 
       expect(service.getFallbackKeyCount()).toBe(1)
     })
@@ -453,12 +212,28 @@ describe('EncryptionService', () => {
       const fallbackKey = await service.generateKey()
       service.addDecryptionKey(fallbackKey)
 
-      // Check storage
       const stored = localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY)
       expect(stored).toBeTruthy()
 
       const parsed = JSON.parse(stored!)
       expect(parsed).toContain(fallbackKey)
+    })
+
+    it('should trigger onFallbackKeyAdded callbacks', async () => {
+      const primaryKey = await service.generateKey()
+      await service.setKey(primaryKey)
+
+      let calls = 0
+      const unsubscribe = service.onFallbackKeyAdded(() => {
+        calls += 1
+      })
+
+      service.addDecryptionKey(await service.generateKey())
+      expect(calls).toBe(1)
+
+      unsubscribe()
+      service.addDecryptionKey(await service.generateKey())
+      expect(calls).toBe(1)
     })
   })
 
@@ -496,10 +271,55 @@ describe('EncryptionService', () => {
       service.clearFallbackKeys()
 
       expect(service.getKey()).toBe(primaryKey)
-      // The primary should still be usable for encrypt/decrypt.
-      const enc = await service.encrypt({ msg: 'hello' })
-      const dec = await service.decrypt(enc)
-      expect(dec).toEqual({ msg: 'hello' })
+      expect(service.getKeyBytesOrThrow()).toBeInstanceOf(Uint8Array)
+    })
+  })
+
+  describe('setAllKeys / replaceKeyBundle', () => {
+    it('setAllKeys persists the primary and alternatives', async () => {
+      const primary = await service.generateKey()
+      const alt1 = await service.generateKey()
+      const alt2 = await service.generateKey()
+
+      await service.setAllKeys(primary, [alt1, alt2])
+
+      expect(service.getKey()).toBe(primary)
+      expect(service.getFallbackKeyCount()).toBe(2)
+      const stored = JSON.parse(
+        localStorage.getItem(USER_ENCRYPTION_KEY_HISTORY) || '[]',
+      )
+      expect(stored).toEqual(expect.arrayContaining([alt1, alt2]))
+    })
+
+    it('setAllKeys skips invalid alternatives silently', async () => {
+      const primary = await service.generateKey()
+      const alt = await service.generateKey()
+
+      await service.setAllKeys(primary, [alt, 'bogus_key'])
+
+      expect(service.getFallbackKeyCount()).toBe(1)
+    })
+
+    it('replaceKeyBundle clears the bundle when primary is null', async () => {
+      const primary = await service.generateKey()
+      await service.setKey(primary)
+
+      await service.replaceKeyBundle(null, [])
+
+      expect(service.getKey()).toBeNull()
+      expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
+    })
+
+    it('replaceKeyBundle swaps primary and updates alternatives', async () => {
+      const oldPrimary = await service.generateKey()
+      const newPrimary = await service.generateKey()
+      const alt = await service.generateKey()
+
+      await service.setKey(oldPrimary)
+      await service.replaceKeyBundle(newPrimary, [alt])
+
+      expect(service.getKey()).toBe(newPrimary)
+      expect(service.getFallbackKeyCount()).toBe(1)
     })
   })
 })

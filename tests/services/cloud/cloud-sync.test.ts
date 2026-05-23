@@ -140,54 +140,6 @@ describe('CloudSyncService', () => {
     mockSyncRemoteDeletions.mockResolvedValue(undefined)
   })
 
-  describe('reencryptAndUploadChats', () => {
-    it('does not upload local-only chats', async () => {
-      mockGetAllChats.mockResolvedValue([
-        {
-          id: 'local-only-1',
-          title: 'Local only',
-          messages: [],
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: false,
-          isLocalOnly: true,
-          decryptionFailed: false,
-          encryptedData: undefined,
-          syncVersion: 10,
-        },
-        {
-          id: 'cloud-1',
-          title: 'Cloud',
-          messages: [],
-          createdAt: '2024-01-02T00:00:00.000Z',
-          updatedAt: '2024-01-02T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: false,
-          isLocalOnly: false,
-          decryptionFailed: false,
-          encryptedData: undefined,
-          syncVersion: 1,
-        },
-      ])
-
-      const service = new CloudSyncService()
-      const result = await service.reencryptAndUploadChats()
-
-      expect(mockUploadChat).toHaveBeenCalledTimes(1)
-      expect(mockUploadChat.mock.calls[0]?.[0]?.id).toBe('cloud-1')
-
-      // We persist the chat (with bumped syncVersion) only for the one we upload
-      expect(mockSaveChat).toHaveBeenCalledTimes(1)
-      expect(mockSaveChat.mock.calls[0]?.[0]?.id).toBe('cloud-1')
-      expect(mockMarkAsSynced).toHaveBeenCalledTimes(1)
-
-      expect(result.uploaded).toBe(1)
-      expect(result.reencrypted).toBe(1)
-      expect(result.errors).toEqual([])
-    })
-  })
-
   describe('backupChat', () => {
     it('skips local-only chats', async () => {
       mockGetChat.mockResolvedValue({
@@ -254,7 +206,7 @@ describe('CloudSyncService', () => {
   })
 
   describe('backupUnsyncedChats', () => {
-    it('filters out local-only, streaming, blank, failed-decryption and encryptedData chats', async () => {
+    it('filters out local-only, streaming, blank, and failed-decryption chats', async () => {
       const good = {
         id: 'cloud-1',
         title: 'Good',
@@ -265,7 +217,6 @@ describe('CloudSyncService', () => {
         isBlankChat: false,
         isLocalOnly: false,
         decryptionFailed: false,
-        encryptedData: undefined,
         syncVersion: 3,
       }
 
@@ -273,7 +224,6 @@ describe('CloudSyncService', () => {
         { ...good, id: 'local-only', isLocalOnly: true },
         { ...good, id: 'blank', isBlankChat: true },
         { ...good, id: 'failed', decryptionFailed: true },
-        { ...good, id: 'encrypted', encryptedData: '{"x":"y"}' },
         { ...good, id: 'streaming' },
         good,
       ])
@@ -568,79 +518,6 @@ describe('CloudSyncService', () => {
     })
   })
 
-  describe('reencryptAndUploadChats edge cases', () => {
-    it('skips chats that failed to decrypt', async () => {
-      mockGetAllChats.mockResolvedValue([
-        {
-          id: 'failed-decrypt',
-          title: 'Encrypted',
-          messages: [],
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: false,
-          isLocalOnly: false,
-          decryptionFailed: true,
-          encryptedData: '{"encrypted":"data"}',
-          syncVersion: 1,
-        },
-      ])
-
-      const service = new CloudSyncService()
-      const result = await service.reencryptAndUploadChats()
-
-      expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(result.uploaded).toBe(0)
-      expect(result.reencrypted).toBe(0)
-    })
-
-    it('skips blank chats during re-encryption', async () => {
-      mockGetAllChats.mockResolvedValue([
-        {
-          id: 'blank-chat',
-          title: '',
-          messages: [],
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: true,
-          isLocalOnly: false,
-          syncVersion: 1,
-        },
-      ])
-
-      const service = new CloudSyncService()
-      const result = await service.reencryptAndUploadChats()
-
-      expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(result.uploaded).toBe(0)
-    })
-
-    it('skips chats with encryptedData that need decryption first', async () => {
-      mockGetAllChats.mockResolvedValue([
-        {
-          id: 'needs-decrypt',
-          title: 'Encrypted',
-          messages: [],
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: false,
-          isLocalOnly: false,
-          decryptionFailed: false,
-          encryptedData: '{"still":"encrypted"}',
-          syncVersion: 1,
-        },
-      ])
-
-      const service = new CloudSyncService()
-      const result = await service.reencryptAndUploadChats()
-
-      expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(result.uploaded).toBe(0)
-    })
-  })
-
   describe('Sync eligibility - comprehensive filtering', () => {
     /**
      * Tests documenting all the conditions that make a chat ineligible for upload.
@@ -657,7 +534,6 @@ describe('CloudSyncService', () => {
       isBlankChat: false,
       isLocalOnly: false,
       decryptionFailed: false,
-      encryptedData: undefined,
       syncVersion: 1,
     }
 
@@ -672,11 +548,6 @@ describe('CloudSyncService', () => {
           { ...uploadableChat, id: 'local-only', isLocalOnly: true },
           { ...uploadableChat, id: 'blank', isBlankChat: true, messages: [] },
           { ...uploadableChat, id: 'decrypt-failed', decryptionFailed: true },
-          {
-            ...uploadableChat,
-            id: 'has-encrypted-data',
-            encryptedData: '{"iv":"x"}',
-          },
           { ...uploadableChat, id: 'streaming' },
         ])
 
