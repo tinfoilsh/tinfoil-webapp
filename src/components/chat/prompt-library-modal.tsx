@@ -1,5 +1,6 @@
 import { cn } from '@/components/ui/utils'
 import {
+  ArrowLeftIcon,
   CheckIcon,
   PencilSquareIcon,
   PlusIcon,
@@ -51,16 +52,19 @@ export function PromptLibraryModal({
     activePresetId ?? builtInPresets[0]?.id ?? null,
   )
   const [editor, setEditor] = useState<PresetEditorState | null>(null)
+  const [mobileView, setMobileView] = useState<'list' | 'detail'>('list')
   const wasOpenRef = useRef(false)
 
   useEffect(() => {
     if (!isOpen) {
       setEditor(null)
+      setMobileView('list')
       wasOpenRef.current = false
       return
     }
     if (!wasOpenRef.current) {
       setSelectedId(activePresetId ?? builtInPresets[0]?.id ?? null)
+      setMobileView('list')
       wasOpenRef.current = true
     }
   }, [isOpen, activePresetId, builtInPresets])
@@ -102,6 +106,7 @@ export function PromptLibraryModal({
 
   const startCreate = () => {
     setEditor({ ...EMPTY_PRESET_EDITOR_STATE })
+    setMobileView('detail')
   }
 
   const startEdit = (preset: PromptPreset) => {
@@ -112,6 +117,7 @@ export function PromptLibraryModal({
       description: preset.description,
       systemPrompt: stripSystemTags(preset.systemPrompt),
     })
+    setMobileView('detail')
   }
 
   const handleDuplicate = (preset: PromptPreset) => {
@@ -125,6 +131,7 @@ export function PromptLibraryModal({
         description: copy.description,
         systemPrompt: stripSystemTags(copy.systemPrompt),
       })
+      setMobileView('detail')
     }
   }
 
@@ -178,7 +185,10 @@ export function PromptLibraryModal({
       <button
         type="button"
         key={preset.id}
-        onClick={() => setSelectedId(preset.id)}
+        onClick={() => {
+          setSelectedId(preset.id)
+          setMobileView('detail')
+        }}
         className={cn(
           'group relative flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
           isSelected
@@ -227,10 +237,25 @@ export function PromptLibraryModal({
           maxWidth: `min(1024px, calc(92vw - ${leftOffset + rightOffset}px))`,
         }}
       >
-        <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
-          <div className="flex items-center gap-2">
-            <Squares2X2Icon className="h-5 w-5 text-content-secondary" />
-            <h2 className="text-lg font-semibold text-content-primary">
+        <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3 md:px-6 md:py-4">
+          <div className="flex min-w-0 items-center gap-2">
+            {mobileView === 'detail' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (editor) {
+                    setEditor(null)
+                  }
+                  setMobileView('list')
+                }}
+                className="-ml-1 flex h-8 w-8 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat md:hidden"
+                aria-label="Back to library"
+              >
+                <ArrowLeftIcon className="h-5 w-5" />
+              </button>
+            )}
+            <Squares2X2Icon className="hidden h-5 w-5 text-content-secondary md:block" />
+            <h2 className="truncate text-base font-semibold text-content-primary md:text-lg">
               Prompt Library
             </h2>
           </div>
@@ -244,13 +269,18 @@ export function PromptLibraryModal({
         </div>
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <div className="flex w-[300px] flex-none flex-col border-r border-border-subtle">
+          <div
+            className={cn(
+              'flex min-h-0 w-full flex-none flex-col md:w-[300px] md:border-r md:border-border-subtle',
+              mobileView === 'detail' ? 'hidden md:flex' : 'flex',
+            )}
+          >
             <div className="flex items-center justify-between px-4 pt-4">
               <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
                 Built-in
               </span>
             </div>
-            <div className="flex flex-col gap-1.5 overflow-y-auto px-3 pb-2 pt-2">
+            <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
               {builtInPresets.map(renderPresetCard)}
             </div>
 
@@ -267,7 +297,7 @@ export function PromptLibraryModal({
                 New
               </button>
             </div>
-            <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto px-3 pb-4 pt-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-3 pb-4 pt-2">
               {userPresets.length === 0 ? (
                 <p className="px-1 pt-1 text-xs text-content-muted">
                   No custom prompts yet. Click &quot;New&quot; to create one.
@@ -278,13 +308,24 @@ export function PromptLibraryModal({
             </div>
           </div>
 
-          <div className="flex min-w-0 flex-1 flex-col">
+          <div
+            className={cn(
+              'min-w-0 flex-1 flex-col',
+              mobileView === 'list' ? 'hidden md:flex' : 'flex',
+            )}
+          >
             {editor ? (
               <PresetEditor
                 editor={editor}
                 onChange={setEditor}
-                onCancel={() => setEditor(null)}
-                onSave={handleEditorSave}
+                onCancel={() => {
+                  setEditor(null)
+                  setMobileView('list')
+                }}
+                onSave={() => {
+                  handleEditorSave()
+                  setMobileView('detail')
+                }}
               />
             ) : selectedPreset ? (
               <PresetDetail
