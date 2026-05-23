@@ -222,7 +222,7 @@ export function PromptLibraryModal({
       />
 
       <div
-        className="relative z-10 flex h-[85vh] w-[92vw] max-w-5xl flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl"
+        className="relative z-10 flex h-[85dvh] w-[92vw] max-w-5xl flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl"
         style={{
           maxWidth: `min(1024px, calc(92vw - ${leftOffset + rightOffset}px))`,
         }}
