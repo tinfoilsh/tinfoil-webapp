@@ -18,10 +18,10 @@ export function PromptPresetSuggestions({
 }: PromptPresetSuggestionsProps) {
   const suggested = BUILT_IN_PROMPT_PRESETS.slice(0, SUGGESTION_COUNT)
   const pillBase =
-    'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition-colors'
+    'inline-flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors md:w-auto md:py-1.5'
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2">
+    <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center md:justify-center">
       {suggested.map((preset) => {
         const Icon = preset.Icon
         const isActive = activePreset?.id === preset.id

@@ -88,6 +88,7 @@ import { AskSidebar } from './ask-sidebar'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import { ChatSidebar } from './chat-sidebar'
+import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { useDocumentUploader } from './document-uploader'
 import { DragProvider } from './drag-context'
@@ -3109,6 +3110,15 @@ export function ChatInterface({
                       onSubmit={handleSubmit}
                       className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8"
                     >
+                      {!currentChat?.messages?.length && (
+                        <div className="mb-3 md:hidden">
+                          <PromptPresetSuggestions
+                            activePreset={activePreset}
+                            onSetActive={handleSetActivePreset}
+                            onOpenLibrary={handleOpenPromptLibrary}
+                          />
+                        </div>
+                      )}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
