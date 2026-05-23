@@ -33,8 +33,15 @@ export interface LinkMetadata {
   description: string | null
   siteName: string | null
   image: string | null
-  faviconBytes: ArrayBuffer | null
-  faviconContentType: string | null
+  /**
+   * `data:` URL for the page's favicon, already encoded so consumers can
+   * drop it straight into an `<img src>` without managing a Blob or
+   * object URL lifecycle. The bytes never leave the original base64
+   * envelope, which sidesteps the race conditions that come with
+   * `URL.createObjectURL` / `URL.revokeObjectURL` when the same icon is
+   * rendered by multiple components.
+   */
+  faviconDataUrl: string | null
   cached: boolean
 }
 
@@ -116,25 +123,19 @@ async function doFetchLinkMetadata(url: string): Promise<LinkMetadata> {
     description: data.description,
     siteName: data.site_name,
     image: data.image,
-    faviconBytes: decodeBase64Bytes(data.favicon_bytes),
-    faviconContentType: data.favicon_content_type ?? null,
+    faviconDataUrl: buildFaviconDataUrl(
+      data.favicon_bytes,
+      data.favicon_content_type,
+    ),
     cached: data.cached,
   }
 }
 
-function decodeBase64Bytes(
-  value: string | null | undefined,
-): ArrayBuffer | null {
-  if (!value) return null
-  try {
-    const binary = atob(value)
-    const buffer = new ArrayBuffer(binary.length)
-    const bytes = new Uint8Array(buffer)
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i)
-    }
-    return buffer
-  } catch {
-    return null
-  }
+function buildFaviconDataUrl(
+  base64: string | null | undefined,
+  contentType: string | null | undefined,
+): string | null {
+  if (!base64) return null
+  const type = contentType ?? 'image/x-icon'
+  return `data:${type};base64,${base64}`
 }
