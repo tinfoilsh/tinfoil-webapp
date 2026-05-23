@@ -275,36 +275,38 @@ export function PromptLibraryModal({
               mobileView === 'detail' ? 'hidden md:flex' : 'flex',
             )}
           >
-            <div className="flex items-center justify-between px-4 pt-4">
-              <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
-                Built-in
-              </span>
-            </div>
-            <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
-              {builtInPresets.map(renderPresetCard)}
-            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-8">
+              <div className="flex items-center justify-between px-4 pt-4">
+                <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                  Built-in
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
+                {builtInPresets.map(renderPresetCard)}
+              </div>
 
-            <div className="mt-2 flex items-center justify-between px-4 pt-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
-                Your prompts
-              </span>
-              <button
-                type="button"
-                onClick={startCreate}
-                className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
-              >
-                <PlusIcon className="h-3.5 w-3.5" />
-                New
-              </button>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto px-3 pb-4 pt-2">
-              {userPresets.length === 0 ? (
-                <p className="px-1 pt-1 text-xs text-content-muted">
-                  No custom prompts yet. Click &quot;New&quot; to create one.
-                </p>
-              ) : (
-                userPresets.map(renderPresetCard)
-              )}
+              <div className="mt-2 flex items-center justify-between px-4 pt-2">
+                <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                  Your prompts
+                </span>
+                <button
+                  type="button"
+                  onClick={startCreate}
+                  className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
+                >
+                  <PlusIcon className="h-3.5 w-3.5" />
+                  New
+                </button>
+              </div>
+              <div className="flex flex-col gap-1.5 px-3 pt-2">
+                {userPresets.length === 0 ? (
+                  <p className="px-1 pt-1 text-xs text-content-muted">
+                    No custom prompts yet. Click &quot;New&quot; to create one.
+                  </p>
+                ) : (
+                  userPresets.map(renderPresetCard)
+                )}
+              </div>
             </div>
           </div>
 
