@@ -484,6 +484,9 @@ export class CloudStorageService {
     return results
   }
 
+  // Part of the v0/v1 → v2 attachment migration. Safe to remove once
+  // the controlplane `chat_attachments_legacy` table is drained and
+  // no client (web or iOS) still depends on this fallback.
   private async fetchLegacyAttachment(
     attachmentId: string,
     keyB64: string,
