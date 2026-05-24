@@ -402,16 +402,28 @@ export class IndexedDBStorage {
   }
 
   async deleteChat(id: string): Promise<void> {
-    const db = await this.ensureDB()
+    // Serialize through saveQueue so a deletion can't race with an in-flight
+    // saveChatInternal that would resurrect the row after the delete.
+    this.saveQueue = this.saveQueue
+      .catch((error) => {
+        logError('Previous save operation failed, recovering queue', error, {
+          component: 'IndexedDBStorage',
+          action: 'deleteChat.queueRecovery',
+        })
+      })
+      .then(async () => {
+        const db = await this.ensureDB()
+        return new Promise<void>((resolve, reject) => {
+          const transaction = db.transaction([CHATS_STORE], 'readwrite')
+          const store = transaction.objectStore(CHATS_STORE)
+          const request = store.delete(id)
 
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction([CHATS_STORE], 'readwrite')
-      const store = transaction.objectStore(CHATS_STORE)
-      const request = store.delete(id)
-
-      request.onsuccess = () => resolve()
-      request.onerror = () => reject(new Error('Failed to delete chat'))
-    })
+          transaction.oncomplete = () => resolve()
+          transaction.onerror = () => reject(new Error('Failed to delete chat'))
+          request.onerror = () => reject(new Error('Failed to delete chat'))
+        })
+      })
+    return this.saveQueue
   }
 
   async deleteAllNonLocalChats(): Promise<number> {
@@ -880,37 +892,69 @@ export class IndexedDBStorage {
     chatId: string,
     projectId: string | null,
   ): Promise<void> {
-    const chat = await this.getChatInternal(chatId)
-    if (chat) {
-      chat.projectId = projectId ?? undefined
-      chat.locallyModified = true
-      chat.updatedAt = new Date().toISOString()
-      await this.saveChatInternal(chat)
-    }
+    this.saveQueue = this.saveQueue
+      .catch((error) => {
+        logError('Previous save operation failed, recovering queue', error, {
+          component: 'IndexedDBStorage',
+          action: 'updateChatProject.queueRecovery',
+        })
+      })
+      .then(async () => {
+        const chat = await this.getChatInternal(chatId)
+        if (chat) {
+          chat.projectId = projectId ?? undefined
+          chat.locallyModified = true
+          chat.updatedAt = new Date().toISOString()
+          await this.saveChatInternal(chat)
+        }
+      })
+    return this.saveQueue
   }
 
   async applyRemoteChatProject(
     chatId: string,
     projectId: string | null,
   ): Promise<void> {
-    const chat = await this.getChatInternal(chatId)
-    if (chat) {
-      chat.projectId = projectId ?? undefined
-      await this.saveChatInternal(chat, { markContentChangesAsLocal: false })
-    }
+    this.saveQueue = this.saveQueue
+      .catch((error) => {
+        logError('Previous save operation failed, recovering queue', error, {
+          component: 'IndexedDBStorage',
+          action: 'applyRemoteChatProject.queueRecovery',
+        })
+      })
+      .then(async () => {
+        const chat = await this.getChatInternal(chatId)
+        if (chat) {
+          chat.projectId = projectId ?? undefined
+          await this.saveChatInternal(chat, {
+            markContentChangesAsLocal: false,
+          })
+        }
+      })
+    return this.saveQueue
   }
 
   async updateChatLocalOnly(
     chatId: string,
     isLocalOnly: boolean,
   ): Promise<void> {
-    const chat = await this.getChatInternal(chatId)
-    if (chat) {
-      chat.isLocalOnly = isLocalOnly
-      chat.locallyModified = true
-      chat.updatedAt = new Date().toISOString()
-      await this.saveChatInternal(chat)
-    }
+    this.saveQueue = this.saveQueue
+      .catch((error) => {
+        logError('Previous save operation failed, recovering queue', error, {
+          component: 'IndexedDBStorage',
+          action: 'updateChatLocalOnly.queueRecovery',
+        })
+      })
+      .then(async () => {
+        const chat = await this.getChatInternal(chatId)
+        if (chat) {
+          chat.isLocalOnly = isLocalOnly
+          chat.locallyModified = true
+          chat.updatedAt = new Date().toISOString()
+          await this.saveChatInternal(chat)
+        }
+      })
+    return this.saveQueue
   }
 }
 
