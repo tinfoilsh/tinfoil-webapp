@@ -146,7 +146,7 @@ describe('ComputerUseToolButton (unpaired state)', () => {
   })
 })
 
-describe('ComputerUseToolButton (ask mode — first-touch, broker absent)', () => {
+describe('ComputerUseToolButton (ask mode — first-touch, driver absent)', () => {
   it('desktop: when supported=false + onAsk is wired, click calls onAsk (not disabled)', () => {
     const onAsk = vi.fn()
     const onConnect = vi.fn()

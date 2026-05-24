@@ -3,7 +3,7 @@
  *
  * This is the piece the rest of the design hangs off (architecture →
  * "Integration — the action loop"). The model runs in the attested enclave; the
- * browser relays its emitted actions to the local broker over loopback and
+ * browser relays its emitted actions to the local driver over loopback and
  * feeds the resulting screenshots back as tool results, looping until the model
  * stops emitting actions. Tinfoil's backend never touches this loop — execution
  * is browser↔localhost↔guest; only screenshots leave the machine, inside the
@@ -17,7 +17,7 @@
  *   until: model emits no action (done) | request_handoff | max steps | abort
  *
  * It is a dedicated, isolated controller: it reuses the inference seam and the
- * broker client but owns its own multi-turn cycle, so the main chat pipeline is
+ * driver client but owns its own multi-turn cycle, so the main chat pipeline is
  * untouched. It works directly in OpenAI chat-protocol message space (so it can
  * carry `tool` messages and image content the webapp `Message` type can't).
  *
@@ -36,14 +36,14 @@ import {
 import { imageSize } from './image-size'
 import { collectTurn } from './turn-collector'
 import {
-  BrokerError,
+  DriverError,
   firstImagePart,
   isPerceptionResult,
   perceptionText,
   type ActionResult,
   type BeginResponse,
-  type BrokerAction,
   type CapabilityManifest,
+  type DriverAction,
   type HandoffResponse,
 } from './types'
 
@@ -89,18 +89,18 @@ async function reduceResultForModel(
 }
 
 /**
- * The slice of the broker client the loop needs. Typed structurally so the loop
- * is decoupled from the concrete `BrokerClient` (and trivially fakeable). The
+ * The slice of the driver client the loop needs. Typed structurally so the loop
+ * is decoupled from the concrete `DriverClient` (and trivially fakeable). The
  * real client satisfies this.
  */
-export interface BrokerLike {
+export interface DriverLike {
   begin(
     manifest: CapabilityManifest,
     signal?: AbortSignal,
   ): Promise<BeginResponse>
   action(
     session: string,
-    action: BrokerAction,
+    action: DriverAction,
     signal?: AbortSignal,
   ): Promise<ActionResult>
   end(session: string, signal?: AbortSignal): Promise<void>
@@ -160,17 +160,17 @@ export type LoopEvent =
       reasoning: string
       toolCalls: ToolCall[]
     }
-  | { type: 'action'; callId: string; action: BrokerAction }
+  | { type: 'action'; callId: string; action: DriverAction }
   | {
       type: 'action_result'
       callId: string
-      action: BrokerAction
+      action: DriverAction
       result: ActionResult
     }
   | {
       type: 'action_error'
       callId: string
-      action: BrokerAction
+      action: DriverAction
       message: string
     }
   | { type: 'unsupported'; callId: string; reason: string }
@@ -213,15 +213,15 @@ export interface RunComputerUseLoopParams {
   task: string
   /** Capability manifest for `computer_begin`. */
   manifest: CapabilityManifest
-  /** Broker client (JWT-gated calls auto-attach the access token). */
-  broker: BrokerLike
+  /** Driver client (JWT-gated calls auto-attach the access token). */
+  driver: DriverLike
   /** Inference seam — streams a chat completion (wraps the attested client). */
   streamChat: StreamChat
   /** Model name, used to pick the presentation adapter. */
   modelName: string
   /** Override the default computer-use system prompt. */
   systemPrompt?: string
-  /** Safety bound on model↔broker round-trips. Default 30. */
+  /** Safety bound on model↔driver round-trips. Default 30. */
   maxSteps?: number
   /** Token manager, so a surprise 401 mid-loop can invalidate + re-mint once. */
   tokens?: AccessTokenManager
@@ -258,7 +258,7 @@ export interface LoopResult {
 
 /**
  * Run the computer-use loop to completion. Provisions a session, drives the
- * model↔broker action loop, and tears the session down — except on a handoff,
+ * model↔driver action loop, and tears the session down — except on a handoff,
  * where the session is left alive so the user can take over and `resume`.
  */
 export async function runComputerUseLoop(
@@ -267,7 +267,7 @@ export async function runComputerUseLoop(
   const {
     task,
     manifest,
-    broker,
+    driver,
     streamChat,
     modelName,
     maxSteps = DEFAULT_MAX_STEPS,
@@ -286,7 +286,7 @@ export async function runComputerUseLoop(
   const emit = (e: LoopEvent) => onEvent?.(e)
 
   // 1) Provision the session and get the first screen.
-  const begin = await broker.begin(manifest, signal)
+  const begin = await driver.begin(manifest, signal)
   const session = begin.session
   // Full frame → chat/audit; reduced copy → model.
   emit({ type: 'begin', session, screenshot: begin.screenshot })
@@ -351,7 +351,7 @@ export async function runComputerUseLoop(
 
         if (action.op === 'request_handoff') {
           const res = (await dispatch(
-            broker,
+            driver,
             session,
             action,
             tokens,
@@ -388,7 +388,7 @@ export async function runComputerUseLoop(
             : { approved: false, reason: 'no approver wired' }
           if (approval.approved) {
             try {
-              const applied = await broker.escalate(
+              const applied = await driver.escalate(
                 session,
                 approval.egress,
                 signal,
@@ -435,7 +435,7 @@ export async function runComputerUseLoop(
         emit({ type: 'action', callId: call.id, action })
         try {
           const result = (await dispatch(
-            broker,
+            driver,
             session,
             action,
             tokens,
@@ -476,7 +476,7 @@ export async function runComputerUseLoop(
   } finally {
     if (!leaveSessionOpen) {
       try {
-        await broker.end(session)
+        await driver.end(session)
       } catch {
         // Best-effort teardown; idle_timeout is the backstop.
       }
@@ -493,18 +493,18 @@ export async function runComputerUseLoop(
  * request). A second 401 propagates — the refresh credential was revoked.
  */
 async function dispatch(
-  broker: BrokerLike,
+  driver: DriverLike,
   session: string,
-  action: BrokerAction,
+  action: DriverAction,
   tokens: AccessTokenManager | undefined,
   signal: AbortSignal | undefined,
 ): Promise<unknown> {
   try {
-    return await broker.action(session, action, signal)
+    return await driver.action(session, action, signal)
   } catch (err) {
-    if (err instanceof BrokerError && err.isAuthError && tokens) {
+    if (err instanceof DriverError && err.isAuthError && tokens) {
       tokens.invalidate()
-      return await broker.action(session, action, signal)
+      return await driver.action(session, action, signal)
     }
     throw err
   }

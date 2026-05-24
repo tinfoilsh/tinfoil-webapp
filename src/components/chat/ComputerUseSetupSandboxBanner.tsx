@@ -1,12 +1,12 @@
 /**
  * Post-pair, pre-image banner: prompts the user to set up their first sandbox
- * image with a single click, no CLI required. Drives the broker's
+ * image with a single click, no CLI required. Drives the driver's
  * `POST /images/setup-default` endpoint, which pulls + provisions a known-good
  * base in the background and reflects progress via `/status`'s setup_job.
  *
  * Lifecycle:
  *   - idle (no setup_job): "Set up a sandbox" + Start button
- *   - pulling: indeterminate progress + the broker's progress message
+ *   - pulling: indeterminate progress + the driver's progress message
  *   - provisioning: ditto, different label
  *   - done: brief success ("Sandbox ready!") — auto-dismissed when the next
  *     /status poll reflects the new ready image (the banner's `show` gate
@@ -14,21 +14,21 @@
  *   - error: red error band + Retry button
  *
  * The webapp doesn't need to poll a separate progress endpoint — the existing
- * /status poll in `useBrokerStatus` already surfaces `setup_job`.
+ * /status poll in `useDriverStatus` already surfaces `setup_job`.
  */
 'use client'
 
 import { cn } from '@/components/ui/utils'
-import type { BrokerSetupJob } from '@/services/computer-use'
+import type { DriverSetupJob } from '@/services/computer-use'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useState } from 'react'
 import { PiDesktop, PiSpinner } from 'react-icons/pi'
 
 interface ComputerUseSetupSandboxBannerProps {
-  /** Caller gates visibility (broker paired + no ready image yet). */
+  /** Caller gates visibility (driver paired + no ready image yet). */
   show: boolean
   /** Live setup-job snapshot from /status, when one is in flight. */
-  job?: BrokerSetupJob
+  job?: DriverSetupJob
   /** Trigger `POST /images/setup-default`. */
   onStart: () => void
   isDarkMode: boolean
@@ -55,7 +55,7 @@ function writeDismissed(): void {
   }
 }
 
-const STATE_LABEL: Record<BrokerSetupJob['state'], string> = {
+const STATE_LABEL: Record<DriverSetupJob['state'], string> = {
   pulling: 'Pulling base image…',
   provisioning: 'Provisioning sandbox…',
   done: 'Sandbox ready!',
@@ -107,7 +107,7 @@ function ProgressBar({
       </div>
     )
   }
-  // Clamp defensively in case the broker reports >100% (which it shouldn't).
+  // Clamp defensively in case the driver reports >100% (which it shouldn't).
   const clamped = Math.min(1, Math.max(0, fraction))
   return (
     <div className={cn('mt-1 h-1 w-full overflow-hidden rounded', trackCls)}>

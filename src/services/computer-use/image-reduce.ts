@@ -1,7 +1,7 @@
 /**
  * Browser canvas-based screenshot reduction for the model turn.
  *
- * The broker returns a full PNG; the chat / persisted history / audit trail show
+ * The driver returns a full PNG; the chat / persisted history / audit trail show
  * that full frame, but the copy sent to the model is re-encoded as JPEG (≈10×
  * smaller) — saving inference tokens and context, and shrinking the request body
  * (which also relieves main-thread pressure during a turn).

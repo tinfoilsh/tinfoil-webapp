@@ -5,7 +5,7 @@
  * a "needs vision" tooltip rather than hiding it, so the constraint is
  * discoverable.
  *
- * (A live broker online/offline indicator was prototyped here; removed for now
+ * (A live driver online/offline indicator was prototyped here; removed for now
  * pending a positioning pass — the detection plumbing still lives in
  * `services/computer-use` and is wired for conditional tool exposure.)
  */
@@ -38,12 +38,12 @@ export interface ComputerUseToolButtonProps {
   onConnect?: () => void
   /**
    * Discovery-mode click handler: fires when the user is in the "first-touch"
-   * state — broker absent, never engaged with computer-use — so the button
+   * state — driver absent, never engaged with computer-use — so the button
    * acts as a "Ask Tin about this feature" affordance. When set, the button
    * is clickable in that otherwise-disabled state, uses the help cursor (?),
    * and a click dispatches `onAsk` instead of `onToggle` / `onConnect`.
    * Mutually exclusive with the pair / toggle actions; the parent decides
-   * which mode is current based on broker readiness + the `discovered` flag.
+   * which mode is current based on driver readiness + the `discovered` flag.
    */
   onAsk?: () => void
 }
@@ -61,7 +61,7 @@ export function ComputerUseToolButton({
 }: ComputerUseToolButtonProps) {
   const active = enabled && supported && paired
   // Ask mode wins when wired: the parent sets `onAsk` only in the
-  // "broker absent + never-engaged" first-touch state, where the button
+  // "driver absent + never-engaged" first-touch state, where the button
   // would otherwise be disabled. In that state a click is "ask the model
   // to suggest installing computer-use", visually cued by the help cursor.
   const askMode = !supported && !!onAsk

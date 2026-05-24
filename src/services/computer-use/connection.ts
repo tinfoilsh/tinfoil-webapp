@@ -1,25 +1,25 @@
 /**
- * Ties the stored pairing credential to a ready-to-use broker connection.
+ * Ties the stored pairing credential to a ready-to-use driver connection.
  *
  * Lifecycle (architecture → "Auth/token lifecycle"):
  *  1. Pair once per browser → store the refresh credential.
- *  2. Per use: exchange it for short-lived access JWTs (the {@link BrokerConnection}
+ *  2. Per use: exchange it for short-lived access JWTs (the {@link DriverConnection}
  *     auto-refreshes), used on the consequential endpoints.
  *  3. On a revoked credential, clear it and re-pair.
  */
 
-import { createBrokerConnection, type BrokerConnection } from './access-token'
-import type { BrokerClient, BrokerClientOptions } from './broker-client'
+import { createDriverConnection, type DriverConnection } from './access-token'
 import {
   clearRefreshCredential,
   getRefreshCredential,
   setRefreshCredential,
 } from './credential-store'
+import type { DriverClient, DriverClientOptions } from './driver-client'
 import { runPairing, type RunPairingOptions } from './pairing'
 
 export interface ConnectionOptions {
   baseUrl?: string
-  fetchImpl?: BrokerClientOptions['fetchImpl']
+  fetchImpl?: DriverClientOptions['fetchImpl']
 }
 
 /**
@@ -28,10 +28,10 @@ export interface ConnectionOptions {
  */
 export function getStoredConnection(
   opts: ConnectionOptions = {},
-): BrokerConnection | null {
+): DriverConnection | null {
   const refreshCredential = getRefreshCredential()
   if (!refreshCredential) return null
-  return createBrokerConnection({
+  return createDriverConnection({
     refreshCredential,
     ...opts,
     // Auto-rotate: a rejected credential is cleared from storage wherever the
@@ -46,12 +46,12 @@ export function getStoredConnection(
  * deny/timeout/unreachable — the caller leaves the user un-paired.
  */
 export async function pairAndConnect(
-  client: BrokerClient,
+  client: DriverClient,
   opts: RunPairingOptions & ConnectionOptions = {},
-): Promise<BrokerConnection> {
+): Promise<DriverConnection> {
   const { refreshCredential } = await runPairing(client, opts)
   setRefreshCredential(refreshCredential)
-  return createBrokerConnection({
+  return createDriverConnection({
     refreshCredential,
     baseUrl: opts.baseUrl,
     fetchImpl: opts.fetchImpl,

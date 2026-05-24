@@ -2,15 +2,15 @@
  * Static install-funnel card. Renders when an assistant message carries the
  * `computerUseInstallSuggestion` marker; that marker is committed by the
  * webapp (NOT by the model) — currently from the toggle's "Ask Tin" click in
- * the broker-absent + never-engaged state. Moved out of GenUI because the
+ * the driver-absent + never-engaged state. Moved out of GenUI because the
  * funnel is a deterministic webapp action, not a model-controlled widget;
  * the model has no install tool to abuse and never sees this message in its
  * context (chat-query builder filters it).
  *
  * Live status:
  *   • Polls `/status` while the card is on screen so the user sees the
- *     broker come online the moment they finish installing.
- *   • Once the broker is detected (unpaired), a Connect button drives the
+ *     driver come online the moment they finish installing.
+ *   • Once the driver is detected (unpaired), a Connect button drives the
  *     same pairing flow as the toggle/banner via `ComputerUseFunnelContext`.
  *   • Once paired, the row shows "Connected" and the toggle becomes active.
  */
@@ -18,7 +18,7 @@
 
 import { useComputerUseFunnelContext } from '@/components/chat/computer-use-funnel-context'
 import { cn } from '@/components/ui/utils'
-import { useBrokerStatus, usePaired } from '@/services/computer-use'
+import { useDriverStatus, usePaired } from '@/services/computer-use'
 import {
   ArrowTopRightOnSquareIcon,
   CheckCircleIcon,
@@ -89,10 +89,10 @@ export function ComputerUseInstallCard({
   reason,
   className,
 }: ComputerUseInstallCardProps) {
-  const brokerStatus = useBrokerStatus({ enabled: true })
+  const driverStatus = useDriverStatus({ enabled: true })
   const paired = usePaired()
   const funnel = useComputerUseFunnelContext()
-  const reachable = brokerStatus.readiness !== 'absent'
+  const reachable = driverStatus.readiness !== 'absent'
 
   return (
     // Standard assistant-message shell (mx-auto, max-w-3xl, left-aligned) so
@@ -146,12 +146,12 @@ export function ComputerUseInstallCard({
                 <ArrowTopRightOnSquareIcon className="size-3" />
               </a>
               <span className="text-xs text-content-muted">
-                macOS · ~21 GB image
+                macOS · ~30 GB image
               </span>
             </div>
             <ConnectionStatusRow
               reachable={reachable}
-              probing={brokerStatus.probing}
+              probing={driverStatus.probing}
               paired={paired}
               onConnect={funnel?.connect}
             />

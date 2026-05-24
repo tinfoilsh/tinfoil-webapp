@@ -214,9 +214,9 @@ interface WelcomeScreenProps {
   onComputerUseToggle?: () => void
   /** One-time pairing handler, forwarded to ChatInput for the connect banner. */
   onComputerUseConnect?: () => Promise<boolean> | void
-  /** Broker-driven default-image setup handler, for the setup-sandbox banner. */
+  /** Driver-driven default-image setup handler, for the setup-sandbox banner. */
   onComputerUseSetup?: () => void | Promise<void>
-  /** First-touch ask handler, for the broker-absent toggle click. */
+  /** First-touch ask handler, for the driver-absent toggle click. */
   onComputerUseAsk?: () => void
   computerUseModel?: { modelName: string; multimodal?: boolean }
   onOpenVerifier?: () => void

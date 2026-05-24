@@ -88,7 +88,7 @@ export interface GenUIWidget<Schema extends ZodTypeAny = ZodTypeAny> {
    * Whether to include this widget in the default per-request tool schema set
    * (`buildGenUIToolSchemas`). Default `true`. Set `false` for widgets that
    * are renderable but only exposed to the model from a non-GenUI code path
-   * (e.g. `suggest_installing_computer_use`, which is gated by broker state).
+   * (e.g. `suggest_installing_computer_use`, which is gated by driver state).
    * The rendering side (`getGenUIWidget` lookup, `GenUIToolCallRenderer`)
    * works regardless — `defaultExpose` only governs auto-inclusion in tools.
    */

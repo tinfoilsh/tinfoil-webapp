@@ -7,7 +7,7 @@
  *
  * It keeps the deep chat-messaging pipeline untouched: the chat triggers
  * `start(task)` when computer-use is enabled, and this hook drives everything
- * against the broker + the attested inference client, exposing observable state
+ * against the driver + the attested inference client, exposing observable state
  * the session UI renders. Dependencies are injectable so the machine is
  * unit-testable without the network, a VM, or the enclave.
  */
@@ -15,15 +15,15 @@
 'use client'
 
 import { useCallback, useMemo, useRef, useState } from 'react'
-import type { BrokerConnection } from './access-token'
+import type { DriverConnection } from './access-token'
 import { readyImages } from './availability'
-import { BrokerClient } from './broker-client'
 import type { StreamChat } from './chat-protocol'
 import {
   forgetPairing,
   getStoredConnection,
   pairAndConnect,
 } from './connection'
+import { DriverClient } from './driver-client'
 import {
   createCanvasImageReducer,
   getComputerUseImageQuality,
@@ -36,8 +36,8 @@ import {
   type LoopEvent,
   type LoopResult,
 } from './loop-controller'
-import type { BrokerImage, CapabilityManifest, PairState } from './types'
-import { BrokerError } from './types'
+import type { CapabilityManifest, DriverImage, PairState } from './types'
+import { DriverError } from './types'
 
 export type SessionPhase =
   | 'idle'
@@ -64,7 +64,7 @@ export interface ComputerUseSessionState {
    * and so the loop can fill in `session.os` from the chosen image rather
    * than from a model-supplied value.
    */
-  images: BrokerImage[]
+  images: DriverImage[]
   /** Loop events accumulated for the live view + audit trail. */
   frames: LoopEvent[]
   finalText?: string
@@ -80,13 +80,13 @@ export interface ComputerUseSessionState {
 /** Injectable seams (real implementations by default). */
 export interface ComputerUseSessionDeps {
   baseUrl?: string
-  getConnection?: () => BrokerConnection | null
+  getConnection?: () => DriverConnection | null
   pair?: (opts: {
     onCode: (code: string) => void
     onState: (state: PairState) => void
     signal?: AbortSignal
-  }) => Promise<BrokerConnection>
-  fetchStatusImages?: (conn: BrokerConnection) => Promise<BrokerImage[]>
+  }) => Promise<DriverConnection>
+  fetchStatusImages?: (conn: DriverConnection) => Promise<DriverImage[]>
   runLoop?: typeof runComputerUseLoop
   makeStreamChat?: (modelName: string) => StreamChat
   /** Build the model-facing screenshot reducer (default: canvas JPEG @ quality setting). */
@@ -102,7 +102,7 @@ const INITIAL: ComputerUseSessionState = {
 
 /** Default proposed manifest: the first ready image, sealed (default-deny). */
 function proposeManifest(
-  images: BrokerImage[],
+  images: DriverImage[],
 ): CapabilityManifest | undefined {
   const first = images[0]
   if (!first) return undefined
@@ -119,7 +119,7 @@ function proposeManifest(
  */
 function applyImageOS(
   manifest: CapabilityManifest,
-  images: BrokerImage[],
+  images: DriverImage[],
 ): CapabilityManifest {
   const found = images.find((i) => i.name === manifest.session.image)
   if (!found) return manifest
@@ -134,7 +134,7 @@ export function useComputerUseSession(
   deps: ComputerUseSessionDeps = {},
 ) {
   const [state, setState] = useState<ComputerUseSessionState>(INITIAL)
-  const connRef = useRef<BrokerConnection | null>(null)
+  const connRef = useRef<DriverConnection | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   // When the loop pauses on a capability request, the resolver of the await'd
   // promise lives here. Cleared on every resolve so a stale resolver from a
@@ -168,7 +168,7 @@ export function useComputerUseSession(
     () =>
       deps.pair ??
       ((opts) => {
-        const client = new BrokerClient({ baseUrl })
+        const client = new DriverClient({ baseUrl })
         return pairAndConnect(client, { ...opts, baseUrl })
       }),
     [deps.pair, baseUrl],
@@ -176,7 +176,7 @@ export function useComputerUseSession(
   const fetchStatusImages = useMemo(
     () =>
       deps.fetchStatusImages ??
-      (async (conn: BrokerConnection) =>
+      (async (conn: DriverConnection) =>
         readyImages(await conn.client.getStatus())),
     [deps.fetchStatusImages],
   )
@@ -203,15 +203,15 @@ export function useComputerUseSession(
 
       try {
         let conn = getConnection()
-        // Validate a stored credential before relying on it: if the broker was
+        // Validate a stored credential before relying on it: if the driver was
         // restarted/reinstalled or the pairing was revoked, `/token` returns 401
         // — drop the stale credential and re-pair rather than failing mid-run.
-        // (A merely-unreachable broker is NOT an auth error, so we don't clear.)
+        // (A merely-unreachable driver is NOT an auth error, so we don't clear.)
         if (conn && typeof conn.tokens?.getAccessToken === 'function') {
           try {
             await conn.tokens.getAccessToken(ac.signal)
           } catch (err) {
-            if (err instanceof BrokerError && err.isAuthError) {
+            if (err instanceof DriverError && err.isAuthError) {
               forgetPairing()
               conn = null
             } else {
@@ -253,7 +253,7 @@ export function useComputerUseSession(
     async (manifest: CapabilityManifest) => {
       const conn = connRef.current
       if (!conn) {
-        patch({ phase: 'error', error: 'no broker connection' })
+        patch({ phase: 'error', error: 'no driver connection' })
         return
       }
       const ac = abortRef.current ?? new AbortController()
@@ -266,7 +266,7 @@ export function useComputerUseSession(
         const result: LoopResult = await runLoop({
           task: state.task,
           manifest: sealed,
-          broker: conn.client,
+          driver: conn.client,
           tokens: conn.tokens,
           streamChat: makeStreamChat(modelName),
           modelName,
@@ -375,9 +375,9 @@ export function useComputerUseSession(
   }, [])
 
   /**
-   * Eagerly establish a refresh credential with the broker — runs the pairing
+   * Eagerly establish a refresh credential with the driver — runs the pairing
    * flow on its own, without a task or consent. Used by the "Connect" banner
-   * and the unpaired-toggle click so users can prove the local broker is
+   * and the unpaired-toggle click so users can prove the local driver is
    * reachable before they bother phrasing a computer-use request.
    *
    * Returns `true` on a fresh or already-valid pairing, `false` on failure
@@ -402,7 +402,7 @@ export function useComputerUseSession(
         try {
           await conn.tokens.getAccessToken(ac.signal)
         } catch (err) {
-          if (err instanceof BrokerError && err.isAuthError) {
+          if (err instanceof DriverError && err.isAuthError) {
             forgetPairing()
             conn = null
           } else {

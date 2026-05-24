@@ -8,7 +8,7 @@
  * a `computer_begin` call hands off to the consent + agentic-loop session. The
  * normal streaming pipeline is untouched — this is a post-stream check.
  *
- * When the broker is ABSENT (driver not installed yet), no computer-use tool
+ * When the driver is ABSENT (driver not installed yet), no computer-use tool
  * is offered. The install funnel runs as a webapp-side action instead (see
  * `ComputerUseInstallCard` + the toggle's "Ask Tin" handler in
  * chat-interface) — it's a deterministic onboarding step, not something the
@@ -16,8 +16,8 @@
  */
 
 import { computerUseAvailability } from './availability'
-import { BrokerClient, type BrokerClientOptions } from './broker-client'
 import type { ToolSchema } from './chat-protocol'
+import { DriverClient, type DriverClientOptions } from './driver-client'
 import { buildComputerBeginSchema } from './manifest-schema'
 import type { ModelLike } from './model-support'
 import type { CapabilityManifest } from './types'
@@ -46,13 +46,13 @@ export const COMPUTER_USE_PROMPT_HINT = [
 
 /**
  * Build the computer-use tool(s) to add to the chat request. Returns one of:
- *  - `[computer_begin]` — broker reachable + model can drive it. Existing flow.
- *  - `[]` — anything else (toggle off, broker absent, non-vision model,
+ *  - `[computer_begin]` — driver reachable + model can drive it. Existing flow.
+ *  - `[]` — anything else (toggle off, driver absent, non-vision model,
  *    transport error). The install funnel is handled by the webapp side
  *    (`ComputerUseInstallCard`), not via a model tool, so we don't need to
  *    offer one here.
  *
- * Probes `/status` once at send time. Never throws — a broker problem just
+ * Probes `/status` once at send time. Never throws — a driver problem just
  * means no tools are offered.
  */
 export async function computerUseRequestTools(args: {
@@ -60,18 +60,18 @@ export async function computerUseRequestTools(args: {
   /** Per-chat toggle. Required true for `computer_begin`. */
   enabled: boolean
   baseUrl?: string
-  fetchImpl?: BrokerClientOptions['fetchImpl']
+  fetchImpl?: DriverClientOptions['fetchImpl']
   signal?: AbortSignal
 }): Promise<ToolSchema[]> {
-  let status = null as Awaited<ReturnType<BrokerClient['getStatus']>> | null
+  let status = null as Awaited<ReturnType<DriverClient['getStatus']>> | null
   try {
-    const client = new BrokerClient({
+    const client = new DriverClient({
       baseUrl: args.baseUrl,
       fetchImpl: args.fetchImpl,
     })
     status = await client.getStatus(args.signal)
   } catch {
-    // Broker unreachable — fall through; no tool gets offered.
+    // Driver unreachable — fall through; no tool gets offered.
   }
   const avail = computerUseAvailability({ status, model: args.model })
   if (avail.exposeTools && args.enabled) {
@@ -94,7 +94,7 @@ export interface ComputerBeginCall {
 
 /**
  * Find a `computer_begin` call in the model's emitted tool calls and parse its
- * manifest argument. Returns `null` if absent or unparseable (the broker
+ * manifest argument. Returns `null` if absent or unparseable (the driver
  * re-validates the manifest server-side regardless, so we parse leniently). The
  * model's `reason` is pulled out for the consent UI; the rest is the manifest.
  */

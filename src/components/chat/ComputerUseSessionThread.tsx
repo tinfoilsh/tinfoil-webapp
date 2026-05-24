@@ -59,7 +59,7 @@ export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
             status={STATUS_LABEL[state.phase]}
             pulse={state.phase === 'running'}
             // Red = stop. `cancel()` aborts the in-flight loop AND tears down
-            // the session via broker.end() in the loop's finally-block.
+            // the session via driver.end() in the loop's finally-block.
             onClose={state.phase === 'running' ? cancel : undefined}
             // Yellow = collapse to just the toolbar.
             onMinimize={() => setCollapsed((c) => !c)}

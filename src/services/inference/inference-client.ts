@@ -132,7 +132,7 @@ export interface SendChatStreamParams {
   /**
    * Model-initiated computer-use: the `computer_begin` tool schema, added to the
    * request so the model can choose to drive the sandbox. Built per-request (the
-   * `session.image` enum tracks the broker's ready images).
+   * `session.image` enum tracks the driver's ready images).
    */
   computerUseTools?: ToolSchema[]
 }

@@ -1,6 +1,6 @@
 /**
  * Reactive hook for "has the user *ever* engaged with computer-use" — used to
- * pick the right tooltip on the toggle when the broker is absent:
+ * pick the right tooltip on the toggle when the driver is absent:
  *   - Never engaged ("first-touch"): the toggle hints toward the model
  *     ("Ask Tin about computer use") so a curious user can discover the
  *     feature via the install funnel.
@@ -9,7 +9,7 @@
  *
  * "Engaged" today means: a refresh credential has *ever* been stored on this
  * browser (i.e. they completed a pairing at some point). That's sticky and
- * survives uninstall/restart of the broker — exactly the right signal for "do
+ * survives uninstall/restart of the driver — exactly the right signal for "do
  * they know what this is."
  */
 'use client'

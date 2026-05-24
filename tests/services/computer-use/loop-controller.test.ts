@@ -1,18 +1,18 @@
 import {
   runComputerUseLoop,
-  type BrokerLike,
+  type DriverLike,
   type LoopEvent,
 } from '@/services/computer-use/loop-controller'
 import type {
   ActionResult,
   BeginResponse,
-  BrokerAction,
   CapabilityManifest,
+  DriverAction,
 } from '@/services/computer-use/types'
-import { BrokerError, firstImagePart } from '@/services/computer-use/types'
+import { DriverError, firstImagePart } from '@/services/computer-use/types'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  FakeBroker,
+  FakeDriver,
   TINY_PNG,
   screenshotResult,
   scriptedStreamChat,
@@ -24,7 +24,7 @@ const MANIFEST: CapabilityManifest = {
 }
 
 function run(
-  broker: BrokerLike,
+  driver: DriverLike,
   turns: Parameters<typeof scriptedStreamChat>[0],
   extra?: { maxSteps?: number; onEvent?: (e: LoopEvent) => void; tokens?: any },
 ) {
@@ -34,7 +34,7 @@ function run(
     promise: runComputerUseLoop({
       task: 'do the thing',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'qwen3-vl',
       maxSteps: extra?.maxSteps,
@@ -45,9 +45,9 @@ function run(
 }
 
 describe('runComputerUseLoop — multi-turn screenshot→action cycle', () => {
-  it('drives the model↔broker loop and tears the session down when the model finishes', async () => {
-    const broker = new FakeBroker()
-    const { promise } = run(broker, [
+  it('drives the model↔driver loop and tears the session down when the model finishes', async () => {
+    const driver = new FakeDriver()
+    const { promise } = run(driver, [
       {
         toolCalls: [
           {
@@ -68,20 +68,20 @@ describe('runComputerUseLoop — multi-turn screenshot→action cycle', () => {
     ])
     const result = await promise
 
-    expect(broker.beginCount).toBe(1)
-    expect(broker.calls.map((c) => c.action.op)).toEqual(['click', 'type'])
+    expect(driver.beginCount).toBe(1)
+    expect(driver.calls.map((c) => c.action.op)).toEqual(['click', 'type'])
     expect(result.reason).toBe('model_finished')
     expect(result.finalText).toMatch(/Done/)
     expect(result.ended).toBe(true)
-    expect(broker.endedSessions).toEqual(['sess_test'])
+    expect(driver.endedSessions).toEqual(['sess_test'])
   })
 
   it('feeds each screenshot back to the model on the next turn', async () => {
-    const broker = new FakeBroker({
-      onAction: (a: BrokerAction): ActionResult =>
+    const driver = new FakeDriver({
+      onAction: (a: DriverAction): ActionResult =>
         screenshotResult(`screen after ${a.op}`),
     })
-    const { promise, invocations } = run(broker, [
+    const { promise, invocations } = run(driver, [
       {
         toolCalls: [
           {
@@ -105,8 +105,8 @@ describe('runComputerUseLoop — multi-turn screenshot→action cycle', () => {
   })
 
   it('presents the `computer` tool on every turn', async () => {
-    const broker = new FakeBroker()
-    const { promise, invocations } = run(broker, [{ content: 'nothing to do' }])
+    const driver = new FakeDriver()
+    const { promise, invocations } = run(driver, [{ content: 'nothing to do' }])
     await promise
     expect(invocations[0].tools.map((t) => t.function.name)).toEqual([
       'computer',
@@ -116,10 +116,10 @@ describe('runComputerUseLoop — multi-turn screenshot→action cycle', () => {
 
 describe('runComputerUseLoop — unsupported actions', () => {
   it('feeds a tool error back and keeps going instead of aborting', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const events: LoopEvent[] = []
     const { promise, invocations } = run(
-      broker,
+      driver,
       [
         {
           toolCalls: [
@@ -132,7 +132,7 @@ describe('runComputerUseLoop — unsupported actions', () => {
     )
     const result = await promise
 
-    expect(broker.calls).toHaveLength(0) // never dispatched
+    expect(driver.calls).toHaveLength(0) // never dispatched
     expect(events.some((e) => e.type === 'unsupported')).toBe(true)
     const errToolMsg = invocations[1].messages.find((m) => m.role === 'tool')
     expect(String(errToolMsg?.content)).toMatch(/Error/)
@@ -142,10 +142,10 @@ describe('runComputerUseLoop — unsupported actions', () => {
 
 describe('runComputerUseLoop — handoff', () => {
   it('stops on request_handoff and leaves the session open for resume', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const events: LoopEvent[] = []
     const { promise } = run(
-      broker,
+      driver,
       [
         {
           toolCalls: [
@@ -162,7 +162,7 @@ describe('runComputerUseLoop — handoff', () => {
 
     expect(result.reason).toBe('handoff')
     expect(result.ended).toBe(false)
-    expect(broker.endedSessions).toEqual([]) // not torn down
+    expect(driver.endedSessions).toEqual([]) // not torn down
     expect(events.some((e) => e.type === 'handoff')).toBe(true)
   })
 })
@@ -177,7 +177,7 @@ describe('runComputerUseLoop — reduced image to the model', () => {
   }
 
   it('sends the reduced JPEG to the model but keeps the full frame in events', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const reduceImage = vi.fn(async () => ({
       base64: 'REDUCEDDATA',
       mimeType: 'image/jpeg',
@@ -200,7 +200,7 @@ describe('runComputerUseLoop — reduced image to the model', () => {
     await runComputerUseLoop({
       task: 'go',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'kimi-k2-6',
       reduceImage,
@@ -230,14 +230,14 @@ describe('runComputerUseLoop — reduced image to the model', () => {
   })
 
   it('sends the full frame to the model when no reducer is provided', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const { streamChat, invocations } = scriptedStreamChat([
       { content: 'done' },
     ])
     await runComputerUseLoop({
       task: 'go',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'kimi-k2-6',
     })
@@ -248,7 +248,7 @@ describe('runComputerUseLoop — reduced image to the model', () => {
 
 describe('runComputerUseLoop — bounds', () => {
   it('stops at maxSteps when the model never finishes', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const clickForever = Array.from({ length: 10 }, () => ({
       toolCalls: [
         {
@@ -257,12 +257,12 @@ describe('runComputerUseLoop — bounds', () => {
         },
       ],
     }))
-    const { promise } = run(broker, clickForever, { maxSteps: 3 })
+    const { promise } = run(driver, clickForever, { maxSteps: 3 })
     const result = await promise
 
     expect(result.reason).toBe('max_steps')
     expect(result.steps).toBe(3)
-    expect(broker.calls).toHaveLength(3)
+    expect(driver.calls).toHaveLength(3)
     expect(result.ended).toBe(true)
   })
 })
@@ -271,21 +271,21 @@ describe('runComputerUseLoop — token re-mint on 401', () => {
   it('invalidates and retries once when an action returns 401', async () => {
     const invalidate = vi.fn()
     let thrown = false
-    const broker: BrokerLike = {
+    const driver: DriverLike = {
       async begin(): Promise<BeginResponse> {
         return { session: 's1', screenshot: screenshotResult('init') }
       },
       async action(_s, _a): Promise<ActionResult> {
         if (!thrown) {
           thrown = true
-          throw new BrokerError('expired', 401)
+          throw new DriverError('expired', 401)
         }
         return screenshotResult('ok')
       },
       async end() {},
     }
     const { promise } = run(
-      broker,
+      driver,
       [
         {
           toolCalls: [
@@ -308,10 +308,10 @@ describe('runComputerUseLoop — token re-mint on 401', () => {
 
 describe('runComputerUseLoop — events', () => {
   it('emits begin → model_message → action → action_result → stopped', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const events: LoopEvent[] = []
     const { promise } = run(
-      broker,
+      driver,
       [
         {
           toolCalls: [
@@ -335,9 +335,9 @@ describe('runComputerUseLoop — events', () => {
 })
 
 describe('runComputerUseLoop — capability escalation', () => {
-  it('intercepts request_capability: asks for approval, calls broker.escalate on approve, continues loop', async () => {
+  it('intercepts request_capability: asks for approval, calls driver.escalate on approve, continues loop', async () => {
     // Model: 1st turn requests a capability, 2nd turn says done.
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const events: LoopEvent[] = []
     const { streamChat, invocations } = scriptedStreamChat([
       {
@@ -361,7 +361,7 @@ describe('runComputerUseLoop — capability escalation', () => {
     await runComputerUseLoop({
       task: 't',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'qwen3-vl',
       onEvent: (e) => events.push(e),
@@ -374,16 +374,16 @@ describe('runComputerUseLoop — capability escalation', () => {
       'www.reddit.com',
       '*.redditstatic.com',
     ])
-    // broker.escalate was called with the (possibly edited) list.
-    expect(broker.escalateCalls).toHaveLength(1)
-    expect(broker.escalateCalls[0].egress).toEqual([
+    // driver.escalate was called with the (possibly edited) list.
+    expect(driver.escalateCalls).toHaveLength(1)
+    expect(driver.escalateCalls[0].egress).toEqual([
       'www.reddit.com',
       '*.redditstatic.com',
       'extra.example.com',
     ])
     // The request_capability op was NOT sent through /action — it's a session-
     // config change, not a guest action.
-    expect(broker.calls.map((c) => c.action.op)).not.toContain(
+    expect(driver.calls.map((c) => c.action.op)).not.toContain(
       'request_capability',
     )
     // Both lifecycle events appear in the audit trail.
@@ -401,7 +401,7 @@ describe('runComputerUseLoop — capability escalation', () => {
   })
 
   it('on denial, loop continues and tells the model NOT to retry', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const events: LoopEvent[] = []
     const { streamChat, invocations } = scriptedStreamChat([
       {
@@ -424,13 +424,13 @@ describe('runComputerUseLoop — capability escalation', () => {
     await runComputerUseLoop({
       task: 't',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'qwen3-vl',
       onEvent: (e) => events.push(e),
       requestCapabilityApproval: approver,
     })
-    expect(broker.escalateCalls).toHaveLength(0)
+    expect(driver.escalateCalls).toHaveLength(0)
     const result = events.find((e) => e.type === 'capability_result')!
     expect(result).toMatchObject({ approved: false, reason: 'user denied' })
     // The tool message back to the model contains the denial + the "don't
@@ -442,8 +442,8 @@ describe('runComputerUseLoop — capability escalation', () => {
     expect(String(denialMsg!.content)).toMatch(/do not re-request/i)
   })
 
-  it('without an approver wired, auto-denies (no broker.escalate)', async () => {
-    const broker = new FakeBroker()
+  it('without an approver wired, auto-denies (no driver.escalate)', async () => {
+    const driver = new FakeDriver()
     const { streamChat } = scriptedStreamChat([
       {
         toolCalls: [
@@ -461,17 +461,17 @@ describe('runComputerUseLoop — capability escalation', () => {
     await runComputerUseLoop({
       task: 't',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'qwen3-vl',
       // No `requestCapabilityApproval` injected.
     })
-    expect(broker.escalateCalls).toHaveLength(0)
+    expect(driver.escalateCalls).toHaveLength(0)
   })
 
   it('escalate failure: surfaces as capability_result(approved:false) + tool error to the model', async () => {
-    const broker = new FakeBroker()
-    broker.escalateError = new Error('session started with no egress')
+    const driver = new FakeDriver()
+    driver.escalateError = new Error('session started with no egress')
     const events: LoopEvent[] = []
     const { streamChat } = scriptedStreamChat([
       {
@@ -490,7 +490,7 @@ describe('runComputerUseLoop — capability escalation', () => {
     await runComputerUseLoop({
       task: 't',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'qwen3-vl',
       onEvent: (e) => events.push(e),

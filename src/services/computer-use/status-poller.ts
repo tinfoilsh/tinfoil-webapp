@@ -2,9 +2,9 @@
  * Adaptive `/status` poller — the liveness engine behind the connection
  * indicator and conditional tool exposure (architecture → "Liveness UX — no
  * page refresh"). Framework-agnostic so it's unit-testable with fake timers;
- * `use-broker-status.ts` is a thin React binding over it.
+ * `use-driver-status.ts` is a thin React binding over it.
  *
- * Cadence: probe fast (~2s) while disconnected so a freshly-installed broker is
+ * Cadence: probe fast (~2s) while disconnected so a freshly-installed driver is
  * detected quickly; settle to a slow heartbeat (~20s) once connected. The
  * heartbeat also catches the daemon dying mid-session (a probe starts failing →
  * indicator flips → the next request withdraws the tools). The React layer calls
@@ -12,16 +12,16 @@
  */
 
 import {
-  brokerReadiness,
   connectionIndicator,
-  type BrokerReadiness,
+  driverReadiness,
   type ConnectionIndicator,
+  type DriverReadiness,
 } from './availability'
-import { BrokerError, type BrokerStatus } from './types'
+import { DriverError, type DriverStatus } from './types'
 
-export interface BrokerStatusState {
-  status: BrokerStatus | null
-  readiness: BrokerReadiness
+export interface DriverStatusState {
+  status: DriverStatus | null
+  readiness: DriverReadiness
   indicator: ConnectionIndicator
   /** True while a probe is in flight. */
   probing: boolean
@@ -29,11 +29,11 @@ export interface BrokerStatusState {
   lastUpdated: number | null
 }
 
-export interface BrokerStatusPollerOptions {
-  /** Fetch `/status`; rejects (BrokerError unreachable) when the daemon is absent. */
-  getStatus: (signal?: AbortSignal) => Promise<BrokerStatus>
+export interface DriverStatusPollerOptions {
+  /** Fetch `/status`; rejects (DriverError unreachable) when the daemon is absent. */
+  getStatus: (signal?: AbortSignal) => Promise<DriverStatus>
   /** Notified on every state change (probe start, success, failure). */
-  onUpdate: (state: BrokerStatusState) => void
+  onUpdate: (state: DriverStatusState) => void
   /** Heartbeat cadence once connected. Default 20s. */
   connectedIntervalMs?: number
   /** Base probe cadence while disconnected (catch post-install quickly). Default 2s. */
@@ -47,13 +47,13 @@ const DEFAULT_CONNECTED_MS = 20_000
 const DEFAULT_DISCONNECTED_MS = 2_000
 const DEFAULT_MAX_DISCONNECTED_MS = 30_000
 
-export class BrokerStatusPoller {
+export class DriverStatusPoller {
   private running = false
   private timer: ReturnType<typeof setTimeout> | null = null
   private abort: AbortController | null = null
   /** Consecutive failed probes — drives exponential backoff while disconnected. */
   private failures = 0
-  private state: BrokerStatusState = {
+  private state: DriverStatusState = {
     status: null,
     readiness: 'absent',
     indicator: 'disconnected',
@@ -61,9 +61,9 @@ export class BrokerStatusPoller {
     lastUpdated: null,
   }
 
-  constructor(private readonly opts: BrokerStatusPollerOptions) {}
+  constructor(private readonly opts: DriverStatusPollerOptions) {}
 
-  getState(): BrokerStatusState {
+  getState(): DriverStatusState {
     return this.state
   }
 
@@ -102,7 +102,7 @@ export class BrokerStatusPoller {
     }, ms)
   }
 
-  private emit(patch: Partial<BrokerStatusState>): void {
+  private emit(patch: Partial<DriverStatusState>): void {
     this.state = { ...this.state, ...patch }
     this.opts.onUpdate(this.state)
   }
@@ -126,15 +126,15 @@ export class BrokerStatusPoller {
       this.failures = 0
       this.emit({
         status,
-        readiness: brokerReadiness(status),
+        readiness: driverReadiness(status),
         indicator: connectionIndicator(status, false),
         probing: false,
         lastUpdated: now(),
       })
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return
-      // Any failure (unreachable, or a non-BrokerError) ⇒ treat as absent.
-      void (err as BrokerError)
+      // Any failure (unreachable, or a non-DriverError) ⇒ treat as absent.
+      void (err as DriverError)
       this.failures++
       this.emit({
         status: null,
@@ -152,7 +152,7 @@ export class BrokerStatusPoller {
 
   /**
    * Connected → steady heartbeat. Disconnected → exponential backoff from the
-   * base cadence up to the cap, so a user who never installs the broker isn't
+   * base cadence up to the cap, so a user who never installs the driver isn't
    * hammering loopback (and spamming the console) every couple seconds forever.
    */
   private nextDelay(): number {

@@ -9,7 +9,7 @@
  *   - dismiss: sessionStorage flag, hides on next render
  */
 import { ComputerUseSetupSandboxBanner } from '@/components/chat/ComputerUseSetupSandboxBanner'
-import type { BrokerSetupJob } from '@/services/computer-use'
+import type { DriverSetupJob } from '@/services/computer-use'
 import { fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -47,7 +47,7 @@ describe('ComputerUseSetupSandboxBanner', () => {
   })
 
   it('pulling with a known fraction: shows percent + label', () => {
-    const job: BrokerSetupJob = {
+    const job: DriverSetupJob = {
       state: 'pulling',
       image: 'tinfoil-default',
       progress: 0.43,
@@ -67,7 +67,7 @@ describe('ComputerUseSetupSandboxBanner', () => {
   })
 
   it('pulling without a fraction: no percent rendered (indeterminate)', () => {
-    const job: BrokerSetupJob = {
+    const job: DriverSetupJob = {
       state: 'pulling',
       image: 'tinfoil-default',
       message: 'Resolving manifest…',
@@ -85,7 +85,7 @@ describe('ComputerUseSetupSandboxBanner', () => {
   })
 
   it('provisioning: shows the provisioning label and no percent', () => {
-    const job: BrokerSetupJob = {
+    const job: DriverSetupJob = {
       state: 'provisioning',
       image: 'tinfoil-default',
       message: 'Installing guest agent',
@@ -103,7 +103,7 @@ describe('ComputerUseSetupSandboxBanner', () => {
   })
 
   it('done: brief success label, no Start button', () => {
-    const job: BrokerSetupJob = {
+    const job: DriverSetupJob = {
       state: 'done',
       image: 'tinfoil-default',
       message: 'Image ready',
@@ -122,7 +122,7 @@ describe('ComputerUseSetupSandboxBanner', () => {
 
   it('error: shows the error + a Retry button', () => {
     const onStart = vi.fn()
-    const job: BrokerSetupJob = {
+    const job: DriverSetupJob = {
       state: 'error',
       image: 'tinfoil-default',
       error: 'disk full',

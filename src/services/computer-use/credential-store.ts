@@ -1,6 +1,6 @@
 /**
- * Storage for the broker pairing **refresh credential** (architecture →
- * "Pairing & broker trust").
+ * Storage for the driver pairing **refresh credential** (architecture →
+ * "Pairing & driver trust").
  *
  * The refresh credential is the long-lived, revocable root obtained once via
  * pairing; it's reused silently for new chats and only re-acquired on cleared

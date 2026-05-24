@@ -1,16 +1,16 @@
 /**
- * Loopback HTTP client for `tinfoil-broker`.
+ * Loopback HTTP client for `tinfoil-driver`.
  *
  * Transport is plain HTTP to a known fixed loopback port (127.0.0.1:8765) — no
  * TLS, no WebSocket. `127.0.0.1` is a potentially-trustworthy origin, so an
  * `https://` chat page calling it is not mixed-content-blocked; the browser
  * attaches the `Origin` header automatically (it is a forbidden header we can't
- * and must not set ourselves), which is what the broker's CORS allowlist gates
- * on. Chrome additionally issues a PNA `OPTIONS` preflight; the broker answers
+ * and must not set ourselves), which is what the driver's CORS allowlist gates
+ * on. Chrome additionally issues a PNA `OPTIONS` preflight; the driver answers
  * `Access-Control-Allow-Private-Network: true` for allowlisted origins, so no
  * action is needed here beyond the page being served from an allowlisted origin.
  *
- * Two gates on the broker side:
+ * Two gates on the driver side:
  *  - origin-only (no secret): /status, /pair, /pair/status, /token
  *  - origin + access-JWT (Authorization: Bearer): /begin /end /action /handoff /resume
  *
@@ -19,23 +19,23 @@
  */
 
 import {
-  BrokerError,
+  DriverError,
   type ActionResult,
   type BeginResponse,
-  type BrokerAction,
-  type BrokerStatus,
   type CapabilityManifest,
+  type DriverAction,
+  type DriverStatus,
   type HandoffResponse,
   type PairResponse,
   type PairStatusResponse,
   type TokenResponse,
 } from './types'
 
-/** The known fixed port the broker binds (bind-or-fail-loudly). */
-export const DEFAULT_BROKER_ORIGIN = 'http://127.0.0.1:8765'
+/** The known fixed port the driver binds (bind-or-fail-loudly). */
+export const DEFAULT_DRIVER_ORIGIN = 'http://127.0.0.1:8765'
 
-export interface BrokerClientOptions {
-  /** Override the broker origin (for a future configurable/remote host). */
+export interface DriverClientOptions {
+  /** Override the driver origin (for a future configurable/remote host). */
   baseUrl?: string
   /** Injectable fetch for testing. Defaults to the global `fetch`. */
   fetchImpl?: typeof fetch
@@ -47,13 +47,13 @@ export interface BrokerClientOptions {
   getAccessToken?: () => Promise<string | null>
 }
 
-export class BrokerClient {
+export class DriverClient {
   private readonly baseUrl: string
   private readonly fetchImpl: typeof fetch
   private readonly getAccessToken?: () => Promise<string | null>
 
-  constructor(opts: BrokerClientOptions = {}) {
-    this.baseUrl = (opts.baseUrl ?? DEFAULT_BROKER_ORIGIN).replace(/\/$/, '')
+  constructor(opts: DriverClientOptions = {}) {
+    this.baseUrl = (opts.baseUrl ?? DEFAULT_DRIVER_ORIGIN).replace(/\/$/, '')
     this.fetchImpl = opts.fetchImpl ?? globalThis.fetch.bind(globalThis)
     this.getAccessToken = opts.getAccessToken
   }
@@ -61,11 +61,11 @@ export class BrokerClient {
   // -- Detection (origin-gated) ---------------------------------------------
 
   /**
-   * `GET /status`. Throws `BrokerError(unreachable)` when the daemon is absent,
-   * which the caller treats as "broker not installed/running".
+   * `GET /status`. Throws `DriverError(unreachable)` when the daemon is absent,
+   * which the caller treats as "driver not installed/running".
    */
-  async getStatus(signal?: AbortSignal): Promise<BrokerStatus> {
-    return this.request<BrokerStatus>('GET', '/status', { signal })
+  async getStatus(signal?: AbortSignal): Promise<DriverStatus> {
+    return this.request<DriverStatus>('GET', '/status', { signal })
   }
 
   // -- Pairing (origin-gated) -----------------------------------------------
@@ -124,7 +124,7 @@ export class BrokerClient {
   /** `POST /action`. The consequential path: one normalized curated op. */
   async action(
     session: string,
-    action: BrokerAction,
+    action: DriverAction,
     signal?: AbortSignal,
   ): Promise<ActionResult> {
     return this.request<ActionResult>('POST', '/action', {
@@ -186,11 +186,11 @@ export class BrokerClient {
   }
 
   /**
-   * `POST /images/setup-default`. Kicks off the broker-driven first-time image
+   * `POST /images/setup-default`. Kicks off the driver-driven first-time image
    * setup (pull default base from CDN + provision autostart/TCC). Returns 202
-   * with the chosen image name; the broker runs the work in the background
+   * with the chosen image name; the driver runs the work in the background
    * and reflects progress via `/status`'s `setup_job` field, which the chat's
-   * `useBrokerStatus` poll already surfaces. Idempotent: calling while a setup
+   * `useDriverStatus` poll already surfaces. Idempotent: calling while a setup
    * is in flight returns the in-flight job's image name.
    */
   async setupDefaultImage(signal?: AbortSignal): Promise<{ image: string }> {
@@ -222,7 +222,7 @@ export class BrokerClient {
     if (opts.jwt) {
       const token = this.getAccessToken ? await this.getAccessToken() : null
       if (!token) {
-        throw new BrokerError(
+        throw new DriverError(
           'no access token available (not paired or pairing revoked)',
           401,
         )
@@ -246,15 +246,15 @@ export class BrokerClient {
       // A failed fetch (connection refused, DNS, CORS rejection surfacing as a
       // TypeError) means the daemon is effectively absent for our purposes.
       if (err instanceof DOMException && err.name === 'AbortError') throw err
-      throw new BrokerError(
-        `broker unreachable: ${(err as Error).message}`,
+      throw new DriverError(
+        `driver unreachable: ${(err as Error).message}`,
         0,
         true,
       )
     }
 
     if (!res.ok) {
-      throw new BrokerError(await readErrorMessage(res), res.status)
+      throw new DriverError(await readErrorMessage(res), res.status)
     }
 
     // Some endpoints (e.g. /end) return a tiny body we don't need typed.
@@ -262,7 +262,7 @@ export class BrokerClient {
   }
 }
 
-/** Pull `{ "error": string }` out of a broker error body, falling back to status text. */
+/** Pull `{ "error": string }` out of a driver error body, falling back to status text. */
 async function readErrorMessage(res: Response): Promise<string> {
   try {
     const data = (await res.json()) as { error?: string }

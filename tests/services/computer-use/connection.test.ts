@@ -1,4 +1,3 @@
-import { BrokerClient } from '@/services/computer-use/broker-client'
 import {
   forgetPairing,
   getStoredConnection,
@@ -10,6 +9,7 @@ import {
   isPaired,
   setRefreshCredential,
 } from '@/services/computer-use/credential-store'
+import { DriverClient } from '@/services/computer-use/driver-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 beforeEach(() => clearRefreshCredential())
@@ -66,7 +66,7 @@ describe('pairAndConnect', () => {
       throw new Error(`unexpected ${url}`)
     }) as unknown as typeof fetch
 
-    const client = new BrokerClient({ fetchImpl })
+    const client = new DriverClient({ fetchImpl })
     const onCode = vi.fn()
     const conn = await pairAndConnect(client, {
       code: 'WXYZ',

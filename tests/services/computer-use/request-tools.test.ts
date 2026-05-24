@@ -19,7 +19,7 @@ const READY_STATUS = {
 }
 
 describe('computerUseRequestTools', () => {
-  it('returns the computer_begin tool for a vision model + ready broker + enabled toggle', async () => {
+  it('returns the computer_begin tool for a vision model + ready driver + enabled toggle', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(READY_STATUS),
     ) as unknown as typeof fetch
@@ -36,7 +36,7 @@ describe('computerUseRequestTools', () => {
     expect(image.enum).toEqual(['tahoe'])
   })
 
-  it('returns [] when the toggle is off and the broker is ready (computer_begin is gated)', async () => {
+  it('returns [] when the toggle is off and the driver is ready (computer_begin is gated)', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(READY_STATUS),
     ) as unknown as typeof fetch
@@ -48,11 +48,11 @@ describe('computerUseRequestTools', () => {
     expect(tools).toEqual([])
   })
 
-  it('returns [] when broker is unreachable (install funnel is webapp-side now)', async () => {
+  it('returns [] when driver is unreachable (install funnel is webapp-side now)', async () => {
     // The webapp commits a static install card from the toggle's "Ask Tin"
     // handler instead of going through a model tool — see
     // ComputerUseInstallCard + chat-interface.handleComputerUseAsk. So
-    // an unreachable broker should yield no tool here.
+    // an unreachable driver should yield no tool here.
     const fetchImpl = vi.fn(async () => {
       throw new TypeError('Failed to fetch')
     }) as unknown as typeof fetch
@@ -64,7 +64,7 @@ describe('computerUseRequestTools', () => {
     expect(tools).toEqual([])
   })
 
-  it('returns [] for a non-vision model regardless of broker/enabled state', async () => {
+  it('returns [] for a non-vision model regardless of driver/enabled state', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse(READY_STATUS),
     ) as unknown as typeof fetch

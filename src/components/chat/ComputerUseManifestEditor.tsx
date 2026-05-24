@@ -13,8 +13,8 @@
 
 import { cn } from '@/components/ui/utils'
 import type {
-  BrokerImage,
   CapabilityManifest,
+  DriverImage,
   GuestOS,
   ManifestMount,
 } from '@/services/computer-use'
@@ -33,7 +33,7 @@ export function ManifestEditor({
   approveLabel = 'Approve & run',
 }: {
   reason: string
-  images: BrokerImage[]
+  images: DriverImage[]
   initial: CapabilityManifest
   onApprove: (m: CapabilityManifest) => void
   onCancel: () => void
@@ -42,7 +42,7 @@ export function ManifestEditor({
 }) {
   // Offer ready images plus the model's choice (even if not currently ready).
   // For the model's own image (if not in the ready set), fall back to mac
-  // as the OS display — the broker will reject the manifest at /begin if the
+  // as the OS display — the driver will reject the manifest at /begin if the
   // OS doesn't match the image anyway.
   const imageMap = new Map(images.map((i) => [i.name, i.os] as const))
   const initialOS =
@@ -66,7 +66,7 @@ export function ManifestEditor({
 
   const hasImage = imageOptions.length > 0
   // Derived OS: looked up from the currently-selected image, falling back to
-  // the initial value so an image the broker doesn't (yet) report still has
+  // the initial value so an image the driver doesn't (yet) report still has
   // something sensible to display.
   const derivedOS: GuestOS = imageMap.get(image) ?? initialOS
 
@@ -116,7 +116,7 @@ export function ManifestEditor({
             </div>
           ) : (
             <span className="text-sm text-red-500">
-              No ready image — run `tinfoil-broker image setup` first.
+              No ready image — run `tinfoil-driver image setup` first.
             </span>
           )}
         </Field>

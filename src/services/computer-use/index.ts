@@ -1,14 +1,14 @@
 /**
  * Confidential computer-use: browser-side half of the feature.
  *
- * The host broker (`tinfoil-broker`) is already built; this module is the
+ * The host driver (`tinfoil-driver`) is already built; this module is the
  * browser/Next layer that detects + pairs with it, presents the curated tool
  * surface to the model, and drives the browser-mediated action loop. See
  * `~/dev/tinfoil/architecture.md` for the authoritative design.
  */
 
-export { AccessTokenManager, createBrokerConnection } from './access-token'
-export type { BrokerConnection } from './access-token'
+export { AccessTokenManager, createDriverConnection } from './access-token'
+export type { DriverConnection } from './access-token'
 export {
   adapterForModel,
   openAICUAdapter,
@@ -19,20 +19,15 @@ export {
   type ResolvedAdapter,
 } from './adapter'
 export {
-  brokerReadiness,
   computerUseAvailability,
   connectionIndicator,
+  driverReadiness,
   readyImageNames,
   readyImages,
-  type BrokerReadiness,
   type ComputerUseAvailability,
   type ConnectionIndicator,
+  type DriverReadiness,
 } from './availability'
-export {
-  BrokerClient,
-  DEFAULT_BROKER_ORIGIN,
-  type BrokerClientOptions,
-} from './broker-client'
 export * from './chat-protocol'
 export {
   forgetPairing,
@@ -47,6 +42,11 @@ export {
   isPaired,
   setRefreshCredential,
 } from './credential-store'
+export {
+  DEFAULT_DRIVER_ORIGIN,
+  DriverClient,
+  type DriverClientOptions,
+} from './driver-client'
 export { isMacOS } from './host'
 export {
   DEFAULT_IMAGE_QUALITY,
@@ -60,7 +60,7 @@ export {
   DEFAULT_SCREENSHOT_WINDOW,
   applyScreenshotWindow,
   runComputerUseLoop,
-  type BrokerLike,
+  type DriverLike,
   type ImageReducer,
   type LoopEvent,
   type LoopResult,
@@ -92,16 +92,12 @@ export {
   type ComputerBeginCall,
 } from './request-tools'
 export {
-  BrokerStatusPoller,
-  type BrokerStatusPollerOptions,
-  type BrokerStatusState,
+  DriverStatusPoller,
+  type DriverStatusPollerOptions,
+  type DriverStatusState,
 } from './status-poller'
 export { collectTurn, type CollectedTurn } from './turn-collector'
 export * from './types'
-export {
-  useBrokerStatus,
-  type UseBrokerStatusOptions,
-} from './use-broker-status'
 export {
   useComputerUseSession,
   type ComputerUseSessionDeps,
@@ -112,4 +108,8 @@ export {
   markComputerUseDiscovered,
   useComputerUseDiscovered,
 } from './use-discovered'
+export {
+  useDriverStatus,
+  type UseDriverStatusOptions,
+} from './use-driver-status'
 export { usePaired } from './use-paired'

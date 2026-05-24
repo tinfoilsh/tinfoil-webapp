@@ -1,19 +1,10 @@
 /**
- * Small banner shown above the chat input when:
- *   - the local computer driver (broker) is reachable, AND
- *   - this browser has not yet paired with it, AND
- *   - the current model is vision-capable (otherwise pairing wouldn't help), AND
- *   - the host is macOS (the driver only runs there for MVP).
+ * Banner above the chat input prompting the user to pair when the local
+ * computer driver is reachable, this browser hasn't paired yet, the model
+ * is vision-capable, and the host is macOS.
  *
- * Click "Connect" to run the pairing flow eagerly (no chat input required).
- * The X dismisses the banner for the rest of the page-load — so the user
- * isn't nagged after declining — while reload re-shows it. Successful
- * pairing makes it disappear naturally because `usePaired()` flips true.
- *
- * Why a banner (not just the toggle): without this, the only signal that the
- * driver was detected is the toggle becoming clickable, which the user has
- * to notice. A short inline prompt above the input is the first thing in
- * their eye-line and makes the one-time setup discoverable.
+ * Why a banner (not just the toggle): without it, the only signal that the
+ * driver is detected is the toggle becoming clickable — too easy to miss.
  */
 'use client'
 

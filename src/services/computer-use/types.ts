@@ -1,9 +1,9 @@
 /**
  * Type definitions for the confidential computer-use feature.
  *
- * These mirror the `tinfoil-broker` HTTP contract (see
- * `~/dev/tinfoil/tinfoil-broker/internal/{loopback,manifest,session}`) and the
- * cua-driver result shapes the broker passes through. The broker is the
+ * These mirror the `tinfoil-driver` HTTP contract (see
+ * `~/dev/tinfoil/tinfoil-driver/internal/{loopback,manifest,session}`) and the
+ * cua-driver result shapes the driver passes through. The driver is the
  * authoritative validator — these types are the browser's view of the wire
  * format, not a second source of truth.
  */
@@ -15,7 +15,7 @@
 export type GuestOS = 'mac' | 'linux'
 
 /** One sandbox image reported by `GET /status`. */
-export interface BrokerImage {
+export interface DriverImage {
   name: string
   os: GuestOS
   ready: boolean
@@ -23,14 +23,14 @@ export interface BrokerImage {
 }
 
 /**
- * In-progress (or recently-finished) broker-driven default-image setup. The
- * broker runs the pull + provision in a background goroutine; the snapshot is
+ * In-progress (or recently-finished) driver-driven default-image setup. The
+ * driver runs the pull + provision in a background goroutine; the snapshot is
  * pinned to `setup_job` on `/status` so the chat's existing poll picks it up
  * for the inline progress UI. Once the job hits a terminal state (`done` /
- * `error`), the broker holds the snapshot ~30s so the next poll sees the
+ * `error`), the driver holds the snapshot ~30s so the next poll sees the
  * outcome, then clears the field.
  */
-export interface BrokerSetupJob {
+export interface DriverSetupJob {
   /** `pulling` | `provisioning` | `done` | `error`. */
   state: 'pulling' | 'provisioning' | 'done' | 'error'
   /** Local image name the setup is creating (e.g. `tinfoil-default`). */
@@ -50,13 +50,13 @@ export interface BrokerSetupJob {
 }
 
 /** `GET /status` response — drives conditional tool exposure + the indicator. */
-export interface BrokerStatus {
+export interface DriverStatus {
   installed: boolean
   running: boolean
   version: string
-  images: BrokerImage[]
+  images: DriverImage[]
   /** Snapshot of an active default-image setup, if any. */
-  setup_job?: BrokerSetupJob
+  setup_job?: DriverSetupJob
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +137,7 @@ export interface ManifestDisplay {
 
 /**
  * The capability manifest. Default-deny: an empty manifest (beyond the required
- * `session`) yields a fully sealed VM. The broker re-validates server-side.
+ * `session`) yields a fully sealed VM. The driver re-validates server-side.
  */
 export interface CapabilityManifest {
   version: 1
@@ -232,11 +232,11 @@ export interface HandoffResponse {
 }
 
 // ---------------------------------------------------------------------------
-// Canonical broker action (post-normalization)
+// Canonical driver action (post-normalization)
 // ---------------------------------------------------------------------------
 
 /**
- * The curated op vocabulary the broker accepts on `/action`. `request_handoff`
+ * The curated op vocabulary the driver accepts on `/action`. `request_handoff`
  * is the model's yield-at-a-login-wall escape hatch (not gated). Everything
  * else outside this set is rejected server-side.
  *
@@ -244,7 +244,7 @@ export interface HandoffResponse {
  * intercepts it client-side, asks the user, and calls `/escalate` on approve.
  * It lives in this union so the adapter can normalize the action shape.
  */
-export type BrokerOp =
+export type DriverOp =
   | 'screenshot'
   | 'click'
   | 'type'
@@ -256,8 +256,8 @@ export type BrokerOp =
   | 'request_capability'
 
 /** A normalized action ready to POST to `/action`. */
-export interface BrokerAction {
-  op: BrokerOp
+export interface DriverAction {
+  op: DriverOp
   payload: Record<string, unknown>
 }
 
@@ -265,17 +265,17 @@ export interface BrokerAction {
 // Errors
 // ---------------------------------------------------------------------------
 
-/** Maps to the broker's `{ "error": string }` body and HTTP status codes. */
-export class BrokerError extends Error {
+/** Maps to the driver's `{ "error": string }` body and HTTP status codes. */
+export class DriverError extends Error {
   constructor(
     message: string,
-    /** HTTP status; 0 when the fetch itself failed (broker absent). */
+    /** HTTP status; 0 when the fetch itself failed (driver absent). */
     readonly status: number,
     /** True when the daemon could not be reached at all. */
     readonly unreachable = false,
   ) {
     super(message)
-    this.name = 'BrokerError'
+    this.name = 'DriverError'
   }
 
   /** 401/403 — the access token or origin was rejected. */

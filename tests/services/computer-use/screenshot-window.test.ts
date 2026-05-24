@@ -15,7 +15,7 @@ import {
 } from '@/services/computer-use/loop-controller'
 import type { CapabilityManifest } from '@/services/computer-use/types'
 import { describe, expect, it } from 'vitest'
-import { FakeBroker, scriptedStreamChat } from './fixtures'
+import { FakeDriver, scriptedStreamChat } from './fixtures'
 
 const MANIFEST: CapabilityManifest = {
   version: 1,
@@ -205,7 +205,7 @@ describe('applyScreenshotWindow — pure helper', () => {
 
 describe('runComputerUseLoop — screenshot window plumbed end-to-end', () => {
   it('keeps initial + last 2 screenshots by default after many turns', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const turns = [
       // 4 model turns each emitting a click, then a closing text turn.
       ...Array.from({ length: 4 }, () => ({
@@ -222,7 +222,7 @@ describe('runComputerUseLoop — screenshot window plumbed end-to-end', () => {
     await runComputerUseLoop({
       task: 'do the thing',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'qwen3-vl',
     })
@@ -240,7 +240,7 @@ describe('runComputerUseLoop — screenshot window plumbed end-to-end', () => {
   })
 
   it('respects screenshotWindow:false (no elision; every frame retained)', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const turns = [
       ...Array.from({ length: 4 }, () => ({
         toolCalls: [
@@ -256,7 +256,7 @@ describe('runComputerUseLoop — screenshot window plumbed end-to-end', () => {
     await runComputerUseLoop({
       task: 'do the thing',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'qwen3-vl',
       screenshotWindow: false,
@@ -274,7 +274,7 @@ describe('runComputerUseLoop — screenshot window plumbed end-to-end', () => {
   })
 
   it('honors a custom window policy (first:1, recent:1)', async () => {
-    const broker = new FakeBroker()
+    const driver = new FakeDriver()
     const turns = [
       ...Array.from({ length: 5 }, () => ({
         toolCalls: [
@@ -291,7 +291,7 @@ describe('runComputerUseLoop — screenshot window plumbed end-to-end', () => {
     await runComputerUseLoop({
       task: 'do the thing',
       manifest: MANIFEST,
-      broker,
+      driver,
       streamChat,
       modelName: 'qwen3-vl',
       screenshotWindow: { first: 1, recent: 1 },

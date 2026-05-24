@@ -1,5 +1,5 @@
-import { BrokerClient } from '@/services/computer-use/broker-client'
-import { BrokerError } from '@/services/computer-use/types'
+import { DriverClient } from '@/services/computer-use/driver-client'
+import { DriverError } from '@/services/computer-use/types'
 import { describe, expect, it, vi } from 'vitest'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -9,7 +9,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-describe('BrokerClient — detection', () => {
+describe('DriverClient — detection', () => {
   it('parses GET /status', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({
@@ -19,7 +19,7 @@ describe('BrokerClient — detection', () => {
         images: [{ name: 'tahoe', os: 'mac', ready: true }],
       }),
     ) as unknown as typeof fetch
-    const client = new BrokerClient({ fetchImpl })
+    const client = new DriverClient({ fetchImpl })
 
     const status = await client.getStatus()
     expect(status.running).toBe(true)
@@ -33,21 +33,21 @@ describe('BrokerClient — detection', () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError('Failed to fetch')
     }) as unknown as typeof fetch
-    const client = new BrokerClient({ fetchImpl })
+    const client = new DriverClient({ fetchImpl })
 
     await expect(client.getStatus()).rejects.toSatisfy(
       (e: unknown) =>
-        e instanceof BrokerError && e.unreachable && e.status === 0,
+        e instanceof DriverError && e.unreachable && e.status === 0,
     )
   })
 })
 
-describe('BrokerClient — error bodies', () => {
-  it('surfaces the broker {error} body with the HTTP status', async () => {
+describe('DriverClient — error bodies', () => {
+  it('surfaces the driver {error} body with the HTTP status', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({ error: 'unknown or ended session' }, 502),
     ) as unknown as typeof fetch
-    const client = new BrokerClient({
+    const client = new DriverClient({
       fetchImpl,
       getAccessToken: async () => 'jwt',
     })
@@ -61,12 +61,12 @@ describe('BrokerClient — error bodies', () => {
   })
 })
 
-describe('BrokerClient — auth', () => {
+describe('DriverClient — auth', () => {
   it('attaches the access JWT on consequential calls', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({ ok: true }),
     ) as unknown as typeof fetch
-    const client = new BrokerClient({
+    const client = new DriverClient({
       fetchImpl,
       getAccessToken: async () => 'the-jwt',
     })
@@ -79,7 +79,7 @@ describe('BrokerClient — auth', () => {
 
   it('throws 401 before fetching when no access token is available', async () => {
     const fetchImpl = vi.fn() as unknown as typeof fetch
-    const client = new BrokerClient({
+    const client = new DriverClient({
       fetchImpl,
       getAccessToken: async () => null,
     })
@@ -92,7 +92,7 @@ describe('BrokerClient — auth', () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({ access_token: 'a', expires_at: 1, expires_in: 1 }),
     ) as unknown as typeof fetch
-    const client = new BrokerClient({ fetchImpl })
+    const client = new DriverClient({ fetchImpl })
 
     await client.mintAccessToken('refresh-cred')
     const [url, init] = (fetchImpl as any).mock.calls[0]
@@ -101,12 +101,12 @@ describe('BrokerClient — auth', () => {
   })
 })
 
-describe('BrokerClient — actions', () => {
+describe('DriverClient — actions', () => {
   it('POSTs {session, op, payload} to /action', async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({ content: [{ type: 'text', text: 'ok' }] }),
     ) as unknown as typeof fetch
-    const client = new BrokerClient({
+    const client = new DriverClient({
       fetchImpl,
       getAccessToken: async () => 'jwt',
     })

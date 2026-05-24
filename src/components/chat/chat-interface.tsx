@@ -550,7 +550,7 @@ export function ChatInterface({
   })
 
   // State for computer use toggle (persisted in localStorage, defaults to off).
-  // Whether it's actually exposed to the model also depends on broker readiness
+  // Whether it's actually exposed to the model also depends on driver readiness
   // and model vision-capability (resolved at request build time).
   const [computerUseEnabled, setComputerUseEnabled] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -1268,9 +1268,9 @@ export function ChatInterface({
     return ok
   }, [connectComputerUseSession])
 
-  // Setup-sandbox handler: drives `POST /images/setup-default` on the broker.
-  // The broker runs pull + provision in the background; progress shows up in
-  // the next /status poll's setup_job field (surfaced by `useBrokerStatus`
+  // Setup-sandbox handler: drives `POST /images/setup-default` on the driver.
+  // The driver runs pull + provision in the background; progress shows up in
+  // the next /status poll's setup_job field (surfaced by `useDriverStatus`
   // inside ChatInput, which then feeds it into the setup banner). Errors
   // here are also reflected via setup_job.state="error", so the banner's
   // "Retry" path covers them — the console.error below is dev-side only.
@@ -1292,7 +1292,7 @@ export function ChatInterface({
   }, [])
 
   // First-touch "ask Tin about computer use" handler. Fires when the user
-  // clicks the toggle in the broker-absent + never-engaged state — same
+  // clicks the toggle in the driver-absent + never-engaged state — same
   // predicate that switches the tooltip cursor to a question mark. Commits
   // a static install-funnel assistant message directly (no model involvement);
   // the install card is a deterministic onboarding step, not a model-driven
@@ -1472,7 +1472,7 @@ export function ChatInterface({
   // Cancel wrapper for the consent UI: marks the pending consent message as
   // cancelled (so the chronological record reflects the user's choice), then
   // tears the session down. Used when the user clicks "Cancel" in the
-  // editor; other cancellation paths (tray reject, broker error) go through
+  // editor; other cancellation paths (tray reject, driver error) go through
   // the session's own error path and clear committedConsentTaskRef below.
   const cancelConsentForChat = useCallback(() => {
     setCurrentChat((c) => {

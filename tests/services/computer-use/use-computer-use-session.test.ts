@@ -1,14 +1,14 @@
-import type { BrokerConnection } from '@/services/computer-use/access-token'
+import type { DriverConnection } from '@/services/computer-use/access-token'
 import type { LoopResult } from '@/services/computer-use/loop-controller'
-import { BrokerError, type BrokerImage } from '@/services/computer-use/types'
+import { DriverError, type DriverImage } from '@/services/computer-use/types'
 import { useComputerUseSession } from '@/services/computer-use/use-computer-use-session'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
-const fakeConn = {} as BrokerConnection
+const fakeConn = {} as DriverConnection
 
-const mac = (name: string): BrokerImage => ({ name, os: 'mac', ready: true })
-const linuxImg = (name: string): BrokerImage => ({
+const mac = (name: string): DriverImage => ({ name, os: 'mac', ready: true })
+const linuxImg = (name: string): DriverImage => ({
   name,
   os: 'linux',
   ready: true,
@@ -118,14 +118,14 @@ describe('useComputerUseSession', () => {
     expect(result.current.state.phase).toBe('consent')
   })
 
-  it('re-pairs when a stored credential is rejected (broker restarted → /token 401)', async () => {
+  it('re-pairs when a stored credential is rejected (driver restarted → /token 401)', async () => {
     const staleConn = {
       tokens: {
         getAccessToken: async () => {
-          throw new BrokerError('invalid refresh credential', 401)
+          throw new DriverError('invalid refresh credential', 401)
         },
       },
-    } as unknown as BrokerConnection
+    } as unknown as DriverConnection
     const pair = vi.fn(async () => fakeConn)
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
@@ -144,14 +144,14 @@ describe('useComputerUseSession', () => {
     expect(result.current.state.phase).toBe('consent')
   })
 
-  it('does NOT re-pair when the broker is merely unreachable (not an auth error)', async () => {
+  it('does NOT re-pair when the driver is merely unreachable (not an auth error)', async () => {
     const downConn = {
       tokens: {
         getAccessToken: async () => {
-          throw new BrokerError('broker unreachable', 0, true)
+          throw new DriverError('driver unreachable', 0, true)
         },
       },
-    } as unknown as BrokerConnection
+    } as unknown as DriverConnection
     const pair = vi.fn(async () => fakeConn)
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
@@ -225,7 +225,7 @@ describe('useComputerUseSession', () => {
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => {
-          throw new Error('broker exploded')
+          throw new Error('driver exploded')
         },
         runLoop: vi.fn(),
       }),
@@ -237,7 +237,7 @@ describe('useComputerUseSession', () => {
     expect(result.current.state.error).toMatch(/exploded/)
   })
 
-  it('capability escalation: pause → approve → broker.escalate is called + manifest egress updates', async () => {
+  it('capability escalation: pause → approve → driver.escalate is called + manifest egress updates', async () => {
     // The loop, on detecting `request_capability`, awaits the hook's
     // `requestCapabilityApproval` injection. Once we click Approve, the
     // promise resolves and the loop continues; on a successful approval
@@ -252,7 +252,7 @@ describe('useComputerUseSession', () => {
         egress: ['www.reddit.com'],
       })
       if (approval.approved) {
-        const { egress } = await p.broker.escalate('sess_abc', approval.egress)
+        const { egress } = await p.driver.escalate('sess_abc', approval.egress)
         escalateCalls.push({ session: 'sess_abc', egress })
         p.onEvent({
           type: 'capability_result',
@@ -278,7 +278,7 @@ describe('useComputerUseSession', () => {
       client: {
         escalate: async (s: string, egress: string[]) => ({ egress }),
       },
-    } as unknown as BrokerConnection
+    } as unknown as DriverConnection
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => conn,
@@ -334,7 +334,7 @@ describe('useComputerUseSession', () => {
       }
     })
     const escalate = vi.fn()
-    const conn = { client: { escalate } } as unknown as BrokerConnection
+    const conn = { client: { escalate } } as unknown as DriverConnection
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {
         getConnection: () => conn,
@@ -380,7 +380,7 @@ describe('useComputerUseSession', () => {
     it('paired already (valid stored credential): returns true without re-pairing', async () => {
       const tokenConn = {
         tokens: { getAccessToken: async () => 'jwt' },
-      } as unknown as BrokerConnection
+      } as unknown as DriverConnection
       const pair = vi.fn(async () => fakeConn)
       const { result } = renderHook(() =>
         useComputerUseSession('kimi-k2-6', {
@@ -427,10 +427,10 @@ describe('useComputerUseSession', () => {
       const staleConn = {
         tokens: {
           getAccessToken: async () => {
-            throw new BrokerError('invalid refresh credential', 401)
+            throw new DriverError('invalid refresh credential', 401)
           },
         },
-      } as unknown as BrokerConnection
+      } as unknown as DriverConnection
       const pair = vi.fn(async () => fakeConn)
       const { result } = renderHook(() =>
         useComputerUseSession('kimi-k2-6', {

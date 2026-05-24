@@ -1,33 +1,33 @@
 import {
-  brokerReadiness,
   computerUseAvailability,
   connectionIndicator,
+  driverReadiness,
   readyImageNames,
   readyImages,
 } from '@/services/computer-use/availability'
-import type { BrokerStatus } from '@/services/computer-use/types'
+import type { DriverStatus } from '@/services/computer-use/types'
 import { describe, expect, it } from 'vitest'
 
-function status(images: BrokerStatus['images'], running = true): BrokerStatus {
+function status(images: DriverStatus['images'], running = true): DriverStatus {
   return { installed: true, running, version: '0.1', images }
 }
 
 const VISION = { modelName: 'kimi-k2-6', multimodal: true }
 const TEXT = { modelName: 'gpt-oss-120b', multimodal: false }
 
-describe('brokerReadiness', () => {
+describe('driverReadiness', () => {
   it('absent when null or not running', () => {
-    expect(brokerReadiness(null)).toBe('absent')
-    expect(brokerReadiness(status([], false))).toBe('absent')
+    expect(driverReadiness(null)).toBe('absent')
+    expect(driverReadiness(status([], false))).toBe('absent')
   })
   it('no_images when running with no ready image', () => {
     expect(
-      brokerReadiness(status([{ name: 'a', os: 'mac', ready: false }])),
+      driverReadiness(status([{ name: 'a', os: 'mac', ready: false }])),
     ).toBe('no_images')
   })
   it('ready when at least one image is ready', () => {
     expect(
-      brokerReadiness(
+      driverReadiness(
         status([
           { name: 'a', os: 'mac', ready: false },
           { name: 'b', os: 'mac', ready: true },
@@ -36,15 +36,15 @@ describe('brokerReadiness', () => {
     ).toBe('ready')
   })
   it('no_images when running with images=null (Go nil-slice → JSON null)', () => {
-    // Regression: the Go broker can serialise a nil slice as JSON `null`
+    // Regression: the Go driver can serialise a nil slice as JSON `null`
     // rather than `[]`. Earlier this crashed `images.some()` and broke
     // every subsequent poll.
     expect(
-      brokerReadiness({
+      driverReadiness({
         installed: true,
         running: true,
         version: '0.1',
-        images: null as unknown as BrokerStatus['images'],
+        images: null as unknown as DriverStatus['images'],
       }),
     ).toBe('no_images')
   })
@@ -80,7 +80,7 @@ describe('readyImages', () => {
     ])
   })
 
-  it('returns [] when status is null (broker absent)', () => {
+  it('returns [] when status is null (driver absent)', () => {
     expect(readyImages(null)).toEqual([])
   })
 })
@@ -96,10 +96,10 @@ describe('computerUseAvailability', () => {
     expect(a.reasons[0]).toMatch(/vision/i)
   })
 
-  it('vision model + broker absent: install CTA only', () => {
+  it('vision model + driver absent: install CTA only', () => {
     const a = computerUseAvailability({ status: null, model: VISION })
     expect(a).toMatchObject({
-      brokerState: 'absent',
+      driverState: 'absent',
       exposeTools: false,
       showInstallCTA: true,
     })
@@ -122,7 +122,7 @@ describe('computerUseAvailability', () => {
       model: VISION,
     })
     expect(a).toMatchObject({
-      brokerState: 'ready',
+      driverState: 'ready',
       exposeTools: true,
       showInstallCTA: false,
     })

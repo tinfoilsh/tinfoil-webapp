@@ -1,8 +1,8 @@
-import { BrokerStatusPoller } from '@/services/computer-use/status-poller'
-import { BrokerError, type BrokerStatus } from '@/services/computer-use/types'
+import { DriverStatusPoller } from '@/services/computer-use/status-poller'
+import { DriverError, type DriverStatus } from '@/services/computer-use/types'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const STATUS: BrokerStatus = {
+const STATUS: DriverStatus = {
   installed: true,
   running: true,
   version: '0.1',
@@ -10,9 +10,9 @@ const STATUS: BrokerStatus = {
 }
 
 function makePoller(
-  getStatus: (signal?: AbortSignal) => Promise<BrokerStatus>,
+  getStatus: (signal?: AbortSignal) => Promise<DriverStatus>,
 ) {
-  const poller = new BrokerStatusPoller({
+  const poller = new DriverStatusPoller({
     getStatus,
     onUpdate: () => {},
     connectedIntervalMs: 20_000,
@@ -24,7 +24,7 @@ function makePoller(
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
-describe('BrokerStatusPoller', () => {
+describe('DriverStatusPoller', () => {
   it('probes immediately on start and reports connected/ready', async () => {
     const getStatus = vi.fn().mockResolvedValue(STATUS)
     const poller = makePoller(getStatus)
@@ -57,7 +57,7 @@ describe('BrokerStatusPoller', () => {
   it('polls fast while disconnected', async () => {
     const getStatus = vi
       .fn()
-      .mockRejectedValue(new BrokerError('unreachable', 0, true))
+      .mockRejectedValue(new DriverError('unreachable', 0, true))
     const poller = makePoller(getStatus)
     poller.start()
     await vi.advanceTimersByTimeAsync(1)
@@ -74,7 +74,7 @@ describe('BrokerStatusPoller', () => {
   it('backs off exponentially while disconnected', async () => {
     const getStatus = vi
       .fn()
-      .mockRejectedValue(new BrokerError('unreachable', 0, true))
+      .mockRejectedValue(new DriverError('unreachable', 0, true))
     const poller = makePoller(getStatus)
     poller.start()
 
@@ -94,7 +94,7 @@ describe('BrokerStatusPoller', () => {
     const getStatus = vi
       .fn()
       .mockResolvedValueOnce(STATUS)
-      .mockRejectedValue(new BrokerError('unreachable', 0, true))
+      .mockRejectedValue(new DriverError('unreachable', 0, true))
     const poller = makePoller(getStatus)
     poller.start()
     await vi.advanceTimersByTimeAsync(1)

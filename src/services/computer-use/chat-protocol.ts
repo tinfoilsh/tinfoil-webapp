@@ -1,7 +1,7 @@
 /**
  * Minimal OpenAI-compatible chat-completions shapes the computer-use loop works
  * in. The loop runs *inside* a single user turn (the model drives the guest
- * over many model↔broker round-trips), so it speaks the raw chat protocol
+ * over many model↔driver round-trips), so it speaks the raw chat protocol
  * directly rather than the webapp's `Message` type — that keeps the controller
  * isolated from the main chat pipeline and lets it carry `tool` messages and
  * image content parts, which the `Message` type doesn't model.

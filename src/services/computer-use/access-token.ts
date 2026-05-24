@@ -1,20 +1,20 @@
 /**
- * Access-token lifecycle for the broker's two-tier (refresh/access) model.
+ * Access-token lifecycle for the driver's two-tier (refresh/access) model.
  *
  * The long-lived **refresh credential** (opaque, revocable root, obtained once
- * via pairing) is exchanged for short-lived **access JWTs** the broker mints.
+ * via pairing) is exchanged for short-lived **access JWTs** the driver mints.
  * This manager caches the current access token, reads its `expires_at`, and
  * re-mints *ahead* of expiry so the action loop never stalls. On a 401 from an
  * action the loop calls `invalidate()` to force a fresh mint on the next call;
  * if minting itself 401s, the refresh credential was revoked and the caller
- * must re-pair (the `BrokerError` propagates with `isAuthError`).
+ * must re-pair (the `DriverError` propagates with `isAuthError`).
  *
  * The refresh credential is a JS-readable bearer secret (see architecture →
  * threat model): keep it only here, never in URLs/logs.
  */
 
-import { BrokerClient, type BrokerClientOptions } from './broker-client'
-import { BrokerError, type TokenResponse } from './types'
+import { DriverClient, type DriverClientOptions } from './driver-client'
+import { DriverError, type TokenResponse } from './types'
 
 /** Mint a token before it gets this close to expiry (ms). */
 const REFRESH_SKEW_MS = 30_000
@@ -46,7 +46,7 @@ export class AccessTokenManager {
   /**
    * Return a valid access token, minting/refreshing if the cached one is
    * missing or within the skew window of expiry. Concurrent callers share one
-   * in-flight mint. Throws `BrokerError` if the refresh credential is rejected.
+   * in-flight mint. Throws `DriverError` if the refresh credential is rejected.
    */
   async getAccessToken(signal?: AbortSignal): Promise<string> {
     if (this.token && this.now() < this.expiresAtMs - REFRESH_SKEW_MS) {
@@ -64,7 +64,7 @@ export class AccessTokenManager {
         // A rejected refresh credential is terminal — the cached token (if any)
         // is also useless once it expires. Surface the auth error to trigger
         // re-pairing upstream.
-        if (err instanceof BrokerError && err.isAuthError) {
+        if (err instanceof DriverError && err.isAuthError) {
           this.token = null
           this.expiresAtMs = 0
           this.onRefreshRejected?.()
@@ -85,30 +85,30 @@ export class AccessTokenManager {
   }
 }
 
-export interface BrokerConnection {
+export interface DriverConnection {
   /** JWT-gated client wired to auto-refresh access tokens. */
-  client: BrokerClient
+  client: DriverClient
   /** The token manager, exposed so the loop can `invalidate()` on a 401. */
   tokens: AccessTokenManager
 }
 
 /**
- * Wire a {@link BrokerClient} together with an {@link AccessTokenManager} so the
+ * Wire a {@link DriverClient} together with an {@link AccessTokenManager} so the
  * client transparently attaches a fresh access JWT to consequential calls. The
  * same client instance mints tokens (origin-gated, no JWT needed) and performs
  * JWT-gated actions — there is no recursion because `mintAccessToken` does not
  * consult `getAccessToken`.
  */
-export function createBrokerConnection(opts: {
+export function createDriverConnection(opts: {
   refreshCredential: string
   baseUrl?: string
-  fetchImpl?: BrokerClientOptions['fetchImpl']
+  fetchImpl?: DriverClientOptions['fetchImpl']
   now?: () => number
   /** Invoked when the refresh credential is rejected (clear stored state + re-pair). */
   onRefreshRejected?: () => void
-}): BrokerConnection {
+}): DriverConnection {
   let tokens: AccessTokenManager
-  const client = new BrokerClient({
+  const client = new DriverClient({
     baseUrl: opts.baseUrl,
     fetchImpl: opts.fetchImpl,
     getAccessToken: () => tokens.getAccessToken(),

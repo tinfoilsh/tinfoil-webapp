@@ -13,7 +13,7 @@
  */
 'use client'
 
-import type { BrokerImage, CapabilityManifest } from '@/services/computer-use'
+import type { CapabilityManifest, DriverImage } from '@/services/computer-use'
 import { createContext, useContext } from 'react'
 
 export interface ComputerUseConsentContextValue {
@@ -25,11 +25,11 @@ export interface ComputerUseConsentContextValue {
   /** Cancel the session. Drives the underlying `session.cancel()`. */
   cancel: () => void
   /**
-   * Ready broker images at consent time. The editor's image dropdown lists
+   * Ready driver images at consent time. The editor's image dropdown lists
    * these; the inline renderer is supplied them via context because they
    * aren't persisted on the message itself.
    */
-  images: BrokerImage[]
+  images: DriverImage[]
 }
 
 export const ComputerUseConsentContext =

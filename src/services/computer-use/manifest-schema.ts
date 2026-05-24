@@ -4,9 +4,9 @@
  * so tool definitions and runtime validation never drift).
  *
  * The manifest IS the parameter schema (architecture → "Capabilities manifest"):
- * the model receives it every turn, the broker re-validates server-side, and
+ * the model receives it every turn, the driver re-validates server-side, and
  * everything is default-deny. The one dynamic piece is `session.image`, built
- * per-request as an enum of the broker's currently-ready images (from `/status`)
+ * per-request as an enum of the driver's currently-ready images (from `/status`)
  * — so the model can only pick a real, ready sandbox and *sees* what exists.
  *
  * This declares the session-opening tool. The model's *actions* inside the
@@ -40,7 +40,7 @@ const COMPUTER_BEGIN_DESCRIPTION = [
 /** Build the Zod schema for the manifest, with `image` constrained to `images`. */
 function manifestZodSchema(images: string[]) {
   // z.enum needs a non-empty tuple; with no ready images fall back to a string
-  // (the `no_images` state — the broker will reject begin until one is ready).
+  // (the `no_images` state — the driver will reject begin until one is ready).
   const imageSchema =
     images.length > 0
       ? z

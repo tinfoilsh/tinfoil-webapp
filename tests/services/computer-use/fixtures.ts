@@ -1,5 +1,5 @@
 /**
- * Test fixtures for the computer-use loop: an in-memory fake broker and a
+ * Test fixtures for the computer-use loop: an in-memory fake driver and a
  * scripted inference seam. These let us exercise the full multi-turn
  * screenshot→action cycle deterministically, without the network, a booted VM,
  * or the enclave.
@@ -11,12 +11,12 @@ import type {
   StreamChatParams,
   ToolCall,
 } from '@/services/computer-use/chat-protocol'
-import type { BrokerLike } from '@/services/computer-use/loop-controller'
+import type { DriverLike } from '@/services/computer-use/loop-controller'
 import type {
   ActionResult,
   BeginResponse,
-  BrokerAction,
   CapabilityManifest,
+  DriverAction,
   HandoffResponse,
   PerceptionResult,
 } from '@/services/computer-use/types'
@@ -34,18 +34,18 @@ export function screenshotResult(text = 'window: Safari'): PerceptionResult {
   }
 }
 
-export interface FakeBrokerCall {
+export interface FakeDriverCall {
   session: string
-  action: BrokerAction
+  action: DriverAction
 }
 
 /**
- * In-memory broker satisfying {@link BrokerLike}. Records every action and
+ * In-memory driver satisfying {@link DriverLike}. Records every action and
  * returns a canned screenshot (or a per-op override). `request_handoff` returns
- * a {@link HandoffResponse}, mirroring the real broker's special-casing.
+ * a {@link HandoffResponse}, mirroring the real driver's special-casing.
  */
-export class FakeBroker implements BrokerLike {
-  readonly calls: FakeBrokerCall[] = []
+export class FakeDriver implements DriverLike {
+  readonly calls: FakeDriverCall[] = []
   readonly escalateCalls: Array<{ session: string; egress: string[] }> = []
   beginCount = 0
   endedSessions: string[] = []
@@ -56,7 +56,7 @@ export class FakeBroker implements BrokerLike {
       sessionId?: string
       firstScreenshot?: ActionResult
       /** Map an op to a fixed result; default is a fresh screenshot. */
-      onAction?: (action: BrokerAction) => ActionResult | HandoffResponse
+      onAction?: (action: DriverAction) => ActionResult | HandoffResponse
     } = {},
   ) {}
 
@@ -68,7 +68,7 @@ export class FakeBroker implements BrokerLike {
     }
   }
 
-  async action(session: string, action: BrokerAction): Promise<ActionResult> {
+  async action(session: string, action: DriverAction): Promise<ActionResult> {
     this.calls.push({ session, action })
     if (action.op === 'request_handoff') {
       const res: HandoffResponse = {

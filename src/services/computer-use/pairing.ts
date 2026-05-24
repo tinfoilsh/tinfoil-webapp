@@ -1,6 +1,6 @@
 /**
- * One-time, human-confirmed pairing flow (architecture → "Pairing & broker
- * trust"). The chat displays a short code and POSTs it to the broker, which
+ * One-time, human-confirmed pairing flow (architecture → "Pairing & driver
+ * trust"). The chat displays a short code and POSTs it to the driver, which
  * surfaces an Approve/Deny request in the system tray showing the same code.
  * The user confirms the tray code matches the chat, approves, and the browser
  * receives the long-lived refresh credential exactly once.
@@ -9,8 +9,8 @@
  * for new chats. Re-pair only on cleared storage / new browser / revocation.
  */
 
-import type { BrokerClient } from './broker-client'
-import { BrokerError, type PairState } from './types'
+import type { DriverClient } from './driver-client'
+import { DriverError, type PairState } from './types'
 
 /** Unambiguous code alphabet — no 0/O/1/I/L to keep the tray↔chat match easy. */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -45,7 +45,7 @@ export interface RunPairingOptions {
   code?: string
   /** Poll cadence while the user decides. Default 1s. */
   pollIntervalMs?: number
-  /** Give up after this long. Default 2 minutes (matches the broker TTL). */
+  /** Give up after this long. Default 2 minutes (matches the driver TTL). */
   timeoutMs?: number
   signal?: AbortSignal
   /** Called with the code as soon as it's known, so the UI can render it. */
@@ -64,10 +64,10 @@ export interface PairingResult {
 /**
  * Run the full pairing handshake and resolve with the refresh credential.
  * Rejects with {@link PairingDeniedError} / {@link PairingTimeoutError} or a
- * {@link BrokerError} if the broker is unreachable.
+ * {@link DriverError} if the driver is unreachable.
  */
 export async function runPairing(
-  client: BrokerClient,
+  client: DriverClient,
   opts: RunPairingOptions = {},
 ): Promise<PairingResult> {
   const code = opts.code ?? generatePairingCode()
@@ -90,7 +90,7 @@ export async function runPairing(
         if (!status.refresh_credential) {
           // Approved but the credential was already consumed by an earlier read
           // — treat as a failed handshake rather than silently returning empty.
-          throw new BrokerError(
+          throw new DriverError(
             'pairing approved but refresh credential was already consumed',
             409,
           )
@@ -99,7 +99,7 @@ export async function runPairing(
       case 'denied':
         throw new PairingDeniedError()
       case 'consumed':
-        throw new BrokerError(
+        throw new DriverError(
           'pairing already consumed (re-pair to obtain a new credential)',
           409,
         )

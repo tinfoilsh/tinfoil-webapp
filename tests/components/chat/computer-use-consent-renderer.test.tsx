@@ -8,13 +8,13 @@ import { ComputerUseConsentContext } from '@/components/chat/computer-use-contex
 import { ComputerUseConsentRenderer } from '@/components/chat/renderers/ComputerUseConsentRenderer'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
-import type { BrokerImage, CapabilityManifest } from '@/services/computer-use'
+import type { CapabilityManifest, DriverImage } from '@/services/computer-use'
 import { fireEvent, render } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const model = { modelName: 'kimi-k2-6' } as unknown as BaseModel
 
-const macImage: BrokerImage = { name: 'tahoe', os: 'mac', ready: true }
+const macImage: DriverImage = { name: 'tahoe', os: 'mac', ready: true }
 
 function msg(over: Partial<Message>): Message {
   return {
@@ -61,7 +61,7 @@ function renderWithContext(
   ctx: {
     approve: (m: CapabilityManifest) => void
     cancel: () => void
-    images: BrokerImage[]
+    images: DriverImage[]
   } | null = null,
 ) {
   return render(

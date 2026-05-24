@@ -59,7 +59,7 @@ describe('ComputerUseInstallRenderer.render', () => {
     expect(getByText('Install Tinfoil computer use')).toBeDefined()
     expect(getByText(/curl -fsSL/)).toBeDefined()
     // The in-card connection-status row should be present and (in the test
-    // env with no broker reachable) show the watching state.
+    // env with no driver reachable) show the watching state.
     expect(getByText(/Watching for the local driver/i)).toBeDefined()
   })
 

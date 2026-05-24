@@ -4,8 +4,8 @@
  * Qwen3-VL / Kimi K2.6 are finetuned on the **OpenAI computer-use** action
  * vocabulary and will emit `{type:"click", x, y}` (with quirks like `x:[a,b]`)
  * regardless of the schema we declare. So we *present* the OpenAI-CU `computer`
- * tool to the model and *normalize* whatever it emits into the broker's
- * canonical `{ op, payload }`. `computer_*` stays the internal/broker vocabulary
+ * tool to the model and *normalize* whatever it emits into the driver's
+ * canonical `{ op, payload }`. `computer_*` stays the internal/driver vocabulary
  * — the model never sees it.
  *
  * The adapter also owns the *return* direction: how a perception/exec result
@@ -32,12 +32,12 @@ import {
   isExecResult,
   perceptionText,
   type ActionResult,
-  type BrokerAction,
-  type BrokerOp,
+  type DriverAction,
+  type DriverOp,
 } from './types'
 
 export type NormalizeResult =
-  | { ok: true; action: BrokerAction }
+  | { ok: true; action: DriverAction }
   | { ok: false; reason: string }
 
 /**
@@ -64,7 +64,7 @@ export interface ModelAdapter {
   readonly systemPrompt: string
   /** The tool schema(s) presented to the model on every turn. */
   presentTools(): ToolSchema[]
-  /** Normalize one emitted tool call into a canonical broker action. */
+  /** Normalize one emitted tool call into a canonical driver action. */
   normalizeCall(
     call: { name: string; arguments: string },
     ctx?: NormalizeContext,
@@ -305,7 +305,7 @@ function maybeScale(
 const SUPPORTED_TYPES =
   'click, double_click, right_click, scroll, type, keypress, screenshot, launch_app, exec, request_handoff, request_capability'
 
-/** Map a normalized OpenAI-CU action object to a canonical broker action. */
+/** Map a normalized OpenAI-CU action object to a canonical driver action. */
 function buildAction(
   type: string,
   a: Record<string, unknown>,
@@ -313,7 +313,7 @@ function buildAction(
 ): NormalizeResult {
   const t = type.toLowerCase()
   const ok = (
-    op: BrokerOp,
+    op: DriverOp,
     payload: Record<string, unknown>,
   ): NormalizeResult => ({
     ok: true,
@@ -436,7 +436,7 @@ function buildAction(
     case 'escalate':
     case 'request_egress': {
       // Only egress is live-escalatable today. The egress array is the full
-      // desired allowlist (the broker replaces, not merges, so the model
+      // desired allowlist (the driver replaces, not merges, so the model
       // should include both the existing and the new domains).
       const egress = Array.isArray(a.egress)
         ? a.egress

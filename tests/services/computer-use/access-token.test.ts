@@ -1,5 +1,5 @@
 import { AccessTokenManager } from '@/services/computer-use/access-token'
-import { BrokerError, type TokenResponse } from '@/services/computer-use/types'
+import { DriverError, type TokenResponse } from '@/services/computer-use/types'
 import { describe, expect, it, vi } from 'vitest'
 
 function tokenResponse(
@@ -73,13 +73,13 @@ describe('AccessTokenManager', () => {
   it('propagates an auth error and clears cached state (revoked refresh credential)', async () => {
     const now = 1_000_000
     const mint = vi.fn(async () => {
-      throw new BrokerError('invalid refresh credential', 401)
+      throw new DriverError('invalid refresh credential', 401)
     })
     const mgr = new AccessTokenManager(mint, 'refresh', () => now)
 
     await expect(mgr.getAccessToken()).rejects.toMatchObject({ status: 401 })
     // A subsequent call retries minting (not stuck on a cached failure).
-    await expect(mgr.getAccessToken()).rejects.toBeInstanceOf(BrokerError)
+    await expect(mgr.getAccessToken()).rejects.toBeInstanceOf(DriverError)
     expect(mint).toHaveBeenCalledTimes(2)
   })
 
@@ -87,7 +87,7 @@ describe('AccessTokenManager', () => {
     const now = 1_000_000
     const onRefreshRejected = vi.fn()
     const mint = vi.fn(async () => {
-      throw new BrokerError('invalid refresh credential', 401)
+      throw new DriverError('invalid refresh credential', 401)
     })
     const mgr = new AccessTokenManager(
       mint,
@@ -96,7 +96,7 @@ describe('AccessTokenManager', () => {
       onRefreshRejected,
     )
 
-    await expect(mgr.getAccessToken()).rejects.toBeInstanceOf(BrokerError)
+    await expect(mgr.getAccessToken()).rejects.toBeInstanceOf(DriverError)
     expect(onRefreshRejected).toHaveBeenCalledOnce()
   })
 
@@ -104,7 +104,7 @@ describe('AccessTokenManager', () => {
     const now = 1_000_000
     const onRefreshRejected = vi.fn()
     const mint = vi.fn(async () => {
-      throw new BrokerError('broker unreachable', 0, true)
+      throw new DriverError('driver unreachable', 0, true)
     })
     const mgr = new AccessTokenManager(
       mint,
@@ -113,7 +113,7 @@ describe('AccessTokenManager', () => {
       onRefreshRejected,
     )
 
-    await expect(mgr.getAccessToken()).rejects.toBeInstanceOf(BrokerError)
+    await expect(mgr.getAccessToken()).rejects.toBeInstanceOf(DriverError)
     expect(onRefreshRejected).not.toHaveBeenCalled()
   })
 })

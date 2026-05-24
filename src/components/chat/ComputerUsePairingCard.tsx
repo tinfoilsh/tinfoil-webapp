@@ -1,6 +1,6 @@
 /**
  * Inline pairing-handshake card. Renders as an assistant-styled chat message
- * while the broker session is in the `pairing` phase — the user verifies the
+ * while the driver session is in the `pairing` phase — the user verifies the
  * code shown here matches the code shown by the system-tray's pairing
  * prompt, then clicks Approve in the tray. Mutated to a terminal state
  * (approved / denied / cancelled / timeout) once the handshake resolves, so

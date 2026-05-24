@@ -114,7 +114,7 @@ describe('openAICUAdapter.normalizeCall — happy paths', () => {
     })
   })
 
-  it('maps request_capability to a broker op carrying the egress list', () => {
+  it('maps request_capability to a driver op carrying the egress list', () => {
     expect(
       norm('computer', {
         type: 'request_capability',

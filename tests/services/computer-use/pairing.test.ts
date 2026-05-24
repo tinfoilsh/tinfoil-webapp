@@ -1,4 +1,4 @@
-import { BrokerClient } from '@/services/computer-use/broker-client'
+import { DriverClient } from '@/services/computer-use/driver-client'
 import {
   PairingDeniedError,
   generatePairingCode,
@@ -45,7 +45,7 @@ describe('runPairing', () => {
       { state: 'pending' },
       { state: 'approved', refresh_credential: 'secret-refresh' },
     ])
-    const client = new BrokerClient({ fetchImpl })
+    const client = new DriverClient({ fetchImpl })
     const states: PairState[] = []
 
     const result = await runPairing(client, {
@@ -62,7 +62,7 @@ describe('runPairing', () => {
 
   it('rejects when the tray denies', async () => {
     const fetchImpl = scriptedFetch([{ state: 'pending' }, { state: 'denied' }])
-    const client = new BrokerClient({ fetchImpl })
+    const client = new DriverClient({ fetchImpl })
 
     await expect(
       runPairing(client, { pollIntervalMs: 1 }),
@@ -73,7 +73,7 @@ describe('runPairing', () => {
     const fetchImpl = scriptedFetch([
       { state: 'approved', refresh_credential: 'r' },
     ])
-    const client = new BrokerClient({ fetchImpl })
+    const client = new DriverClient({ fetchImpl })
     const onCode = vi.fn()
 
     const result = await runPairing(client, {

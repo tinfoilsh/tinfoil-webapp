@@ -5,8 +5,8 @@ import { useToast } from '@/hooks/use-toast'
 import {
   computerUseSupport,
   isMacOS,
-  useBrokerStatus,
   useComputerUseDiscovered,
+  useDriverStatus,
   usePaired,
 } from '@/services/computer-use'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
@@ -76,7 +76,7 @@ type ChatInputProps = {
    */
   onComputerUseConnect?: () => Promise<boolean> | void
   /**
-   * Trigger broker-driven default-image setup. Wired only when the broker is
+   * Trigger driver-driven default-image setup. Wired only when the driver is
    * paired but has no ready image (the post-pair onboarding hop). When
    * absent the setup banner doesn't render — the user is left with the
    * existing "no image" tooltip.
@@ -85,7 +85,7 @@ type ChatInputProps = {
   /**
    * First-touch "ask about computer use" handler — submits a synthetic user
    * message that prompts the model to call `suggest_installing_computer_use`.
-   * Used when the user clicks the toggle in the broker-absent + never-engaged
+   * Used when the user clicks the toggle in the driver-absent + never-engaged
    * state (the same state where the tooltip says "ask Tin about computer use").
    */
   onComputerUseAsk?: () => void
@@ -151,7 +151,7 @@ export function ChatInput({
 
   // The button is shown when the toggle is wired, the host is macOS, and a model
   // is known. Whether it can actually be enabled depends on vision support AND a
-  // reachable broker with a ready image — otherwise it's disabled with a tooltip
+  // reachable driver with a ready image — otherwise it's disabled with a tooltip
   // explaining the current state.
   const computerUseSupportInfo = computerUseModel
     ? computerUseSupport(computerUseModel)
@@ -159,9 +159,9 @@ export function ChatInput({
   const computerUseVisible =
     !!onComputerUseToggle && !!computerUseModel && computerUseHostOk
 
-  // Poll the broker only when the button is shown and the model is vision-capable
+  // Poll the driver only when the button is shown and the model is vision-capable
   // (no point probing for non-vision models).
-  const brokerStatus = useBrokerStatus({
+  const driverStatus = useDriverStatus({
     enabled: computerUseVisible && !!computerUseSupportInfo?.supported,
   })
   // Pair state of this browser, reactive across the same-tab `setRefresh-
@@ -170,42 +170,42 @@ export function ChatInput({
   // back to "Click to pair" if a 401 clears the credential.
   const paired = usePaired()
   // Sticky "user has ever engaged with computer-use" flag — used to pick a
-  // first-touch vs. returning-user tooltip when the broker is absent.
+  // first-touch vs. returning-user tooltip when the driver is absent.
   // Flipped on first pairing (see credential-store); we also flip it here
   // the moment the user clicks the toggle, so the next render's tooltip
   // tracks intent.
   const discovered = useComputerUseDiscovered()
 
-  // The broker is "reachable" (responding on /status) when it's not absent.
-  // Pairing only needs the broker to be reachable — it's independent of
+  // The driver is "reachable" (responding on /status) when it's not absent.
+  // Pairing only needs the driver to be reachable — it's independent of
   // whether any sandbox image is ready yet, since pairing just establishes
   // the per-browser refresh credential.
-  const brokerReachable = brokerStatus.readiness !== 'absent'
+  const driverReachable = driverStatus.readiness !== 'absent'
   // Toggling the feature for the conversation requires a usable image too;
   // until then the toggle stays disabled with a "no image" tooltip.
   const computerUseCanEnable =
-    !!computerUseSupportInfo?.supported && brokerStatus.readiness === 'ready'
+    !!computerUseSupportInfo?.supported && driverStatus.readiness === 'ready'
   // The toggle is clickable when:
   //  - model can do vision AND
   //  - we can either enable it (paired + ready) OR pair it (reachable, !paired)
   // i.e., once paired with no image, click is meaningless until an image is set up.
   const computerUseClickable =
     !!computerUseSupportInfo?.supported &&
-    (computerUseCanEnable || (!paired && brokerReachable))
+    (computerUseCanEnable || (!paired && driverReachable))
   // Tooltip for the disabled / unconnected states. Context-aware:
-  //   - never engaged + broker absent → nudge toward the model so the user
+  //   - never engaged + driver absent → nudge toward the model so the user
   //     can discover the feature via the install funnel ("Ask Tin about
   //     computer use" — Tin is the assistant persona).
-  //   - engaged but broker absent → actionable reconnect cue.
+  //   - engaged but driver absent → actionable reconnect cue.
   //   - paired + no_images → tell the user an image is needed.
   //   - unpaired + reachable → tooltip is owned by `ComputerUseToolButton`
   //     (it shows "Click to pair to computer driver" from the `paired=false`
   //     state), so we return `undefined` here to not override it.
   const computerUseReason = !computerUseSupportInfo?.supported
     ? computerUseSupportInfo?.reasons[0]
-    : brokerStatus.readiness === 'ready'
+    : driverStatus.readiness === 'ready'
       ? undefined
-      : brokerStatus.readiness === 'no_images'
+      : driverStatus.readiness === 'no_images'
         ? paired
           ? 'No sandbox image is ready yet — set one up to enable computer use.'
           : undefined // unpaired + no_images: see button's `paired=false` tooltip
@@ -220,11 +220,11 @@ export function ChatInput({
   const computerUseAskMode =
     computerUseVisible &&
     !!computerUseSupportInfo?.supported &&
-    brokerStatus.readiness === 'absent' &&
+    driverStatus.readiness === 'absent' &&
     !discovered &&
     !!onComputerUseAsk
 
-  // The Connect banner shows when the broker is reachable + this browser
+  // The Connect banner shows when the driver is reachable + this browser
   // has not paired yet + the model can drive it + we have a handler. Once
   // the banner exists in a stable place (above the input form), discovery
   // doesn't depend on the user noticing the toggle's amber dot. Note: we
@@ -234,7 +234,7 @@ export function ChatInput({
   const showConnectBanner =
     computerUseVisible &&
     !!computerUseSupportInfo?.supported &&
-    brokerReachable &&
+    driverReachable &&
     !paired &&
     !!onComputerUseConnect
   // Setup-sandbox banner: post-pair, pre-image. Shows after the user pairs
@@ -242,13 +242,13 @@ export function ChatInput({
   // running (so the progress UI stays visible across `pulling` →
   // `provisioning` → `done`). Once a ready image exists and no job is
   // active, the gate flips off — the toggle is now actually usable.
-  const setupJob = brokerStatus.status?.setup_job
+  const setupJob = driverStatus.status?.setup_job
   const showSetupBanner =
     computerUseVisible &&
     !!computerUseSupportInfo?.supported &&
     paired &&
     !!onComputerUseSetup &&
-    (brokerStatus.readiness === 'no_images' ||
+    (driverStatus.readiness === 'no_images' ||
       // Keep the banner visible during the brief "done" window before /status
       // picks up the new ready image, so the user sees the success state.
       setupJob?.state === 'done' ||
@@ -625,7 +625,7 @@ export function ChatInput({
       {/* One-time "pair the local computer driver" banner. Sits above the
           input box, in the same flex column as the rest of the form, so it
           uses the same width and disappears cleanly without layout shift.
-          Visibility is fully derived from broker status + pair state, so we
+          Visibility is fully derived from driver status + pair state, so we
           render it unconditionally and let the component itself decide. */}
       {onComputerUseConnect && (
         <ComputerUseConnectBanner
@@ -638,7 +638,7 @@ export function ChatInput({
       )}
       {/* "Set up a sandbox" banner — post-pair onboarding step. Same shape
           as the connect banner, but drives `POST /images/setup-default` and
-          surfaces the broker's setup-job progress while it runs. */}
+          surfaces the driver's setup-job progress while it runs. */}
       {onComputerUseSetup && (
         <ComputerUseSetupSandboxBanner
           show={showSetupBanner}

@@ -1,10 +1,10 @@
 /**
  * Host-environment gating for computer-use.
  *
- * The broker runs on the user's own machine and the MVP only supports a macOS
+ * The driver runs on the user's own machine and the MVP only supports a macOS
  * host (Apple Virtualization via `tart`). The chat runs in the browser on that
  * same machine, so the browser's OS *is* the host OS — if it isn't macOS, the
- * broker can't exist here and the tool should not be offered at all.
+ * driver can't exist here and the tool should not be offered at all.
  */
 
 /** True when the browser is running on macOS (and not iOS/iPadOS). */

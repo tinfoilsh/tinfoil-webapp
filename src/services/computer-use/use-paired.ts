@@ -1,5 +1,5 @@
 /**
- * Reactive hook for the broker pairing state — whether this browser has a
+ * Reactive hook for the driver pairing state — whether this browser has a
  * stored refresh credential. Used by the "Connect" banner and the
  * unpaired-toggle behavior to react to pairing happening, or to a 401-driven
  * credential clear, without polling.

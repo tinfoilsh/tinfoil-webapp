@@ -15,7 +15,7 @@ import { createContext, useContext } from 'react'
 
 export interface ComputerUseFunnelContextValue {
   /**
-   * Run the pairing handshake against the local broker. Returns `true` on a
+   * Run the pairing handshake against the local driver. Returns `true` on a
    * successful pairing. The pairing card in chat (or, in fallback mode,
    * the dialog) shows the code while this is in flight.
    */
