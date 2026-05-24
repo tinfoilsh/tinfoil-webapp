@@ -708,6 +708,22 @@ export class CloudSyncService {
         this.notifyAttestationFailure()
         return
       }
+      if (decision.action.type === 'surface-existing-data-under-other-key') {
+        this.notifyExistingDataUnderOtherKey()
+        return
+      }
+      if (decision.action.type === 'surface-not-found') {
+        this.notifyChatNotFound(chatId)
+        return
+      }
+      if (decision.action.type === 'migrate-legacy-and-retry') {
+        this.notifyLegacyMigrationNeeded(decision.action.scope)
+        return
+      }
+      if (decision.action.type === 'abort') {
+        this.notifyUploadAborted(chatId, decision.action.reason)
+        return
+      }
       throw error
     }
   }
@@ -754,6 +770,41 @@ export class CloudSyncService {
   private notifyAttestationFailure(): void {
     if (typeof window === 'undefined') return
     window.dispatchEvent(new CustomEvent('tinfoil:sync-attestation-failed'))
+  }
+
+  private notifyExistingDataUnderOtherKey(): void {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(
+      new CustomEvent('tinfoil:sync-existing-data-under-other-key'),
+    )
+  }
+
+  private notifyChatNotFound(chatId: string): void {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(
+      new CustomEvent('tinfoil:sync-chat-not-found', { detail: { chatId } }),
+    )
+  }
+
+  private notifyLegacyMigrationNeeded(scope?: string): void {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(
+      new CustomEvent('tinfoil:sync-legacy-migration-needed', {
+        detail: { scope },
+      }),
+    )
+  }
+
+  private notifyUploadAborted(
+    chatId: string,
+    reason: 'IDEMPOTENCY_CONFLICT' | 'FORBIDDEN' | 'UNKNOWN',
+  ): void {
+    if (typeof window === 'undefined') return
+    window.dispatchEvent(
+      new CustomEvent('tinfoil:sync-upload-aborted', {
+        detail: { chatId, reason },
+      }),
+    )
   }
 
   // Backup all unsynced chats
