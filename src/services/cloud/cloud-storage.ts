@@ -5,7 +5,7 @@ import {
   decryptAttachment,
   uint8ArrayToBase64,
 } from '@/utils/binary-codec'
-import { logError } from '@/utils/error-handling'
+import { logError, logWarning } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import { type AttachmentRewrite, type StoredChat } from '../storage/indexed-db'
 import {
@@ -542,12 +542,27 @@ export class CloudStorageService {
     >()
     for (const item of pulled.items) {
       if (!item.ok) {
-        if (item.code === 'NOT_FOUND') {
-          continue
+        // Batch pull is best-effort: surface per-item failures via
+        // structured logging and keep filling in the rest of the
+        // page. Throwing here would tear down the whole sync on the
+        // first legacy row encrypted under a key this device no
+        // longer holds, which is exactly the scenario the recovery
+        // wizard is supposed to surface. NOT_FOUND is silent because
+        // it just means the row was deleted between list and pull.
+        if (item.code !== 'NOT_FOUND') {
+          logWarning('Skipping chat the sync enclave could not return', {
+            component: 'CloudStorage',
+            action: 'attachInlineContent',
+            metadata: {
+              chatId: item.id,
+              code: item.code ?? 'unknown',
+              reason: item.reason,
+            },
+          })
         }
-        throw new Error(item.code || 'Failed to pull chat from sync enclave')
+        continue
       }
-      const plaintext = item.ok ? pullItemPlaintext(item) : null
+      const plaintext = pullItemPlaintext(item)
       if (plaintext) {
         pulledById.set(item.id, {
           content: new TextDecoder().decode(plaintext),
