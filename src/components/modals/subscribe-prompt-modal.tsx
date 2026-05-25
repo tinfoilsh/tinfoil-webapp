@@ -79,6 +79,7 @@ export function SubscribePromptModal({
                       <button
                         type="button"
                         onClick={() => {
+                          onClose()
                           void startUpgrade()
                         }}
                         disabled={upgradeLoading}
@@ -99,6 +100,7 @@ export function SubscribePromptModal({
                       <SignInButton mode="modal">
                         <button
                           type="button"
+                          onClick={onClose}
                           className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
                         >
                           Subscribe to Premium
@@ -107,7 +109,10 @@ export function SubscribePromptModal({
                       <p className="text-center text-xs text-content-secondary">
                         Already subscribed?{' '}
                         <SignInButton mode="modal">
-                          <span className="cursor-pointer underline hover:text-content-primary">
+                          <span
+                            onClick={onClose}
+                            className="cursor-pointer underline hover:text-content-primary"
+                          >
                             Log in
                           </span>
                         </SignInButton>
