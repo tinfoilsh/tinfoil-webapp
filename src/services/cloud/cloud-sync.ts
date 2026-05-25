@@ -1045,6 +1045,15 @@ export class CloudSyncService {
    * @param projectId - Optional project ID. If provided, syncs project chats.
    */
   async smartSync(projectId?: string): Promise<SyncResult> {
+    // Kick the legacy-blob migration before any sync work runs.
+    // Previously this only fired at the end of a successful
+    // doSyncAllChats, which deadlocked first-time v2 users: their
+    // sync couldn't complete until legacy rows were migrated, but
+    // migration was gated behind a successful sync. The kick is
+    // session-idempotent and fire-and-forget, so calling it on
+    // every smartSync entry is safe.
+    this.kickLegacyBlobMigration()
+
     // Note: smartSync doesn't need its own lock because it delegates to
     // syncChangedChats/syncAllChats/syncProjectChats which have their own locks
     if (this.syncLock) {
