@@ -197,6 +197,34 @@ export class CloudSyncService {
         }
       }
 
+      // Take a live snapshot of how many cloud-eligible chats are
+      // actually on disk. The cached `count` records remote totals,
+      // which is not a faithful view of what the user has locally —
+      // a chat that 404s during decrypt, an eviction sweep, or even
+      // an IndexedDB corruption can silently empty rows that the
+      // remote tally still counts. When the live local count drops
+      // below the snapshot we last persisted, the disk lost rows the
+      // cache still believes are present and only a full pull can
+      // bring them back.
+      let localCount: number | null = null
+      if (!projectId) {
+        try {
+          localCount = await indexedDBStorage.getCloudChatCount()
+        } catch (countError) {
+          // Best-effort: if the count read fails we fall back to the
+          // pre-existing remote-only checks rather than turning every
+          // sync into an unbounded full pull.
+          logError(
+            'Failed to read local chat count during sync status check',
+            countError,
+            {
+              component: 'CloudSync',
+              action: 'checkSyncStatus.localCount',
+            },
+          )
+        }
+      }
+
       logInfo('[CloudSync] checkSyncStatus comparing statuses', {
         component: 'CloudSync',
         action: 'checkSyncStatus.compare',
@@ -206,6 +234,8 @@ export class CloudSyncService {
           cachedCount: cachedStatus.count,
           remoteLastUpdated: remoteStatus.lastUpdated,
           cachedLastUpdated: cachedStatus.lastUpdated,
+          localCount,
+          cachedLocalCount: cachedStatus.localCount ?? null,
         },
       })
 
@@ -224,6 +254,24 @@ export class CloudSyncService {
         return {
           needsSync: true,
           reason: 'updated',
+          remoteCount: remoteStatus.count,
+          remoteLastUpdated: remoteStatus.lastUpdated,
+        }
+      }
+
+      // Detect the disk-lost-rows case last so the more precise
+      // remote-side signals above win when both fire on the same
+      // tick. Only meaningful once a prior sync has captured the
+      // baseline `localCount`; older cached entries (no field) keep
+      // the legacy behaviour.
+      if (
+        localCount !== null &&
+        cachedStatus.localCount !== undefined &&
+        localCount < cachedStatus.localCount
+      ) {
+        return {
+          needsSync: true,
+          reason: 'count_changed',
           remoteCount: remoteStatus.count,
           remoteLastUpdated: remoteStatus.lastUpdated,
         }
@@ -343,6 +391,7 @@ export class CloudSyncService {
   }
 
   private async doSyncChangedChats(): Promise<SyncResult> {
+    const startedAt = Date.now()
     const result: SyncResult = {
       uploaded: 0,
       downloaded: 0,
@@ -434,6 +483,10 @@ export class CloudSyncService {
       // Update cached sync status
       try {
         const newStatus = await cloudStorage.getChatSyncStatus()
+        const localCount = await this.safeReadLocalChatCount()
+        if (localCount !== null) {
+          newStatus.localCount = localCount
+        }
         this.chatSyncCache.save(newStatus)
       } catch (statusError) {
         logError('Failed to update sync status', statusError, {
@@ -480,6 +533,24 @@ export class CloudSyncService {
     this.allChatsSyncCache.clear()
     for (const cache of this.projectSyncCaches.values()) {
       cache.clear()
+    }
+  }
+
+  // Best-effort wrapper around the IndexedDB count so save sites can
+  // record a localCount alongside the remote snapshot without turning
+  // a count-read failure into a sync failure. Returns null when the
+  // count is unavailable; callers omit the field in that case so the
+  // next checkSyncStatus falls back to the remote-only comparison
+  // rather than misreporting "disk is empty".
+  private async safeReadLocalChatCount(): Promise<number | null> {
+    try {
+      return await indexedDBStorage.getCloudChatCount()
+    } catch (error) {
+      logError('Failed to read local chat count for sync cache', error, {
+        component: 'CloudSync',
+        action: 'safeReadLocalChatCount',
+      })
+      return null
     }
   }
 
@@ -578,6 +649,7 @@ export class CloudSyncService {
     chatId: string,
     idempotencyKey: string,
   ): Promise<void> {
+    const startedAt = Date.now()
     try {
       if (!(await canWriteToCloud())) {
         return
@@ -929,6 +1001,7 @@ export class CloudSyncService {
   }
 
   private async doSyncAllChats(): Promise<SyncResult> {
+    const startedAt = Date.now()
     const result: SyncResult = {
       uploaded: 0,
       downloaded: 0,
@@ -984,6 +1057,10 @@ export class CloudSyncService {
       // Update cached sync status after successful sync
       try {
         const newStatus = await cloudStorage.getChatSyncStatus()
+        const localCount = await this.safeReadLocalChatCount()
+        if (localCount !== null) {
+          newStatus.localCount = localCount
+        }
         this.chatSyncCache.save(newStatus)
       } catch (statusError) {
         // Non-fatal: continue even if we can't update status
@@ -1011,8 +1088,11 @@ export class CloudSyncService {
    * trigger is a no-op on the enclave side anyway.
    */
   private kickLegacyBlobMigration(): void {
-    if (this.legacyMigrationKicked) return
+    if (this.legacyMigrationKicked) {
+      return
+    }
     this.legacyMigrationKicked = true
+    const kickStartedAt = Date.now()
     void runLegacyBlobMigrationAndFinalize()
       .then(async (report) => {
         logInfo('Legacy blob migration completed', {

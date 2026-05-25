@@ -530,6 +530,36 @@ export class IndexedDBStorage {
     return result
   }
 
+  // Count chats that are eligible for cloud sync (everything except
+  // local-only rows). Cheaper than getAllChats when the caller only
+  // needs the total — avoids deserializing every stored message.
+  async getCloudChatCount(): Promise<number> {
+    await this.saveQueue.catch(() => {})
+    const db = await this.ensureDB()
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([CHATS_STORE], 'readonly')
+      const store = transaction.objectStore(CHATS_STORE)
+      const request = store.openCursor()
+      let count = 0
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest).result
+        if (cursor) {
+          const chat = cursor.value
+          if (!chat.isLocalOnly) {
+            count++
+          }
+          cursor.continue()
+        } else {
+          resolve(count)
+        }
+      }
+
+      request.onerror = () => reject(new Error('Failed to count chats'))
+    })
+  }
+
   async getAllChats(): Promise<StoredChat[]> {
     await this.saveQueue.catch(() => {})
     const db = await this.ensureDB()

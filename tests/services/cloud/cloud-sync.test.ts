@@ -3,6 +3,7 @@ import { CloudSyncService } from '@/services/cloud/cloud-sync'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetAllChats = vi.fn()
+const mockGetCloudChatCount = vi.fn()
 const mockGetUnsyncedChats = vi.fn()
 const mockGetChat = vi.fn()
 const mockSaveChat = vi.fn()
@@ -42,6 +43,7 @@ vi.mock('@/utils/error-handling', () => ({
 vi.mock('@/services/storage/indexed-db', () => ({
   indexedDBStorage: {
     getAllChats: (...args: any[]) => mockGetAllChats(...args),
+    getCloudChatCount: (...args: any[]) => mockGetCloudChatCount(...args),
     getUnsyncedChats: (...args: any[]) => mockGetUnsyncedChats(...args),
     saveChat: (...args: any[]) => mockSaveChat(...args),
     saveExistingChat: (...args: any[]) => mockSaveExistingChat(...args),
@@ -330,6 +332,78 @@ describe('CloudSyncService', () => {
       expect(status.reason).toBe('no_changes')
       expect(status.remoteCount).toBe(5)
       expect(status.remoteLastUpdated).toBe('2024-01-01T00:00:00.000Z')
+    })
+
+    it('forces a full pull when the live local chat count has dropped below the cached snapshot', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetChatSyncStatus.mockResolvedValue({
+        count: 1873,
+        lastUpdated: '2026-05-25T18:04:30.182Z',
+      })
+      mockGetCloudChatCount.mockResolvedValue(6)
+
+      localStorage.setItem(
+        SYNC_CHAT_STATUS,
+        JSON.stringify({
+          count: 1873,
+          lastUpdated: '2026-05-25T18:04:30.182Z',
+          localCount: 1633,
+        }),
+      )
+
+      const service = new CloudSyncService()
+      const status = await service.checkSyncStatus()
+
+      expect(status.needsSync).toBe(true)
+      expect(status.reason).toBe('count_changed')
+      expect(status.remoteCount).toBe(1873)
+    })
+
+    it('stays at no_changes when remote and live local counts both match the cached snapshot', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetChatSyncStatus.mockResolvedValue({
+        count: 1873,
+        lastUpdated: '2026-05-25T18:04:30.182Z',
+      })
+      mockGetCloudChatCount.mockResolvedValue(1633)
+
+      localStorage.setItem(
+        SYNC_CHAT_STATUS,
+        JSON.stringify({
+          count: 1873,
+          lastUpdated: '2026-05-25T18:04:30.182Z',
+          localCount: 1633,
+        }),
+      )
+
+      const service = new CloudSyncService()
+      const status = await service.checkSyncStatus()
+
+      expect(status.needsSync).toBe(false)
+      expect(status.reason).toBe('no_changes')
+    })
+
+    it('falls back to remote-only comparison when the snapshot predates the localCount field', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetChatSyncStatus.mockResolvedValue({
+        count: 12,
+        lastUpdated: '2024-01-01T00:00:00.000Z',
+      })
+      mockGetCloudChatCount.mockResolvedValue(0)
+
+      localStorage.setItem(
+        SYNC_CHAT_STATUS,
+        JSON.stringify({
+          count: 12,
+          lastUpdated: '2024-01-01T00:00:00.000Z',
+        }),
+      )
+
+      const service = new CloudSyncService()
+      const status = await service.checkSyncStatus()
+
+      expect(status.needsSync).toBe(false)
+      expect(status.reason).toBe('no_changes')
     })
 
     it('filters out project chats when checking non-project sync status', async () => {

@@ -55,6 +55,14 @@ export interface ChatListResponse {
 export interface ChatSyncStatus {
   count: number
   lastUpdated: string | null
+  // Snapshot of how many cloud chats were actually persisted to
+  // IndexedDB at the time this status was cached. smartSync uses
+  // it to detect post-eviction drift: if the live local count
+  // dropped below this value, the disk lost rows the cache still
+  // thinks are present, and a full pull is required. Optional for
+  // backwards compatibility with snapshots written before the
+  // field was introduced.
+  localCount?: number
 }
 
 export interface ProfileSyncStatus {
