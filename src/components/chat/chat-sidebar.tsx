@@ -1,4 +1,4 @@
-import { API_BASE_URL, PAGINATION } from '@/config'
+import { PAGINATION } from '@/config'
 import {
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   UI_EXPAND_PROJECTS_ON_MOUNT,
@@ -9,6 +9,7 @@ import {
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
 import { toast } from '@/hooks/use-toast'
+import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { chatStorage } from '@/services/storage/chat-storage'
 import {
@@ -52,7 +53,6 @@ import { useDrag } from './drag-context'
 import { useProject } from '@/components/project/project-context'
 import { cn } from '@/components/ui/utils'
 import { useCloudPagination } from '@/hooks/use-cloud-pagination'
-import { authTokenManager } from '@/services/auth'
 import { type StoredChat } from '@/services/storage/indexed-db'
 import { getConversationTimestampFromId } from '@/utils/chat-timestamps'
 import { logError } from '@/utils/error-handling'
@@ -203,10 +203,11 @@ export function ChatSidebar({
   const chatListRef = useRef<HTMLDivElement>(null)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const [isIOS, setIsIOS] = useState(false)
-  const [upgradeLoading, setUpgradeLoading] = useState(false)
-  const [upgradeError, setUpgradeError] = useState<string | null>(null)
-  const [highlightBox, setHighlightBox] = useState(false)
-  const highlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const {
+    startUpgrade: handleUpgradeToPro,
+    upgradeLoading,
+    upgradeError,
+  } = useUpgradeToPro()
   const [activeTab, setActiveTab] = useState<'cloud' | 'local'>(() => {
     if (typeof window !== 'undefined') {
       const stored = sessionStorage.getItem(UI_SIDEBAR_ACTIVE_TAB)
@@ -358,27 +359,6 @@ export function ChatSidebar({
       setLocalOnlyModeEnabled(true)
     }
   }, [isSignedIn, cloudSyncEnabled, chats])
-
-  // Listen for highlight CTA events (triggered when user hits send at rate limit)
-  useEffect(() => {
-    const handleHighlight = () => {
-      setHighlightBox(true)
-      if (highlightTimeoutRef.current) {
-        clearTimeout(highlightTimeoutRef.current)
-      }
-      highlightTimeoutRef.current = setTimeout(() => {
-        setHighlightBox(false)
-        highlightTimeoutRef.current = null
-      }, 2400)
-    }
-    window.addEventListener('highlightSidebarBox', handleHighlight)
-    return () => {
-      window.removeEventListener('highlightSidebarBox', handleHighlight)
-      if (highlightTimeoutRef.current) {
-        clearTimeout(highlightTimeoutRef.current)
-      }
-    }
-  }, [])
 
   // Update blank chat's isLocalOnly when active tab changes
   useEffect(() => {
@@ -723,39 +703,6 @@ export function ChatSidebar({
     }
   }
 
-  const handleUpgradeToPro = useCallback(async () => {
-    setUpgradeError(null)
-    setUpgradeLoading(true)
-    try {
-      const token = await authTokenManager.getValidToken()
-
-      const returnUrl = encodeURIComponent(window.location.origin)
-      const response = await fetch(
-        `${API_BASE_URL}/api/billing/chat-checkout-link?returnUrl=${returnUrl}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      )
-
-      if (!response.ok) {
-        throw new Error('Failed to generate checkout link')
-      }
-
-      const data = await response.json()
-      if (!data?.url) {
-        throw new Error('Checkout link unavailable')
-      }
-
-      window.location.href = data.url as string
-    } catch (error) {
-      setUpgradeError('Failed to start checkout. Please try again later.')
-    } finally {
-      setUpgradeLoading(false)
-    }
-  }, [])
-
   // Check if mobile
   const isMobile = windowWidth < MOBILE_BREAKPOINT
 
@@ -950,20 +897,12 @@ export function ChatSidebar({
           {/* Message for non-premium users (signed in or not) */}
           {!isPremium && (
             <div
-              className={`relative z-10 m-2 flex-none rounded-lg border p-4 transition-all duration-300 ${
-                highlightBox
-                  ? isDarkMode
-                    ? 'border-emerald-400/50 bg-emerald-900/30'
-                    : 'border-emerald-500/50 bg-emerald-100/60'
-                  : isDarkMode
-                    ? 'border-emerald-500/30 bg-emerald-950/20'
-                    : 'border-emerald-500/30 bg-emerald-50/50'
-              }`}
-              style={{
-                animation: highlightBox
-                  ? 'subtlePulse 1.2s ease-in-out infinite'
-                  : undefined,
-              }}
+              className={cn(
+                'relative z-10 m-2 flex-none rounded-lg border p-4 transition-all duration-300',
+                isDarkMode
+                  ? 'border-emerald-500/30 bg-emerald-950/20'
+                  : 'border-emerald-500/30 bg-emerald-50/50',
+              )}
             >
               <div className="flex-1">
                 <h4 className="mb-3 text-sm font-semibold text-content-primary">
@@ -2050,21 +1989,6 @@ export function ChatSidebar({
           onClick={() => setIsOpen(false)}
         />
       )}
-
-      {}
-      <style jsx global>{`
-        @keyframes subtlePulse {
-          0% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0.88;
-          }
-          100% {
-            opacity: 1;
-          }
-        }
-      `}</style>
     </>
   )
 }

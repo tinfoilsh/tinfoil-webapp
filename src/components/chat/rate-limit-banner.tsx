@@ -25,7 +25,7 @@ export function RateLimitBanner({
   const exhausted = rateLimit.remaining <= 0
 
   return (
-    <div className="pointer-events-none relative z-10 hidden w-full flex-none justify-center md:flex">
+    <div className="pointer-events-none relative z-10 flex w-full flex-none justify-center px-3">
       <div
         className={cn(
           'pointer-events-auto flex items-center gap-2 rounded-b-xl border-x border-b px-4 py-1.5 transition-colors',
