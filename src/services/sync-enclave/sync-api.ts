@@ -309,7 +309,7 @@ export async function push(req: PushRequest): Promise<PushResponse> {
 
 export async function pull(req: PullRequest): Promise<PullResponse> {
   const client = await getSyncEnclaveClient()
-  return client.post<PullResponse>('/v1/sync/pull', {
+  const resp = await client.post<PullResponse>('/v1/sync/pull', {
     scope: req.scope,
     ids: req.ids,
     all: req.all,
@@ -317,6 +317,10 @@ export async function pull(req: PullRequest): Promise<PullResponse> {
     limit: req.limit,
     keys: req.keys,
   })
+  // Go marshals an empty slice as JSON null, which would crash every
+  // downstream `for (const item of resp.items)` consumer. Force a
+  // stable [] at the boundary so callers can iterate without guards.
+  return { ...resp, items: resp.items ?? [] }
 }
 
 export async function pullOne(
@@ -339,12 +343,20 @@ export async function listStatus(
   req: ListStatusRequest,
 ): Promise<ListStatusResponse> {
   const client = await getSyncEnclaveClient()
-  return client.post<ListStatusResponse>('/v1/sync/list-status', {
+  const resp = await client.post<ListStatusResponse>('/v1/sync/list-status', {
     scope: req.scope,
     cursor: req.cursor,
     limit: req.limit,
     project_id: req.projectId,
   })
+  // Both arrays land as JSON null when the server has nothing to
+  // report for the page; normalize so iteration in cloud-storage /
+  // project-storage / profile-sync stays branchless.
+  return {
+    ...resp,
+    updates: resp.updates ?? [],
+    deletes: resp.deletes ?? [],
+  }
 }
 
 export async function deleteRow(req: DeleteRequest): Promise<OKResponse> {
@@ -427,23 +439,31 @@ export async function keyCurrent(): Promise<KeyCurrentResponse> {
 
 export async function migrate(req: MigrateRequest): Promise<MigrateResponse> {
   const client = await getSyncEnclaveClient()
-  return client.post<MigrateResponse>('/v1/blobs/migrate', {
+  const resp = await client.post<MigrateResponse>('/v1/blobs/migrate', {
     scope: req.scope,
     ids: req.ids,
     limit: req.limit,
     keys: req.keys,
     target: req.target,
   })
+  return { ...resp, blocked: resp.blocked ?? [] }
 }
 
 export async function migrateAll(
   req: MigrateAllRequest,
 ): Promise<MigrateAllResponse> {
   const client = await getSyncEnclaveClient()
-  return client.post<MigrateAllResponse>('/v1/blobs/migrate-all', {
+  const resp = await client.post<MigrateAllResponse>('/v1/blobs/migrate-all', {
     keys: req.keys,
     target: req.target,
   })
+  return {
+    ...resp,
+    scopes: (resp.scopes ?? []).map((s) => ({
+      ...s,
+      blocked: s.blocked ?? [],
+    })),
+  }
 }
 
 /* -------------------------------------------------------------------------- */
