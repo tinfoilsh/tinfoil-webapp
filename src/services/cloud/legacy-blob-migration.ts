@@ -27,13 +27,15 @@ import { logError, logInfo } from '@/utils/error-handling'
 import { encryptionService } from '../encryption/encryption-service'
 import {
   migrateAll as enclaveMigrateAll,
+  migrateStatus as enclaveMigrateStatus,
   type MigrateAllResponse,
   type MigrateAllScopeReport,
   type Scope,
 } from '../sync-enclave/sync-api'
 import { migrationKeys, requirePrimaryKeyB64 } from './cek-encoding'
 
-const MIGRATE_ALL_MAX_PASSES = 2
+const MIGRATION_POLL_INTERVAL_MS = 2_000
+const MIGRATION_POLL_TIMEOUT_MS = 15 * 60_000
 
 export interface ScopeMigrationResult {
   scope: Scope
@@ -68,26 +70,20 @@ function emptyReport(): MigrationReport {
   }
 }
 
-function mergeScopeReports(
-  acc: Map<Scope, ScopeMigrationResult>,
+function snapshotScopeReports(
   incoming: readonly MigrateAllScopeReport[],
-): void {
+): Map<Scope, ScopeMigrationResult> {
+  const acc = new Map<Scope, ScopeMigrationResult>()
   for (const s of incoming) {
-    const prev = acc.get(s.scope) ?? {
-      scope: s.scope,
-      migrated: 0,
-      remaining: 0,
-      blockedUnmigrated: 0,
-      blocked: [],
-    }
     acc.set(s.scope, {
       scope: s.scope,
-      migrated: prev.migrated + s.migrated,
+      migrated: s.migrated,
       remaining: s.retryable_remaining,
       blockedUnmigrated: s.blocked_unmigrated,
-      blocked: s.blocked ? [...prev.blocked, ...s.blocked] : prev.blocked,
+      blocked: s.blocked ?? [],
     })
   }
+  return acc
 }
 
 function toReport(scopes: Map<Scope, ScopeMigrationResult>): MigrationReport {
@@ -105,48 +101,55 @@ function toReport(scopes: Map<Scope, ScopeMigrationResult>): MigrationReport {
 }
 
 /**
- * Run the enclave-driven migration. Re-invokes the migrate-all
- * endpoint until it reports `partial: false` or the pass budget is
- * exhausted. Returns an aggregate report whose `fullyMigrated` flag
- * is the Layer C trigger.
+ * Run the enclave-driven migration. Kicks off the detached
+ * migration job, then polls migrate-status until the job reaches a
+ * terminal state. Survives tab close on the enclave side: closing
+ * the tab cancels this polling loop but the job keeps draining on
+ * the enclave; the next sync attempt picks up the in-flight job
+ * via the same coordinator and resumes polling.
  */
 export async function runLegacyBlobMigration(): Promise<MigrationReport> {
   const target = { key: requirePrimaryKeyB64() }
   const keys = migrationKeys()
-  const accumulator = new Map<Scope, ScopeMigrationResult>()
+  const startedAt = Date.now()
 
   let lastResp: MigrateAllResponse | undefined
-  for (let pass = 0; pass < MIGRATE_ALL_MAX_PASSES; pass++) {
-    let resp: MigrateAllResponse
+  try {
+    lastResp = await enclaveMigrateAll({ keys, target })
+  } catch (err) {
+    logError('legacy-blob-migration: enclave migrate-all kickoff failed', err, {
+      component: 'LegacyBlobMigration',
+      action: 'runLegacyBlobMigration',
+    })
+    return emptyReport()
+  }
+
+  while (lastResp?.partial && (lastResp.status ?? 'running') === 'running') {
+    if (Date.now() - startedAt > MIGRATION_POLL_TIMEOUT_MS) {
+      break
+    }
+    await sleep(MIGRATION_POLL_INTERVAL_MS)
     try {
-      resp = await enclaveMigrateAll({ keys, target })
+      lastResp = await enclaveMigrateStatus()
     } catch (err) {
-      logError('legacy-blob-migration: enclave migrate-all failed', err, {
+      logError('legacy-blob-migration: enclave migrate-status failed', err, {
         component: 'LegacyBlobMigration',
         action: 'runLegacyBlobMigration',
-        metadata: { pass },
       })
       break
     }
-    mergeScopeReports(accumulator, resp.scopes)
-    lastResp = resp
-    if (!resp.partial) break
   }
 
-  const report = toReport(accumulator)
-  // If the pass budget was exhausted before the enclave reported
-  // `partial:false`, scopes the enclave did not get to are missing
-  // from the accumulator entirely. `totalRemaining === 0` then means
-  // "no remaining rows in the scopes we observed" — not "no remaining
-  // rows anywhere" — so Layer C must NOT drop alternatives.
-  const enclaveStillPartial = lastResp?.partial === true
-  if (enclaveStillPartial) {
+  const snapshot = lastResp ? snapshotScopeReports(lastResp.scopes) : new Map()
+  const report = toReport(snapshot)
+  if (lastResp?.partial !== false) {
     report.fullyMigrated = false
   }
   logInfo('legacy-blob-migration complete', {
     component: 'LegacyBlobMigration',
     action: 'runLegacyBlobMigration',
     metadata: {
+      status: lastResp?.status,
       totalMigrated: report.totalMigrated,
       totalRemaining: report.totalRemaining,
       totalBlocked: report.totalBlocked,
@@ -158,17 +161,21 @@ export async function runLegacyBlobMigration(): Promise<MigrationReport> {
   //      is undefined. Return emptyReport with fullyMigrated:false so
   //      Layer C does not drop alternatives on a failed pass.
   //   2. We got a final response with no scopes (a freshly-keyed user
-  //      has nothing to migrate) — accumulator is empty BUT lastResp
+  //      has nothing to migrate) — snapshot is empty BUT lastResp
   //      is defined with partial:false. This is success; Layer C must
   //      be allowed to clear alternatives.
-  //   3. Normal case — accumulator has entries; trust `toReport`.
-  if (accumulator.size === 0) {
+  //   3. Normal case — snapshot has entries; trust `toReport`.
+  if (snapshot.size === 0) {
     if (lastResp && !lastResp.partial) {
       return { ...emptyReport(), fullyMigrated: true }
     }
     return emptyReport()
   }
   return report
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**

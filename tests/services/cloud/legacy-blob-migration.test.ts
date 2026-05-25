@@ -6,6 +6,7 @@ vi.mock('@/utils/error-handling', () => ({
 }))
 
 const mockMigrateAll = vi.fn()
+const mockMigrateStatus = vi.fn()
 const mockRequirePrimaryKeyB64 = vi.fn<() => string>()
 const mockPullKeys = vi.fn<() => Array<{ key: string }>>()
 
@@ -16,6 +17,7 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
   return {
     ...real,
     migrateAll: (...args: unknown[]) => mockMigrateAll(...args),
+    migrateStatus: (...args: unknown[]) => mockMigrateStatus(...args),
   }
 })
 
@@ -61,6 +63,7 @@ function emptyEnclaveReport() {
 describe('runLegacyBlobMigration', () => {
   beforeEach(() => {
     mockMigrateAll.mockReset()
+    mockMigrateStatus.mockReset()
     mockRequirePrimaryKeyB64.mockReset()
     mockPullKeys.mockReset()
     mockClearFallbackKeys.mockReset()
@@ -72,6 +75,7 @@ describe('runLegacyBlobMigration', () => {
 
   afterEach(() => {
     vi.clearAllMocks()
+    vi.useRealTimers()
   })
 
   it('calls the enclave once when nothing needs migrating', async () => {
@@ -122,13 +126,32 @@ describe('runLegacyBlobMigration', () => {
     expect(chatScope.blocked).toEqual(['row-a', 'row-b'])
   })
 
-  it('re-invokes the enclave when the first pass reports partial', async () => {
-    mockMigrateAll
+  it('polls migrate-status until the enclave reports the job completed', async () => {
+    vi.useFakeTimers()
+    mockMigrateAll.mockResolvedValue({
+      migrated: 0,
+      retryable_remaining: 250,
+      blocked_unmigrated: 0,
+      partial: true,
+      status: 'running',
+      job_id: 'job-1',
+      scopes: [
+        {
+          scope: 'chat',
+          migrated: 0,
+          retryable_remaining: 250,
+          blocked_unmigrated: 0,
+        },
+      ],
+    })
+    mockMigrateStatus
       .mockResolvedValueOnce({
         migrated: 200,
         retryable_remaining: 50,
         blocked_unmigrated: 0,
         partial: true,
+        status: 'running',
+        job_id: 'job-1',
         scopes: [
           {
             scope: 'chat',
@@ -139,31 +162,39 @@ describe('runLegacyBlobMigration', () => {
         ],
       })
       .mockResolvedValueOnce({
-        migrated: 50,
+        migrated: 250,
         retryable_remaining: 0,
         blocked_unmigrated: 0,
         partial: false,
+        status: 'completed',
+        job_id: 'job-1',
         scopes: [
           {
             scope: 'chat',
-            migrated: 50,
+            migrated: 250,
             retryable_remaining: 0,
             blocked_unmigrated: 0,
           },
         ],
       })
-    const report = await runLegacyBlobMigration()
-    expect(mockMigrateAll).toHaveBeenCalledTimes(2)
+    const promise = runLegacyBlobMigration()
+    await vi.runAllTimersAsync()
+    const report = await promise
+    expect(mockMigrateAll).toHaveBeenCalledTimes(1)
+    expect(mockMigrateStatus).toHaveBeenCalledTimes(2)
     expect(report.fullyMigrated).toBe(true)
     expect(report.totalMigrated).toBe(250)
   })
 
-  it('caps the pass budget so a permanently-partial enclave cannot spin forever', async () => {
+  it('caps the poll budget so a permanently-running enclave cannot spin forever', async () => {
+    vi.useFakeTimers()
     mockMigrateAll.mockResolvedValue({
       migrated: 1,
       retryable_remaining: 99,
       blocked_unmigrated: 0,
       partial: true,
+      status: 'running',
+      job_id: 'job-stuck',
       scopes: [
         {
           scope: 'chat',
@@ -173,8 +204,26 @@ describe('runLegacyBlobMigration', () => {
         },
       ],
     })
-    const report = await runLegacyBlobMigration()
-    expect(mockMigrateAll).toHaveBeenCalledTimes(2)
+    mockMigrateStatus.mockResolvedValue({
+      migrated: 1,
+      retryable_remaining: 99,
+      blocked_unmigrated: 0,
+      partial: true,
+      status: 'running',
+      job_id: 'job-stuck',
+      scopes: [
+        {
+          scope: 'chat',
+          migrated: 1,
+          retryable_remaining: 99,
+          blocked_unmigrated: 0,
+        },
+      ],
+    })
+    const promise = runLegacyBlobMigration()
+    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    const report = await promise
+    expect(mockMigrateStatus).toHaveBeenCalled()
     expect(report.fullyMigrated).toBe(false)
     expect(report.totalRemaining).toBe(99)
   })

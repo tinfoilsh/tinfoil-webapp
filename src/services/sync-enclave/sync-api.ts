@@ -255,17 +255,30 @@ export interface MigrateAllScopeReport {
   blocked?: string[]
 }
 
+export type MigrateAllStatus = 'idle' | 'running' | 'completed' | 'failed'
+
 export interface MigrateAllResponse {
   migrated: number
   retryable_remaining: number
   blocked_unmigrated: number
   /**
-   * True when the enclave hit its wall-clock budget before every
-   * scope was drained. The client should re-invoke migrate-all to
-   * pick up where it left off.
+   * True while the enclave-side job is still draining; clients
+   * keep polling until it flips to false. Set to false on terminal
+   * states (completed, failed).
    */
   partial: boolean
   scopes: MigrateAllScopeReport[]
+  /**
+   * Async migration lifecycle fields. The enclave runs migrate-all
+   * in a detached goroutine so a tab close no longer kills the
+   * loop; the kickoff returns immediately with status='running'
+   * and the client polls until 'completed' or 'failed'.
+   */
+  status?: MigrateAllStatus
+  job_id?: string
+  started_at?: string
+  updated_at?: string
+  error?: string
 }
 
 /* -------------------------------------------------------------------------- */
@@ -457,6 +470,26 @@ export async function migrateAll(
     keys: req.keys,
     target: req.target,
   })
+  return normalizeMigrateAllResponse(resp)
+}
+
+/**
+ * Poll the enclave's current migration job for this user. Used by
+ * the polling loop between migrate-all kickoff and completion so we
+ * don't have to re-send keys + target on every tick.
+ */
+export async function migrateStatus(): Promise<MigrateAllResponse> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.post<MigrateAllResponse>(
+    '/v1/blobs/migrate-status',
+    {},
+  )
+  return normalizeMigrateAllResponse(resp)
+}
+
+function normalizeMigrateAllResponse(
+  resp: MigrateAllResponse,
+): MigrateAllResponse {
   return {
     ...resp,
     scopes: (resp.scopes ?? []).map((s) => ({
