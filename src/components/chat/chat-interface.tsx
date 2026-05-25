@@ -2006,8 +2006,31 @@ export function ChatInterface({
     selectedModelDetails?.contextWindow,
   ])
 
-  const handleInputFocusWithRateLimitCheck = useCallback(() => {
+  // Tracks whether the user already saw and dismissed the rate-limit modal
+  // for the current depleted window. Without this, dismissing via the close
+  // button immediately refocuses the textarea and the focus handler would
+  // pop the same modal right back open.
+  const rateLimitModalDismissedRef = useRef(false)
+
+  useEffect(() => {
+    if (rateLimit && rateLimit.remaining > 0) {
+      rateLimitModalDismissedRef.current = false
+    }
+  }, [rateLimit])
+
+  const handleCloseSubscribePrompt = useCallback(() => {
+    setIsSubscribePromptOpen(false)
     if (rateLimit && rateLimit.remaining <= 0) {
+      rateLimitModalDismissedRef.current = true
+    }
+  }, [rateLimit])
+
+  const handleInputFocusWithRateLimitCheck = useCallback(() => {
+    if (
+      rateLimit &&
+      rateLimit.remaining <= 0 &&
+      !rateLimitModalDismissedRef.current
+    ) {
       setIsSubscribePromptOpen(true)
     }
     handleInputFocus()
@@ -2932,9 +2955,14 @@ export function ChatInterface({
               />
             ) : null}
 
-            {/* Rate Limit Banner */}
+            {/* Rate Limit Banner (desktop) — on mobile this renders as a
+                floating pill above the chat input instead. */}
             {shouldShowRateLimitBanner(rateLimit) && (
-              <RateLimitBanner rateLimit={rateLimit} isDarkMode={isDarkMode} />
+              <RateLimitBanner
+                rateLimit={rateLimit}
+                isDarkMode={isDarkMode}
+                className="hidden md:flex"
+              />
             )}
 
             {/* Decryption Progress Banner */}
@@ -3099,6 +3127,14 @@ export function ChatInterface({
                             onOpenLibrary={handleOpenPromptLibrary}
                           />
                         </div>
+                      )}
+                      {shouldShowRateLimitBanner(rateLimit) && (
+                        <RateLimitBanner
+                          rateLimit={rateLimit}
+                          isDarkMode={isDarkMode}
+                          className="mb-2 flex md:hidden"
+                          pillClassName="rounded-full border"
+                        />
                       )}
                       <MessageQueue
                         queue={queuedMessages}
@@ -3356,7 +3392,7 @@ export function ChatInterface({
 
       <SubscribePromptModal
         isOpen={isSubscribePromptOpen}
-        onClose={() => setIsSubscribePromptOpen(false)}
+        onClose={handleCloseSubscribePrompt}
         isSignedIn={!!isSignedIn}
       />
     </div>
