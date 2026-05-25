@@ -21,7 +21,7 @@ import {
   snapshotAndDecrementRemaining,
   type RateLimitInfo,
 } from '@/services/inference/tinfoil-client'
-import { SignInButton, useAuth, useClerk, useUser } from '@clerk/nextjs'
+import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
 import {
   ArrowDownIcon,
   ChatBubbleLeftRightIcon,
@@ -81,6 +81,7 @@ import {
 const useLayoutEffect =
   typeof window !== 'undefined' ? reactUseLayoutEffect : useEffect
 
+import { SubscribePromptModal } from '../modals/subscribe-prompt-modal'
 import { UrlHashMessageHandler } from '../url-hash-message-handler'
 import { UrlHashSettingsHandler } from '../url-hash-settings-handler'
 import { ArtifactSidebar } from './artifact-sidebar'
@@ -301,9 +302,9 @@ export function ChatInterface({
   // TODO: unflip this
   const canUseCodeExecution = false
   const { user } = useUser()
-  const { openSignIn } = useClerk()
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
+  const [isSubscribePromptOpen, setIsSubscribePromptOpen] = useState(false)
 
   // Onboarding state (must be defined before usePasskeyBackup so we can gate it)
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -846,17 +847,8 @@ export function ChatInterface({
   }, [rateLimit])
 
   const handleQueueRateLimited = useCallback(() => {
-    if (!isSignedIn) {
-      void openSignIn()
-      return
-    }
-    setIsSidebarOpen(true)
-    window.dispatchEvent(
-      new CustomEvent('highlightSidebarBox', {
-        detail: { isPremium },
-      }),
-    )
-  }, [isSignedIn, openSignIn, setIsSidebarOpen, isPremium])
+    setIsSubscribePromptOpen(true)
+  }, [])
 
   // Queue of user messages submitted while the assistant is busy. The hook
   // observes `loadingState` and dispatches one queued message per idle
@@ -1058,22 +1050,13 @@ export function ChatInterface({
   // Handle upgrade requests from error CTA buttons
   useEffect(() => {
     const handleRequestUpgrade = () => {
-      if (!isSignedIn) {
-        void openSignIn()
-      } else {
-        setIsSidebarOpen(true)
-        window.dispatchEvent(
-          new CustomEvent('highlightSidebarBox', {
-            detail: { isPremium },
-          }),
-        )
-      }
+      setIsSubscribePromptOpen(true)
     }
     window.addEventListener('requestUpgrade', handleRequestUpgrade)
     return () => {
       window.removeEventListener('requestUpgrade', handleRequestUpgrade)
     }
-  }, [isSignedIn, isPremium, openSignIn, setIsSidebarOpen])
+  }, [])
 
   // Persist web search toggle to localStorage
   useEffect(() => {
@@ -2023,20 +2006,41 @@ export function ChatInterface({
     selectedModelDetails?.contextWindow,
   ])
 
+  // Tracks whether the user already saw and dismissed the rate-limit modal
+  // for the current depleted window. Without this, dismissing via the close
+  // button immediately refocuses the textarea and the focus handler would
+  // pop the same modal right back open.
+  const rateLimitModalDismissedRef = useRef(false)
+
+  useEffect(() => {
+    if (rateLimit && rateLimit.remaining > 0) {
+      rateLimitModalDismissedRef.current = false
+    }
+  }, [rateLimit])
+
+  const handleCloseSubscribePrompt = useCallback(() => {
+    setIsSubscribePromptOpen(false)
+    if (rateLimit && rateLimit.remaining <= 0) {
+      rateLimitModalDismissedRef.current = true
+    }
+  }, [rateLimit])
+
+  const handleInputFocusWithRateLimitCheck = useCallback(() => {
+    if (
+      rateLimit &&
+      rateLimit.remaining <= 0 &&
+      !rateLimitModalDismissedRef.current
+    ) {
+      setIsSubscribePromptOpen(true)
+    }
+    handleInputFocus()
+  }, [rateLimit, handleInputFocus])
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
     if (rateLimit && rateLimit.remaining <= 0) {
-      if (!isSignedIn) {
-        void openSignIn()
-      } else {
-        setIsSidebarOpen(true)
-        window.dispatchEvent(
-          new CustomEvent('highlightSidebarBox', {
-            detail: { isPremium },
-          }),
-        )
-      }
+      setIsSubscribePromptOpen(true)
       return
     }
 
@@ -2951,9 +2955,14 @@ export function ChatInterface({
               />
             ) : null}
 
-            {/* Rate Limit Banner */}
+            {/* Rate Limit Banner (desktop) — on mobile this renders as a
+                floating pill above the chat input instead. */}
             {shouldShowRateLimitBanner(rateLimit) && (
-              <RateLimitBanner rateLimit={rateLimit} isDarkMode={isDarkMode} />
+              <RateLimitBanner
+                rateLimit={rateLimit}
+                isDarkMode={isDarkMode}
+                className="hidden md:flex"
+              />
             )}
 
             {/* Decryption Progress Banner */}
@@ -3037,7 +3046,7 @@ export function ChatInterface({
                     retryInfo={retryInfo}
                     cancelGeneration={cancelGeneration}
                     inputRef={inputRef}
-                    handleInputFocus={handleInputFocus}
+                    handleInputFocus={handleInputFocusWithRateLimitCheck}
                     handleDocumentUpload={handleFileUpload}
                     processedDocuments={processedDocuments}
                     removeDocument={removeDocument}
@@ -3119,6 +3128,14 @@ export function ChatInterface({
                           />
                         </div>
                       )}
+                      {shouldShowRateLimitBanner(rateLimit) && (
+                        <RateLimitBanner
+                          rateLimit={rateLimit}
+                          isDarkMode={isDarkMode}
+                          className="mb-2 flex md:hidden"
+                          pillClassName="rounded-full border"
+                        />
+                      )}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
@@ -3130,7 +3147,7 @@ export function ChatInterface({
                         loadingState={loadingState}
                         cancelGeneration={cancelGeneration}
                         inputRef={inputRef}
-                        handleInputFocus={handleInputFocus}
+                        handleInputFocus={handleInputFocusWithRateLimitCheck}
                         inputMinHeight={inputMinHeight}
                         isDarkMode={isDarkMode}
                         handleDocumentUpload={handleFileUpload}
@@ -3371,6 +3388,12 @@ export function ChatInterface({
         }}
         models={models}
         isDarkMode={isDarkMode}
+      />
+
+      <SubscribePromptModal
+        isOpen={isSubscribePromptOpen}
+        onClose={handleCloseSubscribePrompt}
+        isSignedIn={!!isSignedIn}
       />
     </div>
   )

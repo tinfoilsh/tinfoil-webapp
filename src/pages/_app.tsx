@@ -160,7 +160,15 @@ export default function App({ Component, pageProps }: AppProps) {
       <div
         className={`${aeonikFono.variable} ${aeonik.variable} ${openDyslexic.variable} ${lora.variable}`}
       >
-        <ClerkProvider telemetry={false} afterSignOutUrl="/">
+        <ClerkProvider
+          telemetry={false}
+          afterSignOutUrl="/"
+          appearance={{
+            elements: {
+              modalBackdrop: 'bg-black/50',
+            },
+          }}
+        >
           <AuthCleanupHandler />
           <Component {...pageProps} />
           <Toaster />
