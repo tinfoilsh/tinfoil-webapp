@@ -520,6 +520,7 @@ export class CloudStorageService {
       scope: 'chat',
       cursor: options?.continuationToken,
       limit,
+      direction: 'desc',
     })
     const conversations = status.updates.map(chatUpdateToMeta)
 

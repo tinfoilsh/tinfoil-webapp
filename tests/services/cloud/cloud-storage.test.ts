@@ -102,6 +102,7 @@ describe('CloudStorageService auth readiness', () => {
       scope: 'chat',
       cursor: undefined,
       limit: 100,
+      direction: 'desc',
     })
   })
 

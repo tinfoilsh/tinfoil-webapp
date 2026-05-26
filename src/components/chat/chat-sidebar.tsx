@@ -52,8 +52,8 @@ import { useDrag } from './drag-context'
 import { useProject } from '@/components/project/project-context'
 import { cn } from '@/components/ui/utils'
 import { useCloudPagination } from '@/hooks/use-cloud-pagination'
-import { type StoredChat } from '@/services/storage/indexed-db'
-import { getConversationTimestampFromId } from '@/utils/chat-timestamps'
+import { authTokenManager } from '@/services/auth'
+
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '../link'
@@ -570,73 +570,19 @@ export function ChatSidebar({
     isChatHistoryExpanded,
   ])
 
-  const getChatSortTimestamp = useCallback((chat: Chat) => {
-    const createdValue =
-      chat.createdAt instanceof Date
-        ? chat.createdAt.getTime()
-        : new Date(chat.createdAt).getTime()
-
-    if (!Number.isNaN(createdValue)) {
-      return createdValue
-    }
-
-    const storedChat = chat as unknown as StoredChat
-    const candidateTimes: Array<number | undefined> = [
-      typeof storedChat.syncedAt === 'number' ? storedChat.syncedAt : undefined,
-      storedChat.updatedAt
-        ? new Date(storedChat.updatedAt).getTime()
-        : undefined,
-      storedChat.loadedAt,
-    ]
-
-    for (const candidate of candidateTimes) {
-      if (typeof candidate === 'number' && !Number.isNaN(candidate)) {
-        return candidate
-      }
-    }
-
-    return getConversationTimestampFromId(chat.id) ?? 0
-  }, [])
-
   const sortedChats = useMemo(() => {
-    // Filter chats based on active tab and cloud sync status
-    // Also exclude chats that belong to a project
-    const filteredChats =
-      isSignedIn && cloudSyncEnabled
-        ? localOnlyModeEnabled && activeTab === 'local'
-          ? chats.filter((chat) => {
-              // Filter for local-only chats and not in a project
-              return chat.isLocalOnly && !chat.projectId
-            })
-          : chats.filter((chat) => {
-              // Filter for cloud chats (not local-only) and not in a project
-              return !chat.isLocalOnly && !chat.projectId
-            })
-        : chats.filter((chat) => {
-            // When cloud sync is disabled, only show local chats that aren't in a project
-            return (chat as any).isLocalOnly && !chat.projectId
-          })
-
-    return [...filteredChats].sort((a, b) => {
-      // Blank chats should always be at the top
-      const aIsBlank = a.isBlankChat === true
-      const bIsBlank = b.isBlankChat === true
-
-      if (aIsBlank && !bIsBlank) return -1
-      if (!aIsBlank && bIsBlank) return 1
-
-      const timeA = getChatSortTimestamp(a)
-      const timeB = getChatSortTimestamp(b)
-      return timeB - timeA
-    })
-  }, [
-    chats,
-    getChatSortTimestamp,
-    activeTab,
-    isSignedIn,
-    cloudSyncEnabled,
-    localOnlyModeEnabled,
-  ])
+    // The incoming `chats` array is already sorted by `sortChats`
+    // (blank-first, then most-recently-updated). We only filter
+    // here; the display order matches the server's pagination so
+    // newly-loaded pages slot in at the bottom without reshuffling.
+    if (isSignedIn && cloudSyncEnabled) {
+      if (localOnlyModeEnabled && activeTab === 'local') {
+        return chats.filter((chat) => chat.isLocalOnly && !chat.projectId)
+      }
+      return chats.filter((chat) => !chat.isLocalOnly && !chat.projectId)
+    }
+    return chats.filter((chat) => (chat as any).isLocalOnly && !chat.projectId)
+  }, [chats, activeTab, isSignedIn, cloudSyncEnabled, localOnlyModeEnabled])
 
   const handleCloudSyncToggle = async (enabled: boolean) => {
     if (enabled) {

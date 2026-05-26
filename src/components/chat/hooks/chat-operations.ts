@@ -136,9 +136,20 @@ export function ensureAtLeastOneChat(chats: Chat[]): Chat[] {
 }
 
 /**
- * Sorts chats with blank chats first, then by creation date
- * Blank chats are always at the top (cloud blank first, then local-only blank)
+ * Latest-write-wins ordering: blank chats first, then by
+ * `updatedAt` desc (falling back to `createdAt` if the chat has
+ * never been stored). Matches the server's `direction=desc`
+ * pagination key, so freshly-fetched pages slot in correctly.
  */
+export function chatSortTimestamp(chat: Chat): number {
+  if (chat.updatedAt) {
+    const updated = new Date(chat.updatedAt).getTime()
+    if (!Number.isNaN(updated)) return updated
+  }
+  const created = new Date(chat.createdAt).getTime()
+  return Number.isNaN(created) ? 0 : created
+}
+
 export function sortChats(chats: Chat[]): Chat[] {
   return [...chats].sort((a, b) => {
     // Both blank chats - cloud blank comes before local-only blank
@@ -152,10 +163,7 @@ export function sortChats(chats: Chat[]): Chat[] {
     if (a.isBlankChat && !b.isBlankChat) return -1
     if (!a.isBlankChat && b.isBlankChat) return 1
 
-    // Regular chats sorted by creation date (newest first)
-    const timeA = new Date(a.createdAt).getTime()
-    const timeB = new Date(b.createdAt).getTime()
-    return timeB - timeA
+    return chatSortTimestamp(b) - chatSortTimestamp(a)
   })
 }
 
