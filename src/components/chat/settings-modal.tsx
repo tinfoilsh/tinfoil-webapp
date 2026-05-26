@@ -22,7 +22,13 @@ import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { projectStorage } from '@/services/cloud/project-storage'
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { PrfNotSupportedError } from '@/services/passkey'
+import {
+  deletePasskeyCredential,
+  getLocalPasskeyCredentialId,
+  loadPasskeyCredentials,
+  PrfNotSupportedError,
+  type PasskeyCredentialEntry,
+} from '@/services/passkey'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { TINFOIL_COLORS } from '@/theme/colors'
@@ -177,6 +183,109 @@ export type SettingsTab =
 
 import type { ThemeMode } from './hooks/use-ui-state'
 
+function PasskeyBundleInventory({
+  entries,
+  isDarkMode,
+  removingId,
+  onRemove,
+}: {
+  entries: PasskeyCredentialEntry[]
+  isDarkMode: boolean
+  removingId: string | null
+  onRemove: (credentialId: string) => Promise<void>
+}) {
+  const localCredentialId = getLocalPasskeyCredentialId()
+  const sorted = [...entries].sort((a, b) => {
+    if (a.id === localCredentialId) return -1
+    if (b.id === localCredentialId) return 1
+    return (b.created_at ?? '').localeCompare(a.created_at ?? '')
+  })
+
+  const formatAddedAt = (iso: string | undefined) => {
+    if (!iso) return 'Date unknown'
+    const epoch = new Date(0).toISOString()
+    if (iso === epoch) return 'Date unknown'
+    try {
+      return new Date(iso).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    } catch {
+      return 'Date unknown'
+    }
+  }
+
+  const formatCredentialId = (id: string) =>
+    id.length <= 12 ? id : `${id.slice(0, 6)}…${id.slice(-4)}`
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border border-border-subtle',
+        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+      )}
+    >
+      <div className="border-b border-border-subtle px-4 py-2.5">
+        <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+          Registered devices ({sorted.length})
+        </span>
+      </div>
+      <ul className="divide-y divide-border-subtle">
+        {sorted.map((entry) => {
+          const isThisDevice = entry.id === localCredentialId
+          const isLegacy = entry.source === 'legacy'
+          const isRemoving = removingId === entry.id
+          return (
+            <li
+              key={entry.id}
+              className="flex items-center justify-between gap-3 px-4 py-3"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <GoPasskeyFill className="h-4 w-4 shrink-0 text-content-secondary" />
+                  <span className="truncate text-sm font-medium text-content-primary">
+                    {isThisDevice ? 'This device' : 'Other device'}
+                  </span>
+                  {isLegacy && (
+                    <span className="rounded bg-surface-chat px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
+                      Legacy
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate font-mono text-xs text-content-muted">
+                  {formatCredentialId(entry.id)} ·{' '}
+                  {formatAddedAt(entry.created_at)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void onRemove(entry.id)
+                }}
+                disabled={isRemoving || isLegacy}
+                title={
+                  isLegacy
+                    ? 'Legacy credentials cannot be removed from settings yet'
+                    : undefined
+                }
+                className={cn(
+                  'shrink-0 rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium transition-colors',
+                  isRemoving || isLegacy
+                    ? 'cursor-not-allowed opacity-50'
+                    : 'hover:bg-surface-chat/80',
+                )}
+              >
+                {isRemoving ? 'Removing…' : 'Remove'}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 type SettingsModalProps = {
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
@@ -200,6 +309,7 @@ type SettingsModalProps = {
   passkeyAddDeviceAvailable?: boolean
   onSetupPasskey?: () => Promise<boolean>
   onAddPasskeyToThisDevice?: () => Promise<boolean>
+  onRefreshBundleState?: () => Promise<void>
   initialTab?: SettingsTab
   chats?: Chat[]
 }
@@ -224,6 +334,7 @@ export function SettingsModal({
   passkeyAddDeviceAvailable,
   onSetupPasskey,
   onAddPasskeyToThisDevice,
+  onRefreshBundleState,
   initialTab,
   chats = [],
 }: SettingsModalProps) {
@@ -248,6 +359,12 @@ export function SettingsModal({
   const [isQRCodeExpanded, setIsQRCodeExpanded] = useState(false)
   const [isKeyVisible, setIsKeyVisible] = useState(false)
   const [isSettingUpPasskey, setIsSettingUpPasskey] = useState(false)
+  const [passkeyBundles, setPasskeyBundles] = useState<
+    PasskeyCredentialEntry[]
+  >([])
+  const [removingPasskeyId, setRemovingPasskeyId] = useState<string | null>(
+    null,
+  )
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [primaryKeyMode, setPrimaryKeyMode] = useState<
@@ -580,6 +697,38 @@ export function SettingsModal({
       )
     }
   }, [isClient, loadSettingsFromStorage])
+
+  const refreshPasskeyBundles = useCallback(async () => {
+    if (!cloudSyncEnabled) {
+      setPasskeyBundles([])
+      return
+    }
+    try {
+      const entries = await loadPasskeyCredentials()
+      setPasskeyBundles(entries)
+    } catch (error) {
+      logError('Failed to load passkey bundle inventory', error, {
+        component: 'SettingsModal',
+        action: 'refreshPasskeyBundles',
+      })
+      setPasskeyBundles([])
+    }
+  }, [cloudSyncEnabled])
+
+  // Reload the bundle inventory whenever the Cloud Sync panel
+  // becomes visible or the user's passkey state may have changed
+  // (active / add-device / setup transitions).
+  useEffect(() => {
+    if (!isOpen) return
+    if (activeTab !== 'cloud-sync') return
+    void refreshPasskeyBundles()
+  }, [
+    isOpen,
+    activeTab,
+    refreshPasskeyBundles,
+    passkeyActive,
+    passkeyAddDeviceAvailable,
+  ])
 
   // Save personalization settings and notify components
   const savePersonalizationSettings = (values?: {
@@ -3396,6 +3545,56 @@ ${encryptionKey.replace('key_', '')}
                               </span>
                             </div>
                           </div>
+                        )}
+
+                        {/* Per-device passkey inventory */}
+                        {passkeyBundles.length > 0 && (
+                          <PasskeyBundleInventory
+                            entries={passkeyBundles}
+                            isDarkMode={isDarkMode}
+                            removingId={removingPasskeyId}
+                            onRemove={async (credentialId) => {
+                              setRemovingPasskeyId(credentialId)
+                              try {
+                                const ok =
+                                  await deletePasskeyCredential(credentialId)
+                                if (ok) {
+                                  toast({
+                                    title: 'Passkey removed',
+                                    description:
+                                      'That device can no longer unlock your chats with this passkey.',
+                                  })
+                                  await refreshPasskeyBundles()
+                                  if (onRefreshBundleState) {
+                                    await onRefreshBundleState()
+                                  }
+                                } else {
+                                  toast({
+                                    title: 'Could not remove passkey',
+                                    description:
+                                      'Please try again in a moment.',
+                                    variant: 'destructive',
+                                  })
+                                }
+                              } catch (error) {
+                                logError(
+                                  'Failed to remove passkey credential',
+                                  error,
+                                  {
+                                    component: 'SettingsModal',
+                                    action: 'onRemovePasskey',
+                                  },
+                                )
+                                toast({
+                                  title: 'Could not remove passkey',
+                                  description: 'Please try again in a moment.',
+                                  variant: 'destructive',
+                                })
+                              } finally {
+                                setRemovingPasskeyId(null)
+                              }
+                            }}
+                          />
                         )}
 
                         {/* Passkey Setup Prompt */}
