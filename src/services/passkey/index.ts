@@ -1,9 +1,15 @@
 export {
+  clearLocalPasskeyCredentialId,
+  getLocalPasskeyCredentialId,
+  setLocalPasskeyCredentialId,
+} from './local-passkey-credential'
+export {
   PasskeyCredentialConflictError,
   decryptKeyBundle,
   deletePasskeyCredential,
   encryptKeyBundle,
   getPasskeyCredentialState,
+  getPasskeyDeviceState,
   hasPasskeyCredentials,
   loadPasskeyCredentials,
   retrieveEncryptedKeys,
@@ -14,6 +20,7 @@ export type {
   KeyBundle,
   PasskeyCredentialEntry,
   PasskeyCredentialState,
+  PasskeyDeviceState,
   StoreEncryptedKeysOptions,
 } from './passkey-key-storage'
 export {

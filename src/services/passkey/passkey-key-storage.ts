@@ -88,6 +88,23 @@ const CURRENT_CREDENTIAL_VERSION = 1
 
 export type PasskeyCredentialState = 'exists' | 'empty' | 'unknown'
 
+/**
+ * Per-device classification of the user's passkey bundle state.
+ *
+ *  - `this-device`: a bundle for the credential id that this device
+ *    last enrolled / authenticated against is registered server-side.
+ *  - `other-device-only`: at least one bundle exists but none of them
+ *    match this device's local credential id, so the user must
+ *    enroll a passkey on this device to back up their key here.
+ *  - `empty`: no bundles registered for the current key at all.
+ *  - `unknown`: enclave was unreachable; caller should leave state alone.
+ */
+export type PasskeyDeviceState =
+  | 'this-device'
+  | 'other-device-only'
+  | 'empty'
+  | 'unknown'
+
 export interface StoreEncryptedKeysOptions {
   expectedSyncVersion?: number | null
   knownBundleVersion?: number | null
@@ -273,6 +290,34 @@ export async function getPasskeyCredentialState(): Promise<PasskeyCredentialStat
   try {
     const entries = await loadPasskeyCredentials()
     return entries.length > 0 ? 'exists' : 'empty'
+  } catch {
+    return 'unknown'
+  }
+}
+
+/**
+ * Classify the user's passkey bundle state from the perspective of
+ * the current device. The data model already supports many bundles
+ * per user (one per WebAuthn credential id), so the right question
+ * is not "does any bundle exist?" but "does *this* device have its
+ * own bundle?". A user with an Apple passkey on a Mac and Windows
+ * Hello on a PC should see "active" on each device and a
+ * "set up passkey on this device" prompt when signing in on a new
+ * machine.
+ */
+export async function getPasskeyDeviceState(
+  localCredentialId: string | null,
+): Promise<PasskeyDeviceState> {
+  try {
+    const entries = await loadPasskeyCredentials()
+    if (entries.length === 0) return 'empty'
+    if (
+      localCredentialId &&
+      entries.some((entry) => entry.id === localCredentialId)
+    ) {
+      return 'this-device'
+    }
+    return 'other-device-only'
   } catch {
     return 'unknown'
   }

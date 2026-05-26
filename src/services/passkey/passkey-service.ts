@@ -20,6 +20,8 @@ import {
 } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
 
+import { setLocalPasskeyCredentialId } from './local-passkey-credential'
+
 export class PrfNotSupportedError extends Error {
   constructor() {
     super(
@@ -94,6 +96,10 @@ function cachePrfResult(result: PrfPasskeyResult): void {
   } catch {
     // best-effort
   }
+  // Remember which credential id was last seen on this device so the
+  // passkey hook can tell "I already have a bundle here" from
+  // "another device has one but I don't".
+  setLocalPasskeyCredentialId(result.credentialId)
 }
 
 /**
