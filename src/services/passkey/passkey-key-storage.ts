@@ -32,7 +32,11 @@ import { logError, logInfo } from '@/utils/error-handling'
 import { requirePrimaryKeyB64 } from '../cloud/cek-encoding'
 import type { CloudKeyAuthorizationMode } from '../cloud/cloud-key-authorization'
 import { encryptionService } from '../encryption/encryption-service'
-import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
+import {
+  deriveKeyIdHex,
+  unwrapCekFromBundle,
+  wrapCekForCredential,
+} from '../sync-enclave/key-bundle'
 import {
   bytesToBase64,
   addBundle as enclaveAddBundle,
@@ -298,13 +302,20 @@ export async function storeEncryptedKeys(
   options: StoreEncryptedKeysOptions = {},
 ): Promise<{ syncVersion: number; bundleVersion: number } | null> {
   try {
-    const encrypted = await encryptKeyBundle(kek, keys)
     const current = await enclaveKeyCurrent()
     const primaryBytes = encryptionService.getAlternativeKeyBytes(keys.primary)
     if (!primaryBytes) {
       throw new Error('passkey-key-storage: primary key is not decodable')
     }
     const localKeyId = await deriveKeyIdHex(primaryBytes)
+    // Bundle the raw CEK bytes — same wire shape iOS and every other
+    // v2 client uses. The legacy `{primary, alternatives, ...}` JSON
+    // envelope is no longer written by anyone.
+    const wrapped = await wrapCekForCredential({
+      credentialId,
+      kek,
+      cek: primaryBytes,
+    })
 
     if (!current.key_id) {
       try {
@@ -318,8 +329,8 @@ export async function storeEncryptedKeys(
           idempotencyKey: newIdempotencyKey(),
           initialBundle: {
             credentialId,
-            kekIvHex: b64ToHexLocal(encrypted.iv),
-            encryptedKeysHex: b64ToHexLocal(encrypted.data),
+            kekIvHex: wrapped.kekIvHex,
+            encryptedKeysHex: wrapped.wrappedKeyHex,
           },
         })
       } catch (err) {
@@ -359,8 +370,8 @@ export async function storeEncryptedKeys(
           idempotencyKey: newIdempotencyKey(),
           initialBundle: {
             credentialId,
-            kekIvHex: b64ToHexLocal(encrypted.iv),
-            encryptedKeysHex: b64ToHexLocal(encrypted.data),
+            kekIvHex: wrapped.kekIvHex,
+            encryptedKeysHex: wrapped.wrappedKeyHex,
           },
         })
         const created = await enclaveKeyCurrent()
@@ -386,8 +397,8 @@ export async function storeEncryptedKeys(
       keyId: current.key_id,
       keyB64: bytesToBase64(primaryBytes),
       credentialId,
-      kekIvHex: b64ToHexLocal(encrypted.iv),
-      encryptedKeysHex: b64ToHexLocal(encrypted.data),
+      kekIvHex: wrapped.kekIvHex,
+      encryptedKeysHex: wrapped.wrappedKeyHex,
       idempotencyKey: newIdempotencyKey(),
     })
 
@@ -450,11 +461,31 @@ async function tryRetrieveFromEnclave(
     if (!resp.key_id) return { bundle: null, enclaveKeyExists: false }
     const bundle = resp.bundles[credentialId]
     if (!bundle) return { bundle: null, enclaveKeyExists: true }
-    const decrypted = await decryptKeyBundle(kek, {
-      iv: hexToB64(bundle.kek_iv),
-      data: hexToB64(bundle.encrypted_keys),
-    })
-    return { bundle: decrypted, enclaveKeyExists: true }
+    // Try the v2 raw-CEK shape first — what iOS and the modern
+    // webapp flow write. If that succeeds we synthesize the legacy
+    // {primary, alternatives:[]} envelope the hook still consumes.
+    try {
+      const cekBytes = await unwrapCekFromBundle(kek, {
+        kekIvHex: bundle.kek_iv,
+        wrappedKeyHex: bundle.encrypted_keys,
+      } as Parameters<typeof unwrapCekFromBundle>[1])
+      return {
+        bundle: {
+          primary: uint8ArrayToBase64(cekBytes),
+          alternatives: [],
+        },
+        enclaveKeyExists: true,
+      }
+    } catch {
+      // Pre-v2 webapp wrapped a JSON envelope. Keep the legacy decode
+      // as a fallback so users who registered on the old wire still
+      // unlock without re-enrolling.
+      const decrypted = await decryptKeyBundle(kek, {
+        iv: hexToB64(bundle.kek_iv),
+        data: hexToB64(bundle.encrypted_keys),
+      })
+      return { bundle: decrypted, enclaveKeyExists: true }
+    }
   } catch (err) {
     if (err instanceof SyncEnclaveError && err.status === 404) {
       return { bundle: null, enclaveKeyExists: false }
@@ -474,15 +505,4 @@ async function tryRetrieveFromLegacy(
     iv: entry.iv,
     data: entry.encrypted_keys,
   })
-}
-
-// --- Helpers ---------------------------------------------------------------
-
-function b64ToHexLocal(s: string): string {
-  const bytes = base64ToUint8Array(s)
-  let out = ''
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, '0')
-  }
-  return out
 }
