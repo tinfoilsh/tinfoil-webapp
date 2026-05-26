@@ -9,6 +9,7 @@ import { chatEvents } from '../storage/chat-events'
 import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
 import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
 import { decideRecovery } from '../sync-enclave/enclave-error-recovery'
+import { passkeyEvents } from '../sync-enclave/passkey-events'
 import { newIdempotencyKey } from '../sync-enclave/sync-api'
 import { processRemoteChat } from './chat-codec'
 import { ingestRemoteChats, syncRemoteDeletions } from './chat-ingestion'
@@ -1111,6 +1112,11 @@ export class CloudSyncService {
         // it so the next `smartSync` falls back to a full pull and
         // repopulates the evicted chats from the enclave.
         this.invalidateChatSyncCaches()
+        // Migration may have promoted a legacy CEK into the enclave,
+        // which means a brand-new bundle now exists for this device's
+        // credential. Nudge the passkey hook so the sidebar/setting
+        // surfaces "passkey active" instead of "set up passkey".
+        passkeyEvents.emit({ type: 'bundle-state-maybe-changed' })
       })
       .catch((err) => {
         logError('Legacy blob migration kickoff failed', err, {
