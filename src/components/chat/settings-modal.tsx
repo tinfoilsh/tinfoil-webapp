@@ -197,7 +197,9 @@ type SettingsModalProps = {
   onAddRecoveryKey: (key: string) => Promise<void>
   passkeyActive?: boolean
   passkeySetupAvailable?: boolean
+  passkeyAddDeviceAvailable?: boolean
   onSetupPasskey?: () => Promise<boolean>
+  onAddPasskeyToThisDevice?: () => Promise<boolean>
   initialTab?: SettingsTab
   chats?: Chat[]
 }
@@ -219,7 +221,9 @@ export function SettingsModal({
   onAddRecoveryKey,
   passkeyActive,
   passkeySetupAvailable,
+  passkeyAddDeviceAvailable,
   onSetupPasskey,
+  onAddPasskeyToThisDevice,
   initialTab,
   chats = [],
 }: SettingsModalProps) {
@@ -3357,7 +3361,9 @@ ${encryptionKey.replace('key_', '')}
                   {/* Passkey Section */}
                   {cloudSyncEnabled &&
                     (passkeyActive ||
-                      (passkeySetupAvailable && onSetupPasskey)) && (
+                      (passkeySetupAvailable && onSetupPasskey) ||
+                      (passkeyAddDeviceAvailable &&
+                        onAddPasskeyToThisDevice)) && (
                       <div className="space-y-3">
                         <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                           Passkey
@@ -3444,6 +3450,65 @@ ${encryptionKey.replace('key_', '')}
                                   <p className="text-xs text-content-muted">
                                     Use Face ID or Touch ID to sync chats across
                                     devices
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+                          )}
+
+                        {/* Add Passkey on This Device Prompt */}
+                        {!passkeyActive &&
+                          passkeyAddDeviceAvailable &&
+                          onAddPasskeyToThisDevice && (
+                            <button
+                              onClick={async () => {
+                                setIsSettingUpPasskey(true)
+                                try {
+                                  const success =
+                                    await onAddPasskeyToThisDevice()
+                                  if (success) {
+                                    toast({
+                                      title: 'Passkey added for this device',
+                                      description:
+                                        'You can now unlock your chats on this device with Face ID or Touch ID',
+                                    })
+                                  }
+                                } catch (error) {
+                                  toast({
+                                    title:
+                                      error instanceof PrfNotSupportedError
+                                        ? 'Passkey provider not supported'
+                                        : 'Passkey setup failed',
+                                    description:
+                                      error instanceof PrfNotSupportedError
+                                        ? error.message
+                                        : 'Could not add passkey for this device. You can try again later.',
+                                    variant: 'destructive',
+                                  })
+                                } finally {
+                                  setIsSettingUpPasskey(false)
+                                }
+                              }}
+                              disabled={isSettingUpPasskey}
+                              className={cn(
+                                'w-full rounded-lg border border-border-subtle p-4 text-left transition-colors',
+                                isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                                isSettingUpPasskey
+                                  ? 'cursor-not-allowed opacity-50'
+                                  : 'hover:bg-surface-chat/80',
+                              )}
+                            >
+                              <div className="flex gap-2">
+                                <GoPasskeyFill className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary" />
+                                <div>
+                                  <span className="text-sm font-medium leading-tight text-content-primary">
+                                    {isSettingUpPasskey
+                                      ? 'Setting up...'
+                                      : 'Set Up Passkey on This Device'}
+                                  </span>
+                                  <p className="text-xs text-content-muted">
+                                    Your other devices use a passkey already.
+                                    Add one here for one-tap access.
                                   </p>
                                 </div>
                               </div>

@@ -84,6 +84,8 @@ type ChatSidebarProps = {
   onCloudSyncSetupClick?: () => void
   onSetupPasskey?: () => Promise<boolean>
   passkeySetupAvailable?: boolean
+  onAddPasskeyToThisDevice?: () => Promise<boolean>
+  passkeyAddDeviceAvailable?: boolean
   backupWarningVisible?: boolean
   /**
    * True when remote encrypted data exists but this device can't decrypt it
@@ -144,6 +146,8 @@ export function ChatSidebar({
   onCloudSyncSetupClick,
   onSetupPasskey,
   passkeySetupAvailable,
+  onAddPasskeyToThisDevice,
+  passkeyAddDeviceAvailable,
   backupWarningVisible = false,
   backupWarningNeedsRecovery = false,
   onDismissBackupWarning,

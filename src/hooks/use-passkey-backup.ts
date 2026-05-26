@@ -25,7 +25,9 @@ import {
   deletePasskeyCredential,
   deriveKeyEncryptionKey,
   getCachedPrfResult,
+  getLocalPasskeyCredentialId,
   getPasskeyCredentialState,
+  getPasskeyDeviceState,
   loadPasskeyCredentials,
   PasskeyCredentialConflictError,
   PasskeyTimeoutError,
@@ -35,7 +37,12 @@ import {
 } from '@/services/passkey'
 import { isPrfSupported } from '@/services/passkey/prf-support'
 import { cekBytesToHex } from '@/services/sync-enclave/key-bundle'
-import { promoteRecoveredCekToEnclave } from '@/services/sync-enclave/passkey-key-flow'
+import { passkeyEvents } from '@/services/sync-enclave/passkey-events'
+import {
+  addBundleForCurrentKey,
+  promoteRecoveredCekToEnclave,
+} from '@/services/sync-enclave/passkey-key-flow'
+import { keyCurrent as enclaveKeyCurrent } from '@/services/sync-enclave/sync-api'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import type { useUser } from '@clerk/nextjs'
@@ -52,6 +59,15 @@ export interface PasskeyBackupState {
   manualRecoveryNeeded: boolean
   /** PRF supported + keys exist locally; user can register a passkey backup from settings */
   passkeySetupAvailable: boolean
+  /**
+   * Local CEK already has bundle(s) on the server, but none of them
+   * belong to this device's last-known credential id. Surfaces a
+   * "Set Up Passkey on This Device" prompt so the user can enroll a
+   * second authenticator (e.g. Windows Hello after already having an
+   * Apple passkey on another device). The data model already supports
+   * many bundles per key — this flag exposes that capability in the UI.
+   */
+  passkeyAddDeviceAvailable: boolean
   /**
    * Passkey backup setup was attempted but failed because the user's passkey
    * provider doesn't actually support PRF or hung. Surfaces the
@@ -236,6 +252,7 @@ export function usePasskeyBackup({
     passkeyRecoveryNeeded: false,
     manualRecoveryNeeded: false,
     passkeySetupAvailable: false,
+    passkeyAddDeviceAvailable: false,
     passkeySetupFailed: false,
     passkeyRetryAvailable: true,
     passkeyFirstTimePromptAvailable: false,
@@ -289,6 +306,7 @@ export function usePasskeyBackup({
           passkeyRecoveryNeeded: false,
           manualRecoveryNeeded: false,
           passkeySetupAvailable: false,
+          passkeyAddDeviceAvailable: false,
           passkeySetupFailed: false,
           passkeyRetryAvailable: true,
           passkeyFirstTimePromptAvailable: false,
@@ -975,26 +993,47 @@ export function usePasskeyBackup({
 
       if (encryptionKey) {
         // User has local keys — check for existing backup
-        const credentialState = await getPasskeyCredentialState()
+        const localCredentialId = getLocalPasskeyCredentialId()
+        const deviceState = await getPasskeyDeviceState(localCredentialId)
 
-        if (credentialState === 'exists') {
-          // Already backed up — show green badge, hide setup button
+        if (deviceState === 'this-device') {
+          // This device already has its own bundle — show green badge,
+          // hide every flavour of setup button.
           localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
           if (isMountedRef.current) {
             setState((prev) => ({
               ...prev,
               passkeyActive: true,
+              passkeySetupAvailable: false,
+              passkeyAddDeviceAvailable: false,
               manualRecoveryNeeded: false,
             }))
           }
         } else if (
-          credentialState === 'empty' &&
+          deviceState === 'other-device-only' &&
+          !passkeyFlowInProgressRef.current
+        ) {
+          // The user's key has a bundle, but it was registered on a
+          // different device. Surface a prompt so they can enroll a
+          // passkey on this device too — the enclave / CP already
+          // support many bundles per key.
+          if (isMountedRef.current) {
+            setState((prev) => ({
+              ...prev,
+              passkeyAddDeviceAvailable: true,
+              passkeySetupAvailable: false,
+              passkeyActive: false,
+            }))
+          }
+        } else if (
+          deviceState === 'empty' &&
           !passkeyFlowInProgressRef.current
         ) {
           if (isMountedRef.current) {
             setState((prev) => ({
               ...prev,
               passkeySetupAvailable: true,
+              passkeyAddDeviceAvailable: false,
             }))
           }
         }
@@ -1480,6 +1519,130 @@ export function usePasskeyBackup({
     })
   }, [])
 
+  /**
+   * Re-evaluate per-device bundle state. Safe to call any time the
+   * server's `user_key_bundles` may have changed (e.g. another device
+   * just added a bundle, the legacy-blob migration finished and
+   * promoted a CEK, the user removed a credential from settings).
+   * Pure read: never triggers a WebAuthn prompt.
+   */
+  const refreshBundleState = useCallback(async (): Promise<void> => {
+    if (!encryptionKey) return
+    if (passkeyFlowInProgressRef.current) return
+    const localCredentialId = getLocalPasskeyCredentialId()
+    const deviceState = await getPasskeyDeviceState(localCredentialId)
+    if (!isMountedRef.current) return
+
+    if (deviceState === 'this-device') {
+      localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+      setState((prev) => ({
+        ...prev,
+        passkeyActive: true,
+        passkeySetupAvailable: false,
+        passkeyAddDeviceAvailable: false,
+        manualRecoveryNeeded: false,
+      }))
+    } else if (deviceState === 'other-device-only') {
+      setState((prev) => ({
+        ...prev,
+        passkeyAddDeviceAvailable: true,
+        passkeySetupAvailable: false,
+        passkeyActive: false,
+      }))
+    } else if (deviceState === 'empty') {
+      setState((prev) => ({
+        ...prev,
+        passkeySetupAvailable: true,
+        passkeyAddDeviceAvailable: false,
+      }))
+    }
+  }, [encryptionKey])
+
+  // Subscribe to bundle-state-maybe-changed events so the hook stays in
+  // sync after the legacy-blob migration finishes, a different tab adds
+  // a bundle via storage events, etc.
+  useEffect(() => {
+    const unsubscribe = passkeyEvents.on('bundle-state-maybe-changed', () => {
+      void refreshBundleState()
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [refreshBundleState])
+
+  /**
+   * Add a passkey bundle for *this device* against the existing key.
+   * Used when `passkeyAddDeviceAvailable === true` (another device
+   * already has a bundle but this one doesn't). Wraps the local CEK
+   * under a freshly-derived KEK from a new WebAuthn ceremony and
+   * pushes it as an additional bundle via `add-bundle`. Returns true
+   * on success.
+   */
+  const addPasskeyToThisDevice = useCallback(async (): Promise<boolean> => {
+    const userInfo = getPasskeyUserInfo()
+    if (!userInfo) return false
+
+    const keys = encryptionService.getAllKeys()
+    if (!keys.primary) return false
+
+    const cekBytes = encryptionService.getAlternativeKeyBytes(keys.primary)
+    if (!cekBytes) return false
+    const cekHex = cekBytesToHex(cekBytes)
+
+    let keyIdHex: string
+    try {
+      const resp = await enclaveKeyCurrent()
+      if (!resp.key_id) return false
+      keyIdHex = resp.key_id
+    } catch (error) {
+      logError('Failed to read enclave key state for add-bundle', error, {
+        component: 'usePasskeyBackup',
+        action: 'addPasskeyToThisDevice',
+      })
+      return false
+    }
+
+    passkeyFlowInProgressRef.current = true
+    try {
+      const result = await addBundleForCurrentKey({
+        cekHex,
+        keyIdHex,
+        user: userInfo,
+      })
+      if (!result.ok) {
+        logInfo('add-bundle attempt failed', {
+          component: 'usePasskeyBackup',
+          action: 'addPasskeyToThisDevice',
+          metadata: { reason: result.reason },
+        })
+        return false
+      }
+
+      localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+      if (isMountedRef.current) {
+        setState((prev) => ({
+          ...prev,
+          passkeyActive: true,
+          passkeyAddDeviceAvailable: false,
+          passkeySetupAvailable: false,
+          passkeySetupFailed: false,
+        }))
+      }
+      passkeyEvents.emit({ type: 'bundle-state-maybe-changed' })
+      return true
+    } catch (error) {
+      if (error instanceof PrfNotSupportedError) throw error
+      if (error instanceof PasskeyTimeoutError) throw error
+      logError('Failed to add passkey for this device', error, {
+        component: 'usePasskeyBackup',
+        action: 'addPasskeyToThisDevice',
+      })
+      return false
+    } finally {
+      passkeyFlowInProgressRef.current = false
+    }
+  }, [])
+
   return {
     ...state,
     setupPasskey,
@@ -1492,5 +1655,7 @@ export function usePasskeyBackup({
     updatePasskeyBackup,
     dismissBackupWarning,
     skipPasskeyRecovery,
+    addPasskeyToThisDevice,
+    refreshBundleState,
   }
 }
