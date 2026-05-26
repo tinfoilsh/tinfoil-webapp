@@ -1078,6 +1078,29 @@ export function usePasskeyBackup({
       firstTimePromptDismissedFlag.clear()
       manualRecoveryDismissedFlag.clear()
       backupWarningDismissedFlag.clear()
+      if (isMountedRef.current) {
+        // Once the user has a working key, the sidebar warning's
+        // raison d'être disappears. Without this update the
+        // "Can't access your existing backup" banner sticks around
+        // until the next mount (full page reload).
+        setState((prev) => {
+          if (
+            !prev.manualRecoveryNeeded &&
+            !prev.passkeySetupFailed &&
+            !prev.passkeyRecoveryNeeded &&
+            prev.passkeyRecoveryFailure === null
+          ) {
+            return prev
+          }
+          return {
+            ...prev,
+            manualRecoveryNeeded: false,
+            passkeySetupFailed: false,
+            passkeyRecoveryNeeded: false,
+            passkeyRecoveryFailure: null,
+          }
+        })
+      }
     }
   }, [encryptionKey])
 
