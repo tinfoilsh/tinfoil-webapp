@@ -26,8 +26,11 @@ function ok(body: unknown): Response {
   })
 }
 
-function lastRequest() {
-  return mockFetch.mock.calls.at(-1)!
+function lastRequest(): [string, RequestInit | undefined] {
+  const call = mockFetch.mock.calls.at(-1)!
+  const urlArg = call[0]
+  const url = typeof urlArg === 'string' ? urlArg : (urlArg as URL).toString()
+  return [new URL(url).pathname, call[1]]
 }
 
 function lastBody<T = unknown>(): T {
