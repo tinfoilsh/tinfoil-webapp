@@ -99,6 +99,8 @@ export interface ListStatusRequest {
   limit?: number
   /** Optional server-side project filter for chat scope. */
   projectId?: string
+  /** Sort order. Defaults to ascending (`updated_at` oldest -> newest). */
+  direction?: 'asc' | 'desc'
 }
 
 export interface ListStatusUpdate {
@@ -361,6 +363,7 @@ export async function listStatus(
     cursor: req.cursor,
     limit: req.limit,
     project_id: req.projectId,
+    direction: req.direction,
   })
   // Both arrays land as JSON null when the server has nothing to
   // report for the page; normalize so iteration in cloud-storage /

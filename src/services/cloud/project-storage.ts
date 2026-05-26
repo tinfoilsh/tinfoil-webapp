@@ -371,6 +371,7 @@ export class ProjectStorageService {
       scope: PROJECT_SCOPE,
       cursor: options?.continuationToken,
       limit,
+      direction: 'desc',
     })
     return {
       projects: status.updates.map((update) => ({
