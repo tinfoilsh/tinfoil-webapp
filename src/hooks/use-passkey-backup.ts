@@ -1571,12 +1571,58 @@ export function usePasskeyBackup({
   }, [refreshBundleState])
 
   /**
+   * Re-authenticate the user's legacy `/api/passkey-credentials/`
+   * passkey and use the resulting PRF to write a v2 initial bundle
+   * via `promoteRecoveredCekToEnclave`. Used when the user has a
+   * local CEK and a legacy passkey credential, but no v2
+   * `user_keys` row yet — the historical promotion only fires
+   * during a recovery flow (which never happens for users whose
+   * local CEK is still valid). Returns true on a successful
+   * register-key.
+   */
+  const promoteLegacyPasskeyForCurrentDevice = useCallback(
+    async (cekHex: string): Promise<boolean> => {
+      const legacyEntries = (await loadPasskeyCredentials()).filter(
+        (entry) => entry.source === 'legacy',
+      )
+      if (legacyEntries.length === 0) return false
+
+      const credentialIds = legacyEntries.map((entry) => entry.id)
+      const prf = await authenticatePrfPasskey(credentialIds)
+      if (!prf) return false
+
+      const kek = await deriveKeyEncryptionKey(prf.prfOutput)
+      const result = await promoteRecoveredCekToEnclave({
+        cekHex,
+        credentialId: prf.credentialId,
+        kek,
+      })
+      if (!result.ok) {
+        logInfo('legacy promotion via add-device button failed', {
+          component: 'usePasskeyBackup',
+          action: 'promoteLegacyPasskeyForCurrentDevice',
+          metadata: { reason: result.reason },
+        })
+        return false
+      }
+      return true
+    },
+    [],
+  )
+
+  /**
    * Add a passkey bundle for *this device* against the existing key.
    * Used when `passkeyAddDeviceAvailable === true` (another device
    * already has a bundle but this one doesn't). Wraps the local CEK
    * under a freshly-derived KEK from a new WebAuthn ceremony and
    * pushes it as an additional bundle via `add-bundle`. Returns true
    * on success.
+   *
+   * Also handles the legacy v1 case: if the enclave has no
+   * `user_keys` row yet but the user has a credential in
+   * `/api/passkey-credentials/`, this re-authenticates that
+   * credential and uses the legacy promotion path so they keep
+   * their original passkey on the v2 wire.
    */
   const addPasskeyToThisDevice = useCallback(async (): Promise<boolean> => {
     const userInfo = getPasskeyUserInfo()
@@ -1589,11 +1635,10 @@ export function usePasskeyBackup({
     if (!cekBytes) return false
     const cekHex = cekBytesToHex(cekBytes)
 
-    let keyIdHex: string
+    let keyIdHex: string | null
     try {
       const resp = await enclaveKeyCurrent()
-      if (!resp.key_id) return false
-      keyIdHex = resp.key_id
+      keyIdHex = resp.key_id ?? null
     } catch (error) {
       logError('Failed to read enclave key state for add-bundle', error, {
         component: 'usePasskeyBackup',
@@ -1604,18 +1649,30 @@ export function usePasskeyBackup({
 
     passkeyFlowInProgressRef.current = true
     try {
-      const result = await addBundleForCurrentKey({
-        cekHex,
-        keyIdHex,
-        user: userInfo,
-      })
-      if (!result.ok) {
-        logInfo('add-bundle attempt failed', {
-          component: 'usePasskeyBackup',
-          action: 'addPasskeyToThisDevice',
-          metadata: { reason: result.reason },
+      if (keyIdHex) {
+        const result = await addBundleForCurrentKey({
+          cekHex,
+          keyIdHex,
+          user: userInfo,
         })
-        return false
+        if (!result.ok) {
+          logInfo('add-bundle attempt failed', {
+            component: 'usePasskeyBackup',
+            action: 'addPasskeyToThisDevice',
+            metadata: { reason: result.reason },
+          })
+          return false
+        }
+      } else {
+        // Legacy v1 user: local CEK already exists, the enclave has
+        // no `user_keys` row yet, but `/api/passkey-credentials/`
+        // still holds the original PRF credential. Re-authenticate
+        // that credential, derive the KEK, and call the legacy
+        // promotion path so the user lands on the v2 wire reusing
+        // their existing passkey instead of being asked to enroll
+        // a brand-new one.
+        const promoted = await promoteLegacyPasskeyForCurrentDevice(cekHex)
+        if (!promoted) return false
       }
 
       localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
@@ -1641,7 +1698,7 @@ export function usePasskeyBackup({
     } finally {
       passkeyFlowInProgressRef.current = false
     }
-  }, [])
+  }, [promoteLegacyPasskeyForCurrentDevice])
 
   return {
     ...state,
