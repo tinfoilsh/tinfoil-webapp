@@ -89,7 +89,13 @@ export class SyncEnclaveClient {
     }
 
     const { skipAuth: _skipAuth, ...fetchInit } = init
-    const resp = await this.secure.fetch(path, { ...fetchInit, headers })
+    const resp = await this.secure.fetch(
+      new URL(path, SYNC_ENCLAVE_URL).toString(),
+      {
+        ...fetchInit,
+        headers,
+      },
+    )
 
     if (!resp.ok) {
       let body: Record<string, unknown> = {}
