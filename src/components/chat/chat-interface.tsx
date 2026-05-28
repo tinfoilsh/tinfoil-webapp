@@ -127,19 +127,24 @@ import { initializeRenderers } from './renderers/client'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
 import type { Attachment, Chat, DocumentPage } from './types'
-// Lazy-load modals that aren't shown on initial load
+// Lazy-load modals that aren't shown on initial load. The loaders are
+// hoisted so they can be pre-warmed (see preloadCloudSyncModals) before
+// the user clicks, keeping the chunk fetch off the click critical path.
+const loadCloudSyncSetupModal = () => import('../modals/cloud-sync-setup-modal')
+const loadPasskeySetupPromptModal = () =>
+  import('../modals/passkey-setup-prompt-modal')
+
+function preloadCloudSyncModals(): void {
+  void loadCloudSyncSetupModal()
+  void loadPasskeySetupPromptModal()
+}
+
 const CloudSyncSetupModal = dynamic(
-  () =>
-    import('../modals/cloud-sync-setup-modal').then(
-      (m) => m.CloudSyncSetupModal,
-    ),
+  () => loadCloudSyncSetupModal().then((m) => m.CloudSyncSetupModal),
   { ssr: false },
 )
 const PasskeySetupPromptModal = dynamic(
-  () =>
-    import('../modals/passkey-setup-prompt-modal').then(
-      (m) => m.PasskeySetupPromptModal,
-    ),
+  () => loadPasskeySetupPromptModal().then((m) => m.PasskeySetupPromptModal),
   { ssr: false },
 )
 const AddToProjectContextModal = dynamic(
@@ -1410,16 +1415,48 @@ export function ChatInterface({
   // remote data without a passkey, or PRF unsupported).
   const handleOpenCloudSyncSetup = useCallback(async () => {
     if (!encryptionService.getKey()) {
+      // Open the modal immediately for instant feedback. It renders
+      // its recovery / manual UI from the live hook state, so we don't
+      // block the popup on the slow enclave key-state probe. The
+      // probes below run in the background and the modal reacts to the
+      // resulting state changes (e.g. a manual-recovery warning getting
+      // upgraded to a passkey-recovery flow).
+      setShowCloudSyncSetupModal(true)
       const recovered = await showPasskeyRecoveryPrompt()
-      if (recovered) {
-        setShowCloudSyncSetupModal(true)
-        return
-      }
+      if (recovered) return
       const routed = await showFirstTimePasskeyPrompt()
-      if (routed) return
+      if (routed) {
+        // A brand-new user with no remote data is better served by the
+        // dedicated first-time prompt; hand off to it.
+        setShowCloudSyncSetupModal(false)
+      }
+      return
     }
     setShowCloudSyncSetupModal(true)
   }, [showPasskeyRecoveryPrompt, showFirstTimePasskeyPrompt])
+
+  // Pre-warm the cloud-sync modal chunks as soon as a cloud-sync entry
+  // point is reachable, so clicking the sidebar prompt opens the popup
+  // without first paying for an on-demand chunk fetch.
+  useEffect(() => {
+    if (!isSignedIn) return
+    if (
+      passkeyRecoveryNeeded ||
+      manualRecoveryNeeded ||
+      passkeySetupFailed ||
+      passkeySetupAvailable ||
+      passkeyAddDeviceAvailable
+    ) {
+      preloadCloudSyncModals()
+    }
+  }, [
+    isSignedIn,
+    passkeyRecoveryNeeded,
+    manualRecoveryNeeded,
+    passkeySetupFailed,
+    passkeySetupAvailable,
+    passkeyAddDeviceAvailable,
+  ])
 
   const handleKeyChanged = useCallback(
     async (

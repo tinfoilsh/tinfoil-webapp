@@ -128,6 +128,21 @@ export function CloudSyncSetupModal({
     }
   }, [])
 
+  // The modal can be opened before the caller's background passkey
+  // probe resolves (so the popup appears instantly instead of waiting
+  // on a slow enclave round-trip). When the probe later confirms a
+  // passkey recovery is possible, advance into the recovery step — but
+  // only from the neutral auto-routed entry steps, so we never yank the
+  // user out of a step they navigated to deliberately.
+  useEffect(() => {
+    if (!passkeyRecoveryNeeded) return
+    setCurrentStep((step) =>
+      step === 'generate-or-restore' || step === 'intro'
+        ? 'passkey-recovery'
+        : step,
+    )
+  }, [passkeyRecoveryNeeded])
+
   const handleEnableToggle = (enabled: boolean) => {
     setCloudSyncEnabled(enabled)
     if (!enabled) {
