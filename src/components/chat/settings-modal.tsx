@@ -299,11 +299,6 @@ type SettingsModalProps = {
   isSignedIn?: boolean
   isPremium?: boolean
   encryptionKey: string | null
-  onKeyChange: (
-    key: string,
-    options?: { mode?: 'recoverExisting' | 'explicitStartFresh' },
-  ) => Promise<void>
-  onAddRecoveryKey: (key: string) => Promise<void>
   passkeyActive?: boolean
   passkeySetupAvailable?: boolean
   passkeyAddDeviceAvailable?: boolean
@@ -327,8 +322,6 @@ export function SettingsModal({
   isSignedIn,
   isPremium,
   encryptionKey,
-  onKeyChange,
-  onAddRecoveryKey,
   passkeyActive,
   passkeySetupAvailable,
   passkeyAddDeviceAvailable,
@@ -351,11 +344,7 @@ export function SettingsModal({
     autoLoad: isSignedIn && isPremium,
   })
   // Encryption key management state
-  const [inputKey, setInputKey] = useState('')
-  const [isInputKeyVisible, setIsInputKeyVisible] = useState(false)
-  const [isUpdating, setIsUpdating] = useState(false)
   const [isCopied, setIsCopied] = useState(false)
-  const [isDragging, setIsDragging] = useState(false)
   const [isQRCodeExpanded, setIsQRCodeExpanded] = useState(false)
   const [isKeyVisible, setIsKeyVisible] = useState(false)
   const [isSettingUpPasskey, setIsSettingUpPasskey] = useState(false)
@@ -367,9 +356,6 @@ export function SettingsModal({
   )
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const [primaryKeyMode, setPrimaryKeyMode] = useState<
-    'recoverExisting' | 'explicitStartFresh'
-  >('recoverExisting')
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Structured personalization fields
@@ -1891,7 +1877,6 @@ export function SettingsModal({
       setDeleteAllChatsConfirmText('')
       setShowDeleteAllProjectsConfirm(false)
       setDeleteAllProjectsConfirmText('')
-      setPrimaryKeyMode('recoverExisting')
     }
   }, [isOpen])
 
@@ -1919,57 +1904,6 @@ export function SettingsModal({
     }
   }
 
-  const handleKeyAction = async (
-    action: (key: string) => Promise<void>,
-    successTitle: string,
-    successDescription: string,
-  ) => {
-    if (!inputKey.trim()) {
-      toast({
-        title: 'Invalid key',
-        description: 'Please enter a valid encryption key',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setIsUpdating(true)
-    try {
-      await action(inputKey)
-      toast({ title: successTitle, description: successDescription })
-      setInputKey('')
-    } catch (error) {
-      toast({
-        title: 'Invalid key',
-        description:
-          error instanceof Error
-            ? error.message
-            : 'The encryption key you entered is invalid',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsUpdating(false)
-    }
-  }
-
-  const handleUpdateKey = () =>
-    handleKeyAction(
-      (key) => onKeyChange(key, { mode: primaryKeyMode }),
-      primaryKeyMode === 'recoverExisting'
-        ? 'Primary key verified'
-        : 'Primary key replaced',
-      primaryKeyMode === 'recoverExisting'
-        ? 'This device verified the key against your existing cloud data'
-        : 'Future cloud writes will use the new primary key on this device',
-    )
-
-  const handleAddRecoveryKey = () =>
-    handleKeyAction(
-      onAddRecoveryKey,
-      'Recovery key added',
-      'Older encrypted data can now be retried with this key',
-    )
-
   const downloadKeyAsPEM = () => {
     if (!encryptionKey) return
 
@@ -1987,81 +1921,6 @@ ${encryptionKey.replace('key_', '')}
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
-
-  const extractKeyFromPEM = (pemContent: string): string | null => {
-    const lines = pemContent.split('\n')
-    const startIndex = lines.findIndex((line) =>
-      line.includes('BEGIN TINFOIL CHAT ENCRYPTION KEY'),
-    )
-    const endIndex = lines.findIndex((line) =>
-      line.includes('END TINFOIL CHAT ENCRYPTION KEY'),
-    )
-
-    if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
-      const keyLines = lines.slice(startIndex + 1, endIndex)
-      const keyContent = keyLines.join('').trim()
-      return keyContent ? `key_${keyContent}` : null
-    }
-
-    return null
-  }
-
-  const handleFileImport = useCallback(
-    async (file: File) => {
-      try {
-        const content = await file.text()
-        const extractedKey = extractKeyFromPEM(content)
-
-        if (extractedKey) {
-          setInputKey(extractedKey)
-        } else {
-          toast({
-            title: 'Invalid file',
-            description: 'Could not extract encryption key from the PEM file',
-            variant: 'destructive',
-          })
-        }
-      } catch {
-        toast({
-          title: 'Import failed',
-          description: 'Failed to read the PEM file',
-          variant: 'destructive',
-        })
-      }
-    },
-    [toast],
-  )
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }, [])
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault()
-      setIsDragging(false)
-
-      const files = Array.from(e.dataTransfer.files)
-      const pemFile = files.find((file) => file.name.endsWith('.pem'))
-
-      if (pemFile) {
-        await handleFileImport(pemFile)
-      } else {
-        toast({
-          title: 'Invalid file',
-          description: 'Please drop a .pem file',
-          variant: 'destructive',
-        })
-      }
-    },
-    [handleFileImport, toast],
-  )
 
   if (!isOpen) return null
 
@@ -3329,179 +3188,6 @@ ${encryptionKey.replace('key_', '')}
                           Do not share this key with anyone. Only save it in a
                           secure location.
                         </p>
-
-                        {/* Restore or Update Encryption Key */}
-                        <div className="space-y-2 pt-2">
-                          <h4 className="font-aeonik text-xs font-medium text-content-secondary">
-                            {passkeyActive
-                              ? 'Add Decryption Key'
-                              : 'Recovery and Primary Keys'}
-                          </h4>
-                          <p className="text-xs text-content-muted">
-                            {passkeyActive
-                              ? 'Add an older key to decrypt data from before a key rotation. Your passkey manages the primary key.'
-                              : 'Add a recovery key to decrypt older data without changing your current primary key, or replace the primary key used for future cloud writes.'}
-                          </p>
-                          {!passkeyActive && (
-                            <div className="space-y-2 rounded-lg border border-border-subtle bg-surface-chat p-3">
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPrimaryKeyMode('recoverExisting')
-                                  }
-                                  className={cn(
-                                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                                    primaryKeyMode === 'recoverExisting'
-                                      ? 'border border-blue-500 bg-blue-500/10 text-blue-500'
-                                      : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
-                                  )}
-                                >
-                                  Recover Existing
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPrimaryKeyMode('explicitStartFresh')
-                                  }
-                                  className={cn(
-                                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                                    primaryKeyMode === 'explicitStartFresh'
-                                      ? 'border border-amber-500 bg-amber-500/10 text-amber-500'
-                                      : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
-                                  )}
-                                >
-                                  Start Fresh
-                                </button>
-                              </div>
-                              <p className="text-xs text-content-muted">
-                                {primaryKeyMode === 'recoverExisting'
-                                  ? 'Verify this key against your existing cloud data before this device resumes writing.'
-                                  : 'Use this key for future cloud writes on this device without validating it against older cloud data.'}
-                              </p>
-                            </div>
-                          )}
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault()
-                              if (!isUpdating && inputKey.trim()) {
-                                if (passkeyActive) {
-                                  handleAddRecoveryKey()
-                                } else {
-                                  handleUpdateKey()
-                                }
-                              }
-                            }}
-                            onDragOver={handleDragOver}
-                            onDragLeave={handleDragLeave}
-                            onDrop={handleDrop}
-                            className="space-y-2"
-                            id="encryption-key-form"
-                          >
-                            <div className="flex gap-2">
-                              <div className="relative flex-1">
-                                <input
-                                  type="text"
-                                  style={
-                                    isInputKeyVisible
-                                      ? undefined
-                                      : ({
-                                          WebkitTextSecurity: 'disc',
-                                        } as React.CSSProperties)
-                                  }
-                                  name="encryption-key"
-                                  value={inputKey}
-                                  onChange={(e) => setInputKey(e.target.value)}
-                                  placeholder={
-                                    isDragging
-                                      ? ''
-                                      : 'Enter key (e.g., key_abc123...)'
-                                  }
-                                  autoComplete="off"
-                                  aria-label="Encryption key input"
-                                  className={cn(
-                                    'w-full rounded-lg border border-blue-500 bg-surface-input px-3 py-2 pr-9 font-mono text-sm text-blue-500 placeholder:font-sans placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-blue-500',
-                                    isDragging && 'ring-2 ring-blue-500',
-                                  )}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setIsInputKeyVisible(!isInputKeyVisible)
-                                  }
-                                  aria-label={
-                                    isInputKeyVisible ? 'Hide key' : 'Show key'
-                                  }
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-content-muted transition-all hover:text-content-primary"
-                                >
-                                  {isInputKeyVisible ? (
-                                    <EyeSlashIcon className="h-4 w-4" />
-                                  ) : (
-                                    <EyeIcon className="h-4 w-4" />
-                                  )}
-                                </button>
-                                {isDragging && (
-                                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-blue-500/10">
-                                    <span className="text-sm text-blue-500">
-                                      Drop your PEM file here
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              {passkeyActive ? (
-                                <button
-                                  type="submit"
-                                  disabled={isUpdating || !inputKey.trim()}
-                                  aria-label="Add decryption key"
-                                  className={cn(
-                                    'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                    isUpdating || !inputKey.trim()
-                                      ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                      : 'bg-blue-500 text-white hover:bg-blue-600',
-                                  )}
-                                >
-                                  {isUpdating ? 'Saving...' : 'Add Key'}
-                                </button>
-                              ) : (
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={handleAddRecoveryKey}
-                                    disabled={isUpdating || !inputKey.trim()}
-                                    aria-label="Add recovery key"
-                                    className={cn(
-                                      'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                      isUpdating || !inputKey.trim()
-                                        ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                        : 'border border-border-subtle bg-surface-chat text-content-primary hover:bg-surface-chat/80',
-                                    )}
-                                  >
-                                    {isUpdating ? 'Saving...' : 'Add Recovery'}
-                                  </button>
-                                  <button
-                                    type="submit"
-                                    disabled={isUpdating || !inputKey.trim()}
-                                    aria-label="Replace primary encryption key"
-                                    className={cn(
-                                      'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                      isUpdating || !inputKey.trim()
-                                        ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                        : primaryKeyMode ===
-                                            'explicitStartFresh'
-                                          ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                          : 'bg-blue-500 text-white hover:bg-blue-600',
-                                    )}
-                                  >
-                                    {isUpdating
-                                      ? 'Saving...'
-                                      : primaryKeyMode === 'recoverExisting'
-                                        ? 'Recover Existing'
-                                        : 'Start Fresh'}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </form>
                         </div>
                       </div>
                     </div>

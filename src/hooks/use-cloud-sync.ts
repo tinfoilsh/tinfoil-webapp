@@ -551,28 +551,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     [rollbackToPreviousKeys, syncChats, retryDecryptionWithNewKey],
   )
 
-  const addRecoveryKey = useCallback(
-    async (key: string) => {
-      try {
-        encryptionService.addDecryptionKey(key)
-        void retryDecryptionWithNewKey({
-          runInBackground: true,
-        })
-
-        if (hasPasskeyBackup()) {
-          onKeyChangedRef.current?.()
-        }
-      } catch (error) {
-        logError('Failed to add recovery key', error, {
-          component: 'useCloudSync',
-          action: 'addRecoveryKey',
-        })
-        throw new Error('Invalid encryption key')
-      }
-    },
-    [retryDecryptionWithNewKey],
-  )
-
   return {
     ...state,
     syncChats,
@@ -580,7 +558,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     syncProjectChats,
     backupChat,
     setEncryptionKey,
-    addRecoveryKey,
     retryDecryptionWithNewKey,
   }
 }

@@ -339,7 +339,6 @@ export function ChatInterface({
     encryptionKey,
     initialized: cloudSyncInitialized,
     setEncryptionKey,
-    addRecoveryKey,
     retryDecryptionWithNewKey,
     decryptionProgress,
   } = useCloudSync({
@@ -1474,15 +1473,6 @@ export function ChatInterface({
       }
     },
     [setEncryptionKey, retryProfileDecryption, reloadChats],
-  )
-
-  const handleAddRecoveryKey = useCallback(
-    async (key: string) => {
-      await addRecoveryKey(key)
-      await retryProfileDecryption()
-      await reloadChats()
-    },
-    [addRecoveryKey, retryProfileDecryption, reloadChats],
   )
 
   const handleCreateProject = useCallback(async () => {
@@ -2903,8 +2893,6 @@ export function ChatInterface({
         isSignedIn={isSignedIn}
         isPremium={isPremium}
         encryptionKey={encryptionKey}
-        onKeyChange={handleKeyChanged}
-        onAddRecoveryKey={handleAddRecoveryKey}
         passkeyActive={passkeyActive}
         passkeySetupAvailable={passkeySetupAvailable}
         passkeyAddDeviceAvailable={passkeyAddDeviceAvailable}
