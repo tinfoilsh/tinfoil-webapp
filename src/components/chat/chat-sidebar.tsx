@@ -1794,17 +1794,6 @@ export function ChatSidebar({
                         : 'border border-gray-400 bg-gray-200/30'),
                   )}
                 >
-                  {chatDecryptionProgress?.isDecrypting && (
-                    <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
-                      <PiSpinner className="h-4 w-4 animate-spin" />
-                      <span className="text-sm">
-                        Loading chats
-                        {chatDecryptionProgress.total > 0
-                          ? ` (${chatDecryptionProgress.current}/${chatDecryptionProgress.total})`
-                          : '...'}
-                      </span>
-                    </div>
-                  )}
                   {isClient && (
                     <ChatList
                       chats={sortedChats as ChatItemData[]}
@@ -1852,6 +1841,19 @@ export function ChatSidebar({
                               await onMoveChatToProject(chatId, projectId)
                             }
                           : undefined
+                      }
+                      loadingIndicator={
+                        chatDecryptionProgress?.isDecrypting ? (
+                          <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
+                            <PiSpinner className="h-4 w-4 animate-spin" />
+                            <span className="text-sm">
+                              Loading chats
+                              {chatDecryptionProgress.total > 0
+                                ? ` (${chatDecryptionProgress.current}/${chatDecryptionProgress.total})`
+                                : '...'}
+                            </span>
+                          </div>
+                        ) : undefined
                       }
                       onConvertToCloud={onConvertChatToCloud}
                       onConvertToLocal={onConvertChatToLocal}

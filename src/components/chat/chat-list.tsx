@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { cn } from '../ui/utils'
 import {
   type ChatItemData,
@@ -46,6 +46,12 @@ interface ChatListProps {
   onRemoveFromProject?: (chatId: string) => void
   loadMoreButton?: React.ReactNode
   emptyState?: React.ReactNode
+  /**
+   * Optional indicator rendered directly after the blank "New Chat"
+   * item (and before the chat history). Used to show a "Loading chats"
+   * spinner while the post-unlock decryption runs.
+   */
+  loadingIndicator?: React.ReactNode
 }
 
 export function ChatList({
@@ -75,6 +81,7 @@ export function ChatList({
   onRemoveFromProject,
   loadMoreButton,
   emptyState,
+  loadingIndicator,
 }: ChatListProps) {
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
@@ -163,66 +170,82 @@ export function ChatList({
   }
 
   if (chats.length === 0 && emptyState) {
-    return <div className="p-2">{emptyState}</div>
+    return (
+      <div className="space-y-2 p-2">
+        {loadingIndicator}
+        <div className="p-2">{emptyState}</div>
+      </div>
+    )
   }
+
+  const lastBlankIndex = chats.reduce(
+    (acc, chat, index) => (chat.isBlankChat ? index : acc),
+    -1,
+  )
 
   return (
     <>
       <div role="list" className="space-y-2 p-2">
-        {chats.map((chat) => (
-          <div key={getChatKey(chat)} role="listitem" className="relative">
-            <ChatListItem
-              chat={chat}
-              isSelected={isSelected(chat)}
-              isEditing={editingChatId === chat.id}
-              editingTitle={editingTitle}
-              isDarkMode={isDarkMode}
-              showEncryptionStatus={showEncryptionStatus}
-              showSyncStatus={showSyncStatus}
-              enableTitleAnimation={
-                enableTitleAnimation && manuallyEditedChatId !== chat.id
-              }
-              isDraggable={
-                isDraggable && !chat.isBlankChat && !chat.decryptionFailed
-              }
-              showMoveToProject={
-                showMoveToProject && !chat.isBlankChat && !chat.decryptionFailed
-              }
-              projects={projects}
-              onSelect={() => handleSelect(chat)}
-              onStartEdit={() => handleStartEdit(chat)}
-              onTitleChange={setEditingTitle}
-              onSaveTitle={() => handleSaveTitle(chat.id)}
-              onCancelEdit={handleCancelEdit}
-              onRequestDelete={() => setDeletingChatId(chat.id)}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onMoveToProject={
-                onMoveToProject
-                  ? (projectId) => onMoveToProject(chat.id, projectId)
-                  : undefined
-              }
-              onConvertToCloud={
-                onConvertToCloud ? () => onConvertToCloud(chat.id) : undefined
-              }
-              onConvertToLocal={
-                onConvertToLocal ? () => onConvertToLocal(chat.id) : undefined
-              }
-              onRemoveFromProject={
-                onRemoveFromProject
-                  ? () => onRemoveFromProject(chat.id)
-                  : undefined
-              }
-            />
-            {deletingChatId === chat.id && (
-              <DeleteConfirmation
-                onConfirm={() => handleConfirmDelete(chat.id)}
-                onCancel={() => setDeletingChatId(null)}
+        {lastBlankIndex < 0 && loadingIndicator}
+        {chats.map((chat, index) => (
+          <Fragment key={getChatKey(chat)}>
+            <div role="listitem" className="relative">
+              <ChatListItem
+                chat={chat}
+                isSelected={isSelected(chat)}
+                isEditing={editingChatId === chat.id}
+                editingTitle={editingTitle}
                 isDarkMode={isDarkMode}
-                animated={animatedDeleteConfirmation}
+                showEncryptionStatus={showEncryptionStatus}
+                showSyncStatus={showSyncStatus}
+                enableTitleAnimation={
+                  enableTitleAnimation && manuallyEditedChatId !== chat.id
+                }
+                isDraggable={
+                  isDraggable && !chat.isBlankChat && !chat.decryptionFailed
+                }
+                showMoveToProject={
+                  showMoveToProject &&
+                  !chat.isBlankChat &&
+                  !chat.decryptionFailed
+                }
+                projects={projects}
+                onSelect={() => handleSelect(chat)}
+                onStartEdit={() => handleStartEdit(chat)}
+                onTitleChange={setEditingTitle}
+                onSaveTitle={() => handleSaveTitle(chat.id)}
+                onCancelEdit={handleCancelEdit}
+                onRequestDelete={() => setDeletingChatId(chat.id)}
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                onMoveToProject={
+                  onMoveToProject
+                    ? (projectId) => onMoveToProject(chat.id, projectId)
+                    : undefined
+                }
+                onConvertToCloud={
+                  onConvertToCloud ? () => onConvertToCloud(chat.id) : undefined
+                }
+                onConvertToLocal={
+                  onConvertToLocal ? () => onConvertToLocal(chat.id) : undefined
+                }
+                onRemoveFromProject={
+                  onRemoveFromProject
+                    ? () => onRemoveFromProject(chat.id)
+                    : undefined
+                }
               />
-            )}
-          </div>
+              {deletingChatId === chat.id && (
+                <DeleteConfirmation
+                  onConfirm={() => handleConfirmDelete(chat.id)}
+                  onCancel={() => setDeletingChatId(null)}
+                  isDarkMode={isDarkMode}
+                  animated={animatedDeleteConfirmation}
+                />
+              )}
+            </div>
+            {index === lastBlankIndex && loadingIndicator}
+          </Fragment>
         ))}
       </div>
       {loadMoreButton}
