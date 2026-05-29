@@ -38,6 +38,7 @@ import {
   shouldShowRateLimitBanner,
 } from '@/components/chat/rate-limit-banner'
 import { StreamErrorBanner } from '@/components/chat/stream-error-banner'
+import { classifyCloudKeySetupError } from '@/components/modals/cloud-sync-setup-mode'
 import {
   ProjectModeBanner,
   ProjectSidebar,
@@ -3311,9 +3312,9 @@ export function ChatInterface({
             try {
               await handleKeyChanged(key, { mode })
               setShowCloudSyncSetupModal(false)
-              return true
-            } catch {
-              return false
+              return { ok: true }
+            } catch (error) {
+              return { ok: false, reason: classifyCloudKeySetupError(error) }
             }
           }}
           isDarkMode={isDarkMode}

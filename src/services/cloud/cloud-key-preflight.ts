@@ -32,6 +32,23 @@ export interface CloudKeyValidationResult {
 }
 
 /**
+ * Raised when activating a CEK is rejected by the preflight check.
+ * Carries the enclave's `remoteState` so callers can distinguish a
+ * genuine key mismatch (`exists`) from a verification outage
+ * (`unknown`, e.g. attestation/network failure) and surface an
+ * accurate message instead of always blaming the key.
+ */
+export class CloudKeySetupError extends Error {
+  readonly remoteState: CloudRemoteState
+
+  constructor(message: string, remoteState: CloudRemoteState) {
+    super(message)
+    this.name = 'CloudKeySetupError'
+    this.remoteState = remoteState
+  }
+}
+
+/**
  * Probe the enclave for the user's current key. A registered key id
  * implies the user already has cloud data (the controlplane created
  * the row when the first piece of sealed data was written, and the

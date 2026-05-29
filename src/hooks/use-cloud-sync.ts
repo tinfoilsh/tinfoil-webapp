@@ -8,7 +8,10 @@ import {
   canWriteToCloud,
   clearCloudKeyAuthorization,
 } from '@/services/cloud/cloud-key-authorization'
-import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
+import {
+  CloudKeySetupError,
+  validateCurrentPrimaryKey,
+} from '@/services/cloud/cloud-key-preflight'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
@@ -451,9 +454,10 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
           if (!validation.canWrite) {
             await rollbackToPreviousKeys(previousKeys)
             rolledBack = true
-            throw new Error(
+            throw new CloudKeySetupError(
               validation.message ??
                 "This key doesn't match your existing cloud data.",
+              validation.remoteState,
             )
           }
           await authorizeCurrentPrimaryKeyOrThrow('validated')

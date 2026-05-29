@@ -1,6 +1,8 @@
 import {
+  describeCloudKeySetupFailure,
   determineGeneratedKeySetupMode,
   type CloudKeySetupMode,
+  type CloudKeySetupResult,
 } from '@/components/modals/cloud-sync-setup-mode'
 import { SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL } from '@/constants/storage-keys'
 import { useToast } from '@/hooks/use-toast'
@@ -35,7 +37,7 @@ interface CloudSyncSetupModalBaseProps {
   onSetupComplete: (
     encryptionKey: string,
     mode: CloudKeySetupMode,
-  ) => Promise<boolean>
+  ) => Promise<CloudKeySetupResult>
   isDarkMode: boolean
   initialCloudSyncEnabled?: boolean
   prfSupported?: boolean
@@ -185,8 +187,8 @@ export function CloudSyncSetupModal({
       // immediately. They can reveal the backup key from Settings later if
       // they want a paper copy.
       if (prfSupported && !manualRecoveryNeeded) {
-        const success = await onSetupComplete(newKey, keySetupMode)
-        if (success) {
+        const result = await onSetupComplete(newKey, keySetupMode)
+        if (result.ok) {
           persistCloudSyncEnabled(true)
           onClose()
           return
@@ -221,13 +223,15 @@ export function CloudSyncSetupModal({
 
     setIsProcessing(true)
     try {
-      const success = await onSetupComplete(inputKey, 'recoverExisting')
+      const result = await onSetupComplete(inputKey, 'recoverExisting')
 
-      if (!success) {
+      if (!result.ok) {
+        const { title, description } = describeCloudKeySetupFailure(
+          result.reason,
+        )
         toast({
-          title: 'Invalid key',
-          description:
-            "This key doesn't match your existing cloud data. Try using your existing key instead.",
+          title,
+          description,
           variant: 'destructive',
         })
         return
@@ -393,12 +397,14 @@ ${generatedKey.replace('key_', '')}
 
     setIsProcessing(true)
     void onSetupComplete(generatedKey, generatedKeyMode)
-      .then((success) => {
-        if (!success) {
+      .then((result) => {
+        if (!result.ok) {
+          const { title, description } = describeCloudKeySetupFailure(
+            result.reason,
+          )
           toast({
-            title: 'Setup failed',
-            description:
-              "This key couldn't be verified for cloud sync. Try using your existing key instead.",
+            title,
+            description,
             variant: 'destructive',
           })
           return
