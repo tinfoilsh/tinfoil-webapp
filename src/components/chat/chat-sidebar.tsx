@@ -109,6 +109,17 @@ type ChatSidebarProps = {
   onConvertChatToLocal?: (chatId: string) => Promise<void>
   onSettingsClick?: () => void
   windowWidth: number
+  /**
+   * Progress of the post-unlock background chat decryption. When
+   * `isDecrypting` is true the sidebar shows a "Loading chats"
+   * indicator so users see work is happening after the recovery modal
+   * dismisses, without the modal blocking the whole UI.
+   */
+  chatDecryptionProgress?: {
+    isDecrypting: boolean
+    current: number
+    total: number
+  } | null
 }
 
 const MOBILE_BREAKPOINT = 1024 // Same as in chat-interface.tsx
@@ -162,6 +173,7 @@ export function ChatSidebar({
   onConvertChatToLocal,
   onSettingsClick,
   windowWidth,
+  chatDecryptionProgress,
 }: ChatSidebarProps) {
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
@@ -1782,6 +1794,17 @@ export function ChatSidebar({
                         : 'border border-gray-400 bg-gray-200/30'),
                   )}
                 >
+                  {chatDecryptionProgress?.isDecrypting && (
+                    <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
+                      <PiSpinner className="h-4 w-4 animate-spin" />
+                      <span className="text-sm">
+                        Loading chats
+                        {chatDecryptionProgress.total > 0
+                          ? ` (${chatDecryptionProgress.current}/${chatDecryptionProgress.total})`
+                          : '...'}
+                      </span>
+                    </div>
+                  )}
                   {isClient && (
                     <ChatList
                       chats={sortedChats as ChatItemData[]}

@@ -2785,6 +2785,7 @@ export function ChatInterface({
                 onConvertChatToLocal={handleConvertChatToLocal}
                 onSettingsClick={handleOpenSettingsModal}
                 windowWidth={windowWidth}
+                chatDecryptionProgress={decryptionProgress}
               />
             </motion.div>
           )}
@@ -2960,25 +2961,6 @@ export function ChatInterface({
                 isDarkMode={isDarkMode}
                 className="hidden md:flex"
               />
-            )}
-
-            {/* Decryption Progress Banner */}
-            {decryptionProgress && decryptionProgress.isDecrypting && (
-              <div className="border-b border-border-subtle bg-surface-chat px-4 py-2 text-content-secondary">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <PiSpinner className="h-4 w-4 animate-spin text-content-secondary" />
-                    <span className="text-sm">
-                      Decrypting chats with new key...
-                    </span>
-                  </div>
-                  {decryptionProgress.total > 0 && (
-                    <span className="text-sm">
-                      {decryptionProgress.current} / {decryptionProgress.total}
-                    </span>
-                  )}
-                </div>
-              </div>
             )}
 
             {/* Messages Area */}

@@ -500,21 +500,36 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
         const stateNeedsSync = !stateKey
 
         if (keyValueChanged || stateNeedsSync) {
-          // Sync immediately to fetch encrypted chats from cloud
-          // Don't let sync failures block key updates
-          try {
-            await syncChats()
-          } catch (syncError) {
-            logError('Failed to sync after setting encryption key', syncError, {
-              component: 'useCloudSync',
-              action: 'setEncryptionKey.initialSync',
-            })
+          // Pull encrypted chats from the cloud and decrypt them in the
+          // background so callers (e.g. the passkey recovery modal) can
+          // dismiss as soon as the key is authorized, instead of blocking
+          // the whole UI until every chat is decrypted. The sidebar shows
+          // a "Loading chats" indicator driven by `decryptionProgress`
+          // until the decryption pass finishes.
+          if (isMountedRef.current) {
+            setState((prev) => ({
+              ...prev,
+              decryptionProgress: { isDecrypting: true, current: 0, total: 0 },
+            }))
           }
-
-          // Run decryption in background to avoid UI hang
-          void retryDecryptionWithNewKey({
-            runInBackground: true,
-          })
+          void (async () => {
+            try {
+              await syncChats()
+            } catch (syncError) {
+              logError(
+                'Failed to sync after setting encryption key',
+                syncError,
+                {
+                  component: 'useCloudSync',
+                  action: 'setEncryptionKey.initialSync',
+                },
+              )
+            }
+            // Run decryption in background to avoid UI hang
+            await retryDecryptionWithNewKey({ runInBackground: true }).catch(
+              () => {},
+            )
+          })()
 
           // Re-encrypt the passkey backup only when the key VALUE actually changed
           // (not when state is merely catching up to what encryptionService already holds,
