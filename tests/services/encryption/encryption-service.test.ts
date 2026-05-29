@@ -114,6 +114,25 @@ describe('EncryptionService', () => {
       expect(bytes).toBeInstanceOf(Uint8Array)
       expect(bytes.byteLength).toBe(32)
     })
+
+    it('encodeKeyFromBytes round-trips raw CEK bytes through setKey', async () => {
+      const key = await service.generateKey()
+      await service.setKey(key)
+      const bytes = service.getKeyBytesOrThrow()
+
+      const encoded = service.encodeKeyFromBytes(bytes)
+      expect(encoded).toBe(key)
+
+      service.clearKey()
+      await service.setKey(encoded)
+      expect(service.getKeyBytesOrThrow()).toEqual(bytes)
+    })
+
+    it('encodeKeyFromBytes rejects non-32-byte input', () => {
+      expect(() => service.encodeKeyFromBytes(new Uint8Array(16))).toThrow(
+        /32 bytes/,
+      )
+    })
   })
 
   describe('clearKey', () => {

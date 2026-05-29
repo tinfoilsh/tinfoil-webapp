@@ -516,7 +516,7 @@ async function tryRetrieveFromEnclave(
       } as Parameters<typeof unwrapCekFromBundle>[1])
       return {
         bundle: {
-          primary: uint8ArrayToBase64(cekBytes),
+          primary: encryptionService.encodeKeyFromBytes(cekBytes),
           alternatives: [],
         },
         enclaveKeyExists: true,

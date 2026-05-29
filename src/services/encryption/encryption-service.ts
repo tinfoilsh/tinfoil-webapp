@@ -258,6 +258,22 @@ export class EncryptionService {
   }
 
   /**
+   * Encode raw CEK bytes into the canonical `key_<base36>` string the
+   * rest of the app expects. Inverse of `getKeyBytesOrThrow`. Recovery
+   * flows that unwrap a raw CEK from an enclave bundle (which stores
+   * raw key bytes, not the key string) must round-trip through this so
+   * `setKey` / `setAllKeys` accept the result.
+   */
+  encodeKeyFromBytes(bytes: Uint8Array): string {
+    if (bytes.byteLength !== CEK_BYTE_LENGTH) {
+      throw new Error(
+        `Key must be ${CEK_BYTE_LENGTH} bytes (got ${bytes.byteLength})`,
+      )
+    }
+    return 'key_' + this.bytesToAlphanumeric(bytes)
+  }
+
+  /**
    * Return the raw bytes for one of the alternative (history) keys, or
    * null when the index is out of range. Same `key_<base36>` decoding
    * as `getKeyBytesOrThrow`.
