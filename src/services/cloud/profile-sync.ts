@@ -7,11 +7,23 @@ import {
   newIdempotencyKey,
   pullItemPlaintext,
 } from '../sync-enclave/sync-api'
+import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
+import { WIRE_CODES } from '../sync-enclave/wire-contract'
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
 
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
+
+// A STALE_BLOB (HTTP 412) push means our If-Match version no longer
+// matches the server: either the row advanced under another writer or
+// we tried to create a profile that already exists.
+function isStaleBlobConflict(error: unknown): boolean {
+  return (
+    error instanceof SyncEnclaveError &&
+    (error.code === WIRE_CODES.StaleBlob || error.status === 412)
+  )
+}
 
 export interface ProfileData {
   // Theme settings
@@ -144,50 +156,71 @@ export class ProfileSyncService {
         },
       })
 
-      // Add metadata
-      const profileWithMetadata: ProfileData = {
-        ...profile,
-        updatedAt: new Date().toISOString(),
-        version: (profile.version || 0) + 1,
+      // Push the local profile under a given base version. The
+      // controlplane treats a missing/zero version as create-only and
+      // any positive version as a CAS update gated on the row's etag.
+      const pushAtVersion = async (
+        baseVersion: number,
+      ): Promise<{ success: boolean; version?: number }> => {
+        const profileWithMetadata: ProfileData = {
+          ...profile,
+          updatedAt: new Date().toISOString(),
+          version: baseVersion + 1,
+        }
+
+        const plaintext = new TextEncoder().encode(
+          JSON.stringify(profileWithMetadata),
+        )
+        const ifMatch = baseVersion > 0 ? String(baseVersion) : null
+
+        const pushResp = await enclavePush({
+          scope: PROFILE_SCOPE,
+          id: PROFILE_ROW_ID,
+          keyB64: requirePrimaryKeyB64(),
+          plaintext,
+          ifMatch,
+          idempotencyKey: newIdempotencyKey(),
+          metadata: {
+            version: profileWithMetadata.version,
+          },
+        })
+        const pushedVersion = parseInt(pushResp.etag, 10)
+        if (Number.isFinite(pushedVersion)) {
+          profileWithMetadata.version = pushedVersion
+        }
+
+        // Update cache
+        this.cachedProfile = profileWithMetadata
+
+        logInfo('Profile saved via enclave', {
+          component: 'ProfileSync',
+          action: 'saveProfile',
+          metadata: {
+            version: profileWithMetadata.version,
+            size: plaintext.byteLength,
+          },
+        })
+
+        return { success: true, version: profileWithMetadata.version }
       }
 
-      const plaintext = new TextEncoder().encode(
-        JSON.stringify(profileWithMetadata),
-      )
-      const ifMatch =
-        profile.version !== undefined && profile.version > 0
-          ? String(profile.version)
-          : null
-
-      const pushResp = await enclavePush({
-        scope: PROFILE_SCOPE,
-        id: PROFILE_ROW_ID,
-        keyB64: requirePrimaryKeyB64(),
-        plaintext,
-        ifMatch,
-        idempotencyKey: newIdempotencyKey(),
-        metadata: {
-          version: profileWithMetadata.version,
-        },
-      })
-      const pushedVersion = parseInt(pushResp.etag, 10)
-      if (Number.isFinite(pushedVersion)) {
-        profileWithMetadata.version = pushedVersion
+      try {
+        return await pushAtVersion(profile.version || 0)
+      } catch (pushError) {
+        if (!isStaleBlobConflict(pushError)) {
+          throw pushError
+        }
+        // Optimistic-concurrency conflict: our base version is behind
+        // the server, or we tried to create a profile that already
+        // exists. Re-read the current version and retry once so local
+        // settings win instead of looping on STALE_BLOB forever.
+        logInfo('Profile push conflicted; rebasing on current version', {
+          component: 'ProfileSync',
+          action: 'saveProfile',
+        })
+        const remote = await this.fetchProfile()
+        return await pushAtVersion(remote?.version ?? 0)
       }
-
-      // Update cache
-      this.cachedProfile = profileWithMetadata
-
-      logInfo('Profile saved via enclave', {
-        component: 'ProfileSync',
-        action: 'saveProfile',
-        metadata: {
-          version: profileWithMetadata.version,
-          size: plaintext.byteLength,
-        },
-      })
-
-      return { success: true, version: profileWithMetadata.version }
     } catch (error) {
       // Silently fail if no auth token
       if (
