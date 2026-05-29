@@ -4,6 +4,7 @@ import {
   SECRET_PASSKEY_BACKED_UP,
   USER_ENCRYPTION_KEY,
 } from '@/constants/storage-keys'
+import { revokeAndClearOAuthTokens } from '@/services/auth'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { profileSync } from '@/services/cloud/profile-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -29,6 +30,15 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   // async work, so concurrent code cannot re-persist a stale key.
   if (!preserveEncryptionKey) {
     encryptionService.clearKey({ persist: true })
+  }
+
+  try {
+    await revokeAndClearOAuthTokens()
+  } catch (error) {
+    logError('Failed to revoke OAuth tokens during cleanup', error, {
+      component: context,
+      action: 'clearAllUserData',
+    })
   }
 
   // Reset renderer registry to clear any cached renderers

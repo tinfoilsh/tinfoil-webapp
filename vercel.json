@@ -35,7 +35,9 @@
       "destination": "/share/%5B%5B...slug%5D%5D.html"
     },
     { "source": "/newchat", "destination": "/newchat.html" },
-    { "source": "/newchat/", "destination": "/newchat.html" }
+    { "source": "/newchat/", "destination": "/newchat.html" },
+    { "source": "/oauth/callback", "destination": "/oauth/callback.html" },
+    { "source": "/oauth/callback/", "destination": "/oauth/callback.html" }
   ],
   "headers": [
     {

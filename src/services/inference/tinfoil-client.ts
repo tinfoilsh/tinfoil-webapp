@@ -1,5 +1,8 @@
 import { API_BASE_URL, DEV_API_KEY, IS_DEV } from '@/config'
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import {
+  AUTH_ACTIVE_USER_ID,
+  SETTINGS_CACHED_SUBSCRIPTION_STATUS,
+} from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import {
   TINFOIL_EVENTS_HEADER,
@@ -12,7 +15,14 @@ import {
   SecureClient,
   type VerificationDocument,
 } from 'tinfoil'
-import { authTokenManager } from '../auth'
+import {
+  authTokenManager,
+  clearOAuthAccessTokenCache,
+  getOAuthAccessToken,
+  hasOAuthRefreshToken,
+  isOAuthTokenFlowEnabled,
+  OAuthRedirectStartedError,
+} from '../auth'
 
 export interface RateLimitInfo {
   maxRequests: number
@@ -32,6 +42,31 @@ let cachedSessionTokenWasAuthenticated = false
 let cachedRateLimit: RateLimitInfo | null = null
 let remainingBeforeRequest: number | null = null
 let refreshInFlight: Promise<void> | null = null
+
+function clearCachedSessionToken(): void {
+  cachedSessionToken = null
+  cachedSessionTokenExpiresAt = null
+}
+
+function hasCachedActiveChatSubscription(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    const raw = localStorage.getItem(SETTINGS_CACHED_SUBSCRIPTION_STATUS)
+    if (!raw) return false
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    return parsed.chat_subscription_active === true
+  } catch {
+    return false
+  }
+}
+
+function shouldUseOAuthSessionToken(usedAuthHeader: boolean): boolean {
+  return (
+    usedAuthHeader &&
+    isOAuthTokenFlowEnabled() &&
+    (hasOAuthRefreshToken() || hasCachedActiveChatSubscription())
+  )
+}
 
 function dispatchRateLimitUpdate(): void {
   if (typeof window !== 'undefined') {
@@ -76,6 +111,28 @@ async function fetchSessionToken(): Promise<string> {
   }
   const usedAuthHeader = authBearer !== null
 
+  if (shouldUseOAuthSessionToken(usedAuthHeader)) {
+    clearCachedSessionToken()
+    if (cachedRateLimit !== null) {
+      cachedRateLimit = null
+      dispatchRateLimitUpdate()
+    }
+
+    try {
+      const token = await getOAuthAccessToken()
+      if (token) return token
+    } catch (error) {
+      if (error instanceof OAuthRedirectStartedError) {
+        throw error
+      }
+      logError('Failed to fetch OAuth session token', error, {
+        component: 'tinfoil-client',
+        action: 'fetchSessionToken',
+      })
+      throw error
+    }
+  }
+
   // If the cached token was fetched anonymously but we now have an
   // authenticated bearer, discard it so the next fetch goes out with
   // the user's token and returns the correct (possibly premium) rate
@@ -85,8 +142,7 @@ async function fetchSessionToken(): Promise<string> {
     !cachedSessionTokenWasAuthenticated &&
     usedAuthHeader
   ) {
-    cachedSessionToken = null
-    cachedSessionTokenExpiresAt = null
+    clearCachedSessionToken()
     cachedRateLimit = null
     dispatchRateLimitUpdate()
   }
@@ -98,8 +154,7 @@ async function fetchSessionToken(): Promise<string> {
     if (!isExpired) {
       return cachedSessionToken
     }
-    cachedSessionToken = null
-    cachedSessionTokenExpiresAt = null
+    clearCachedSessionToken()
   }
 
   // Build request headers: include auth if we resolved a bearer above
@@ -182,8 +237,7 @@ export async function refreshRateLimit(): Promise<void> {
   refreshInFlight = (async () => {
     const snapshot = remainingBeforeRequest
     remainingBeforeRequest = null
-    cachedSessionToken = null
-    cachedSessionTokenExpiresAt = null
+    clearCachedSessionToken()
     try {
       await fetchSessionToken()
       if (
@@ -214,12 +268,12 @@ export function resetTinfoilClient(): void {
   clientInstance = null
   secureClient = null
   lastSessionToken = null
-  cachedSessionToken = null
-  cachedSessionTokenExpiresAt = null
+  clearCachedSessionToken()
   cachedSessionTokenWasAuthenticated = false
   cachedRateLimit = null
   remainingBeforeRequest = null
   refreshInFlight = null
+  clearOAuthAccessTokenCache()
 }
 
 /**
@@ -230,8 +284,7 @@ export function resetTinfoilClient(): void {
  */
 export function invalidateAnonymousSessionCache(): void {
   if (cachedSessionTokenWasAuthenticated) return
-  cachedSessionToken = null
-  cachedSessionTokenExpiresAt = null
+  clearCachedSessionToken()
   if (cachedRateLimit !== null) {
     cachedRateLimit = null
     dispatchRateLimitUpdate()

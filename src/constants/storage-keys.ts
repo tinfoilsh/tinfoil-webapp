@@ -18,6 +18,7 @@ export const SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX =
 
 // --- localStorage: Auth ----------------------------------------------------
 export const AUTH_ACTIVE_USER_ID = 'tinfoil-auth-active-user-id'
+export const AUTH_OAUTH_REFRESH_TOKEN = 'tinfoil-auth-oauth-refresh-token'
 
 // --- localStorage: App settings --------------------------------------------
 export const SETTINGS_CLOUD_SYNC_ENABLED = 'tinfoil-settings-cloud-sync-enabled'
@@ -110,6 +111,16 @@ export const SYNC_PROFILE_DIRTY = 'tinfoil-sync-profile-dirty'
 export const DEV_ENABLE_DEBUG_LOGS = 'tinfoil-dev-enable-debug-logs'
 
 // --- sessionStorage: UI state ----------------------------------------------
+export const AUTH_OAUTH_ACCESS_TOKEN = 'tinfoil-auth-oauth-access-token'
+export const AUTH_OAUTH_ACCESS_TOKEN_EXPIRES_AT =
+  'tinfoil-auth-oauth-access-token-expires-at'
+export const AUTH_OAUTH_PENDING_CODE_VERIFIER =
+  'tinfoil-auth-oauth-pending-code-verifier'
+export const AUTH_OAUTH_PENDING_REDIRECT_URI =
+  'tinfoil-auth-oauth-pending-redirect-uri'
+export const AUTH_OAUTH_PENDING_RETURN_TO =
+  'tinfoil-auth-oauth-pending-return-to'
+export const AUTH_OAUTH_PENDING_STATE = 'tinfoil-auth-oauth-pending-state'
 export const UI_SIDEBAR_OPEN = 'tinfoil-ui-sidebar-open'
 export const UI_SIDEBAR_ACTIVE_TAB = 'tinfoil-ui-sidebar-active-tab'
 export const UI_SIDEBAR_PROJECTS_EXPANDED =
