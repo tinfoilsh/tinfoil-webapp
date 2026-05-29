@@ -27,6 +27,15 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
     getKey: vi.fn().mockReturnValue('key_test'),
     getKeyBytesOrThrow: () => new TextEncoder().encode('key_test'),
+    encodeKeyFromBytes: (bytes: Uint8Array) => {
+      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+      let result = ''
+      for (let i = 0; i < bytes.length; i++) {
+        result += chars[Math.floor(bytes[i] / chars.length)]
+        result += chars[bytes[i] % chars.length]
+      }
+      return `key_${result}`
+    },
   },
 }))
 
@@ -43,10 +52,14 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
 const CRED_ID = 'cred_test_1'
 const CEK_BYTES = new Uint8Array(32).map((_, i) => i + 1) // deterministic 32 raw bytes
 
-function uint8ToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-  return btoa(binary)
+function cekToKeyString(bytes: Uint8Array): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
+  let result = ''
+  for (let i = 0; i < bytes.length; i++) {
+    result += chars[Math.floor(bytes[i] / chars.length)]
+    result += chars[bytes[i] % chars.length]
+  }
+  return `key_${result}`
 }
 
 function base64ToHex(b64: string): string {
@@ -87,7 +100,7 @@ describe('retrieveEncryptedKeys', () => {
 
     const bundle = await retrieveEncryptedKeys(CRED_ID, kek)
     expect(bundle).not.toBeNull()
-    expect(bundle?.primary).toBe(uint8ToBase64(CEK_BYTES))
+    expect(bundle?.primary).toBe(cekToKeyString(CEK_BYTES))
     expect(bundle?.alternatives).toEqual([])
   })
 
