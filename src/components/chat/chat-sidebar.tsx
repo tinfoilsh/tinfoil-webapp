@@ -52,7 +52,6 @@ import { useDrag } from './drag-context'
 import { useProject } from '@/components/project/project-context'
 import { cn } from '@/components/ui/utils'
 import { useCloudPagination } from '@/hooks/use-cloud-pagination'
-import { authTokenManager } from '@/services/auth'
 
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -120,6 +119,12 @@ type ChatSidebarProps = {
     current: number
     total: number
   } | null
+  /**
+   * True while the active chat's assistant response is streaming. Used
+   * to defer the sidebar "Syncing with cloud" badge until the stream
+   * finishes and the real upload runs.
+   */
+  isStreaming?: boolean
 }
 
 const MOBILE_BREAKPOINT = 1024 // Same as in chat-interface.tsx
@@ -174,6 +179,7 @@ export function ChatSidebar({
   onSettingsClick,
   windowWidth,
   chatDecryptionProgress,
+  isStreaming,
 }: ChatSidebarProps) {
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
@@ -1803,6 +1809,9 @@ export function ChatSidebar({
                       isDarkMode={isDarkMode}
                       showEncryptionStatus={true}
                       showSyncStatus={true}
+                      streamingChatId={
+                        isStreaming ? currentChat?.id : undefined
+                      }
                       enableTitleAnimation={true}
                       isDraggable={
                         isSignedIn &&

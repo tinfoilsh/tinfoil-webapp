@@ -62,6 +62,12 @@ interface ChatListItemProps {
   isDarkMode: boolean
   showEncryptionStatus?: boolean
   showSyncStatus?: boolean
+  /**
+   * True while this chat's assistant response is actively streaming.
+   * The cloud upload is deferred until the stream finishes, so the
+   * "Syncing with cloud" badge stays hidden until then.
+   */
+  isStreaming?: boolean
   enableTitleAnimation?: boolean
   isDraggable?: boolean
   showMoveToProject?: boolean
@@ -88,6 +94,7 @@ export function ChatListItem({
   isDarkMode,
   showEncryptionStatus = false,
   showSyncStatus = false,
+  isStreaming = false,
   enableTitleAnimation = false,
   isDraggable = false,
   showMoveToProject = false,
@@ -340,7 +347,9 @@ export function ChatListItem({
               (messageCount > 0 && timestamp) ||
               (showSyncStatus &&
                 (chat.isLocalOnly ||
-                  (!chat.isBlankChat && chat.pendingSave)))) && (
+                  (!chat.isBlankChat &&
+                    chat.pendingSave &&
+                    !isStreaming)))) && (
               <div className="mt-1 flex min-h-[16px] w-full items-center gap-2">
                 {chat.decryptionFailed ? (
                   <div className="text-xs text-red-500">
@@ -368,7 +377,9 @@ export function ChatListItem({
                           Only saved locally
                         </span>
                       </>
-                    ) : !chat.isBlankChat && chat.pendingSave ? (
+                    ) : !chat.isBlankChat &&
+                      chat.pendingSave &&
+                      !isStreaming ? (
                       <>
                         {messageCount > 0 && (
                           <span className="text-xs text-content-muted">·</span>

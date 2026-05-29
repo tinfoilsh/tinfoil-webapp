@@ -28,6 +28,12 @@ interface ChatListProps {
   isLoading?: boolean
   showEncryptionStatus?: boolean
   showSyncStatus?: boolean
+  /**
+   * ID of the chat whose assistant response is currently streaming, if
+   * any. Used to suppress the "Syncing with cloud" badge until the
+   * stream finishes and the real upload happens.
+   */
+  streamingChatId?: string
   enableTitleAnimation?: boolean
   animatedDeleteConfirmation?: boolean
   isDraggable?: boolean
@@ -63,6 +69,7 @@ export function ChatList({
   isLoading = false,
   showEncryptionStatus = false,
   showSyncStatus = false,
+  streamingChatId,
   enableTitleAnimation = false,
   animatedDeleteConfirmation = true,
   isDraggable = false,
@@ -198,6 +205,7 @@ export function ChatList({
                 isDarkMode={isDarkMode}
                 showEncryptionStatus={showEncryptionStatus}
                 showSyncStatus={showSyncStatus}
+                isStreaming={!chat.isBlankChat && chat.id === streamingChatId}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id
                 }

@@ -2786,6 +2786,7 @@ export function ChatInterface({
                 onSettingsClick={handleOpenSettingsModal}
                 windowWidth={windowWidth}
                 chatDecryptionProgress={decryptionProgress}
+                isStreaming={isStreaming}
               />
             </motion.div>
           )}
