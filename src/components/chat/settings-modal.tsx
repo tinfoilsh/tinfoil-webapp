@@ -228,12 +228,12 @@ function PasskeyBundleInventory({
     >
       <div className="border-b border-border-subtle px-4 py-2.5">
         <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
-          Registered devices ({sorted.length})
+          Registered platforms ({sorted.length})
         </span>
       </div>
       <ul className="divide-y divide-border-subtle">
         {sorted.map((entry) => {
-          const isThisDevice = entry.id === localCredentialId
+          const isCurrentPlatform = entry.id === localCredentialId
           const isLegacy = entry.source === 'legacy'
           const isRemoving = removingId === entry.id
           return (
@@ -245,7 +245,7 @@ function PasskeyBundleInventory({
                 <div className="flex items-center gap-2">
                   <GoPasskeyFill className="h-4 w-4 shrink-0 text-content-secondary" />
                   <span className="truncate text-sm font-medium text-content-primary">
-                    {isThisDevice ? 'This device' : 'Other device'}
+                    {isCurrentPlatform ? 'This platform' : 'Other platform'}
                   </span>
                   {isLegacy && (
                     <span className="rounded bg-surface-chat px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
@@ -3248,7 +3248,7 @@ ${encryptionKey.replace('key_', '')}
                                   toast({
                                     title: 'Passkey removed',
                                     description:
-                                      'That device can no longer unlock your chats with this passkey.',
+                                      'That platform can no longer unlock your chats with this passkey.',
                                   })
                                   await refreshPasskeyBundles()
                                   if (onRefreshBundleState) {
