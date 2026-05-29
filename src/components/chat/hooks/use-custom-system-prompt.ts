@@ -154,10 +154,6 @@ export const useCustomSystemPrompt = (
 
   // Generate the user preferences XML
   const generateUserPreferencesXML = (): string => {
-    if (!personalization.isEnabled) {
-      return ''
-    }
-
     // Check if any personalization fields are filled
     const hasPersonalization =
       personalization.nickname.trim() ||
@@ -199,10 +195,9 @@ export const useCustomSystemPrompt = (
 
   // Shared helper to replace placeholders in text
   const replacePlaceholders = (text: string): string => {
-    // Generate user preferences XML only if personalization is enabled
-    const userPreferencesXML = personalization.isEnabled
-      ? generateUserPreferencesXML()
-      : ''
+    // Personalization applies whenever any field is filled. The
+    // generator returns an empty string when nothing is set.
+    const userPreferencesXML = generateUserPreferencesXML()
 
     // Get the effective language (default to English if not set)
     const effectiveLanguage = personalization.language.trim() || 'English'
@@ -256,6 +251,6 @@ export const useCustomSystemPrompt = (
   return {
     effectiveSystemPrompt,
     processedRules: processRules(),
-    isUsingPersonalization: personalization.isEnabled,
+    isUsingPersonalization: generateUserPreferencesXML().length > 0,
   }
 }
