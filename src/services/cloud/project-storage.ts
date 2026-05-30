@@ -23,6 +23,7 @@ import {
 } from '../sync-enclave/sync-api'
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import { canWriteToCloud } from './cloud-key-authorization'
+import { ProjectDataSchema, ProjectDocumentPlaintextSchema } from './schemas'
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
@@ -215,9 +216,17 @@ export class ProjectStorageService {
       const plaintextBytes = pullItemPlaintext(item)
       if (!plaintextBytes) return null
 
-      const decoded = JSON.parse(
-        new TextDecoder().decode(plaintextBytes),
-      ) as ProjectData
+      const parsed = JSON.parse(new TextDecoder().decode(plaintextBytes))
+      const projectValidation = ProjectDataSchema.safeParse(parsed)
+      if (!projectValidation.success) {
+        logError('Discarding project with invalid shape', undefined, {
+          component: 'ProjectStorage',
+          action: 'getProject',
+          metadata: { projectId, issues: projectValidation.error.message },
+        })
+        return null
+      }
+      const decoded = parsed as ProjectData
 
       // PullItem only carries the row body + etag; createdAt/updatedAt
       // come from the controlplane listing path (listProjects /
@@ -268,9 +277,20 @@ export class ProjectStorageService {
         const plaintextBytes = pullItemPlaintext(item)
         if (!plaintextBytes) continue
         try {
-          const decoded = JSON.parse(
-            new TextDecoder().decode(plaintextBytes),
-          ) as ProjectData
+          const parsed = JSON.parse(new TextDecoder().decode(plaintextBytes))
+          const projectValidation = ProjectDataSchema.safeParse(parsed)
+          if (!projectValidation.success) {
+            logError('Skipping project with invalid shape', undefined, {
+              component: 'ProjectStorage',
+              action: 'getProjects',
+              metadata: {
+                id: item.id,
+                issues: projectValidation.error.message,
+              },
+            })
+            continue
+          }
+          const decoded = parsed as ProjectData
           const now = new Date().toISOString()
           result.set(item.id, {
             id: item.id,
@@ -529,11 +549,18 @@ export class ProjectStorageService {
       const plaintextBytes = pullItemPlaintext(item)
       if (!plaintextBytes) return null
 
-      const decoded = JSON.parse(new TextDecoder().decode(plaintextBytes)) as {
-        content: string
-        filename?: string
-        contentType?: string
+      const documentValidation = ProjectDocumentPlaintextSchema.safeParse(
+        JSON.parse(new TextDecoder().decode(plaintextBytes)),
+      )
+      if (!documentValidation.success) {
+        logError('Discarding document with invalid shape', undefined, {
+          component: 'ProjectStorage',
+          action: 'getDocument',
+          metadata: { documentId, issues: documentValidation.error.message },
+        })
+        return null
       }
+      const decoded = documentValidation.data
 
       // Same timestamp-synthesis rationale as getProject: the
       // controlplane listing path owns the authoritative values.
@@ -595,13 +622,21 @@ export class ProjectStorageService {
         const plaintextBytes = pullItemPlaintext(item)
         if (!plaintextBytes) continue
         try {
-          const decoded = JSON.parse(
-            new TextDecoder().decode(plaintextBytes),
-          ) as {
-            content: string
-            filename?: string
-            contentType?: string
+          const documentValidation = ProjectDocumentPlaintextSchema.safeParse(
+            JSON.parse(new TextDecoder().decode(plaintextBytes)),
+          )
+          if (!documentValidation.success) {
+            logError('Skipping document with invalid shape', undefined, {
+              component: 'ProjectStorage',
+              action: 'getDocuments',
+              metadata: {
+                id: originalId,
+                issues: documentValidation.error.message,
+              },
+            })
+            continue
           }
+          const decoded = documentValidation.data
           const now = new Date().toISOString()
           result.set(originalId, {
             id: originalId,

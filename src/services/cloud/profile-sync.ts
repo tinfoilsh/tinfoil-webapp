@@ -1,4 +1,4 @@
-import { logError, logInfo } from '@/utils/error-handling'
+import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import {
   listStatus as enclaveListStatus,
@@ -11,6 +11,7 @@ import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
 import { WIRE_CODES } from '../sync-enclave/wire-contract'
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
+import { ProfileDataSchema } from './schemas'
 
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
@@ -88,9 +89,18 @@ export class ProfileSyncService {
       const plaintextBytes = pullItemPlaintext(item)
       if (!plaintextBytes) return null
 
-      const decoded = JSON.parse(
-        new TextDecoder().decode(plaintextBytes),
-      ) as ProfileData
+      const validation = ProfileDataSchema.safeParse(
+        JSON.parse(new TextDecoder().decode(plaintextBytes)),
+      )
+      if (!validation.success) {
+        logWarning('Discarding profile with invalid shape from enclave', {
+          component: 'ProfileSync',
+          action: 'fetchProfile',
+          metadata: { issues: validation.error.message },
+        })
+        return null
+      }
+      const decoded = validation.data as ProfileData
       const etagVersion = item.etag ? parseInt(item.etag, 10) : NaN
       if (Number.isFinite(etagVersion)) {
         decoded.version = etagVersion

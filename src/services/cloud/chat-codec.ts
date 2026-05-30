@@ -10,6 +10,7 @@
 import { ensureValidISODate } from '@/utils/chat-timestamps'
 import { logInfo } from '@/utils/error-handling'
 import type { StoredChat } from '../storage/indexed-db'
+import { RemoteChatPlaintextSchema } from './schemas'
 
 export interface RemoteChatData {
   id: string
@@ -82,6 +83,11 @@ export async function processRemoteChat(
         parseErr instanceof Error ? parseErr.message : String(parseErr)
       }`,
     )
+  }
+
+  const validation = RemoteChatPlaintextSchema.safeParse(decrypted)
+  if (!validation.success) {
+    throw new Error(`v2_plaintext_invalid: ${validation.error.message}`)
   }
 
   const chat: StoredChat = {

@@ -12,6 +12,8 @@ import {
   USER_PREFS_TRAITS,
 } from '@/constants/storage-keys'
 import type { ProfileData } from '@/services/cloud/profile-sync'
+import { logWarning } from '@/utils/error-handling'
+import { ProfileDataSchema } from './schemas'
 
 const DEFAULT_PROFILE_LANGUAGE = 'English'
 
@@ -130,6 +132,16 @@ export function resetSettingsToLocalDefaults(): ProfileData {
  * so the UI reacts to the updated values.
  */
 export function applySettingsToLocal(settings: ProfileData): void {
+  const validation = ProfileDataSchema.safeParse(settings)
+  if (!validation.success) {
+    logWarning('Skipping settings apply for invalid profile shape', {
+      component: 'ProfileSettingsSerializer',
+      action: 'applySettingsToLocal',
+      metadata: { issues: validation.error.message },
+    })
+    return
+  }
+
   // Theme - prefer themeMode if available, fall back to isDarkMode for backwards compatibility
   if (settings.themeMode) {
     localStorage.setItem(SETTINGS_THEME_MODE, settings.themeMode)
