@@ -175,6 +175,8 @@ function ToolCallRow({ call }: { call: ToolCallState }) {
       </div>
       {displayContent && (
         <pre
+          tabIndex={0}
+          aria-label={`${label} output`}
           className={`ml-6 max-h-60 overflow-auto rounded-md px-3 py-2 text-xs leading-relaxed ${
             isBash
               ? 'bg-surface-chat-background font-mono text-content-primary/70'

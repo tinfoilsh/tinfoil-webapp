@@ -46,7 +46,7 @@ export function ExpandableTable({ children }: ExpandableTableProps) {
   const toggle = () => setIsExpanded((prev) => !prev)
 
   const chevronBase =
-    'pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border border-border-subtle bg-white text-content-secondary shadow hover:text-content-primary dark:bg-zinc-800'
+    'pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border border-border-subtle bg-white text-content-secondary shadow hover:text-content-primary focus:outline-none focus:ring-2 focus:ring-brand-accent-dark dark:bg-zinc-800 dark:focus:ring-brand-accent-light'
 
   const collapsed = canExpand && !isExpanded
   const expanded = canExpand && isExpanded
@@ -88,7 +88,7 @@ export function ExpandableTable({ children }: ExpandableTableProps) {
             type="button"
             onClick={toggle}
             aria-expanded={isExpanded}
-            className={`${chevronBase} absolute left-1.5 top-1/2 -translate-y-1/2 ${expanded ? 'opacity-0 transition-opacity group-hover/table:opacity-100' : ''}`}
+            className={`${chevronBase} absolute left-1.5 top-1/2 -translate-y-1/2 ${expanded ? 'opacity-0 transition-opacity focus:opacity-100 group-focus-within/table:opacity-100 group-hover/table:opacity-100' : ''}`}
             aria-label={collapsed ? 'Expand table' : 'Collapse table'}
           >
             {collapsed ? (
@@ -101,7 +101,7 @@ export function ExpandableTable({ children }: ExpandableTableProps) {
             type="button"
             onClick={toggle}
             aria-expanded={isExpanded}
-            className={`${chevronBase} absolute right-1.5 top-1/2 -translate-y-1/2 ${expanded ? 'opacity-0 transition-opacity group-hover/table:opacity-100' : ''}`}
+            className={`${chevronBase} absolute right-1.5 top-1/2 -translate-y-1/2 ${expanded ? 'opacity-0 transition-opacity focus:opacity-100 group-focus-within/table:opacity-100 group-hover/table:opacity-100' : ''}`}
             aria-label={collapsed ? 'Expand table' : 'Collapse table'}
           >
             {collapsed ? (

@@ -21,6 +21,8 @@ const CodeIcon = () => (
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
+    aria-hidden="true"
+    focusable="false"
   >
     <polyline points="16 18 22 12 16 6" />
     <polyline points="8 6 2 12 8 18" />
@@ -36,6 +38,8 @@ const EyeIcon = () => (
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
+    aria-hidden="true"
+    focusable="false"
   >
     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
     <circle cx="12" cy="12" r="3" />
@@ -51,6 +55,8 @@ const PlayIcon = () => (
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
+    aria-hidden="true"
+    focusable="false"
   >
     <polygon points="5 3 19 12 5 21 5 3" />
   </svg>
@@ -136,6 +142,7 @@ const ViewModeToggle = ({
             : 'text-content-muted hover:text-content-secondary'
         }`}
         aria-label={isExecutable ? 'Run' : 'Preview'}
+        aria-pressed={mode === 'preview'}
       >
         <PreviewIcon />
       </button>
@@ -149,6 +156,7 @@ const ViewModeToggle = ({
             : 'text-content-muted hover:text-content-secondary'
         }`}
         aria-label="View code"
+        aria-pressed={mode === 'code'}
       >
         <CodeIcon />
       </button>
@@ -708,11 +716,23 @@ const JsonTreeNode = ({
     )
   }
 
+  const nodeLabel = name ?? (isArray ? 'array' : 'object')
+
   return (
     <div>
-      <div
-        className="hover:bg-surface-secondary/50 flex cursor-pointer"
-        onClick={() => setIsExpanded(!isExpanded)}
+      <button
+        type="button"
+        disabled={!hasChildren}
+        aria-expanded={hasChildren ? isExpanded : undefined}
+        aria-label={
+          hasChildren
+            ? `${isExpanded ? 'Collapse' : 'Expand'} ${nodeLabel}`
+            : undefined
+        }
+        className={`flex w-full text-left disabled:cursor-default ${hasChildren ? 'hover:bg-surface-secondary/50 cursor-pointer' : ''}`}
+        onClick={() => {
+          if (hasChildren) setIsExpanded(!isExpanded)
+        }}
       >
         <span className="w-4 text-content-muted">
           {hasChildren ? (isExpanded ? '▼' : '▶') : ' '}
@@ -729,7 +749,7 @@ const JsonTreeNode = ({
             {!isLast && <span className="text-content-muted">,</span>}
           </>
         )}
-      </div>
+      </button>
       {isExpanded && (
         <>
           <div className="ml-4">
