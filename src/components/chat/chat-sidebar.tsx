@@ -1078,7 +1078,6 @@ export function ChatSidebar({
                 role="button"
                 tabIndex={0}
                 aria-expanded={isProjectsExpanded}
-                aria-label="Projects"
                 onClick={() => {
                   const newExpanded = !isProjectsExpanded
                   setIsProjectsExpanded(newExpanded)
@@ -1557,9 +1556,14 @@ export function ChatSidebar({
                 >
                   {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
                   {isSignedIn && cloudSyncEnabled && localOnlyModeEnabled && (
-                    <div className="relative mx-4 mt-2 flex rounded-lg bg-surface-chat p-1">
+                    <div
+                      className="relative mx-4 mt-2 flex rounded-lg bg-surface-chat p-1"
+                      role="tablist"
+                      aria-label="Chat storage"
+                    >
                       {/* Sliding background indicator */}
                       <div
+                        aria-hidden="true"
                         className={cn(
                           'absolute inset-y-1 w-[calc(50%-4px)] rounded-md shadow-sm transition-all duration-200 ease-in-out',
                           isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
@@ -1571,6 +1575,10 @@ export function ChatSidebar({
                       />
 
                       <button
+                        id="chat-cloud-tab"
+                        role="tab"
+                        aria-selected={activeTab === 'cloud'}
+                        aria-controls="chat-storage-panel"
                         onClick={() => setActiveTab('cloud')}
                         onDragOver={(e) => {
                           if (
@@ -1637,6 +1645,10 @@ export function ChatSidebar({
                         Cloud
                       </button>
                       <button
+                        id="chat-local-tab"
+                        role="tab"
+                        aria-selected={activeTab === 'local'}
+                        aria-controls="chat-storage-panel"
                         onClick={() => setActiveTab('local')}
                         onDragOver={(e) => {
                           if (
@@ -1755,6 +1767,11 @@ export function ChatSidebar({
                 className="flex-1 overflow-hidden"
               >
                 <div
+                  id="chat-storage-panel"
+                  role="tabpanel"
+                  aria-labelledby={
+                    activeTab === 'cloud' ? 'chat-cloud-tab' : 'chat-local-tab'
+                  }
                   ref={chatListRef}
                   onDragOver={(e) => {
                     if (

@@ -10,7 +10,7 @@ import {
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CiFloppyDisk } from 'react-icons/ci'
 import { FaLock } from '../icons/lazy-icons'
@@ -115,6 +115,7 @@ export function ChatListItem({
     'main',
   )
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+  const mobileMenuId = useId()
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null)
   const mobileMenuPortalRef = useRef<HTMLDivElement>(null)
   const prevTitleRef = useRef(chat.title)
@@ -159,9 +160,24 @@ export function ChatListItem({
       }
     }
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      setIsMobileMenuOpen(false)
+      setMobileMenuView('main')
+      mobileMenuButtonRef.current?.focus()
+    }
+
     document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [isMobileMenuOpen])
+    document.addEventListener('keydown', handleKeyDown)
+    const frame = requestAnimationFrame(() => {
+      mobileMenuPortalRef.current?.querySelector('button')?.focus()
+    })
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKeyDown)
+      cancelAnimationFrame(frame)
+    }
+  }, [isMobileMenuOpen, mobileMenuView])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -220,24 +236,12 @@ export function ChatListItem({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-current={isSelected ? 'true' : undefined}
       draggable={isDraggable}
-      onClick={onSelect}
-      onKeyDown={(e) => {
-        // Only handle events originating on the row itself, not bubbled from nested buttons
-        if (e.target !== e.currentTarget) return
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onSelect()
-        }
-      }}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       className={cn(
         'group flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors hover:border-border-subtle',
-        isDraggable ? 'cursor-grab' : 'cursor-pointer',
+        isDraggable && 'cursor-grab',
         isDragging && 'opacity-50',
         chat.decryptionFailed
           ? 'text-content-muted hover:bg-surface-chat'
@@ -250,8 +254,8 @@ export function ChatListItem({
               : 'text-content-secondary hover:bg-surface-sidebar',
       )}
     >
-      <div className="min-w-0 flex-1 pr-2">
-        {isEditing ? (
+      {isEditing ? (
+        <div className="min-w-0 flex-1 pr-2">
           <form
             onSubmit={handleSubmit}
             className="flex w-full items-center gap-2"
@@ -270,8 +274,9 @@ export function ChatListItem({
               type="submit"
               className="ml-auto flex-shrink-0 rounded p-1 text-green-500 transition-colors hover:bg-green-500/10"
               title="Save"
+              aria-label="Save chat title"
             >
-              <CheckIcon className="h-4 w-4" />
+              <CheckIcon className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -281,17 +286,26 @@ export function ChatListItem({
               }}
               className="flex-shrink-0 rounded p-1 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-secondary"
               title="Cancel"
+              aria-label="Cancel rename"
             >
-              <XMarkIcon className="h-4 w-4" />
+              <XMarkIcon className="h-4 w-4" aria-hidden="true" />
             </button>
           </form>
-        ) : (
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-current={isSelected ? 'true' : undefined}
+          className="min-w-0 flex-1 cursor-pointer rounded-md pr-2 text-left focus:outline-none focus:ring-2 focus:ring-brand-accent-dark dark:focus:ring-brand-accent-light"
+        >
           <>
             <div className="flex items-center gap-1.5">
               {showEncryptionStatus && chat.decryptionFailed && (
                 <FaLock
                   className="h-3.5 w-3.5 flex-shrink-0 text-orange-500"
                   title="Encrypted chat"
+                  aria-hidden="true"
                 />
               )}
               <div
@@ -318,6 +332,7 @@ export function ChatListItem({
                 <div
                   className="h-1.5 w-1.5 rounded-full bg-blue-500"
                   title="New chat"
+                  aria-hidden="true"
                 />
               )}
             </div>
@@ -346,7 +361,10 @@ export function ChatListItem({
                           <span className="text-xs text-content-muted">·</span>
                         )}
                         <span className="flex items-center gap-0.5 text-xs leading-none text-content-muted">
-                          <CiFloppyDisk className="h-3 w-3" />
+                          <CiFloppyDisk
+                            className="h-3 w-3"
+                            aria-hidden="true"
+                          />
                           Only saved locally
                         </span>
                       </>
@@ -356,7 +374,10 @@ export function ChatListItem({
                           <span className="text-xs text-content-muted">·</span>
                         )}
                         <span className="flex items-center gap-0.5 text-xs leading-none text-orange-500">
-                          <CloudArrowUpIcon className="h-3 w-3" />
+                          <CloudArrowUpIcon
+                            className="h-3 w-3"
+                            aria-hidden="true"
+                          />
                           Syncing with cloud
                         </span>
                       </>
@@ -366,12 +387,12 @@ export function ChatListItem({
               </div>
             )}
           </>
-        )}
-      </div>
+        </button>
+      )}
 
       {!isEditing && (
         <div className="flex flex-shrink-0 items-center gap-1.5">
-          <div className="hidden items-center opacity-0 transition-opacity md:flex md:group-focus-within:opacity-100 md:group-hover:opacity-100">
+          <div className="pointer-events-none hidden items-center opacity-0 transition-opacity md:flex md:group-focus-within:pointer-events-auto md:group-focus-within:opacity-100 md:group-hover:pointer-events-auto md:group-hover:opacity-100">
             {!chat.decryptionFailed && !chat.isBlankChat && (
               <button
                 className={cn(
@@ -408,6 +429,7 @@ export function ChatListItem({
             <div className="flex items-center md:hidden">
               <button
                 ref={mobileMenuButtonRef}
+                type="button"
                 className={cn(
                   'rounded p-1 transition-colors',
                   isDarkMode
@@ -429,15 +451,22 @@ export function ChatListItem({
                   }
                 }}
                 title="More options"
+                aria-label="More chat options"
+                aria-haspopup="menu"
+                aria-expanded={isMobileMenuOpen}
+                aria-controls={isMobileMenuOpen ? mobileMenuId : undefined}
               >
-                <EllipsisVerticalIcon className="h-5 w-5" />
+                <EllipsisVerticalIcon className="h-5 w-5" aria-hidden="true" />
               </button>
 
               {/* Mobile dropdown menu - rendered via portal to escape overflow constraints */}
               {isMobileMenuOpen &&
                 createPortal(
                   <div
+                    id={mobileMenuId}
                     ref={mobileMenuPortalRef}
+                    role="menu"
+                    aria-label={`Actions for ${displayTitle}`}
                     className={cn(
                       'fixed z-[9999] min-w-[200px] rounded-lg border py-1 shadow-lg',
                       isDarkMode
@@ -455,6 +484,8 @@ export function ChatListItem({
                         {/* Rename */}
                         {!chat.decryptionFailed && (
                           <button
+                            type="button"
+                            role="menuitem"
                             className={cn(
                               'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
                               isDarkMode
@@ -468,7 +499,10 @@ export function ChatListItem({
                               onStartEdit()
                             }}
                           >
-                            <PencilSquareIcon className="h-4 w-4" />
+                            <PencilSquareIcon
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                             Rename
                           </button>
                         )}
@@ -479,6 +513,9 @@ export function ChatListItem({
                           !chat.decryptionFailed &&
                           projects.length > 0 && (
                             <button
+                              type="button"
+                              role="menuitem"
+                              aria-haspopup="menu"
                               className={cn(
                                 'flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors',
                                 isDarkMode
@@ -491,7 +528,10 @@ export function ChatListItem({
                               }}
                             >
                               <span className="flex items-center gap-3">
-                                <FolderIcon className="h-4 w-4" />
+                                <FolderIcon
+                                  className="h-4 w-4"
+                                  aria-hidden="true"
+                                />
                                 Move to project
                               </span>
                               <svg
@@ -499,6 +539,7 @@ export function ChatListItem({
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
+                                aria-hidden="true"
                               >
                                 <path
                                   strokeLinecap="round"
@@ -513,6 +554,8 @@ export function ChatListItem({
                         {/* Move out of project */}
                         {onRemoveFromProject && !chat.decryptionFailed && (
                           <button
+                            type="button"
+                            role="menuitem"
                             className={cn(
                               'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
                               isDarkMode
@@ -526,7 +569,10 @@ export function ChatListItem({
                               onRemoveFromProject()
                             }}
                           >
-                            <FolderIcon className="h-4 w-4" />
+                            <FolderIcon
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                             Move out of project
                           </button>
                         )}
@@ -536,6 +582,8 @@ export function ChatListItem({
                           onConvertToCloud &&
                           !chat.decryptionFailed && (
                             <button
+                              type="button"
+                              role="menuitem"
                               className={cn(
                                 'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
                                 isDarkMode
@@ -549,7 +597,10 @@ export function ChatListItem({
                                 onConvertToCloud()
                               }}
                             >
-                              <CloudIcon className="h-4 w-4" />
+                              <CloudIcon
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
                               Move to cloud
                             </button>
                           )}
@@ -559,6 +610,8 @@ export function ChatListItem({
                           onConvertToLocal &&
                           !chat.decryptionFailed && (
                             <button
+                              type="button"
+                              role="menuitem"
                               className={cn(
                                 'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
                                 isDarkMode
@@ -572,13 +625,18 @@ export function ChatListItem({
                                 onConvertToLocal()
                               }}
                             >
-                              <CiFloppyDisk className="h-4 w-4" />
+                              <CiFloppyDisk
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
                               Move to local
                             </button>
                           )}
 
                         {/* Delete */}
                         <button
+                          type="button"
+                          role="menuitem"
                           className={cn(
                             'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
                             'text-red-500 hover:bg-red-500/10',
@@ -590,7 +648,7 @@ export function ChatListItem({
                             onRequestDelete()
                           }}
                         >
-                          <TrashIcon className="h-4 w-4" />
+                          <TrashIcon className="h-4 w-4" aria-hidden="true" />
                           Delete
                         </button>
                       </>
@@ -599,6 +657,8 @@ export function ChatListItem({
                         {/* Projects submenu */}
                         {/* Back button */}
                         <button
+                          type="button"
+                          role="menuitem"
                           className={cn(
                             'flex w-full items-center gap-2 border-b px-3 py-2.5 text-left text-sm font-medium transition-colors',
                             isDarkMode
@@ -615,6 +675,7 @@ export function ChatListItem({
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
+                            aria-hidden="true"
                           >
                             <path
                               strokeLinecap="round"
@@ -630,6 +691,8 @@ export function ChatListItem({
                         <div className="max-h-[200px] overflow-y-auto">
                           {projects.map((project) => (
                             <button
+                              type="button"
+                              role="menuitem"
                               key={project.id}
                               className={cn(
                                 'flex w-full items-center gap-3 px-3 py-2.5 text-left text-sm transition-colors',
@@ -644,7 +707,10 @@ export function ChatListItem({
                                 onMoveToProject?.(project.id)
                               }}
                             >
-                              <FolderIcon className="h-4 w-4 text-content-muted" />
+                              <FolderIcon
+                                className="h-4 w-4 text-content-muted"
+                                aria-hidden="true"
+                              />
                               <span className="truncate">{project.name}</span>
                             </button>
                           ))}
