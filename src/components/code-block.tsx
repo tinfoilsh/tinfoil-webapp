@@ -995,15 +995,19 @@ export const CodeBlock = memo(function CodeBlock({
           />
         </div>
       )}
-      <div className="absolute right-2 top-2 z-10 hidden gap-1 group-hover:flex">
+      <div className="pointer-events-none absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
         {isMarkdown && viewMode === 'preview' && (
           <>
             <div className="group/md relative">
               <button
                 onClick={downloadMarkdown}
+                aria-label="Download as Markdown"
                 className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80"
               >
-                <BsFiletypeMd className="h-5 w-5 text-content-muted" />
+                <BsFiletypeMd
+                  className="h-5 w-5 text-content-muted"
+                  aria-hidden="true"
+                />
               </button>
               <span className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/md:block">
                 .md
@@ -1013,10 +1017,12 @@ export const CodeBlock = memo(function CodeBlock({
               <button
                 onClick={downloadPdf}
                 disabled={isGeneratingPdf}
+                aria-label="Download as PDF"
                 className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80 disabled:opacity-50"
               >
                 <BsFiletypePdf
                   className={`h-5 w-5 ${isGeneratingPdf ? 'animate-pulse' : ''} text-content-muted`}
+                  aria-hidden="true"
                 />
               </button>
               <span className="pointer-events-none absolute -top-8 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/pdf:block">
@@ -1028,6 +1034,7 @@ export const CodeBlock = memo(function CodeBlock({
         <div className="group/copy relative">
           <button
             onClick={copyToClipboard}
+            aria-label={copied ? 'Copied' : 'Copy code'}
             className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80"
           >
             {copied ? (
@@ -1037,6 +1044,7 @@ export const CodeBlock = memo(function CodeBlock({
                 strokeWidth="1.5"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
                 <path
                   strokeLinecap="round"
@@ -1051,6 +1059,7 @@ export const CodeBlock = memo(function CodeBlock({
                 strokeWidth="1.5"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
                 <path
                   strokeLinecap="round"
