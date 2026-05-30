@@ -81,6 +81,8 @@ export function ReasoningEffortSelector({
         )}
         title={buttonTitle}
         aria-label={buttonTitle}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
       >
         <ReasoningIcon active={isThinkingActive} />
         <ChevronDownIcon
@@ -217,6 +219,8 @@ function ReasoningPopover({
     <div
       ref={menuRef}
       data-reasoning-menu
+      role="menu"
+      aria-label="Thinking options"
       className={cn(
         'absolute z-50 w-[200px] overflow-y-auto rounded-lg border border-border-subtle bg-surface-chat p-1 font-aeonik-fono text-content-secondary shadow-lg',
         dynamicStyles.bottom ? 'mb-2' : 'mt-2',
@@ -253,6 +257,8 @@ function ReasoningPopover({
             <button
               key={option.value}
               type="button"
+              role="menuitemradio"
+              aria-checked={isActive}
               className={cn(
                 'flex w-full flex-col rounded-md border px-3 py-2 text-left text-sm transition-colors',
                 isActive
@@ -281,6 +287,8 @@ function ReasoningPopover({
       {supportsToggle && !supportsEffort && (
         <button
           type="button"
+          role="menuitemradio"
+          aria-checked={thinkingEnabled}
           className={cn(
             'flex w-full flex-col rounded-md border px-3 py-2 text-left text-sm transition-colors',
             thinkingEnabled
@@ -310,6 +318,8 @@ function ReasoningPopover({
       {supportsToggle && (
         <button
           type="button"
+          role="menuitemradio"
+          aria-checked={!thinkingEnabled}
           className={cn(
             'flex w-full flex-col rounded-md border px-3 py-2 text-left text-sm transition-colors',
             !thinkingEnabled

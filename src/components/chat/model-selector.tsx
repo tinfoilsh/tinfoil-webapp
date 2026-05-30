@@ -161,6 +161,8 @@ export function ModelSelector({
       <button
         type="button"
         key={model.modelName}
+        role="menuitemradio"
+        aria-checked={isSelected}
         className={`relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
         onClick={(e) => {
           e.preventDefault()
@@ -193,7 +195,10 @@ export function ModelSelector({
           </span>
         </div>
         {isSelected && (
-          <CheckIcon className="h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light" />
+          <CheckIcon
+            className="h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
+            aria-hidden="true"
+          />
         )}
       </button>
     )
@@ -203,6 +208,8 @@ export function ModelSelector({
     <div
       ref={menuRef}
       data-model-menu
+      role="menu"
+      aria-label="Select a model"
       className={`absolute z-50 w-[280px] overflow-y-auto rounded-lg border border-border-subtle bg-surface-chat p-2 font-aeonik-fono text-content-secondary shadow-lg ${dynamicStyles.bottom ? 'mb-2' : 'mt-2'}`}
       style={{
         maxHeight: dynamicStyles.maxHeight,
@@ -229,6 +236,7 @@ export function ModelSelector({
           <div className="mx-3 my-1 border-t border-border-subtle" />
           <button
             type="button"
+            aria-expanded={showOtherModels}
             className="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm font-medium text-content-secondary transition-colors hover:bg-surface-card/70"
             onClick={(e) => {
               e.preventDefault()
@@ -240,6 +248,7 @@ export function ModelSelector({
             <span>Other models</span>
             <ChevronDownIcon
               className={`h-4 w-4 text-content-muted transition-transform ${showOtherModels ? 'rotate-180' : ''}`}
+              aria-hidden="true"
             />
           </button>
 

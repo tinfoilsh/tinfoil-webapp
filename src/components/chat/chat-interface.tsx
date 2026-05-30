@@ -3196,6 +3196,8 @@ export function ChatInterface({
                               <button
                                 type="button"
                                 data-model-selector
+                                aria-haspopup="menu"
+                                aria-expanded={expandedLabel === 'model'}
                                 onClick={(e) => {
                                   e.preventDefault()
                                   e.stopPropagation()
@@ -3218,6 +3220,7 @@ export function ChatInterface({
                                         fill="none"
                                         stroke="currentColor"
                                         viewBox="0 0 24 24"
+                                        aria-hidden="true"
                                       >
                                         <path
                                           strokeLinecap="round"
