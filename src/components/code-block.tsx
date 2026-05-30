@@ -1083,6 +1083,8 @@ export const CodeBlock = memo(function CodeBlock({
         />
       ) : isMarkdown ? (
         <pre
+          tabIndex={0}
+          aria-label={`Code block${language ? `, ${language}` : ''}`}
           className="font-mono text-sm"
           style={{
             borderRadius: '0.5rem',
@@ -1112,6 +1114,8 @@ export const CodeBlock = memo(function CodeBlock({
       ) : (
         <SyntaxHighlighter
           language={language}
+          tabIndex={0}
+          aria-label={`Code block${language ? `, ${language}` : ''}`}
           style={isDarkMode ? DARK_THEME : LIGHT_THEME}
           customStyle={{
             borderRadius: '0.5rem',
