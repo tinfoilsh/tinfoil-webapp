@@ -188,6 +188,28 @@ export function ChatInput({
     }
   }, [processedDocuments?.length])
 
+  // Announce attachment processing progress to screen readers without
+  // re-rendering: write directly into an off-screen live region.
+  const uploadStatusRef = useRef<HTMLSpanElement>(null)
+  const wasProcessingAttachmentsRef = useRef(false)
+  const processingAttachmentCount = (processedDocuments ?? []).filter(
+    (doc) => doc.isUploading || doc.isGeneratingDescription,
+  ).length
+  useEffect(() => {
+    const region = uploadStatusRef.current
+    if (!region) return
+    if (processingAttachmentCount > 0) {
+      region.textContent =
+        processingAttachmentCount === 1
+          ? 'Processing attachment'
+          : `Processing ${processingAttachmentCount} attachments`
+      wasProcessingAttachmentsRef.current = true
+    } else if (wasProcessingAttachmentsRef.current) {
+      region.textContent = 'Attachments ready'
+      wasProcessingAttachmentsRef.current = false
+    }
+  }, [processingAttachmentCount])
+
   // Auto-resize textarea as content changes (typing, transcription, paste, etc.)
   // Layout effect avoids iOS Safari cases where `scrollHeight` lags a paint.
   useIsomorphicLayoutEffect(() => {
@@ -559,6 +581,13 @@ export function ChatInput({
               )}
             </div>
           )}
+
+          <span
+            ref={uploadStatusRef}
+            className="sr-only"
+            role="status"
+            aria-live="polite"
+          />
 
           {processedDocuments && processedDocuments.length > 0 && (
             <div
