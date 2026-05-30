@@ -354,6 +354,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
           >
             <button
               type="button"
+              aria-expanded={privacyExpanded}
               onClick={() => {
                 setPrivacyExpanded((prev) => {
                   if (!prev) setLockPop(true)
@@ -376,7 +377,10 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                     : { duration: 0 }
                 }
               >
-                <BiSolidLock className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light" />
+                <BiSolidLock
+                  className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
+                  aria-hidden="true"
+                />
               </motion.span>
               <span>Your chats are private by design</span>
               <svg
@@ -384,6 +388,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
                 <path
                   strokeLinecap="round"
@@ -489,6 +494,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                         <button
                           type="button"
                           data-model-selector
+                          aria-haspopup="menu"
+                          aria-expanded={expandedLabel === 'model'}
                           onClick={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
@@ -513,6 +520,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                                   fill="none"
                                   stroke="currentColor"
                                   viewBox="0 0 24 24"
+                                  aria-hidden="true"
                                 >
                                   <path
                                     strokeLinecap="round"
