@@ -46,6 +46,7 @@ const DefaultMessageComponent = ({
     React.useState(false)
   const userMessageContentRef = React.useRef<HTMLDivElement>(null)
   const editTextareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const editButtonRef = React.useRef<HTMLButtonElement>(null)
 
   const citationUrlTitles = React.useMemo(() => {
     if (!message.annotations || message.annotations.length === 0)
@@ -162,6 +163,9 @@ const DefaultMessageComponent = ({
   const handleCancelEdit = React.useCallback(() => {
     setIsEditing(false)
     setEditContent(message.content || '')
+    setTimeout(() => {
+      editButtonRef.current?.focus()
+    }, 0)
   }, [message.content])
 
   const handleSubmitEdit = React.useCallback(() => {
@@ -532,6 +536,7 @@ const DefaultMessageComponent = ({
                 <div className="rounded-xl border border-border-subtle bg-surface-chat p-4">
                   <textarea
                     ref={editTextareaRef}
+                    aria-label="Edit message"
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
                     onKeyDown={(e) => {
@@ -608,6 +613,7 @@ const DefaultMessageComponent = ({
                 {onEditMessage && (
                   <div className="group/edit relative">
                     <button
+                      ref={editButtonRef}
                       onClick={handleStartEdit}
                       aria-label="Edit message"
                       className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
@@ -672,7 +678,7 @@ const DefaultMessageComponent = ({
                 <button
                   onClick={() => onRegenerateMessage(messageIndex - 1)}
                   aria-label="Regenerate response"
-                  className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
+                  className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
                 >
                   <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
