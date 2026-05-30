@@ -710,7 +710,8 @@ export function ChatSidebar({
     <>
       {/* Collapsed sidebar rail - always visible on desktop when sidebar is closed */}
       {!isMobile && !isOpen && (
-        <div
+        <nav
+          aria-label="Chat history"
           className={cn(
             'fixed left-0 top-0 z-40 flex h-dvh flex-col border-r',
             'border-border-subtle bg-surface-sidebar text-content-primary',
@@ -822,11 +823,13 @@ export function ChatSidebar({
               </span>
             </div>
           </div>
-        </div>
+        </nav>
       )}
 
       {/* Expanded sidebar wrapper */}
-      <div
+      <nav
+        aria-label="Chat history"
+        inert={!isOpen}
         className={cn(
           'fixed z-40 flex h-dvh flex-col overflow-hidden border-r',
           // On mobile: slide in/out. On desktop: always positioned, just toggle width
@@ -866,9 +869,10 @@ export function ChatSidebar({
                 id="settings-button"
                 type="button"
                 onClick={onSettingsClick}
+                aria-label="Settings"
                 className="rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
               >
-                <Cog6ToothIcon className="h-5 w-5" />
+                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
               </button>
               <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings
@@ -1073,6 +1077,8 @@ export function ChatSidebar({
               <div
                 role="button"
                 tabIndex={0}
+                aria-expanded={isProjectsExpanded}
+                aria-label="Projects"
                 onClick={() => {
                   const newExpanded = !isProjectsExpanded
                   setIsProjectsExpanded(newExpanded)
@@ -1475,6 +1481,8 @@ export function ChatSidebar({
             <div
               role="button"
               tabIndex={0}
+              aria-expanded={isChatHistoryExpanded}
+              aria-label="Chats"
               onClick={() => setIsChatHistoryExpanded(!isChatHistoryExpanded)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1980,7 +1988,7 @@ export function ChatSidebar({
             </p>
           </div>
         </div>
-      </div>
+      </nav>
 
       {/* Mobile overlay */}
       {isOpen && (

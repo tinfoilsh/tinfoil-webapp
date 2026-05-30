@@ -167,9 +167,9 @@ export function ChatList({
   }
 
   return (
-    <div className="space-y-2 p-2">
+    <div role="list" className="space-y-2 p-2">
       {chats.map((chat) => (
-        <div key={getChatKey(chat)} className="relative">
+        <div key={getChatKey(chat)} role="listitem" className="relative">
           <ChatListItem
             chat={chat}
             isSelected={isSelected(chat)}

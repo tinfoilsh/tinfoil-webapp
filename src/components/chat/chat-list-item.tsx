@@ -222,6 +222,7 @@ export function ChatListItem({
     <div
       role="button"
       tabIndex={0}
+      aria-current={isSelected ? 'true' : undefined}
       draggable={isDraggable}
       onClick={onSelect}
       onKeyDown={(e) => {
@@ -257,6 +258,7 @@ export function ChatListItem({
             onClick={(e) => e.stopPropagation()}
           >
             <input
+              aria-label="Chat title"
               className="min-w-0 flex-1 rounded bg-surface-sidebar px-2 py-1 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={editingTitle}
               onChange={(e) => onTitleChange(e.target.value)}
@@ -369,7 +371,7 @@ export function ChatListItem({
 
       {!isEditing && (
         <div className="flex flex-shrink-0 items-center gap-1.5">
-          <div className="hidden items-center md:group-hover:flex">
+          <div className="hidden items-center opacity-0 transition-opacity md:flex md:group-focus-within:opacity-100 md:group-hover:opacity-100">
             {!chat.decryptionFailed && !chat.isBlankChat && (
               <button
                 className={cn(
@@ -379,9 +381,10 @@ export function ChatListItem({
                     : 'text-content-muted hover:bg-surface-sidebar hover:text-content-secondary',
                 )}
                 onClick={handleStartEdit}
+                aria-label="Rename chat"
                 title="Rename"
               >
-                <PencilSquareIcon className="h-4 w-4" />
+                <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
             {!chat.isBlankChat && (
@@ -393,9 +396,10 @@ export function ChatListItem({
                     : 'text-content-muted hover:bg-surface-sidebar hover:text-content-secondary',
                 )}
                 onClick={handleRequestDelete}
+                aria-label="Delete chat"
                 title="Delete"
               >
-                <TrashIcon className="h-4 w-4" />
+                <TrashIcon className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
           </div>
