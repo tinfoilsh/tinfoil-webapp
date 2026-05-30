@@ -354,6 +354,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
           >
             <button
               type="button"
+              aria-expanded={privacyExpanded}
               onClick={() => {
                 setPrivacyExpanded((prev) => {
                   if (!prev) setLockPop(true)
@@ -361,7 +362,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   return !prev
                 })
               }}
-              className={`group flex w-full items-center gap-2 text-base text-content-secondary transition-colors hover:text-content-primary md:justify-start ${privacyExpanded ? 'justify-start' : 'justify-center'}`}
+              className={`group flex w-full items-center gap-2 py-1.5 text-base text-content-secondary transition-colors hover:text-content-primary md:justify-start ${privacyExpanded ? 'justify-start' : 'justify-center'}`}
             >
               <motion.span
                 className="inline-flex shrink-0"
@@ -376,7 +377,10 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                     : { duration: 0 }
                 }
               >
-                <BiSolidLock className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light" />
+                <BiSolidLock
+                  className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
+                  aria-hidden="true"
+                />
               </motion.span>
               <span>Your chats are private by design</span>
               <svg
@@ -384,6 +388,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
+                aria-hidden="true"
               >
                 <path
                   strokeLinecap="round"
@@ -489,6 +494,9 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                         <button
                           type="button"
                           data-model-selector
+                          aria-haspopup="menu"
+                          aria-expanded={expandedLabel === 'model'}
+                          aria-label={`Current model ${models.find((m) => m.modelName === selectedModel)?.name ?? ''}`}
                           onClick={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
@@ -496,7 +504,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                               handleLabelClick('model', () => {})
                             }
                           }}
-                          className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
+                          className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
                         >
                           {(() => {
                             const model = models.find(
@@ -513,6 +521,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                                   fill="none"
                                   stroke="currentColor"
                                   viewBox="0 0 24 24"
+                                  aria-hidden="true"
                                 >
                                   <path
                                     strokeLinecap="round"

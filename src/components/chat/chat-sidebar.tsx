@@ -710,7 +710,8 @@ export function ChatSidebar({
     <>
       {/* Collapsed sidebar rail - always visible on desktop when sidebar is closed */}
       {!isMobile && !isOpen && (
-        <div
+        <nav
+          aria-label="Chat history"
           className={cn(
             'fixed left-0 top-0 z-40 flex h-dvh flex-col border-r',
             'border-border-subtle bg-surface-sidebar text-content-primary',
@@ -822,11 +823,13 @@ export function ChatSidebar({
               </span>
             </div>
           </div>
-        </div>
+        </nav>
       )}
 
       {/* Expanded sidebar wrapper */}
-      <div
+      <nav
+        aria-label="Chat history"
+        inert={!isOpen}
         className={cn(
           'fixed z-40 flex h-dvh flex-col overflow-hidden border-r',
           // On mobile: slide in/out. On desktop: always positioned, just toggle width
@@ -866,9 +869,10 @@ export function ChatSidebar({
                 id="settings-button"
                 type="button"
                 onClick={onSettingsClick}
+                aria-label="Settings"
                 className="rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
               >
-                <Cog6ToothIcon className="h-5 w-5" />
+                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
               </button>
               <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings
@@ -1073,6 +1077,7 @@ export function ChatSidebar({
               <div
                 role="button"
                 tabIndex={0}
+                aria-expanded={isProjectsExpanded}
                 onClick={() => {
                   const newExpanded = !isProjectsExpanded
                   setIsProjectsExpanded(newExpanded)
@@ -1475,6 +1480,8 @@ export function ChatSidebar({
             <div
               role="button"
               tabIndex={0}
+              aria-expanded={isChatHistoryExpanded}
+              aria-label="Chats"
               onClick={() => setIsChatHistoryExpanded(!isChatHistoryExpanded)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -1549,9 +1556,14 @@ export function ChatSidebar({
                 >
                   {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
                   {isSignedIn && cloudSyncEnabled && localOnlyModeEnabled && (
-                    <div className="relative mx-4 mt-2 flex rounded-lg bg-surface-chat p-1">
+                    <div
+                      className="relative mx-4 mt-2 flex rounded-lg bg-surface-chat p-1"
+                      role="tablist"
+                      aria-label="Chat storage"
+                    >
                       {/* Sliding background indicator */}
                       <div
+                        aria-hidden="true"
                         className={cn(
                           'absolute inset-y-1 w-[calc(50%-4px)] rounded-md shadow-sm transition-all duration-200 ease-in-out',
                           isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
@@ -1563,6 +1575,10 @@ export function ChatSidebar({
                       />
 
                       <button
+                        id="chat-cloud-tab"
+                        role="tab"
+                        aria-selected={activeTab === 'cloud'}
+                        aria-controls="chat-storage-panel"
                         onClick={() => setActiveTab('cloud')}
                         onDragOver={(e) => {
                           if (
@@ -1629,6 +1645,10 @@ export function ChatSidebar({
                         Cloud
                       </button>
                       <button
+                        id="chat-local-tab"
+                        role="tab"
+                        aria-selected={activeTab === 'local'}
+                        aria-controls="chat-storage-panel"
                         onClick={() => setActiveTab('local')}
                         onDragOver={(e) => {
                           if (
@@ -1747,6 +1767,11 @@ export function ChatSidebar({
                 className="flex-1 overflow-hidden"
               >
                 <div
+                  id="chat-storage-panel"
+                  role="tabpanel"
+                  aria-labelledby={
+                    activeTab === 'cloud' ? 'chat-cloud-tab' : 'chat-local-tab'
+                  }
                   ref={chatListRef}
                   onDragOver={(e) => {
                     if (
@@ -1980,7 +2005,7 @@ export function ChatSidebar({
             </p>
           </div>
         </div>
-      </div>
+      </nav>
 
       {/* Mobile overlay */}
       {isOpen && (

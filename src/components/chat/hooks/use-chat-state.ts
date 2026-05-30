@@ -226,47 +226,59 @@ export function useChatState({
   // Update ref with cancelGeneration function
   cancelGenerationRef.current = cancelGeneration
 
-  // Add effect to handle clicks outside the model/reasoning selectors
+  // Add effect to handle dismissing the model/reasoning selectors
   useEffect(() => {
     if (expandedLabel === 'model' || expandedLabel === 'reasoning') {
+      const triggerSelector =
+        expandedLabel === 'model'
+          ? '[data-model-selector]'
+          : '[data-reasoning-selector]'
+      const menuSelector =
+        expandedLabel === 'model'
+          ? '[data-model-menu]'
+          : '[data-reasoning-menu]'
+
+      const getSelectorElements = () => ({
+        trigger: document.querySelector<HTMLElement>(triggerSelector),
+        menu: document.querySelector<HTMLElement>(menuSelector),
+      })
+
+      const isOutsideSelector = (target: EventTarget | null) => {
+        if (!(target instanceof Node)) return false
+        const { trigger, menu } = getSelectorElements()
+        return (
+          trigger && menu && !trigger.contains(target) && !menu.contains(target)
+        )
+      }
+
       const handleClickOutside = (event: MouseEvent) => {
-        if (expandedLabel === 'model') {
-          const modelSelectorButton = document.querySelector(
-            '[data-model-selector]',
-          )
-          const modelSelectorMenu = document.querySelector('[data-model-menu]')
+        if (isOutsideSelector(event.target)) {
+          setExpandedLabel(null)
+        }
+      }
 
-          if (
-            modelSelectorButton &&
-            modelSelectorMenu &&
-            !modelSelectorButton.contains(event.target as Node) &&
-            !modelSelectorMenu.contains(event.target as Node)
-          ) {
-            setExpandedLabel(null)
-          }
-        } else if (expandedLabel === 'reasoning') {
-          const reasoningSelectorButton = document.querySelector(
-            '[data-reasoning-selector]',
-          )
-          const reasoningSelectorMenu = document.querySelector(
-            '[data-reasoning-menu]',
-          )
+      const handleFocusOutside = (event: FocusEvent) => {
+        if (isOutsideSelector(event.target)) {
+          setExpandedLabel(null)
+        }
+      }
 
-          if (
-            reasoningSelectorButton &&
-            reasoningSelectorMenu &&
-            !reasoningSelectorButton.contains(event.target as Node) &&
-            !reasoningSelectorMenu.contains(event.target as Node)
-          ) {
-            setExpandedLabel(null)
-          }
+      const handleKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          setExpandedLabel(null)
+          getSelectorElements().trigger?.focus()
         }
       }
 
       document.addEventListener('mousedown', handleClickOutside)
+      document.addEventListener('focusin', handleFocusOutside)
+      document.addEventListener('keydown', handleKeyDown)
 
       return () => {
         document.removeEventListener('mousedown', handleClickOutside)
+        document.removeEventListener('focusin', handleFocusOutside)
+        document.removeEventListener('keydown', handleKeyDown)
       }
     }
   }, [expandedLabel, setExpandedLabel])

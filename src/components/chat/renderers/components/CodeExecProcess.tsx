@@ -175,6 +175,8 @@ function ToolCallRow({ call }: { call: ToolCallState }) {
       </div>
       {displayContent && (
         <pre
+          tabIndex={0}
+          aria-label={`${label} output`}
           className={`ml-6 max-h-60 overflow-auto rounded-md px-3 py-2 text-xs leading-relaxed ${
             isBash
               ? 'bg-surface-chat-background font-mono text-content-primary/70'
@@ -239,6 +241,7 @@ export const CodeExecProcess = memo(function CodeExecProcess({
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
+        aria-expanded={isExpanded}
         className="hover:bg-surface-secondary/50 group -mx-1 flex w-full cursor-pointer items-start gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
       >
         <span className="mt-[5px] h-3.5 w-3.5 shrink-0" aria-hidden="true">
@@ -274,6 +277,7 @@ export const CodeExecProcess = memo(function CodeExecProcess({
       </button>
 
       <div
+        inert={!isExpanded}
         className="grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out"
         style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
       >

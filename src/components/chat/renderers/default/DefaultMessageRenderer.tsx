@@ -46,6 +46,7 @@ const DefaultMessageComponent = ({
     React.useState(false)
   const userMessageContentRef = React.useRef<HTMLDivElement>(null)
   const editTextareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const editButtonRef = React.useRef<HTMLButtonElement>(null)
 
   const citationUrlTitles = React.useMemo(() => {
     if (!message.annotations || message.annotations.length === 0)
@@ -162,6 +163,9 @@ const DefaultMessageComponent = ({
   const handleCancelEdit = React.useCallback(() => {
     setIsEditing(false)
     setEditContent(message.content || '')
+    setTimeout(() => {
+      editButtonRef.current?.focus()
+    }, 0)
   }, [message.content])
 
   const handleSubmitEdit = React.useCallback(() => {
@@ -212,6 +216,9 @@ const DefaultMessageComponent = ({
     <div
       className={`relative mx-auto flex w-full max-w-3xl flex-col ${isUser ? 'items-end' : 'items-start'} group mb-6`}
       data-message-role={message.role}
+      role="article"
+      aria-label={isUser ? 'You said' : 'Tin said'}
+      tabIndex={-1}
     >
       {/* Display the quoted reply preview above the user's message */}
       {isUser && message.quote && !isEditing && (
@@ -529,6 +536,7 @@ const DefaultMessageComponent = ({
                 <div className="rounded-xl border border-border-subtle bg-surface-chat p-4">
                   <textarea
                     ref={editTextareaRef}
+                    aria-label="Edit message"
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
                     onKeyDown={(e) => {
@@ -592,9 +600,10 @@ const DefaultMessageComponent = ({
                   <div className="group/regen relative">
                     <button
                       onClick={handleRegenerate}
+                      aria-label="Regenerate response"
                       className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                     >
-                      <ArrowPathIcon className="h-4 w-4" />
+                      <ArrowPathIcon className="h-4 w-4" aria-hidden="true" />
                     </button>
                     <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
                       Regenerate
@@ -604,10 +613,15 @@ const DefaultMessageComponent = ({
                 {onEditMessage && (
                   <div className="group/edit relative">
                     <button
+                      ref={editButtonRef}
                       onClick={handleStartEdit}
+                      aria-label="Edit message"
                       className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                     >
-                      <PencilSquareIcon className="h-4 w-4" />
+                      <PencilSquareIcon
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                      />
                     </button>
                     <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
                       Edit
@@ -617,6 +631,7 @@ const DefaultMessageComponent = ({
                 <div className="group/copy relative">
                   <button
                     onClick={handleCopyUser}
+                    aria-label={copiedUser ? 'Copied' : 'Copy message'}
                     className={`flex items-center gap-1.5 rounded-lg p-2 text-xs font-medium transition-all ${
                       copiedUser
                         ? 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400'
@@ -625,11 +640,11 @@ const DefaultMessageComponent = ({
                   >
                     {copiedUser ? (
                       <>
-                        <BsCheckLg className="h-4 w-4" />
+                        <BsCheckLg className="h-4 w-4" aria-hidden="true" />
                         <span>Copied!</span>
                       </>
                     ) : (
-                      <RxCopy className="h-4 w-4" />
+                      <RxCopy className="h-4 w-4" aria-hidden="true" />
                     )}
                   </button>
                   {!copiedUser && (
@@ -662,9 +677,10 @@ const DefaultMessageComponent = ({
               <div className="group/regen relative">
                 <button
                   onClick={() => onRegenerateMessage(messageIndex - 1)}
-                  className="flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
+                  aria-label="Regenerate response"
+                  className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
                 >
-                  <ArrowPathIcon className="h-3.5 w-3.5" />
+                  <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
                   Regenerate

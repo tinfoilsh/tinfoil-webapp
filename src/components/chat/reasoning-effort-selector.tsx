@@ -81,6 +81,8 @@ export function ReasoningEffortSelector({
         )}
         title={buttonTitle}
         aria-label={buttonTitle}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
       >
         <ReasoningIcon active={isThinkingActive} />
         <ChevronDownIcon
@@ -213,10 +215,18 @@ function ReasoningPopover({
     }
   }, [preferredPosition])
 
+  const focusTrigger = () => {
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-reasoning-selector]')?.focus()
+    })
+  }
+
   return (
     <div
       ref={menuRef}
       data-reasoning-menu
+      role="menu"
+      aria-label="Thinking options"
       className={cn(
         'absolute z-50 w-[200px] overflow-y-auto rounded-lg border border-border-subtle bg-surface-chat p-1 font-aeonik-fono text-content-secondary shadow-lg',
         dynamicStyles.bottom ? 'mb-2' : 'mt-2',
@@ -248,11 +258,14 @@ function ReasoningPopover({
             }
             onEffortChange(option.value)
             onClose()
+            focusTrigger()
           }
           return (
             <button
               key={option.value}
               type="button"
+              role="menuitemradio"
+              aria-checked={isActive}
               className={cn(
                 'flex w-full flex-col rounded-md border px-3 py-2 text-left text-sm transition-colors',
                 isActive
@@ -281,6 +294,8 @@ function ReasoningPopover({
       {supportsToggle && !supportsEffort && (
         <button
           type="button"
+          role="menuitemradio"
+          aria-checked={thinkingEnabled}
           className={cn(
             'flex w-full flex-col rounded-md border px-3 py-2 text-left text-sm transition-colors',
             thinkingEnabled
@@ -292,6 +307,7 @@ function ReasoningPopover({
             e.stopPropagation()
             onThinkingEnabledChange(true)
             onClose()
+            focusTrigger()
           }}
           onTouchEnd={(e) => {
             e.stopPropagation()
@@ -299,6 +315,7 @@ function ReasoningPopover({
             e.preventDefault()
             onThinkingEnabledChange(true)
             onClose()
+            focusTrigger()
           }}
         >
           <span className="font-medium">On</span>
@@ -310,6 +327,8 @@ function ReasoningPopover({
       {supportsToggle && (
         <button
           type="button"
+          role="menuitemradio"
+          aria-checked={!thinkingEnabled}
           className={cn(
             'flex w-full flex-col rounded-md border px-3 py-2 text-left text-sm transition-colors',
             !thinkingEnabled
@@ -321,6 +340,7 @@ function ReasoningPopover({
             e.stopPropagation()
             onThinkingEnabledChange(false)
             onClose()
+            focusTrigger()
           }}
           onTouchEnd={(e) => {
             e.stopPropagation()
@@ -328,6 +348,7 @@ function ReasoningPopover({
             e.preventDefault()
             onThinkingEnabledChange(false)
             onClose()
+            focusTrigger()
           }}
         >
           <span className="font-medium">Off</span>

@@ -111,6 +111,7 @@ const SingleWebSearchProcess = memo(function SingleWebSearchProcess({
         type="button"
         onClick={handleToggle}
         disabled={!hasSources}
+        aria-expanded={hasSources ? isExpanded : undefined}
         className={`group -mx-1 flex items-start gap-1.5 rounded-md px-1 py-1 text-left transition-colors ${
           hasSources
             ? 'hover:bg-surface-secondary/50 cursor-pointer'
@@ -186,6 +187,7 @@ const SingleWebSearchProcess = memo(function SingleWebSearchProcess({
 
       {hasSources && (
         <div
+          inert={!isExpanded}
           className="grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out"
           style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
         >
@@ -271,6 +273,7 @@ const GroupedWebSearchProcess = memo(function GroupedWebSearchProcess({
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
+        aria-expanded={isExpanded}
         className="hover:bg-surface-secondary/50 group -mx-1 flex cursor-pointer items-start gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
       >
         <span className="mt-[5px] h-3.5 w-3.5 shrink-0" aria-hidden="true">
@@ -309,6 +312,7 @@ const GroupedWebSearchProcess = memo(function GroupedWebSearchProcess({
       </button>
 
       <div
+        inert={!isExpanded}
         className="grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out"
         style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
       >

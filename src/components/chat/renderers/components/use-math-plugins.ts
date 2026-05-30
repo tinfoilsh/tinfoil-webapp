@@ -46,7 +46,7 @@ async function loadPlugins(): Promise<PluginState> {
             {
               throwOnError: false,
               strict: false,
-              output: 'html',
+              output: 'htmlAndMathml',
               errorColor: TINFOIL_COLORS.utility.destructive,
               trust: false,
             },

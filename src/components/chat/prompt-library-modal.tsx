@@ -9,7 +9,8 @@ import {
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -74,15 +75,15 @@ export function PromptLibraryModal({
 
   useEffect(() => {
     if (!isOpen) return
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !editor) {
-        e.preventDefault()
-        onClose()
-      }
+    const appRoot = document.getElementById('__next')
+    if (!appRoot) return
+    appRoot.setAttribute('inert', '')
+    appRoot.setAttribute('aria-hidden', 'true')
+    return () => {
+      appRoot.removeAttribute('inert')
+      appRoot.removeAttribute('aria-hidden')
     }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose, editor])
+  }, [isOpen])
 
   const selectedPreset = useMemo<PromptPreset | null>(() => {
     if (!selectedId) return null
@@ -211,9 +212,10 @@ export function PromptLibraryModal({
             : 'border-border-subtle bg-surface-chat-background hover:bg-surface-chat',
         )}
         aria-pressed={isActive}
+        aria-current={isSelected ? 'true' : undefined}
       >
         <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-md bg-surface-chat text-content-secondary">
-          <Icon className="h-4 w-4" />
+          <Icon className="h-4 w-4" aria-hidden="true" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col pr-5">
           <span className="truncate text-sm font-medium text-content-primary">
@@ -236,136 +238,154 @@ export function PromptLibraryModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ left: `${leftOffset}px`, right: `${rightOffset}px` }}
-    >
-      <div
-        className="fixed inset-0 bg-black/50"
-        onClick={editor ? undefined : onClose}
-        style={{ left: 0, right: 0 }}
-      />
-
-      <div
-        className="relative z-10 flex h-[85dvh] w-[92vw] max-w-5xl flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl"
-        style={{
-          maxWidth: `min(1024px, calc(92vw - ${leftOffset + rightOffset}px))`,
+    <>
+      <DialogPrimitive.Root
+        open
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) onClose()
         }}
       >
-        <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3 md:px-6 md:py-4">
-          <div className="flex min-w-0 items-center gap-2">
-            {mobileView === 'detail' && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (editor) {
-                    setEditor(null)
-                  }
-                  setMobileView('list')
-                }}
-                className="-ml-1 flex h-8 w-8 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat md:hidden"
-                aria-label="Back to library"
-              >
-                <ArrowLeftIcon className="h-5 w-5" />
-              </button>
-            )}
-            <Squares2X2Icon className="hidden h-5 w-5 text-content-secondary md:block" />
-            <h2 className="truncate text-base font-semibold text-content-primary md:text-lg">
-              Prompt Library
-            </h2>
-          </div>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
-            aria-label="Close prompt library"
-          >
-            <XMarkIcon className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="flex min-h-0 flex-1 overflow-hidden">
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
           <div
-            className={cn(
-              'flex min-h-0 w-full flex-none flex-col md:w-[300px] md:border-r md:border-border-subtle',
-              mobileView === 'detail' ? 'hidden md:flex' : 'flex',
-            )}
+            className="fixed inset-0 z-50 flex items-center justify-center"
+            style={{ left: `${leftOffset}px`, right: `${rightOffset}px` }}
           >
-            <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-8">
-              <div className="flex items-center justify-between px-4 pt-4">
-                <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
-                  Built-in
-                </span>
-              </div>
-              <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
-                {builtInPresets.map(renderPresetCard)}
-              </div>
-
-              <div className="mt-2 flex items-center justify-between px-4 pt-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
-                  Your prompts
-                </span>
+            <DialogPrimitive.Content
+              aria-modal="true"
+              aria-describedby={undefined}
+              onEscapeKeyDown={(e) => {
+                if (editor) e.preventDefault()
+              }}
+              onInteractOutside={(e) => {
+                if (editor) e.preventDefault()
+              }}
+              className="relative z-10 flex h-[85dvh] w-[92vw] max-w-5xl flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl focus:outline-none"
+              style={{
+                maxWidth: `min(1024px, calc(92vw - ${leftOffset + rightOffset}px))`,
+              }}
+            >
+              <div className="flex items-center justify-between border-b border-border-subtle px-4 py-3 md:px-6 md:py-4">
+                <div className="flex min-w-0 items-center gap-2">
+                  {mobileView === 'detail' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editor) {
+                          setEditor(null)
+                        }
+                        setMobileView('list')
+                      }}
+                      className="-ml-1 flex h-8 w-8 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat md:hidden"
+                      aria-label="Back to library"
+                    >
+                      <ArrowLeftIcon className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  )}
+                  <Squares2X2Icon
+                    className="hidden h-5 w-5 text-content-secondary md:block"
+                    aria-hidden="true"
+                  />
+                  <DialogPrimitive.Title className="truncate text-base font-semibold text-content-primary md:text-lg">
+                    Prompt Library
+                  </DialogPrimitive.Title>
+                </div>
                 <button
-                  type="button"
-                  onClick={startCreate}
-                  className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
+                  onClick={onClose}
+                  className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
+                  aria-label="Close prompt library"
                 >
-                  <PlusIcon className="h-3.5 w-3.5" />
-                  New
+                  <XMarkIcon className="h-5 w-5" aria-hidden="true" />
                 </button>
               </div>
-              <div className="flex flex-col gap-1.5 px-3 pt-2">
-                {userPresets.length === 0 ? (
-                  <p className="px-1 pt-1 text-xs text-content-muted">
-                    No custom prompts yet. Click &quot;New&quot; to create one.
-                  </p>
-                ) : (
-                  userPresets.map(renderPresetCard)
-                )}
-              </div>
-            </div>
-          </div>
 
-          <div
-            className={cn(
-              'min-w-0 flex-1 flex-col',
-              mobileView === 'list' ? 'hidden md:flex' : 'flex',
-            )}
-          >
-            {editor ? (
-              <PresetEditor
-                editor={editor}
-                onChange={setEditor}
-                onCancel={() => {
-                  setEditor(null)
-                  setMobileView('list')
-                }}
-                onSave={() => {
-                  handleEditorSave()
-                  setMobileView('detail')
-                }}
-              />
-            ) : selectedPreset ? (
-              <PresetDetail
-                key={selectedPreset.id}
-                preset={selectedPreset}
-                isActive={activePresetId === selectedPreset.id}
-                onUseThis={handleUseThis}
-                onClearActive={handleClearActive}
-                onEdit={() => startEdit(selectedPreset)}
-                onDuplicate={() => handleDuplicate(selectedPreset)}
-                onDelete={() => handleDelete(selectedPreset)}
-                onRename={(name) => handleRename(selectedPreset, name)}
-              />
-            ) : (
-              <div className="flex flex-1 items-center justify-center p-6">
-                <p className="text-sm text-content-muted">
-                  Select a prompt to view its details.
-                </p>
+              <div className="flex min-h-0 flex-1 overflow-hidden">
+                <div
+                  className={cn(
+                    'flex min-h-0 w-full flex-none flex-col md:w-[300px] md:border-r md:border-border-subtle',
+                    mobileView === 'detail' ? 'hidden md:flex' : 'flex',
+                  )}
+                >
+                  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-8">
+                    <div className="flex items-center justify-between px-4 pt-4">
+                      <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                        Built-in
+                      </span>
+                    </div>
+                    <div className="flex flex-col gap-1.5 px-3 pb-2 pt-2">
+                      {builtInPresets.map(renderPresetCard)}
+                    </div>
+
+                    <div className="mt-2 flex items-center justify-between px-4 pt-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                        Your prompts
+                      </span>
+                      <button
+                        type="button"
+                        onClick={startCreate}
+                        className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
+                      >
+                        <PlusIcon className="h-3.5 w-3.5" />
+                        New
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-1.5 px-3 pt-2">
+                      {userPresets.length === 0 ? (
+                        <p className="px-1 pt-1 text-xs text-content-muted">
+                          No custom prompts yet. Click &quot;New&quot; to create
+                          one.
+                        </p>
+                      ) : (
+                        userPresets.map(renderPresetCard)
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className={cn(
+                    'min-w-0 flex-1 flex-col',
+                    mobileView === 'list' ? 'hidden md:flex' : 'flex',
+                  )}
+                >
+                  {editor ? (
+                    <PresetEditor
+                      editor={editor}
+                      onChange={setEditor}
+                      onCancel={() => {
+                        setEditor(null)
+                        setMobileView('list')
+                      }}
+                      onSave={() => {
+                        handleEditorSave()
+                        setMobileView('detail')
+                      }}
+                    />
+                  ) : selectedPreset ? (
+                    <PresetDetail
+                      key={selectedPreset.id}
+                      preset={selectedPreset}
+                      isActive={activePresetId === selectedPreset.id}
+                      onUseThis={handleUseThis}
+                      onClearActive={handleClearActive}
+                      onEdit={() => startEdit(selectedPreset)}
+                      onDuplicate={() => handleDuplicate(selectedPreset)}
+                      onDelete={() => handleDelete(selectedPreset)}
+                      onRename={(name) => handleRename(selectedPreset, name)}
+                    />
+                  ) : (
+                    <div className="flex flex-1 items-center justify-center p-6">
+                      <p className="text-sm text-content-muted">
+                        Select a prompt to view its details.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
+            </DialogPrimitive.Content>
           </div>
-        </div>
-      </div>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
 
       <ConfirmDialog
         isOpen={presetPendingDelete !== null}
@@ -380,7 +400,7 @@ export function PromptLibraryModal({
         onConfirm={handleConfirmDelete}
         onCancel={() => setPresetPendingDelete(null)}
       />
-    </div>
+    </>
   )
 }
 
@@ -408,6 +428,7 @@ function PresetDetail({
   const Icon = preset.Icon
   const [isEditingName, setIsEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(preset.name)
+  const systemPromptLabelId = useId()
 
   const commitRename = () => {
     setIsEditingName(false)
@@ -424,7 +445,7 @@ function PresetDetail({
       <div className="flex flex-none items-start justify-between gap-4 border-b border-border-subtle px-6 py-4">
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-surface-chat text-content-secondary">
-            <Icon className="h-5 w-5" />
+            <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
             {isEditingName && !preset.isBuiltIn ? (
@@ -432,6 +453,7 @@ function PresetDetail({
                 type="text"
                 value={nameDraft}
                 autoFocus
+                aria-label="Prompt name"
                 onChange={(e) => setNameDraft(e.target.value)}
                 onBlur={commitRename}
                 onKeyDown={(e) => {
@@ -453,10 +475,21 @@ function PresetDetail({
                   !preset.isBuiltIn && 'cursor-text hover:bg-surface-chat',
                 )}
                 title={preset.isBuiltIn ? undefined : 'Click to rename'}
+                role={preset.isBuiltIn ? undefined : 'button'}
+                tabIndex={preset.isBuiltIn ? undefined : 0}
+                aria-label={preset.isBuiltIn ? undefined : 'Rename prompt'}
                 onClick={() => {
                   if (preset.isBuiltIn) return
                   setNameDraft(preset.name)
                   setIsEditingName(true)
+                }}
+                onKeyDown={(e) => {
+                  if (preset.isBuiltIn) return
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setNameDraft(preset.name)
+                    setIsEditingName(true)
+                  }
                 }}
               >
                 {preset.name}
@@ -526,10 +559,17 @@ function PresetDetail({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col px-6 py-4">
-        <span className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted">
+        <span
+          id={systemPromptLabelId}
+          className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted"
+        >
           System prompt
         </span>
-        <pre className="flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-4 font-mono text-[13px] text-content-primary">
+        <pre
+          tabIndex={0}
+          aria-labelledby={systemPromptLabelId}
+          className="flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-4 font-mono text-[13px] text-content-primary"
+        >
           {preset.systemPrompt}
         </pre>
       </div>

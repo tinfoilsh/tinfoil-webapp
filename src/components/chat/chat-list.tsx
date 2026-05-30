@@ -167,64 +167,66 @@ export function ChatList({
   }
 
   return (
-    <div className="space-y-2 p-2">
-      {chats.map((chat) => (
-        <div key={getChatKey(chat)} className="relative">
-          <ChatListItem
-            chat={chat}
-            isSelected={isSelected(chat)}
-            isEditing={editingChatId === chat.id}
-            editingTitle={editingTitle}
-            isDarkMode={isDarkMode}
-            showEncryptionStatus={showEncryptionStatus}
-            showSyncStatus={showSyncStatus}
-            enableTitleAnimation={
-              enableTitleAnimation && manuallyEditedChatId !== chat.id
-            }
-            isDraggable={
-              isDraggable && !chat.isBlankChat && !chat.decryptionFailed
-            }
-            showMoveToProject={
-              showMoveToProject && !chat.isBlankChat && !chat.decryptionFailed
-            }
-            projects={projects}
-            onSelect={() => handleSelect(chat)}
-            onStartEdit={() => handleStartEdit(chat)}
-            onTitleChange={setEditingTitle}
-            onSaveTitle={() => handleSaveTitle(chat.id)}
-            onCancelEdit={handleCancelEdit}
-            onRequestDelete={() => setDeletingChatId(chat.id)}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            onMoveToProject={
-              onMoveToProject
-                ? (projectId) => onMoveToProject(chat.id, projectId)
-                : undefined
-            }
-            onConvertToCloud={
-              onConvertToCloud ? () => onConvertToCloud(chat.id) : undefined
-            }
-            onConvertToLocal={
-              onConvertToLocal ? () => onConvertToLocal(chat.id) : undefined
-            }
-            onRemoveFromProject={
-              onRemoveFromProject
-                ? () => onRemoveFromProject(chat.id)
-                : undefined
-            }
-          />
-          {deletingChatId === chat.id && (
-            <DeleteConfirmation
-              onConfirm={() => handleConfirmDelete(chat.id)}
-              onCancel={() => setDeletingChatId(null)}
+    <>
+      <div role="list" className="space-y-2 p-2">
+        {chats.map((chat) => (
+          <div key={getChatKey(chat)} role="listitem" className="relative">
+            <ChatListItem
+              chat={chat}
+              isSelected={isSelected(chat)}
+              isEditing={editingChatId === chat.id}
+              editingTitle={editingTitle}
               isDarkMode={isDarkMode}
-              animated={animatedDeleteConfirmation}
+              showEncryptionStatus={showEncryptionStatus}
+              showSyncStatus={showSyncStatus}
+              enableTitleAnimation={
+                enableTitleAnimation && manuallyEditedChatId !== chat.id
+              }
+              isDraggable={
+                isDraggable && !chat.isBlankChat && !chat.decryptionFailed
+              }
+              showMoveToProject={
+                showMoveToProject && !chat.isBlankChat && !chat.decryptionFailed
+              }
+              projects={projects}
+              onSelect={() => handleSelect(chat)}
+              onStartEdit={() => handleStartEdit(chat)}
+              onTitleChange={setEditingTitle}
+              onSaveTitle={() => handleSaveTitle(chat.id)}
+              onCancelEdit={handleCancelEdit}
+              onRequestDelete={() => setDeletingChatId(chat.id)}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
+              onMoveToProject={
+                onMoveToProject
+                  ? (projectId) => onMoveToProject(chat.id, projectId)
+                  : undefined
+              }
+              onConvertToCloud={
+                onConvertToCloud ? () => onConvertToCloud(chat.id) : undefined
+              }
+              onConvertToLocal={
+                onConvertToLocal ? () => onConvertToLocal(chat.id) : undefined
+              }
+              onRemoveFromProject={
+                onRemoveFromProject
+                  ? () => onRemoveFromProject(chat.id)
+                  : undefined
+              }
             />
-          )}
-        </div>
-      ))}
+            {deletingChatId === chat.id && (
+              <DeleteConfirmation
+                onConfirm={() => handleConfirmDelete(chat.id)}
+                onCancel={() => setDeletingChatId(null)}
+                isDarkMode={isDarkMode}
+                animated={animatedDeleteConfirmation}
+              />
+            )}
+          </div>
+        ))}
+      </div>
       {loadMoreButton}
-    </div>
+    </>
   )
 }
 

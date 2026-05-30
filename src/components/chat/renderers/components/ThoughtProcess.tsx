@@ -8,7 +8,7 @@ import {
 } from '@/utils/latex-processing'
 import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useMathPlugins } from './use-math-plugins'
 
@@ -28,6 +28,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   thinkingDuration,
 }: ThoughtProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const contentId = useId()
 
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -254,10 +255,12 @@ export const ThoughtProcess = memo(function ThoughtProcess({
       <button
         type="button"
         onClick={handleToggle}
+        aria-expanded={isExpanded}
+        aria-controls={contentId}
         className="hover:bg-surface-secondary/50 group -mx-1 flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
       >
         <svg
-          className={`h-3.5 w-3.5 shrink-0 transform text-content-primary/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+          className={`h-3.5 w-3.5 shrink-0 transform text-content-primary/40 transition-transform motion-reduce:transition-none ${isExpanded ? 'rotate-90' : ''}`}
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -277,7 +280,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
               {thoughtSummary ? (
                 <div className="flex min-w-0 items-center gap-1.5">
                   <span
-                    className="block animate-shimmer truncate bg-clip-text text-base font-medium text-transparent"
+                    className="block animate-shimmer truncate bg-clip-text text-base font-medium text-transparent motion-reduce:animate-none"
                     style={{
                       backgroundImage: isDarkMode
                         ? 'linear-gradient(90deg, #9ca3af 0%, #e5e7eb 25%, #f9fafb 50%, #e5e7eb 75%, #9ca3af 100%)'
@@ -313,7 +316,9 @@ export const ThoughtProcess = memo(function ThoughtProcess({
 
       <div
         ref={scrollContainerRef}
-        className="overflow-hidden transition-all duration-300 ease-out"
+        id={contentId}
+        inert={!isExpanded}
+        className="overflow-hidden transition-all duration-300 ease-out motion-reduce:transition-none"
         style={{
           maxHeight: isExpanded ? `${contentHeight}px` : '0px',
         }}

@@ -175,6 +175,8 @@ export const VerificationStatusDisplay = memo(
                 <PiSpinner className="h-5 w-5 animate-spin text-content-secondary" />
               )}
               <span
+                role="status"
+                aria-live="polite"
                 className={`font-aeonik-fono ${
                   isComplete
                     ? isDarkMode
@@ -213,6 +215,7 @@ export const VerificationStatusDisplay = memo(
 
           {isComplete && (
             <div
+              inert={!isExpanded}
               className="overflow-hidden rounded-b-lg transition-all duration-300 ease-out"
               style={{
                 maxHeight: isExpanded ? '600px' : '0px',
@@ -271,6 +274,8 @@ export const VerificationStatusDisplay = memo(
               <PiSpinner className="h-5 w-5 animate-spin text-content-secondary" />
             )}
             <h3
+              role="status"
+              aria-live="polite"
               className={`text-xs font-medium ${
                 isComplete
                   ? 'text-emerald-500'

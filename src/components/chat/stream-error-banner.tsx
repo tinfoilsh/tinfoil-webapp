@@ -40,37 +40,37 @@ export function StreamErrorBanner({
   }
 
   return (
-    <div className="pointer-events-none absolute left-0 right-0 top-2 z-10 flex w-full justify-center px-4">
+    <div
+      role="alert"
+      className="pointer-events-none absolute left-0 right-0 top-2 z-10 flex w-full justify-center px-4"
+    >
       <div
         className={cn(
-          'pointer-events-auto w-full max-w-xl cursor-pointer overflow-hidden rounded-lg border shadow-lg backdrop-blur-sm transition-colors',
+          'pointer-events-auto w-full max-w-xl overflow-hidden rounded-lg border shadow-lg backdrop-blur-sm transition-colors',
           isDarkMode
             ? 'border-red-500/40 bg-red-950/60 text-red-200'
             : 'border-red-300 bg-red-50 text-red-700',
         )}
-        role="button"
-        onClick={toggleExpanded}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            toggleExpanded()
-          }
-        }}
-        tabIndex={0}
-        aria-expanded={isExpanded}
-        aria-label={
-          isExpanded ? 'Collapse error details' : 'Expand error details'
-        }
       >
         <div className="flex items-center gap-2 px-3 py-2">
-          <ChevronDownIcon
-            className={cn(
-              'h-4 w-4 flex-shrink-0 transition-transform',
-              isExpanded && 'rotate-180',
-            )}
-            aria-hidden="true"
-          />
-          <span className="flex-1 truncate text-sm font-semibold">{title}</span>
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus:outline-none focus:ring-2 focus:ring-red-500/50"
+            aria-expanded={isExpanded}
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} error details: ${title}`}
+          >
+            <ChevronDownIcon
+              className={cn(
+                'h-4 w-4 flex-shrink-0 transition-transform',
+                isExpanded && 'rotate-180',
+              )}
+              aria-hidden="true"
+            />
+            <span className="flex-1 truncate text-sm font-semibold">
+              {title}
+            </span>
+          </button>
           <button
             type="button"
             onClick={handleDismiss}
@@ -80,7 +80,7 @@ export function StreamErrorBanner({
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
             )}
           >
-            <XMarkIcon className="h-4 w-4" />
+            <XMarkIcon className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
         {isExpanded && (

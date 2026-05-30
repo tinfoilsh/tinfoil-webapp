@@ -61,7 +61,7 @@ export const MessageActions = memo(function MessageActions({
       <button
         type="button"
         onClick={handleCopy}
-        className={`flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-all ${
+        className={`flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium transition-all ${
           isCopied
             ? 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400'
             : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'

@@ -170,6 +170,7 @@ export function createMarkdownComponents({
       return (
         <th
           {...props}
+          scope="col"
           className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-content-primary"
           style={{
             maxWidth: CONSTANTS.TABLE_COLUMN_MAX_WIDTH_PX,

@@ -15,6 +15,7 @@ import {
   LockClosedIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent } from '../ui/card'
 import {
@@ -54,12 +55,15 @@ export function ShareModal({
   const [isShareEnabled, setIsShareEnabled] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const contentRef = useRef<HTMLPreElement>(null)
+  const shareLinkInputRef = useRef<HTMLInputElement>(null)
+  const previousShareUrlRef = useRef<string | null>(null)
 
   // Reset modal state when chatId changes (different chat)
   useEffect(() => {
     setShareUrl(null)
     setIsShareEnabled(false)
     setIsLinkCopied(false)
+    previousShareUrlRef.current = null
   }, [chatId])
 
   // Reset transient state when modal closes
@@ -68,6 +72,13 @@ export function ShareModal({
       setIsLinkCopied(false)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (shareUrl && previousShareUrlRef.current !== shareUrl) {
+      requestAnimationFrame(() => shareLinkInputRef.current?.focus())
+    }
+    previousShareUrlRef.current = shareUrl
+  }, [shareUrl])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -308,6 +319,13 @@ export function ShareModal({
   }
 
   const markdown = convertToMarkdown()
+  const shareStatus = isLinkCopied
+    ? 'Share link copied'
+    : shareUrl
+      ? 'Share link ready'
+      : isUploading
+        ? 'Creating share link'
+        : ''
 
   // Calculate the positioning to center within the chat area
   const leftOffset = isSidebarOpen ? CONSTANTS.CHAT_SIDEBAR_WIDTH_PX : 0
@@ -316,181 +334,186 @@ export function ShareModal({
     : 0
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{
-        left: `${leftOffset}px`,
-        right: `${rightOffset}px`,
+    <DialogPrimitive.Root
+      open
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose()
       }}
     >
-      {/* Backdrop - covers entire viewport */}
-      <div
-        className="fixed inset-0 bg-black/50"
-        onClick={onClose}
-        style={{
-          left: 0,
-          right: 0,
-        }}
-      />
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
+        <DialogPrimitive.Content
+          aria-modal="true"
+          aria-describedby={undefined}
+          className="fixed left-[50%] top-[50%] z-50 flex h-[80vh] w-[90vw] max-w-4xl translate-x-[-50%] translate-y-[-50%] flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl focus:outline-none"
+          style={{
+            maxWidth: `min(896px, calc(90vw - ${leftOffset + rightOffset}px))`,
+            marginLeft: `${(leftOffset - rightOffset) / 2}px`,
+          }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
+            <DialogPrimitive.Title className="text-lg font-semibold text-content-primary">
+              Share Conversation
+            </DialogPrimitive.Title>
+            <span className="sr-only" role="status" aria-live="polite">
+              {shareStatus}
+            </span>
+            <button
+              onClick={onClose}
+              aria-label="Close share dialog"
+              className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
+            >
+              <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
 
-      {/* Modal */}
-      <div
-        className="relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl"
-        style={{
-          maxWidth: `min(896px, calc(90vw - ${leftOffset + rightOffset}px))`,
-        }}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
-          <h2 className="text-lg font-semibold text-content-primary">
-            Share Conversation
-          </h2>
-          <button
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
-          >
-            <XMarkIcon className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden p-6">
-          <TextureGrid />
-          <div className="relative z-10 flex min-h-0 flex-1 flex-col space-y-4">
-            {/* Shareable Link Access Card */}
-            <div className="flex-none">
-              <Card className="overflow-hidden border-border-subtle bg-surface-sidebar">
-                <CardContent className="p-0">
-                  <div className="flex items-start gap-4 p-4">
-                    <div className="mt-1 rounded-full bg-surface-chat p-2 text-content-secondary">
-                      {isShareEnabled ? (
-                        <GlobeAltIcon className="h-5 w-5" />
-                      ) : (
-                        <LockClosedIcon className="h-5 w-5" />
-                      )}
-                    </div>
-                    <div className="flex-1 space-y-4">
-                      <div className="space-y-1">
-                        <h3 className="text-sm font-medium text-content-primary">
-                          {isShareEnabled ? 'Shareable link access' : 'Private'}
-                        </h3>
-                        <p className="text-sm text-content-secondary">
-                          {isShareEnabled
-                            ? 'Anyone with the link can view'
-                            : 'Only you have access'}
-                        </p>
+          {/* Content */}
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden p-6">
+            <TextureGrid />
+            <div className="relative z-10 flex min-h-0 flex-1 flex-col space-y-4">
+              {/* Shareable Link Access Card */}
+              <div className="flex-none">
+                <Card className="overflow-hidden border-border-subtle bg-surface-sidebar">
+                  <CardContent className="p-0">
+                    <div className="flex items-start gap-4 p-4">
+                      <div className="mt-1 rounded-full bg-surface-chat p-2 text-content-secondary">
+                        {isShareEnabled ? (
+                          <GlobeAltIcon className="h-5 w-5" />
+                        ) : (
+                          <LockClosedIcon className="h-5 w-5" />
+                        )}
                       </div>
-
-                      <label className="group flex cursor-pointer items-center gap-3">
-                        <div className="relative flex items-center">
-                          <input
-                            type="checkbox"
-                            checked={isShareEnabled}
-                            onChange={(e) =>
-                              setIsShareEnabled(e.target.checked)
-                            }
-                            className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-border-subtle bg-surface-chat transition-all checked:border-brand-accent-dark checked:bg-brand-accent-dark"
-                          />
-                          <CheckIcon className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100" />
+                      <div className="flex-1 space-y-4">
+                        <div className="space-y-1">
+                          <h3 className="text-sm font-medium text-content-primary">
+                            {isShareEnabled
+                              ? 'Shareable link access'
+                              : 'Private'}
+                          </h3>
+                          <p className="text-sm text-content-secondary">
+                            {isShareEnabled
+                              ? 'Anyone with the link can view'
+                              : 'Only you have access'}
+                          </p>
                         </div>
-                        <span className="text-sm font-medium text-content-primary">
-                          Make this conversation shareable with anyone who has
-                          the link
-                        </span>
-                      </label>
 
-                      {isShareEnabled && !shareUrl && (
-                        <div className="flex justify-start pt-2">
-                          <button
-                            onClick={handleShareLink}
-                            disabled={isUploading || !chatId}
-                            className="flex items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {isUploading ? (
-                              <>
-                                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                                Uploading...
-                              </>
-                            ) : (
-                              <>
-                                <LinkIcon className="h-4 w-4" />
-                                Create share link
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
+                        <label className="group flex cursor-pointer items-center gap-3">
+                          <div className="relative flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={isShareEnabled}
+                              onChange={(e) =>
+                                setIsShareEnabled(e.target.checked)
+                              }
+                              aria-label="Make this conversation shareable with anyone who has the link"
+                              className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-border-subtle bg-surface-chat transition-all checked:border-brand-accent-dark checked:bg-brand-accent-dark"
+                            />
+                            <CheckIcon className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100" />
+                          </div>
+                          <span className="text-sm font-medium text-content-primary">
+                            Make this conversation shareable with anyone who has
+                            the link
+                          </span>
+                        </label>
 
-                      {isShareEnabled && shareUrl && (
-                        <div className="flex items-center gap-2 pt-2">
-                          <input
-                            type="text"
-                            readOnly
-                            value={shareUrl}
-                            className="flex-1 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-sm text-content-primary"
-                            onClick={(e) => e.currentTarget.select()}
-                          />
-                          <button
-                            onClick={handleCopyShareUrl}
-                            className="flex items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90"
-                          >
-                            {isLinkCopied ? (
-                              <>
-                                <CheckIcon className="h-4 w-4" />
-                                Copied!
-                              </>
-                            ) : (
-                              <>
-                                <DocumentDuplicateIcon className="h-4 w-4" />
-                                Copy
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      )}
+                        {isShareEnabled && !shareUrl && (
+                          <div className="flex justify-start pt-2">
+                            <button
+                              onClick={handleShareLink}
+                              disabled={isUploading || !chatId}
+                              className="flex items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {isUploading ? (
+                                <>
+                                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                                  Uploading...
+                                </>
+                              ) : (
+                                <>
+                                  <LinkIcon className="h-4 w-4" />
+                                  Create share link
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+
+                        {isShareEnabled && shareUrl && (
+                          <div className="flex items-center gap-2 pt-2">
+                            <input
+                              ref={shareLinkInputRef}
+                              type="text"
+                              readOnly
+                              value={shareUrl}
+                              aria-label="Share link"
+                              className="flex-1 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-sm text-content-primary"
+                              onClick={(e) => e.currentTarget.select()}
+                            />
+                            <button
+                              onClick={handleCopyShareUrl}
+                              className="flex items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90"
+                            >
+                              {isLinkCopied ? (
+                                <>
+                                  <CheckIcon className="h-4 w-4" />
+                                  Copied!
+                                </>
+                              ) : (
+                                <>
+                                  <DocumentDuplicateIcon className="h-4 w-4" />
+                                  Copy
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Raw Markdown Card */}
+              <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border-subtle bg-surface-sidebar">
+                <div className="flex flex-none items-center justify-between border-b border-border-subtle/50 p-4">
+                  <h3 className="text-sm font-medium text-content-primary">
+                    Raw Markdown
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopy}
+                      className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
+                    >
+                      {isCopied ? (
+                        <>
+                          <CheckIcon className="h-3 w-3" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <DocumentDuplicateIcon className="h-3 w-3" />
+                          Copy to Clipboard
+                        </>
+                      )}
+                    </button>
                   </div>
-                </CardContent>
+                </div>
+                <div className="flex min-h-0 flex-1 flex-col p-4">
+                  <pre
+                    ref={contentRef}
+                    tabIndex={0}
+                    aria-label="Raw conversation markdown"
+                    className="flex-1 overflow-auto whitespace-pre-wrap font-mono text-[13px] text-content-primary"
+                  >
+                    {markdown}
+                  </pre>
+                </div>
               </Card>
             </div>
-
-            {/* Raw Markdown Card */}
-            <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border-subtle bg-surface-sidebar">
-              <div className="flex flex-none items-center justify-between border-b border-border-subtle/50 p-4">
-                <h3 className="text-sm font-medium text-content-primary">
-                  Raw Markdown
-                </h3>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleCopy}
-                    className="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
-                  >
-                    {isCopied ? (
-                      <>
-                        <CheckIcon className="h-3 w-3" />
-                        Copied!
-                      </>
-                    ) : (
-                      <>
-                        <DocumentDuplicateIcon className="h-3 w-3" />
-                        Copy to Clipboard
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col p-4">
-                <pre
-                  ref={contentRef}
-                  className="flex-1 overflow-auto whitespace-pre-wrap font-mono text-[13px] text-content-primary"
-                >
-                  {markdown}
-                </pre>
-              </div>
-            </Card>
           </div>
-        </div>
-      </div>
-    </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   )
 }
