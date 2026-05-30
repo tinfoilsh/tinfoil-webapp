@@ -104,6 +104,7 @@ export const URLFetchProcess = memo(function URLFetchProcess({
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
+        aria-expanded={isExpanded}
         className="hover:bg-surface-secondary/50 group -mx-1 flex w-full cursor-pointer items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
       >
         <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
@@ -132,6 +133,7 @@ export const URLFetchProcess = memo(function URLFetchProcess({
       </button>
 
       <div
+        inert={!isExpanded}
         className="grid overflow-hidden transition-[grid-template-rows] duration-300 ease-out"
         style={{ gridTemplateRows: isExpanded ? '1fr' : '0fr' }}
       >

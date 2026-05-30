@@ -8,7 +8,7 @@ import {
 } from '@/utils/latex-processing'
 import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useId, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useMathPlugins } from './use-math-plugins'
 
@@ -28,6 +28,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   thinkingDuration,
 }: ThoughtProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+  const contentId = useId()
 
   const contentRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -254,6 +255,8 @@ export const ThoughtProcess = memo(function ThoughtProcess({
       <button
         type="button"
         onClick={handleToggle}
+        aria-expanded={isExpanded}
+        aria-controls={contentId}
         className="hover:bg-surface-secondary/50 group -mx-1 flex min-w-0 max-w-full items-center gap-1.5 rounded-md px-1 py-1 text-left transition-colors"
       >
         <svg
@@ -313,6 +316,8 @@ export const ThoughtProcess = memo(function ThoughtProcess({
 
       <div
         ref={scrollContainerRef}
+        id={contentId}
+        inert={!isExpanded}
         className="overflow-hidden transition-all duration-300 ease-out"
         style={{
           maxHeight: isExpanded ? `${contentHeight}px` : '0px',
