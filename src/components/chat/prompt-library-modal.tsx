@@ -10,7 +10,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -200,9 +200,10 @@ export function PromptLibraryModal({
             : 'border-border-subtle bg-surface-chat-background hover:bg-surface-chat',
         )}
         aria-pressed={isActive}
+        aria-current={isSelected ? 'true' : undefined}
       >
         <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-md bg-surface-chat text-content-secondary">
-          <Icon className="h-4 w-4" />
+          <Icon className="h-4 w-4" aria-hidden="true" />
         </span>
         <span className="flex min-w-0 flex-1 flex-col pr-5">
           <span className="truncate text-sm font-medium text-content-primary">
@@ -414,6 +415,7 @@ function PresetDetail({
   const Icon = preset.Icon
   const [isEditingName, setIsEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(preset.name)
+  const systemPromptLabelId = useId()
 
   const commitRename = () => {
     setIsEditingName(false)
@@ -430,7 +432,7 @@ function PresetDetail({
       <div className="flex flex-none items-start justify-between gap-4 border-b border-border-subtle px-6 py-4">
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-surface-chat text-content-secondary">
-            <Icon className="h-5 w-5" />
+            <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
             {isEditingName && !preset.isBuiltIn ? (
@@ -544,10 +546,17 @@ function PresetDetail({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col px-6 py-4">
-        <span className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted">
+        <span
+          id={systemPromptLabelId}
+          className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted"
+        >
           System prompt
         </span>
-        <pre className="flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-4 font-mono text-[13px] text-content-primary">
+        <pre
+          tabIndex={0}
+          aria-labelledby={systemPromptLabelId}
+          className="flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-4 font-mono text-[13px] text-content-primary"
+        >
           {preset.systemPrompt}
         </pre>
       </div>

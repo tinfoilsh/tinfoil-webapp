@@ -55,12 +55,15 @@ export function ShareModal({
   const [isShareEnabled, setIsShareEnabled] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const contentRef = useRef<HTMLPreElement>(null)
+  const shareLinkInputRef = useRef<HTMLInputElement>(null)
+  const previousShareUrlRef = useRef<string | null>(null)
 
   // Reset modal state when chatId changes (different chat)
   useEffect(() => {
     setShareUrl(null)
     setIsShareEnabled(false)
     setIsLinkCopied(false)
+    previousShareUrlRef.current = null
   }, [chatId])
 
   // Reset transient state when modal closes
@@ -69,6 +72,13 @@ export function ShareModal({
       setIsLinkCopied(false)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    if (shareUrl && previousShareUrlRef.current !== shareUrl) {
+      requestAnimationFrame(() => shareLinkInputRef.current?.focus())
+    }
+    previousShareUrlRef.current = shareUrl
+  }, [shareUrl])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -309,6 +319,13 @@ export function ShareModal({
   }
 
   const markdown = convertToMarkdown()
+  const shareStatus = isLinkCopied
+    ? 'Share link copied'
+    : shareUrl
+      ? 'Share link ready'
+      : isUploading
+        ? 'Creating share link'
+        : ''
 
   // Calculate the positioning to center within the chat area
   const leftOffset = isSidebarOpen ? CONSTANTS.CHAT_SIDEBAR_WIDTH_PX : 0
@@ -338,6 +355,9 @@ export function ShareModal({
             <DialogPrimitive.Title className="text-lg font-semibold text-content-primary">
               Share Conversation
             </DialogPrimitive.Title>
+            <span className="sr-only" role="status" aria-live="polite">
+              {shareStatus}
+            </span>
             <button
               onClick={onClose}
               aria-label="Close share dialog"
@@ -420,9 +440,11 @@ export function ShareModal({
                         {isShareEnabled && shareUrl && (
                           <div className="flex items-center gap-2 pt-2">
                             <input
+                              ref={shareLinkInputRef}
                               type="text"
                               readOnly
                               value={shareUrl}
+                              aria-label="Share link"
                               className="flex-1 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-sm text-content-primary"
                               onClick={(e) => e.currentTarget.select()}
                             />
@@ -478,6 +500,8 @@ export function ShareModal({
                 <div className="flex min-h-0 flex-1 flex-col p-4">
                   <pre
                     ref={contentRef}
+                    tabIndex={0}
+                    aria-label="Raw conversation markdown"
                     className="flex-1 overflow-auto whitespace-pre-wrap font-mono text-[13px] text-content-primary"
                   >
                     {markdown}
