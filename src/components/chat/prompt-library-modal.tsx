@@ -73,6 +73,18 @@ export function PromptLibraryModal({
     }
   }, [isOpen, activePresetId, builtInPresets])
 
+  useEffect(() => {
+    if (!isOpen) return
+    const appRoot = document.getElementById('__next')
+    if (!appRoot) return
+    appRoot.setAttribute('inert', '')
+    appRoot.setAttribute('aria-hidden', 'true')
+    return () => {
+      appRoot.removeAttribute('inert')
+      appRoot.removeAttribute('aria-hidden')
+    }
+  }, [isOpen])
+
   const selectedPreset = useMemo<PromptPreset | null>(() => {
     if (!selectedId) return null
     return allPresets.find((p) => p.id === selectedId) ?? null
@@ -240,6 +252,7 @@ export function PromptLibraryModal({
             style={{ left: `${leftOffset}px`, right: `${rightOffset}px` }}
           >
             <DialogPrimitive.Content
+              aria-modal="true"
               aria-describedby={undefined}
               onEscapeKeyDown={(e) => {
                 if (editor) e.preventDefault()
