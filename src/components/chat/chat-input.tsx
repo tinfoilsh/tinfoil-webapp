@@ -68,6 +68,9 @@ type ChatInputProps = {
 // Maximum number of characters displayed in the collapsed quote preview.
 const QUOTE_PREVIEW_MAX_LENGTH = 240
 
+const isDocumentSubmittable = (doc: ProcessedDocument) =>
+  !doc.isUploading && !doc.isGeneratingDescription && !doc.isUnsupported
+
 export function ChatInput({
   input,
   setInput,
@@ -195,6 +198,20 @@ export function ChatInput({
   const processingAttachmentCount = (processedDocuments ?? []).filter(
     (doc) => doc.isUploading || doc.isGeneratingDescription,
   ).length
+  const unsupportedAttachmentNames = (processedDocuments ?? [])
+    .filter((doc) => doc.isUnsupported)
+    .map((doc) => doc.name)
+  const unsupportedAttachmentStatus = unsupportedAttachmentNames.join(', ')
+  const recordingButtonLabel = isTranscribing
+    ? 'Transcribing audio'
+    : isRecording
+      ? 'Stop recording'
+      : 'Start recording'
+  const audioStatus = isTranscribing
+    ? 'Transcribing audio'
+    : isRecording
+      ? 'Recording audio'
+      : ''
   useEffect(() => {
     const region = uploadStatusRef.current
     if (!region) return
@@ -204,11 +221,21 @@ export function ChatInput({
           ? 'Processing attachment'
           : `Processing ${processingAttachmentCount} attachments`
       wasProcessingAttachmentsRef.current = true
+    } else if (unsupportedAttachmentNames.length > 0) {
+      region.textContent =
+        unsupportedAttachmentNames.length === 1
+          ? `Unsupported attachment: ${unsupportedAttachmentStatus}`
+          : `Unsupported attachments: ${unsupportedAttachmentStatus}`
+      wasProcessingAttachmentsRef.current = false
     } else if (wasProcessingAttachmentsRef.current) {
       region.textContent = 'Attachments ready'
       wasProcessingAttachmentsRef.current = false
     }
-  }, [processingAttachmentCount])
+  }, [
+    processingAttachmentCount,
+    unsupportedAttachmentNames.length,
+    unsupportedAttachmentStatus,
+  ])
 
   // Auto-resize textarea as content changes (typing, transcription, paste, etc.)
   // Layout effect avoids iOS Safari cases where `scrollHeight` lags a paint.
@@ -614,7 +641,7 @@ export function ChatInput({
                         'absolute right-1 top-1 z-10 flex h-5 w-5 items-center justify-center rounded-full border-[0.5px] border-white',
                         'bg-surface-chat text-content-secondary shadow-sm hover:bg-surface-chat-background hover:text-content-primary',
                       )}
-                      aria-label="Remove document"
+                      aria-label={`Remove ${doc.name}`}
                     >
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
@@ -840,9 +867,7 @@ export function ChatInput({
                 e.preventDefault()
                 const hasDocuments =
                   processedDocuments &&
-                  processedDocuments.some(
-                    (doc) => !doc.isUploading && !doc.isGeneratingDescription,
-                  )
+                  processedDocuments.some((doc) => isDocumentSubmittable(doc))
                 const hasInput = input.trim().length > 0
                 const hasQuote = Boolean(quote)
                 if (!isTranscribing && (hasInput || hasDocuments || hasQuote)) {
@@ -948,6 +973,9 @@ export function ChatInput({
           />
 
           <div className="mt-3 flex items-center justify-between">
+            <span className="sr-only" role="status" aria-live="polite">
+              {audioStatus}
+            </span>
             <div className="flex items-center gap-1">
               {/* Mobile: + button with dropdown menu */}
               <div className="relative md:hidden">
@@ -1137,15 +1165,25 @@ export function ChatInput({
                       : 'rounded-lg bg-transparent p-2.5 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary md:p-1.5',
                   )}
                   style={{ WebkitTapHighlightColor: 'transparent' }}
-                  title={isRecording ? 'Stop recording' : 'Start recording'}
+                  title={recordingButtonLabel}
+                  aria-label={recordingButtonLabel}
                   disabled={isTranscribing}
                 >
                   {isRecording ? (
-                    <StopIcon className="h-6 w-6 md:h-5 md:w-5" />
+                    <StopIcon
+                      className="h-6 w-6 md:h-5 md:w-5"
+                      aria-hidden="true"
+                    />
                   ) : isTranscribing ? (
-                    <PiSpinner className="h-6 w-6 animate-spin text-current md:h-5 md:w-5" />
+                    <PiSpinner
+                      className="h-6 w-6 animate-spin text-current md:h-5 md:w-5"
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <MicrophoneIcon className="h-6 w-6 md:h-5 md:w-5" />
+                    <MicrophoneIcon
+                      className="h-6 w-6 md:h-5 md:w-5"
+                      aria-hidden="true"
+                    />
                   )}
                 </button>
               )}
@@ -1154,9 +1192,7 @@ export function ChatInput({
                   loadingState === 'loading' || loadingState === 'retrying'
                 const hasCompletedDocuments = Boolean(
                   processedDocuments &&
-                  processedDocuments.some(
-                    (doc) => !doc.isUploading && !doc.isGeneratingDescription,
-                  ),
+                  processedDocuments.some((doc) => isDocumentSubmittable(doc)),
                 )
                 const hasSubmittableContent =
                   Boolean(input.trim()) ||
