@@ -155,6 +155,12 @@ export function ModelSelector({
     return `/model-icons/${model.image}`
   }
 
+  const focusTrigger = () => {
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-model-selector]')?.focus()
+    })
+  }
+
   const renderModelItem = (model: BaseModel) => {
     const isSelected = model.modelName === selectedModel
     return (
@@ -168,12 +174,14 @@ export function ModelSelector({
           e.preventDefault()
           e.stopPropagation()
           onSelect(model.modelName as AIModel)
+          focusTrigger()
         }}
         onTouchEnd={(e) => {
           e.stopPropagation()
           if (isScrollingRef.current) return
           e.preventDefault()
           onSelect(model.modelName as AIModel)
+          focusTrigger()
         }}
       >
         <div className="relative flex h-5 w-5 flex-none items-center justify-center">

@@ -215,6 +215,12 @@ function ReasoningPopover({
     }
   }, [preferredPosition])
 
+  const focusTrigger = () => {
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>('[data-reasoning-selector]')?.focus()
+    })
+  }
+
   return (
     <div
       ref={menuRef}
@@ -252,6 +258,7 @@ function ReasoningPopover({
             }
             onEffortChange(option.value)
             onClose()
+            focusTrigger()
           }
           return (
             <button
@@ -300,6 +307,7 @@ function ReasoningPopover({
             e.stopPropagation()
             onThinkingEnabledChange(true)
             onClose()
+            focusTrigger()
           }}
           onTouchEnd={(e) => {
             e.stopPropagation()
@@ -307,6 +315,7 @@ function ReasoningPopover({
             e.preventDefault()
             onThinkingEnabledChange(true)
             onClose()
+            focusTrigger()
           }}
         >
           <span className="font-medium">On</span>
@@ -331,6 +340,7 @@ function ReasoningPopover({
             e.stopPropagation()
             onThinkingEnabledChange(false)
             onClose()
+            focusTrigger()
           }}
           onTouchEnd={(e) => {
             e.stopPropagation()
@@ -338,6 +348,7 @@ function ReasoningPopover({
             e.preventDefault()
             onThinkingEnabledChange(false)
             onClose()
+            focusTrigger()
           }}
         >
           <span className="font-medium">Off</span>
