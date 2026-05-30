@@ -80,6 +80,7 @@ export function TypingAnimation({
     <span className="inline-flex items-baseline">
       <span>{currentText}</span>
       <span
+        aria-hidden="true"
         className={`ml-0.5 inline-block w-0.5 bg-content-primary ${showCursor ? 'opacity-100' : 'opacity-0'}`}
         style={{ height: '1.1em', transform: 'translateY(0.05em)' }}
       />

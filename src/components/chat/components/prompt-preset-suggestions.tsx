@@ -38,7 +38,7 @@ export function PromptPresetSuggestions({
                 : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
             )}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon className="h-3.5 w-3.5" aria-hidden="true" />
             <span>{preset.name}</span>
           </button>
         )
@@ -51,7 +51,7 @@ export function PromptPresetSuggestions({
           'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
         )}
       >
-        <Squares2X2Icon className="h-3.5 w-3.5" />
+        <Squares2X2Icon className="h-3.5 w-3.5" aria-hidden="true" />
         <span>More</span>
       </button>
     </div>
