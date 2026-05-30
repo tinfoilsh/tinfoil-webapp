@@ -84,6 +84,7 @@ export function AskSidebar({
           isOpen ? 'translate-x-0' : 'translate-x-full',
         )}
         style={{ maxWidth: `${CONSTANTS.ASK_SIDEBAR_WIDTH_PX}px` }}
+        inert={!isOpen}
         aria-hidden={!isOpen}
       >
         {/* Header */}
