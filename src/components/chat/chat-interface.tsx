@@ -3204,7 +3204,7 @@ export function ChatInterface({
                                   e.stopPropagation()
                                   handleLabelClick('model', () => {})
                                 }}
-                                className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
+                                className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
                               >
                                 {(() => {
                                   const model = models.find(

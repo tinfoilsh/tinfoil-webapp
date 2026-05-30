@@ -362,7 +362,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   return !prev
                 })
               }}
-              className={`group flex w-full items-center gap-2 text-base text-content-secondary transition-colors hover:text-content-primary md:justify-start ${privacyExpanded ? 'justify-start' : 'justify-center'}`}
+              className={`group flex w-full items-center gap-2 py-1.5 text-base text-content-secondary transition-colors hover:text-content-primary md:justify-start ${privacyExpanded ? 'justify-start' : 'justify-center'}`}
             >
               <motion.span
                 className="inline-flex shrink-0"
@@ -504,7 +504,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                               handleLabelClick('model', () => {})
                             }
                           }}
-                          className="flex items-center gap-1 text-content-secondary transition-colors hover:text-content-primary"
+                          className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
                         >
                           {(() => {
                             const model = models.find(
