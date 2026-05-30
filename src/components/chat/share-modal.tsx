@@ -343,6 +343,7 @@ export function ShareModal({
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/50" />
         <DialogPrimitive.Content
+          aria-modal="true"
           aria-describedby={undefined}
           className="fixed left-[50%] top-[50%] z-50 flex h-[80vh] w-[90vw] max-w-4xl translate-x-[-50%] translate-y-[-50%] flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl focus:outline-none"
           style={{
@@ -405,6 +406,7 @@ export function ShareModal({
                               onChange={(e) =>
                                 setIsShareEnabled(e.target.checked)
                               }
+                              aria-label="Make this conversation shareable with anyone who has the link"
                               className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-border-subtle bg-surface-chat transition-all checked:border-brand-accent-dark checked:bg-brand-accent-dark"
                             />
                             <CheckIcon className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100" />
