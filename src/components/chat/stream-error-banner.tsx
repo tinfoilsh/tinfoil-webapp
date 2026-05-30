@@ -40,7 +40,10 @@ export function StreamErrorBanner({
   }
 
   return (
-    <div className="pointer-events-none absolute left-0 right-0 top-2 z-10 flex w-full justify-center px-4">
+    <div
+      role="alert"
+      className="pointer-events-none absolute left-0 right-0 top-2 z-10 flex w-full justify-center px-4"
+    >
       <div
         className={cn(
           'pointer-events-auto w-full max-w-xl cursor-pointer overflow-hidden rounded-lg border shadow-lg backdrop-blur-sm transition-colors',
@@ -80,7 +83,7 @@ export function StreamErrorBanner({
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
             )}
           >
-            <XMarkIcon className="h-4 w-4" />
+            <XMarkIcon className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
         {isExpanded && (

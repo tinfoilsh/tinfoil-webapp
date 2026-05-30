@@ -38,6 +38,8 @@ export function RateLimitBanner({
       )}
     >
       <div
+        role="status"
+        aria-live={exhausted ? 'assertive' : 'polite'}
         className={cn(
           'pointer-events-auto flex items-center gap-2 rounded-b-xl border-x border-b px-4 py-1.5 transition-colors',
           isDarkMode
