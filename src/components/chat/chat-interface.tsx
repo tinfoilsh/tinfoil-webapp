@@ -86,6 +86,7 @@ import { UrlHashMessageHandler } from '../url-hash-message-handler'
 import { UrlHashSettingsHandler } from '../url-hash-settings-handler'
 import { ArtifactSidebar } from './artifact-sidebar'
 import { AskSidebar } from './ask-sidebar'
+import { ChatAnnouncer } from './chat-announcer'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import { ChatSidebar } from './chat-sidebar'
@@ -721,6 +722,14 @@ export function ChatInterface({
   // Scroll to the last message (for the scroll button)
   const scrollToLastMessage = useCallback(() => {
     scrollToBottom(true)
+    // Move keyboard/screen-reader focus to the latest message so it is read
+    // out and becomes the navigation anchor. preventScroll avoids fighting the
+    // smooth scroll above.
+    const container = scrollContainerRef.current
+    if (!container) return
+    const messageEls = container.querySelectorAll('[data-message-role]')
+    const lastMessage = messageEls[messageEls.length - 1] as HTMLElement | null
+    lastMessage?.focus({ preventScroll: true })
   }, [scrollToBottom])
 
   const {
@@ -3010,6 +3019,11 @@ export function ChatInterface({
               }}
             />
             <div className="relative flex min-h-0 flex-1">
+              <ChatAnnouncer
+                messages={currentChat?.messages || []}
+                isStreaming={isStreaming}
+                isWaitingForResponse={isWaitingForResponse}
+              />
               {streamError && (
                 <StreamErrorBanner
                   message={streamError}
@@ -3021,6 +3035,8 @@ export function ChatInterface({
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
                 data-scroll-container="main"
+                role="main"
+                aria-label="Conversation"
                 className="relative z-0 flex-1 overflow-y-auto bg-surface-chat-background"
                 style={
                   {
