@@ -166,6 +166,7 @@ export function VerifierSidebar({
   return (
     <>
       <div
+        inert={!isOpen}
         className={`${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         } fixed right-0 top-0 z-40 flex h-full w-[85vw] overflow-hidden border-l border-border-subtle bg-surface-sidebar font-aeonik transition-all duration-200 ease-in-out`}
@@ -184,10 +185,12 @@ export function VerifierSidebar({
 
         <div className="absolute right-0 top-0 flex items-center justify-end p-4">
           <button
+            type="button"
             onClick={() => setIsOpen(false)}
+            aria-label="Close verification panel"
             className="rounded-lg border border-border-subtle bg-surface-chat p-2 text-content-secondary shadow-sm transition-all duration-200 hover:bg-surface-chat/80"
           >
-            <XMarkIcon className="h-5 w-5" />
+            <XMarkIcon className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
       </div>

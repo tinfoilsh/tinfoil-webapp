@@ -496,6 +496,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                           data-model-selector
                           aria-haspopup="menu"
                           aria-expanded={expandedLabel === 'model'}
+                          aria-label={`Current model ${models.find((m) => m.modelName === selectedModel)?.name ?? ''}`}
                           onClick={(e) => {
                             e.preventDefault()
                             e.stopPropagation()

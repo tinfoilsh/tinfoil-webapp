@@ -719,7 +719,7 @@ export function ChatInput({
 
           <textarea
             id="chat-input"
-            aria-label="Message Tin"
+            aria-label="Message"
             ref={inputRef}
             key={textareaResetNonce}
             value={input}
