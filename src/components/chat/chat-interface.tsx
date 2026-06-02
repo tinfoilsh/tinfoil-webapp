@@ -55,6 +55,7 @@ import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-s
 
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
@@ -1475,6 +1476,31 @@ export function ChatInterface({
     },
     [setEncryptionKey, retryProfileDecryption, reloadChats],
   )
+
+  // After an explicit "start fresh" the new key lives only on this
+  // device. If the platform supports passkeys and the user doesn't
+  // already have one, create a passkey now so the fresh key stays
+  // recoverable. Users who already have an active passkey get their
+  // backup re-encrypted by the key-change handler in useCloudSync, so
+  // there's nothing to do for them here. Best-effort: a cancel or
+  // failure just leaves the sidebar backup warning in place.
+  const backupStartFreshKeyWithPasskey = useCallback(async () => {
+    if (passkeyActive) return
+    try {
+      if (!(await isPrfSupported())) return
+      await setupPasskey()
+    } catch (error) {
+      if (error instanceof PrfNotSupportedError) return
+      logError(
+        'Failed to back up new key with passkey after start fresh',
+        error,
+        {
+          component: 'ChatInterface',
+          action: 'backupStartFreshKeyWithPasskey',
+        },
+      )
+    }
+  }, [passkeyActive, setupPasskey])
 
   const handleCreateProject = useCallback(async () => {
     try {
@@ -3295,6 +3321,9 @@ export function ChatInterface({
             try {
               await handleKeyChanged(key, { mode })
               setShowCloudSyncSetupModal(false)
+              if (mode === 'explicitStartFresh') {
+                void backupStartFreshKeyWithPasskey()
+              }
               return { ok: true }
             } catch (error) {
               return { ok: false, reason: classifyCloudKeySetupError(error) }
