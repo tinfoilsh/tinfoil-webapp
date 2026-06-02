@@ -846,8 +846,15 @@ export function ChatInterface({
     setIsPromptLibraryModalOpen(false)
   }, [])
 
+  // Only the free-tier daily quota gates sending and the subscribe prompt. The
+  // per-account hourly cap (subscribers) reuses the same indicator channel but
+  // must not block the queue or prompt subscribing; those sends fail fast with
+  // an in-chat rate-limit message and recover once the hourly window resets.
   const isRateLimited = useCallback(
-    () => Boolean(rateLimit && rateLimit.remaining <= 0),
+    () =>
+      Boolean(
+        rateLimit && rateLimit.remaining <= 0 && rateLimit.kind !== 'hourly',
+      ),
     [rateLimit],
   )
 
@@ -2038,6 +2045,7 @@ export function ChatInterface({
     if (
       rateLimit &&
       rateLimit.remaining <= 0 &&
+      rateLimit.kind !== 'hourly' &&
       !rateLimitModalDismissedRef.current
     ) {
       setIsSubscribePromptOpen(true)
@@ -2048,7 +2056,7 @@ export function ChatInterface({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (rateLimit && rateLimit.remaining <= 0) {
+    if (rateLimit && rateLimit.remaining <= 0 && rateLimit.kind !== 'hourly') {
       setIsSubscribePromptOpen(true)
       return
     }
