@@ -24,7 +24,17 @@ import {
   AUTH_ACTIVE_USER_ID,
   SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX,
 } from '@/constants/storage-keys'
-import { validateCurrentPrimaryKey } from './cloud-key-preflight'
+import {
+  keyCurrent,
+  newIdempotencyKey,
+  registerKey,
+} from '../sync-enclave/sync-api'
+import { IF_MATCH_SENTINELS } from '../sync-enclave/wire-contract'
+import { requirePrimaryKeyB64 } from './cek-encoding'
+import {
+  CloudKeySetupError,
+  validateCurrentPrimaryKey,
+} from './cloud-key-preflight'
 
 export type CloudKeyAuthorizationMode = 'validated' | 'explicit_start_fresh'
 
@@ -117,6 +127,41 @@ export async function authorizeCurrentPrimaryKeyOrThrow(
   if (!authorized) {
     throw new Error('Failed to authorize the current encryption key')
   }
+}
+
+/**
+ * Make the current local CEK the enclave's authoritative key for an
+ * explicit "start fresh". When existing cloud data sits under a
+ * different key, the steady-state write guard
+ * (EXISTING_DATA_UNDER_OTHER_KEY) blocks the new key — the only way
+ * past it is register-key with created_via=start_fresh, which
+ * atomically drops the old rows and rebinds the user to this CEK.
+ *
+ * No-op when the key is already authoritative: an empty remote, a
+ * matching KeyID, or a prior ceremony (e.g. the passkey start-fresh
+ * path, which registers before this runs). That lets the manual and
+ * passkey start-fresh callers invoke it unconditionally without
+ * double-wiping. Throws a CloudKeySetupError when the enclave can't
+ * be reached, so the caller surfaces "try again" instead of wiping
+ * blindly or mislabeling the key as invalid.
+ */
+export async function registerStartFreshKeyIfNeeded(): Promise<void> {
+  const validation = await validateCurrentPrimaryKey()
+  if (validation.canWrite) return
+  if (validation.remoteState !== 'exists') {
+    throw new CloudKeySetupError(
+      validation.message ??
+        "We couldn't verify your cloud data. Please try again in a moment.",
+      validation.remoteState,
+    )
+  }
+  const current = await keyCurrent()
+  await registerKey({
+    keyB64: requirePrimaryKeyB64(),
+    ifMatch: current.etag || IF_MATCH_SENTINELS.AnyKey,
+    createdVia: 'start_fresh',
+    idempotencyKey: newIdempotencyKey(),
+  })
 }
 
 export function clearCloudKeyAuthorization(userId?: string | null): void {

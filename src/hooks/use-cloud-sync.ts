@@ -7,6 +7,7 @@ import {
   authorizeCurrentPrimaryKeyOrThrow,
   canWriteToCloud,
   clearCloudKeyAuthorization,
+  registerStartFreshKeyIfNeeded,
 } from '@/services/cloud/cloud-key-authorization'
 import {
   CloudKeySetupError,
@@ -463,6 +464,7 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
           await authorizeCurrentPrimaryKeyOrThrow('validated')
         } else {
           try {
+            await registerStartFreshKeyIfNeeded()
             await authorizeCurrentPrimaryKeyOrThrow('explicit_start_fresh')
           } catch (authorizationError) {
             await rollbackToPreviousKeys(previousKeys)
@@ -562,6 +564,13 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
           component: 'useCloudSync',
           action: 'setEncryptionKey',
         })
+        // Preserve CloudKeySetupError so callers can tell a genuine key
+        // mismatch / verification outage apart from a malformed key.
+        // Flattening to a plain Error here makes every failure look like
+        // an "invalid key" to classifyCloudKeySetupError.
+        if (error instanceof CloudKeySetupError) {
+          throw error
+        }
         throw new Error(
           error instanceof Error ? error.message : 'Invalid encryption key',
         )
