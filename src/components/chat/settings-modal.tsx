@@ -18,6 +18,7 @@ import {
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
+import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { projectStorage } from '@/services/cloud/project-storage'
@@ -187,13 +188,16 @@ function PasskeyBundleInventory({
   entries,
   isDarkMode,
   removingId,
+  keyStatus,
   onRemove,
 }: {
   entries: PasskeyCredentialEntry[]
   isDarkMode: boolean
   removingId: string | null
+  keyStatus: 'match' | 'mismatch' | 'unverified'
   onRemove: (credentialId: string) => Promise<void>
 }) {
+  const canManage = keyStatus === 'match'
   const localCredentialId = getLocalPasskeyCredentialId()
   const sorted = [...entries].sort((a, b) => {
     if (a.id === localCredentialId) return -1
@@ -231,6 +235,15 @@ function PasskeyBundleInventory({
           Registered platforms ({sorted.length})
         </span>
       </div>
+      {!canManage && (
+        <div className="border-b border-border-subtle bg-surface-chat/50 px-4 py-2.5">
+          <p className="text-xs text-content-muted">
+            {keyStatus === 'mismatch'
+              ? "This device's encryption key doesn't match your current cloud key, so passkeys can't be changed here. Recover or re-enter your current key first."
+              : "We couldn't verify your encryption key on this device. Make sure your key is loaded, then reopen this panel."}
+          </p>
+        </div>
+      )}
       <ul className="divide-y divide-border-subtle">
         {sorted.map((entry) => {
           const isCurrentPlatform = entry.id === localCredentialId
@@ -263,15 +276,17 @@ function PasskeyBundleInventory({
                 onClick={() => {
                   void onRemove(entry.id)
                 }}
-                disabled={isRemoving || isLegacy}
+                disabled={isRemoving || isLegacy || !canManage}
                 title={
                   isLegacy
                     ? 'Legacy credentials cannot be removed from settings yet'
-                    : undefined
+                    : !canManage
+                      ? "This device's key must match your current cloud key to remove passkeys"
+                      : undefined
                 }
                 className={cn(
                   'shrink-0 rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium transition-colors',
-                  isRemoving || isLegacy
+                  isRemoving || isLegacy || !canManage
                     ? 'cursor-not-allowed opacity-50'
                     : 'hover:bg-surface-chat/80',
                 )}
@@ -354,6 +369,9 @@ export function SettingsModal({
   const [removingPasskeyId, setRemovingPasskeyId] = useState<string | null>(
     null,
   )
+  const [passkeyKeyStatus, setPasskeyKeyStatus] = useState<
+    'match' | 'mismatch' | 'unverified'
+  >('unverified')
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -687,6 +705,7 @@ export function SettingsModal({
   const refreshPasskeyBundles = useCallback(async () => {
     if (!cloudSyncEnabled) {
       setPasskeyBundles([])
+      setPasskeyKeyStatus('unverified')
       return
     }
     try {
@@ -698,6 +717,18 @@ export function SettingsModal({
         action: 'refreshPasskeyBundles',
       })
       setPasskeyBundles([])
+    }
+    try {
+      const validation = await validateCurrentPrimaryKey()
+      setPasskeyKeyStatus(
+        validation.canWrite
+          ? 'match'
+          : validation.remoteState === 'exists'
+            ? 'mismatch'
+            : 'unverified',
+      )
+    } catch {
+      setPasskeyKeyStatus('unverified')
     }
   }, [cloudSyncEnabled])
 
@@ -3239,6 +3270,7 @@ ${encryptionKey.replace('key_', '')}
                             entries={passkeyBundles}
                             isDarkMode={isDarkMode}
                             removingId={removingPasskeyId}
+                            keyStatus={passkeyKeyStatus}
                             onRemove={async (credentialId) => {
                               setRemovingPasskeyId(credentialId)
                               try {
