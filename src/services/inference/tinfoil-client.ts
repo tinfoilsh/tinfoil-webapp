@@ -18,6 +18,12 @@ export interface RateLimitInfo {
   maxRequests: number
   remaining: number
   resetsAt: string
+  /**
+   * Which limit this represents. Absent or `free_daily` is the anonymous/
+   * free-tier daily request limit; `hourly` is the per-account hourly usage
+   * cap that subscribers hit (surfaced through the same indicator channel).
+   */
+  kind?: 'free_daily' | 'hourly'
 }
 
 const SESSION_TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000
@@ -123,6 +129,37 @@ async function fetchSessionToken(): Promise<string> {
         error: errorText,
       },
     })
+
+    let parsedError: {
+      error?: string
+      code?: string
+      resets_at?: string
+    } | null = null
+    try {
+      parsedError = JSON.parse(errorText)
+    } catch {
+      parsedError = null
+    }
+
+    // Per-account hourly usage cap: surface it through the shared rate-limit
+    // channel so the existing banner renders, and throw a message the chat
+    // recognizes as a rate limit rather than a generic failure.
+    if (
+      response.status === 429 ||
+      parsedError?.code === 'HOURLY_LIMIT_REACHED'
+    ) {
+      cachedRateLimit = {
+        maxRequests: 0,
+        remaining: 0,
+        resetsAt: parsedError?.resets_at ?? '',
+        kind: 'hourly',
+      }
+      dispatchRateLimitUpdate()
+      throw new Error(
+        parsedError?.error ?? 'You have reached your hourly usage limit.',
+      )
+    }
+
     throw new Error(`Failed to get session token: ${response.status}`)
   }
 
@@ -138,6 +175,7 @@ async function fetchSessionToken(): Promise<string> {
       maxRequests: data.rate_limit.max_requests,
       remaining: data.rate_limit.remaining,
       resetsAt: data.rate_limit.resets_at,
+      kind: 'free_daily',
     }
   } else {
     cachedRateLimit = null

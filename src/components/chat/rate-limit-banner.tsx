@@ -22,6 +22,13 @@ export function shouldShowRateLimitBanner(
   )
 }
 
+function formatResetTime(resetsAt: string): string | null {
+  if (!resetsAt) return null
+  const at = new Date(resetsAt)
+  if (Number.isNaN(at.getTime())) return null
+  return at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
 export function RateLimitBanner({
   rateLimit,
   isDarkMode,
@@ -29,6 +36,8 @@ export function RateLimitBanner({
   pillClassName,
 }: RateLimitBannerProps) {
   const exhausted = rateLimit.remaining <= 0
+  const isHourly = rateLimit.kind === 'hourly'
+  const resetLabel = formatResetTime(rateLimit.resetsAt)
 
   return (
     <div
@@ -49,9 +58,11 @@ export function RateLimitBanner({
         )}
       >
         <span className="font-aeonik text-xs font-medium">
-          {exhausted
-            ? "You've used all your free requests for today"
-            : `You have ${rateLimit.remaining} free request${rateLimit.remaining === 1 ? '' : 's'} left today`}
+          {isHourly
+            ? `You've reached your hourly usage limit${resetLabel ? ` — resets at ${resetLabel}` : ''}`
+            : exhausted
+              ? "You've used all your free requests for today"
+              : `You have ${rateLimit.remaining} free request${rateLimit.remaining === 1 ? '' : 's'} left today`}
         </span>
       </div>
     </div>

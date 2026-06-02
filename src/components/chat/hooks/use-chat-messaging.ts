@@ -746,6 +746,7 @@ export function useChatMessaging({
           const isRateLimitError =
             lowerMsg.includes('rate limit') ||
             lowerMsg.includes('request limit') ||
+            lowerMsg.includes('usage limit') ||
             lowerMsg.includes('insufficient_quota')
 
           if (isRateLimitError) {
