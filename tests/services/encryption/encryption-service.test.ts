@@ -90,6 +90,47 @@ describe('EncryptionService', () => {
     })
   })
 
+  describe('staged activation (persist: false)', () => {
+    it('stages the key in memory without touching storage', async () => {
+      const key = await service.generateKey()
+      await service.setKey(key, { persist: false })
+
+      expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
+      expect(service.getKey()).toBeNull()
+      // The active CEK is still usable for the enclave handshake.
+      expect(service.getKeyBytesOrThrow().byteLength).toBe(32)
+    })
+
+    it('persistCurrentKeyState commits the staged key to storage', async () => {
+      const key = await service.generateKey()
+      await service.setKey(key, { persist: false })
+
+      service.persistCurrentKeyState()
+
+      expect(service.getKey()).toBe(key)
+      expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(key)
+    })
+
+    it('keeps the previous stored key until the staged key is committed', async () => {
+      const existing = await service.generateKey()
+      await service.setKey(existing)
+      const existingBytes = service.getKeyBytesOrThrow()
+
+      const staged = await service.generateKey()
+      await service.setKey(staged, { persist: false })
+
+      // Storage still reports the previous key, so an interrupted
+      // activation can never strand a local-only key.
+      expect(service.getKey()).toBe(existing)
+      expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(existing)
+      // The active CEK used by the enclave handshake is the staged key.
+      expect(service.getKeyBytesOrThrow()).not.toEqual(existingBytes)
+
+      service.persistCurrentKeyState()
+      expect(service.getKey()).toBe(staged)
+    })
+  })
+
   describe('getKey / getKeyBytesOrThrow', () => {
     it('should return null when no key is set', () => {
       expect(service.getKey()).toBeNull()

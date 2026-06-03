@@ -169,7 +169,11 @@ export class EncryptionService {
   }
 
   // Set encryption key from alphanumeric string
-  async setKey(keyString: string): Promise<void> {
+  async setKey(
+    keyString: string,
+    options: { persist?: boolean } = {},
+  ): Promise<void> {
+    const { persist = true } = options
     try {
       const previousKey =
         this.currentKeyString ??
@@ -191,22 +195,24 @@ export class EncryptionService {
         ]
       }
 
-      this.persistKeyState(
-        {
-          primaryKey: keyString,
-          history,
-          includeLegacyKey: false,
-        },
-        {
-          previousKey,
-          previousHistory,
-          includeLegacyKey: false,
-        },
-        {
-          failurePrefix: 'Failed to persist encryption key',
-          rollbackAction: 'setKeyRollback',
-        },
-      )
+      if (persist) {
+        this.persistKeyState(
+          {
+            primaryKey: keyString,
+            history,
+            includeLegacyKey: false,
+          },
+          {
+            previousKey,
+            previousHistory,
+            includeLegacyKey: false,
+          },
+          {
+            failurePrefix: 'Failed to persist encryption key',
+            rollbackAction: 'setKeyRollback',
+          },
+        )
+      }
 
       this.currentKeyString = keyString
       this.fallbackKeyStrings = history
@@ -220,6 +226,38 @@ export class EncryptionService {
       }
       throw new Error(`Invalid encryption key: ${error}`)
     }
+  }
+
+  /**
+   * Commit the in-memory key bundle to storage. Pairs with
+   * `setKey(key, { persist: false })`: a caller stages the key in
+   * memory, runs an external confirmation (e.g. the sync enclave
+   * accepting it), and only then persists it. Until this runs an
+   * interrupted activation leaves storage untouched, so it can never
+   * strand a local-only key the enclave would later reject.
+   */
+  persistCurrentKeyState(): void {
+    if (!this.currentKeyString) return
+    const previousKey =
+      localStorage.getItem(USER_ENCRYPTION_KEY) ??
+      localStorage.getItem(LEGACY_ENCRYPTION_KEY)
+    const previousHistory = this.loadKeyHistoryFromStorage()
+    this.persistKeyState(
+      {
+        primaryKey: this.currentKeyString,
+        history: this.fallbackKeyStrings,
+        includeLegacyKey: false,
+      },
+      {
+        previousKey,
+        previousHistory,
+        includeLegacyKey: false,
+      },
+      {
+        failurePrefix: 'Failed to persist encryption key',
+        rollbackAction: 'setKeyRollback',
+      },
+    )
   }
 
   // Get current encryption key as alphanumeric string
@@ -250,7 +288,7 @@ export class EncryptionService {
    * user-facing key string, not the raw bytes.
    */
   getKeyBytesOrThrow(): Uint8Array {
-    const key = this.getKey()
+    const key = this.currentKeyString ?? this.getKey()
     if (!key) {
       throw new Error('encryption-service: no encryption key available')
     }

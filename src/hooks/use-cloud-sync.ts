@@ -440,7 +440,12 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
           return prev
         })
 
-        await encryptionService.setKey(key)
+        // Stage the key in memory only. The enclave handshake below
+        // reads the active CEK from the service, so it operates on this
+        // key without committing it to storage. We persist only after
+        // the enclave accepts it, so an interrupted activation can never
+        // strand a local-only key the enclave would reject.
+        await encryptionService.setKey(key, { persist: false })
         didSetKey = true
 
         if (mode === 'recoverExisting') {
@@ -490,6 +495,9 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
             )
           }
         }
+
+        // The enclave has accepted the key — commit it to storage now.
+        encryptionService.persistCurrentKeyState()
 
         if (isMountedRef.current) {
           setState((prev) => ({
