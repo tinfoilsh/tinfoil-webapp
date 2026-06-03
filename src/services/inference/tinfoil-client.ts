@@ -26,7 +26,7 @@ export interface RateLimitInfo {
   kind?: 'free_daily' | 'hourly'
 }
 
-const SESSION_TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000
+const SESSION_TOKEN_EXPIRY_BUFFER_MS = 1 * 60 * 1000
 const AUTH_INIT_WAIT_MS = 3000
 
 let clientInstance: OpenAI | null = null
