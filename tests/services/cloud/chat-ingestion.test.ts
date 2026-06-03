@@ -50,9 +50,11 @@ describe('syncRemoteDeletions', () => {
     mockGetDeletedChatsSince.mockResolvedValue({
       deletedIds: ['local-chat', 'cloud-chat'],
     })
-    mockGetChat.mockImplementation(async (id: string) =>
-      id === 'local-chat' ? { id, isLocalOnly: true } : null,
-    )
+    mockGetChat.mockImplementation(async (id: string) => {
+      if (id === 'local-chat') return { id, isLocalOnly: true }
+      if (id === 'cloud-chat') return { id, isLocalOnly: false }
+      return null
+    })
 
     await syncRemoteDeletions('2026-01-01T00:00:00.000Z', 'test')
 
@@ -64,5 +66,18 @@ describe('syncRemoteDeletions', () => {
       reason: 'sync',
       ids: ['cloud-chat'],
     })
+  })
+
+  it('skips chats already absent locally so repeated passes are event-free', async () => {
+    mockGetDeletedChatsSince.mockResolvedValue({
+      deletedIds: ['already-gone'],
+    })
+    mockGetChat.mockResolvedValue(null)
+
+    await syncRemoteDeletions('2026-01-01T00:00:00.000Z', 'test')
+
+    expect(mockDeleteChat).not.toHaveBeenCalled()
+    expect(mockMarkAsDeleted).not.toHaveBeenCalled()
+    expect(mockEmit).not.toHaveBeenCalled()
   })
 })

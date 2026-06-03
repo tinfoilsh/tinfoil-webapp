@@ -1149,6 +1149,20 @@ export class CloudSyncService {
     const status = await this.checkSyncStatus(projectId)
 
     if (!status.needsSync) {
+      // A deletion from another device can be absorbed into the status
+      // cache (the count matches again) on the same tick its tombstone
+      // was missed locally, after which the count gate never reopens and
+      // the orphan lingers until a full page refresh. Re-run the
+      // tombstone reconciliation here so a missed deletion self-heals on
+      // the next tick. The pass is idempotent and only emits when a chat
+      // is actually removed locally.
+      if (!projectId) {
+        const cachedStatus = this.chatSyncCache.load()
+        if (cachedStatus?.lastUpdated) {
+          await syncRemoteDeletions(cachedStatus.lastUpdated, 'smartSync')
+        }
+      }
+
       logInfo('Smart sync: no changes detected, skipping sync', {
         component: 'CloudSync',
         action: 'smartSync',

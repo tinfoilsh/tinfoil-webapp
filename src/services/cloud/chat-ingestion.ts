@@ -188,7 +188,10 @@ export async function syncRemoteDeletions(
     for (const id of deletedIds) {
       try {
         const localChat = await indexedDBStorage.getChat(id)
-        if (localChat?.isLocalOnly) {
+        // Already gone locally (e.g. a prior reconciliation pass handled
+        // it) or a local-only chat the cloud never owned. Skipping keeps
+        // repeated reconciliation passes idempotent and event-free.
+        if (!localChat || localChat.isLocalOnly) {
           continue
         }
 
