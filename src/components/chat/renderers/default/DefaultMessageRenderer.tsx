@@ -47,6 +47,8 @@ const DefaultMessageComponent = ({
   const userMessageContentRef = React.useRef<HTMLDivElement>(null)
   const editTextareaRef = React.useRef<HTMLTextAreaElement>(null)
   const editButtonRef = React.useRef<HTMLButtonElement>(null)
+  const isLimitError =
+    message.isRateLimitError || message.isHourlyRateLimitError
 
   const citationUrlTitles = React.useMemo(() => {
     if (!message.annotations || message.annotations.length === 0)
@@ -426,10 +428,24 @@ const DefaultMessageComponent = ({
                     isUser ? 'max-w-[95%]' : 'w-full',
                     isUser &&
                       'rounded-2xl bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
-                    message.isRateLimitError &&
+                    isLimitError &&
                       'rounded-lg border-2 border-brand-accent-dark/30 bg-brand-accent-dark/5 px-4 py-3',
                   )}
                 >
+                  {message.isHourlyRateLimitError && (
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center gap-2">
+                        <GoClockFill className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light" />
+                        <span className="font-semibold text-brand-accent-dark dark:text-brand-accent-light">
+                          Hourly usage limit reached
+                        </span>
+                      </div>
+                      <p className="text-sm text-brand-accent-dark/70 dark:text-brand-accent-light/70">
+                        You&apos;ve reached your hourly usage limit. Please try
+                        again when the usage window resets.
+                      </p>
+                    </div>
+                  )}
                   {message.isRateLimitError && (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center gap-2">
@@ -454,7 +470,7 @@ const DefaultMessageComponent = ({
                       </button>
                     </div>
                   )}
-                  {!message.isRateLimitError && (
+                  {!isLimitError && (
                     <>
                       <div className="relative">
                         <div
