@@ -101,11 +101,25 @@ async function fetchChatJWT(
   }
 
   if (response.ok) {
-    const data = await response.json()
-    return {
-      key: data.key,
-      expiresAt: data.expires_at ? new Date(data.expires_at).getTime() : null,
+    try {
+      const data = await response.json()
+      if (typeof data?.key === 'string' && data.key !== '') {
+        const expiresAtMs = data.expires_at
+          ? new Date(data.expires_at).getTime()
+          : null
+        return {
+          key: data.key,
+          expiresAt:
+            expiresAtMs !== null && !Number.isNaN(expiresAtMs)
+              ? expiresAtMs
+              : null,
+        }
+      }
+    } catch {
+      // Malformed / non-JSON 200 body: treat as a miss and fall back to the
+      // opaque /api/keys/chat path rather than throwing.
     }
+    return null
   }
 
   const parsedError = parseErrorBody(await response.text())
