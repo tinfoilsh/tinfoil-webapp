@@ -121,6 +121,11 @@ export type Attachment = {
   pages?: DocumentPage[]
   // v1 format: per-attachment encryption key material (base64-encoded)
   encryptionKey?: string
+  // Bucket coordinates of the raw file bytes uploaded for code-exec
+  // /user-uploads sync. Present iff the eager bucket upload succeeded
+  // at attach time (requires signed-in + code-exec key derived).
+  fileAccessToken?: string
+  sha256?: string
 }
 
 export type Message = {

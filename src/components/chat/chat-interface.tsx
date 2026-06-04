@@ -33,6 +33,7 @@ import { IoShareOutline } from 'react-icons/io5'
 import { PiFilePlusLight, PiNotePencilLight, PiSpinner } from 'react-icons/pi'
 import { SlGhost } from 'react-icons/sl'
 
+import { truncateForCodeExec } from '@/components/chat/attachment-helpers'
 import {
   RateLimitBanner,
   shouldShowRateLimitBanner,
@@ -54,13 +55,14 @@ import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-s
 
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { uploadAttachmentToBucket } from '@/services/exec-snapshot/upload-attachment-to-bucket'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
   isCloudSyncEnabled,
   setCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
-import { logError } from '@/utils/error-handling'
+import { logError, logInfo } from '@/utils/error-handling'
 import { isSupportedFile } from '@/utils/file-types'
 import {
   getProjectUploadPreference,
@@ -255,6 +257,8 @@ function buildAttachment(opts: {
   textContent?: string
   description?: string
   pages?: DocumentPage[]
+  fileAccessToken?: string
+  sha256?: string
 }): Attachment | undefined {
   if (opts.imageData) {
     return {
@@ -265,6 +269,8 @@ function buildAttachment(opts: {
       base64: opts.imageData.base64,
       thumbnailBase64: opts.imageData.thumbnailBase64,
       description: opts.description ?? opts.fileName,
+      fileAccessToken: opts.fileAccessToken,
+      sha256: opts.sha256,
     }
   }
   // Synthesize textContent from pages when the document was uploaded in
@@ -283,6 +289,8 @@ function buildAttachment(opts: {
       fileName: opts.fileName,
       textContent: textContent || undefined,
       pages: opts.pages,
+      fileAccessToken: opts.fileAccessToken,
+      sha256: opts.sha256,
     }
   }
   return undefined
@@ -300,8 +308,9 @@ export function ChatInterface({
 }: ChatInterfaceProps) {
   const { toast } = useToast()
   const { isSignedIn, isLoaded: isAuthLoaded } = useAuth()
-  // TODO: unflip this
-  const canUseCodeExecution = false
+  // Code execution requires a chat encryption key derived from the
+  // signed-in user's passkey, so it's only available to signed-in users.
+  const canUseCodeExecution = isSignedIn
   const { user } = useUser()
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
   const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
@@ -1726,32 +1735,155 @@ export function ChatInterface({
         },
       ])
 
-      await handleDocumentUpload(
-        file,
-        (content, documentId, imageData, hasDescription, pages) => {
-          const newDocTokens = estimateTokenCount(content)
-          const contextLimit = parseContextWindowTokens(
-            selectedModelDetails?.contextWindow,
-          )
+      // Kick off the bucket upload in parallel with docling/image processing.
+      // Gated on the same condition that lets the user enable the toggle —
+      // signed-in users with a derived encryption key. Failures are
+      // non-fatal: the attachment still works for non-code-exec purposes.
+      //
+      // Observability: toasts + logInfo on every outcome (skipped,
+      // started, succeeded, failed) so we can see end-to-end behavior on
+      // preview without needing browser network-tab access.
+      const bucketUploadPromise: Promise<{
+        fileAccessToken: string
+        sha256: string
+      } | null> = (() => {
+        if (!canEnableCodeExecution || !codeExecutionEncryptionKey) {
+          const reasons: string[] = []
+          if (!isSignedIn) reasons.push('not signed in')
+          if (!codeExecutionEncryptionKey)
+            reasons.push('chat encryption key not derived')
+          const why = reasons.join('; ') || 'feature gate off'
+          logInfo('Bucket upload skipped (gate off)', {
+            component: 'ChatInterface',
+            action: 'uploadAttachmentToBucket',
+            metadata: {
+              fileName: file.name,
+              isSignedIn,
+              canUseCodeExecution,
+              hasEncryptionKey: !!codeExecutionEncryptionKey,
+              why,
+            },
+          })
+          toast({
+            title: `Bucket upload skipped: ${file.name}`,
+            description: why,
+            variant: 'destructive',
+            position: 'top-left',
+          })
+          return Promise.resolve(null)
+        }
 
-          const existingTokens = processedDocuments.reduce(
-            (total, doc) => total + estimateTokenCount(doc.content),
-            0,
-          )
+        logInfo('Bucket upload starting', {
+          component: 'ChatInterface',
+          action: 'uploadAttachmentToBucket',
+          metadata: { fileName: file.name, fileSize: file.size },
+        })
 
-          if (existingTokens + newDocTokens > contextLimit) {
-            setProcessedDocuments((prev) =>
-              prev.filter((doc) => doc.id !== tempDocId),
+        return (async () => {
+          try {
+            const bearer = await getSessionToken()
+            if (!bearer) {
+              const msg = 'no auth bearer'
+              logError('Bucket upload aborted: no bearer', undefined, {
+                component: 'ChatInterface',
+                action: 'uploadAttachmentToBucket',
+                metadata: { fileName: file.name },
+              })
+              toast({
+                title: `Bucket upload failed: ${file.name}`,
+                description: msg,
+                variant: 'destructive',
+                position: 'top-left',
+              })
+              return null
+            }
+            const result = await uploadAttachmentToBucket(
+              file,
+              codeExecutionEncryptionKey,
+              bearer,
             )
-
+            // The exact hint string chat-query-builder will inject into
+            // the user message for this attachment (text-only doc form;
+            // multimodal variants append a slight rephrasing).
+            const promptHint = `Available in code execution environment at: /user-uploads/${file.name}`
+            logInfo('Bucket upload succeeded', {
+              component: 'ChatInterface',
+              action: 'uploadAttachmentToBucket',
+              metadata: {
+                fileName: file.name,
+                fileAccessToken: result.fileAccessToken,
+                sha256: result.sha256,
+                promptHint,
+              },
+            })
             toast({
-              title: 'Context window saturated',
-              description:
-                "The selected model's context window is full. Remove a document or choose a model with a larger context window before uploading more files.",
+              title: `Bucket upload OK: ${file.name}`,
+              description: `accessToken: ${result.fileAccessToken}\nsha256: ${result.sha256}\nmodel will see: "${promptHint}"`,
+              position: 'top-left',
+            })
+            return result
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err)
+            logError('Bucket upload for /user-uploads failed', err, {
+              component: 'ChatInterface',
+              action: 'uploadAttachmentToBucket',
+              metadata: { fileName: file.name, error: msg },
+            })
+            toast({
+              title: `Bucket upload failed: ${file.name}`,
+              description: msg,
               variant: 'destructive',
               position: 'top-left',
             })
-            return
+            return null
+          }
+        })()
+      })()
+
+      await handleDocumentUpload(
+        file,
+        async (content, documentId, imageData, hasDescription, pages) => {
+          const bucketResult = await bucketUploadPromise
+
+          // Documents that landed in the buckets enclave can be capped
+          // per-file: the model reads the rest from /user-uploads via
+          // code execution. Without that fallback, fall through to the
+          // existing whole-context budget check.
+          let finalContent = content
+          let finalPages = pages
+          if (bucketResult && !imageData) {
+            const truncated = truncateForCodeExec({
+              content: content ?? '',
+              pages,
+              fileName: file.name,
+            })
+            finalContent = truncated.content
+            finalPages = truncated.pages
+          } else {
+            const newDocTokens = estimateTokenCount(content)
+            const contextLimit = parseContextWindowTokens(
+              selectedModelDetails?.contextWindow,
+            )
+
+            const existingTokens = processedDocuments.reduce(
+              (total, doc) => total + estimateTokenCount(doc.content),
+              0,
+            )
+
+            if (existingTokens + newDocTokens > contextLimit) {
+              setProcessedDocuments((prev) =>
+                prev.filter((doc) => doc.id !== tempDocId),
+              )
+
+              toast({
+                title: 'Context window saturated',
+                description:
+                  "The selected model's context window is full. Remove a document or choose a model with a larger context window before uploading more files.",
+                variant: 'destructive',
+                position: 'top-left',
+              })
+              return
+            }
           }
 
           // Build an Attachment object from the upload result
@@ -1759,9 +1891,12 @@ export function ChatInterface({
             id: documentId,
             fileName: file.name,
             imageData: imageData ?? undefined,
-            textContent: content ?? undefined,
-            description: hasDescription && content ? content : undefined,
-            pages,
+            textContent: finalContent ?? undefined,
+            description:
+              hasDescription && finalContent ? finalContent : undefined,
+            pages: finalPages,
+            fileAccessToken: bucketResult?.fileAccessToken,
+            sha256: bucketResult?.sha256,
           })
 
           setProcessedDocuments((prev) => {
@@ -1771,11 +1906,11 @@ export function ChatInterface({
                     id: documentId,
                     name: file.name,
                     time: new Date(),
-                    content,
+                    content: finalContent,
                     imageData,
                     attachment,
                     isImageDescription: !!imageData,
-                    hasDescription: hasDescription ?? !!content,
+                    hasDescription: hasDescription ?? !!finalContent,
                     isGeneratingDescription: false,
                   }
                 : doc,
@@ -1819,6 +1954,8 @@ export function ChatInterface({
       )
     },
     [
+      canEnableCodeExecution,
+      codeExecutionEncryptionKey,
       handleDocumentUpload,
       processedDocuments,
       selectedModelDetails?.contextWindow,

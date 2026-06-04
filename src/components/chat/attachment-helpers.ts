@@ -1,4 +1,5 @@
-import type { Attachment, Message } from './types'
+import { CONSTANTS } from './constants'
+import type { Attachment, DocumentPage, Message } from './types'
 
 /**
  * Extract image attachments from a message, handling both new and legacy formats.
@@ -84,6 +85,54 @@ function extractImageDescription(
   const rest = multimodalText.slice(idx + marker.length)
   const nextImg = rest.indexOf('\n\nImage: ')
   return (nextImg === -1 ? rest : rest.slice(0, nextImg)).trim() || undefined
+}
+
+// Rough chars-per-token ratio used by the rest of the chat surface
+// (see estimateTokenCount in chat-interface.tsx). Inlined here so this
+// helper stays a pure leaf module.
+const CHARS_PER_TOKEN = 4
+
+export interface TruncateForCodeExecResult {
+  content: string
+  pages?: DocumentPage[]
+  truncated: boolean
+}
+
+/**
+ * Cap a docling result so a single attachment can't dominate the
+ * model's context window. Only invoked when the eager bucket upload
+ * succeeded — the truncation footer points the model at the full file
+ * in `/user-uploads/<fileName>`.
+ *
+ * Text-only docs: slice `content` to a token cap and append a footer.
+ * Multimodal docs (pages present): cap the pages array to a page count;
+ * the per-attachment `/user-uploads` hint emitted by chat-query-builder
+ * carries the "rest of the file lives in the sandbox" signal there, so
+ * no per-page footer is needed.
+ */
+export function truncateForCodeExec(opts: {
+  content: string
+  pages?: DocumentPage[]
+  fileName: string
+}): TruncateForCodeExecResult {
+  const { content, pages, fileName } = opts
+  const charCap = CONSTANTS.CODE_EXEC_TEXT_TOKEN_CAP_PER_FILE * CHARS_PER_TOKEN
+  const contentOver = content.length > charCap
+  const pagesOver =
+    !!pages && pages.length > CONSTANTS.CODE_EXEC_MAX_PAGES_PER_FILE
+
+  if (!contentOver && !pagesOver) {
+    return { content, pages, truncated: false }
+  }
+
+  const footer = `\n\n[...truncated. Full file at /user-uploads/${fileName} — read it with bash/python in the code execution environment.]`
+  return {
+    content: contentOver ? content.slice(0, charCap) + footer : content,
+    pages: pagesOver
+      ? pages!.slice(0, CONSTANTS.CODE_EXEC_MAX_PAGES_PER_FILE)
+      : pages,
+    truncated: true,
+  }
 }
 
 /**
