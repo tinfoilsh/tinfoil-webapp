@@ -35,7 +35,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion'
 import { CiFloppyDisk } from 'react-icons/ci'
 import { FaLock } from 'react-icons/fa6'
-import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
+import { GoSidebarCollapse, GoSidebarExpand, GoSync } from 'react-icons/go'
 import { IoChatbubblesOutline } from 'react-icons/io5'
 import {
   PiFolder,
@@ -1521,7 +1521,7 @@ export function ChatSidebar({
                     {isSyncing ? (
                       <PiSpinner className="h-4 w-4 animate-spin" />
                     ) : (
-                      <AiOutlineCloudSync className="h-4 w-4" />
+                      <GoSync className="h-4 w-4" />
                     )}
                   </button>
                 )}
