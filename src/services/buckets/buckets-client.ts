@@ -1,19 +1,24 @@
 /**
- * Tinfoil Buckets client — attested PUT for /user-uploads bucket entries.
+ * Tinfoil Buckets client — attested PUT against the tinfoil-bucket S3 enclave.
  *
- * One bucket key per file (`fileAccessToken`); per-chat
- * `codeExecutionEncryptionKey` wraps every file in a chat. The buckets
- * enclave does the encryption: we send plaintext bytes + the wrapping
- * key over attested TLS, the enclave generates a DEK, encrypts in-memory,
- * and persists ciphertext to R2. The key is never persisted.
+ * Wire format (per smoke spec):
+ *   PUT  {ENCLAVE}/{BUCKET}/{key}
+ *   Authorization: Bearer <user api key>          // proxy validates + strips
+ *   X-Tinfoil-Encryption-Key: <std-padded b64>    // per-request AES-256 key
+ *   <raw bytes>
+ *
+ * The bucket name in the URL path is a stand-in: the sidecar always writes
+ * to its server-configured bucket, so any non-empty string works. The
+ * proxy stamps `X-Tinfoil-Tenant-Id` from the validated bearer; objects
+ * land under a per-user prefix server-side.
  */
-import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { SecureClient } from 'tinfoil'
 
 const BUCKETS_ENCLAVE =
-  process.env.NEXT_PUBLIC_BUCKETS_BASE_URL || 'https://buckets.tinfoil.sh'
-const BUCKETS_CONFIG_REPO = 'tinfoilsh/tinfoil-buckets'
+  process.env.NEXT_PUBLIC_BUCKETS_BASE_URL || 'https://bucket.tinfoil.sh'
+const BUCKETS_CONFIG_REPO = 'tinfoilsh/tinfoil-bucket'
+const BUCKETS_URL_BUCKET = 'tinfoil-bucket'
 
 let cachedClient: SecureClient | null = null
 
@@ -28,14 +33,14 @@ function getClient(): SecureClient {
 }
 
 /**
- * Store an encrypted item in buckets. The enclave wraps `value` with a
- * fresh DEK and stores the wrapped DEK in a key slot keyed by
- * `encryptionKeyB64Std`.
+ * Store raw bytes in the buckets enclave under `fileAccessToken`. The enclave
+ * encrypts in-memory with the supplied AES-256 key and persists ciphertext;
+ * the key never leaves the browser → enclave path.
  *
- * @param fileAccessToken  Bucket key (caller-chosen, treated as a password).
- * @param value            Plaintext bytes; base64-encoded on the wire.
- * @param encryptionKeyB64Std  AES-256 wrapping key, standard base64 with padding.
- * @param bearer           User's API key (Tinfoil session token), used for auth + tenant scoping.
+ * @param fileAccessToken      S3 object key (caller-chosen, opaque).
+ * @param value                Plaintext bytes; sent as the PUT body.
+ * @param encryptionKeyB64Std  AES-256 key, standard base64 with padding.
+ * @param bearer               User's Tinfoil API key.
  */
 export async function putBucketItem(
   fileAccessToken: string,
@@ -44,22 +49,17 @@ export async function putBucketItem(
   bearer: string,
 ): Promise<void> {
   const client = getClient()
-  const body = JSON.stringify({
-    value: uint8ArrayToBase64(value),
-    encryption_keys: [encryptionKeyB64Std],
-  })
+  const url = `${BUCKETS_ENCLAVE}/${BUCKETS_URL_BUCKET}/${fileAccessToken}`
 
-  const response = await client.fetch(
-    `${BUCKETS_ENCLAVE}/items/${fileAccessToken}`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${bearer}`,
-        'Content-Type': 'application/json',
-      },
-      body,
+  const response = await client.fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${bearer}`,
+      'X-Tinfoil-Encryption-Key': encryptionKeyB64Std,
+      'Content-Type': 'application/octet-stream',
     },
-  )
+    body: value as BodyInit,
+  })
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '')
