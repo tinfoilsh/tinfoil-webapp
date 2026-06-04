@@ -11,6 +11,7 @@ import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
 import { decideRecovery } from '../sync-enclave/enclave-error-recovery'
 import { passkeyEvents } from '../sync-enclave/passkey-events'
 import { newIdempotencyKey } from '../sync-enclave/sync-api'
+import { hasPrimaryKey } from './cek-encoding'
 import { processRemoteChat } from './chat-codec'
 import { ingestRemoteChats, syncRemoteDeletions } from './chat-ingestion'
 import { canWriteToCloud } from './cloud-key-authorization'
@@ -1122,6 +1123,17 @@ export class CloudSyncService {
    */
   private kickLegacyBlobMigration(): void {
     if (this.legacyMigrationKicked) {
+      return
+    }
+    // Don't consume the once-per-session latch until a primary CEK is
+    // loaded. A keyless device can trigger a sync — and thus this
+    // kick — before the key arrives (e.g. a v1→v2 user whose chats are
+    // still locked behind passkey recovery). The migration throws
+    // immediately without a key, so the enclave is never contacted;
+    // latching here would permanently skip the real migration that
+    // must run once the key is recovered, leaving the legacy rows
+    // unsealed and the user's key unregistered on the controlplane.
+    if (!hasPrimaryKey()) {
       return
     }
     this.legacyMigrationKicked = true

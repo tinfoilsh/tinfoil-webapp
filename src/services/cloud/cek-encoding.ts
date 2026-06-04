@@ -20,6 +20,20 @@ export function requirePrimaryKeyB64(): string {
 }
 
 /**
+ * Whether a primary CEK is currently loaded. The legacy-blob
+ * migration derives both its target and candidate-key set from the
+ * primary key, so it cannot run without one. Callers gate the
+ * once-per-session migration kick on this: a keyless device (e.g. a
+ * v1→v2 user still waiting on passkey recovery) must not consume the
+ * one-shot before the key arrives, or the real migration that should
+ * run once the key is recovered would be skipped for the whole
+ * session.
+ */
+export function hasPrimaryKey(): boolean {
+  return encryptionService.getKey() != null
+}
+
+/**
  * Build the `keys` array for the steady-state read path: only the
  * caller's current primary CEK. v2 rows are sealed under the primary
  * and decrypt cleanly here; anything that doesn't decrypt is treated

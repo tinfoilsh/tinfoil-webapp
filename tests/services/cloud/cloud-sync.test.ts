@@ -25,6 +25,9 @@ const mockListProjectChats = vi.fn()
 const mockGetProjectChatsSyncStatus = vi.fn()
 
 const mockEncryptionInitialize = vi.fn()
+const mockGetKey = vi.fn()
+const mockRunLegacyBlobMigration = vi.fn()
+const mockRunLegacyChatEviction = vi.fn()
 
 const mockIsStreaming = vi.fn()
 const mockOnStreamEnd = vi.fn()
@@ -86,6 +89,7 @@ vi.mock('@/services/cloud/cloud-key-authorization', () => ({
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
     initialize: (...args: any[]) => mockEncryptionInitialize(...args),
+    getKey: (...args: any[]) => mockGetKey(...args),
   },
 }))
 
@@ -107,6 +111,16 @@ vi.mock('@/services/cloud/chat-ingestion', () => ({
   syncRemoteDeletions: (...args: any[]) => mockSyncRemoteDeletions(...args),
 }))
 
+vi.mock('@/services/cloud/legacy-blob-migration', () => ({
+  runLegacyBlobMigrationAndFinalize: (...args: any[]) =>
+    mockRunLegacyBlobMigration(...args),
+}))
+
+vi.mock('@/services/cloud/legacy-chat-eviction', () => ({
+  runLegacyChatEvictionIfNeeded: (...args: any[]) =>
+    mockRunLegacyChatEviction(...args),
+}))
+
 describe('CloudSyncService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -118,6 +132,15 @@ describe('CloudSyncService', () => {
     mockApplyRemoteChatIfFresh.mockResolvedValue({ applied: true })
     mockResetSyncMetadataForAllChats.mockResolvedValue(undefined)
     mockDeleteChat.mockResolvedValue(undefined)
+    mockGetKey.mockReturnValue(null)
+    mockRunLegacyBlobMigration.mockResolvedValue({
+      scopes: [],
+      totalMigrated: 0,
+      totalRemaining: 0,
+      totalBlocked: 0,
+      fullyMigrated: true,
+    })
+    mockRunLegacyChatEviction.mockResolvedValue(undefined)
     mockIsAuthenticated.mockResolvedValue(true)
     mockUploadChat.mockResolvedValue({ syncVersion: null, rewrites: [] })
     mockGetChatSyncStatus.mockResolvedValue({ count: 0, lastUpdated: null })
@@ -548,6 +571,35 @@ describe('CloudSyncService', () => {
       await service.syncAllChats({ deep: true })
 
       expect(mockListChats).toHaveBeenCalledTimes(1)
+    })
+
+    it('defers the legacy blob migration until a primary key is loaded', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({
+        conversations: [],
+        hasMore: false,
+      })
+
+      const service = new CloudSyncService()
+
+      // A keyless device (e.g. a v1->v2 user still waiting on passkey
+      // recovery) can trigger a sync before the key arrives. The
+      // migration must not be kicked yet, and the once-per-session
+      // latch must not be consumed.
+      mockGetKey.mockReturnValue(null)
+      await service.syncAllChats()
+      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
+
+      // Once the key is recovered the next sync kicks the migration,
+      // so the user's key gets registered and legacy rows re-sealed.
+      mockGetKey.mockReturnValue('key_recovered')
+      await service.syncAllChats()
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+
+      // Subsequent syncs in the same session are a no-op.
+      await service.syncAllChats()
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
     })
   })
 
