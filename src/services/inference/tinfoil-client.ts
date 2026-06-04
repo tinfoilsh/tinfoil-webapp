@@ -45,6 +45,76 @@ function dispatchRateLimitUpdate(): void {
   }
 }
 
+type ServerErrorBody = {
+  error?: string
+  code?: string
+  resets_at?: string
+}
+
+function parseErrorBody(errorText: string): ServerErrorBody | null {
+  try {
+    return JSON.parse(errorText) as ServerErrorBody
+  } catch {
+    return null
+  }
+}
+
+function isHourlyLimit(
+  status: number,
+  parsedError: ServerErrorBody | null,
+): boolean {
+  return status === 429 || parsedError?.code === 'HOURLY_LIMIT_REACHED'
+}
+
+// Surfaces the per-account hourly usage cap through the shared rate-limit
+// channel (so the banner renders) and throws a message the chat recognizes as a
+// rate limit rather than a generic failure. Never returns.
+function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
+  cachedRateLimit = {
+    maxRequests: 0,
+    remaining: 0,
+    resetsAt: parsedError?.resets_at ?? '',
+    kind: 'hourly',
+  }
+  dispatchRateLimitUpdate()
+  throw new Error(
+    parsedError?.error ?? 'You have reached your hourly usage limit.',
+  )
+}
+
+// Mints a stateless JWT inference token for a signed-in user via
+// /api/chat/token. Returns the token on success, or null on any non-rate-limit
+// failure (no active subscription, endpoint disabled, network error) so the
+// caller falls back to the opaque /api/keys/chat path. A subscriber over the
+// hourly cap is surfaced here and not fallen back, so the cap cannot be bypassed
+// through the opaque path.
+async function fetchChatJWT(
+  authBearer: string,
+): Promise<{ key: string; expiresAt: number | null } | null> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/api/chat/token`, {
+      headers: { Authorization: `Bearer ${authBearer}` },
+    })
+  } catch {
+    return null
+  }
+
+  if (response.ok) {
+    const data = await response.json()
+    return {
+      key: data.key,
+      expiresAt: data.expires_at ? new Date(data.expires_at).getTime() : null,
+    }
+  }
+
+  const parsedError = parseErrorBody(await response.text())
+  if (isHourlyLimit(response.status, parsedError)) {
+    surfaceHourlyLimit(parsedError)
+  }
+  return null
+}
+
 async function fetchSessionToken(): Promise<string> {
   if (IS_DEV) {
     return DEV_API_KEY
@@ -108,6 +178,21 @@ async function fetchSessionToken(): Promise<string> {
     cachedSessionTokenExpiresAt = null
   }
 
+  // Signed-in clients mint a stateless JWT inference token via /api/chat/token.
+  // Anonymous users (and signed-in users without an active subscription) fall
+  // back to the opaque /api/keys/chat path below.
+  if (authBearer) {
+    const jwt = await fetchChatJWT(authBearer)
+    if (jwt !== null) {
+      cachedSessionToken = jwt.key
+      cachedSessionTokenWasAuthenticated = true
+      cachedSessionTokenExpiresAt = jwt.expiresAt
+      cachedRateLimit = null
+      dispatchRateLimitUpdate()
+      return jwt.key
+    }
+  }
+
   // Build request headers: include auth if we resolved a bearer above
   const headers: Record<string, string> = {}
   if (authBearer) {
@@ -130,34 +215,13 @@ async function fetchSessionToken(): Promise<string> {
       },
     })
 
-    let parsedError: {
-      error?: string
-      code?: string
-      resets_at?: string
-    } | null = null
-    try {
-      parsedError = JSON.parse(errorText)
-    } catch {
-      parsedError = null
-    }
+    const parsedError = parseErrorBody(errorText)
 
     // Per-account hourly usage cap: surface it through the shared rate-limit
     // channel so the existing banner renders, and throw a message the chat
     // recognizes as a rate limit rather than a generic failure.
-    if (
-      response.status === 429 ||
-      parsedError?.code === 'HOURLY_LIMIT_REACHED'
-    ) {
-      cachedRateLimit = {
-        maxRequests: 0,
-        remaining: 0,
-        resetsAt: parsedError?.resets_at ?? '',
-        kind: 'hourly',
-      }
-      dispatchRateLimitUpdate()
-      throw new Error(
-        parsedError?.error ?? 'You have reached your hourly usage limit.',
-      )
+    if (isHourlyLimit(response.status, parsedError)) {
+      surfaceHourlyLimit(parsedError)
     }
 
     throw new Error(`Failed to get session token: ${response.status}`)
