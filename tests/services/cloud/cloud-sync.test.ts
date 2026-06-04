@@ -479,6 +479,76 @@ describe('CloudSyncService', () => {
       await expect(service.syncAllChats()).rejects.toThrow('still failing')
       expect(mockListChats).toHaveBeenCalledTimes(2)
     })
+
+    it('fetches only the first page for a default (non-deep) full sync', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({
+        conversations: [{ id: 'c1' }],
+        hasMore: true,
+        nextContinuationToken: 'tok1',
+      })
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+
+      expect(mockListChats).toHaveBeenCalledTimes(1)
+      expect(
+        mockListChats.mock.calls[0]?.[0]?.continuationToken,
+      ).toBeUndefined()
+    })
+
+    it('pages through every remote chat when a deep sync is requested', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats
+        .mockResolvedValueOnce({
+          conversations: [{ id: 'c1' }],
+          hasMore: true,
+          nextContinuationToken: 'tok1',
+        })
+        .mockResolvedValueOnce({
+          conversations: [{ id: 'c2' }],
+          hasMore: true,
+          nextContinuationToken: 'tok2',
+        })
+        .mockResolvedValueOnce({
+          conversations: [{ id: 'c3' }],
+          hasMore: false,
+        })
+      mockIngestRemoteChats.mockResolvedValue({
+        downloaded: 1,
+        errors: [],
+        savedIds: ['x'],
+      })
+
+      const service = new CloudSyncService()
+      const result = await service.syncAllChats({ deep: true })
+
+      expect(mockListChats).toHaveBeenCalledTimes(3)
+      expect(
+        mockListChats.mock.calls[0]?.[0]?.continuationToken,
+      ).toBeUndefined()
+      expect(mockListChats.mock.calls[1]?.[0]?.continuationToken).toBe('tok1')
+      expect(mockListChats.mock.calls[2]?.[0]?.continuationToken).toBe('tok2')
+      // One ingest per fetched page, all counted toward downloaded.
+      expect(mockIngestRemoteChats).toHaveBeenCalledTimes(3)
+      expect(result.downloaded).toBe(3)
+    })
+
+    it('stops deep paging when a page returns no continuation token', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({
+        conversations: [{ id: 'only' }],
+        hasMore: false,
+      })
+
+      const service = new CloudSyncService()
+      await service.syncAllChats({ deep: true })
+
+      expect(mockListChats).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('syncProjectChats', () => {

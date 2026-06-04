@@ -94,6 +94,10 @@ type ChatSidebarProps = {
   backupWarningNeedsRecovery?: boolean
   onDismissBackupWarning?: () => void
   onChatsUpdated?: () => void
+  /** Triggers a deep (all-pages) cloud sync from the sidebar "Sync" button. */
+  onManualSync?: () => Promise<void>
+  /** True while a cloud sync is in progress; drives the Sync button spinner. */
+  isSyncing?: boolean
   verificationComplete?: boolean
   verificationSuccess?: boolean
   onVerificationComplete?: (success: boolean) => void
@@ -168,6 +172,8 @@ export function ChatSidebar({
   backupWarningNeedsRecovery = false,
   onDismissBackupWarning,
   onChatsUpdated,
+  onManualSync,
+  isSyncing = false,
   isProjectMode,
   activeProjectName,
   onEnterProject,
@@ -1498,6 +1504,27 @@ export function ChatSidebar({
                 <span className="truncate font-aeonik font-medium">Chats</span>
               </span>
               <div className="flex items-center gap-1">
+                {isSignedIn && cloudSyncEnabled && onManualSync && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (isSyncing) return
+                      void onManualSync()
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    disabled={isSyncing}
+                    aria-label="Sync chats"
+                    title="Sync chats"
+                    className="rounded p-1 text-content-muted transition-colors hover:text-content-secondary disabled:cursor-default disabled:opacity-60"
+                  >
+                    {isSyncing ? (
+                      <PiSpinner className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <AiOutlineCloudSync className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
                 {isChatHistoryExpanded ? (
                   <ChevronDownIcon className="h-4 w-4" />
                 ) : (

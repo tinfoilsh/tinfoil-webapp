@@ -178,8 +178,10 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     initializeSync()
   }, [isSignedIn, getToken])
 
-  // Full sync chats (always fetches first page)
-  const syncChats = useCallback(async () => {
+  // Full sync chats. By default only the first page is fetched; pass
+  // `{ deep: true }` (manual "Sync" action) to page through the entire
+  // remote history so older chats land locally.
+  const syncChats = useCallback(async (options?: { deep?: boolean }) => {
     if (!isCloudSyncEnabled()) {
       logInfo('Cloud sync is disabled, skipping sync', {
         component: 'useCloudSync',
@@ -202,7 +204,7 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     }
 
     try {
-      const result = await cloudSync.syncAllChats()
+      const result = await cloudSync.syncAllChats(options)
 
       if (isMountedRef.current) {
         setState((prev) => ({

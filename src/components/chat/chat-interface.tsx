@@ -1346,6 +1346,21 @@ export function ChatInterface({
       window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, handler)
   }, [reloadChats])
 
+  // Manual full sync triggered from the sidebar "Sync" button. Pages
+  // through the entire remote history (deep) so older chats that aren't on
+  // the first page land locally, then refreshes the visible list.
+  const handleManualSync = useCallback(async () => {
+    try {
+      await syncChats({ deep: true })
+      await reloadChats()
+    } catch (error) {
+      logError('Manual chat sync failed', error, {
+        component: 'ChatInterface',
+        action: 'handleManualSync',
+      })
+    }
+  }, [syncChats, reloadChats])
+
   // Handler for opening verifier sidebar
   const handleOpenVerifierSidebar = () => {
     if (isVerifierSidebarOpen) {
@@ -2796,6 +2811,8 @@ export function ChatInterface({
                 backupWarningNeedsRecovery={manualRecoveryNeeded}
                 onDismissBackupWarning={dismissBackupWarning}
                 onChatsUpdated={reloadChats}
+                onManualSync={handleManualSync}
+                isSyncing={syncing}
                 isProjectMode={isProjectMode}
                 activeProjectName={activeProject?.name}
                 onEnterProject={async (projectId, projectName) => {

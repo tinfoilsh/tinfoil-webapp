@@ -938,13 +938,14 @@ export class CloudSyncService {
   }
 
   // Sync all chats (upload local changes, download remote changes)
-  async syncAllChats(): Promise<SyncResult> {
-    return this.withSyncLock(() => this.doSyncAllChats())
+  async syncAllChats(options?: { deep?: boolean }): Promise<SyncResult> {
+    return this.withSyncLock(() => this.doSyncAllChats(options))
   }
 
   private async listChatsWithRetry(options: {
     includeContent: boolean
     limit: number
+    continuationToken?: string
   }) {
     let lastError: unknown
 
@@ -1001,7 +1002,10 @@ export class CloudSyncService {
     throw lastError instanceof Error ? lastError : new Error(String(lastError))
   }
 
-  private async doSyncAllChats(): Promise<SyncResult> {
+  private async doSyncAllChats(options?: {
+    deep?: boolean
+  }): Promise<SyncResult> {
+    const deep = options?.deep ?? false
     const startedAt = Date.now()
     const result: SyncResult = {
       uploaded: 0,
@@ -1054,6 +1058,34 @@ export class CloudSyncService {
       })
       result.downloaded += ingestResult.downloaded
       result.errors.push(...ingestResult.errors)
+
+      // A deep sync (manual "Sync" action) keeps paging through the rest
+      // of the remote history so older chats that predate this device's
+      // local copy are pulled down too. Periodic and page-load syncs stay
+      // first-page-only for bandwidth. Each page reuses the same
+      // checkShouldIngest guard so locally-modified chats are never
+      // clobbered.
+      if (deep) {
+        let continuationToken = remoteList.nextContinuationToken || undefined
+        while (continuationToken) {
+          const nextPage = await this.listChatsWithRetry({
+            includeContent: true,
+            limit: PAGINATION.CHATS_PER_PAGE,
+            continuationToken,
+          })
+          const nextIngest = await ingestRemoteChats(
+            [...(nextPage.conversations || [])],
+            {
+              localChatMap,
+              checkShouldIngest: true,
+              fetchMissingContent: true,
+            },
+          )
+          result.downloaded += nextIngest.downloaded
+          result.errors.push(...nextIngest.errors)
+          continuationToken = nextPage.nextContinuationToken || undefined
+        }
+      }
 
       // Update cached sync status after successful sync
       try {
