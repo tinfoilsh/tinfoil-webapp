@@ -1,4 +1,5 @@
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals'
+import i18next from 'eslint-plugin-i18next'
 
 const eslintConfig = [
   {
@@ -25,6 +26,16 @@ const eslintConfig = [
       'react-hooks/preserve-manual-memoization': 'warn',
       'react-hooks/immutability': 'warn',
       'react-hooks/purity': 'warn',
+    },
+  },
+  {
+    // Surface (without blocking CI) any hardcoded user-facing JSX text in the
+    // UI so new strings get routed through the i18n catalogs. Translate with
+    // useTranslation()/t() and add the key to src/i18n/locales/<lng>/*.json.
+    files: ['src/components/**/*.{ts,tsx}', 'src/pages/**/*.{ts,tsx}'],
+    plugins: { i18next },
+    rules: {
+      'i18next/no-literal-string': ['warn', { mode: 'jsx-text-only' }],
     },
   },
 ]
