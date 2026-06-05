@@ -1,0 +1,41 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "Selamat pagi, {{name}}!",
+    "afternoon": "Selamat siang, {{name}}!",
+    "evening": "Selamat malam, {{name}}!",
+    "late": "Masih terjaga, {{name}}?"
+  },
+  "privacy": {
+    "toggle": "Obrolan Anda bersifat pribadi secara desain",
+    "body1": "Pesan Anda dienkripsi langsung ke model AI yang berjalan di dalam enklave perangkat keras yang aman.",
+    "body2": " Ini adalah lingkungan yang terisolasi pada tingkat perangkat keras, ditenagai oleh GPU komputasi rahasia dengan jaminan kerahasiaan dan integritas yang dapat diverifikasi. Bahkan Tinfoil pun tidak dapat mengakses data Anda. Ini berlaku untuk semua obrolan, gambar, dokumen, dan masukan suara. Stack sumber terbuka kami memungkinkan Anda memverifikasinya sendiri dengan memeriksa atestasi perangkat keras.",
+    "technology": "Teknologi",
+    "source": "Sumber"
+  },
+  "model": {
+    "selectAria": "Pilih model",
+    "others": "Model lainnya"
+  },
+  "rateLimit": {
+    "exhausted": "Anda telah menggunakan semua permintaan gratis Anda untuk hari ini",
+    "remaining_other": "Anda memiliki {{count}} permintaan gratis tersisa hari ini"
+  },
+  "error": {
+    "expandDetails": "Tampilkan detail kesalahan: {{title}}",
+    "collapseDetails": "Sembunyikan detail kesalahan: {{title}}",
+    "dismiss": "Tutup kesalahan"
+  },
+  "input": {
+    "replyPlaceholder": "Balas ke Tin...",
+    "messageAria": "Pesan",
+    "send": "Kirim",
+    "stop": "Hentikan pembuatan",
+    "placeholders": {
+      "mind": "Apa yang sedang Anda pikirkan?",
+      "anything": "Tanyakan apa saja kepada saya...",
+      "help": "Apa yang bisa saya bantu hari ini?",
+      "secrets": "Rahasia Anda aman di sini..."
+    }
+  }
+}

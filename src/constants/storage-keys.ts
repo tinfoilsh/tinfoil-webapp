@@ -37,6 +37,9 @@ export const SETTINGS_PII_CHECK_ENABLED = 'tinfoil-settings-pii-check-enabled'
 export const SETTINGS_THEME_MODE = 'tinfoil-settings-theme-mode'
 export const SETTINGS_THEME = 'tinfoil-settings-theme'
 export const SETTINGS_CHAT_FONT = 'tinfoil-settings-chat-font'
+// UI display language (interface localization). Distinct from
+// USER_PREFS_LANGUAGE, which controls the language the AI responds in.
+export const SETTINGS_UI_LOCALE = 'tinfoil-settings-ui-locale'
 export const SETTINGS_CACHED_SUBSCRIPTION_STATUS =
   'tinfoil-settings-cached-subscription-status'
 export const SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO =

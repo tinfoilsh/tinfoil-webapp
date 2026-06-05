@@ -1,0 +1,44 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "Dzień dobry, {{name}}!",
+    "afternoon": "Miłego popołudnia, {{name}}!",
+    "evening": "Dobry wieczór, {{name}}!",
+    "late": "Jeszcze nie śpisz, {{name}}?"
+  },
+  "privacy": {
+    "toggle": "Twoje czaty są prywatne z założenia",
+    "body1": "Twoje wiadomości są szyfrowane bezpośrednio do modeli AI działających w bezpiecznych enklawach sprzętowych.",
+    "body2": " To środowiska izolowane sprzętowo, oparte na układach GPU do poufnych obliczeń, z weryfikowalnymi gwarancjami poufności i integralności. Nawet Tinfoil nie ma dostępu do Twoich danych. Dotyczy to wszystkich czatów, obrazów, dokumentów i wprowadzania głosowego. Nasz stos open source pozwala samodzielnie to zweryfikować, sprawdzając atestację sprzętową.",
+    "technology": "Technologia",
+    "source": "Źródło"
+  },
+  "model": {
+    "selectAria": "Wybierz model",
+    "others": "Inne modele"
+  },
+  "rateLimit": {
+    "exhausted": "Wykorzystałeś już wszystkie darmowe zapytania na dziś",
+    "remaining_one": "Pozostało Ci dziś {{count}} darmowe zapytanie",
+    "remaining_few": "Pozostały Ci dziś {{count}} darmowe zapytania",
+    "remaining_many": "Pozostało Ci dziś {{count}} darmowych zapytań",
+    "remaining_other": "Pozostało Ci dziś {{count}} darmowych zapytań"
+  },
+  "error": {
+    "expandDetails": "Pokaż szczegóły błędu: {{title}}",
+    "collapseDetails": "Ukryj szczegóły błędu: {{title}}",
+    "dismiss": "Odrzuć błąd"
+  },
+  "input": {
+    "replyPlaceholder": "Odpowiedz Tin...",
+    "messageAria": "Wiadomość",
+    "send": "Wyślij",
+    "stop": "Zatrzymaj generowanie",
+    "placeholders": {
+      "mind": "O czym myślisz?",
+      "anything": "Zapytaj mnie o cokolwiek...",
+      "help": "Jak mogę ci dziś pomóc?",
+      "secrets": "Twoje sekrety są tu bezpieczne..."
+    }
+  }
+}

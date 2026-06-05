@@ -11,6 +11,9 @@ export interface ProfileData {
   isDarkMode?: boolean
   themeMode?: 'light' | 'dark' | 'system'
 
+  // UI display language (interface localization)
+  uiLocale?: string
+
   // Chat settings
   maxPromptMessages?: number
   language?: string

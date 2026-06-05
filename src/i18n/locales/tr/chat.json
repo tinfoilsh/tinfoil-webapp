@@ -1,0 +1,42 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "Günaydın, {{name}}!",
+    "afternoon": "İyi günler, {{name}}!",
+    "evening": "İyi akşamlar, {{name}}!",
+    "late": "Hâlâ ayakta mısın, {{name}}?"
+  },
+  "privacy": {
+    "toggle": "Sohbetleriniz tasarım gereği gizlidir",
+    "body1": "Mesajlarınız, güvenli donanım yuvalarında çalışan yapay zeka modellerine doğrudan şifrelenir.",
+    "body2": " Bunlar, doğrulanabilir gizlilik ve bütünlük garantileri sunan gizli bilişim GPU'larıyla çalışan donanımsal olarak yalıtılmış ortamlardır. Tinfoil bile verilerinize erişemez. Bu, tüm sohbetler, görseller, belgeler ve sesli girişler için geçerlidir. Açık kaynaklı altyapımız, donanım doğrulamasını inceleyerek bunu kendiniz doğrulamanıza olanak tanır.",
+    "technology": "Teknoloji",
+    "source": "Kaynak"
+  },
+  "model": {
+    "selectAria": "Bir model seçin",
+    "others": "Diğer modeller"
+  },
+  "rateLimit": {
+    "exhausted": "Bugünkü tüm ücretsiz isteklerinizi kullandınız",
+    "remaining_one": "Bugün {{count}} ücretsiz isteğiniz kaldı",
+    "remaining_other": "Bugün {{count}} ücretsiz isteğiniz kaldı"
+  },
+  "error": {
+    "expandDetails": "Hata ayrıntılarını göster: {{title}}",
+    "collapseDetails": "Hata ayrıntılarını gizle: {{title}}",
+    "dismiss": "Hatayı kapat"
+  },
+  "input": {
+    "replyPlaceholder": "Tin'e yanıt ver...",
+    "messageAria": "Mesaj",
+    "send": "Gönder",
+    "stop": "Üretimi durdur",
+    "placeholders": {
+      "mind": "Aklından ne geçiyor?",
+      "anything": "Bana her şeyi sorabilirsin...",
+      "help": "Bugün sana nasıl yardımcı olabilirim?",
+      "secrets": "Sırların burada güvende..."
+    }
+  }
+}

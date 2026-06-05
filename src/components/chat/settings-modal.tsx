@@ -18,6 +18,8 @@ import {
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
+import { LOCALES } from '@/i18n/config'
+import { useLocale } from '@/i18n/useLocale'
 import { authTokenManager } from '@/services/auth'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { cloudSync } from '@/services/cloud/cloud-sync'
@@ -66,6 +68,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   AiOutlineCloudSync,
   AiOutlineExport,
@@ -235,6 +238,8 @@ export function SettingsModal({
   const { getToken, signOut } = useAuth()
   const { user } = useUser()
   const { toast } = useToast()
+  const { t } = useTranslation('settings')
+  const { locale: uiLocale, setLocale: setUiLocale } = useLocale()
 
   // Projects for export functionality
   const {
@@ -2256,6 +2261,41 @@ ${encryptionKey.replace('key_', '')}
                               : 'border-border-subtle bg-surface-sidebar text-content-primary',
                           )}
                         />
+                      </div>
+                    </div>
+
+                    {/* Display Language (UI localization) */}
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="space-y-3">
+                        <div>
+                          <div className="font-aeonik text-sm font-medium text-content-primary">
+                            {t('language.label')}
+                          </div>
+                          <div className="font-aeonik-fono text-xs text-content-muted">
+                            {t('language.description')}
+                          </div>
+                        </div>
+                        <select
+                          value={uiLocale}
+                          onChange={(e) => setUiLocale(e.target.value)}
+                          className={cn(
+                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                            isDarkMode
+                              ? 'border-border-strong bg-surface-chat text-content-secondary'
+                              : 'border-border-subtle bg-surface-sidebar text-content-primary',
+                          )}
+                        >
+                          {LOCALES.map((loc) => (
+                            <option key={loc.code} value={loc.code}>
+                              {loc.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
 

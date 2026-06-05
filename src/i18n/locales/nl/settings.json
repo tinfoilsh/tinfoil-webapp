@@ -1,0 +1,6 @@
+{
+  "language": {
+    "label": "Weergavetaal",
+    "description": "Taal van de app-interface. Dit staat los van de taal waarin de AI antwoordt."
+  }
+}

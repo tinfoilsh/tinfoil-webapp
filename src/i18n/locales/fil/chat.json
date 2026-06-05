@@ -1,0 +1,42 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "Magandang umaga, {{name}}!",
+    "afternoon": "Magandang hapon, {{name}}!",
+    "evening": "Magandang gabi, {{name}}!",
+    "late": "Gising pa, {{name}}?"
+  },
+  "privacy": {
+    "toggle": "Pribado ang iyong mga chat ayon sa disenyo",
+    "body1": "Ang iyong mga mensahe ay direktang naka-encrypt patungo sa mga AI model na tumatakbo sa loob ng mga secure na hardware enclave.",
+    "body2": " Ang mga ito ay mga kapaligirang hiwalay sa antas ng hardware, pinapagana ng mga confidential computing GPU na may mapapatunayang garantiya ng pagiging kumpidensiyal at integridad. Kahit ang Tinfoil ay hindi maa-access ang iyong data. Nalalapat ito sa lahat ng chat, larawan, dokumento, at voice input. Ang aming open-source na stack ay nagbibigay-daan sa iyong mismong i-verify ito sa pamamagitan ng pagsusuri sa hardware attestation.",
+    "technology": "Teknolohiya",
+    "source": "Pinagmulan"
+  },
+  "model": {
+    "selectAria": "Pumili ng modelo",
+    "others": "Iba pang mga modelo"
+  },
+  "rateLimit": {
+    "exhausted": "Naubos mo na ang lahat ng iyong libreng kahilingan para ngayong araw",
+    "remaining_one": "May natitira kang {{count}} libreng kahilingan ngayong araw",
+    "remaining_other": "May natitira kang {{count}} na libreng kahilingan ngayong araw"
+  },
+  "error": {
+    "expandDetails": "Ipakita ang mga detalye ng error: {{title}}",
+    "collapseDetails": "Itago ang mga detalye ng error: {{title}}",
+    "dismiss": "I-dismiss ang error"
+  },
+  "input": {
+    "replyPlaceholder": "Tumugon kay Tin...",
+    "messageAria": "Mensahe",
+    "send": "Ipadala",
+    "stop": "Ihinto ang paggawa",
+    "placeholders": {
+      "mind": "Ano ang iniisip mo?",
+      "anything": "Magtanong ka lang ng kahit ano...",
+      "help": "Paano kita matutulungan ngayon?",
+      "secrets": "Ligtas dito ang mga sikreto mo..."
+    }
+  }
+}
