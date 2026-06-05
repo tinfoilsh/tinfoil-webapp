@@ -31,6 +31,12 @@
     "replyPlaceholder": "Répondre à Tin...",
     "messageAria": "Message",
     "send": "Envoyer",
-    "stop": "Arrêter la génération"
+    "stop": "Arrêter la génération",
+    "placeholders": {
+      "mind": "À quoi pensez-vous ?",
+      "anything": "Demandez-moi ce que vous voulez...",
+      "help": "Comment puis-je vous aider aujourd'hui ?",
+      "secrets": "Vos secrets sont en sécurité ici..."
+    }
   }
 }

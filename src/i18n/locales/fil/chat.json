@@ -31,6 +31,12 @@
     "replyPlaceholder": "Tumugon kay Tin...",
     "messageAria": "Mensahe",
     "send": "Ipadala",
-    "stop": "Ihinto ang paggawa"
+    "stop": "Ihinto ang paggawa",
+    "placeholders": {
+      "mind": "Ano ang iniisip mo?",
+      "anything": "Magtanong ka lang ng kahit ano...",
+      "help": "Paano kita matutulungan ngayon?",
+      "secrets": "Ligtas dito ang mga sikreto mo..."
+    }
   }
 }

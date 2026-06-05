@@ -31,6 +31,12 @@
     "replyPlaceholder": "Tin'e yanıt ver...",
     "messageAria": "Mesaj",
     "send": "Gönder",
-    "stop": "Üretimi durdur"
+    "stop": "Üretimi durdur",
+    "placeholders": {
+      "mind": "Aklından ne geçiyor?",
+      "anything": "Bana her şeyi sorabilirsin...",
+      "help": "Bugün sana nasıl yardımcı olabilirim?",
+      "secrets": "Sırların burada güvende..."
+    }
   }
 }

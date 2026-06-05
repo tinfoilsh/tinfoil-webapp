@@ -30,6 +30,12 @@
     "replyPlaceholder": "Balas ke Tin...",
     "messageAria": "Pesan",
     "send": "Kirim",
-    "stop": "Hentikan pembuatan"
+    "stop": "Hentikan pembuatan",
+    "placeholders": {
+      "mind": "Apa yang sedang Anda pikirkan?",
+      "anything": "Tanyakan apa saja kepada saya...",
+      "help": "Apa yang bisa saya bantu hari ini?",
+      "secrets": "Rahasia Anda aman di sini..."
+    }
   }
 }

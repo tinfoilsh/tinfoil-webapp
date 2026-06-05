@@ -33,6 +33,12 @@
     "replyPlaceholder": "Odpowiedz Tin...",
     "messageAria": "Wiadomość",
     "send": "Wyślij",
-    "stop": "Zatrzymaj generowanie"
+    "stop": "Zatrzymaj generowanie",
+    "placeholders": {
+      "mind": "O czym myślisz?",
+      "anything": "Zapytaj mnie o cokolwiek...",
+      "help": "Jak mogę ci dziś pomóc?",
+      "secrets": "Twoje sekrety są tu bezpieczne..."
+    }
   }
 }

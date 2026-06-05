@@ -30,6 +30,12 @@
     "replyPlaceholder": "回覆 Tin...",
     "messageAria": "訊息",
     "send": "傳送",
-    "stop": "停止產生"
+    "stop": "停止產生",
+    "placeholders": {
+      "mind": "在想什麼？",
+      "anything": "儘管問我……",
+      "help": "今天我能幫你什麼？",
+      "secrets": "你的祕密在這裡很安全……"
+    }
   }
 }

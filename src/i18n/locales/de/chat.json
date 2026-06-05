@@ -31,6 +31,12 @@
     "replyPlaceholder": "Antworte Tin...",
     "messageAria": "Nachricht",
     "send": "Senden",
-    "stop": "Generierung stoppen"
+    "stop": "Generierung stoppen",
+    "placeholders": {
+      "mind": "Woran denkst du?",
+      "anything": "Frag mich alles...",
+      "help": "Wie kann ich dir heute helfen?",
+      "secrets": "Deine Geheimnisse sind hier sicher..."
+    }
   }
 }
