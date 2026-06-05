@@ -1,0 +1,35 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "좋은 아침이에요, {{name}}님!",
+    "afternoon": "안녕하세요, {{name}}님!",
+    "evening": "좋은 저녁이에요, {{name}}님!",
+    "late": "아직 안 주무셨어요, {{name}}님?"
+  },
+  "privacy": {
+    "toggle": "귀하의 채팅은 설계상 비공개입니다",
+    "body1": "메시지는 보안 하드웨어 엔클레이브 내에서 실행되는 AI 모델로 직접 암호화됩니다.",
+    "body2": " 이는 검증 가능한 기밀성과 무결성 보장을 갖춘 기밀 컴퓨팅 GPU로 구동되는 하드웨어 격리 환경입니다. Tinfoil조차도 귀하의 데이터에 접근할 수 없습니다. 이는 모든 채팅, 이미지, 문서 및 음성 입력에 적용됩니다. 오픈 소스 스택을 통해 하드웨어 증명을 직접 검사하여 이를 확인할 수 있습니다.",
+    "technology": "기술",
+    "source": "출처"
+  },
+  "model": {
+    "selectAria": "모델 선택",
+    "others": "다른 모델"
+  },
+  "rateLimit": {
+    "exhausted": "오늘 무료 요청을 모두 사용했습니다",
+    "remaining_other": "오늘 무료 요청이 {{count}}개 남았습니다"
+  },
+  "error": {
+    "expandDetails": "오류 세부정보 표시: {{title}}",
+    "collapseDetails": "오류 세부정보 숨기기: {{title}}",
+    "dismiss": "오류 닫기"
+  },
+  "input": {
+    "replyPlaceholder": "Tin에게 답장...",
+    "messageAria": "메시지",
+    "send": "보내기",
+    "stop": "생성 중지"
+  }
+}

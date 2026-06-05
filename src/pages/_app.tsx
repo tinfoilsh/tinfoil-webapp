@@ -1,5 +1,6 @@
 import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
 import { Toaster } from '@/components/ui/toaster'
+import { I18nProvider } from '@/i18n/I18nProvider'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { migrateStorageKeys } from '@/utils/storage-migration'
@@ -169,9 +170,11 @@ export default function App({ Component, pageProps }: AppProps) {
             },
           }}
         >
-          <AuthCleanupHandler />
-          <Component {...pageProps} />
-          <Toaster />
+          <I18nProvider>
+            <AuthCleanupHandler />
+            <Component {...pageProps} />
+            <Toaster />
+          </I18nProvider>
         </ClerkProvider>
       </div>
     </>
