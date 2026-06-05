@@ -3,6 +3,7 @@
 import { cn } from '@/components/ui/utils'
 import { ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface StreamErrorBannerProps {
   message: string
@@ -10,13 +11,11 @@ interface StreamErrorBannerProps {
   isDarkMode: boolean
 }
 
-const DEFAULT_ERROR_TITLE = 'Something went wrong'
-
 // Extract a short, human-friendly title from the raw error message while
 // keeping the full text available for the expanded view.
-function getErrorTitle(message: string): string {
+function getErrorTitle(message: string, fallback: string): string {
   const cleaned = message.replace(/^Error:\s*/i, '').trim()
-  if (!cleaned) return DEFAULT_ERROR_TITLE
+  if (!cleaned) return fallback
   const firstLine = cleaned.split('\n')[0]
   const firstSentence = firstLine.split(/(?<=[.!?])\s/)[0]
   return firstSentence.length > 120
@@ -29,8 +28,9 @@ export function StreamErrorBanner({
   onDismiss,
   isDarkMode,
 }: StreamErrorBannerProps) {
+  const { t } = useTranslation(['chat', 'common'])
   const [isExpanded, setIsExpanded] = useState(false)
-  const title = getErrorTitle(message)
+  const title = getErrorTitle(message, t('common:somethingWentWrong'))
 
   const toggleExpanded = () => setIsExpanded((prev) => !prev)
 
@@ -58,7 +58,11 @@ export function StreamErrorBanner({
             onClick={toggleExpanded}
             className="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus:outline-none focus:ring-2 focus:ring-red-500/50"
             aria-expanded={isExpanded}
-            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} error details: ${title}`}
+            aria-label={
+              isExpanded
+                ? t('error.collapseDetails', { title })
+                : t('error.expandDetails', { title })
+            }
           >
             <ChevronDownIcon
               className={cn(
@@ -74,7 +78,7 @@ export function StreamErrorBanner({
           <button
             type="button"
             onClick={handleDismiss}
-            aria-label="Dismiss error"
+            aria-label={t('error.dismiss')}
             className={cn(
               'rounded p-1 transition-colors',
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',

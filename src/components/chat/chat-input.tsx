@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   PiGlobe,
   PiGlobeX,
@@ -100,6 +101,7 @@ export function ChatInput({
   onOpenPromptLibrary,
   onClearPromptPreset,
 }: ChatInputProps) {
+  const { t } = useTranslation('chat')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsScrollRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
@@ -719,7 +721,7 @@ export function ChatInput({
 
           <textarea
             id="chat-input"
-            aria-label="Message"
+            aria-label={t('input.messageAria')}
             ref={inputRef}
             key={textareaResetNonce}
             value={input}
@@ -960,7 +962,9 @@ export function ChatInput({
                 cancelGeneration()
               }
             }}
-            placeholder={hasMessages ? 'Reply to Tin...' : placeholder}
+            placeholder={
+              hasMessages ? t('input.replyPlaceholder') : placeholder
+            }
             rows={1}
             className={cn(
               'w-full resize-none bg-transparent text-lg leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
@@ -1228,7 +1232,9 @@ export function ChatInput({
                         ? false
                         : isTranscribing || !hasSubmittableContent
                     }
-                    aria-label={showStopAction ? 'Stop generation' : 'Send'}
+                    aria-label={
+                      showStopAction ? t('input.stop') : t('input.send')
+                    }
                   >
                     {showStopAction ? (
                       <div className="h-3.5 w-3.5 bg-button-send-foreground/80 transition-colors md:h-3 md:w-3" />

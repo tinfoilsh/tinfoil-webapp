@@ -1,6 +1,7 @@
 import { type BaseModel } from '@/config/models'
 import { CheckIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { useLayoutEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { AIModel } from './types'
 
 type ModelSelectorProps = {
@@ -18,6 +19,7 @@ export function ModelSelector({
   models,
   preferredPosition = 'above',
 }: ModelSelectorProps) {
+  const { t } = useTranslation('chat')
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
   const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({})
   const menuRef = useRef<HTMLDivElement>(null)
@@ -217,7 +219,7 @@ export function ModelSelector({
       ref={menuRef}
       data-model-menu
       role="menu"
-      aria-label="Select a model"
+      aria-label={t('model.selectAria')}
       className={`absolute z-50 w-[280px] overflow-y-auto rounded-lg border border-border-subtle bg-surface-chat p-2 font-aeonik-fono text-content-secondary shadow-lg ${dynamicStyles.bottom ? 'mb-2' : 'mt-2'}`}
       style={{
         maxHeight: dynamicStyles.maxHeight,
@@ -253,7 +255,7 @@ export function ModelSelector({
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
-            <span>Other models</span>
+            <span>{t('model.others')}</span>
             <ChevronDownIcon
               className={`h-4 w-4 text-content-muted transition-transform ${showOtherModels ? 'rotate-180' : ''}`}
               aria-hidden="true"
