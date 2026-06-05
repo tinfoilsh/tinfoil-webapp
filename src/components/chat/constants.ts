@@ -46,13 +46,9 @@ export const CONSTANTS = {
   VERIFICATION_RETRY_DELAY_MS: 2000, // Base delay between retries (exponential backoff)
   MESSAGE_SEND_MAX_RETRIES: 6,
   MESSAGE_SEND_RETRY_DELAY_MS: 1000, // Base delay between retries (exponential backoff)
-  // Placeholder messages for empty chat input
-  INPUT_PLACEHOLDERS: [
-    "What's on your mind?",
-    'Ask me anything...',
-    'How can I help you today?',
-    'Your secrets are safe here...',
-  ],
+  // Translation keys (chat:input.placeholders.*) for the empty chat input.
+  // The visible copy lives in the i18n catalogs so it can be localized.
+  INPUT_PLACEHOLDER_KEYS: ['mind', 'anything', 'help', 'secrets'],
   // Base document title used when no chat title is meaningful
   BASE_DOCUMENT_TITLE: 'Tinfoil Private Chat',
 } as const

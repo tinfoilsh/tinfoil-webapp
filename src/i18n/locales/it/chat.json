@@ -31,6 +31,12 @@
     "replyPlaceholder": "Rispondi a Tin...",
     "messageAria": "Messaggio",
     "send": "Invia",
-    "stop": "Interrompi generazione"
+    "stop": "Interrompi generazione",
+    "placeholders": {
+      "mind": "A cosa stai pensando?",
+      "anything": "Chiedimi qualsiasi cosa...",
+      "help": "Come posso aiutarti oggi?",
+      "secrets": "I tuoi segreti sono al sicuro qui..."
+    }
   }
 }

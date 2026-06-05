@@ -30,6 +30,12 @@
     "replyPlaceholder": "Tinに返信...",
     "messageAria": "メッセージ",
     "send": "送信",
-    "stop": "生成を停止"
+    "stop": "生成を停止",
+    "placeholders": {
+      "mind": "何を考えていますか？",
+      "anything": "何でも聞いてください…",
+      "help": "今日はどんなお手伝いをしましょうか？",
+      "secrets": "あなたの秘密はここで安全です…"
+    }
   }
 }

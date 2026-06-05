@@ -30,6 +30,12 @@
     "replyPlaceholder": "Tin에게 답장...",
     "messageAria": "메시지",
     "send": "보내기",
-    "stop": "생성 중지"
+    "stop": "생성 중지",
+    "placeholders": {
+      "mind": "무슨 생각을 하고 계신가요?",
+      "anything": "무엇이든 물어보세요…",
+      "help": "오늘 무엇을 도와드릴까요?",
+      "secrets": "당신의 비밀은 여기서 안전합니다…"
+    }
   }
 }

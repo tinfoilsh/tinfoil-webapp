@@ -30,6 +30,12 @@
     "replyPlaceholder": "Trả lời Tin...",
     "messageAria": "Tin nhắn",
     "send": "Gửi",
-    "stop": "Dừng tạo"
+    "stop": "Dừng tạo",
+    "placeholders": {
+      "mind": "Bạn đang nghĩ gì?",
+      "anything": "Hãy hỏi tôi bất cứ điều gì...",
+      "help": "Hôm nay tôi có thể giúp gì cho bạn?",
+      "secrets": "Bí mật của bạn được an toàn ở đây..."
+    }
   }
 }

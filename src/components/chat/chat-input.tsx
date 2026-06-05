@@ -172,15 +172,16 @@ export function ChatInput({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
   // Random placeholder - use first one initially to avoid SSR hydration mismatch,
-  // then randomize after mount
-  const [placeholder, setPlaceholder] = useState<string>(
-    CONSTANTS.INPUT_PLACEHOLDERS[0],
+  // then randomize after mount. We track the key (not the resolved string) so
+  // the placeholder follows the active UI language.
+  const [placeholderKey, setPlaceholderKey] = useState<string>(
+    CONSTANTS.INPUT_PLACEHOLDER_KEYS[0],
   )
 
   useEffect(() => {
-    setPlaceholder(
-      CONSTANTS.INPUT_PLACEHOLDERS[
-        Math.floor(Math.random() * CONSTANTS.INPUT_PLACEHOLDERS.length)
+    setPlaceholderKey(
+      CONSTANTS.INPUT_PLACEHOLDER_KEYS[
+        Math.floor(Math.random() * CONSTANTS.INPUT_PLACEHOLDER_KEYS.length)
       ],
     )
   }, [])
@@ -963,7 +964,9 @@ export function ChatInput({
               }
             }}
             placeholder={
-              hasMessages ? t('input.replyPlaceholder') : placeholder
+              hasMessages
+                ? t('input.replyPlaceholder')
+                : t(`input.placeholders.${placeholderKey}`)
             }
             rows={1}
             className={cn(

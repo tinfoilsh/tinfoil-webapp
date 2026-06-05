@@ -31,6 +31,12 @@
     "replyPlaceholder": "Antwoord Tin...",
     "messageAria": "Bericht",
     "send": "Verzenden",
-    "stop": "Generatie stoppen"
+    "stop": "Generatie stoppen",
+    "placeholders": {
+      "mind": "Waar denk je aan?",
+      "anything": "Vraag me wat je wilt...",
+      "help": "Hoe kan ik je vandaag helpen?",
+      "secrets": "Jouw geheimen zijn hier veilig..."
+    }
   }
 }
