@@ -1,0 +1,36 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "Bonjour, {{name}} !",
+    "afternoon": "Bon après-midi, {{name}} !",
+    "evening": "Bonsoir, {{name}} !",
+    "late": "Encore debout, {{name}} ?"
+  },
+  "privacy": {
+    "toggle": "Vos conversations sont privées par conception",
+    "body1": "Vos messages sont chiffrés directement vers les modèles d'IA qui s'exécutent dans des enclaves matérielles sécurisées.",
+    "body2": " Ce sont des environnements isolés au niveau matériel, alimentés par des GPU de calcul confidentiel offrant des garanties vérifiables de confidentialité et d'intégrité. Même Tinfoil ne peut pas accéder à vos données. Cela s'applique à toutes les conversations, images, documents et entrées vocales. Notre stack open source vous permet de le vérifier vous-même en inspectant l'attestation matérielle.",
+    "technology": "Technologie",
+    "source": "Source"
+  },
+  "model": {
+    "selectAria": "Sélectionner un modèle",
+    "others": "Autres modèles"
+  },
+  "rateLimit": {
+    "exhausted": "Vous avez utilisé toutes vos requêtes gratuites pour aujourd'hui",
+    "remaining_one": "Il vous reste {{count}} requête gratuite aujourd'hui",
+    "remaining_other": "Il vous reste {{count}} requêtes gratuites aujourd'hui"
+  },
+  "error": {
+    "expandDetails": "Afficher les détails de l'erreur : {{title}}",
+    "collapseDetails": "Masquer les détails de l'erreur : {{title}}",
+    "dismiss": "Ignorer l'erreur"
+  },
+  "input": {
+    "replyPlaceholder": "Répondre à Tin...",
+    "messageAria": "Message",
+    "send": "Envoyer",
+    "stop": "Arrêter la génération"
+  }
+}

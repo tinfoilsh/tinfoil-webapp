@@ -1,0 +1,6 @@
+{
+  "language": {
+    "label": "Język wyświetlania",
+    "description": "Język interfejsu aplikacji. Niezależny od języka, w którym odpowiada AI."
+  }
+}

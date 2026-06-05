@@ -1,0 +1,14 @@
+{
+  "cancel": "취소",
+  "delete": "삭제",
+  "close": "닫기",
+  "copy": "복사",
+  "save": "저장",
+  "retry": "다시 시도",
+  "dismiss": "무시",
+  "expand": "펼치기",
+  "collapse": "접기",
+  "loading": "로드 중…",
+  "search": "검색",
+  "somethingWentWrong": "문제가 발생했습니다"
+}

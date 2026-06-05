@@ -1,0 +1,6 @@
+{
+  "language": {
+    "label": "Display language",
+    "description": "Language for the app interface. This is separate from the language the AI responds in."
+  }
+}

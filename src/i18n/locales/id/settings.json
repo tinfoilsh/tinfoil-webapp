@@ -1,0 +1,6 @@
+{
+  "language": {
+    "label": "Bahasa tampilan",
+    "description": "Bahasa antarmuka aplikasi. Ini terpisah dari bahasa yang digunakan AI untuk menjawab."
+  }
+}

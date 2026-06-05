@@ -1,0 +1,14 @@
+{
+  "cancel": "ยกเลิก",
+  "delete": "ลบ",
+  "close": "ปิด",
+  "copy": "คัดลอก",
+  "save": "บันทึก",
+  "retry": "ลองอีกครั้ง",
+  "dismiss": "ละเว้น",
+  "expand": "ขยาย",
+  "collapse": "ย่อ",
+  "loading": "กำลังโหลด…",
+  "search": "ค้นหา",
+  "somethingWentWrong": "เกิดข้อผิดพลาดบางอย่าง"
+}

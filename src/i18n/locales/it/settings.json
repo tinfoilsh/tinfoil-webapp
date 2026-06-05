@@ -1,0 +1,6 @@
+{
+  "language": {
+    "label": "Lingua dell'interfaccia",
+    "description": "Lingua dell'interfaccia dell'app. È indipendente dalla lingua in cui risponde l'IA."
+  }
+}
