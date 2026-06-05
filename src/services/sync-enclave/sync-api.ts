@@ -217,6 +217,13 @@ export interface KeyCurrentResponse {
   bundles: Record<string, KeyCurrentBundle>
   created_via?: 'passkey' | 'manual' | 'recovery' | 'start_fresh'
   created_at?: string
+  /**
+   * Whether the user owns encrypted blobs not sealed under the reported
+   * key. When `key_id` is null this means legacy (key_id IS NULL) data
+   * exists, so the client should route to recovery rather than offering
+   * first-time setup. Absent on older enclaves (treated as false).
+   */
+  has_data?: boolean
 }
 
 /* -------------------------------------------------------------------------- */
@@ -447,7 +454,7 @@ export async function keyCurrent(): Promise<KeyCurrentResponse> {
     return await client.post<KeyCurrentResponse>('/v1/key/current', {})
   } catch (err) {
     if (err instanceof SyncEnclaveError && err.status === 404) {
-      return { key_id: null, bundles: {} }
+      return { key_id: null, bundles: {}, has_data: false }
     }
     throw err
   }

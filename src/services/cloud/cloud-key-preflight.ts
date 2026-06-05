@@ -50,17 +50,17 @@ export class CloudKeySetupError extends Error {
 
 /**
  * Probe the enclave for the user's current key. A registered key id
- * implies the user already has cloud data (the controlplane created
- * the row when the first piece of sealed data was written, and the
- * enclave refuses register-key with EXISTING_DATA_UNDER_OTHER_KEY
- * unless created_via=start_fresh). The legacy chat/project/profile
- * fan-out is no longer needed because the enclave consolidates the
- * answer.
+ * implies the user already has cloud data. A legacy (v0/v1) user can
+ * have un-migrated data with no key registered yet — the enclave
+ * reports that via `has_data`, so treat it as existing remote state
+ * too. Without this check such a user would be misrouted into
+ * first-time "enable backups" setup instead of recovery, and the
+ * fresh key would be refused (or strand their chats).
  */
 export async function inspectRemoteEncryptedState(): Promise<CloudRemoteState> {
   try {
     const resp = await enclaveKeyCurrent()
-    return resp.key_id ? 'exists' : 'empty'
+    return resp.key_id || resp.has_data ? 'exists' : 'empty'
   } catch {
     return 'unknown'
   }
