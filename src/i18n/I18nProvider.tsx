@@ -1,5 +1,6 @@
 'use client'
 
+import { logError } from '@/utils/error-handling'
 import { type ReactNode, useEffect } from 'react'
 import { I18nextProvider } from 'react-i18next'
 import { getDirection } from './config'
@@ -21,7 +22,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     i18nInitPromise
       .then(() => applyDocumentLocale(i18n.language))
-      .catch(() => {})
+      .catch((error) =>
+        logError('Failed to initialize i18n', error, {
+          component: 'I18nProvider',
+          action: 'init',
+        }),
+      )
 
     const handleLanguageChanged = (lng: string) => applyDocumentLocale(lng)
     i18n.on('languageChanged', handleLanguageChanged)
