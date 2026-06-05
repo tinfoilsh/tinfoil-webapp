@@ -158,6 +158,29 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(entries[0].source).toBe('legacy')
     })
 
+    it('falls back to legacy when the enclave key has no bundles (orphan key)', async () => {
+      // The migrate-all bootstrap can stamp a current key before any
+      // passkey bundle is written, leaving key_id set with empty
+      // bundles. Recovery must still surface the legacy passkey instead
+      // of reporting no credentials.
+      mockKeyCurrent.mockResolvedValue({ key_id: 'orphan-kid', bundles: {} })
+      mockFetchLegacy.mockResolvedValue([
+        {
+          id: 'legacy-cred',
+          encrypted_keys: 'legacy-data',
+          iv: 'legacy-iv',
+          created_at: '2024-01-01T00:00:00.000Z',
+          version: 1,
+          sync_version: 1,
+        },
+      ])
+
+      const entries = await loadPasskeyCredentials()
+      expect(entries).toHaveLength(1)
+      expect(entries[0].source).toBe('legacy')
+      expect(mockFetchLegacy).toHaveBeenCalledOnce()
+    })
+
     it('returns empty when both the enclave and the legacy fallback are empty', async () => {
       mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
       mockFetchLegacy.mockResolvedValue([])
@@ -227,6 +250,22 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
           },
         },
       })
+      expect(await getPasskeyCredentialState()).toBe('exists')
+      expect(await hasPasskeyCredentials()).toBe(true)
+    })
+
+    it('reports exists via legacy fallback when the key is an orphan (no bundles)', async () => {
+      mockKeyCurrent.mockResolvedValue({ key_id: 'orphan-kid', bundles: {} })
+      mockFetchLegacy.mockResolvedValue([
+        {
+          id: 'legacy-cred',
+          encrypted_keys: 'legacy-data',
+          iv: 'legacy-iv',
+          created_at: '2024-01-01T00:00:00.000Z',
+          version: 1,
+          sync_version: 1,
+        },
+      ])
       expect(await getPasskeyCredentialState()).toBe('exists')
       expect(await hasPasskeyCredentials()).toBe(true)
     })

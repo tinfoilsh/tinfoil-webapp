@@ -213,10 +213,17 @@ export async function loadPasskeyCredentials(): Promise<
   try {
     const resp = await enclaveKeyCurrent()
     if (resp.key_id) {
-      return Object.values(resp.bundles).map((bundle) => ({
+      const entries = Object.values(resp.bundles).map((bundle) => ({
         ...reshapeBundleToEntry(bundle),
         source: 'enclave' as const,
       }))
+      if (entries.length > 0) return entries
+      // A registered key with zero bundles is an orphan: the enclave's
+      // migrate-all bootstrap stamps a current key before any passkey
+      // bundle is written, so a key_id can exist with no way to unlock
+      // it. Fall back to the legacy passkey so the user can still
+      // recover instead of being forced into manual key entry.
+      return await loadLegacyFallback()
     }
     return await loadLegacyFallback()
   } catch (err) {
@@ -505,7 +512,15 @@ async function tryRetrieveFromEnclave(
     const resp = await enclaveKeyCurrent()
     if (!resp.key_id) return { bundle: null, enclaveKeyExists: false }
     const bundle = resp.bundles[credentialId]
-    if (!bundle) return { bundle: null, enclaveKeyExists: true }
+    if (!bundle) {
+      // Treat a key with no bundles at all as "no enclave key" so the
+      // legacy passkey fallback runs (orphan key from the migrate-all
+      // bootstrap). When other bundles exist but none for this
+      // credential, keep blocking the legacy revival — a populated key
+      // means the legacy bundle wraps a rotated-away CEK.
+      const hasAnyBundle = Object.keys(resp.bundles).length > 0
+      return { bundle: null, enclaveKeyExists: hasAnyBundle }
+    }
     // Try the v2 raw-CEK shape first — what iOS and the modern
     // webapp flow write. If that succeeds we synthesize the legacy
     // {primary, alternatives:[]} envelope the hook still consumes.
