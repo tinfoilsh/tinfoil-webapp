@@ -56,6 +56,7 @@ import { useCloudPagination } from '@/hooks/use-cloud-pagination'
 
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from '../link'
 import { Logo } from '../logo'
 import type { Chat } from './types'
@@ -189,6 +190,7 @@ export function ChatSidebar({
   isStreaming,
 }: ChatSidebarProps) {
   const syncNeedsAttention = useSyncHealthAttention()
+  const { t } = useTranslation('sidebar')
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -719,12 +721,12 @@ export function ChatSidebar({
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                 )}
-                aria-label="New chat"
+                aria-label={t('newChat')}
               >
                 <PiNotePencilLight className="h-5 w-5" />
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                New chat{' '}
+                {t('newChat')}{' '}
                 <span className="text-content-muted">
                   {modKey}
                   {isMac ? '⇧' : 'Shift+'}O
@@ -1046,7 +1048,7 @@ export function ChatSidebar({
             >
               <span className="flex items-center gap-2">
                 <PiNotePencilLight className="h-4 w-4" />
-                <span className="font-aeonik font-medium">New chat</span>
+                <span className="font-aeonik font-medium">{t('newChat')}</span>
               </span>
               <span className="text-xs text-content-muted">
                 {modKey}

@@ -2,6 +2,7 @@
 
 import { cn } from '@/components/ui/utils'
 import type { RateLimitInfo } from '@/services/inference/tinfoil-client'
+import { useTranslation } from 'react-i18next'
 
 const RATE_LIMIT_WARNING_THRESHOLD = 3
 
@@ -35,6 +36,7 @@ export function RateLimitBanner({
   className,
   pillClassName,
 }: RateLimitBannerProps) {
+  const { t } = useTranslation('chat')
   const exhausted = rateLimit.remaining <= 0
   const isHourly = rateLimit.kind === 'hourly'
   const resetLabel = formatResetTime(rateLimit.resetsAt)
@@ -61,8 +63,8 @@ export function RateLimitBanner({
           {isHourly
             ? `You've reached your hourly usage limit${resetLabel ? ` — resets at ${resetLabel}` : ''}`
             : exhausted
-              ? "You've used all your free requests for today"
-              : `You have ${rateLimit.remaining} free request${rateLimit.remaining === 1 ? '' : 's'} left today`}
+              ? t('rateLimit.exhausted')
+              : t('rateLimit.remaining', { count: rateLimit.remaining })}
         </span>
       </div>
     </div>

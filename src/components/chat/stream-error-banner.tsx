@@ -7,6 +7,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface StreamErrorBannerProps {
   message: string
@@ -100,6 +101,7 @@ export function StreamErrorBanner({
   onRetry,
   isDarkMode,
 }: StreamErrorBannerProps) {
+  const { t } = useTranslation(['chat', 'common'])
   const [isExpanded, setIsExpanded] = useState(false)
   const { title, suggestion } = explainError(message)
 
@@ -153,7 +155,11 @@ export function StreamErrorBanner({
             type="button"
             onClick={() => setIsExpanded((prev) => !prev)}
             aria-expanded={isExpanded}
-            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} error details`}
+            aria-label={
+              isExpanded
+                ? t('error.collapseDetails', { title })
+                : t('error.expandDetails', { title })
+            }
             className={cn(
               'rounded p-1 transition-colors',
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
@@ -170,7 +176,7 @@ export function StreamErrorBanner({
           <button
             type="button"
             onClick={handleDismiss}
-            aria-label="Dismiss error"
+            aria-label={t('error.dismiss')}
             className={cn(
               'rounded p-1 transition-colors',
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
