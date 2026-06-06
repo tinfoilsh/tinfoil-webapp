@@ -1,102 +1,219 @@
 /**
- * Inline computer-use session — rendered *in the chat scroll* (not a modal)
- * while the run is in flight (`running` or paused for `handoff`). The pairing +
- * consent steps stay in `ComputerUseSessionDialog`.
+ * Inline computer-use session — rendered in the chat scroll while the run is in
+ * flight (`running` or paused for `handoff`). Pairing + consent live in
+ * `ComputerUseSessionDialog`; the static post-mortem is in
+ * `ComputerUseSessionMessage`.
  *
- * On terminal phases (`done` / `error`), chat-interface commits the session's
- * frames + summary as a synthetic assistant message and the
- * `ComputerUseSessionRenderer` takes over the visual — so the run takes its
- * chronological place in history and survives reload. While that handoff is
- * happening this component returns `null` to avoid double-rendering.
+ * The card never renders screenshots inline. The toolbar exposes the archive
+ * via the history popover. The body shows the model's prose, the action ledger,
+ * exec output, and any pending capability ask.
  */
 
 'use client'
 
-import { type useComputerUseSession } from '@/services/computer-use'
-import { useEffect, useState } from 'react'
+import { cn } from '@/components/ui/utils'
 import {
-  SandboxConfigSummary,
-  SessionFrame,
-  SessionToolbar,
-} from './ComputerUseSessionMessage'
+  imageSize,
+  type LoopEvent,
+  type useComputerUseSession,
+} from '@/services/computer-use'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ComputerUseLiveView, type LiveViewStatus } from './ComputerUseLiveView'
+import { collectErrors } from './ComputerUseSessionMessage'
+import { ComputerUseSessionToolbar } from './ComputerUseSessionToolbar'
+import {
+  ComputerUseTerminal,
+  type ComputerUseTerminalHandle,
+} from './ComputerUseTerminal'
 
 type SessionApi = ReturnType<typeof useComputerUseSession>
 
-const STATUS_LABEL: Record<string, string> = {
-  running: 'Working…',
-  handoff: 'Paused — your turn',
-}
+export function ComputerUseSessionThread({
+  session,
+  onStop,
+}: {
+  session: SessionApi
+  /**
+   * Red-light handler. The chat passes a commit-then-teardown callback here
+   * (snapshot the run into history, THEN end the VM) so the live surface is
+   * preserved until the operator explicitly stops. Defaults to a bare
+   * `cancel()` — used by the dev harness, which has no chat history to
+   * commit into.
+   */
+  onStop?: () => void
+}) {
+  const { state, cancel, dispatchExec, pause, resume, getAccessToken } = session
+  const stop = onStop ?? cancel
+  // The thread stays mounted while a session id exists OR the agent is
+  // spinning one up — phase 'running' precedes the first `begin` event that
+  // sets `sessionId`, and that gap is the boot window the skeleton fills.
+  // The loop's phase tracks what the agent is doing, NOT whether the VM is
+  // up; `cancel()` (red traffic light) zeroes `sessionId` and drops phase
+  // out of 'running', which is what unmounts the thread. Until then the
+  // operator can keep driving via the live view even after the model stops.
+  const live = Boolean(state.sessionId) || state.phase === 'running'
+  const agentActive = state.phase === 'running' || state.phase === 'handoff'
 
-export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
-  const { state, cancel } = session
-  // Render ONLY while the run is in flight. `done` / `error` are folded into
-  // chat history by chat-interface and rendered by `ComputerUseSessionRenderer`.
-  const live = state.phase === 'running' || state.phase === 'handoff'
+  // Whether the live view has reported a successful VNC connection on this
+  // mount. Latched (only flips on 'connected') so a mid-run disconnect shows
+  // the live view's own banner rather than re-raising the booting skeleton.
+  // Reset naturally: the thread remounts fresh for each new session.
+  const [everConnected, setEverConnected] = useState(false)
+  const handleLiveStatus = useCallback((s: LiveViewStatus) => {
+    if (s === 'connected') setEverConnected(true)
+  }, [])
 
-  // Yellow-light minimize: hide the card body, leaving only the toolbar.
-  // The toolbar visual is small and unobtrusive, so the user still sees that
-  // a session is running but doesn't have its frames in their face.
   const [collapsed, setCollapsed] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  // Terminal is hidden by default — the agent activity popover already shows
+  // everything; the terminal is opt-in for users who want raw exec output
+  // and the interactive prompt.
+  const [terminalVisible, setTerminalVisible] = useState(false)
+  const terminalRef = useRef<ComputerUseTerminalHandle | null>(null)
+  const flushedRef = useRef(0)
 
-  // Keep the booting skeleton on screen for at least ~900ms after entering
-  // `running`, even if the first frame arrives almost immediately (warm host /
-  // pre-pulled image). Otherwise the placeholder flashes for one paint and the
-  // user perceives the card as having "skipped" the loading state.
-  const showSkeleton = useBootingSkeletonVisible(
-    state.phase === 'running',
-    state.frames.length,
+  const flushIntoTerminal = useCallback(() => {
+    const term = terminalRef.current
+    if (!term) return
+    for (let i = flushedRef.current; i < state.frames.length; i++) {
+      term.appendEvent(state.frames[i])
+    }
+    flushedRef.current = state.frames.length
+  }, [state.frames])
+
+  // New frames just stream in; the effect runs whenever the frames array
+  // changes (or the terminal becomes visible, in case it's a late mount).
+  useEffect(() => {
+    flushIntoTerminal()
+  }, [flushIntoTerminal, terminalVisible])
+
+  useEffect(() => {
+    flushedRef.current = 0
+  }, [state.sessionId])
+
+  const handleExec = useCallback(
+    (cmd: string) => dispatchExec(cmd),
+    [dispatchExec],
   )
+
+  const handleTogglePause = useCallback(() => {
+    if (state.paused) resume()
+    else pause()
+  }, [state.paused, pause, resume])
+
+  // Keep the booting placeholder up from the moment the agent starts running
+  // until the live view actually connects (decoupled from frame count — the
+  // first `begin` frame lands a beat before the WS finishes connecting).
+  const showSkeleton = state.phase === 'running' && !everConnected
 
   if (!live) return null
 
+  const errors = collectErrors(state.frames, state.error)
+
   return (
-    // Same layout shell as an assistant message (mx-auto, max-w-3xl, left-aligned)
-    // so the session reads as an assistant turn in the conversation.
-    <div className="relative mx-auto mb-6 flex w-full max-w-3xl flex-col items-start">
+    <div
+      className={cn(
+        'relative mx-auto mb-6 flex w-full flex-col items-start',
+        // Expanded mode escapes the standard message cap and grows to
+        // whatever horizontal room the parent gives us, leaving a 1rem
+        // gutter so the rounded card edges stay visible.
+        expanded ? 'max-w-[calc(100vw-2rem)]' : 'max-w-3xl',
+      )}
+    >
       <div className="w-full px-4 py-2">
         <div className="overflow-hidden rounded-2xl border border-border-subtle bg-surface-chat-background">
-          <SessionToolbar
-            status={STATUS_LABEL[state.phase]}
-            pulse={state.phase === 'running'}
-            // Red = stop. `cancel()` aborts the in-flight loop AND tears down
-            // the session via driver.end() in the loop's finally-block.
-            onClose={state.phase === 'running' ? cancel : undefined}
-            // Yellow = collapse to just the toolbar.
+          <ComputerUseSessionToolbar
+            imageName={state.manifest?.session.image}
+            imageOS={state.manifest?.session.os}
+            vmStatus={
+              state.phase === 'error'
+                ? 'error'
+                : state.paused || state.phase === 'handoff'
+                  ? 'paused'
+                  : 'running'
+            }
+            errors={errors}
+            frames={state.frames}
+            manifest={state.manifest}
+            // Red light = explicitly stop the session. Always wired while a
+            // session exists — the user owns lifecycle even after the agent
+            // has finished. In chat this commits the run into history before
+            // tearing the VM down; the dev harness just cancels.
+            onClose={stop}
             onMinimize={() => setCollapsed((c) => !c)}
+            onExpand={() => setExpanded((e) => !e)}
+            expanded={expanded}
+            terminalVisible={terminalVisible}
+            onToggleTerminal={() => setTerminalVisible((v) => !v)}
+            // Play/pause only makes sense while the agent is dispatching
+            // (or already user-paused). Done/error get a static dot.
+            onTogglePause={
+              agentActive || state.paused ? handleTogglePause : undefined
+            }
           />
 
           {!collapsed && (
             <div className="space-y-3 px-3 py-3">
-              {state.manifest && (
-                <SandboxConfigSummary manifest={state.manifest} />
+              {state.sessionId ? (
+                <div className="relative">
+                  <ComputerUseLiveView
+                    sessionId={state.sessionId}
+                    getAccessToken={getAccessToken}
+                    onConnectionStateChange={handleLiveStatus}
+                    // When the user starts driving, pause the agent so the
+                    // two input streams don't fight. They'll resume the
+                    // agent explicitly via the toolbar's play button.
+                    onUserTakeover={pause}
+                    agentCursor={agentCursorFromFrames(state.frames)}
+                    idleTimeout={state.manifest?.session.idle_timeout}
+                    activityKey={state.frames.length}
+                    vmPaused={state.paused}
+                    className={
+                      expanded ? 'aspect-[16/10] w-full' : 'aspect-[4/3] w-full'
+                    }
+                  />
+                  {/* Skeleton overlays the (mounted-but-connecting) live view
+                      so it can finish its WS handshake underneath, then lifts
+                      the moment it reports connected. */}
+                  {showSkeleton && <BootingSkeleton overlay />}
+                  {/* In-VM prompts overlay the live view so the operator
+                      reads them as dialogs about the visible screen
+                      rather than as stacked rows that push it down. */}
+                  {state.phase === 'handoff' && (
+                    <PromptOverlay tone="amber">
+                      <p className="text-sm">
+                        Paused for you to take over in the sandbox. Resume from
+                        the tray when done.
+                      </p>
+                    </PromptOverlay>
+                  )}
+                  {state.capabilityRequest && (
+                    <PromptOverlay tone="amber" wide>
+                      <CapabilityRequestPrompt
+                        egress={state.capabilityRequest.egress}
+                        onApprove={(edited) =>
+                          session.approveCapability(edited)
+                        }
+                        onDeny={() => session.denyCapability()}
+                      />
+                    </PromptOverlay>
+                  )}
+                </div>
+              ) : (
+                // Boot window: phase 'running' but the first `begin` event
+                // hasn't set `sessionId` yet, so there's no live view to mount
+                // — the skeleton stands alone until it does.
+                showSkeleton && <BootingSkeleton />
               )}
-              {state.phase === 'handoff' && (
-                <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-600">
-                  Paused for you to take over in the sandbox window. Resume from
-                  the tray when done.
-                </p>
-              )}
-              {/* Skeleton placeholder while the VM boots: `running` is set as
-                  soon as the user approves, but the first frame doesn't arrive
-                  until `/begin` returns its screenshot (clone + boot + first
-                  capture can be ~10-30s). Without this, the card shows just
-                  the header for that whole window, which reads as "stuck".
-                  Stays visible for a minimum duration even on warm boots — see
-                  useBootingSkeletonVisible. */}
-              {showSkeleton && <BootingSkeleton />}
-              {/* Only render frames after the skeleton has cleared, otherwise
-                  the user momentarily sees the first screenshot stacked under
-                  the placeholder during the minimum-display window. */}
-              {!showSkeleton &&
-                state.frames.map((f, i) => <SessionFrame key={i} event={f} />)}
-              {/* Pending capability ask: the loop is paused awaiting user
-                  consent. Approve / Deny resolve the promise the loop is
-                  sitting on. */}
-              {state.capabilityRequest && (
-                <CapabilityRequestPrompt
-                  egress={state.capabilityRequest.egress}
-                  onApprove={(edited) => session.approveCapability(edited)}
-                  onDeny={() => session.denyCapability()}
+              {terminalVisible && (
+                <ComputerUseTerminal
+                  ref={terminalRef}
+                  onExec={handleExec}
+                  // When the terminal mounts late (operator opened it mid
+                  // run), the frames that arrived before mount are still
+                  // buffered on this thread. Flush them as soon as the
+                  // ghostty WASM is initialised.
+                  onReady={flushIntoTerminal}
                 />
               )}
             </div>
@@ -108,19 +225,27 @@ export function ComputerUseSessionThread({ session }: { session: SessionApi }) {
 }
 
 /**
- * Placeholder shown while the VM is booting and no screenshot has arrived yet.
- * 4:3 aspect approximates the macOS sandbox display (1024×768 logical) so the
- * card doesn't visibly resize when the real frame replaces it.
+ * Placeholder shown while the VM boots and the live view connects. Two modes:
  *
- * Visuals: an `animate-pulse` rectangle as the screenshot stand-in, plus a
- * spinning ring + status text centered on top so the user reads the box as
- * "loading" rather than "broken". The spinner is plain Tailwind — no extra
- * dependency.
+ *   - standalone (`overlay` false): owns the frame slot during the boot window
+ *     before `sessionId` exists, sized to mirror the inline frame area so the
+ *     card doesn't visibly resize when the live view takes over.
+ *   - overlay (`overlay` true): an absolutely-positioned cover over the
+ *     already-mounted live view while it finishes its WS handshake, lifted
+ *     once the view reports connected.
+ *
+ * Both keep the pulsing surface + spinner so the loading affordance reads the
+ * same in either slot.
  */
-function BootingSkeleton() {
+function BootingSkeleton({ overlay = false }: { overlay?: boolean }) {
   return (
-    <div className="relative">
-      <div className="aspect-[4/3] w-full animate-pulse rounded-lg border border-border-subtle bg-surface-chat" />
+    <div className={overlay ? 'absolute inset-0' : 'relative'}>
+      <div
+        className={cn(
+          'animate-pulse rounded-lg border border-border-subtle bg-surface-chat',
+          overlay ? 'absolute inset-0' : 'aspect-[4/3] w-full',
+        )}
+      />
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
         <span
           aria-hidden
@@ -135,46 +260,81 @@ function BootingSkeleton() {
 }
 
 /**
- * Hook that returns `true` while the booting placeholder should be on screen.
- * The placeholder shows when:
- *   - we're in `running` AND no frames yet, OR
- *   - we've been in `running` for less than ~900ms (the minimum-display window,
- *     for the warm-host case where the first frame arrives in < 1 paint).
+ * Walk the LoopEvent stream backwards to find the agent's most recent
+ * input action's (x, y), plus the dimensions of the most recent screenshot
+ * we have. The overlay renders relative to that frame so a fit-scaled
+ * canvas still places the marker at the same logical pixel.
  *
- * Hiding happens when BOTH the minimum window has elapsed AND at least one
- * frame has arrived. Resets whenever `running` exits.
+ * Returns undefined until both a coord-bearing action and a screenshot
+ * have arrived — the overlay should not render before then.
  */
-function useBootingSkeletonVisible(running: boolean, frameCount: number) {
-  const MIN_MS = 900
-  // `minimumElapsed` flips false→true after MIN_MS once `running` starts, and
-  // resets to false on every transition out of `running`.
-  const [minimumElapsed, setMinimumElapsed] = useState(false)
-  useEffect(() => {
-    // The setState-in-effect is the entire point of this hook: a boolean
-    // phase change (running false→true) needs to drive a *delayed* state
-    // transition that isn't observable from the inputs alone. There is no
-    // pure-derivation alternative for "show this for at least N ms."
-    if (!running) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setMinimumElapsed(false)
-      return
+function agentCursorFromFrames(
+  frames: LoopEvent[],
+):
+  | { x: number; y: number; frameWidth: number; frameHeight: number }
+  | undefined {
+  let cursor: { x: number; y: number } | undefined
+  let frame: { frameWidth: number; frameHeight: number } | undefined
+  for (let i = frames.length - 1; i >= 0; i--) {
+    const f = frames[i]
+    if (!cursor && f.type === 'action') {
+      const p = f.action.payload as { x?: number; y?: number }
+      if (typeof p?.x === 'number' && typeof p?.y === 'number') {
+        cursor = { x: p.x, y: p.y }
+      }
     }
-    setMinimumElapsed(false)
-    const id = setTimeout(() => setMinimumElapsed(true), MIN_MS)
-    return () => clearTimeout(id)
-  }, [running])
-
-  if (!running) return false
-  if (!minimumElapsed) return true
-  return frameCount === 0
+    if (!frame && (f.type === 'begin' || f.type === 'action_result')) {
+      const result = f.type === 'begin' ? f.screenshot : f.result
+      const content = (result as { content?: Array<{ data?: string }> })
+        ?.content
+      const img = content?.find((p): p is { data?: string } => Boolean(p?.data))
+      if (img?.data) {
+        const size = imageSize(img.data)
+        if (size) {
+          frame = { frameWidth: size.width, frameHeight: size.height }
+        }
+      }
+    }
+    if (cursor && frame) break
+  }
+  if (!cursor || !frame) return undefined
+  return { ...cursor, ...frame }
 }
 
 /**
- * Inline consent prompt rendered when the model has called `request_capability`
- * and the loop is paused awaiting the user's decision. The user can edit the
- * domain list (e.g. trim something the model overreached on) before approving;
- * the edited list becomes the new egress allowlist.
+ * Translucent dialog laid on top of the live VM view. Used for prompts
+ * that are about the sandbox itself (handoff banner, capability ask) so
+ * the user reads them as dialogs over the screen rather than as separate
+ * boxes that push the canvas down.
  */
+function PromptOverlay({
+  tone,
+  wide,
+  children,
+}: {
+  tone: 'amber'
+  wide?: boolean
+  children: React.ReactNode
+}) {
+  const toneCls =
+    tone === 'amber'
+      ? 'border-amber-500/50 text-amber-100'
+      : 'border-white/30 text-white'
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
+      <div
+        className={cn(
+          'pointer-events-auto rounded-xl border px-4 py-3 shadow-xl backdrop-blur',
+          toneCls,
+          wide ? 'w-full max-w-md' : 'max-w-sm',
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function CapabilityRequestPrompt({
   egress,
   onApprove,
@@ -186,7 +346,7 @@ function CapabilityRequestPrompt({
 }) {
   const [edited, setEdited] = useState<string[]>(egress)
   return (
-    <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+    <div className="space-y-2 rounded-lg px-3 py-2">
       <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
         Agent wants additional network access
       </p>

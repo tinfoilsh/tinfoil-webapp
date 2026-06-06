@@ -1,17 +1,12 @@
 /**
- * Static, history-resident render of a finished computer-use session.
+ * History-resident render of a finished computer-use session.
  *
- * Shape parity with `ComputerUseSessionThread.tsx` (the live, in-flight version)
- * is intentional: the live thread renders during `running`/`handoff`, and once
- * the session reaches a terminal phase (`done` / `error`), chat-interface
- * commits a synthetic `assistant` message carrying the frames + (optionally) an
- * error string. That message picks the `ComputerUseSessionRenderer` below, and
- * the user sees the same visual block they were watching live — but now sitting
- * at the chronological position in chat history and persisted across reload.
- *
- * Frame renderers are shared via `SessionFrame`. The sandbox config the run was
- * approved with is rendered via `SandboxConfigSummary` so the user can always
- * see what privileges this run was granted, including in the persisted history.
+ * Renders the same shell as the live thread (toolbar + body) but with the
+ * VM in a stopped/errored state. Tool calls and per-frame chatter are NOT
+ * surfaced here — the toolbar's Agent activity popover is the canonical
+ * audit-trail surface. The body holds the VM's final screenshot (so the
+ * operator sees what it looked like at the moment it stopped), a one-line
+ * stop-reason hint, and a final error banner when the run ended abnormally.
  */
 
 'use client'
@@ -19,222 +14,100 @@
 import {
   dataUrl,
   firstImagePart,
-  isExecResult,
-  perceptionText,
   type CapabilityManifest,
-  type GuestOS,
   type LoopEvent,
+  type LoopStopReason,
 } from '@/services/computer-use'
 import { useState } from 'react'
-import { FaApple, FaLinux } from 'react-icons/fa'
+import { type SessionError } from './ComputerUseSessionPopovers'
+import { ComputerUseSessionToolbar } from './ComputerUseSessionToolbar'
 
-// ---------------------------------------------------------------------------
-// SessionToolbar — macOS-style window-chrome header shared by the live thread
-// and the history card. Three circular controls on the left (close / minimize /
-// maximize) match the visual macOS users expect; status text + the pulsing dot
-// sit to the right.
-//
-// Behaviors per circle (caller decides via handlers):
-//   • Red    → onClose
-//       - live thread: cancel + tear down VM
-//       - history card: drop the message from chat (+ from model context)
-//   • Yellow → onMinimize
-//       - both surfaces: collapse the card body to just the toolbar
-//   • Green  → reserved (future "open live view" / "maximize"); no handler.
-//
-// Hover affordances follow macOS: the ×/−/+ glyphs only show on hover of the
-// control group. A light without an `onClick` (or with `disabled=true`)
-// renders at lower opacity, no cursor, no glyph — used by historical chats
-// that pre-date the on-record handlers.
-// ---------------------------------------------------------------------------
+export { OSBadge } from './ComputerUseOSBadge'
 
-interface SessionToolbarProps {
-  /** Right-aligned status text, e.g. "Working…" or "Done". */
-  status: string
-  /** Show a pulsing green dot next to the status (live "running" only). */
-  pulse?: boolean
-  /** Click handler for the red light. Omit/disable to render non-interactive. */
-  onClose?: () => void
-  /** Click handler for the yellow light. */
-  onMinimize?: () => void
-  /**
-   * When true, lights render at half opacity and don't react to hover/click.
-   * Used by the history card (the session is over — nothing to stop/collapse).
-   */
-  disabled?: boolean
-}
-
-export function SessionToolbar({
-  status,
-  pulse,
-  onClose,
-  onMinimize,
-  disabled,
-}: SessionToolbarProps) {
-  return (
-    <div
-      className={
-        'group/lights flex items-center justify-between border-b border-border-subtle px-3 py-2'
-      }
-    >
-      <div className="flex items-center gap-1.5">
-        <TrafficLight
-          color="red"
-          symbol="×"
-          onClick={onClose}
-          disabled={disabled}
-          aria-label="Stop session"
-        />
-        <TrafficLight
-          color="yellow"
-          symbol="−"
-          onClick={onMinimize}
-          disabled={disabled}
-          aria-label="Minimize session card"
-        />
-        {/* Green: reserved for a future "open live view" / maximize. Render
-            the circle for visual parity, but don't wire a handler today. */}
-        <TrafficLight
-          color="green"
-          symbol="+"
-          disabled
-          aria-label="Maximize (reserved)"
-        />
-      </div>
-      <span className="flex items-center gap-2 text-xs font-medium text-content-secondary">
-        <span className="text-content-primary">Computer use</span>
-        <span className="text-content-muted">· {status}</span>
-        {pulse && (
-          <span className="inline-block size-2 animate-pulse rounded-full bg-green-500" />
-        )}
-      </span>
-    </div>
-  )
+/**
+ * Collect every error the loop surfaced (or the terminal fatal error) so the
+ * toolbar's bug popover can list them. The toolbar auto-opens the popover the
+ * first time a fresh error appears.
+ */
+export function collectErrors(
+  frames: LoopEvent[],
+  fatal?: string,
+): SessionError[] {
+  const out: SessionError[] = []
+  for (const f of frames) {
+    if (f.type === 'action_error') {
+      out.push({
+        id: `act:${f.callId}`,
+        source: 'action_error',
+        message: f.message,
+        op: f.action.op,
+      })
+    } else if (f.type === 'unsupported') {
+      out.push({
+        id: `uns:${f.callId}`,
+        source: 'unsupported',
+        message: f.reason,
+      })
+    }
+  }
+  if (fatal) {
+    out.push({ id: 'fatal', source: 'fatal', message: fatal })
+  }
+  return out
 }
 
 /**
- * One macOS-style traffic-light dot. The `×`/`−`/`+` glyph is only visible
- * when the parent `.group/lights` is hovered (the whole light cluster reveals
- * symbols together, matching macOS). Non-interactive when `disabled` (lower
- * opacity, no cursor, no symbol on hover).
+ * The most-recent screenshot in the frame trail, as a data URL — the VM's
+ * final visible state. Walked backwards from the newest frame; `begin` and
+ * image-bearing `action_result`s are the only screenshot sources. Lets the
+ * static card show what the VM looked like at the moment it stopped instead
+ * of a bare "Session ended" line.
  */
-function TrafficLight({
-  color,
-  symbol,
-  onClick,
-  disabled,
-  'aria-label': ariaLabel,
-}: {
-  color: 'red' | 'yellow' | 'green'
-  symbol: string
-  onClick?: () => void
-  disabled?: boolean
-  'aria-label': string
-}) {
-  const palette = {
-    red: 'bg-[#ff5f57] text-black/70',
-    yellow: 'bg-[#febc2e] text-black/70',
-    green: 'bg-[#28c840] text-black/70',
-  }[color]
-  const interactive = !disabled && Boolean(onClick)
-  return (
-    <button
-      type="button"
-      onClick={interactive ? onClick : undefined}
-      disabled={!interactive}
-      aria-label={ariaLabel}
-      className={`relative inline-flex size-3 items-center justify-center rounded-full ${palette} ${
-        interactive
-          ? 'cursor-pointer hover:brightness-95'
-          : 'cursor-default opacity-50'
-      }`}
-    >
-      {interactive && (
-        <span
-          aria-hidden
-          className="pointer-events-none text-[10px] font-bold leading-none opacity-0 group-hover/lights:opacity-100"
-        >
-          {symbol}
-        </span>
-      )}
-    </button>
-  )
-}
-
-/**
- * Render one loop event the way the live thread does: model prose, action
- * call summary, screenshot image, exec output, or error line.
- *
- * Exported so the live thread (`ComputerUseSessionThread`) and the static
- * history renderer share an identical visual.
- */
-export function SessionFrame({ event }: { event: LoopEvent }) {
-  if (event.type === 'model_message' && event.content) {
-    return <p className="text-sm text-content-secondary">{event.content}</p>
-  }
-  if (event.type === 'action') {
-    return (
-      <p className="font-mono text-xs text-content-muted">
-        → {event.action.op} {JSON.stringify(event.action.payload)}
-      </p>
-    )
-  }
-  if (event.type === 'action_result' || event.type === 'begin') {
-    const result = event.type === 'begin' ? event.screenshot : event.result
+function lastScreenshot(frames: LoopEvent[]): string | undefined {
+  for (let i = frames.length - 1; i >= 0; i--) {
+    const f = frames[i]
+    const result =
+      f.type === 'begin'
+        ? f.screenshot
+        : f.type === 'action_result'
+          ? f.result
+          : undefined
+    if (!result) continue
     const img = firstImagePart(result)
-    if (img) {
-      return (
-        <img
-          src={dataUrl(img.data, img.mimeType)}
-          alt="agent screen"
-          className="w-full rounded-lg border border-border-subtle"
-        />
-      )
-    }
-    if (isExecResult(result)) {
-      return (
-        <pre className="overflow-x-auto rounded-lg bg-surface-chat p-2 text-xs text-content-primary">
-          {perceptionText(result) || `exit ${result.exit_code}`}
-        </pre>
-      )
-    }
+    if (img) return dataUrl(img.data, img.mimeType)
   }
-  if (event.type === 'action_error' || event.type === 'unsupported') {
-    const msg = event.type === 'action_error' ? event.message : event.reason
-    return <p className="text-xs text-red-500">{msg}</p>
+  return undefined
+}
+
+/** The loop's terminal stop reason, if the run emitted a `stopped` event. */
+function stopReason(frames: LoopEvent[]): LoopStopReason | undefined {
+  for (let i = frames.length - 1; i >= 0; i--) {
+    const f = frames[i]
+    if (f.type === 'stopped') return f.reason
   }
-  if (event.type === 'capability_request') {
-    return (
-      <p className="font-mono text-xs text-content-muted">
-        → request_capability {JSON.stringify({ egress: event.egress })}
-      </p>
-    )
+  return undefined
+}
+
+/** Human phrase for the non-error stop reasons surfaced on the static card. */
+function stopReasonLabel(reason: LoopStopReason | undefined): string {
+  switch (reason) {
+    case 'model_finished':
+      return 'the agent finished'
+    case 'max_steps':
+      return 'it reached the step limit'
+    case 'handoff':
+      return 'it was handed to you'
+    default:
+      // 'aborted' never reaches here (abort emits no stopped event) and
+      // 'error' takes the error branch; undefined means the operator
+      // stopped the run before the loop reported a reason.
+      return 'you stopped it'
   }
-  if (event.type === 'capability_result') {
-    return (
-      <p
-        className={
-          event.approved
-            ? 'text-xs text-content-secondary'
-            : 'text-xs text-red-500'
-        }
-      >
-        {event.approved
-          ? `✓ Egress widened: ${event.egress?.join(', ')}`
-          : `✗ Capability denied${event.reason ? `: ${event.reason}` : ''}`}
-      </p>
-    )
-  }
-  return null
 }
 
 /**
- * Static card matching the live `ComputerUseSessionThread` shell, used by the
- * `ComputerUseSessionRenderer` to render a finished/errored session embedded
- * as a regular chat message. `error` switches the header label and shows the
- * error banner; otherwise renders the frame audit trail (the model's final
- * answer lives in its own assistant message right after — see the commit
- * effect in chat-interface.tsx).
+ * Static history card. The body just nudges the user toward the toolbar
+ * popovers; everything that happened is recorded there.
  */
 export function ComputerUseSessionCard({
   frames,
@@ -244,146 +117,52 @@ export function ComputerUseSessionCard({
 }: {
   frames: LoopEvent[]
   error?: string
-  /** Sandbox configuration the run was approved with; hidden when absent. */
   manifest?: CapabilityManifest
-  /**
-   * Wired by the parent renderer (via `ComputerUseFunnelContext.removeMessage`)
-   * to let the user drop this record from chat history. The session is
-   * already torn down by the time the card renders, so the red light's
-   * only meaningful action here is to clear the audit trail.
-   */
   onRemove?: () => void
 }) {
   const isError = Boolean(error)
-  // Local collapse — same behavior as the live thread's yellow light.
   const [collapsed, setCollapsed] = useState(false)
+  const errors = collectErrors(frames, error)
+  const shot = lastScreenshot(frames)
+  const reason = stopReason(frames)
   return (
     <div className="relative mx-auto mb-6 flex w-full max-w-3xl flex-col items-start">
       <div className="w-full px-4 py-2">
         <div className="overflow-hidden rounded-2xl border border-border-subtle bg-surface-chat-background">
-          {/* History card lights are now interactive when handlers are
-              wired: red drops the record from chat (and from model context,
-              since both read the same array); yellow collapses the body.
-              When no onRemove handler is provided (older callers), the red
-              light degrades to disabled. */}
-          <SessionToolbar
-            status={isError ? 'Error' : 'Done'}
+          <ComputerUseSessionToolbar
+            imageName={manifest?.session.image}
+            imageOS={manifest?.session.os}
+            vmStatus={isError ? 'error' : 'stopped'}
+            errors={errors}
+            frames={frames}
+            manifest={manifest}
             onClose={onRemove}
             onMinimize={() => setCollapsed((c) => !c)}
           />
           {!collapsed && (
             <div className="space-y-3 px-3 py-3">
-              {manifest && <SandboxConfigSummary manifest={manifest} />}
-              {isError && (
-                <p className="rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-500">
-                  {error}
-                </p>
+              {shot && (
+                <img
+                  src={shot}
+                  alt="Final sandbox screenshot"
+                  className="block w-full rounded-lg border border-border-subtle"
+                />
               )}
-              {frames.map((f, i) => (
-                <SessionFrame key={i} event={f} />
-              ))}
+              <div className="text-xs text-content-secondary">
+                {isError ? (
+                  <p className="text-red-500">Session ended with an error.</p>
+                ) : (
+                  <p>
+                    Session ended — {stopReasonLabel(reason)}. Open the activity
+                    icon for the full action log; the terminal icon for any exec
+                    output.
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>
       </div>
     </div>
-  )
-}
-
-/**
- * Compact, collapsible read-only summary of the capability manifest the run
- * was approved with — image (with OS icon), ephemeral/persistent, windowed/
- * headless, idle timeout, mount table, egress allowlist. Default-collapsed
- * to keep the session card visually quiet; users click to expand.
- */
-function ConfigRow({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <>
-      <dt className="text-content-muted">{label}</dt>
-      <dd className="text-content-primary">{children}</dd>
-    </>
-  )
-}
-
-export function SandboxConfigSummary({
-  manifest,
-}: {
-  manifest: CapabilityManifest
-}) {
-  const { session, mounts, network } = manifest
-  const egress = network?.egress ?? []
-  return (
-    <details className="rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs">
-      <summary className="cursor-pointer select-none font-medium text-content-secondary">
-        Sandbox config
-      </summary>
-      <dl className="mt-2 grid grid-cols-[max-content_1fr] items-baseline gap-x-3 gap-y-1">
-        <ConfigRow label="Image">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="font-mono">{session.image}</span>
-            <OSBadge os={session.os} />
-          </span>
-        </ConfigRow>
-        <ConfigRow label="Lifetime">
-          {session.clone === false
-            ? 'persistent (in-place)'
-            : 'ephemeral clone'}
-        </ConfigRow>
-        <ConfigRow label="Display">
-          {session.headless === false ? 'windowed (for takeover)' : 'headless'}
-        </ConfigRow>
-        {session.idle_timeout ? (
-          <ConfigRow label="Idle timeout">{session.idle_timeout}</ConfigRow>
-        ) : null}
-        <ConfigRow label="Mounts">
-          {mounts && mounts.length > 0 ? (
-            <ul className="space-y-0.5">
-              {mounts.map((m, i) => (
-                <li key={i} className="font-mono">
-                  {m.src} → {m.dst}{' '}
-                  <span className="text-content-muted">({m.mode})</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span className="text-content-muted">none</span>
-          )}
-        </ConfigRow>
-        <ConfigRow label="Egress">
-          {egress.length > 0 ? (
-            <ul className="space-y-0.5">
-              {egress.map((d, i) => (
-                <li key={i} className="font-mono">
-                  {d}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span className="text-content-muted">sealed (no network)</span>
-          )}
-        </ConfigRow>
-      </dl>
-    </details>
-  )
-}
-
-/** Apple / Linux platform glyph; used both in the consent dialog and here. */
-export function OSBadge({ os }: { os: GuestOS }) {
-  const Icon = os === 'mac' ? FaApple : FaLinux
-  return (
-    <span
-      className="text-content-muted"
-      role="img"
-      aria-label={os === 'mac' ? 'macOS' : 'Linux'}
-      title={os === 'mac' ? 'macOS' : 'Linux'}
-    >
-      <Icon size={12} />
-    </span>
   )
 }

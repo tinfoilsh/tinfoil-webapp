@@ -86,6 +86,7 @@ import {
   getStoredConnection,
   useComputerUseSession,
   type CapabilityManifest,
+  type LoopEvent,
 } from '@/services/computer-use'
 import { UrlHashMessageHandler } from '../url-hash-message-handler'
 import { UrlHashSettingsHandler } from '../url-hash-settings-handler'
@@ -1557,113 +1558,129 @@ export function ChatInterface({
     [handleComputerUseConnect, handleCancelPairing, handleRemoveMessage],
   )
 
-  // Fold a finished/errored session into chat history at its chronological
-  // position: commit a synthetic assistant message carrying the frame trail
-  // (and, on error, an error string) — then reset the session so the live
-  // thread component stops rendering. The committed message picks
-  // `ComputerUseSessionRenderer` and visually reads like the live thread.
+  // Commit a finished session's audit trail into chat history at its
+  // chronological position. Builds TWO messages:
   //
-  // Without this, the live `ComputerUseSessionThread` keeps rendering after
-  // `done` / `error` and pins under the messages array, breaking chronological
-  // order if the user sends another message. It also means the run vanishes on
-  // reload (frames live only in `useComputerUseSession` state).
+  //   1) Session-record message — frames + manifest + (on error) the error
+  //      banner. `content` stays empty so the chat-query builder skips it on
+  //      future turns (it's an audit trail; the model already saw every frame
+  //      in the loop). Picks `ComputerUseSessionRenderer`, which reads like
+  //      the live thread did.
+  //   2) Final answer — a plain assistant turn carrying the model's last
+  //      message, so it reads as a normal chat bubble and round-trips to the
+  //      model on follow-up turns.
+  //
+  // Pure with respect to the session: it reads only the snapshot passed in,
+  // so the caller can `cancel()` immediately after (which zeroes the live
+  // state) without racing the commit. Shared by the explicit-stop handler
+  // (red traffic light) and the pre-begin error path below.
+  const commitSessionRecord = useCallback(
+    (snapshot: {
+      frames: LoopEvent[]
+      finalText?: string
+      error?: string
+      manifest?: CapabilityManifest
+      isError: boolean
+    }) => {
+      const { frames, finalText, error, manifest, isError } = snapshot
+      // Strip the trailing model_message that matches finalText so the card
+      // doesn't render the answer twice (the loop emits a model_message for
+      // every turn, including the final no-tool-calls one that IS the answer).
+      const trimmedFrames =
+        finalText && frames.length > 0
+          ? (() => {
+              const last = frames[frames.length - 1]
+              return last &&
+                last.type === 'model_message' &&
+                last.content === finalText
+                ? frames.slice(0, -1)
+                : frames
+            })()
+          : frames
+      // Ordered timestamps (record first, answer 1ms later) so chat sorting
+      // is unambiguous and scroll-to-bottom lands on the answer.
+      const recordTs = new Date()
+      const answerTs = new Date(recordTs.getTime() + 1)
+      setCurrentChat((c) => ({
+        ...c,
+        messages: [
+          ...c.messages,
+          {
+            role: 'assistant',
+            content: '',
+            timestamp: recordTs,
+            computerUseFrames: trimmedFrames,
+            ...(manifest ? { computerUseManifest: manifest } : {}),
+            ...(isError
+              ? { isError: true, computerUseError: error ?? 'Session failed.' }
+              : {}),
+          },
+          // Only emit the answer when the model produced one. On error (or a
+          // silent finish) we omit it — the record carries the signal.
+          ...(finalText
+            ? [
+                {
+                  role: 'assistant' as const,
+                  content: finalText,
+                  timestamp: answerTs,
+                },
+              ]
+            : []),
+        ],
+      }))
+      // Scroll to bottom so the newly-committed answer is the first thing the
+      // user sees. The 60ms delay covers the DOM commit + the synthetic
+      // message's image frames laying out.
+      setTimeout(() => {
+        const el = scrollContainerRef.current
+        if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+      }, 60)
+    },
+    [setCurrentChat],
+  )
+
+  // Explicit stop (red traffic light on the live session thread). Snapshot
+  // the run into history, THEN tear the VM down. Deferring the commit until
+  // the operator stops is what keeps the live view + terminal usable after
+  // the agent finishes its turn — the run no longer vanishes into a static
+  // card the moment the model stops emitting actions.
+  const handleStopSession = useCallback(() => {
+    const { phase, frames, finalText, error, manifest } =
+      computerUseSession.state
+    commitSessionRecord({
+      frames,
+      finalText,
+      error,
+      manifest,
+      isError: phase === 'error',
+    })
+    computerUseSession.cancel()
+  }, [computerUseSession, commitSessionRecord])
+
+  // A session that errors BEFORE it ever produced a VM (pairing / provision /
+  // consent failure — no `sessionId`, so the live thread never mounts to
+  // offer a red light) has nothing for the operator to keep using. Commit its
+  // error record straight to history and reset so the failure is visible in
+  // the scroll. Post-begin errors keep the thread mounted and are committed
+  // via `handleStopSession` instead.
   const committedSessionTaskRef = useRef<string | null>(null)
   useEffect(() => {
-    const { phase, task, frames, finalText, error, manifest } =
+    const { phase, task, sessionId, frames, error, manifest } =
       computerUseSession.state
-    if (phase !== 'done' && phase !== 'error') return
-    // Guard against double-commit across re-renders. Using the task string +
-    // phase as a coarse session key — `task` is captured fresh by `start()`
-    // and cleared by `cancel()`.
-    const key = `${task}::${phase}`
+    if (phase !== 'error' || sessionId) return
+    const key = `${task}::error`
     if (committedSessionTaskRef.current === key) return
     committedSessionTaskRef.current = key
-
-    // Split into TWO messages so the final answer reads as a normal assistant
-    // chat bubble (not buried inside the session card):
-    //
-    //   1) Session-record message — frames + manifest + (on error) the error
-    //      banner. content stays empty so the chat-query builder skips it on
-    //      future turns (it's an audit-trail, not something the model needs
-    //      to re-read; the model already saw every frame in the loop).
-    //   2) Final answer — a plain assistant turn whose `content` is the
-    //      model's last message. Picks the default renderer and round-trips
-    //      to the model on follow-up turns (it WAS the model's response, so
-    //      the model should see it back).
-    //
-    // Strip the trailing model_message that matches finalText from frames so
-    // the card doesn't render the answer a second time (the loop emits a
-    // model_message event for every turn including the last no-tool-calls
-    // one, which IS the final answer).
-    //
-    // Timestamps are ordered (record first, then answer 1ms later) so chat
-    // sorting is unambiguous and the scroll-to-bottom lands on the answer.
-    const trimmedFrames =
-      finalText && frames.length > 0
-        ? (() => {
-            const last = frames[frames.length - 1]
-            if (
-              last &&
-              last.type === 'model_message' &&
-              last.content === finalText
-            ) {
-              return frames.slice(0, -1)
-            }
-            return frames
-          })()
-        : frames
-    const recordTs = new Date()
-    const answerTs = new Date(recordTs.getTime() + 1)
-    setCurrentChat((c) => ({
-      ...c,
-      messages: [
-        ...c.messages,
-        {
-          role: 'assistant',
-          content: '',
-          timestamp: recordTs,
-          computerUseFrames: trimmedFrames,
-          ...(manifest ? { computerUseManifest: manifest } : {}),
-          ...(phase === 'error'
-            ? { isError: true, computerUseError: error ?? 'Session failed.' }
-            : {}),
-        },
-        // Only emit the answer message when the model produced one. On error
-        // (or when the model finished silently) we omit it — the error banner
-        // on the record carries the user-facing signal already.
-        ...(finalText
-          ? [
-              {
-                role: 'assistant' as const,
-                content: finalText,
-                timestamp: answerTs,
-              },
-            ]
-          : []),
-      ],
-    }))
-    // Reset the session so the live thread stops rendering and a future
-    // computer_begin starts fresh.
+    commitSessionRecord({
+      frames,
+      error: error ?? 'Session failed.',
+      manifest,
+      isError: true,
+    })
     computerUseSession.cancel()
-    // The cancel itself zeroes `state.task`, so reset the dedupe key too.
+    // `cancel()` zeroes `state.task`, so reset the dedupe key for future runs.
     committedSessionTaskRef.current = null
-
-    // Scroll to bottom so the newly-committed final answer is the first
-    // thing the user sees. Without this the viewport stays anchored to
-    // wherever the user was during the session (typically the top of the
-    // card, courtesy of `scrollUserMessageToTop`), which buries the answer
-    // off-screen. The 60ms delay covers the DOM commit + the synthetic
-    // message's image frames laying out.
-    setTimeout(() => {
-      const el = scrollContainerRef.current
-      if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-    }, 60)
-  }, [
-    computerUseSession.state.phase,
-    computerUseSession.state.task,
-    computerUseSession,
-    setCurrentChat,
-  ])
+  }, [computerUseSession, commitSessionRecord])
 
   // Initialize document uploader hook
   const { handleDocumentUpload, describeImageWithMultimodal } =
@@ -3477,6 +3494,7 @@ export function ChatInterface({
                         computerUseSession={
                           <ComputerUseSessionThread
                             session={computerUseSession}
+                            onStop={handleStopSession}
                           />
                         }
                         isPremium={isPremium}

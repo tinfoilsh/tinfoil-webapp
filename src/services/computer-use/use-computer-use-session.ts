@@ -14,7 +14,7 @@
 
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DriverConnection } from './access-token'
 import { readyImages } from './availability'
 import type { StreamChat } from './chat-protocol'
@@ -50,6 +50,10 @@ export type SessionPhase =
 
 export interface ComputerUseSessionState {
   phase: SessionPhase
+  /** Live session ID, captured from the first `begin` event the loop emits. */
+  sessionId?: string
+  /** User-toggled dispatch pause. Buffered tool calls wait until resumed. */
+  paused?: boolean
   task: string
   /** The model's own summary of why it opened the sandbox (for consent). */
   reason?: string
@@ -134,6 +138,15 @@ export function useComputerUseSession(
   deps: ComputerUseSessionDeps = {},
 ) {
   const [state, setState] = useState<ComputerUseSessionState>(INITIAL)
+  // Mirror the latest state into a ref so callbacks (cancel) can read the
+  // current sessionId without re-keying on the freshest closure each
+  // render. The sync runs in a layout effect — i.e. synchronously after
+  // the commit, before any user-triggered handler can fire — so any
+  // observer that reads `stateRef.current` sees the just-committed state.
+  const stateRef = useRef(state)
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
   const connRef = useRef<DriverConnection | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   // When the loop pauses on a capability request, the resolver of the await'd
@@ -142,6 +155,10 @@ export function useComputerUseSession(
   const capabilityResolverRef = useRef<
     ((decision: CapabilityApproval) => void) | null
   >(null)
+  // Mirrors `state.paused` for synchronous access from the dispatch barrier
+  // (a React state read would race the latest setState).
+  const pausedRef = useRef(false)
+  const resumeWaitersRef = useRef<Array<() => void>>([])
 
   const runLoop = deps.runLoop ?? runComputerUseLoop
   const makeStreamChat = deps.makeStreamChat ?? createTinfoilStreamChat
@@ -274,6 +291,16 @@ export function useComputerUseSession(
           reduceImage: makeReduceImage(),
           signal: ac.signal,
           onEvent: (event) => {
+            // Capture the live session id off the first `begin` event so user
+            // ad-hoc actions (e.g. terminal exec) can target it.
+            if (event.type === 'begin') {
+              setState((s) => ({
+                ...s,
+                sessionId: event.session,
+                frames: [...s.frames, event],
+              }))
+              return
+            }
             // Mirror successful escalations into the displayed manifest so the
             // config widget reflects what the session is actually running with.
             if (
@@ -299,6 +326,23 @@ export function useComputerUseSession(
               return
             }
             setState((s) => ({ ...s, frames: [...s.frames, event] }))
+          },
+          waitForUnpaused: async (sig) => {
+            if (!pausedRef.current) return
+            await new Promise<void>((resolve, reject) => {
+              resumeWaitersRef.current.push(resolve)
+              if (sig) {
+                const onAbort = () => {
+                  // Pull the resolver off the queue so cancel() doesn't try
+                  // to fire a settled promise later.
+                  resumeWaitersRef.current = resumeWaitersRef.current.filter(
+                    (r) => r !== resolve,
+                  )
+                  reject(new DOMException('Aborted', 'AbortError'))
+                }
+                sig.addEventListener('abort', onAbort, { once: true })
+              }
+            })
           },
           // Promise-based pause: the loop awaits this; the UI fulfills it via
           // approveCapability / denyCapability.
@@ -361,16 +405,102 @@ export function useComputerUseSession(
     setState((s) => ({ ...s, capabilityRequest: undefined }))
   }, [])
 
-  /** Cancel the session (abort any in-flight work) and reset. */
+  /**
+   * Mint a fresh access JWT against the live session's connection. The live
+   * view needs this because the WS upgrade carries the token in a query
+   * param (the browser can't set Authorization on an upgrade). Resolves
+   * `null` if the session never paired or has been torn down.
+   */
+  const getAccessToken = useCallback(
+    async (signal?: AbortSignal): Promise<string | null> => {
+      const conn = connRef.current
+      if (!conn?.tokens) return null
+      try {
+        return await conn.tokens.getAccessToken(signal)
+      } catch {
+        return null
+      }
+    },
+    [],
+  )
+
+  /** Hold pending dispatches behind the pause barrier. Idempotent. */
+  const pause = useCallback(() => {
+    if (pausedRef.current) return
+    pausedRef.current = true
+    setState((s) => ({ ...s, paused: true }))
+  }, [])
+
+  /** Release the pause barrier; queued dispatches continue. Idempotent. */
+  const resume = useCallback(() => {
+    if (!pausedRef.current) return
+    pausedRef.current = false
+    setState((s) => ({ ...s, paused: false }))
+    const waiters = resumeWaitersRef.current
+    resumeWaitersRef.current = []
+    for (const w of waiters) w()
+  }, [])
+
+  /**
+   * Dispatch a user-typed shell command against the live session's `exec`
+   * primitive. The terminal embed uses this to let the operator interleave
+   * their own commands with the agent's, hitting the same channel as the
+   * agent. Resolves to the raw text the guest returned (stdout/stderr
+   * combined, as cua-driver formats it) or an error if no session is live.
+   */
+  const dispatchExec = useCallback(
+    async (cmd: string): Promise<string> => {
+      const conn = connRef.current
+      const sessionId = state.sessionId
+      if (!conn || !sessionId) {
+        throw new Error('no live session')
+      }
+      const result = await conn.client.action(sessionId, {
+        op: 'exec',
+        payload: { cmd },
+      })
+      // cua-driver returns either a perception result (content blocks) or an
+      // exec result with stdout/stderr/exit_code. Surface the latter cleanly;
+      // the perception branch is only here for forward-compat.
+      if (result && typeof result === 'object' && 'exit_code' in result) {
+        const { stdout, stderr, exit_code } = result as {
+          stdout?: string
+          stderr?: string
+          exit_code: number
+        }
+        const out = [stdout, stderr].filter((s) => s && s.length > 0).join('')
+        return out || `exit ${exit_code}`
+      }
+      return JSON.stringify(result)
+    },
+    [state.sessionId],
+  )
+
+  /**
+   * Cancel the session (abort any in-flight work) and reset.
+   *
+   * The loop no longer ends the VM on its own when the model finishes —
+   * the operator owns lifecycle now. So `cancel()` is what actually
+   * tears the session down: it issues `/end` against the driver in the
+   * background (fire-and-forget so the call returns immediately) and
+   * the idle reaper is the backstop if the request fails.
+   */
   const cancel = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
+    const conn = connRef.current
+    const sessionId = stateRef.current.sessionId
     connRef.current = null
-    // Resolve any in-flight capability request as denied so the loop's awaited
-    // promise unblocks and the finally-block can tear the session down.
+    if (conn && sessionId) {
+      void conn.client.end(sessionId).catch(() => {
+        /* idle reaper is the backstop */
+      })
+    }
     if (capabilityResolverRef.current) {
       capabilityResolverRef.current({ approved: false, reason: 'cancelled' })
     }
+    pausedRef.current = false
+    resumeWaitersRef.current = []
     setState(INITIAL)
   }, [])
 
@@ -439,5 +569,9 @@ export function useComputerUseSession(
     denyCapability,
     cancel,
     connect,
+    dispatchExec,
+    pause,
+    resume,
+    getAccessToken,
   }
 }

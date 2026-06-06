@@ -186,6 +186,36 @@ export class DriverClient {
   }
 
   /**
+   * `GET /vnc/credentials`. Returns the per-session VF VNC password the
+   * browser passes to noVNC during the RFB auth handshake. JWT-gated.
+   */
+  async getVncCredentials(
+    session: string,
+    signal?: AbortSignal,
+  ): Promise<{ password: string }> {
+    return this.request<{ password: string }>(
+      'GET',
+      `/vnc/credentials?session=${encodeURIComponent(session)}`,
+      { jwt: true, signal },
+    )
+  }
+
+  /**
+   * Build the WebSocket URL the noVNC client connects to. The token rides in
+   * the query string because the browser cannot set Authorization on a WS
+   * upgrade; the URL never leaves the host (loopback only) and the token is
+   * short-lived.
+   */
+  vncWebSocketUrl(session: string, accessToken: string): string {
+    const u = new URL(this.baseUrl)
+    u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+    u.pathname = '/vnc'
+    u.searchParams.set('session', session)
+    u.searchParams.set('token', accessToken)
+    return u.toString()
+  }
+
+  /**
    * `POST /images/setup-default`. Kicks off the driver-driven first-time image
    * setup (pull default base from CDN + provision autostart/TCC). Returns 202
    * with the chosen image name; the driver runs the work in the background

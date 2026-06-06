@@ -1,0 +1,27 @@
+{
+  "name": "ghostty-web",
+  "version": "0.4.1",
+  "description": "Vendored build of ghostty-web (WASM VT100 parser for the browser). Rebuild via `nix develop` + `bun run build` in ../../ghostty-web, then re-copy dist/* and ghostty-vt.wasm.",
+  "type": "module",
+  "main": "./dist/ghostty-web.cjs.js",
+  "module": "./dist/ghostty-web.es.js",
+  "types": "./dist/ghostty-web.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/ghostty-web.d.ts",
+      "import": "./dist/ghostty-web.es.js",
+      "require": "./dist/ghostty-web.cjs.js"
+    },
+    "./headless": {
+      "types": "./dist/headless.d.ts",
+      "import": "./dist/headless.es.js",
+      "require": "./dist/headless.cjs.js"
+    },
+    "./ghostty-vt.wasm": "./ghostty-vt.wasm"
+  },
+  "files": [
+    "dist",
+    "ghostty-vt.wasm"
+  ],
+  "license": "MIT"
+}

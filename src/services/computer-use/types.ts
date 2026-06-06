@@ -252,6 +252,7 @@ export type DriverOp =
   | 'scroll'
   | 'launch_app'
   | 'exec'
+  | 'set_recording'
   | 'request_handoff'
   | 'request_capability'
 

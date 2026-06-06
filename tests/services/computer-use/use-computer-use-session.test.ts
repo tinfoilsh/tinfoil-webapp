@@ -202,6 +202,58 @@ describe('useComputerUseSession', () => {
     expect(result.current.state.frames).toHaveLength(2)
   })
 
+  it('dispatchExec hits the live session via the driver client', async () => {
+    const action = vi.fn(async () => ({
+      stdout: 'hello\n',
+      stderr: '',
+      exit_code: 0,
+    }))
+    const conn = {
+      client: { action },
+      tokens: {},
+    } as unknown as DriverConnection
+    const runLoop = vi.fn(async (p: any) => {
+      p.onEvent({
+        type: 'begin',
+        session: 'sess_x',
+        screenshot: { content: [] },
+      })
+      return loopResult({ session: 'sess_x', finalText: '' })
+    })
+    const { result } = renderHook(() =>
+      useComputerUseSession('kimi-k2-6', {
+        getConnection: () => conn,
+        fetchStatusImages: async () => [mac('tahoe')],
+        runLoop,
+      }),
+    )
+    await act(async () => {
+      await result.current.start('go')
+    })
+    await act(async () => {
+      await result.current.approve(result.current.state.manifest!)
+    })
+    // Captured from the `begin` event the loop emitted.
+    expect(result.current.state.sessionId).toBe('sess_x')
+    const out = await result.current.dispatchExec('echo hi')
+    expect(out).toBe('hello\n')
+    expect(action).toHaveBeenCalledWith('sess_x', {
+      op: 'exec',
+      payload: { cmd: 'echo hi' },
+    })
+  })
+
+  it('dispatchExec throws when there is no live session', async () => {
+    const { result } = renderHook(() =>
+      useComputerUseSession('kimi-k2-6', {
+        getConnection: () => fakeConn,
+      }),
+    )
+    await expect(result.current.dispatchExec('echo')).rejects.toThrow(
+      /no live session/,
+    )
+  })
+
   it('handoff result lands in the handoff phase', async () => {
     const { result } = renderHook(() =>
       useComputerUseSession('kimi-k2-6', {

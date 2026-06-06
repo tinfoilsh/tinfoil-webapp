@@ -103,6 +103,7 @@ const computerActionSchema = z
         'drag',
         'launch_app',
         'exec',
+        'set_recording',
         'request_handoff',
         'request_capability',
       ])
@@ -131,6 +132,12 @@ const computerActionSchema = z
       .optional()
       .describe('App name or bundle id, for launch_app.'),
     command: z.string().optional().describe('Shell command, for exec.'),
+    recording: z
+      .boolean()
+      .optional()
+      .describe(
+        'For set_recording: true starts a session recording, false stops it. The driver returns the on-disk path on stop.',
+      ),
     egress: z
       .array(z.string())
       .optional()
@@ -232,6 +239,26 @@ function lenientParseToolArgs(
         `${lead}"${value}"${tail}`,
     ),
   )
+  // 5) Tuple-style coordinates the model occasionally emits as if x/y were
+  //    one slot: `"x": 0.293,0.278}` → `"x": 0.293, "y": 0.278}`. The same
+  //    pattern shows up as a string value: `"x": "0.293,0.278"`. We only
+  //    fire on `"x"` (the failure mode we've seen) and only when both
+  //    sides of the comma are numbers, so a legitimate string value
+  //    containing a comma can't get mangled.
+  const tupleRepair = (s: string): string => {
+    return s
+      .replace(
+        /"x"(\s*:\s*)(-?[\d.]+)\s*,\s*(-?[\d.]+)(\s*[,}])/g,
+        (_m, sep: string, x: string, y: string, tail: string) =>
+          `"x"${sep}${x}, "y": ${y}${tail}`,
+      )
+      .replace(
+        /"x"(\s*:\s*)"(-?[\d.]+)\s*,\s*(-?[\d.]+)"(\s*[,}])/g,
+        (_m, sep: string, x: string, y: string, tail: string) =>
+          `"x"${sep}${x}, "y": ${y}${tail}`,
+      )
+  }
+  attempts.push(tupleRepair(attempts[3]))
 
   for (const candidate of attempts) {
     try {
@@ -244,6 +271,11 @@ function lenientParseToolArgs(
       /* try next */
     }
   }
+  // No attempt parsed cleanly. Return a sentinel so the call site can
+  // overwrite tool_call.arguments with a benign `{}` — without that the
+  // malformed string lingers in the conversation history and inference
+  // rejects the entire next turn with a 400 on the assistant message's
+  // tool_calls field.
   return { ok: false }
 }
 
@@ -268,9 +300,26 @@ function extractXY(a: Record<string, unknown>): { x?: number; y?: number } {
     if (Array.isArray(arr) && arr.length >= 2) {
       return { x: num(arr[0]), y: num(arr[1]) }
     }
+    // Tuple-as-string variant the model sometimes emits: `"point": "A,B"`.
+    if (typeof arr === 'string' && arr.includes(',')) {
+      const [sx, sy] = arr.split(',', 2)
+      const xn = num(sx)
+      const yn = num(sy)
+      if (xn !== undefined && yn !== undefined) return { x: xn, y: yn }
+    }
   }
   if (Array.isArray(a.x) && a.x.length >= 2) {
     return { x: num(a.x[0]), y: num(a.x[1]) }
+  }
+  // Models occasionally encode (x, y) as one slot — either as a string
+  // `"x": "0.293,0.278"` (which lenientParse can't see because it parses
+  // fine as JSON) or as the comma-without-key shape repaired by the parser
+  // earlier. Catch the string variant here.
+  if (typeof a.x === 'string' && a.x.includes(',') && a.y === undefined) {
+    const [sx, sy] = (a.x as string).split(',', 2)
+    const xn = num(sx)
+    const yn = num(sy)
+    if (xn !== undefined && yn !== undefined) return { x: xn, y: yn }
   }
   return { x: num(a.x), y: num(a.y) }
 }
@@ -428,6 +477,20 @@ function buildAction(
       if (!cmd) return { ok: false, reason: 'exec requires a command' }
       return ok('exec', { cmd })
     }
+    case 'set_recording':
+    case 'start_recording':
+    case 'stop_recording': {
+      // A boolean recording flag drives the on/off transition. Model can
+      // emit either set_recording with recording=true/false, or the more
+      // explicit start_/stop_ aliases.
+      const recording =
+        type.toLowerCase() === 'start_recording'
+          ? true
+          : type.toLowerCase() === 'stop_recording'
+            ? false
+            : Boolean(a.recording)
+      return ok('set_recording', { recording })
+    }
     case 'request_handoff':
     case 'handoff':
     case 'human_takeover':
@@ -491,6 +554,13 @@ export const openAICUAdapter: ModelAdapter = {
   normalizeCall(call, ctx): NormalizeResult {
     const repair = lenientParseToolArgs(call.arguments)
     if (!repair.ok) {
+      // Even when no repair attempt parsed, ALWAYS overwrite arguments
+      // with a benign empty object so the malformed string can't ride
+      // along in the conversation history. Inference is strict about
+      // tool_calls[].arguments being valid JSON on subsequent turns;
+      // leaving the broken value in place 400s the entire next request,
+      // which would otherwise crash the loop.
+      ;(call as { arguments: string }).arguments = '{}'
       return { ok: false, reason: 'tool call arguments were not valid JSON' }
     }
     // CRITICAL: write the repaired JSON back into the tool call so the

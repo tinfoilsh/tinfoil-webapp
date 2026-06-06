@@ -48,11 +48,10 @@ import {
 } from './types'
 
 /**
- * Derives the **reduced** copy of a screenshot that is sent to the model (saving
- * inference tokens/context). Returns the reduced image's base64 + mime + pixel
- * dimensions. The full frame still goes to the chat/audit; only the model turn
- * gets this. Injected by the browser (canvas-based); absent in node/tests, where
- * the model gets the full frame unchanged.
+ * Reducer that returns the version of a screenshot the model (and the chat
+ * history) sees. The same artifact is used for inference and the screenshot
+ * archive — there is no separate full-quality path. Injected by the browser
+ * (canvas-based); absent in node/tests, in which case the raw frame is used.
  */
 export type ImageReducer = (
   base64: string,
@@ -64,13 +63,7 @@ export type ImageReducer = (
   height: number
 }>
 
-/**
- * Build the model-facing copy of an action result: same content, but the image
- * part swapped for the reduced JPEG. No-op when there's no reducer or no image.
- * Critically, the loop derives `screenFrom` from THIS (reduced) result, so the
- * coordinate normalizer scales clicks against the exact frame the model saw.
- */
-async function reduceResultForModel(
+async function reduceResult(
   result: ActionResult,
   reduce: ImageReducer | undefined,
 ): Promise<ActionResult> {
@@ -240,6 +233,22 @@ export interface RunComputerUseLoopParams {
   signal?: AbortSignal
   onEvent?: (event: LoopEvent) => void
   /**
+   * Awaited before each action dispatch. The session orchestrator uses this to
+   * implement a user-toggled "pause" — pending tool calls buffer behind the
+   * promise until the user resumes. Omit for no-op pauses (the loop runs at
+   * full speed).
+   */
+  waitForUnpaused?: (signal?: AbortSignal) => Promise<void>
+  /**
+   * When false (default), the loop leaves the session alive once the model
+   * stops emitting actions / hits max steps so the operator can keep
+   * interacting with the VM through the live view. The session owner ends
+   * it via `cancel()` (red traffic light), or the driver's idle reaper
+   * fires when the manifest's `idle_timeout` lapses. When true, the loop
+   * tears the session down as it returns — useful for headless test runs.
+   */
+  endOnFinish?: boolean
+  /**
    * Pause the loop and ask the user to approve/deny a model-requested capability
    * change. The loop only honors this for egress (the only live-escalatable
    * axis). Omit to auto-deny every escalation request.
@@ -277,6 +286,8 @@ export async function runComputerUseLoop(
     signal,
     onEvent,
     requestCapabilityApproval,
+    waitForUnpaused,
+    endOnFinish = false,
   } = params
 
   const adapter = adapterForModel(modelName)
@@ -288,12 +299,9 @@ export async function runComputerUseLoop(
   // 1) Provision the session and get the first screen.
   const begin = await driver.begin(manifest, signal)
   const session = begin.session
-  // Full frame → chat/audit; reduced copy → model.
-  emit({ type: 'begin', session, screenshot: begin.screenshot })
-  const beginForModel = await reduceResultForModel(
-    begin.screenshot,
-    reduceImage,
-  )
+  // Single reduced artifact serves both the audit trail and the model context.
+  const beginForModel = await reduceResult(begin.screenshot, reduceImage)
+  emit({ type: 'begin', session, screenshot: beginForModel })
 
   const messages: ChatMessage[] = [
     { role: 'system', content: systemPrompt },
@@ -310,7 +318,11 @@ export async function runComputerUseLoop(
   let stop: LoopStopReason = 'max_steps'
   let finalText = ''
   let steps = 0
-  let leaveSessionOpen = false
+  // The session lives past loop exit by default — only an explicit
+  // `endOnFinish: true` (tests, batch runs) tears the VM down here.
+  // Handoff stays opt-out: even if the caller asked for endOnFinish,
+  // we never close on a takeover.
+  let leaveSessionOpen = !endOnFinish
 
   try {
     for (steps = 0; steps < maxSteps; steps++) {
@@ -434,6 +446,10 @@ export async function runComputerUseLoop(
 
         emit({ type: 'action', callId: call.id, action })
         try {
+          // Honor a user-toggled pause: the dispatch waits behind the
+          // promise the orchestrator hands us, so further tool calls in this
+          // turn buffer in this loop body until resume.
+          if (waitForUnpaused) await waitForUnpaused(signal)
           const result = (await dispatch(
             driver,
             session,
@@ -441,9 +457,13 @@ export async function runComputerUseLoop(
             tokens,
             signal,
           )) as ActionResult
-          emit({ type: 'action_result', callId: call.id, action, result })
-          // Full frame → chat/audit (emit above); reduced copy → model below.
-          const resultForModel = await reduceResultForModel(result, reduceImage)
+          const resultForModel = await reduceResult(result, reduceImage)
+          emit({
+            type: 'action_result',
+            callId: call.id,
+            action,
+            result: resultForModel,
+          })
           for (const m of adapter.formatToolResult(call, resultForModel))
             messages.push(m)
           // Track the newest frame (as the model saw it) for coordinate scaling.

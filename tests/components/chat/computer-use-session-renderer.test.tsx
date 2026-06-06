@@ -43,12 +43,10 @@ describe('ComputerUseSessionRenderer.canRender', () => {
 })
 
 describe('ComputerUseSessionRenderer.render', () => {
-  it('shows the "Done" header + the frame trail (final answer lives in its own message)', () => {
-    const { getByText, queryByText } = render(
+  it('renders the static card with a stopped VM dot for a finished session', () => {
+    const { container, queryByText } = render(
       ComputerUseSessionRenderer.render({
         message: msg({
-          // Post-split: the record message has empty content; the final
-          // answer is committed as a separate assistant message.
           content: '',
           computerUseFrames: [
             {
@@ -64,15 +62,17 @@ describe('ComputerUseSessionRenderer.render', () => {
         isDarkMode: false,
       }),
     )
-    expect(getByText(/Done/)).toBeDefined()
-    expect(getByText('opening Safari')).toBeDefined()
-    // The card no longer renders message.content as the final answer; that
-    // moved to the standalone assistant message that follows.
+    // The card no longer renders the frame trail inline — the agent
+    // activity popover owns that. We just assert the shell rendered.
+    expect(
+      container.querySelector('button[aria-label="Stop session"]'),
+    ).toBeTruthy()
+    // The standalone assistant message holds the final answer.
     expect(queryByText('all set')).toBeNull()
   })
 
-  it('shows the "Error" header + error banner when computerUseError is set', () => {
-    const { getByText } = render(
+  it('surfaces the fatal error message in the bug popover when set', () => {
+    const { getByLabelText } = render(
       ComputerUseSessionRenderer.render({
         message: msg({
           isError: true,
@@ -84,7 +84,63 @@ describe('ComputerUseSessionRenderer.render', () => {
         isDarkMode: false,
       }),
     )
-    expect(getByText(/Error/)).toBeDefined()
-    expect(getByText('VM did not boot')).toBeDefined()
+    // The bug icon's aria-label includes the error count, so its presence
+    // is enough — clicking the popover open isn't part of this surface
+    // test.
+    expect(getByLabelText(/1 error/)).toBeTruthy()
+  })
+
+  it('preserves the final screenshot and surfaces the stop reason', () => {
+    const { getByAltText, queryByText } = render(
+      ComputerUseSessionRenderer.render({
+        message: msg({
+          computerUseFrames: [
+            {
+              type: 'begin',
+              session: 'sess_1',
+              screenshot: {
+                content: [
+                  { type: 'image', data: 'AAAA', mimeType: 'image/png' },
+                ],
+              },
+            },
+            { type: 'stopped', reason: 'model_finished', finalText: '' },
+          ],
+        }),
+        messageIndex: 0,
+        model,
+        isDarkMode: false,
+      }),
+    )
+    const img = getByAltText('Final sandbox screenshot') as HTMLImageElement
+    expect(img.src).toContain('data:image/png;base64,AAAA')
+    expect(queryByText(/the agent finished/)).toBeTruthy()
+  })
+
+  it('shows the final screenshot even when the session errored', () => {
+    const { getByAltText, queryByText } = render(
+      ComputerUseSessionRenderer.render({
+        message: msg({
+          isError: true,
+          computerUseError: 'inference 400',
+          computerUseFrames: [
+            {
+              type: 'begin',
+              session: 'sess_2',
+              screenshot: {
+                content: [
+                  { type: 'image', data: 'BBBB', mimeType: 'image/png' },
+                ],
+              },
+            },
+          ],
+        }),
+        messageIndex: 0,
+        model,
+        isDarkMode: false,
+      }),
+    )
+    expect(getByAltText('Final sandbox screenshot')).toBeTruthy()
+    expect(queryByText(/Session ended with an error/)).toBeTruthy()
   })
 })

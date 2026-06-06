@@ -662,8 +662,23 @@ export function ChatInput({
           </div>
         )}
         <div
+          // Click anywhere inside the wrapper (off the interactive
+          // children) focuses the textarea. This widens the click target
+          // from the single line of text to the full surface — easier to
+          // hit on mobile and matches the affordance users expect from a
+          // pill-shaped composer.
+          onMouseDown={(e) => {
+            if (
+              (e.target as HTMLElement).closest(
+                'button,input,textarea,select,a,[role="button"]',
+              )
+            )
+              return
+            // Defer so the synthetic mousedown finishes; then move focus.
+            requestAnimationFrame(() => inputRef.current?.focus())
+          }}
           className={cn(
-            'rounded-3xl border bg-surface-chat px-3 py-3 shadow-md transition-colors md:rounded-4xl md:px-6 md:py-4',
+            'cursor-text rounded-3xl border bg-surface-chat px-4 py-4 transition-colors md:rounded-4xl md:px-6 md:py-4',
             isTemporaryMode
               ? 'border-dashed border-content-muted'
               : 'border-border-subtle',

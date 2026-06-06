@@ -203,6 +203,47 @@ describe('openAICUAdapter.normalizeCall — happy paths', () => {
     expect(r.ok).toBe(false)
   })
 
+  it('lenient JSON: on irreparable input, overwrites arguments with `{}` so the next-turn echo cannot 400', () => {
+    // Models occasionally emit syntax so broken no repair attempt can
+    // recover (e.g. half-truncated strings, gibberish). The loop is
+    // expected to surface `unsupported` and continue — but the assistant
+    // message it re-emits to inference must NOT carry the broken JSON,
+    // otherwise upstream rejects the entire request with a 400 and the
+    // session dies on what should have been a recoverable error.
+    const call = { name: 'computer', arguments: '{this is not json at all' }
+    const r = openAICUAdapter.normalizeCall(call)
+    expect(r.ok).toBe(false)
+    // After normalization, the arguments must be re-emittable as valid JSON.
+    expect(() => JSON.parse(call.arguments)).not.toThrow()
+    expect(JSON.parse(call.arguments)).toEqual({})
+  })
+
+  it('lenient JSON: repairs tuple-style coordinates the model emits as one slot', () => {
+    // Observed live: `"x": 0.293,0.278` (no key for the second number).
+    // Pre-fix this 400d the entire next inference call.
+    const call = {
+      name: 'computer',
+      arguments: '{"type": "click", "x": 0.293,0.278}',
+    }
+    const r = openAICUAdapter.normalizeCall(call)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.action.op).toBe('click')
+    expect(r.action.payload).toMatchObject({ x: 0.293, y: 0.278 })
+    expect(() => JSON.parse(call.arguments)).not.toThrow()
+  })
+
+  it('lenient JSON: repairs the string-wrapped variant `"x": "0.293,0.278"`', () => {
+    const call = {
+      name: 'computer',
+      arguments: '{"type":"click","x":"0.293,0.278"}',
+    }
+    const r = openAICUAdapter.normalizeCall(call)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.action.payload).toMatchObject({ x: 0.293, y: 0.278 })
+  })
+
   it('lenient JSON: repairs a missing opening quote on a value (`:click"`)', () => {
     // Regression: observed live from Kimi —
     // ` {"type":click", "x": 502, "y": 129} `

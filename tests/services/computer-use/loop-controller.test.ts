@@ -26,7 +26,12 @@ const MANIFEST: CapabilityManifest = {
 function run(
   driver: DriverLike,
   turns: Parameters<typeof scriptedStreamChat>[0],
-  extra?: { maxSteps?: number; onEvent?: (e: LoopEvent) => void; tokens?: any },
+  extra?: {
+    maxSteps?: number
+    onEvent?: (e: LoopEvent) => void
+    tokens?: any
+    endOnFinish?: boolean
+  },
 ) {
   const { streamChat, invocations } = scriptedStreamChat(turns)
   return {
@@ -40,12 +45,42 @@ function run(
       maxSteps: extra?.maxSteps,
       onEvent: extra?.onEvent,
       tokens: extra?.tokens,
+      // Existing tests expect the loop to tear the VM down at the end of
+      // the run. Production now keeps the VM alive by default (operator
+      // owns lifecycle), so opt the test runs back into the old
+      // behaviour unless a specific case overrides it.
+      endOnFinish: extra?.endOnFinish ?? true,
     }),
   }
 }
 
 describe('runComputerUseLoop — multi-turn screenshot→action cycle', () => {
-  it('drives the model↔driver loop and tears the session down when the model finishes', async () => {
+  it('leaves the session alive by default — the operator owns lifecycle', async () => {
+    const driver = new FakeDriver()
+    const { promise } = run(
+      driver,
+      [
+        {
+          toolCalls: [
+            {
+              name: 'computer',
+              arguments: JSON.stringify({ type: 'click', x: 1, y: 1 }),
+            },
+          ],
+        },
+        { content: 'done' },
+      ],
+      // Reset the helper's default so this test exercises the production
+      // behaviour: no teardown when the model finishes.
+      { endOnFinish: false },
+    )
+    const result = await promise
+    expect(result.reason).toBe('model_finished')
+    expect(result.ended).toBe(false)
+    expect(driver.endedSessions).toEqual([])
+  })
+
+  it('drives the model↔driver loop and tears the session down with endOnFinish', async () => {
     const driver = new FakeDriver()
     const { promise } = run(driver, [
       {
@@ -176,7 +211,7 @@ describe('runComputerUseLoop — reduced image to the model', () => {
       .map((p) => p.image_url.url as string)
   }
 
-  it('sends the reduced JPEG to the model but keeps the full frame in events', async () => {
+  it('reduces the screenshot once and emits the same artifact to model and audit', async () => {
     const driver = new FakeDriver()
     const reduceImage = vi.fn(async () => ({
       base64: 'REDUCEDDATA',
@@ -207,24 +242,27 @@ describe('runComputerUseLoop — reduced image to the model', () => {
       onEvent: (e) => events.push(e),
     })
 
-    // The model only ever sees the reduced JPEG (initial screen + action result).
+    // The model sees the reduced JPEG (initial screen + action result).
     const urls = invocations.flatMap((inv) => imageUrlParts(inv.messages))
     expect(urls.length).toBeGreaterThan(0)
     expect(
       urls.every((u) => u.includes('REDUCEDDATA') && u.includes('image/jpeg')),
     ).toBe(true)
 
-    // The emitted events (chat/audit) keep the FULL original PNG.
+    // The emitted events surface the same reduced artifact — there is no
+    // longer a separate full-quality path. The audit trail and the model
+    // share one canonical screenshot.
     const begin = events.find((e) => e.type === 'begin') as Extract<
       LoopEvent,
       { type: 'begin' }
     >
-    expect(firstImagePart(begin.screenshot)?.data).toBe(TINY_PNG)
+    expect(firstImagePart(begin.screenshot)?.data).toBe('REDUCEDDATA')
+    expect(firstImagePart(begin.screenshot)?.mimeType).toBe('image/jpeg')
     const result = events.find((e) => e.type === 'action_result') as Extract<
       LoopEvent,
       { type: 'action_result' }
     >
-    expect(firstImagePart(result.result)?.data).toBe(TINY_PNG)
+    expect(firstImagePart(result.result)?.data).toBe('REDUCEDDATA')
 
     expect(reduceImage).toHaveBeenCalled()
   })

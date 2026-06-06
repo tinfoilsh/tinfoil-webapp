@@ -104,7 +104,7 @@ function manifestZodSchema(images: string[]) {
           .array(z.string())
           .optional()
           .describe(
-            'Default-deny domain allowlist, e.g. ["*.irs.gov","mail.google.com"].',
+            'Default-deny domain allowlist, e.g. ["*.irs.gov","mail.google.com"]. Use ["*"] to opt in to allow-all (operator-only escape hatch).',
           ),
         ingress: z.array(z.number().int()).optional(),
       })
