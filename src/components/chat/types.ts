@@ -138,6 +138,7 @@ export type Message = {
   thinkingDuration?: number // Duration in seconds
   isError?: boolean
   isRateLimitError?: boolean
+  isHourlyRateLimitError?: boolean
   urlFetches?: URLFetchState[]
   webSearch?: WebSearchState
   webSearchBeforeThinking?: boolean // True if web search started before thinking

@@ -743,9 +743,13 @@ export function useChatMessaging({
           const errorMsg =
             error instanceof Error ? error.message : 'Unknown error occurred'
           const lowerMsg = errorMsg.toLowerCase()
+          const isHourlyRateLimitError =
+            lowerMsg.includes('hourly usage limit') ||
+            lowerMsg.includes('hourly limit')
           const isRateLimitError =
             lowerMsg.includes('rate limit') ||
             lowerMsg.includes('request limit') ||
+            lowerMsg.includes('usage limit') ||
             lowerMsg.includes('insufficient_quota')
 
           if (isRateLimitError) {
@@ -754,7 +758,8 @@ export function useChatMessaging({
               content: `Error: ${errorMsg}`,
               timestamp: new Date(),
               isError: true,
-              isRateLimitError: true,
+              isRateLimitError: !isHourlyRateLimitError,
+              isHourlyRateLimitError,
             }
 
             // Use the current chat ID from ref which has the correct (possibly server) ID

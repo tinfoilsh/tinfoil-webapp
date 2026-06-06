@@ -18,9 +18,15 @@ export interface RateLimitInfo {
   maxRequests: number
   remaining: number
   resetsAt: string
+  /**
+   * Which limit this represents. Absent or `free_daily` is the anonymous/
+   * free-tier daily request limit; `hourly` is the per-account hourly usage
+   * cap that subscribers hit (surfaced through the same indicator channel).
+   */
+  kind?: 'free_daily' | 'hourly'
 }
 
-const SESSION_TOKEN_EXPIRY_BUFFER_MS = 5 * 60 * 1000
+const SESSION_TOKEN_EXPIRY_BUFFER_MS = 1 * 60 * 1000
 const AUTH_INIT_WAIT_MS = 3000
 
 let clientInstance: OpenAI | null = null
@@ -37,6 +43,90 @@ function dispatchRateLimitUpdate(): void {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('rateLimitUpdated'))
   }
+}
+
+type ServerErrorBody = {
+  error?: string
+  code?: string
+  resets_at?: string
+}
+
+function parseErrorBody(errorText: string): ServerErrorBody | null {
+  try {
+    return JSON.parse(errorText) as ServerErrorBody
+  } catch {
+    return null
+  }
+}
+
+function isHourlyLimit(
+  status: number,
+  parsedError: ServerErrorBody | null,
+): boolean {
+  return status === 429 || parsedError?.code === 'HOURLY_LIMIT_REACHED'
+}
+
+// Surfaces the per-account hourly usage cap through the shared rate-limit
+// channel (so the banner renders) and throws a message the chat recognizes as a
+// rate limit rather than a generic failure. Never returns.
+function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
+  cachedRateLimit = {
+    maxRequests: 0,
+    remaining: 0,
+    resetsAt: parsedError?.resets_at ?? '',
+    kind: 'hourly',
+  }
+  dispatchRateLimitUpdate()
+  throw new Error(
+    parsedError?.error ?? 'You have reached your hourly usage limit.',
+  )
+}
+
+// Mints a stateless JWT inference token for a signed-in user via
+// /api/chat/token. Returns the token on success, or null on any non-rate-limit
+// failure (no active subscription, endpoint disabled, network error) so the
+// caller falls back to the opaque /api/keys/chat path. A subscriber over the
+// hourly cap is surfaced here and not fallen back, so the cap cannot be bypassed
+// through the opaque path.
+async function fetchChatJWT(
+  authBearer: string,
+): Promise<{ key: string; expiresAt: number | null } | null> {
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}/api/chat/token`, {
+      headers: { Authorization: `Bearer ${authBearer}` },
+    })
+  } catch {
+    return null
+  }
+
+  if (response.ok) {
+    try {
+      const data = await response.json()
+      if (typeof data?.key === 'string' && data.key !== '') {
+        const expiresAtMs = data.expires_at
+          ? new Date(data.expires_at).getTime()
+          : null
+        return {
+          key: data.key,
+          expiresAt:
+            expiresAtMs !== null && !Number.isNaN(expiresAtMs)
+              ? expiresAtMs
+              : null,
+        }
+      }
+    } catch {
+      // Malformed / non-JSON 200 body: treat as a miss and fall back to the
+      // opaque /api/keys/chat path rather than throwing.
+    }
+    return null
+  }
+
+  const parsedError = parseErrorBody(await response.text())
+  if (isHourlyLimit(response.status, parsedError)) {
+    surfaceHourlyLimit(parsedError)
+  }
+  return null
 }
 
 async function fetchSessionToken(): Promise<string> {
@@ -102,6 +192,21 @@ async function fetchSessionToken(): Promise<string> {
     cachedSessionTokenExpiresAt = null
   }
 
+  // Signed-in clients mint a stateless JWT inference token via /api/chat/token.
+  // Anonymous users (and signed-in users without an active subscription) fall
+  // back to the opaque /api/keys/chat path below.
+  if (authBearer) {
+    const jwt = await fetchChatJWT(authBearer)
+    if (jwt !== null) {
+      cachedSessionToken = jwt.key
+      cachedSessionTokenWasAuthenticated = true
+      cachedSessionTokenExpiresAt = jwt.expiresAt
+      cachedRateLimit = null
+      dispatchRateLimitUpdate()
+      return jwt.key
+    }
+  }
+
   // Build request headers: include auth if we resolved a bearer above
   const headers: Record<string, string> = {}
   if (authBearer) {
@@ -123,6 +228,16 @@ async function fetchSessionToken(): Promise<string> {
         error: errorText,
       },
     })
+
+    const parsedError = parseErrorBody(errorText)
+
+    // Per-account hourly usage cap: surface it through the shared rate-limit
+    // channel so the existing banner renders, and throw a message the chat
+    // recognizes as a rate limit rather than a generic failure.
+    if (isHourlyLimit(response.status, parsedError)) {
+      surfaceHourlyLimit(parsedError)
+    }
+
     throw new Error(`Failed to get session token: ${response.status}`)
   }
 
@@ -138,6 +253,7 @@ async function fetchSessionToken(): Promise<string> {
       maxRequests: data.rate_limit.max_requests,
       remaining: data.rate_limit.remaining,
       resetsAt: data.rate_limit.resets_at,
+      kind: 'free_daily',
     }
   } else {
     cachedRateLimit = null
