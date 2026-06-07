@@ -29,6 +29,7 @@ import {
   getPasskeyCredentialState,
   getPasskeyDeviceState,
   loadPasskeyCredentials,
+  loadRecoveryCandidates,
   PasskeyCredentialConflictError,
   PasskeyTimeoutError,
   PrfNotSupportedError,
@@ -444,7 +445,7 @@ export function usePasskeyBackup({
     bundleVersion: number
     legacyKek?: CryptoKey
   } | null> => {
-    const entries = await loadPasskeyCredentials()
+    const entries = await loadRecoveryCandidates()
     if (entries.length === 0) return null
 
     const credentialIds = entries.map((e) => e.id)
@@ -1582,7 +1583,7 @@ export function usePasskeyBackup({
    */
   const promoteLegacyPasskeyForCurrentDevice = useCallback(
     async (cekHex: string): Promise<boolean> => {
-      const legacyEntries = (await loadPasskeyCredentials()).filter(
+      const legacyEntries = (await loadRecoveryCandidates()).filter(
         (entry) => entry.source === 'legacy',
       )
       if (legacyEntries.length === 0) return false

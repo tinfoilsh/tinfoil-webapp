@@ -246,6 +246,37 @@ async function loadLegacyFallback(): Promise<PasskeyCredentialEntry[]> {
 }
 
 /**
+ * Candidate set for the recovery wizard. Unlike loadPasskeyCredentials
+ * — which prefers enclave bundles and hides legacy credentials once any
+ * bundle exists — this returns the UNION of the enclave bundles and the
+ * user's legacy credentials (deduped by id, enclave winning conflicts).
+ * That lets a device whose own pre-enclave passkey predates the v2 key
+ * registry still be offered for recovery after another platform has
+ * registered the key, so it can unlock the shared CEK and enroll itself.
+ */
+export async function loadRecoveryCandidates(): Promise<
+  PasskeyCredentialEntry[]
+> {
+  let enclaveEntries: PasskeyCredentialEntry[] = []
+  try {
+    const resp = await enclaveKeyCurrent()
+    if (resp.key_id) {
+      enclaveEntries = Object.values(resp.bundles).map((bundle) => ({
+        ...reshapeBundleToEntry(bundle),
+        source: 'enclave' as const,
+      }))
+    }
+  } catch (err) {
+    if (!(err instanceof SyncEnclaveError) || err.status !== 404) throw err
+  }
+  const legacyEntries = await loadLegacyFallback()
+  const byId = new Map<string, PasskeyCredentialEntry>()
+  for (const entry of legacyEntries) byId.set(entry.id, entry)
+  for (const entry of enclaveEntries) byId.set(entry.id, entry)
+  return [...byId.values()]
+}
+
+/**
  * Legacy bulk-replace. The enclave wire doesn't expose a put-all
  * endpoint — bundles are added/removed individually — so this helper
  * is now a no-op kept only for source compatibility. Callers must
@@ -483,13 +514,21 @@ export async function retrieveEncryptedKeys(
   try {
     const lookup = await tryRetrieveFromEnclave(credentialId, kek)
     if (lookup.bundle) return lookup.bundle
-    // Only fall back to a legacy bundle when the enclave has no
-    // registered key yet. Once an enclave-side key exists, a missing
-    // bundle for this credentialId means the passkey is not paired
-    // with the current CEK — reviving a stale legacy bundle here
-    // would unwrap an old CEK that's already been rotated away.
-    if (lookup.enclaveKeyExists) return null
-    return await tryRetrieveFromLegacy(credentialId, kek)
+    if (!lookup.enclaveKeyExists) {
+      // No registered key yet (or an orphan key with no bundles) — safe
+      // to revive any legacy bundle for this credential.
+      return await tryRetrieveFromLegacy(credentialId, kek)
+    }
+    // A key exists but this credential has no enclave bundle. Revive the
+    // legacy bundle only when it wraps the SAME current CEK — i.e. a v1
+    // user with the same passkey on another platform that hasn't been
+    // enrolled yet. A legacy bundle deriving a different key_id is a
+    // rotated-away CEK and must never be adopted as primary.
+    return await tryRetrieveFromLegacyIfCurrent(
+      credentialId,
+      kek,
+      lookup.currentKeyId,
+    )
   } catch (err) {
     logError('Failed to retrieve encrypted keys', err, {
       component: 'PasskeyKeyStorage',
@@ -502,6 +541,7 @@ export async function retrieveEncryptedKeys(
 interface EnclaveBundleLookup {
   bundle: KeyBundle | null
   enclaveKeyExists: boolean
+  currentKeyId: string | null
 }
 
 async function tryRetrieveFromEnclave(
@@ -510,16 +550,22 @@ async function tryRetrieveFromEnclave(
 ): Promise<EnclaveBundleLookup> {
   try {
     const resp = await enclaveKeyCurrent()
-    if (!resp.key_id) return { bundle: null, enclaveKeyExists: false }
+    if (!resp.key_id) {
+      return { bundle: null, enclaveKeyExists: false, currentKeyId: null }
+    }
     const bundle = resp.bundles[credentialId]
     if (!bundle) {
       // Treat a key with no bundles at all as "no enclave key" so the
       // legacy passkey fallback runs (orphan key from the migrate-all
       // bootstrap). When other bundles exist but none for this
-      // credential, keep blocking the legacy revival — a populated key
-      // means the legacy bundle wraps a rotated-away CEK.
+      // credential, the caller verifies the legacy bundle still wraps
+      // the current key before reviving it.
       const hasAnyBundle = Object.keys(resp.bundles).length > 0
-      return { bundle: null, enclaveKeyExists: hasAnyBundle }
+      return {
+        bundle: null,
+        enclaveKeyExists: hasAnyBundle,
+        currentKeyId: resp.key_id,
+      }
     }
     // Try the v2 raw-CEK shape first — what iOS and the modern
     // webapp flow write. If that succeeds we synthesize the legacy
@@ -535,6 +581,7 @@ async function tryRetrieveFromEnclave(
           alternatives: [],
         },
         enclaveKeyExists: true,
+        currentKeyId: resp.key_id,
       }
     } catch {
       // Pre-v2 webapp wrapped a JSON envelope. Keep the legacy decode
@@ -544,11 +591,15 @@ async function tryRetrieveFromEnclave(
         iv: hexToB64(bundle.kek_iv),
         data: hexToB64(bundle.encrypted_keys),
       })
-      return { bundle: decrypted, enclaveKeyExists: true }
+      return {
+        bundle: decrypted,
+        enclaveKeyExists: true,
+        currentKeyId: resp.key_id,
+      }
     }
   } catch (err) {
     if (err instanceof SyncEnclaveError && err.status === 404) {
-      return { bundle: null, enclaveKeyExists: false }
+      return { bundle: null, enclaveKeyExists: false, currentKeyId: null }
     }
     throw err
   }
@@ -565,4 +616,33 @@ async function tryRetrieveFromLegacy(
     iv: entry.iv,
     data: entry.encrypted_keys,
   })
+}
+
+/**
+ * Revive a legacy bundle for a credential that has no enclave bundle,
+ * but only when the CEK it unwraps matches the enclave's current
+ * key_id. This is the multi-platform case: a v1 user with the same
+ * passkey on another device, where the legacy bundle wraps the very
+ * CEK already registered. A mismatch means the legacy bundle is a
+ * rotated-away key and must not be adopted.
+ */
+async function tryRetrieveFromLegacyIfCurrent(
+  credentialId: string,
+  kek: CryptoKey,
+  currentKeyId: string | null,
+): Promise<KeyBundle | null> {
+  if (!currentKeyId) return null
+  const bundle = await tryRetrieveFromLegacy(credentialId, kek)
+  if (!bundle) return null
+  const primaryBytes = encryptionService.getAlternativeKeyBytes(bundle.primary)
+  if (!primaryBytes) return null
+  const legacyKeyId = await deriveKeyIdHex(primaryBytes)
+  if (legacyKeyId !== currentKeyId) {
+    logInfo('skipping legacy passkey bundle for a rotated-away key', {
+      component: 'PasskeyKeyStorage',
+      action: 'retrieveEncryptedKeys',
+    })
+    return null
+  }
+  return bundle
 }

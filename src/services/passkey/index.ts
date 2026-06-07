@@ -12,6 +12,7 @@ export {
   getPasskeyDeviceState,
   hasPasskeyCredentials,
   loadPasskeyCredentials,
+  loadRecoveryCandidates,
   retrieveEncryptedKeys,
   savePasskeyCredentials,
   storeEncryptedKeys,

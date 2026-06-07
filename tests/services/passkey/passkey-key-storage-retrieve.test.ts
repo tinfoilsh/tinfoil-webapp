@@ -13,7 +13,10 @@ import {
   retrieveEncryptedKeys,
 } from '@/services/passkey/passkey-key-storage'
 import { deriveKeyEncryptionKey } from '@/services/passkey/passkey-service'
-import { wrapCekForCredential } from '@/services/sync-enclave/key-bundle'
+import {
+  deriveKeyIdHex,
+  wrapCekForCredential,
+} from '@/services/sync-enclave/key-bundle'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
@@ -29,10 +32,15 @@ vi.mock('@/services/passkey/legacy-passkey-credentials', () => ({
     mockFetchLegacy(...args),
 }))
 
+// Set by individual tests so the keyId-match check in the multi-platform
+// legacy revival path can be steered.
+let mockAlternativeKeyBytes: Uint8Array | null = null
+
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
     getKey: vi.fn().mockReturnValue('key_test'),
     getKeyBytesOrThrow: () => new TextEncoder().encode('key_test'),
+    getAlternativeKeyBytes: () => mockAlternativeKeyBytes,
     encodeKeyFromBytes: (bytes: Uint8Array) => {
       const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
       let result = ''
@@ -81,6 +89,7 @@ describe('retrieveEncryptedKeys', () => {
   beforeEach(() => {
     mockKeyCurrent.mockReset()
     mockFetchLegacy.mockReset().mockResolvedValue([])
+    mockAlternativeKeyBytes = null
   })
 
   it('returns the CEK when the bundle wraps raw CEK bytes (iOS / v2 webapp shape)', async () => {
@@ -139,7 +148,7 @@ describe('retrieveEncryptedKeys', () => {
     expect(bundle?.alternatives).toEqual(original.alternatives)
   })
 
-  it('returns null when the key has bundles but not for this credential (no legacy revival)', async () => {
+  it('returns null when the key has bundles, this credential has none, and no legacy entry exists', async () => {
     const prf = crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
     const kek = await deriveKeyEncryptionKey(prf)
     mockKeyCurrent.mockResolvedValue({
@@ -158,9 +167,80 @@ describe('retrieveEncryptedKeys', () => {
 
     const bundle = await retrieveEncryptedKeys(CRED_ID, kek)
     expect(bundle).toBeNull()
-    // A populated key means the legacy bundle wraps a rotated-away CEK,
-    // so the legacy fallback must not run.
-    expect(mockFetchLegacy).not.toHaveBeenCalled()
+  })
+
+  it('revives the legacy bundle when it wraps the current CEK (multi-platform same passkey)', async () => {
+    const prf = crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
+    const kek = await deriveKeyEncryptionKey(prf)
+    const original = { primary: 'key_shared_cek', alternatives: [] as string[] }
+    const encrypted = await encryptKeyBundle(kek, original)
+    // The enclave key was registered by another device (other-cred);
+    // its key_id is derived from the SAME CEK this device's legacy
+    // passkey wraps, so the bundle must be revived.
+    mockAlternativeKeyBytes = CEK_BYTES
+    const keyId = await deriveKeyIdHex(CEK_BYTES)
+    mockKeyCurrent.mockResolvedValue({
+      key_id: keyId,
+      etag: '1',
+      bundles: {
+        'other-cred': {
+          credential_id: 'other-cred',
+          kek_iv: '000102030405060708090a0b',
+          encrypted_keys: '0a'.repeat(16),
+          bundle_version: 1,
+        },
+      },
+    })
+    mockFetchLegacy.mockResolvedValue([
+      {
+        id: CRED_ID,
+        iv: encrypted.iv,
+        encrypted_keys: encrypted.data,
+        created_at: '2024-01-01T00:00:00.000Z',
+        version: 1,
+        sync_version: 1,
+      },
+    ])
+
+    const bundle = await retrieveEncryptedKeys(CRED_ID, kek)
+    expect(bundle).not.toBeNull()
+    expect(bundle?.primary).toBe(original.primary)
+  })
+
+  it('skips the legacy bundle when it wraps a rotated-away key (different key_id)', async () => {
+    const prf = crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
+    const kek = await deriveKeyEncryptionKey(prf)
+    const original = {
+      primary: 'key_rotated_away',
+      alternatives: [] as string[],
+    }
+    const encrypted = await encryptKeyBundle(kek, original)
+    mockAlternativeKeyBytes = CEK_BYTES
+    mockKeyCurrent.mockResolvedValue({
+      key_id: 'ff'.repeat(32),
+      etag: '1',
+      bundles: {
+        'other-cred': {
+          credential_id: 'other-cred',
+          kek_iv: '000102030405060708090a0b',
+          encrypted_keys: '0a'.repeat(16),
+          bundle_version: 1,
+        },
+      },
+    })
+    mockFetchLegacy.mockResolvedValue([
+      {
+        id: CRED_ID,
+        iv: encrypted.iv,
+        encrypted_keys: encrypted.data,
+        created_at: '2024-01-01T00:00:00.000Z',
+        version: 1,
+        sync_version: 1,
+      },
+    ])
+
+    const bundle = await retrieveEncryptedKeys(CRED_ID, kek)
+    expect(bundle).toBeNull()
   })
 
   it('falls back to the legacy passkey when the enclave key has no bundles (orphan key)', async () => {

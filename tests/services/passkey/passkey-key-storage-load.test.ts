@@ -11,6 +11,7 @@ import {
   getPasskeyCredentialState,
   hasPasskeyCredentials,
   loadPasskeyCredentials,
+  loadRecoveryCandidates,
 } from '@/services/passkey/passkey-key-storage'
 import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -185,6 +186,87 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
       mockFetchLegacy.mockResolvedValue([])
       expect(await loadPasskeyCredentials()).toEqual([])
+    })
+  })
+
+  describe('loadRecoveryCandidates', () => {
+    it('merges enclave bundles with the legacy credentials (multi-platform)', async () => {
+      // The enclave already has a bundle for the first device (cred-a),
+      // while this second device only has its own legacy passkey
+      // (cred-b). Recovery must offer BOTH so cred-b can authenticate.
+      mockKeyCurrent.mockResolvedValue({
+        key_id: 'abc',
+        bundles: {
+          'cred-a': {
+            credential_id: 'cred-a',
+            kek_iv: '000102030405060708090a0b',
+            encrypted_keys: '0a'.repeat(16),
+            bundle_version: 1,
+          },
+        },
+      })
+      mockFetchLegacy.mockResolvedValue([
+        {
+          id: 'cred-b',
+          encrypted_keys: 'legacy-data',
+          iv: 'legacy-iv',
+          created_at: '2024-01-01T00:00:00.000Z',
+          version: 1,
+          sync_version: 1,
+        },
+      ])
+
+      const entries = await loadRecoveryCandidates()
+      const ids = entries.map((e) => e.id).sort()
+      expect(ids).toEqual(['cred-a', 'cred-b'])
+      expect(entries.find((e) => e.id === 'cred-a')?.source).toBe('enclave')
+      expect(entries.find((e) => e.id === 'cred-b')?.source).toBe('legacy')
+    })
+
+    it('prefers the enclave entry when an id is in both sources', async () => {
+      mockKeyCurrent.mockResolvedValue({
+        key_id: 'abc',
+        bundles: {
+          'cred-a': {
+            credential_id: 'cred-a',
+            kek_iv: '000102030405060708090a0b',
+            encrypted_keys: '0a'.repeat(16),
+            bundle_version: 1,
+          },
+        },
+      })
+      mockFetchLegacy.mockResolvedValue([
+        {
+          id: 'cred-a',
+          encrypted_keys: 'legacy-data',
+          iv: 'legacy-iv',
+          created_at: '2024-01-01T00:00:00.000Z',
+          version: 1,
+          sync_version: 1,
+        },
+      ])
+
+      const entries = await loadRecoveryCandidates()
+      expect(entries).toHaveLength(1)
+      expect(entries[0].source).toBe('enclave')
+    })
+
+    it('returns only legacy entries when no enclave key exists', async () => {
+      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+      mockFetchLegacy.mockResolvedValue([
+        {
+          id: 'cred-b',
+          encrypted_keys: 'legacy-data',
+          iv: 'legacy-iv',
+          created_at: '2024-01-01T00:00:00.000Z',
+          version: 1,
+          sync_version: 1,
+        },
+      ])
+
+      const entries = await loadRecoveryCandidates()
+      expect(entries).toHaveLength(1)
+      expect(entries[0].source).toBe('legacy')
     })
   })
 

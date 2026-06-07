@@ -410,25 +410,17 @@ export async function unlockFromServer(opts?: {
  * `keyCurrent()` reads will find the bundle in `user_key_bundles` and
  * the legacy fallback will no longer trigger.
  *
- * No-op if the enclave already reports a key for the user (someone
- * else promoted concurrently).
+ * When the enclave already reports a key for the user that matches the
+ * recovered CEK (e.g. another platform migrated first), this enrolls
+ * the device's passkey as an additional bundle instead of registering.
+ * It refuses (remote_key_exists) only when the live key differs from
+ * the recovered CEK, so a rotated-away key is never clobbered.
  */
 export async function promoteRecoveredCekToEnclave(opts: {
   cekHex: string
   credentialId: string
   kek: CryptoKey
 }): Promise<{ ok: true; keyIdHex: string } | { ok: false; reason: string }> {
-  try {
-    const existing = await enclaveKeyCurrent()
-    if (existing.key_id) {
-      return { ok: true, keyIdHex: existing.key_id }
-    }
-  } catch (err) {
-    if (!(err instanceof SyncEnclaveError) || err.status !== 404) {
-      return { ok: false, reason: 'enclave_unavailable' }
-    }
-  }
-
   const cek = cekHexToBytes(opts.cekHex)
   const keyIdHex = await deriveKeyIdHex(cek)
   let bundle: BundleBody
@@ -445,6 +437,54 @@ export async function promoteRecoveredCekToEnclave(opts: {
       { component: 'passkey-key-flow', action: 'promoteRecoveredCek' },
     )
     return { ok: false, reason: 'bundle_decrypt_failed' }
+  }
+
+  // A key may already exist when another platform migrated first. In
+  // that case we don't re-register — we enroll THIS device's passkey as
+  // an additional bundle so future sessions unlock via the v2 wire.
+  let existing: KeyCurrentResponse | null = null
+  try {
+    existing = await enclaveKeyCurrent()
+  } catch (err) {
+    if (!(err instanceof SyncEnclaveError) || err.status !== 404) {
+      return { ok: false, reason: 'enclave_unavailable' }
+    }
+  }
+  if (existing?.key_id) {
+    if (existing.key_id !== keyIdHex) {
+      // The live primary is a different (rotated-away) key. Never clobber
+      // it; the caller re-runs recovery against whatever the enclave reports.
+      return { ok: false, reason: 'remote_key_exists' }
+    }
+    const alreadyEnrolled = Object.values(existing.bundles).some(
+      (b) => b.credential_id === opts.credentialId,
+    )
+    if (alreadyEnrolled) {
+      return { ok: true, keyIdHex: existing.key_id }
+    }
+    try {
+      await enclaveAddBundle({
+        keyId: existing.key_id,
+        keyB64: hexToB64(opts.cekHex),
+        credentialId: bundle.credentialId,
+        kekIvHex: bundle.kekIvHex,
+        encryptedKeysHex: bundle.wrappedKeyHex,
+        idempotencyKey: newIdempotencyKey(),
+      })
+    } catch (err) {
+      logError(
+        'enclave addBundle failed during recovery promotion',
+        err instanceof Error ? err : new Error(String(err)),
+        { component: 'passkey-key-flow', action: 'promoteRecoveredCek' },
+      )
+      return { ok: false, reason: 'register_failed' }
+    }
+    logInfo('enrolled this device passkey into existing enclave key', {
+      component: 'passkey-key-flow',
+      action: 'promoteRecoveredCek',
+      metadata: { keyIdHex, credentialId: opts.credentialId },
+    })
+    return { ok: true, keyIdHex: existing.key_id }
   }
 
   try {

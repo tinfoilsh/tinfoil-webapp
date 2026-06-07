@@ -229,6 +229,101 @@ describe('passkey-key-flow', () => {
     })
   })
 
+  describe('promoteRecoveredCekToEnclave', () => {
+    it('registers key + bundle when no key exists yet', async () => {
+      const cek = crypto.getRandomValues(new Uint8Array(32))
+      const cekHex = cekBytesToHex(cek)
+      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+      mockRegisterKey.mockResolvedValue({ ok: true })
+      const result = await flow.promoteRecoveredCekToEnclave({
+        cekHex,
+        credentialId: 'cred-a',
+        kek: await importKek(0xa1),
+      })
+      expect(result.ok).toBe(true)
+      expect(mockRegisterKey).toHaveBeenCalledOnce()
+      expect(mockAddBundle).not.toHaveBeenCalled()
+    })
+
+    it('adds this device bundle when a matching key already exists', async () => {
+      const cek = crypto.getRandomValues(new Uint8Array(32))
+      const cekHex = cekBytesToHex(cek)
+      const keyIdHex = await deriveKeyIdHex(cek)
+      // Another platform already registered the same CEK under cred-a;
+      // this device (cred-b) must enroll itself, not re-register.
+      mockKeyCurrent.mockResolvedValue({
+        key_id: keyIdHex,
+        bundles: {
+          'cred-a': {
+            credential_id: 'cred-a',
+            kek_iv: '00',
+            encrypted_keys: '01',
+          },
+        },
+      })
+      mockAddBundle.mockResolvedValue({ ok: true })
+      const result = await flow.promoteRecoveredCekToEnclave({
+        cekHex,
+        credentialId: 'cred-b',
+        kek: await importKek(0xb2),
+      })
+      expect(result.ok).toBe(true)
+      expect(mockRegisterKey).not.toHaveBeenCalled()
+      expect(mockAddBundle).toHaveBeenCalledOnce()
+      expect(mockAddBundle.mock.calls[0][0].credentialId).toBe('cred-b')
+      expect(mockAddBundle.mock.calls[0][0].keyId).toBe(keyIdHex)
+    })
+
+    it('is a no-op when this device is already enrolled', async () => {
+      const cek = crypto.getRandomValues(new Uint8Array(32))
+      const cekHex = cekBytesToHex(cek)
+      const keyIdHex = await deriveKeyIdHex(cek)
+      mockKeyCurrent.mockResolvedValue({
+        key_id: keyIdHex,
+        bundles: {
+          'cred-a': {
+            credential_id: 'cred-a',
+            kek_iv: '00',
+            encrypted_keys: '01',
+          },
+        },
+      })
+      const result = await flow.promoteRecoveredCekToEnclave({
+        cekHex,
+        credentialId: 'cred-a',
+        kek: await importKek(0xa1),
+      })
+      expect(result.ok).toBe(true)
+      expect(mockAddBundle).not.toHaveBeenCalled()
+      expect(mockRegisterKey).not.toHaveBeenCalled()
+    })
+
+    it('refuses when the live key is a different (rotated-away) CEK', async () => {
+      const cek = crypto.getRandomValues(new Uint8Array(32))
+      const cekHex = cekBytesToHex(cek)
+      mockKeyCurrent.mockResolvedValue({
+        key_id: 'ff'.repeat(16),
+        bundles: {
+          'cred-x': {
+            credential_id: 'cred-x',
+            kek_iv: '00',
+            encrypted_keys: '01',
+          },
+        },
+      })
+      const result = await flow.promoteRecoveredCekToEnclave({
+        cekHex,
+        credentialId: 'cred-b',
+        kek: await importKek(0xb2),
+      })
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.reason).toBe('remote_key_exists')
+      expect(mockAddBundle).not.toHaveBeenCalled()
+      expect(mockRegisterKey).not.toHaveBeenCalled()
+    })
+  })
+
   describe('fetchServerKeyState', () => {
     it('returns empty when the enclave has no key for the user', async () => {
       mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
