@@ -28,6 +28,8 @@ const mockEncryptionInitialize = vi.fn()
 const mockGetKey = vi.fn()
 const mockRunLegacyBlobMigration = vi.fn()
 const mockRunLegacyChatEviction = vi.fn()
+const mockKeyCurrent = vi.fn()
+const mockPrimaryKeyIdHex = vi.fn()
 
 const mockIsStreaming = vi.fn()
 const mockOnStreamEnd = vi.fn()
@@ -93,6 +95,16 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   },
 }))
 
+vi.mock('@/services/sync-enclave/sync-api', () => ({
+  keyCurrent: (...args: any[]) => mockKeyCurrent(...args),
+  newIdempotencyKey: () => 'idem-test-key',
+}))
+
+vi.mock('@/services/cloud/cek-encoding', () => ({
+  hasPrimaryKey: () => mockGetKey() != null,
+  primaryKeyIdHexOrNull: (...args: any[]) => mockPrimaryKeyIdHex(...args),
+}))
+
 vi.mock('@/services/cloud/streaming-tracker', () => ({
   streamingTracker: {
     isStreaming: (...args: any[]) => mockIsStreaming(...args),
@@ -133,6 +145,8 @@ describe('CloudSyncService', () => {
     mockResetSyncMetadataForAllChats.mockResolvedValue(undefined)
     mockDeleteChat.mockResolvedValue(undefined)
     mockGetKey.mockReturnValue(null)
+    mockKeyCurrent.mockResolvedValue({ key_id: null })
+    mockPrimaryKeyIdHex.mockResolvedValue(null)
     mockRunLegacyBlobMigration.mockResolvedValue({
       scopes: [],
       totalMigrated: 0,
@@ -573,7 +587,7 @@ describe('CloudSyncService', () => {
       expect(mockListChats).toHaveBeenCalledTimes(1)
     })
 
-    it('defers the legacy blob migration until a primary key is loaded', async () => {
+    it('defers the legacy blob migration until the local key is the registered current key', async () => {
       mockGetUnsyncedChats.mockResolvedValue([])
       mockGetAllChats.mockResolvedValue([])
       mockListChats.mockResolvedValue({
@@ -581,24 +595,47 @@ describe('CloudSyncService', () => {
         hasMore: false,
       })
 
+      // The migration kick is fire-and-forget, so flush microtasks
+      // after each sync before asserting on its async gate.
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
       const service = new CloudSyncService()
 
-      // A keyless device (e.g. a v1->v2 user still waiting on passkey
-      // recovery) can trigger a sync before the key arrives. The
-      // migration must not be kicked yet, and the once-per-session
-      // latch must not be consumed.
+      // 1. Keyless device (e.g. a v1->v2 user still waiting on passkey
+      // recovery): the migration must not be kicked yet, and the
+      // once-per-session latch must not be consumed.
       mockGetKey.mockReturnValue(null)
       await service.syncAllChats()
+      await flush()
       expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
 
-      // Once the key is recovered the next sync kicks the migration,
-      // so the user's key gets registered and legacy rows re-sealed.
+      // 2. Key loaded locally but not yet registered as the
+      // controlplane's current key. migrate-all would storm the rewrap
+      // endpoint with 409 stale key, so it must not fire and the latch
+      // must stay free for a later retry.
       mockGetKey.mockReturnValue('key_recovered')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null })
       await service.syncAllChats()
+      await flush()
+      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
+
+      // 3. A different key is registered as current: still a mismatch,
+      // still no kick.
+      mockKeyCurrent.mockResolvedValue({ key_id: 'kid-other' })
+      await service.syncAllChats()
+      await flush()
+      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
+
+      // 4. Once the local key is the registered current key the
+      // migration kicks exactly once.
+      mockKeyCurrent.mockResolvedValue({ key_id: 'kid-local' })
+      await service.syncAllChats()
+      await flush()
       expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
 
       // Subsequent syncs in the same session are a no-op.
       await service.syncAllChats()
+      await flush()
       expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
     })
   })

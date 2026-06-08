@@ -8,6 +8,7 @@
  */
 
 import { encryptionService } from '../encryption/encryption-service'
+import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import { bytesToBase64, type PullKey } from '../sync-enclave/sync-api'
 
 /**
@@ -31,6 +32,19 @@ export function requirePrimaryKeyB64(): string {
  */
 export function hasPrimaryKey(): boolean {
   return encryptionService.getKey() != null
+}
+
+/**
+ * Derive the controlplane key_id (hex) of the loaded primary CEK, or
+ * null when no key is loaded. Callers use this to confirm the local
+ * key is the controlplane's registered current key before running the
+ * legacy-blob migration: migrate-all re-seals rows via Rewrap, which
+ * the controlplane rejects with 409 stale key unless the target key is
+ * already the current key.
+ */
+export async function primaryKeyIdHexOrNull(): Promise<string | null> {
+  if (encryptionService.getKey() == null) return null
+  return deriveKeyIdHex(encryptionService.getKeyBytesOrThrow())
 }
 
 /**

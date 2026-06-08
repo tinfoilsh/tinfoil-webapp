@@ -10,8 +10,8 @@ import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
 import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
 import { decideRecovery } from '../sync-enclave/enclave-error-recovery'
 import { passkeyEvents } from '../sync-enclave/passkey-events'
-import { newIdempotencyKey } from '../sync-enclave/sync-api'
-import { hasPrimaryKey } from './cek-encoding'
+import { keyCurrent, newIdempotencyKey } from '../sync-enclave/sync-api'
+import { hasPrimaryKey, primaryKeyIdHexOrNull } from './cek-encoding'
 import { processRemoteChat } from './chat-codec'
 import { ingestRemoteChats, syncRemoteDeletions } from './chat-ingestion'
 import { canWriteToCloud } from './cloud-key-authorization'
@@ -1106,7 +1106,7 @@ export class CloudSyncService {
 
       // Detect cross-scope moves (chats moving between projects)
       await this.syncCrossScope(result)
-      this.kickLegacyBlobMigration()
+      void this.kickLegacyBlobMigration()
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error))
     }
@@ -1121,7 +1121,7 @@ export class CloudSyncService {
    * rows. Runs at most once per session — any subsequent foreground
    * trigger is a no-op on the enclave side anyway.
    */
-  private kickLegacyBlobMigration(): void {
+  private async kickLegacyBlobMigration(): Promise<void> {
     if (this.legacyMigrationKicked) {
       return
     }
@@ -1134,6 +1134,32 @@ export class CloudSyncService {
     // must run once the key is recovered, leaving the legacy rows
     // unsealed and the user's key unregistered on the controlplane.
     if (!hasPrimaryKey()) {
+      return
+    }
+    // Only migrate once the local primary CEK is the controlplane's
+    // registered current key. migrate-all re-seals every legacy row
+    // under that CEK via Rewrap, which the controlplane rejects with
+    // 409 stale key unless it is already the current key. A v1→v2 user
+    // can hold a primary CEK locally (cached/recovered) before it has
+    // been registered/recovered on the controlplane; kicking the
+    // migration then drives a doomed rewrap loop against every row.
+    // Don't latch on a mismatch or transient lookup failure so a later
+    // sync retries once the recovery flow registers the key.
+    let currentKeyId: string | null
+    try {
+      currentKeyId = (await keyCurrent()).key_id
+    } catch (err) {
+      logError('Legacy migration gate: current key lookup failed', err, {
+        component: 'CloudSync',
+        action: 'kickLegacyBlobMigration',
+      })
+      return
+    }
+    const localKeyId = await primaryKeyIdHexOrNull()
+    if (!currentKeyId || !localKeyId || currentKeyId !== localKeyId) {
+      return
+    }
+    if (this.legacyMigrationKicked) {
       return
     }
     this.legacyMigrationKicked = true
@@ -1182,7 +1208,7 @@ export class CloudSyncService {
     // migration was gated behind a successful sync. The kick is
     // session-idempotent and fire-and-forget, so calling it on
     // every smartSync entry is safe.
-    this.kickLegacyBlobMigration()
+    void this.kickLegacyBlobMigration()
 
     // Note: smartSync doesn't need its own lock because it delegates to
     // syncChangedChats/syncAllChats/syncProjectChats which have their own locks
