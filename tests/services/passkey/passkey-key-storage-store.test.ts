@@ -112,6 +112,24 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(mockRegisterKey.mock.calls[0][0].createdVia).toBe('start_fresh')
   })
 
+  it('adopts the existing CEK via created_via=recovery when legacy data exists', async () => {
+    mockKeyCurrent
+      .mockResolvedValueOnce({ key_id: null, has_data: true, bundles: {} })
+      .mockResolvedValueOnce({
+        key_id: expectedKeyId,
+        bundles: { 'cred-1': { bundle_version: 1 } },
+      })
+    mockRegisterKey.mockResolvedValue({ ok: true, key_id: expectedKeyId })
+
+    await storeEncryptedKeys('cred-1', kek, KEY_BUNDLE)
+
+    expect(mockRegisterKey).toHaveBeenCalledOnce()
+    const arg = mockRegisterKey.mock.calls[0][0]
+    expect(arg.createdVia).toBe('recovery')
+    // The bundle is still attached so the adopted key is never stranded.
+    expect(arg.initialBundle.credentialId).toBe('cred-1')
+  })
+
   it('maps EXISTING_DATA_UNDER_OTHER_KEY from register-key to a credential conflict', async () => {
     mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
     mockRegisterKey.mockRejectedValue(

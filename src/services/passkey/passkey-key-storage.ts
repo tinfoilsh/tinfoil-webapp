@@ -405,10 +405,19 @@ export async function storeEncryptedKeys(
         await enclaveRegisterKey({
           keyB64: bytesToBase64(primaryBytes),
           ifMatch: IF_MATCH_SENTINELS.AnyKey,
+          // When the controlplane reports un-migrated legacy data
+          // (key_id IS NULL rows) but no current key, this CEK is the
+          // existing v1 key being adopted into v2, not a brand-new one.
+          // Register it as 'recovery' so the cross-key guard allows it
+          // (a fresh 'passkey' key is refused over legacy data) and the
+          // legacy rows can then re-seal under it. The bundle is still
+          // attached, so the key is never stranded without a passkey.
           createdVia:
             keys.authorizationMode === 'explicit_start_fresh'
               ? 'start_fresh'
-              : 'passkey',
+              : current.has_data
+                ? 'recovery'
+                : 'passkey',
           idempotencyKey: newIdempotencyKey(),
           initialBundle: {
             credentialId,
