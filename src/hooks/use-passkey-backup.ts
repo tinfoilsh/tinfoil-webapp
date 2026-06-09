@@ -971,7 +971,10 @@ export function usePasskeyBackup({
                 passkeyRetryAvailable: false,
               }))
             }
-          } else if (!manualRecoveryDismissedFlag.isSet()) {
+          } else if (
+            remoteState === 'exists' &&
+            !manualRecoveryDismissedFlag.isSet()
+          ) {
             // Remote data exists but PRF is unavailable on this device.
             // Surface both the recovery-needed flag (so the unlock modal
             // can open when sync is enabled) and the warning (so the user
@@ -985,6 +988,15 @@ export function usePasskeyBackup({
               passkeySetupFailed: setupWarningDismissedFlag.isSet()
                 ? prev.passkeySetupFailed
                 : true,
+              passkeyRetryAvailable: false,
+            }))
+          } else if (
+            remoteState === 'unknown' &&
+            !backupWarningDismissedFlag.isSet()
+          ) {
+            setState((prev) => ({
+              ...prev,
+              passkeySetupFailed: true,
               passkeyRetryAvailable: false,
             }))
           }
@@ -1069,6 +1081,7 @@ export function usePasskeyBackup({
               }))
             }
           } else if (
+            remoteState === 'exists' &&
             isMountedRef.current &&
             !manualRecoveryDismissedFlag.isSet()
           ) {
@@ -1090,6 +1103,18 @@ export function usePasskeyBackup({
                 ? prev.passkeySetupFailed
                 : true,
               passkeyRetryAvailable: false,
+            }))
+          } else if (
+            remoteState === 'unknown' &&
+            isMountedRef.current &&
+            !setupWarningDismissedFlag.isSet()
+          ) {
+            setState((prev) => ({
+              ...prev,
+              manualRecoveryNeeded: false,
+              passkeyFirstTimePromptAvailable: false,
+              passkeySetupFailed: true,
+              passkeyRetryAvailable: true,
             }))
           }
         } else if (
@@ -1472,7 +1497,23 @@ export function usePasskeyBackup({
         getPasskeyCredentialState(),
         inspectRemoteEncryptedState(),
       ])
-      if (credentialState !== 'empty' || remoteState !== 'empty') {
+      if (credentialState !== 'empty') {
+        return false
+      }
+      if (remoteState === 'exists') {
+        return false
+      }
+      if (remoteState === 'unknown') {
+        setupWarningDismissedFlag.clear()
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            manualRecoveryNeeded: false,
+            passkeyFirstTimePromptAvailable: false,
+            passkeySetupFailed: true,
+            passkeyRetryAvailable: true,
+          }))
+        }
         return false
       }
     } catch {
