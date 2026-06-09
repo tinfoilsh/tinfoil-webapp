@@ -30,6 +30,9 @@ const mockRunLegacyBlobMigration = vi.fn()
 const mockRunLegacyChatEviction = vi.fn()
 const mockKeyCurrent = vi.fn()
 const mockPrimaryKeyIdHex = vi.fn()
+const mockRegisterKey = vi.fn()
+const mockGetPasskeyCredentialState = vi.fn()
+const mockRequirePrimaryKeyB64 = vi.fn()
 
 const mockIsStreaming = vi.fn()
 const mockOnStreamEnd = vi.fn()
@@ -98,11 +101,18 @@ vi.mock('@/services/encryption/encryption-service', () => ({
 vi.mock('@/services/sync-enclave/sync-api', () => ({
   keyCurrent: (...args: any[]) => mockKeyCurrent(...args),
   newIdempotencyKey: () => 'idem-test-key',
+  registerKey: (...args: any[]) => mockRegisterKey(...args),
+}))
+
+vi.mock('@/services/passkey', () => ({
+  getPasskeyCredentialState: (...args: any[]) =>
+    mockGetPasskeyCredentialState(...args),
 }))
 
 vi.mock('@/services/cloud/cek-encoding', () => ({
   hasPrimaryKey: () => mockGetKey() != null,
   primaryKeyIdHexOrNull: (...args: any[]) => mockPrimaryKeyIdHex(...args),
+  requirePrimaryKeyB64: (...args: any[]) => mockRequirePrimaryKeyB64(...args),
 }))
 
 vi.mock('@/services/cloud/streaming-tracker', () => ({
@@ -147,6 +157,9 @@ describe('CloudSyncService', () => {
     mockGetKey.mockReturnValue(null)
     mockKeyCurrent.mockResolvedValue({ key_id: null })
     mockPrimaryKeyIdHex.mockResolvedValue(null)
+    mockRegisterKey.mockResolvedValue({ key_id: 'kid-local' })
+    mockGetPasskeyCredentialState.mockResolvedValue('empty')
+    mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
     mockRunLegacyBlobMigration.mockResolvedValue({
       scopes: [],
       totalMigrated: 0,
@@ -637,6 +650,58 @@ describe('CloudSyncService', () => {
       await service.syncAllChats()
       await flush()
       expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('adopts the local key without a passkey so legacy data can migrate', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      // v1->v2 user with a local CEK and legacy data on the server, but
+      // no registered current key and no passkey credential anywhere.
+      // The CEK is adopted as the current key (bundleless, recovery) so
+      // the rewrap gate passes and migration runs.
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockGetPasskeyCredentialState.mockResolvedValue('empty')
+      mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRegisterKey.mock.calls[0]?.[0]).toMatchObject({
+        keyB64: 'cek-b64',
+        ifMatch: '*',
+        createdVia: 'recovery',
+      })
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not adopt the local key when a passkey credential exists', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      // Same legacy state, but the user has a passkey: registering a
+      // bundleless key here would hide the recoverable passkey, so the
+      // adoption must be skipped and migration deferred to the passkey
+      // recovery flow.
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockGetPasskeyCredentialState.mockResolvedValue('exists')
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockRegisterKey).not.toHaveBeenCalled()
+      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
     })
   })
 

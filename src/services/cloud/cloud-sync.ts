@@ -5,13 +5,23 @@ import {
   SYNC_PROJECT_CHAT_STATUS_PREFIX,
 } from '@/constants/storage-keys'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
+import { getPasskeyCredentialState } from '../passkey'
 import { chatEvents } from '../storage/chat-events'
 import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
 import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
 import { decideRecovery } from '../sync-enclave/enclave-error-recovery'
 import { passkeyEvents } from '../sync-enclave/passkey-events'
-import { keyCurrent, newIdempotencyKey } from '../sync-enclave/sync-api'
-import { hasPrimaryKey, primaryKeyIdHexOrNull } from './cek-encoding'
+import {
+  keyCurrent,
+  newIdempotencyKey,
+  registerKey,
+} from '../sync-enclave/sync-api'
+import { IF_MATCH_SENTINELS } from '../sync-enclave/wire-contract'
+import {
+  hasPrimaryKey,
+  primaryKeyIdHexOrNull,
+  requirePrimaryKeyB64,
+} from './cek-encoding'
 import { processRemoteChat } from './chat-codec'
 import { ingestRemoteChats, syncRemoteDeletions } from './chat-ingestion'
 import { canWriteToCloud } from './cloud-key-authorization'
@@ -1145,9 +1155,9 @@ export class CloudSyncService {
     // migration then drives a doomed rewrap loop against every row.
     // Don't latch on a mismatch or transient lookup failure so a later
     // sync retries once the recovery flow registers the key.
-    let currentKeyId: string | null
+    let current: Awaited<ReturnType<typeof keyCurrent>>
     try {
-      currentKeyId = (await keyCurrent()).key_id
+      current = await keyCurrent()
     } catch (err) {
       logError('Legacy migration gate: current key lookup failed', err, {
         component: 'CloudSync',
@@ -1156,6 +1166,19 @@ export class CloudSyncService {
       return
     }
     const localKeyId = await primaryKeyIdHexOrNull()
+    let currentKeyId = current.key_id
+    // A v1→v2 user can hold legacy data and a local CEK without ever
+    // registering it as the current key — e.g. they have no passkey, so
+    // none of the passkey/recovery flows that normally register the key
+    // ever run, and nothing else would migrate them. Adopt the local CEK
+    // as the current key here so the rewrap gate below passes. Guarded on
+    // "no passkey credential" so a recoverable passkey is never hidden
+    // behind a bundleless key.
+    if (!currentKeyId && current.has_data && localKeyId) {
+      if (await this.adoptLocalKeyForPasskeylessMigration()) {
+        currentKeyId = localKeyId
+      }
+    }
     if (!currentKeyId || !localKeyId || currentKeyId !== localKeyId) {
       return
     }
@@ -1194,6 +1217,60 @@ export class CloudSyncService {
           action: 'kickLegacyBlobMigration',
         })
       })
+  }
+
+  /**
+   * Register the local primary CEK as the controlplane's current key for
+   * a user who has legacy data but no registered key and no passkey to
+   * recover with. Without this a passkey-less v1→v2 user could never
+   * migrate: nothing registers their CEK, so every rewrap is gated out.
+   *
+   * The key is registered bundleless with created_via='recovery', which
+   * the controlplane accepts non-destructively over legacy (key_id NULL)
+   * rows. Guarded on the user having no passkey credential anywhere: a
+   * user with a passkey (enclave bundle or legacy credential) must
+   * register through the passkey/recovery path so their key keeps a
+   * recoverable bundle. Returns true when the key was adopted.
+   */
+  private async adoptLocalKeyForPasskeylessMigration(): Promise<boolean> {
+    let credentialState: Awaited<ReturnType<typeof getPasskeyCredentialState>>
+    try {
+      credentialState = await getPasskeyCredentialState()
+    } catch {
+      return false
+    }
+    if (credentialState !== 'empty') {
+      return false
+    }
+    let keyB64: string
+    try {
+      keyB64 = requirePrimaryKeyB64()
+    } catch {
+      return false
+    }
+    try {
+      await registerKey({
+        keyB64,
+        ifMatch: IF_MATCH_SENTINELS.AnyKey,
+        createdVia: 'recovery',
+        idempotencyKey: newIdempotencyKey(),
+      })
+    } catch (err) {
+      logError('Failed to adopt local key for passkey-less migration', err, {
+        component: 'CloudSync',
+        action: 'adoptLocalKeyForPasskeylessMigration',
+      })
+      return false
+    }
+    logInfo(
+      'Adopted local key as current to enable migration without a passkey',
+      {
+        component: 'CloudSync',
+        action: 'adoptLocalKeyForPasskeylessMigration',
+      },
+    )
+    passkeyEvents.emit({ type: 'bundle-state-maybe-changed' })
+    return true
   }
 
   /**
