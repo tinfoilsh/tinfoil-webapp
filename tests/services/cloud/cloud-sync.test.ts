@@ -31,7 +31,6 @@ const mockRunLegacyChatEviction = vi.fn()
 const mockKeyCurrent = vi.fn()
 const mockPrimaryKeyIdHex = vi.fn()
 const mockRegisterKey = vi.fn()
-const mockGetPasskeyCredentialState = vi.fn()
 const mockRequirePrimaryKeyB64 = vi.fn()
 
 const mockIsStreaming = vi.fn()
@@ -104,11 +103,6 @@ vi.mock('@/services/sync-enclave/sync-api', () => ({
   registerKey: (...args: any[]) => mockRegisterKey(...args),
 }))
 
-vi.mock('@/services/passkey', () => ({
-  getPasskeyCredentialState: (...args: any[]) =>
-    mockGetPasskeyCredentialState(...args),
-}))
-
 vi.mock('@/services/cloud/cek-encoding', () => ({
   hasPrimaryKey: () => mockGetKey() != null,
   primaryKeyIdHexOrNull: (...args: any[]) => mockPrimaryKeyIdHex(...args),
@@ -158,7 +152,6 @@ describe('CloudSyncService', () => {
     mockKeyCurrent.mockResolvedValue({ key_id: null })
     mockPrimaryKeyIdHex.mockResolvedValue(null)
     mockRegisterKey.mockResolvedValue({ key_id: 'kid-local' })
-    mockGetPasskeyCredentialState.mockResolvedValue('empty')
     mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
     mockRunLegacyBlobMigration.mockResolvedValue({
       scopes: [],
@@ -652,20 +645,20 @@ describe('CloudSyncService', () => {
       expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
     })
 
-    it('adopts the local key without a passkey so legacy data can migrate', async () => {
+    it('adopts the local key so legacy data can migrate without a passkey', async () => {
       mockGetUnsyncedChats.mockResolvedValue([])
       mockGetAllChats.mockResolvedValue([])
       mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
       const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
       // v1->v2 user with a local CEK and legacy data on the server, but
-      // no registered current key and no passkey credential anywhere.
-      // The CEK is adopted as the current key (bundleless, recovery) so
-      // the rewrap gate passes and migration runs.
+      // no registered current key. The CEK is adopted as the current key
+      // (bundleless, recovery) so the rewrap gate passes and migration
+      // runs — no passkey required, and a legacy passkey wrapping the
+      // same CEK would stay promotable afterwards.
       mockGetKey.mockReturnValue('key_local')
       mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
       mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
-      mockGetPasskeyCredentialState.mockResolvedValue('empty')
       mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
 
       const service = new CloudSyncService()
@@ -681,20 +674,19 @@ describe('CloudSyncService', () => {
       expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
     })
 
-    it('does not adopt the local key when a passkey credential exists', async () => {
+    it('does not adopt the local key when the server reports no legacy data', async () => {
       mockGetUnsyncedChats.mockResolvedValue([])
       mockGetAllChats.mockResolvedValue([])
       mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
       const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-      // Same legacy state, but the user has a passkey: registering a
-      // bundleless key here would hide the recoverable passkey, so the
-      // adoption must be skipped and migration deferred to the passkey
-      // recovery flow.
+      // Local CEK present and no registered key, but the server has no
+      // legacy data to migrate (has_data false). Adopting would register
+      // a key for a user who has nothing to re-seal, so it must be
+      // skipped and migration must not run.
       mockGetKey.mockReturnValue('key_local')
       mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
-      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
-      mockGetPasskeyCredentialState.mockResolvedValue('exists')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: false })
 
       const service = new CloudSyncService()
       await service.syncAllChats()

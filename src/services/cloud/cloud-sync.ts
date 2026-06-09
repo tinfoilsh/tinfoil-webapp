@@ -5,7 +5,6 @@ import {
   SYNC_PROJECT_CHAT_STATUS_PREFIX,
 } from '@/constants/storage-keys'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
-import { getPasskeyCredentialState } from '../passkey'
 import { chatEvents } from '../storage/chat-events'
 import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
 import { indexedDBStorage, type StoredChat } from '../storage/indexed-db'
@@ -1168,14 +1167,14 @@ export class CloudSyncService {
     const localKeyId = await primaryKeyIdHexOrNull()
     let currentKeyId = current.key_id
     // A v1→v2 user can hold legacy data and a local CEK without ever
-    // registering it as the current key — e.g. they have no passkey, so
-    // none of the passkey/recovery flows that normally register the key
-    // ever run, and nothing else would migrate them. Adopt the local CEK
-    // as the current key here so the rewrap gate below passes. Guarded on
-    // "no passkey credential" so a recoverable passkey is never hidden
-    // behind a bundleless key.
+    // registering it as the current key — e.g. they have no passkey, or
+    // only an un-promoted legacy passkey, so none of the passkey/recovery
+    // flows that normally register the key ever run, and nothing else
+    // would migrate them. Adopt the local CEK as the current key here so
+    // the rewrap gate below passes. Safe because we already hold the CEK
+    // and a legacy passkey wrapping it stays promotable afterwards.
     if (!currentKeyId && current.has_data && localKeyId) {
-      if (await this.adoptLocalKeyForPasskeylessMigration()) {
+      if (await this.adoptLocalKeyForMigration()) {
         currentKeyId = localKeyId
       }
     }
@@ -1221,27 +1220,21 @@ export class CloudSyncService {
 
   /**
    * Register the local primary CEK as the controlplane's current key for
-   * a user who has legacy data but no registered key and no passkey to
-   * recover with. Without this a passkey-less v1→v2 user could never
-   * migrate: nothing registers their CEK, so every rewrap is gated out.
+   * a user who has legacy data but no registered key. Without this a
+   * v1→v2 user who never registered their key — they have no passkey, or
+   * only an un-promoted legacy passkey — could never migrate: nothing
+   * registers their CEK, so every rewrap is gated out.
    *
-   * The key is registered bundleless with created_via='recovery', which
-   * the controlplane accepts non-destructively over legacy (key_id NULL)
-   * rows. Guarded on the user having no passkey credential anywhere: a
-   * user with a passkey (enclave bundle or legacy credential) must
-   * register through the passkey/recovery path so their key keeps a
-   * recoverable bundle. Returns true when the key was adopted.
+   * Registered bundleless with created_via='recovery', which the
+   * controlplane accepts non-destructively over legacy (key_id NULL)
+   * rows. The caller only invokes this with a local CEK, legacy data, and
+   * no registered key, so no enclave bundle can exist; a legacy passkey
+   * wrapping this same CEK stays promotable afterwards (its bundle is
+   * added on the next recovery), so adopting never strands a backup.
+   * register-key's if_match='*' fails safely on a concurrent register.
+   * Returns true when the key was adopted.
    */
-  private async adoptLocalKeyForPasskeylessMigration(): Promise<boolean> {
-    let credentialState: Awaited<ReturnType<typeof getPasskeyCredentialState>>
-    try {
-      credentialState = await getPasskeyCredentialState()
-    } catch {
-      return false
-    }
-    if (credentialState !== 'empty') {
-      return false
-    }
+  private async adoptLocalKeyForMigration(): Promise<boolean> {
     let keyB64: string
     try {
       keyB64 = requirePrimaryKeyB64()
@@ -1256,19 +1249,16 @@ export class CloudSyncService {
         idempotencyKey: newIdempotencyKey(),
       })
     } catch (err) {
-      logError('Failed to adopt local key for passkey-less migration', err, {
+      logError('Failed to adopt local key for migration', err, {
         component: 'CloudSync',
-        action: 'adoptLocalKeyForPasskeylessMigration',
+        action: 'adoptLocalKeyForMigration',
       })
       return false
     }
-    logInfo(
-      'Adopted local key as current to enable migration without a passkey',
-      {
-        component: 'CloudSync',
-        action: 'adoptLocalKeyForPasskeylessMigration',
-      },
-    )
+    logInfo('Adopted local key as current to enable migration', {
+      component: 'CloudSync',
+      action: 'adoptLocalKeyForMigration',
+    })
     passkeyEvents.emit({ type: 'bundle-state-maybe-changed' })
     return true
   }
