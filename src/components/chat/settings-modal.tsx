@@ -5,7 +5,6 @@ import { API_BASE_URL } from '@/config'
 import {
   SETTINGS_CHAT_FONT,
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
-  SETTINGS_MAX_PROMPT_MESSAGES,
   SETTINGS_PII_CHECK_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
@@ -79,7 +78,6 @@ import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
 import { ConfirmDialog } from './components/confirm-dialog'
-import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
 import {
@@ -244,10 +242,6 @@ export function SettingsModal({
   } = useProjects({
     autoLoad: isSignedIn && isPremium,
   })
-  const [maxMessages, setMaxMessages] = useState<number>(
-    CONSTANTS.MAX_PROMPT_MESSAGES,
-  )
-
   // Encryption key management state
   const [inputKey, setInputKey] = useState('')
   const [isInputKeyVisible, setIsInputKeyVisible] = useState(false)
@@ -462,19 +456,6 @@ export function SettingsModal({
 
   // Shared function to load settings from localStorage
   const loadSettingsFromStorage = useCallback(() => {
-    // Load max messages setting
-    const savedMaxMessages = localStorage.getItem(SETTINGS_MAX_PROMPT_MESSAGES)
-    if (savedMaxMessages) {
-      const parsedValue = parseInt(savedMaxMessages, 10)
-      if (
-        !isNaN(parsedValue) &&
-        parsedValue > 0 &&
-        parsedValue <= CONSTANTS.MAX_PROMPT_MESSAGES_LIMIT
-      ) {
-        setMaxMessages(parsedValue)
-      }
-    }
-
     // Load personalization settings
     const savedNickname = localStorage.getItem(USER_PREFS_NICKNAME)
     const savedProfession = localStorage.getItem(USER_PREFS_PROFESSION)
@@ -565,7 +546,6 @@ export function SettingsModal({
     }
 
     // These events are fired by the profile sync when it updates localStorage
-    window.addEventListener('maxPromptMessagesChanged', handleProfileSyncUpdate)
     window.addEventListener('personalizationChanged', handleProfileSyncUpdate)
     window.addEventListener('languageChanged', handleProfileSyncUpdate)
     window.addEventListener(
@@ -576,10 +556,6 @@ export function SettingsModal({
 
     return () => {
       window.removeEventListener('storage', loadSettingsFromStorage)
-      window.removeEventListener(
-        'maxPromptMessagesChanged',
-        handleProfileSyncUpdate,
-      )
       window.removeEventListener(
         'personalizationChanged',
         handleProfileSyncUpdate,
@@ -595,22 +571,6 @@ export function SettingsModal({
       )
     }
   }, [isClient, loadSettingsFromStorage])
-
-  // Save max messages setting to localStorage
-  const handleMaxMessagesChange = (value: number) => {
-    if (value > 0 && value <= CONSTANTS.MAX_PROMPT_MESSAGES_LIMIT) {
-      setMaxMessages(value)
-      if (isClient) {
-        localStorage.setItem(SETTINGS_MAX_PROMPT_MESSAGES, value.toString())
-        // Trigger a custom event to notify other components
-        window.dispatchEvent(
-          new CustomEvent('maxPromptMessagesChanged', {
-            detail: value,
-          }),
-        )
-      }
-    }
-  }
 
   // Save personalization settings and notify components
   const savePersonalizationSettings = (values?: {
@@ -2221,47 +2181,6 @@ ${encryptionKey.replace('key_', '')}
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                       Conversation Settings
                     </h3>
-                    {/* Messages in Context */}
-                    <div
-                      className={cn(
-                        'rounded-lg border border-border-subtle p-4',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="mr-3 flex-1">
-                          <div className="font-aeonik text-sm font-medium text-content-primary">
-                            Messages in Context
-                          </div>
-                          <div className="font-aeonik-fono text-xs text-content-muted">
-                            Maximum number of recent messages sent to the model
-                            (1-
-                            {CONSTANTS.MAX_PROMPT_MESSAGES_LIMIT}). Longer
-                            contexts increase network usage and slow down
-                            responses.
-                          </div>
-                        </div>
-                        <input
-                          type="number"
-                          min="1"
-                          max={CONSTANTS.MAX_PROMPT_MESSAGES_LIMIT}
-                          value={maxMessages}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value, 10)
-                            if (!isNaN(value)) {
-                              handleMaxMessagesChange(value)
-                            }
-                          }}
-                          className={cn(
-                            'w-16 rounded-md border px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
-                            isDarkMode
-                              ? 'border-border-strong bg-surface-chat text-content-secondary'
-                              : 'border-border-subtle bg-surface-sidebar text-content-primary',
-                          )}
-                        />
-                      </div>
-                    </div>
-
                     {/* Response Language */}
                     <div
                       className={cn(

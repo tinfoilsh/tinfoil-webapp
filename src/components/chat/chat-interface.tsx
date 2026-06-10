@@ -66,6 +66,10 @@ import {
   getProjectUploadPreference,
   setProjectUploadPreference,
 } from '@/utils/project-upload-preference'
+import {
+  estimateTokenCount,
+  parseContextWindowTokens,
+} from '@/utils/token-estimation'
 import { TfTinSad } from '@tinfoilsh/tinfoil-icons'
 import dynamic from 'next/dynamic'
 import Head from 'next/head'
@@ -103,7 +107,6 @@ import {
 } from './genui/widgets/ArtifactPreview'
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
-import { useMaxMessages } from './hooks/use-max-messages'
 import { useMessageQueue } from './hooks/use-message-queue'
 import { usePromptLibrary } from './hooks/use-prompt-library'
 import {
@@ -184,24 +187,6 @@ type ChatInterfaceProps = {
    * can still open these flows manually from settings.
    */
   suppressIntroModals?: boolean
-}
-
-// Helper to roughly estimate token count based on character length (≈4 chars per token)
-const estimateTokenCount = (text: string | undefined): number => {
-  if (!text) return 0
-  return Math.ceil(text.length / 4)
-}
-
-// Helper to parse values like "64k tokens" → 64000
-const parseContextWindowTokens = (contextWindow?: string): number => {
-  if (!contextWindow) return 64000 // sensible default
-  const match = contextWindow.match(/(\d+)(k)?/i)
-  if (!match) return 64000
-  let tokens = parseInt(match[1], 10)
-  if (match[2]) {
-    tokens *= 1000
-  }
-  return tokens
 }
 
 // Generate a silly privacy-themed project name
@@ -888,13 +873,11 @@ export function ChatInterface({
   // Ask sidebar - ephemeral streaming only. Nothing is persisted until the
   // user clicks "Open as chat", which creates a new real chat seeded with the
   // sidebar's messages.
-  const sidebarMaxMessages = useMaxMessages()
   const sidebarChat = useSidebarChat({
     systemPrompt: finalSystemPrompt,
     rules: processedRules,
     models,
     selectedModel,
-    maxMessages: sidebarMaxMessages,
     reasoningEffort,
     thinkingEnabled,
     webSearchEnabled,

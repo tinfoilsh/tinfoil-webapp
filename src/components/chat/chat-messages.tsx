@@ -1,11 +1,14 @@
 import { type BaseModel } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
+import {
+  findContextStartIndex,
+  getContextTokenBudget,
+} from '@/utils/token-estimation'
 import 'katex/dist/katex.min.css'
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { CONSTANTS } from './constants'
 import { ensureTimeline } from './ensure-timeline'
 import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
-import { useMaxMessages } from './hooks/use-max-messages'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
 import { PrintableChat } from './PrintableChat'
 import type { PromptPreset } from './prompts/types'
@@ -233,7 +236,6 @@ export function ChatMessages({
   onSelectPromptPreset,
 }: ChatMessagesProps) {
   const [mounted, setMounted] = useState(false)
-  const maxMessages = useMaxMessages()
   const chatFont = useChatFont()
   const [showSpacer, setShowSpacer] = useState(false)
   const prevMessageCountRef = React.useRef(messages.length)
@@ -292,12 +294,13 @@ export function ChatMessages({
 
   // Separate messages into archived and live sections - memoize this calculation
   const { archivedMessages, liveMessages } = useMemo(() => {
-    const archived =
-      messages.length > maxMessages ? messages.slice(0, -maxMessages) : []
-    const live =
-      messages.length > maxMessages ? messages.slice(-maxMessages) : messages
-    return { archivedMessages: archived, liveMessages: live }
-  }, [messages, maxMessages])
+    const budget = getContextTokenBudget(currentModel?.contextWindow)
+    const startIndex = findContextStartIndex(messages, budget)
+    return {
+      archivedMessages: messages.slice(0, startIndex),
+      liveMessages: messages.slice(startIndex),
+    }
+  }, [messages, currentModel?.contextWindow])
 
   useEffect(() => {
     setMounted(true)

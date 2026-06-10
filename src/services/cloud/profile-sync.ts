@@ -12,7 +12,6 @@ export interface ProfileData {
   themeMode?: 'light' | 'dark' | 'system'
 
   // Chat settings
-  maxPromptMessages?: number
   language?: string
 
   // Personalization settings

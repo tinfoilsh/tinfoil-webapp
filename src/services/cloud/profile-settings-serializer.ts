@@ -1,5 +1,4 @@
 import {
-  SETTINGS_MAX_PROMPT_MESSAGES,
   SETTINGS_THEME,
   SETTINGS_THEME_MODE,
   USER_PREFS_ADDITIONAL_CONTEXT,
@@ -25,7 +24,6 @@ export function hasProfileChanged(
   return (
     profile1.isDarkMode !== profile2.isDarkMode ||
     profile1.themeMode !== profile2.themeMode ||
-    profile1.maxPromptMessages !== profile2.maxPromptMessages ||
     profile1.language !== profile2.language ||
     profile1.nickname !== profile2.nickname ||
     profile1.profession !== profile2.profession ||
@@ -55,15 +53,6 @@ export function loadLocalSettings(): ProfileData {
     savedThemeMode === 'system'
   ) {
     settings.themeMode = savedThemeMode
-  }
-
-  // Chat settings
-  const maxMessages = localStorage.getItem(SETTINGS_MAX_PROMPT_MESSAGES)
-  if (maxMessages) {
-    const parsed = parseInt(maxMessages, 10)
-    if (!isNaN(parsed)) {
-      settings.maxPromptMessages = parsed
-    }
   }
 
   const language = localStorage.getItem(USER_PREFS_LANGUAGE)
@@ -147,19 +136,6 @@ export function applySettingsToLocal(settings: ProfileData): void {
     window.dispatchEvent(
       new CustomEvent('themeChanged', {
         detail: theme,
-      }),
-    )
-  }
-
-  // Chat settings
-  if (settings.maxPromptMessages !== undefined) {
-    localStorage.setItem(
-      SETTINGS_MAX_PROMPT_MESSAGES,
-      settings.maxPromptMessages.toString(),
-    )
-    window.dispatchEvent(
-      new CustomEvent('maxPromptMessagesChanged', {
-        detail: settings.maxPromptMessages,
       }),
     )
   }

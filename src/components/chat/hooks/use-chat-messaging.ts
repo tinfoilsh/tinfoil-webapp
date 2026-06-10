@@ -36,7 +36,6 @@ import type { Chat, LoadingState, Message } from '../types'
 import { createBlankChat, sortChats } from './chat-operations'
 import { createUpdateChatWithHistoryCheck } from './chat-persistence'
 import { processStreamingResponse } from './streaming'
-import { useMaxMessages } from './use-max-messages'
 import type { ReasoningEffort } from './use-reasoning-effort'
 
 interface UseChatMessagingProps {
@@ -108,7 +107,6 @@ export function useChatMessaging({
   codeExecutionEncryptionKey,
 }: UseChatMessagingProps): UseChatMessagingReturn {
   const { isSignedIn } = useAuth()
-  const maxMessages = useMaxMessages()
   const { isProjectMode, activeProject } = useProject()
 
   const [input, setInput] = useState('')
@@ -561,7 +559,6 @@ export function useChatMessaging({
             setRetryInfo({ attempt, maxRetries, error })
           },
           updatedMessages,
-          maxMessages,
           signal: controller.signal,
           reasoningEffort,
           thinkingEnabled,
@@ -800,7 +797,6 @@ export function useChatMessaging({
       models,
       selectedModel,
       systemPrompt,
-      maxMessages,
       rules,
       updateChatWithHistoryCheck,
       scrollToBottom,
