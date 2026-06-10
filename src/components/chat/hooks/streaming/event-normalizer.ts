@@ -31,16 +31,6 @@ import type { NormalizedEvent } from './types'
 
 type SSEJson = any
 
-/**
- * A reasoning resume after a tool boundary is only treated as real thinking
- * once it contains a letter or digit, so trailing punctuation/whitespace
- * crumbs of the previous reasoning don't open an empty "Thought for
- * 0.0 seconds" block. Resumes after a content interruption never open a new
- * block at all — they are late tails of the previous reasoning and are
- * merged back into it (see thinking_tail_delta).
- */
-const SUBSTANTIVE_REASONING_RE = /[\p{L}\p{N}]/u
-
 function extractReasoningContent(json: SSEJson): string | null {
   const delta =
     json.choices?.[0]?.delta?.reasoning_content ??
@@ -229,7 +219,6 @@ export function createEventNormalizer(): EventNormalizer {
   let initialBuffer = ''
   let isInThinking = false
   let isReasoningFormat = false
-  let pendingReasoningTail = ''
   // True while the last thinking block was closed by content (not by a
   // tool boundary). Reasoning arriving in that state is the late tail of
   // that block — routers/upstreams race the think-close boundary so the
@@ -342,21 +331,12 @@ export function createEventNormalizer(): EventNormalizer {
               content: reasoningContent,
             })
           } else {
-            // We were out of thinking (tool boundary). Hold the resume
-            // in a buffer and only reopen a thinking block once it
-            // contains substantive text, so trailing punctuation crumbs
-            // don't open an empty thinking block.
-            pendingReasoningTail += reasoningContent
-            if (SUBSTANTIVE_REASONING_RE.test(pendingReasoningTail)) {
-              isInThinking = true
-              thinkingClosedByContent = false
-              events.push({ type: 'thinking_start' })
-              events.push({
-                type: 'thinking_delta',
-                content: pendingReasoningTail,
-              })
-              pendingReasoningTail = ''
-            }
+            // Reasoning resumed after a tool boundary — a new thinking
+            // phase of the next model turn.
+            isInThinking = true
+            thinkingClosedByContent = false
+            events.push({ type: 'thinking_start' })
+            events.push({ type: 'thinking_delta', content: reasoningContent })
           }
         }
         // Content must be emitted regardless of thinking state: the
@@ -368,7 +348,6 @@ export function createEventNormalizer(): EventNormalizer {
             isInThinking = false
             thinkingClosedByContent = true
           }
-          pendingReasoningTail = ''
           events.push({ type: 'content_delta', content })
         }
         return events
@@ -381,7 +360,6 @@ export function createEventNormalizer(): EventNormalizer {
           isInThinking = false
           thinkingClosedByContent = true
         }
-        pendingReasoningTail = ''
         events.push({ type: 'content_delta', content })
         return events
       }
