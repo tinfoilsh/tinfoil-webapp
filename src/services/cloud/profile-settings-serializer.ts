@@ -1,4 +1,3 @@
-import { CONSTANTS } from '@/components/chat/constants'
 import {
   SETTINGS_THEME,
   SETTINGS_THEME_MODE,
@@ -112,7 +111,6 @@ export function loadLocalSettings(): ProfileData {
 export function resetSettingsToLocalDefaults(): ProfileData {
   const defaults: ProfileData = {
     themeMode: 'system',
-    maxPromptMessages: CONSTANTS.MAX_PROMPT_MESSAGES,
     language: DEFAULT_PROFILE_LANGUAGE,
     nickname: '',
     profession: '',
