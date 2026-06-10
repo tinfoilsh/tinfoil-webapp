@@ -24,6 +24,7 @@ import {
   AUTH_ACTIVE_USER_ID,
   SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX,
 } from '@/constants/storage-keys'
+import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
 import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import {
@@ -34,7 +35,7 @@ import {
   type KeyCurrentResponse,
 } from '../sync-enclave/sync-api'
 import { IF_MATCH_SENTINELS } from '../sync-enclave/wire-contract'
-import { requirePrimaryKeyB64 } from './cek-encoding'
+import { persistedPrimaryKeyB64, requirePrimaryKeyB64 } from './cek-encoding'
 import {
   CloudKeySetupError,
   validateCurrentPrimaryKey,
@@ -100,7 +101,7 @@ export async function getCurrentCloudKeyAuthorizationMode(): Promise<CloudKeyAut
 export async function canWriteToCloud(): Promise<boolean> {
   const validation = await validateCurrentPrimaryKey()
   if (!validation.canWrite) return false
-  if (validation.remoteState === 'empty') {
+  if (validation.remoteState === 'empty' && isCloudSyncEnabled()) {
     return registerKeyForEmptyRemote()
   }
   return true
@@ -119,11 +120,18 @@ let emptyRemoteRegistration: Promise<boolean> | null = null
  * the push until the next validation pass sees the winner's key.
  */
 function registerKeyForEmptyRemote(): Promise<boolean> {
+  // Only bind a key the user has actually committed. During an
+  // activation ceremony the new key is staged in memory only; a
+  // concurrent background write must not register it before the
+  // ceremony finishes (a transient failure would roll the client
+  // back while the server stays bound to the discarded key).
+  const persistedKeyB64 = persistedPrimaryKeyB64()
+  if (!persistedKeyB64) return Promise.resolve(false)
   if (!emptyRemoteRegistration) {
     emptyRemoteRegistration = (async () => {
       try {
         await registerKey({
-          keyB64: requirePrimaryKeyB64(),
+          keyB64: persistedKeyB64,
           ifMatch: IF_MATCH_SENTINELS.AnyKey,
           createdVia: 'manual',
           idempotencyKey: newIdempotencyKey(),

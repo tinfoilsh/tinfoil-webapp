@@ -21,6 +21,22 @@ export function requirePrimaryKeyB64(): string {
 }
 
 /**
+ * Encode the persisted (committed) primary CEK as base64, or null
+ * when no key has been committed to storage. Unlike
+ * `requirePrimaryKeyB64()` this ignores a staged in-memory key, so
+ * callers that bind a key server-side outside an activation ceremony
+ * (e.g. the lazy empty-remote registration on the write gate) never
+ * register a key the user has not finished adopting.
+ */
+export function persistedPrimaryKeyB64(): string | null {
+  const persisted = encryptionService.getKey()
+  if (!persisted) return null
+  const bytes = encryptionService.getAlternativeKeyBytes(persisted)
+  if (!bytes) return null
+  return bytesToBase64(bytes)
+}
+
+/**
  * Whether a primary CEK is currently loaded. The legacy-blob
  * migration derives both its target and candidate-key set from the
  * primary key, so it cannot run without one. Callers gate the

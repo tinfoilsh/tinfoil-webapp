@@ -23,8 +23,11 @@ const TEST_KEY_B64 = vi.hoisted(() => {
   return btoa(bin)
 })
 
+const mockPersistedPrimaryKeyB64 = vi.fn()
+
 vi.mock('@/services/cloud/cek-encoding', () => ({
   requirePrimaryKeyB64: () => TEST_KEY_B64,
+  persistedPrimaryKeyB64: () => mockPersistedPrimaryKeyB64(),
 }))
 
 vi.mock('@/services/sync-enclave/sync-api', async () => {
@@ -42,6 +45,7 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
 import {
   AUTH_ACTIVE_USER_ID,
   SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX,
+  SETTINGS_CLOUD_SYNC_ENABLED,
 } from '@/constants/storage-keys'
 import {
   authorizeCurrentPrimaryKey,
@@ -62,7 +66,10 @@ describe('cloud-key-authorization', () => {
     mockValidateCurrentPrimaryKey.mockReset()
     mockKeyCurrent.mockReset()
     mockRegisterKey.mockReset()
+    mockPersistedPrimaryKeyB64.mockReset()
+    mockPersistedPrimaryKeyB64.mockReturnValue(TEST_KEY_B64)
     localStorage.setItem(AUTH_ACTIVE_USER_ID, USER_ID)
+    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
   })
 
   afterEach(() => {
@@ -116,6 +123,30 @@ describe('cloud-key-authorization', () => {
       mockRegisterKey.mockRejectedValue(new Error('conflict'))
 
       expect(await canWriteToCloud()).toBe(false)
+    })
+
+    it('does not register on an empty remote when cloud sync is disabled', async () => {
+      localStorage.removeItem(SETTINGS_CLOUD_SYNC_ENABLED)
+      mockValidateCurrentPrimaryKey.mockResolvedValue({
+        remoteState: 'empty',
+        canWrite: true,
+        probe: 'none',
+      })
+
+      expect(await canWriteToCloud()).toBe(true)
+      expect(mockRegisterKey).not.toHaveBeenCalled()
+    })
+
+    it('does not register a staged key that has not been committed', async () => {
+      mockPersistedPrimaryKeyB64.mockReturnValue(null)
+      mockValidateCurrentPrimaryKey.mockResolvedValue({
+        remoteState: 'empty',
+        canWrite: true,
+        probe: 'none',
+      })
+
+      expect(await canWriteToCloud()).toBe(false)
+      expect(mockRegisterKey).not.toHaveBeenCalled()
     })
   })
 
