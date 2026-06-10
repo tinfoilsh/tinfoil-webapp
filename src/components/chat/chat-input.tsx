@@ -121,11 +121,19 @@ export function ChatInput({
       const min = Number.parseInt(inputMinHeight, 10) || 0
       // Cap the textarea to the visual viewport (which shrinks when the
       // on-screen keyboard opens) so the toolbar row with the send button
-      // always stays visible below it.
+      // always stays visible below it. Measure everything else rendered in
+      // the input area (toolbar, paddings, suggestion chips, banners,
+      // attachment previews) so the cap adapts to what is actually shown,
+      // e.g. the extra suggestions row on the initial query screen.
       const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+      const inputArea = el.closest('[data-chat-input-area]')
+      const chromeHeight = inputArea
+        ? inputArea.getBoundingClientRect().height -
+          el.getBoundingClientRect().height
+        : CONSTANTS.INPUT_VIEWPORT_RESERVED_PX
       const available = Math.min(
         CONSTANTS.INPUT_MAX_HEIGHT_PX,
-        viewportHeight - CONSTANTS.INPUT_VIEWPORT_RESERVED_PX,
+        viewportHeight - chromeHeight - CONSTANTS.INPUT_VIEWPORT_TOP_GAP_PX,
       )
       // Snap the cap to a whole number of text lines so scrolled-out content
       // is clipped flush at a line boundary instead of mid-line.

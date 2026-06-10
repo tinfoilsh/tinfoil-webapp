@@ -4,10 +4,12 @@ export const CONSTANTS = {
   INPUT_MIN_HEIGHT: '28px',
   // Maximum height of the chat input textarea before it scrolls internally
   INPUT_MAX_HEIGHT_PX: 240,
-  // Vertical space reserved for the input card chrome (paddings, toolbar row,
-  // send button) so the whole input fits in the visual viewport above the
-  // on-screen keyboard when the textarea is at its maximum height
+  // Fallback estimate of the input card chrome height (paddings, toolbar row,
+  // send button) used when the input area wrapper cannot be measured
   INPUT_VIEWPORT_RESERVED_PX: 160,
+  // Minimum breathing room kept above the input area within the visual
+  // viewport so it never covers the entire screen above the keyboard
+  INPUT_VIEWPORT_TOP_GAP_PX: 24,
   CHAT_INPUT_BOTTOM_GAP_PX: 32,
   CHAT_INPUT_FADE_HEIGHT_PX: 80,
   CHAT_INPUT_FADE_SOLID_AT_PX: 72,

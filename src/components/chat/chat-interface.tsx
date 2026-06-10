@@ -3113,6 +3113,7 @@ export function ChatInterface({
                 (currentChat?.messages && currentChat.messages.length > 0)) && (
                 <div
                   ref={inputAreaRef}
+                  data-chat-input-area
                   className="pointer-events-none absolute inset-x-0 bottom-0 isolate z-30 px-4 pb-4"
                   style={{
                     minHeight: '80px',
