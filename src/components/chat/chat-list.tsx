@@ -176,7 +176,12 @@ export function ChatList({
     )
   }
 
-  if (chats.length === 0 && emptyState) {
+  // Chats that failed to decrypt are never displayed. They stay in
+  // storage so the background re-decryption can recover them once the
+  // right key is active, at which point they reappear here.
+  const visibleChats = chats.filter((chat) => !chat.decryptionFailed)
+
+  if (visibleChats.length === 0 && emptyState) {
     return (
       <div className="space-y-2 p-2">
         {loadingIndicator}
@@ -185,7 +190,7 @@ export function ChatList({
     )
   }
 
-  const lastBlankIndex = chats.reduce(
+  const lastBlankIndex = visibleChats.reduce(
     (acc, chat, index) => (chat.isBlankChat ? index : acc),
     -1,
   )
@@ -194,7 +199,7 @@ export function ChatList({
     <>
       <div role="list" className="space-y-2 p-2">
         {lastBlankIndex < 0 && loadingIndicator}
-        {chats.map((chat, index) => (
+        {visibleChats.map((chat, index) => (
           <Fragment key={getChatKey(chat)}>
             <div role="listitem" className="relative">
               <ChatListItem
