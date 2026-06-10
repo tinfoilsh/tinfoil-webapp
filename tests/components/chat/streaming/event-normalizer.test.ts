@@ -194,10 +194,20 @@ describe('EventNormalizer', () => {
       ])
 
       const types = events.map((e) => e.type)
-      // Should see: start, delta, end, content, start, delta, end, content
+      // Should see: start, delta, end, content, tail, content — reasoning
+      // arriving after content is the late tail of the previous thinking
+      // block, not a new one.
       expect(types[0]).toBe('thinking_start')
-      expect(types).toContain('content_delta')
-      expect(types.filter((t) => t === 'thinking_start').length).toBe(2)
+      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
+      expect(events).toContainEqual({
+        type: 'thinking_tail_delta',
+        content: 'thought2',
+      })
+      const text = events
+        .filter((e) => e.type === 'content_delta')
+        .map((e) => (e as any).content)
+        .join('')
+      expect(text).toBe('partial answerfinal')
     })
 
     it('handles reasoning with empty string (present but empty)', () => {
@@ -294,17 +304,81 @@ describe('EventNormalizer', () => {
       expect(text).toBe('Hello world')
     })
 
-    it('still restarts thinking when substantive reasoning resumes after content', () => {
+    it('merges substantive reasoning tails arriving after content into the previous thinking block', () => {
+      // Upstream splits the think-close boundary, so the final reasoning
+      // fragment (" for.") can land after the answer already started.
       const events = processAll([
-        reasoningChunk('thought1'),
-        { choices: [{ delta: { content: 'partial answer' } }] },
-        reasoningChunk('thought2'),
-        { choices: [{ delta: { content: 'final' } }] },
+        reasoningChunk('I should account'),
+        { choices: [{ delta: { content: 'The' } }] },
+        reasoningChunk(' for.'),
+        { choices: [{ delta: { content: ' main things were:' } }] },
+      ])
+
+      const types = events.map((e) => e.type)
+      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
+      expect(types.filter((t) => t === 'thinking_end').length).toBe(1)
+      expect(events).toContainEqual({
+        type: 'thinking_tail_delta',
+        content: ' for.',
+      })
+      const text = events
+        .filter((e) => e.type === 'content_delta')
+        .map((e) => (e as any).content)
+        .join('')
+      expect(text).toBe('The main things were:')
+    })
+
+    it('merges a reasoning tail carried on the same chunk as content', () => {
+      const events = processAll([
+        reasoningChunk('thinking about trade'),
+        { choices: [{ delta: { content: 'Answer start' } }] },
+        reasoningChunk('offs. ', ' **TCP** is reliable'),
+      ])
+
+      const types = events.map((e) => e.type)
+      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
+      expect(events).toContainEqual({
+        type: 'thinking_tail_delta',
+        content: 'offs. ',
+      })
+      const text = events
+        .filter((e) => e.type === 'content_delta')
+        .map((e) => (e as any).content)
+        .join('')
+      expect(text).toBe('Answer start **TCP** is reliable')
+    })
+
+    it('opens a new thinking block when reasoning resumes after a tool call', () => {
+      const events = processAll([
+        reasoningChunk('first thoughts'),
+        { choices: [{ delta: { content: 'Intro text' } }] },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_widget',
+                    type: 'function',
+                    function: {
+                      name: 'render_stat_cards',
+                      arguments: '{"stats":[]}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        reasoningChunk('second phase thoughts'),
+        { choices: [{ delta: { content: 'Final answer' } }] },
       ])
 
       const types = events.map((e) => e.type)
       expect(types.filter((t) => t === 'thinking_start').length).toBe(2)
       expect(types.filter((t) => t === 'thinking_end').length).toBe(2)
+      expect(types).not.toContain('thinking_tail_delta')
     })
   })
 

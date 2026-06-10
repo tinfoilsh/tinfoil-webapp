@@ -68,6 +68,35 @@ describe('TimelineBuilder', () => {
       expect(builder.snapshot()).toEqual([])
     })
 
+    it('appends a tail to the closed thinking block without splitting content', () => {
+      const builder = new TimelineBuilder()
+      builder.startThinking()
+      builder.appendThinking('I should account')
+      builder.endThinking(1.1)
+      builder.appendContent('The')
+      builder.appendThinkingTail(' for.')
+      builder.appendContent(' main things were:')
+
+      const blocks = builder.snapshot()
+      expect(blocks).toHaveLength(2)
+      const thinking = blocks[0] as TimelineThinkingBlock
+      expect(thinking.content).toBe('I should account for.')
+      expect(thinking.isThinking).toBe(false)
+      expect(thinking.duration).toBe(1.1)
+      const content = blocks[1] as TimelineContentBlock
+      expect(content.content).toBe('The main things were:')
+    })
+
+    it('ignores appendThinkingTail when no thinking block exists', () => {
+      const builder = new TimelineBuilder()
+      builder.appendContent('hello')
+      builder.appendThinkingTail('orphan tail')
+
+      const blocks = builder.snapshot()
+      expect(blocks).toHaveLength(1)
+      expect((blocks[0] as TimelineContentBlock).content).toBe('hello')
+    })
+
     it('ignores endThinking when no block is open', () => {
       const builder = new TimelineBuilder()
       // Should not throw

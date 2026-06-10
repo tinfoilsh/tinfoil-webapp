@@ -14,6 +14,16 @@ import type { Chat, Message } from '../../types'
 export type ThinkingStartEvent = { type: 'thinking_start' }
 export type ThinkingDeltaEvent = { type: 'thinking_delta'; content: string }
 export type ThinkingEndEvent = { type: 'thinking_end' }
+/**
+ * A late fragment of an already-closed thinking block. Upstream reasoning
+ * parsers split the think-close boundary so the final reasoning fragment
+ * can arrive after the first content deltas; it belongs at the end of the
+ * previous thinking block, not in a new one.
+ */
+export type ThinkingTailDeltaEvent = {
+  type: 'thinking_tail_delta'
+  content: string
+}
 export type ContentDeltaEvent = { type: 'content_delta'; content: string }
 
 export type WebSearchEvent = {
@@ -75,6 +85,7 @@ export type NormalizedEvent =
   | ThinkingStartEvent
   | ThinkingDeltaEvent
   | ThinkingEndEvent
+  | ThinkingTailDeltaEvent
   | ContentDeltaEvent
   | WebSearchEvent
   | URLFetchEvent
