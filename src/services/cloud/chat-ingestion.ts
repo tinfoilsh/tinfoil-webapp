@@ -192,6 +192,12 @@ export async function syncRemoteDeletions(
         // it) or a local-only chat the cloud never owned. Skipping keeps
         // repeated reconciliation passes idempotent and event-free.
         if (!localChat || localChat.isLocalOnly) {
+          if (!localChat) {
+            // Still record the tombstone: a concurrent ingest pass may
+            // have listed this chat before it was deleted remotely and
+            // would otherwise save it back after this pass moves on.
+            deletedChatsTracker.markAsDeleted(id)
+          }
           continue
         }
 
