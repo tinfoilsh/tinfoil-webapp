@@ -95,6 +95,24 @@ export async function probeLegacyDataWithLocalKeys(opts?: {
     }
   }
 
+  // A mixed sample (some rows unseal, some don't) still proves the
+  // local keys belong to this data set — legacy rows can sit under
+  // several historical keys and the migration sweep surfaces the
+  // blocked ones. Only an all-UNKNOWN_KEY sample proves a mismatch.
+  if (sawDecryptableRow) {
+    if (sawUndecryptableRow) {
+      logWarning('Legacy data key probe found rows local keys cannot unseal', {
+        component: 'LegacyKeyProbe',
+        action,
+      })
+    }
+    return {
+      outcome: 'decryptable',
+      sampledDecryptable: true,
+      sampledUndecryptable: sawUndecryptableRow,
+    }
+  }
+
   if (sawUndecryptableRow) {
     logWarning('Legacy data key probe found rows local keys cannot unseal', {
       component: 'LegacyKeyProbe',
@@ -102,16 +120,8 @@ export async function probeLegacyDataWithLocalKeys(opts?: {
     })
     return {
       outcome: 'undecryptable',
-      sampledDecryptable: sawDecryptableRow,
+      sampledDecryptable: false,
       sampledUndecryptable: true,
-    }
-  }
-
-  if (sawDecryptableRow) {
-    return {
-      outcome: 'decryptable',
-      sampledDecryptable: true,
-      sampledUndecryptable: false,
     }
   }
 
