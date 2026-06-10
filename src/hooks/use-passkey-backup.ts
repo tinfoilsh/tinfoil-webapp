@@ -18,6 +18,7 @@ import {
   validateCurrentPrimaryKey,
 } from '@/services/cloud/cloud-key-preflight'
 import {
+  LegacyKeyMismatchError,
   legacyKeyProbeAllowsBinding,
   probeLegacyDataWithLocalKeys,
 } from '@/services/cloud/legacy-key-probe'
@@ -1654,11 +1655,33 @@ export function usePasskeyBackup({
    * register-key.
    */
   const promoteLegacyPasskeyForCurrentDevice = useCallback(
-    async (cekHex: string): Promise<boolean> => {
+    async (cekHex: string, hasRemoteData: boolean): Promise<boolean> => {
       const legacyEntries = (await loadRecoveryCandidates()).filter(
         (entry) => entry.source === 'legacy',
       )
       if (legacyEntries.length === 0) return false
+
+      // Before prompting for the passkey, refuse to bind a key that the
+      // existing remote data proves it can never unseal. A transient
+      // probe failure is not proof of mismatch, so it falls through and
+      // the promotion proceeds (the enclave still rejects a divergent
+      // key on register).
+      if (hasRemoteData) {
+        const probe = await probeLegacyDataWithLocalKeys({
+          action: 'promoteLegacyPasskeyForCurrentDevice',
+        })
+        if (probe.outcome === 'undecryptable') {
+          logError(
+            'refusing legacy passkey setup: local key cannot unlock remote data',
+            new LegacyKeyMismatchError(),
+            {
+              component: 'usePasskeyBackup',
+              action: 'promoteLegacyPasskeyForCurrentDevice',
+            },
+          )
+          throw new LegacyKeyMismatchError()
+        }
+      }
 
       const credentialIds = legacyEntries.map((entry) => entry.id)
       const prf = await authenticatePrfPasskey(credentialIds)
@@ -1709,9 +1732,11 @@ export function usePasskeyBackup({
     const cekHex = cekBytesToHex(cekBytes)
 
     let keyIdHex: string | null
+    let hasRemoteData: boolean
     try {
       const resp = await enclaveKeyCurrent()
       keyIdHex = resp.key_id ?? null
+      hasRemoteData = resp.has_data ?? false
     } catch (error) {
       logError('Failed to read enclave key state for add-bundle', error, {
         component: 'usePasskeyBackup',
@@ -1744,7 +1769,10 @@ export function usePasskeyBackup({
         // promotion path so the user lands on the v2 wire reusing
         // their existing passkey instead of being asked to enroll
         // a brand-new one.
-        const promoted = await promoteLegacyPasskeyForCurrentDevice(cekHex)
+        const promoted = await promoteLegacyPasskeyForCurrentDevice(
+          cekHex,
+          hasRemoteData,
+        )
         if (!promoted) return false
       }
 
@@ -1763,6 +1791,7 @@ export function usePasskeyBackup({
     } catch (error) {
       if (error instanceof PrfNotSupportedError) throw error
       if (error instanceof PasskeyTimeoutError) throw error
+      if (error instanceof LegacyKeyMismatchError) throw error
       logError('Failed to add passkey for this device', error, {
         component: 'usePasskeyBackup',
         action: 'addPasskeyToThisDevice',

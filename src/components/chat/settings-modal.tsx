@@ -21,6 +21,7 @@ import { authTokenManager } from '@/services/auth'
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { cloudSync } from '@/services/cloud/cloud-sync'
+import { LegacyKeyMismatchError } from '@/services/cloud/legacy-key-probe'
 import { projectStorage } from '@/services/cloud/project-storage'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import {
@@ -322,6 +323,26 @@ type SettingsModalProps = {
   onRefreshBundleState?: () => Promise<void>
   initialTab?: SettingsTab
   chats?: Chat[]
+}
+
+function getAddPasskeyErrorTitle(error: unknown): string {
+  if (error instanceof PrfNotSupportedError) {
+    return 'Passkey provider not supported'
+  }
+  if (error instanceof LegacyKeyMismatchError) {
+    return "This key doesn't match your cloud data"
+  }
+  return 'Passkey setup failed'
+}
+
+function getAddPasskeyErrorDescription(error: unknown): string {
+  if (error instanceof PrfNotSupportedError) {
+    return error.message
+  }
+  if (error instanceof LegacyKeyMismatchError) {
+    return "The key on this device can't unlock your existing encrypted data, so we didn't link a passkey. Recover with your original key or device first."
+  }
+  return 'Could not add passkey for this device. You can try again later.'
 }
 
 export function SettingsModal({
@@ -3392,14 +3413,9 @@ ${encryptionKey.replace('key_', '')}
                                   }
                                 } catch (error) {
                                   toast({
-                                    title:
-                                      error instanceof PrfNotSupportedError
-                                        ? 'Passkey provider not supported'
-                                        : 'Passkey setup failed',
+                                    title: getAddPasskeyErrorTitle(error),
                                     description:
-                                      error instanceof PrfNotSupportedError
-                                        ? error.message
-                                        : 'Could not add passkey for this device. You can try again later.',
+                                      getAddPasskeyErrorDescription(error),
                                     variant: 'destructive',
                                   })
                                 } finally {

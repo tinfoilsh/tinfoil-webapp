@@ -34,6 +34,19 @@ export function legacyKeyProbeAllowsBinding(
   return result.outcome === 'decryptable' || result.outcome === 'no_sample'
 }
 
+/**
+ * Thrown when a key would be bound to the enclave even though the
+ * existing remote data proves it can never unseal that data. Callers
+ * surface this as a distinct, user-facing message rather than a
+ * generic failure.
+ */
+export class LegacyKeyMismatchError extends Error {
+  constructor() {
+    super('Local key cannot unlock existing cloud data')
+    this.name = 'LegacyKeyMismatchError'
+  }
+}
+
 export async function probeLegacyDataWithLocalKeys(opts?: {
   keys?: PullKey[]
   action?: string
