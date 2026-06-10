@@ -46,6 +46,24 @@ export class TimelineBuilder {
     }
   }
 
+  /**
+   * Append a late reasoning fragment to the most recent thinking block
+   * without reopening it or disturbing the current content block, so the
+   * answer text keeps accumulating contiguously around it.
+   */
+  appendThinkingTail(text: string): void {
+    for (let i = this.blocks.length - 1; i >= 0; i--) {
+      const block = this.blocks[i]
+      if (block.type === 'thinking') {
+        this.blocks[i] = {
+          ...block,
+          content: block.content + text,
+        }
+        return
+      }
+    }
+  }
+
   endThinking(duration?: number): void {
     if (this.currentThinkingIdx < 0) return
     const block = this.blocks[this.currentThinkingIdx] as TimelineThinkingBlock

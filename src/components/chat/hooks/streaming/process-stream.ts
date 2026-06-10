@@ -91,6 +91,10 @@ export async function processStreamingResponse(
         timeline.appendThinking(event.content)
         break
 
+      case 'thinking_tail_delta':
+        timeline.appendThinkingTail(event.content)
+        break
+
       case 'thinking_end': {
         const duration = getThinkingDuration(ctx.thinkingStartTimeRef)
         timeline.endThinking(duration)

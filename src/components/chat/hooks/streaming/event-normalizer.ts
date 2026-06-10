@@ -31,15 +31,6 @@ import type { NormalizedEvent } from './types'
 
 type SSEJson = any
 
-/**
- * A reasoning resume is only treated as real thinking once it contains a
- * letter or digit. Routers interleave trailing punctuation/whitespace crumbs
- * of the previous reasoning (e.g. ". ") into the content stream, and opening
- * a thinking block for those splits the reply around an empty "Thought for
- * 0.0 seconds" block.
- */
-const SUBSTANTIVE_REASONING_RE = /[\p{L}\p{N}]/u
-
 function extractReasoningContent(json: SSEJson): string | null {
   const delta =
     json.choices?.[0]?.delta?.reasoning_content ??
@@ -228,7 +219,11 @@ export function createEventNormalizer(): EventNormalizer {
   let initialBuffer = ''
   let isInThinking = false
   let isReasoningFormat = false
-  let pendingReasoningTail = ''
+  // True while the last thinking block was closed by content (not by a
+  // tool boundary). Reasoning arriving in that state is the late tail of
+  // that block — routers/upstreams race the think-close boundary so the
+  // final reasoning fragment can land after content started.
+  let thinkingClosedByContent = false
   const toolCallIndexToId = new Map<number, string>()
   const toolCallStartedIds = new Set<string>()
 
@@ -242,6 +237,7 @@ export function createEventNormalizer(): EventNormalizer {
           events.push({ type: 'thinking_end' })
           isInThinking = false
         }
+        thinkingClosedByContent = false
         events.push(...normalizeLegacyToolEvent(sseJson))
         return events
       }
@@ -259,6 +255,7 @@ export function createEventNormalizer(): EventNormalizer {
           events.push({ type: 'thinking_end' })
           isInThinking = false
         }
+        thinkingClosedByContent = false
         events.push(...toolCallEvents)
       }
       if (sseJson.choices?.[0]?.finish_reason === 'tool_calls') {
@@ -286,6 +283,7 @@ export function createEventNormalizer(): EventNormalizer {
           events.push({ type: 'thinking_end' })
           isInThinking = false
         }
+        thinkingClosedByContent = false
         for (const toolEvent of preprocessed.toolEvents) {
           events.push(...normalizeToolEvent(toolEvent, logger))
         }
@@ -303,6 +301,7 @@ export function createEventNormalizer(): EventNormalizer {
         isReasoningFormat = true
         isInThinking = true
         isFirstChunk = false
+        thinkingClosedByContent = false
         events.push({ type: 'thinking_start' })
         if (reasoningContent) {
           events.push({ type: 'thinking_delta', content: reasoningContent })
@@ -312,6 +311,7 @@ export function createEventNormalizer(): EventNormalizer {
         if (content) {
           events.push({ type: 'thinking_end' })
           isInThinking = false
+          thinkingClosedByContent = true
           events.push({ type: 'content_delta', content })
         }
         return events
@@ -322,21 +322,21 @@ export function createEventNormalizer(): EventNormalizer {
         if (reasoningContent) {
           if (isInThinking) {
             events.push({ type: 'thinking_delta', content: reasoningContent })
+          } else if (thinkingClosedByContent) {
+            // Late tail of the reasoning that content already closed.
+            // Merge it back into that block instead of opening a phantom
+            // "Thought for 0.0 seconds" block that splits the answer.
+            events.push({
+              type: 'thinking_tail_delta',
+              content: reasoningContent,
+            })
           } else {
-            // We were out of thinking (content interrupted). Hold the
-            // resume in a buffer and only reopen a thinking block once it
-            // contains substantive text, so trailing punctuation crumbs
-            // don't split the content timeline mid-word.
-            pendingReasoningTail += reasoningContent
-            if (SUBSTANTIVE_REASONING_RE.test(pendingReasoningTail)) {
-              isInThinking = true
-              events.push({ type: 'thinking_start' })
-              events.push({
-                type: 'thinking_delta',
-                content: pendingReasoningTail,
-              })
-              pendingReasoningTail = ''
-            }
+            // Reasoning resumed after a tool boundary — a new thinking
+            // phase of the next model turn.
+            isInThinking = true
+            thinkingClosedByContent = false
+            events.push({ type: 'thinking_start' })
+            events.push({ type: 'thinking_delta', content: reasoningContent })
           }
         }
         // Content must be emitted regardless of thinking state: the
@@ -346,8 +346,8 @@ export function createEventNormalizer(): EventNormalizer {
           if (isInThinking) {
             events.push({ type: 'thinking_end' })
             isInThinking = false
+            thinkingClosedByContent = true
           }
-          pendingReasoningTail = ''
           events.push({ type: 'content_delta', content })
         }
         return events
@@ -358,8 +358,8 @@ export function createEventNormalizer(): EventNormalizer {
         if (isInThinking) {
           events.push({ type: 'thinking_end' })
           isInThinking = false
+          thinkingClosedByContent = true
         }
-        pendingReasoningTail = ''
         events.push({ type: 'content_delta', content })
         return events
       }
