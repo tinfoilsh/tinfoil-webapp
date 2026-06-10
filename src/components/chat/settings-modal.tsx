@@ -1600,6 +1600,14 @@ export function SettingsModal({
           ? 'We will email you a confirmation.'
           : 'Email confirmation could not be sent.',
       })
+
+      await refreshProjects()
+
+      // Project deletion detaches chats from projects on the server, so the
+      // chat list in the sidebar may need to refresh too.
+      if (onChatsUpdated) {
+        onChatsUpdated()
+      }
     } catch (error) {
       logError('Failed to delete all projects', error, {
         component: 'SettingsModal',
