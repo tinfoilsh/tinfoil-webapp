@@ -2,10 +2,9 @@
  * Renders a set of GenUI tool calls inline in the chat.
  *
  * While the assistant message is still streaming, a tracer placeholder is
- * always shown — even if the tool arguments JSON has fully parsed — so the
- * user has continuous visual feedback until the turn completes. Once
- * streaming ends, the placeholder is swapped for the real widget (or a
- * parse-failure card if arguments are invalid).
+ * shown until the tool arguments are complete enough to render. This lets the
+ * widget appear as soon as its own stream is done, even if the assistant turn
+ * continues into another stage like thinking.
  *
  * Input-surface widgets are skipped here — they render inside `ChatInput`
  * via `GenUIInputAreaRenderer`.
@@ -93,14 +92,6 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
           return null
         }
 
-        // While the assistant is still streaming, always show the tracer.
-        // This guarantees continuous visual feedback from the moment the
-        // tool call starts until the turn completes, even if the JSON
-        // arguments finish parsing early.
-        if (isStreaming) {
-          return <StreamingToolCallTracer key={tc.id} toolCall={tc} />
-        }
-
         const input = resolveInput(tc)
         if (input) {
           const rendered = renderGenUIInline(tc.name, input, { isDarkMode })
@@ -111,6 +102,10 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
               </div>
             )
           }
+        }
+
+        if (isStreaming) {
+          return <StreamingToolCallTracer key={tc.id} toolCall={tc} />
         }
 
         // The widget itself isn't registered on this client (e.g. a tool
