@@ -16,6 +16,20 @@ interface ErrorContext {
 }
 
 /**
+ * Reading localStorage can throw in restricted environments (blocked
+ * site data, sandboxed frames). Loggers run inside catch blocks, so
+ * they must never throw themselves.
+ */
+function debugLogsEnabled(): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return localStorage.getItem(DEV_ENABLE_DEBUG_LOGS) === 'true'
+  } catch {
+    return false
+  }
+}
+
+/**
  * Log an error with context - replace console.error calls with this
  */
 export function logError(
@@ -23,9 +37,7 @@ export function logError(
   error?: Error | unknown,
   context?: ErrorContext,
 ): void {
-  const debugEnabled =
-    typeof window !== 'undefined' &&
-    localStorage.getItem(DEV_ENABLE_DEBUG_LOGS) === 'true'
+  const debugEnabled = debugLogsEnabled()
 
   // Log in development, or in production when the user opted in via the
   // local debug flag (see logInfo). Output never leaves the browser —
@@ -49,9 +61,7 @@ export function logError(
  * Log a warning - replace console.warn calls with this
  */
 export function logWarning(message: string, context?: ErrorContext): void {
-  const debugEnabled =
-    typeof window !== 'undefined' &&
-    localStorage.getItem(DEV_ENABLE_DEBUG_LOGS) === 'true'
+  const debugEnabled = debugLogsEnabled()
 
   if (process.env.NODE_ENV === 'development' || debugEnabled) {
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0]
@@ -69,9 +79,7 @@ export function logWarning(message: string, context?: ErrorContext): void {
  *   localStorage.removeItem('tinfoil-dev-enable-debug-logs')
  */
 export function logInfo(message: string, context?: ErrorContext): void {
-  const debugEnabled =
-    typeof window !== 'undefined' &&
-    localStorage.getItem(DEV_ENABLE_DEBUG_LOGS) === 'true'
+  const debugEnabled = debugLogsEnabled()
 
   if (process.env.NODE_ENV === 'development' || debugEnabled) {
     const timestamp = new Date().toISOString().split('T')[1].split('.')[0]
