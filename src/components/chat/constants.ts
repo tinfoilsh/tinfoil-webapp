@@ -2,6 +2,12 @@ export const CONSTANTS = {
   LOADING_TIMEOUT: 500,
   MOBILE_BREAKPOINT: 768,
   INPUT_MIN_HEIGHT: '28px',
+  // Maximum height of the chat input textarea before it scrolls internally
+  INPUT_MAX_HEIGHT_PX: 240,
+  // Vertical space reserved for the input card chrome (paddings, toolbar row,
+  // send button) so the whole input fits in the visual viewport above the
+  // on-screen keyboard when the textarea is at its maximum height
+  INPUT_VIEWPORT_RESERVED_PX: 160,
   CHAT_INPUT_BOTTOM_GAP_PX: 32,
   CHAT_INPUT_FADE_HEIGHT_PX: 80,
   CHAT_INPUT_FADE_SOLID_AT_PX: 72,
