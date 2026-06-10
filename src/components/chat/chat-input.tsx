@@ -28,6 +28,10 @@ import {
   PiSpinner,
   PiTerminalWindow,
 } from 'react-icons/pi'
+import {
+  ContextUsageIndicator,
+  type ContextUsage,
+} from './components/context-usage-indicator'
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
 import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
@@ -63,6 +67,7 @@ type ChatInputProps = {
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
   onClearPromptPreset?: () => void
+  contextUsage?: ContextUsage
 }
 
 // Maximum number of characters displayed in the collapsed quote preview.
@@ -99,6 +104,7 @@ export function ChatInput({
   activePromptPreset,
   onOpenPromptLibrary,
   onClearPromptPreset,
+  contextUsage,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsScrollRef = useRef<HTMLDivElement>(null)
@@ -1173,6 +1179,7 @@ export function ChatInput({
             </div>
 
             <div className="flex items-center gap-2">
+              {contextUsage && <ContextUsageIndicator usage={contextUsage} />}
               {modelSelectorButton && <div>{modelSelectorButton}</div>}
               {reasoningSelectorButton && <div>{reasoningSelectorButton}</div>}
               {isPremium && audioModel && (

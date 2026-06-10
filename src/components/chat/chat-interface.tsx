@@ -67,7 +67,9 @@ import {
   setProjectUploadPreference,
 } from '@/utils/project-upload-preference'
 import {
+  estimateMessageTokens,
   estimateTokenCount,
+  getContextTokenBudget,
   parseContextWindowTokens,
 } from '@/utils/token-estimation'
 import { TfTinSad } from '@tinfoilsh/tinfoil-icons'
@@ -738,6 +740,7 @@ export function ChatInterface({
     isStreaming,
     streamError,
     dismissStreamError,
+    retryLastMessage,
     selectedModel,
     hasValidatedModel,
     expandedLabel,
@@ -1972,34 +1975,35 @@ export function ChatInterface({
     setProcessedDocuments((prev) => prev.filter((doc) => doc.id !== id))
   }
 
-  // Calculate context usage percentage (memoized to prevent re-calculation during streaming)
-  const contextUsagePercentage = useMemo(() => {
-    // Calculate context usage
-    const contextLimit = parseContextWindowTokens(
+  // Calculate context usage (memoized to prevent re-calculation during streaming)
+  const contextUsage = useMemo(() => {
+    const limitTokens = getContextTokenBudget(
       selectedModelDetails?.contextWindow,
     )
 
-    let totalTokens = 0
+    let usedTokens = estimateTokenCount(input)
 
-    // Count tokens from messages
+    // Count tokens from messages (including their attachments)
     if (currentChat?.messages) {
       currentChat.messages.forEach((msg) => {
-        totalTokens += estimateTokenCount(msg.content)
-        if (msg.thoughts) {
-          totalTokens += estimateTokenCount(msg.thoughts)
-        }
+        usedTokens += estimateMessageTokens(msg)
       })
     }
 
-    // Count tokens from documents
+    // Count tokens from pending documents not yet attached to a message
     if (processedDocuments) {
       processedDocuments.forEach((doc) => {
-        totalTokens += estimateTokenCount(doc.content)
+        usedTokens += estimateTokenCount(doc.content)
       })
     }
 
-    return (totalTokens / contextLimit) * 100
+    return {
+      percentage: (usedTokens / limitTokens) * 100,
+      usedTokens,
+      limitTokens,
+    }
   }, [
+    input,
     currentChat?.messages,
     processedDocuments,
     selectedModelDetails?.contextWindow,
@@ -3015,13 +3019,6 @@ export function ChatInterface({
                 isStreaming={isStreaming}
                 isWaitingForResponse={isWaitingForResponse}
               />
-              {streamError && (
-                <StreamErrorBanner
-                  message={streamError}
-                  onDismiss={dismissStreamError}
-                  isDarkMode={isDarkMode}
-                />
-              )}
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
@@ -3144,6 +3141,14 @@ export function ChatInterface({
                           pillClassName="rounded-full border"
                         />
                       )}
+                      {streamError && (
+                        <StreamErrorBanner
+                          message={streamError}
+                          onDismiss={dismissStreamError}
+                          onRetry={retryLastMessage}
+                          isDarkMode={isDarkMode}
+                        />
+                      )}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
@@ -3162,6 +3167,7 @@ export function ChatInterface({
                         processedDocuments={processedDocuments}
                         removeDocument={removeDocument}
                         isPremium={isPremium}
+                        contextUsage={contextUsage}
                         quote={quote}
                         onClearQuote={() => setQuote(null)}
                         isTemporaryMode={isTemporaryMode}
