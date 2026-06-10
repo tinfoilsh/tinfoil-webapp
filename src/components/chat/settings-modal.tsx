@@ -1,5 +1,4 @@
 import { TextureGrid } from '@/components/texture-grid'
-import { Progress } from '@/components/ui/progress'
 import { cn } from '@/components/ui/utils'
 import { UserAvatar } from '@/components/user-avatar'
 import { API_BASE_URL } from '@/config'
@@ -97,7 +96,6 @@ const DASHBOARD_URL = 'https://dash.tinfoil.sh'
 
 const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
-const DELETE_ALL_CHATS_COMPLETE_PERCENT = 100
 
 const ScrambleText = ({
   text,
@@ -383,25 +381,15 @@ export function SettingsModal({
   const [showDeleteAllChatsConfirm, setShowDeleteAllChatsConfirm] =
     useState(false)
   const [isDeletingAllChats, setIsDeletingAllChats] = useState(false)
-  const [deleteAllChatsProgress, setDeleteAllChatsProgress] = useState<{
-    deleted: number
-    total: number
-  } | null>(null)
+  const [deleteAllChatsCount, setDeleteAllChatsCount] = useState<number | null>(
+    null,
+  )
   const [deleteAllChatsConfirmText, setDeleteAllChatsConfirmText] = useState('')
   const [showDeleteAllProjectsConfirm, setShowDeleteAllProjectsConfirm] =
     useState(false)
   const [isDeletingAllProjects, setIsDeletingAllProjects] = useState(false)
   const [deleteAllProjectsConfirmText, setDeleteAllProjectsConfirmText] =
     useState('')
-  const deleteAllChatsProgressValue = deleteAllChatsProgress
-    ? deleteAllChatsProgress.total === 0
-      ? 0
-      : Math.min(
-          DELETE_ALL_CHATS_COMPLETE_PERCENT,
-          (deleteAllChatsProgress.deleted / deleteAllChatsProgress.total) *
-            DELETE_ALL_CHATS_COMPLETE_PERCENT,
-        )
-    : 0
 
   // Available personality traits
   const availableTraits = [
@@ -1559,7 +1547,7 @@ export function SettingsModal({
     }
 
     setIsDeletingAllChats(true)
-    setDeleteAllChatsProgress(null)
+    setDeleteAllChatsCount(null)
     try {
       if (isSignedIn) {
         const localCount = await chatStorage.getChatCount()
@@ -1574,7 +1562,7 @@ export function SettingsModal({
           })
         }
         const expectedTotal = Math.max(localCount, cloudCount)
-        setDeleteAllChatsProgress({ deleted: 0, total: expectedTotal })
+        setDeleteAllChatsCount(expectedTotal)
 
         const result = await chatStorage.deleteAllChats()
         const total = Math.max(
@@ -1582,16 +1570,14 @@ export function SettingsModal({
           result.localDeleted,
           result.cloudDeleted,
         )
-        setDeleteAllChatsProgress({ deleted: total, total })
         toast({
           title: 'All chats deleted',
           description: `Removed ${total} chat${total !== 1 ? 's' : ''} from this device${result.cloudDeleted > 0 ? ' and the cloud' : ''}.`,
         })
       } else {
         const total = sessionChatStorage.getAllChats().length
-        setDeleteAllChatsProgress({ deleted: 0, total })
+        setDeleteAllChatsCount(total)
         sessionChatStorage.clearAll()
-        setDeleteAllChatsProgress({ deleted: total, total })
         toast({
           title: 'All chats deleted',
           description: 'Removed all chats from this browser session.',
@@ -1613,7 +1599,7 @@ export function SettingsModal({
       })
     } finally {
       setIsDeletingAllChats(false)
-      setDeleteAllChatsProgress(null)
+      setDeleteAllChatsCount(null)
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
     }
@@ -2524,15 +2510,10 @@ ${encryptionKey.replace('key_', '')}
                                 </div>
                                 {isDeletingAllChats && (
                                   <div className="space-y-2 rounded-md border border-red-500/20 bg-red-500/5 p-3">
-                                    <Progress
-                                      value={deleteAllChatsProgressValue}
-                                      aria-label="Delete all chats progress"
-                                      className="bg-red-500/20"
-                                    />
                                     <div className="flex flex-col gap-1 font-aeonik-fono text-xs text-content-muted sm:flex-row sm:items-center sm:justify-between">
                                       <span>
-                                        {deleteAllChatsProgress
-                                          ? `Deleted ${deleteAllChatsProgress.deleted} of ${deleteAllChatsProgress.total} chat${deleteAllChatsProgress.total !== 1 ? 's' : ''}`
+                                        {deleteAllChatsCount !== null
+                                          ? `Deleting ${deleteAllChatsCount} chat${deleteAllChatsCount !== 1 ? 's' : ''}…`
                                           : 'Counting chats to delete…'}
                                       </span>
                                       <span>Do not close this window.</span>
