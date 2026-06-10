@@ -53,7 +53,7 @@ import {
 } from '@/services/cloud/cloud-key-preflight'
 import { deriveKeyIdHex } from '@/services/sync-enclave/key-bundle'
 
-function cekHexToBase64(offset = 1): { cek: Uint8Array; b64: string } {
+function makeDeterministicCek(offset = 1): { cek: Uint8Array; b64: string } {
   const cek = new Uint8Array(32)
   for (let i = 0; i < 32; i++) cek[i] = (i + offset) % 256
   let bin = ''
@@ -122,7 +122,7 @@ describe('cloud-key-preflight', () => {
     })
 
     it('returns empty/writable when the enclave has no key', async () => {
-      const { b64 } = cekHexToBase64()
+      const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
@@ -132,7 +132,7 @@ describe('cloud-key-preflight', () => {
     })
 
     it('probes legacy data before accepting a key when no key is registered', async () => {
-      const { b64 } = cekHexToBase64()
+      const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
@@ -155,7 +155,7 @@ describe('cloud-key-preflight', () => {
     })
 
     it('probes a staged key on a fresh device with no persisted keys', async () => {
-      const { b64 } = cekHexToBase64()
+      const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(null)
       mockKeyCurrent.mockResolvedValue({
@@ -177,8 +177,8 @@ describe('cloud-key-preflight', () => {
     })
 
     it('does not let a persisted key vouch for a different staged key', async () => {
-      const { b64: stagedB64 } = cekHexToBase64(1)
-      const { b64: persistedB64 } = cekHexToBase64(7)
+      const { b64: stagedB64 } = makeDeterministicCek(1)
+      const { b64: persistedB64 } = makeDeterministicCek(7)
       mockCurrentKey.mockReturnValue(stagedB64)
       mockPersistedKey.mockReturnValue(persistedB64)
       mockKeyCurrent.mockResolvedValue({
@@ -200,8 +200,8 @@ describe('cloud-key-preflight', () => {
     })
 
     it('probes with persisted alternatives when the loaded key is the persisted primary', async () => {
-      const { b64 } = cekHexToBase64(1)
-      const { b64: altB64 } = cekHexToBase64(7)
+      const { b64 } = makeDeterministicCek(1)
+      const { b64: altB64 } = makeDeterministicCek(7)
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
       mockStoredAlternatives.mockReturnValue([altB64])
@@ -224,7 +224,7 @@ describe('cloud-key-preflight', () => {
     })
 
     it('blocks a key that cannot decrypt legacy data before registration', async () => {
-      const { b64 } = cekHexToBase64()
+      const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
@@ -244,7 +244,7 @@ describe('cloud-key-preflight', () => {
     })
 
     it('treats transient legacy-data probe failure as unknown', async () => {
-      const { b64 } = cekHexToBase64()
+      const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
@@ -263,7 +263,7 @@ describe('cloud-key-preflight', () => {
     })
 
     it('allows writes when local KeyID matches enclave KeyID', async () => {
-      const { cek, b64 } = cekHexToBase64()
+      const { cek, b64 } = makeDeterministicCek()
       const expectedKid = await deriveKeyIdHex(cek)
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
@@ -277,7 +277,7 @@ describe('cloud-key-preflight', () => {
     })
 
     it('blocks writes when local KeyID does not match the enclave KeyID', async () => {
-      const { b64 } = cekHexToBase64()
+      const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
@@ -291,7 +291,7 @@ describe('cloud-key-preflight', () => {
     })
 
     it('returns unknown when the enclave probe fails', async () => {
-      const { b64 } = cekHexToBase64()
+      const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockRejectedValue(new Error('network'))

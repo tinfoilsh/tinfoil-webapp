@@ -112,7 +112,7 @@ describe('cek-encoding', () => {
       expect(keys).toEqual([])
     })
 
-    it('falls back to localStorage when in-memory primary is null', () => {
+    it('sources primary bytes from persisted storage, not the in-memory decoder', () => {
       mockGetKey.mockReturnValue('key_primary')
       mockGetStoredAlternatives.mockReturnValue([])
       mockGetAlternativeKeyBytes.mockImplementation((k) =>
@@ -121,6 +121,7 @@ describe('cek-encoding', () => {
       const keys = migrationKeys()
       expect(keys).toHaveLength(1)
       expect(atob(keys[0].key).charCodeAt(0)).toBe(0x42)
+      expect(mockGetKeyBytesOrThrow).not.toHaveBeenCalled()
     })
   })
 })

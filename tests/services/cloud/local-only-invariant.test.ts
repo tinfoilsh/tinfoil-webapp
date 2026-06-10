@@ -7,7 +7,7 @@
  * push, bulk-upload, and the upload-coalescer enqueue path.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // vi.hoisted runs before vi.mock factory evaluation, which is the only
 // safe place to declare variables that the factory closes over.
@@ -54,10 +54,6 @@ describe('§9.6 R6 — local-only-chat invariant', () => {
       etag: '1',
       keyId: 'kid',
     })
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
   })
 
   it('refuses single uploadChat for a local-only chat', async () => {
