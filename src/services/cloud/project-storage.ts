@@ -662,12 +662,15 @@ export class ProjectStorageService {
       }
       return result
     } catch (error) {
+      // A failed batch pull is a transport/sync error, not "every
+      // document is missing" — rethrow so the caller can surface an
+      // error state instead of rendering blank placeholder documents.
       logError('Failed to batch-get documents', error, {
         component: 'ProjectStorage',
         action: 'getDocuments',
         metadata: { projectId, count: documentIds.length },
       })
-      return result
+      throw error
     }
   }
 
