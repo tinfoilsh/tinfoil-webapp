@@ -23,27 +23,26 @@ export function logError(
   error?: Error | unknown,
   context?: ErrorContext,
 ): void {
-  // In development, still log to console for debugging
-  if (process.env.NODE_ENV === 'development') {
+  const debugEnabled =
+    typeof window !== 'undefined' &&
+    localStorage.getItem(DEV_ENABLE_DEBUG_LOGS) === 'true'
+
+  // Log in development, or in production when the user opted in via the
+  // local debug flag (see logInfo). Output never leaves the browser —
+  // Tinfoil's privacy model forbids shipping user data (or anything that
+  // could deanonymize a user) to a third-party logging service, so no
+  // remote logging is wired up here; otherwise errors are silently dropped.
+  if (process.env.NODE_ENV === 'development' || debugEnabled) {
     // Extract error message without passing Error object to avoid triggering Next.js error overlay
     const errorMessage = error instanceof Error ? error.message : String(error)
     console.warn(
       `[${context?.component || 'Unknown'}] ${message}: ${errorMessage}`,
     )
     // Only log stack trace if debug logs are enabled
-    if (
-      typeof window !== 'undefined' &&
-      localStorage.getItem(DEV_ENABLE_DEBUG_LOGS) === 'true' &&
-      error instanceof Error
-    ) {
+    if (debugEnabled && error instanceof Error) {
       console.log('Stack trace:', error.stack)
     }
-    return
   }
-
-  // In production, errors are silently dropped. Tinfoil's privacy model
-  // forbids shipping user data (or anything that could deanonymize a user) to
-  // a third-party logging service, so no remote logging is wired up here.
 }
 
 /**
