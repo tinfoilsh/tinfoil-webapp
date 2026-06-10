@@ -277,6 +277,23 @@ describe('EventNormalizer', () => {
       expect(text).toBe('It’s clear and polite.')
     })
 
+    it('does not create a phantom thinking block for punctuation-only reasoning crumbs after content started', () => {
+      const events = processAll([
+        reasoningChunk('thinking...'),
+        { choices: [{ delta: { content: 'Hello' } }] },
+        reasoningChunk('. '),
+        { choices: [{ delta: { content: ' world' } }] },
+      ])
+
+      const types = events.map((e) => e.type)
+      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
+      const text = events
+        .filter((e) => e.type === 'content_delta')
+        .map((e) => (e as any).content)
+        .join('')
+      expect(text).toBe('Hello world')
+    })
+
     it('still restarts thinking when substantive reasoning resumes after content', () => {
       const events = processAll([
         reasoningChunk('thought1'),
