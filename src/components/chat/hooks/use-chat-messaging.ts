@@ -80,6 +80,7 @@ interface UseChatMessagingReturn {
   cancelGeneration: () => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
   regenerateMessage: (messageIndex: number) => void
+  retryLastMessage: () => void
   resolveInputToolCall: (
     toolCallId: string,
     resultText: string,
@@ -986,6 +987,18 @@ export function useChatMessaging({
     editMessage(pending.messageIndex, originalMessage.content || '')
   }, [loadingState, currentChat, editMessage])
 
+  // Re-send the most recent user message, e.g. after a failed stream
+  const retryLastMessage = useCallback(() => {
+    if (!currentChat) return
+    for (let i = currentChat.messages.length - 1; i >= 0; i--) {
+      if (currentChat.messages[i].role === 'user') {
+        setStreamError(null)
+        regenerateMessage(i)
+        return
+      }
+    }
+  }, [currentChat, regenerateMessage])
+
   // Update currentChatIdRef when currentChat changes
   // But don't overwrite during streaming to preserve ID swaps
   useEffect(() => {
@@ -1010,6 +1023,7 @@ export function useChatMessaging({
     cancelGeneration,
     editMessage,
     regenerateMessage,
+    retryLastMessage,
     resolveInputToolCall,
   }
 }
