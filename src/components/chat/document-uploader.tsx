@@ -29,10 +29,7 @@ export const getFileIconType = getFileIcon
 /**
  * Handles the document upload and processing logic
  */
-export const useDocumentUploader = (
-  isPremium?: boolean,
-  isCurrentModelMultimodal?: boolean,
-) => {
+export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
   const [uploadingDocuments, setUploadingDocuments] = useState<
     Record<string, boolean>
   >({})
@@ -199,16 +196,8 @@ export const useDocumentUploader = (
         return
       }
 
-      // For image files, get description from multimodal model (premium only)
+      // For image files, get description from multimodal model
       if (isImageFile(file)) {
-        if (!isPremium) {
-          onError(
-            new Error('Image upload requires a premium subscription'),
-            documentId,
-          )
-          return
-        }
-
         try {
           const scaled = await scaleAndEncodeImage(file, {
             maxWidth: 768,
@@ -257,18 +246,8 @@ export const useDocumentUploader = (
         }
       }
 
-      // For audio files, transcribe via audio model (premium only)
+      // For audio files, transcribe via audio model
       if (isAudioFile(file)) {
-        if (!isPremium) {
-          onError(
-            new Error(
-              'Audio file transcription requires a premium subscription',
-            ),
-            documentId,
-          )
-          return
-        }
-
         const models = await getAIModels()
         const audioModel = (
           models.find((m) => m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL) ||

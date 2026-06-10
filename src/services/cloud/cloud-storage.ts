@@ -468,9 +468,12 @@ export class CloudStorageService {
     deleted: number
     notificationSent?: boolean
   }> {
+    // keepalive lets the browser finish the request even if the tab is
+    // closed right after the user confirms the deletion.
     const response = await fetch(`${API_BASE_URL}/api/storage/conversations`, {
       method: 'DELETE',
       headers: await this.getHeaders(),
+      keepalive: true,
     })
 
     if (!response.ok) {

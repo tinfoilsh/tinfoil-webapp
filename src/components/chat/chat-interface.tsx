@@ -1217,7 +1217,7 @@ export function ChatInterface({
 
   // Initialize document uploader hook
   const { handleDocumentUpload, describeImageWithMultimodal } =
-    useDocumentUploader(isPremium, selectedModelDetails?.multimodal)
+    useDocumentUploader(selectedModelDetails?.multimodal)
 
   // Generate descriptions for images when switching to a non-multimodal model
   useEffect(() => {
@@ -2689,7 +2689,6 @@ export function ChatInterface({
                   onSelectChat={handleChatSelect}
                   currentChatId={currentChat?.id}
                   isClient={isClient}
-                  isPremium={isPremium}
                   chats={chats
                     .filter((c) => c.projectId === activeProject.id)
                     .map((c) => ({
@@ -2730,7 +2729,6 @@ export function ChatInterface({
                   onNewChat={() => {}}
                   onSelectChat={() => {}}
                   isClient={isClient}
-                  isPremium={isPremium}
                   onSettingsClick={handleOpenSettingsModal}
                   windowWidth={windowWidth}
                 />

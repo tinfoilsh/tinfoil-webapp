@@ -8,7 +8,6 @@ import { useProject } from './project-context'
 
 interface ProjectDocumentUploadProps {
   isDarkMode: boolean
-  isPremium?: boolean
 }
 
 const ACCEPTED_FILE_TYPES = [
@@ -24,11 +23,9 @@ const ACCEPTED_FILE_TYPES = [
 
 export function ProjectDocumentUpload({
   isDarkMode,
-  isPremium,
 }: ProjectDocumentUploadProps) {
   const { uploadDocument, loading: projectLoading } = useProject()
-  const { handleDocumentUpload, isDocumentUploading } =
-    useDocumentUploader(isPremium)
+  const { handleDocumentUpload, isDocumentUploading } = useDocumentUploader()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [uploadStatus, setUploadStatus] = useState<string | null>(null)

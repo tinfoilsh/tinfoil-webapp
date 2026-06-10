@@ -484,17 +484,6 @@ export function ChatInput({
         const imageItem = items.find((item) => item.type.startsWith('image/'))
 
         if (imageItem) {
-          if (!isPremium) {
-            toast({
-              title: 'Premium Required',
-              description: 'Image upload requires a premium subscription.',
-              variant: 'destructive',
-              position: 'top-right',
-            })
-            e.preventDefault()
-            return
-          }
-
           const file = imageItem.getAsFile()
           if (file) {
             e.preventDefault()
@@ -541,7 +530,7 @@ export function ChatInput({
       }
       // If text is short enough, let it paste normally (default behavior)
     },
-    [handleDocumentUpload, isPremium, toast],
+    [handleDocumentUpload],
   )
 
   return (

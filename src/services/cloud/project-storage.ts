@@ -199,9 +199,12 @@ export class ProjectStorageService {
       )
     }
 
+    // keepalive lets the browser finish the request even if the tab is
+    // closed right after the user confirms the deletion.
     const response = await fetch(`${API_BASE_URL}/api/storage/projects`, {
       method: 'DELETE',
       headers: await this.getHeaders(),
+      keepalive: true,
     })
 
     if (!response.ok) {
