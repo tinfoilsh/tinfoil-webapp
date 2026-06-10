@@ -48,7 +48,7 @@ describe('legacy-key-probe', () => {
     expect(legacyKeyProbeAllowsBinding(result)).toBe(true)
   })
 
-  it('rejects binding when any sampled row has UNKNOWN_KEY', async () => {
+  it('allows binding on a mixed sample where some rows decrypt', async () => {
     mockPull.mockResolvedValueOnce({
       items: [{ id: 'chat-1', ok: true }],
     })
@@ -59,8 +59,21 @@ describe('legacy-key-probe', () => {
 
     const result = await probeLegacyDataWithLocalKeys()
 
-    expect(result.outcome).toBe('undecryptable')
+    expect(result.outcome).toBe('decryptable')
     expect(result.sampledDecryptable).toBe(true)
+    expect(result.sampledUndecryptable).toBe(true)
+    expect(legacyKeyProbeAllowsBinding(result)).toBe(true)
+  })
+
+  it('rejects binding when no sampled row decrypts', async () => {
+    mockPull.mockResolvedValue({
+      items: [{ id: 'chat-1', ok: false, code: 'UNKNOWN_KEY' }],
+    })
+
+    const result = await probeLegacyDataWithLocalKeys()
+
+    expect(result.outcome).toBe('undecryptable')
+    expect(result.sampledDecryptable).toBe(false)
     expect(legacyKeyProbeAllowsBinding(result)).toBe(false)
   })
 

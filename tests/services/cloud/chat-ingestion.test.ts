@@ -68,7 +68,7 @@ describe('syncRemoteDeletions', () => {
     })
   })
 
-  it('skips chats already absent locally so repeated passes are event-free', async () => {
+  it('records the tombstone for chats already absent locally without emitting', async () => {
     mockGetDeletedChatsSince.mockResolvedValue({
       deletedIds: ['already-gone'],
     })
@@ -77,7 +77,7 @@ describe('syncRemoteDeletions', () => {
     await syncRemoteDeletions('2026-01-01T00:00:00.000Z', 'test')
 
     expect(mockDeleteChat).not.toHaveBeenCalled()
-    expect(mockMarkAsDeleted).not.toHaveBeenCalled()
+    expect(mockMarkAsDeleted).toHaveBeenCalledWith('already-gone')
     expect(mockEmit).not.toHaveBeenCalled()
   })
 })
