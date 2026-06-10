@@ -467,10 +467,10 @@ export function SettingsModal({
         parsedTraits = []
       }
     }
-    if (savedNickname !== null) setNickname(savedNickname)
-    if (savedProfession !== null) setProfession(savedProfession)
-    if (savedTraits) setSelectedTraits(parsedTraits)
-    if (savedContext !== null) setAdditionalContext(savedContext)
+    setNickname(savedNickname ?? '')
+    setProfession(savedProfession ?? '')
+    setSelectedTraits(parsedTraits)
+    setAdditionalContext(savedContext ?? '')
     setSavedPersonalization({
       nickname: savedNickname ?? '',
       profession: savedProfession ?? '',
@@ -3483,12 +3483,7 @@ ${encryptionKey.replace('key_', '')}
                       </div>
                     </div>
                   )}
-                </>
-              )}
 
-              {/* Import Tab */}
-              {activeTab === 'chat' && (
-                <>
                   {/* Import Progress */}
                   {isImporting && importProgress && (
                     <div className="space-y-3">
@@ -3851,12 +3846,7 @@ ${encryptionKey.replace('key_', '')}
                       </div>
                     </div>
                   </div>
-                </>
-              )}
 
-              {/* Export Tab */}
-              {activeTab === 'chat' && (
-                <>
                   {/* Export Chats */}
                   <div className="space-y-3">
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">
