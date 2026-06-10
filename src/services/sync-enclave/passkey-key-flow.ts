@@ -420,7 +420,9 @@ export async function promoteRecoveredCekToEnclave(opts: {
   cekHex: string
   credentialId: string
   kek: CryptoKey
-}): Promise<{ ok: true; keyIdHex: string } | { ok: false; reason: string }> {
+}): Promise<
+  { ok: true; keyIdHex: string } | { ok: false; reason: PasskeyFlowFailure }
+> {
   const cek = cekHexToBytes(opts.cekHex)
   const keyIdHex = await deriveKeyIdHex(cek)
   let bundle: BundleBody
