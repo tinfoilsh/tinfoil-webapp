@@ -74,9 +74,9 @@ export async function processRemoteChat(
     }
   }
 
-  let decrypted: any
+  let parsed: unknown
   try {
-    decrypted = JSON.parse(remote.plaintext)
+    parsed = JSON.parse(remote.plaintext)
   } catch (parseErr) {
     throw new Error(
       `v2_plaintext_invalid: ${
@@ -85,13 +85,18 @@ export async function processRemoteChat(
     )
   }
 
-  const validation = RemoteChatPlaintextSchema.safeParse(decrypted)
+  const validation = RemoteChatPlaintextSchema.safeParse(parsed)
   if (!validation.success) {
     throw new Error(`v2_plaintext_invalid: ${validation.error.message}`)
   }
+  const decrypted = validation.data
 
   const chat: StoredChat = {
     ...decrypted,
+    title: decrypted.title ?? 'Untitled',
+    // MessageSchema validates the fields the app depends on and
+    // passes the rest through, so the runtime shape is a Message.
+    messages: decrypted.messages as StoredChat['messages'],
     id: remote.id,
     createdAt: ensureValidISODate(
       decrypted.createdAt ?? remote.createdAt,

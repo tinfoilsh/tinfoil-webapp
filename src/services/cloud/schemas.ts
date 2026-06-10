@@ -23,6 +23,8 @@ export const RemoteChatPlaintextSchema = z
   .object({
     title: z.string().optional(),
     messages: z.array(MessageSchema),
+    createdAt: z.union([z.string(), z.number()]).optional(),
+    updatedAt: z.union([z.string(), z.number()]).optional(),
     model: z.string().optional(),
     isLocalOnly: z.boolean().optional(),
     isBlankChat: z.boolean().optional(),
