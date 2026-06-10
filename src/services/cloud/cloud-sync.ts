@@ -13,14 +13,11 @@ import { passkeyEvents } from '../sync-enclave/passkey-events'
 import {
   keyCurrent,
   newIdempotencyKey,
-  pull,
   registerKey,
-  type PullItem,
 } from '../sync-enclave/sync-api'
 import { IF_MATCH_SENTINELS } from '../sync-enclave/wire-contract'
 import {
   hasPrimaryKey,
-  migrationKeys,
   primaryKeyIdHexOrNull,
   requirePrimaryKeyB64,
 } from './cek-encoding'
@@ -34,6 +31,10 @@ import {
 } from './cloud-storage'
 import { runLegacyBlobMigrationAndFinalize } from './legacy-blob-migration'
 import { runLegacyChatEvictionIfNeeded } from './legacy-chat-eviction'
+import {
+  legacyKeyProbeAllowsBinding,
+  probeLegacyDataWithLocalKeys,
+} from './legacy-key-probe'
 import { projectStorage } from './project-storage'
 import { streamingTracker } from './streaming-tracker'
 import { isUploadableChat } from './sync-predicates'
@@ -63,8 +64,6 @@ const UPLOAD_BASE_DELAY_MS = 1000
 const UPLOAD_MAX_DELAY_MS = 8000
 const UPLOAD_MAX_RETRIES = 3
 const REMOTE_LIST_MAX_ATTEMPTS = 2
-const KEY_ADOPTION_PROBE_LIMIT = 5
-
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
 
 export class CloudSyncService {
@@ -1238,50 +1237,10 @@ export class CloudSyncService {
    * a wrong adoption only blocks rewraps, which recovery can later fix).
    */
   private async localKeysCanDecryptRemoteData(): Promise<boolean> {
-    const keys = migrationKeys()
-    if (keys.length === 0) {
-      return false
-    }
-    let sawUndecryptableRow = false
-    for (const scope of ['chat', 'profile', 'project'] as const) {
-      let items: PullItem[]
-      try {
-        const resp = await pull(
-          scope === 'profile'
-            ? { scope, ids: ['profile'], keys }
-            : { scope, all: true, limit: KEY_ADOPTION_PROBE_LIMIT, keys },
-        )
-        items = resp.items
-      } catch (err) {
-        // Transient probe failure: don't adopt on this pass; the next
-        // sync retries with the gate still closed.
-        logError('Legacy migration adoption probe failed', err, {
-          component: 'CloudSync',
-          action: 'localKeysCanDecryptRemoteData',
-          metadata: { scope },
-        })
-        return false
-      }
-      for (const item of items) {
-        if (item.ok) {
-          return true
-        }
-        if (item.code === 'UNKNOWN_KEY') {
-          sawUndecryptableRow = true
-        }
-      }
-    }
-    if (sawUndecryptableRow) {
-      logWarning(
-        'Legacy migration adoption skipped: local keys cannot unseal existing remote data',
-        {
-          component: 'CloudSync',
-          action: 'localKeysCanDecryptRemoteData',
-        },
-      )
-      return false
-    }
-    return true
+    const result = await probeLegacyDataWithLocalKeys({
+      action: 'localKeysCanDecryptRemoteData',
+    })
+    return legacyKeyProbeAllowsBinding(result)
   }
 
   /**
