@@ -24,10 +24,13 @@ import {
   AUTH_ACTIVE_USER_ID,
   SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX,
 } from '@/constants/storage-keys'
+import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import {
+  base64ToBytes,
   keyCurrent,
   newIdempotencyKey,
   registerKey,
+  type KeyCurrentResponse,
 } from '../sync-enclave/sync-api'
 import { IF_MATCH_SENTINELS } from '../sync-enclave/wire-contract'
 import { requirePrimaryKeyB64 } from './cek-encoding'
@@ -137,27 +140,38 @@ export async function authorizeCurrentPrimaryKeyOrThrow(
  * past it is register-key with created_via=start_fresh, which
  * atomically drops the old rows and rebinds the user to this CEK.
  *
- * No-op when the key is already authoritative: an empty remote, a
- * matching KeyID, or a prior ceremony (e.g. the passkey start-fresh
- * path, which registers before this runs). That lets the manual and
- * passkey start-fresh callers invoke it unconditionally without
- * double-wiping. Throws a CloudKeySetupError when the enclave can't
- * be reached, so the caller surfaces "try again" instead of wiping
- * blindly or mislabeling the key as invalid.
+ * No-op only when the enclave's registered key already IS this CEK
+ * (matching KeyID) — a prior ceremony (e.g. the passkey start-fresh
+ * path, which registers before this runs) must not be wiped again.
+ * Every other state registers, including an empty remote and
+ * unregistered legacy data: start-fresh still needs the enclave-side
+ * key row, or every subsequent push is rejected as a stale key.
+ * Throws a CloudKeySetupError when the enclave can't be reached, so
+ * the caller surfaces "try again" instead of wiping blindly or
+ * mislabeling the key as invalid.
  */
 export async function registerStartFreshKeyIfNeeded(): Promise<void> {
-  const validation = await validateCurrentPrimaryKey()
-  if (validation.canWrite) return
-  if (validation.remoteState !== 'exists') {
+  const keyB64 = requirePrimaryKeyB64()
+  let current: KeyCurrentResponse
+  try {
+    current = await keyCurrent()
+  } catch {
     throw new CloudKeySetupError(
-      validation.message ??
-        "We couldn't verify your cloud data. Please try again in a moment.",
-      validation.remoteState,
+      "We couldn't verify your cloud data. Please try again in a moment.",
+      'unknown',
     )
   }
-  const current = await keyCurrent()
+  if (current.key_id) {
+    try {
+      const localKeyId = await deriveKeyIdHex(base64ToBytes(keyB64))
+      if (localKeyId === current.key_id) return
+    } catch {
+      // Underivable local key bytes: fall through and let the
+      // enclave's register-key validation reject them.
+    }
+  }
   await registerKey({
-    keyB64: requirePrimaryKeyB64(),
+    keyB64,
     ifMatch: current.etag || IF_MATCH_SENTINELS.AnyKey,
     createdVia: 'start_fresh',
     idempotencyKey: newIdempotencyKey(),

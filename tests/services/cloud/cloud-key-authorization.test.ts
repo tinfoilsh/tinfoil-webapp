@@ -17,15 +17,27 @@ vi.mock('@/services/cloud/cloud-key-preflight', () => ({
     mockValidateCurrentPrimaryKey(...args),
 }))
 
+const TEST_KEY_B64 = vi.hoisted(() => {
+  let bin = ''
+  for (let i = 0; i < 32; i++) bin += String.fromCharCode(i + 1)
+  return btoa(bin)
+})
+
 vi.mock('@/services/cloud/cek-encoding', () => ({
-  requirePrimaryKeyB64: () => 'BASE64KEY==',
+  requirePrimaryKeyB64: () => TEST_KEY_B64,
 }))
 
-vi.mock('@/services/sync-enclave/sync-api', () => ({
-  keyCurrent: (...args: unknown[]) => mockKeyCurrent(...args),
-  registerKey: (...args: unknown[]) => mockRegisterKey(...args),
-  newIdempotencyKey: () => 'idem-test',
-}))
+vi.mock('@/services/sync-enclave/sync-api', async () => {
+  const real = await vi.importActual<
+    typeof import('@/services/sync-enclave/sync-api')
+  >('@/services/sync-enclave/sync-api')
+  return {
+    ...real,
+    keyCurrent: (...args: unknown[]) => mockKeyCurrent(...args),
+    registerKey: (...args: unknown[]) => mockRegisterKey(...args),
+    newIdempotencyKey: () => 'idem-test',
+  }
+})
 
 import {
   AUTH_ACTIVE_USER_ID,
@@ -39,6 +51,8 @@ import {
   registerStartFreshKeyIfNeeded,
 } from '@/services/cloud/cloud-key-authorization'
 import { CloudKeySetupError } from '@/services/cloud/cloud-key-preflight'
+import { deriveKeyIdHex } from '@/services/sync-enclave/key-bundle'
+import { base64ToBytes } from '@/services/sync-enclave/sync-api'
 
 const USER_ID = 'user-abc'
 
@@ -152,24 +166,18 @@ describe('cloud-key-authorization', () => {
   })
 
   describe('registerStartFreshKeyIfNeeded', () => {
-    it('does not register when the local key is already authoritative', async () => {
-      mockValidateCurrentPrimaryKey.mockResolvedValue({
-        remoteState: 'exists',
-        canWrite: true,
-        probe: 'none',
+    it('does not register when the registered key is already this CEK', async () => {
+      const localKid = await deriveKeyIdHex(base64ToBytes(TEST_KEY_B64))
+      mockKeyCurrent.mockResolvedValue({
+        key_id: localKid,
+        etag: 'etag-7',
+        bundles: {},
       })
       await registerStartFreshKeyIfNeeded()
-      expect(mockKeyCurrent).not.toHaveBeenCalled()
       expect(mockRegisterKey).not.toHaveBeenCalled()
     })
 
     it('registers with created_via=start_fresh when data exists under another key', async () => {
-      mockValidateCurrentPrimaryKey.mockResolvedValue({
-        remoteState: 'exists',
-        canWrite: false,
-        probe: 'none',
-        message: "doesn't match",
-      })
       mockKeyCurrent.mockResolvedValue({
         key_id: 'old-key-id',
         etag: 'etag-7',
@@ -183,15 +191,27 @@ describe('cloud-key-authorization', () => {
       const arg = mockRegisterKey.mock.calls[0][0]
       expect(arg.createdVia).toBe('start_fresh')
       expect(arg.ifMatch).toBe('etag-7')
-      expect(arg.keyB64).toBe('BASE64KEY==')
+      expect(arg.keyB64).toBe(TEST_KEY_B64)
+    })
+
+    it('registers a brand-new key when the remote has no key yet', async () => {
+      mockKeyCurrent.mockResolvedValue({
+        key_id: null,
+        etag: '',
+        bundles: {},
+        has_data: false,
+      })
+      mockRegisterKey.mockResolvedValue({ ok: true, key_id: 'new-key-id' })
+
+      await registerStartFreshKeyIfNeeded()
+
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      const arg = mockRegisterKey.mock.calls[0][0]
+      expect(arg.createdVia).toBe('start_fresh')
+      expect(arg.ifMatch).toBe('*')
     })
 
     it('falls back to the AnyKey sentinel when the enclave reports no etag', async () => {
-      mockValidateCurrentPrimaryKey.mockResolvedValue({
-        remoteState: 'exists',
-        canWrite: false,
-        probe: 'none',
-      })
       mockKeyCurrent.mockResolvedValue({ key_id: 'old-key-id', bundles: {} })
       mockRegisterKey.mockResolvedValue({ ok: true, key_id: 'new-key-id' })
 
@@ -201,12 +221,7 @@ describe('cloud-key-authorization', () => {
     })
 
     it('throws without wiping when the remote state cannot be verified', async () => {
-      mockValidateCurrentPrimaryKey.mockResolvedValue({
-        remoteState: 'unknown',
-        canWrite: false,
-        probe: 'none',
-        message: 'no verify',
-      })
+      mockKeyCurrent.mockRejectedValue(new Error('network'))
 
       await expect(registerStartFreshKeyIfNeeded()).rejects.toBeInstanceOf(
         CloudKeySetupError,
