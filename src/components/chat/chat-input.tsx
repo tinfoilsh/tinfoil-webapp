@@ -119,7 +119,29 @@ export function ChatInput({
       if (!el) return
 
       const min = Number.parseInt(inputMinHeight, 10) || 0
-      const max = 240
+      // Cap the textarea to the visual viewport (which shrinks when the
+      // on-screen keyboard opens) so the toolbar row with the send button
+      // always stays visible below it. Measure everything else rendered in
+      // the input area (toolbar, paddings, suggestion chips, banners,
+      // attachment previews) so the cap adapts to what is actually shown,
+      // e.g. the extra suggestions row on the initial query screen.
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+      const inputArea = el.closest('[data-chat-input-area]')
+      const chromeHeight = inputArea
+        ? inputArea.getBoundingClientRect().height -
+          el.getBoundingClientRect().height
+        : CONSTANTS.INPUT_VIEWPORT_RESERVED_PX
+      const available = Math.min(
+        CONSTANTS.INPUT_MAX_HEIGHT_PX,
+        viewportHeight - chromeHeight - CONSTANTS.INPUT_VIEWPORT_TOP_GAP_PX,
+      )
+      // Snap the cap to a whole number of text lines so scrolled-out content
+      // is clipped flush at a line boundary instead of mid-line.
+      const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight)
+      const max =
+        Number.isFinite(lineHeight) && lineHeight > 0
+          ? Math.max(Math.floor(available / lineHeight), 1) * lineHeight
+          : available
 
       // Reset to 0 so the browser recomputes content height.
       // Using '0' instead of 'auto' forces scrollHeight to reflect the
@@ -248,6 +270,17 @@ export function ChatInput({
     return () => cancelAnimationFrame(raf)
     // Include `textareaResetNonce` so a remount recalculates height immediately.
   }, [input, inputRef, resizeTextarea, textareaResetNonce])
+
+  // Recompute the height cap when the visual viewport changes (e.g. the
+  // on-screen keyboard opens or closes) so long text never pushes the send
+  // button out of view.
+  useEffect(() => {
+    const vv = typeof window !== 'undefined' ? window.visualViewport : null
+    if (!vv) return
+    const onViewportResize = () => resizeTextarea(inputRef.current)
+    vv.addEventListener('resize', onViewportResize)
+    return () => vv.removeEventListener('resize', onViewportResize)
+  }, [inputRef, resizeTextarea])
 
   // Focus textarea on initial mount only (not on remounts after sending)
   useEffect(() => {
@@ -888,12 +921,7 @@ export function ChatInput({
 
                 if (!listMarkerMatch) {
                   setTimeout(() => {
-                    textarea.style.height = 'auto'
-                    const max = 240
-                    const raw = textarea.scrollHeight
-                    const min = Number.parseInt(inputMinHeight, 10) || 0
-                    const next = Math.max(min, Math.min(raw, max))
-                    textarea.style.height = `${next}px`
+                    resizeTextarea(textarea)
                     textarea.scrollTop = textarea.scrollHeight
                   }, 0)
                 } else {
@@ -943,12 +971,7 @@ export function ChatInput({
                       cursorPosition + 1 + indent.length + newMarker.length + 1
 
                     setTimeout(() => {
-                      textarea.style.height = 'auto'
-                      const max = 240
-                      const raw = textarea.scrollHeight
-                      const min = Number.parseInt(inputMinHeight, 10) || 0
-                      const next = Math.max(min, Math.min(raw, max))
-                      textarea.style.height = `${next}px`
+                      resizeTextarea(textarea)
                       textarea.selectionStart = textarea.selectionEnd =
                         newCursorPos
                       textarea.scrollTop = textarea.scrollHeight
@@ -968,7 +991,7 @@ export function ChatInput({
             )}
             style={{
               minHeight: inputMinHeight,
-              maxHeight: '240px',
+              maxHeight: `${CONSTANTS.INPUT_MAX_HEIGHT_PX}px`,
             }}
           />
 
