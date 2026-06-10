@@ -8,8 +8,6 @@ export type ContextUsage = {
   limitTokens: number
 }
 
-// Usage percentage below which the indicator stays hidden
-const DISPLAY_THRESHOLD_PERCENT = 50
 // Usage percentage at which the indicator switches to the warning color
 const WARNING_THRESHOLD_PERCENT = 80
 
@@ -25,15 +23,11 @@ function formatTokens(tokens: number): string {
 
 /**
  * Small circular gauge showing how much of the model's context window the
- * current conversation occupies. Hidden until usage crosses a threshold.
- * Once usage passes 100%, older messages get archived and are no longer
- * sent to the model.
+ * current conversation occupies. Once usage passes 100%, older messages get
+ * archived and are no longer sent to the model.
  */
 export function ContextUsageIndicator({ usage }: { usage: ContextUsage }) {
   const percentage = Math.min(Math.round(usage.percentage), 100)
-  if (percentage < DISPLAY_THRESHOLD_PERCENT) {
-    return null
-  }
 
   const isNearLimit = percentage >= WARNING_THRESHOLD_PERCENT
   const isFull = percentage >= 100
