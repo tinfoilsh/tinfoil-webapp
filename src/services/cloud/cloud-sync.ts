@@ -132,7 +132,6 @@ export class CloudSyncService {
    * Throws if a sync is already in progress.
    */
   private async withSyncLock<T>(fn: () => Promise<T>): Promise<T> {
-    // Check if sync is already in progress (atomic check)
     if (this.syncLock) {
       logInfo('[CloudSync] Sync already in progress, skipping', {
         component: 'CloudSync',
@@ -141,7 +140,6 @@ export class CloudSyncService {
       throw new Error('Sync already in progress')
     }
 
-    // Acquire lock
     let resolve: () => void
     this.syncLock = new Promise<void>((r) => {
       resolve = r
@@ -151,7 +149,6 @@ export class CloudSyncService {
     try {
       return await fn()
     } finally {
-      // Release lock
       this.syncLock = null
       if (this.syncLockResolve) {
         this.syncLockResolve()
