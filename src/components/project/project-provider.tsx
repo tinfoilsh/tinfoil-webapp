@@ -158,6 +158,10 @@ export function ProjectProvider({
               content: full.content,
               filename: full.filename,
               contentType: full.contentType,
+              // The list surface only carries metadata and stamps
+              // sizeBytes as 0; the real size comes from the decoded
+              // document content.
+              sizeBytes: full.sizeBytes,
             }
           },
         )
