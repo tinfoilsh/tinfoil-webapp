@@ -383,7 +383,7 @@ export function ChatInput({
           description:
             err instanceof Error ? err.message : 'Failed to transcribe audio',
           variant: 'destructive',
-          position: 'top-left',
+          position: 'top-right',
         })
       } finally {
         setIsTranscribing(false)
@@ -452,7 +452,7 @@ export function ChatInput({
                 ? err.message
                 : 'Failed to process audio recording.',
             variant: 'destructive',
-            position: 'top-left',
+            position: 'top-right',
           })
           setIsRecording(false)
           setIsTranscribing(false)
@@ -474,7 +474,7 @@ export function ChatInput({
             ? err.message
             : 'Could not start recording. Please make sure you have granted microphone permissions.',
         variant: 'destructive',
-        position: 'top-left',
+        position: 'top-right',
       })
     }
   }, [sendAudioForTranscription, stopRecording, toast])
@@ -493,7 +493,7 @@ export function ChatInput({
               title: 'Premium Required',
               description: 'Image upload requires a premium subscription.',
               variant: 'destructive',
-              position: 'top-left',
+              position: 'top-right',
             })
             e.preventDefault()
             return

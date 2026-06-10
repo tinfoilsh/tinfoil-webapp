@@ -70,7 +70,6 @@ import {
   estimateMessageTokens,
   estimateTokenCount,
   getContextTokenBudget,
-  parseContextWindowTokens,
 } from '@/utils/token-estimation'
 import { TfTinSad } from '@tinfoilsh/tinfoil-icons'
 import dynamic from 'next/dynamic'
@@ -1272,7 +1271,7 @@ export function ChatInterface({
           title: 'Image processing failed',
           description: `Could not process ${failedImages.length === 1 ? `"${failedImages[0].name}"` : `${failedImages.length} images`} for this model. Please try uploading again.`,
           variant: 'destructive',
-          position: 'top-left',
+          position: 'top-right',
         })
       }
 
@@ -1723,26 +1722,28 @@ export function ChatInterface({
         file,
         (content, documentId, imageData, hasDescription, pages) => {
           const newDocTokens = estimateTokenCount(content)
-          const contextLimit = parseContextWindowTokens(
+          const contextBudget = getContextTokenBudget(
             selectedModelDetails?.contextWindow,
           )
 
-          const existingTokens = processedDocuments.reduce(
+          // Attachments are part of the next message, which cannot be
+          // archived, so all pending attachments together must fit within
+          // the context budget.
+          const pendingTokens = processedDocuments.reduce(
             (total, doc) => total + estimateTokenCount(doc.content),
             0,
           )
 
-          if (existingTokens + newDocTokens > contextLimit) {
+          if (pendingTokens + newDocTokens > contextBudget) {
             setProcessedDocuments((prev) =>
               prev.filter((doc) => doc.id !== tempDocId),
             )
 
             toast({
-              title: 'Context window saturated',
-              description:
-                "The selected model's context window is full. Remove a document or choose a model with a larger context window before uploading more files.",
+              title: 'Attachment too large for this model',
+              description: `"${file.name}" needs ~${Math.round(newDocTokens / 1000)}k tokens but this model can fit ~${Math.round((contextBudget - pendingTokens) / 1000)}k. Remove an attachment or switch to a model with a larger context window.`,
               variant: 'destructive',
-              position: 'top-left',
+              position: 'top-right',
             })
             return
           }
@@ -1784,7 +1785,7 @@ export function ChatInterface({
             title: 'Processing failed',
             description: error.message || 'Failed to process document',
             variant: 'destructive',
-            position: 'top-left',
+            position: 'top-right',
           })
         },
         (documentId, imageData) => {
@@ -1845,7 +1846,7 @@ export function ChatInterface({
               title: 'Upload failed',
               description: 'Failed to add document to project context.',
               variant: 'destructive',
-              position: 'top-left',
+              position: 'top-right',
             })
           } finally {
             removeUploadingFile(uploadId)
@@ -1856,7 +1857,7 @@ export function ChatInterface({
             title: 'Processing failed',
             description: error.message || 'Failed to process document',
             variant: 'destructive',
-            position: 'top-left',
+            position: 'top-right',
           })
           removeUploadingFile(uploadId)
         },
