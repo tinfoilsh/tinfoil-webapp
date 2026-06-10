@@ -297,22 +297,39 @@ export function createEventNormalizer(): EventNormalizer {
         if (reasoningContent) {
           events.push({ type: 'thinking_delta', content: reasoningContent })
         }
+        // Some routers attach content to the same chunk as reasoning;
+        // emit it so it isn't silently dropped.
+        if (content) {
+          events.push({ type: 'thinking_end' })
+          isInThinking = false
+          events.push({ type: 'content_delta', content })
+        }
         return events
       }
 
       if (isReasoningFormat && reasoningContent !== null) {
         // Continued reasoning chunks
         if (reasoningContent) {
-          // If we were out of thinking (content interrupted), restart
-          if (!isInThinking) {
+          // If we were out of thinking (content interrupted), restart —
+          // but not for whitespace-only tails, which would otherwise
+          // create an empty thinking block and split the content
+          // timeline mid-word.
+          if (!isInThinking && reasoningContent.trim()) {
             isInThinking = true
             events.push({ type: 'thinking_start' })
           }
-          events.push({ type: 'thinking_delta', content: reasoningContent })
+          if (isInThinking) {
+            events.push({ type: 'thinking_delta', content: reasoningContent })
+          }
         }
-        if (content && isInThinking) {
-          events.push({ type: 'thinking_end' })
-          isInThinking = false
+        // Content must be emitted regardless of thinking state: the
+        // router sends `reasoning_content: ""` alongside content on some
+        // chunks, and dropping those silently loses message text.
+        if (content) {
+          if (isInThinking) {
+            events.push({ type: 'thinking_end' })
+            isInThinking = false
+          }
           events.push({ type: 'content_delta', content })
         }
         return events

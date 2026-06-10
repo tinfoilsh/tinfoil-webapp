@@ -209,6 +209,86 @@ describe('EventNormalizer', () => {
       const types = events.map((e) => e.type)
       expect(types[0]).toBe('thinking_start')
     })
+
+    it('emits content carried on the same chunk as the first reasoning', () => {
+      const events = processAll([
+        {
+          choices: [
+            { delta: { reasoning_content: 'quick thought. ', content: 'Hi' } },
+          ],
+        },
+        { choices: [{ delta: { content: ' there' } }] },
+      ])
+
+      const types = events.map((e) => e.type)
+      expect(types).toEqual([
+        'thinking_start',
+        'thinking_delta',
+        'thinking_end',
+        'content_delta',
+        'content_delta',
+      ])
+      expect((events[3] as any).content).toBe('Hi')
+    })
+
+    it('does not drop content on chunks carrying an empty reasoning field after thinking ended', () => {
+      const events = processAll([
+        reasoningChunk('thinking about the email...'),
+        {
+          choices: [
+            {
+              delta: { reasoning_content: '', content: 'It’s clear and poli' },
+            },
+          ],
+        },
+        {
+          choices: [
+            { delta: { reasoning_content: '', content: 'te, but hone' } },
+          ],
+        },
+        { choices: [{ delta: { content: 'stly?' } }] },
+      ])
+
+      const text = events
+        .filter((e) => e.type === 'content_delta')
+        .map((e) => (e as any).content)
+        .join('')
+      expect(text).toBe('It’s clear and polite, but honestly?')
+    })
+
+    it('does not restart thinking for whitespace-only reasoning tails after content started', () => {
+      const events = processAll([
+        reasoningChunk('thinking...'),
+        {
+          choices: [{ delta: { reasoning_content: '. ', content: 'It' } }],
+        },
+        {
+          choices: [{ delta: { reasoning_content: ' ', content: '’s clear' } }],
+        },
+        { choices: [{ delta: { content: ' and polite.' } }] },
+      ])
+
+      const types = events.map((e) => e.type)
+      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
+      const text = events
+        .filter((e) => e.type === 'content_delta')
+        .map((e) => (e as any).content)
+        .join('')
+      expect(text).toBe('It’s clear and polite.')
+    })
+
+    it('still restarts thinking when substantive reasoning resumes after content', () => {
+      const events = processAll([
+        reasoningChunk('thought1'),
+        { choices: [{ delta: { content: 'partial answer' } }] },
+        reasoningChunk('thought2'),
+        { choices: [{ delta: { content: 'final' } }] },
+      ])
+
+      const types = events.map((e) => e.type)
+      expect(types.filter((t) => t === 'thinking_start').length).toBe(2)
+      expect(types.filter((t) => t === 'thinking_end').length).toBe(2)
+    })
   })
 
   describe('annotations', () => {
