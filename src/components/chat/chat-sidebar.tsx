@@ -33,7 +33,6 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
-import { AiOutlineCloudSync } from 'react-icons/ai'
 import { CiFloppyDisk } from 'react-icons/ci'
 import { FaLock } from 'react-icons/fa6'
 import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
@@ -920,17 +919,12 @@ export function ChatSidebar({
 
                   <div className="flex items-center gap-3 text-xs text-content-secondary">
                     <PiSparkle className="h-4 w-4 flex-shrink-0 text-content-muted" />
-                    <span>Generous rate limits</span>
+                    <span>No daily request limits</span>
                   </div>
 
                   <div className="flex items-center gap-3 text-xs text-content-secondary">
                     <PiFolder className="h-4 w-4 flex-shrink-0 text-content-muted" />
                     <span>Create projects to chat with files</span>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-xs text-content-secondary">
-                    <AiOutlineCloudSync className="h-4 w-4 flex-shrink-0 text-content-muted" />
-                    <span>Cloud backups and device sync</span>
                   </div>
                 </div>
                 <div className="mt-4">

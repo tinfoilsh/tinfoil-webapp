@@ -61,11 +61,17 @@ import {
   setCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
-import { isSupportedFile } from '@/utils/file-types'
+import { isProbablyTextFile, isSupportedFile } from '@/utils/file-types'
 import {
   getProjectUploadPreference,
   setProjectUploadPreference,
 } from '@/utils/project-upload-preference'
+import {
+  estimateMessageTokens,
+  estimateTokenCount,
+  findContextStartIndex,
+  getContextTokenBudget,
+} from '@/utils/token-estimation'
 import { TfTinSad } from '@tinfoilsh/tinfoil-icons'
 import dynamic from 'next/dynamic'
 import Head from 'next/head'
@@ -103,7 +109,6 @@ import {
 } from './genui/widgets/ArtifactPreview'
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
-import { useMaxMessages } from './hooks/use-max-messages'
 import { useMessageQueue } from './hooks/use-message-queue'
 import { usePromptLibrary } from './hooks/use-prompt-library'
 import {
@@ -184,24 +189,6 @@ type ChatInterfaceProps = {
    * can still open these flows manually from settings.
    */
   suppressIntroModals?: boolean
-}
-
-// Helper to roughly estimate token count based on character length (≈4 chars per token)
-const estimateTokenCount = (text: string | undefined): number => {
-  if (!text) return 0
-  return Math.ceil(text.length / 4)
-}
-
-// Helper to parse values like "64k tokens" → 64000
-const parseContextWindowTokens = (contextWindow?: string): number => {
-  if (!contextWindow) return 64000 // sensible default
-  const match = contextWindow.match(/(\d+)(k)?/i)
-  if (!match) return 64000
-  let tokens = parseInt(match[1], 10)
-  if (match[2]) {
-    tokens *= 1000
-  }
-  return tokens
 }
 
 // Generate a silly privacy-themed project name
@@ -753,6 +740,7 @@ export function ChatInterface({
     isStreaming,
     streamError,
     dismissStreamError,
+    retryLastMessage,
     selectedModel,
     hasValidatedModel,
     expandedLabel,
@@ -888,13 +876,11 @@ export function ChatInterface({
   // Ask sidebar - ephemeral streaming only. Nothing is persisted until the
   // user clicks "Open as chat", which creates a new real chat seeded with the
   // sidebar's messages.
-  const sidebarMaxMessages = useMaxMessages()
   const sidebarChat = useSidebarChat({
     systemPrompt: finalSystemPrompt,
     rules: processedRules,
     models,
     selectedModel,
-    maxMessages: sidebarMaxMessages,
     reasoningEffort,
     thinkingEnabled,
     webSearchEnabled,
@@ -1232,7 +1218,7 @@ export function ChatInterface({
 
   // Initialize document uploader hook
   const { handleDocumentUpload, describeImageWithMultimodal } =
-    useDocumentUploader(isPremium, selectedModelDetails?.multimodal)
+    useDocumentUploader(selectedModelDetails?.multimodal)
 
   // Generate descriptions for images when switching to a non-multimodal model
   useEffect(() => {
@@ -1286,7 +1272,7 @@ export function ChatInterface({
           title: 'Image processing failed',
           description: `Could not process ${failedImages.length === 1 ? `"${failedImages[0].name}"` : `${failedImages.length} images`} for this model. Please try uploading again.`,
           variant: 'destructive',
-          position: 'top-left',
+          position: 'top-right',
         })
       }
 
@@ -1710,7 +1696,7 @@ export function ChatInterface({
     async (file: File) => {
       const tempDocId = crypto.randomUUID()
 
-      if (!isSupportedFile(file.name)) {
+      if (!isSupportedFile(file.name) && !(await isProbablyTextFile(file))) {
         setProcessedDocuments((prev) => [
           ...prev,
           {
@@ -1737,26 +1723,28 @@ export function ChatInterface({
         file,
         (content, documentId, imageData, hasDescription, pages) => {
           const newDocTokens = estimateTokenCount(content)
-          const contextLimit = parseContextWindowTokens(
+          const contextBudget = getContextTokenBudget(
             selectedModelDetails?.contextWindow,
           )
 
-          const existingTokens = processedDocuments.reduce(
+          // Attachments are part of the next message, which cannot be
+          // archived, so all pending attachments together must fit within
+          // the context budget.
+          const pendingTokens = processedDocuments.reduce(
             (total, doc) => total + estimateTokenCount(doc.content),
             0,
           )
 
-          if (existingTokens + newDocTokens > contextLimit) {
+          if (pendingTokens + newDocTokens > contextBudget) {
             setProcessedDocuments((prev) =>
               prev.filter((doc) => doc.id !== tempDocId),
             )
 
             toast({
-              title: 'Context window saturated',
-              description:
-                "The selected model's context window is full. Remove a document or choose a model with a larger context window before uploading more files.",
+              title: 'Attachment too large for this model',
+              description: `"${file.name}" needs ~${Math.round(newDocTokens / 1000)}k tokens but this model can fit ~${Math.round((contextBudget - pendingTokens) / 1000)}k. Remove an attachment or switch to a model with a larger context window.`,
               variant: 'destructive',
-              position: 'top-left',
+              position: 'top-right',
             })
             return
           }
@@ -1798,7 +1786,7 @@ export function ChatInterface({
             title: 'Processing failed',
             description: error.message || 'Failed to process document',
             variant: 'destructive',
-            position: 'top-left',
+            position: 'top-right',
           })
         },
         (documentId, imageData) => {
@@ -1859,7 +1847,7 @@ export function ChatInterface({
               title: 'Upload failed',
               description: 'Failed to add document to project context.',
               variant: 'destructive',
-              position: 'top-left',
+              position: 'top-right',
             })
           } finally {
             removeUploadingFile(uploadId)
@@ -1870,7 +1858,7 @@ export function ChatInterface({
             title: 'Processing failed',
             description: error.message || 'Failed to process document',
             variant: 'destructive',
-            position: 'top-left',
+            position: 'top-right',
           })
           removeUploadingFile(uploadId)
         },
@@ -1989,34 +1977,38 @@ export function ChatInterface({
     setProcessedDocuments((prev) => prev.filter((doc) => doc.id !== id))
   }
 
-  // Calculate context usage percentage (memoized to prevent re-calculation during streaming)
-  const contextUsagePercentage = useMemo(() => {
-    // Calculate context usage
-    const contextLimit = parseContextWindowTokens(
+  // Calculate context usage (memoized to prevent re-calculation during streaming)
+  const contextUsage = useMemo(() => {
+    const limitTokens = getContextTokenBudget(
       selectedModelDetails?.contextWindow,
     )
 
-    let totalTokens = 0
+    let usedTokens = estimateTokenCount(input)
 
-    // Count tokens from messages
+    // Count tokens from messages (including their attachments), skipping
+    // archived messages that are excluded from the prompt
     if (currentChat?.messages) {
-      currentChat.messages.forEach((msg) => {
-        totalTokens += estimateTokenCount(msg.content)
-        if (msg.thoughts) {
-          totalTokens += estimateTokenCount(msg.thoughts)
-        }
-      })
+      const messages = currentChat.messages
+      const startIndex = findContextStartIndex(messages, limitTokens)
+      for (let i = startIndex; i < messages.length; i++) {
+        usedTokens += estimateMessageTokens(messages[i])
+      }
     }
 
-    // Count tokens from documents
+    // Count tokens from pending documents not yet attached to a message
     if (processedDocuments) {
       processedDocuments.forEach((doc) => {
-        totalTokens += estimateTokenCount(doc.content)
+        usedTokens += estimateTokenCount(doc.content)
       })
     }
 
-    return (totalTokens / contextLimit) * 100
+    return {
+      percentage: (usedTokens / limitTokens) * 100,
+      usedTokens,
+      limitTokens,
+    }
   }, [
+    input,
     currentChat?.messages,
     processedDocuments,
     selectedModelDetails?.contextWindow,
@@ -2701,7 +2693,6 @@ export function ChatInterface({
                   onSelectChat={handleChatSelect}
                   currentChatId={currentChat?.id}
                   isClient={isClient}
-                  isPremium={isPremium}
                   chats={chats
                     .filter((c) => c.projectId === activeProject.id)
                     .map((c) => ({
@@ -2742,7 +2733,6 @@ export function ChatInterface({
                   onNewChat={() => {}}
                   onSelectChat={() => {}}
                   isClient={isClient}
-                  isPremium={isPremium}
                   onSettingsClick={handleOpenSettingsModal}
                   windowWidth={windowWidth}
                 />
@@ -3032,13 +3022,6 @@ export function ChatInterface({
                 isStreaming={isStreaming}
                 isWaitingForResponse={isWaitingForResponse}
               />
-              {streamError && (
-                <StreamErrorBanner
-                  message={streamError}
-                  onDismiss={dismissStreamError}
-                  isDarkMode={isDarkMode}
-                />
-              )}
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
@@ -3161,6 +3144,14 @@ export function ChatInterface({
                           pillClassName="rounded-full border"
                         />
                       )}
+                      {streamError && (
+                        <StreamErrorBanner
+                          message={streamError}
+                          onDismiss={dismissStreamError}
+                          onRetry={retryLastMessage}
+                          isDarkMode={isDarkMode}
+                        />
+                      )}
                       <MessageQueue
                         queue={queuedMessages}
                         onRemove={removeQueuedMessage}
@@ -3179,6 +3170,7 @@ export function ChatInterface({
                         processedDocuments={processedDocuments}
                         removeDocument={removeDocument}
                         isPremium={isPremium}
+                        contextUsage={contextUsage}
                         quote={quote}
                         onClearQuote={() => setQuote(null)}
                         isTemporaryMode={isTemporaryMode}

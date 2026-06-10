@@ -36,7 +36,6 @@ import type { Chat, LoadingState, Message } from '../types'
 import { createBlankChat, sortChats } from './chat-operations'
 import { createUpdateChatWithHistoryCheck } from './chat-persistence'
 import { processStreamingResponse } from './streaming'
-import { useMaxMessages } from './use-max-messages'
 import type { ReasoningEffort } from './use-reasoning-effort'
 
 interface UseChatMessagingProps {
@@ -81,6 +80,7 @@ interface UseChatMessagingReturn {
   cancelGeneration: () => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
   regenerateMessage: (messageIndex: number) => void
+  retryLastMessage: () => void
   resolveInputToolCall: (
     toolCallId: string,
     resultText: string,
@@ -108,7 +108,6 @@ export function useChatMessaging({
   codeExecutionEncryptionKey,
 }: UseChatMessagingProps): UseChatMessagingReturn {
   const { isSignedIn } = useAuth()
-  const maxMessages = useMaxMessages()
   const { isProjectMode, activeProject } = useProject()
 
   const [input, setInput] = useState('')
@@ -561,7 +560,6 @@ export function useChatMessaging({
             setRetryInfo({ attempt, maxRetries, error })
           },
           updatedMessages,
-          maxMessages,
           signal: controller.signal,
           reasoningEffort,
           thinkingEnabled,
@@ -800,7 +798,6 @@ export function useChatMessaging({
       models,
       selectedModel,
       systemPrompt,
-      maxMessages,
       rules,
       updateChatWithHistoryCheck,
       scrollToBottom,
@@ -932,11 +929,19 @@ export function useChatMessaging({
   const regenerateMessage = useCallback(
     (messageIndex: number) => {
       if (!currentChat) return
+      if (pendingRegenerateRef.current !== null) return
 
       const originalMessage = currentChat.messages[messageIndex]
       if (!originalMessage || originalMessage.role !== 'user') return
 
-      if (loadingState !== 'idle') {
+      const isGenerationActive =
+        loadingState !== 'idle' ||
+        isStreaming ||
+        isWaitingForResponse ||
+        isThinking ||
+        isStreamingRef.current
+
+      if (isGenerationActive) {
         pendingRegenerateRef.current = {
           chatId: currentChat.id,
           messageIndex,
@@ -947,12 +952,26 @@ export function useChatMessaging({
 
       editMessage(messageIndex, originalMessage.content || '')
     },
-    [loadingState, currentChat, editMessage, cancelGeneration],
+    [
+      loadingState,
+      isStreaming,
+      isWaitingForResponse,
+      isThinking,
+      currentChat,
+      editMessage,
+      cancelGeneration,
+    ],
   )
 
   // Fire the deferred regenerate once cancellation has settled the state.
   useEffect(() => {
-    if (loadingState !== 'idle') return
+    if (
+      loadingState !== 'idle' ||
+      isStreaming ||
+      isWaitingForResponse ||
+      isThinking
+    )
+      return
     const pending = pendingRegenerateRef.current
     if (pending === null || !currentChat) return
 
@@ -972,7 +991,26 @@ export function useChatMessaging({
 
     pendingRegenerateRef.current = null
     editMessage(pending.messageIndex, originalMessage.content || '')
-  }, [loadingState, currentChat, editMessage])
+  }, [
+    loadingState,
+    isStreaming,
+    isWaitingForResponse,
+    isThinking,
+    currentChat,
+    editMessage,
+  ])
+
+  // Re-send the most recent user message, e.g. after a failed stream
+  const retryLastMessage = useCallback(() => {
+    if (!currentChat) return
+    for (let i = currentChat.messages.length - 1; i >= 0; i--) {
+      if (currentChat.messages[i].role === 'user') {
+        setStreamError(null)
+        regenerateMessage(i)
+        return
+      }
+    }
+  }, [currentChat, regenerateMessage])
 
   // Update currentChatIdRef when currentChat changes
   // But don't overwrite during streaming to preserve ID swaps
@@ -998,6 +1036,7 @@ export function useChatMessaging({
     cancelGeneration,
     editMessage,
     regenerateMessage,
+    retryLastMessage,
     resolveInputToolCall,
   }
 }

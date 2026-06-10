@@ -23,7 +23,6 @@ const LOCAL_STORAGE_KEY_MAP: Record<string, string> = {
   hasSeenCloudSyncModal: 'tinfoil-settings-has-seen-cloud-sync-modal',
   selectedModel: 'tinfoil-settings-selected-model',
   reasoningEffort: 'tinfoil-settings-reasoning-effort',
-  maxPromptMessages: 'tinfoil-settings-max-prompt-messages',
   webSearchEnabled: 'tinfoil-settings-web-search-enabled',
   piiCheckEnabled: 'tinfoil-settings-pii-check-enabled',
   themeMode: 'tinfoil-settings-theme-mode',

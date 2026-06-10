@@ -4,7 +4,6 @@ import { cn } from '@/components/ui/utils'
 import { useToast } from '@/hooks/use-toast'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
-import { isImageFile } from '@/utils/preprocessing'
 import {
   FolderIcon,
   MicrophoneIcon,
@@ -28,6 +27,10 @@ import {
   PiSpinner,
   PiTerminalWindow,
 } from 'react-icons/pi'
+import {
+  ContextUsageIndicator,
+  type ContextUsage,
+} from './components/context-usage-indicator'
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
 import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
@@ -63,6 +66,7 @@ type ChatInputProps = {
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
   onClearPromptPreset?: () => void
+  contextUsage?: ContextUsage
 }
 
 // Maximum number of characters displayed in the collapsed quote preview.
@@ -99,6 +103,7 @@ export function ChatInput({
   activePromptPreset,
   onOpenPromptLibrary,
   onClearPromptPreset,
+  contextUsage,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsScrollRef = useRef<HTMLDivElement>(null)
@@ -295,9 +300,6 @@ export function ChatInput({
       if (e.target.files && e.target.files.length > 0 && handleDocumentUpload) {
         const files = Array.from(e.target.files)
         for (const file of files) {
-          if (!isPremium && isImageFile(file)) {
-            continue
-          }
           handleDocumentUpload(file)
         }
         if (fileInputRef.current) {
@@ -305,7 +307,7 @@ export function ChatInput({
         }
       }
     },
-    [handleDocumentUpload, isPremium],
+    [handleDocumentUpload],
   )
 
   const triggerFileInput = () => {
@@ -377,7 +379,7 @@ export function ChatInput({
           description:
             err instanceof Error ? err.message : 'Failed to transcribe audio',
           variant: 'destructive',
-          position: 'top-left',
+          position: 'top-right',
         })
       } finally {
         setIsTranscribing(false)
@@ -446,7 +448,7 @@ export function ChatInput({
                 ? err.message
                 : 'Failed to process audio recording.',
             variant: 'destructive',
-            position: 'top-left',
+            position: 'top-right',
           })
           setIsRecording(false)
           setIsTranscribing(false)
@@ -468,7 +470,7 @@ export function ChatInput({
             ? err.message
             : 'Could not start recording. Please make sure you have granted microphone permissions.',
         variant: 'destructive',
-        position: 'top-left',
+        position: 'top-right',
       })
     }
   }, [sendAudioForTranscription, stopRecording, toast])
@@ -482,17 +484,6 @@ export function ChatInput({
         const imageItem = items.find((item) => item.type.startsWith('image/'))
 
         if (imageItem) {
-          if (!isPremium) {
-            toast({
-              title: 'Premium Required',
-              description: 'Image upload requires a premium subscription.',
-              variant: 'destructive',
-              position: 'top-left',
-            })
-            e.preventDefault()
-            return
-          }
-
           const file = imageItem.getAsFile()
           if (file) {
             e.preventDefault()
@@ -539,7 +530,7 @@ export function ChatInput({
       }
       // If text is short enough, let it paste normally (default behavior)
     },
-    [handleDocumentUpload, isPremium, toast],
+    [handleDocumentUpload],
   )
 
   return (
@@ -597,17 +588,15 @@ export function ChatInput({
               : 'border-border-subtle',
           )}
         >
+          {/* No accept filter: unknown extensions are sniffed for text
+              content and rejected gracefully after selection instead of
+              being blocked by the picker. */}
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
             className="hidden"
             multiple
-            accept={
-              isPremium
-                ? '.pdf,.docx,.xlsx,.pptx,.md,.html,.xhtml,.csv,.png,.jpg,.jpeg,.tiff,.bmp,.webp,.txt,.py,.js,.jsx,.ts,.tsx,.css,.json,.xml,.yaml,.yml,.toml,.sh,.rb,.java,.cpp,.c,.h,.hpp,.go,.rs,.swift,.kt,.r,.sql,.lua,.pl,.php,.env,.ini,.cfg,.conf,.log,.rtf,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm,.wma,.qfx,.qif,.ofx,.ifs,.qbo,.qbx,.bai,.bai2,.mt940,.sta,.tsv,.ics,.vcf'
-                : '.pdf,.docx,.xlsx,.pptx,.md,.html,.xhtml,.csv,.txt,.py,.js,.jsx,.ts,.tsx,.css,.json,.xml,.yaml,.yml,.toml,.sh,.rb,.java,.cpp,.c,.h,.hpp,.go,.rs,.swift,.kt,.r,.sql,.lua,.pl,.php,.env,.ini,.cfg,.conf,.log,.rtf,.qfx,.qif,.ofx,.ifs,.qbo,.qbx,.bai,.bai2,.mt940,.sta,.tsv,.ics,.vcf'
-            }
           />
 
           {quote && (
@@ -1175,6 +1164,7 @@ export function ChatInput({
             </div>
 
             <div className="flex items-center gap-2">
+              {contextUsage && <ContextUsageIndicator usage={contextUsage} />}
               {modelSelectorButton && <div>{modelSelectorButton}</div>}
               {reasoningSelectorButton && <div>{reasoningSelectorButton}</div>}
               {isPremium && audioModel && (

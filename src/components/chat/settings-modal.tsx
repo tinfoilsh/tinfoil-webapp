@@ -5,7 +5,6 @@ import { API_BASE_URL } from '@/config'
 import {
   SETTINGS_CHAT_FONT,
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
-  SETTINGS_MAX_PROMPT_MESSAGES,
   SETTINGS_PII_CHECK_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
@@ -56,7 +55,6 @@ import {
   MoonIcon,
   PencilSquareIcon,
   PlusIcon,
-  SparklesIcon,
   Squares2X2Icon,
   SunIcon,
   TrashIcon,
@@ -66,20 +64,15 @@ import {
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  AiOutlineCloudSync,
-  AiOutlineExport,
-  AiOutlineImport,
-} from 'react-icons/ai'
+import { AiOutlineCloudSync, AiOutlineExport } from 'react-icons/ai'
 import { BsQrCode } from 'react-icons/bs'
 import { GoPasskeyFill } from 'react-icons/go'
 import { HiOutlineAdjustmentsVertical } from 'react-icons/hi2'
 import { IoShieldCheckmark } from 'react-icons/io5'
-import { PiSignIn } from 'react-icons/pi'
+import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
 import { ConfirmDialog } from './components/confirm-dialog'
-import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
 import {
@@ -180,8 +173,6 @@ export type SettingsTab =
   | 'personalization'
   | 'prompts'
   | 'cloud-sync'
-  | 'import'
-  | 'export'
   | 'account'
 
 import type { ThemeMode } from './hooks/use-ui-state'
@@ -244,10 +235,6 @@ export function SettingsModal({
   } = useProjects({
     autoLoad: isSignedIn && isPremium,
   })
-  const [maxMessages, setMaxMessages] = useState<number>(
-    CONSTANTS.MAX_PROMPT_MESSAGES,
-  )
-
   // Encryption key management state
   const [inputKey, setInputKey] = useState('')
   const [isInputKeyVisible, setIsInputKeyVisible] = useState(false)
@@ -259,8 +246,6 @@ export function SettingsModal({
   const [isSettingUpPasskey, setIsSettingUpPasskey] = useState(false)
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
-  const [isEncryptionKeyOpen, setIsEncryptionKeyOpen] = useState(false)
   const [primaryKeyMode, setPrimaryKeyMode] = useState<
     'recoverExisting' | 'explicitStartFresh'
   >('recoverExisting')
@@ -273,6 +258,14 @@ export function SettingsModal({
   const [additionalContext, setAdditionalContext] = useState<string>('')
   const [isUsingPersonalization, setIsUsingPersonalization] =
     useState<boolean>(true)
+  // Last persisted personalization values; edits stay local until the user
+  // hits Save, and this baseline is what dirty-checking compares against.
+  const [savedPersonalization, setSavedPersonalization] = useState<{
+    nickname: string
+    profession: string
+    traits: string[]
+    additionalContext: string
+  }>({ nickname: '', profession: '', traits: [], additionalContext: '' })
 
   // Language setting (separate from personalization)
   const [language, setLanguage] = useState<string>('')
@@ -291,6 +284,8 @@ export function SettingsModal({
 
   // Chat font setting
   const [chatFont, setChatFont] = useState<ChatFont>('system')
+
+  const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
 
   // Prompt library management state
   const {
@@ -337,10 +332,6 @@ export function SettingsModal({
       }
     }
   }, [isOpen, activeTab])
-
-  // Advanced settings collapsed state
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
-  const [dangerZoneOpen, setDangerZoneOpen] = useState(false)
 
   // Placeholder animation state
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
@@ -462,19 +453,6 @@ export function SettingsModal({
 
   // Shared function to load settings from localStorage
   const loadSettingsFromStorage = useCallback(() => {
-    // Load max messages setting
-    const savedMaxMessages = localStorage.getItem(SETTINGS_MAX_PROMPT_MESSAGES)
-    if (savedMaxMessages) {
-      const parsedValue = parseInt(savedMaxMessages, 10)
-      if (
-        !isNaN(parsedValue) &&
-        parsedValue > 0 &&
-        parsedValue <= CONSTANTS.MAX_PROMPT_MESSAGES_LIMIT
-      ) {
-        setMaxMessages(parsedValue)
-      }
-    }
-
     // Load personalization settings
     const savedNickname = localStorage.getItem(USER_PREFS_NICKNAME)
     const savedProfession = localStorage.getItem(USER_PREFS_PROFESSION)
@@ -484,16 +462,24 @@ export function SettingsModal({
       USER_PREFS_PERSONALIZATION_ENABLED,
     )
 
-    if (savedNickname !== null) setNickname(savedNickname)
-    if (savedProfession !== null) setProfession(savedProfession)
+    let parsedTraits: string[] = []
     if (savedTraits) {
       try {
-        setSelectedTraits(JSON.parse(savedTraits))
+        parsedTraits = JSON.parse(savedTraits)
       } catch {
-        setSelectedTraits([])
+        parsedTraits = []
       }
     }
-    if (savedContext !== null) setAdditionalContext(savedContext)
+    setNickname(savedNickname ?? '')
+    setProfession(savedProfession ?? '')
+    setSelectedTraits(parsedTraits)
+    setAdditionalContext(savedContext ?? '')
+    setSavedPersonalization({
+      nickname: savedNickname ?? '',
+      profession: savedProfession ?? '',
+      traits: parsedTraits,
+      additionalContext: savedContext ?? '',
+    })
     if (savedUsingPersonalization !== null) {
       setIsUsingPersonalization(savedUsingPersonalization === 'true')
     }
@@ -565,7 +551,6 @@ export function SettingsModal({
     }
 
     // These events are fired by the profile sync when it updates localStorage
-    window.addEventListener('maxPromptMessagesChanged', handleProfileSyncUpdate)
     window.addEventListener('personalizationChanged', handleProfileSyncUpdate)
     window.addEventListener('languageChanged', handleProfileSyncUpdate)
     window.addEventListener(
@@ -576,10 +561,6 @@ export function SettingsModal({
 
     return () => {
       window.removeEventListener('storage', loadSettingsFromStorage)
-      window.removeEventListener(
-        'maxPromptMessagesChanged',
-        handleProfileSyncUpdate,
-      )
       window.removeEventListener(
         'personalizationChanged',
         handleProfileSyncUpdate,
@@ -595,22 +576,6 @@ export function SettingsModal({
       )
     }
   }, [isClient, loadSettingsFromStorage])
-
-  // Save max messages setting to localStorage
-  const handleMaxMessagesChange = (value: number) => {
-    if (value > 0 && value <= CONSTANTS.MAX_PROMPT_MESSAGES_LIMIT) {
-      setMaxMessages(value)
-      if (isClient) {
-        localStorage.setItem(SETTINGS_MAX_PROMPT_MESSAGES, value.toString())
-        // Trigger a custom event to notify other components
-        window.dispatchEvent(
-          new CustomEvent('maxPromptMessagesChanged', {
-            detail: value,
-          }),
-        )
-      }
-    }
-  }
 
   // Save personalization settings and notify components
   const savePersonalizationSettings = (values?: {
@@ -670,19 +635,14 @@ export function SettingsModal({
     }
   }
 
-  // Handle individual field changes
+  // Handle individual field changes. Edits are buffered locally and only
+  // persisted when the user hits Save.
   const handleNicknameChange = (value: string) => {
     setNickname(value)
-    if (isClient) {
-      savePersonalizationSettings({ nickname: value })
-    }
   }
 
   const handleProfessionChange = (value: string) => {
     setProfession(value)
-    if (isClient) {
-      savePersonalizationSettings({ profession: value })
-    }
   }
 
   const handleTraitToggle = (trait: string) => {
@@ -690,16 +650,28 @@ export function SettingsModal({
       ? selectedTraits.filter((t) => t !== trait)
       : [...selectedTraits, trait]
     setSelectedTraits(newTraits)
-    if (isClient) {
-      savePersonalizationSettings({ traits: newTraits })
-    }
   }
 
   const handleContextChange = (value: string) => {
     setAdditionalContext(value)
-    if (isClient) {
-      savePersonalizationSettings({ additionalContext: value })
-    }
+  }
+
+  const hasUnsavedPersonalization =
+    nickname !== savedPersonalization.nickname ||
+    profession !== savedPersonalization.profession ||
+    additionalContext !== savedPersonalization.additionalContext ||
+    selectedTraits.length !== savedPersonalization.traits.length ||
+    selectedTraits.some((t, i) => t !== savedPersonalization.traits[i])
+
+  const handleSavePersonalization = () => {
+    if (!isClient) return
+    savePersonalizationSettings()
+    setSavedPersonalization({
+      nickname,
+      profession,
+      traits: selectedTraits,
+      additionalContext,
+    })
   }
 
   const handleLanguageChange = (value: string) => {
@@ -712,7 +684,10 @@ export function SettingsModal({
   const handleTogglePersonalization = (enabled: boolean) => {
     setIsUsingPersonalization(enabled)
     if (isClient) {
-      savePersonalizationSettings({ isEnabled: enabled })
+      savePersonalizationSettings({
+        ...savedPersonalization,
+        isEnabled: enabled,
+      })
     }
   }
 
@@ -722,6 +697,12 @@ export function SettingsModal({
     setSelectedTraits([])
     setAdditionalContext('')
     setLanguage('English')
+    setSavedPersonalization({
+      nickname: '',
+      profession: '',
+      traits: [],
+      additionalContext: '',
+    })
 
     if (isClient) {
       localStorage.removeItem(USER_PREFS_NICKNAME)
@@ -1547,10 +1528,11 @@ export function SettingsModal({
     try {
       if (isSignedIn) {
         const result = await chatStorage.deleteAllChats()
-        const total = result.localDeleted + result.cloudDeleted
         toast({
           title: 'All chats deleted',
-          description: `Removed ${total} chat${total !== 1 ? 's' : ''} from this device${result.cloudDeleted > 0 ? ' and the cloud' : ''}.`,
+          description: result.notificationSent
+            ? 'We will email you a confirmation.'
+            : 'Email confirmation could not be sent.',
         })
       } else {
         sessionChatStorage.clearAll()
@@ -1595,7 +1577,9 @@ export function SettingsModal({
       const result = await projectStorage.deleteAllProjects()
       toast({
         title: 'All projects deleted',
-        description: `Removed ${result.deleted} project${result.deleted !== 1 ? 's' : ''}.`,
+        description: result.notificationSent
+          ? 'We will email you a confirmation.'
+          : 'Email confirmation could not be sent.',
       })
 
       await refreshProjects()
@@ -1959,16 +1943,6 @@ ${encryptionKey.replace('key_', '')}
           },
         ]
       : []),
-    {
-      id: 'import' as const,
-      label: 'Import Chats',
-      icon: AiOutlineImport,
-    },
-    {
-      id: 'export' as const,
-      label: 'Export Chats',
-      icon: AiOutlineExport,
-    },
   ]
 
   return (
@@ -2001,12 +1975,22 @@ ${encryptionKey.replace('key_', '')}
             <h2 className="font-aeonik text-base font-semibold text-content-primary">
               {navItems.find((item) => item.id === activeTab)?.label}
             </h2>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {activeTab === 'personalization' && hasUnsavedPersonalization && (
+                <button
+                  onClick={handleSavePersonalization}
+                  className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                >
+                  Save
+                </button>
+              )}
+              <button
+                onClick={() => setIsOpen(false)}
+                className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {/* Horizontal tabs */}
@@ -2072,10 +2056,18 @@ ${encryptionKey.replace('key_', '')}
         {/* Right content area */}
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Header (desktop only) */}
-          <div className="hidden h-14 items-center border-b border-border-subtle px-6 md:flex">
+          <div className="hidden h-14 items-center justify-between border-b border-border-subtle px-6 md:flex">
             <h2 className="font-aeonik text-lg font-semibold text-content-primary">
               {navItems.find((item) => item.id === activeTab)?.label}
             </h2>
+            {activeTab === 'personalization' && hasUnsavedPersonalization && (
+              <button
+                onClick={handleSavePersonalization}
+                className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+              >
+                Save
+              </button>
+            )}
           </div>
 
           {/* Content */}
@@ -2140,7 +2132,18 @@ ${encryptionKey.replace('key_', '')}
                         ))}
                       </div>
                     </div>
+                  </div>
+                </>
+              )}
 
+              {/* Chat Tab */}
+              {activeTab === 'chat' && (
+                <>
+                  {/* Conversation Settings */}
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Conversation Settings
+                    </h3>
                     {/* Chat Font */}
                     <div
                       className={cn(
@@ -2156,7 +2159,7 @@ ${encryptionKey.replace('key_', '')}
                           Choose the font for chat messages
                         </div>
                       </div>
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                         {(
                           [
                             {
@@ -2206,59 +2209,6 @@ ${encryptionKey.replace('key_', '')}
                         ))}
                       </div>
                     </div>
-                  </div>
-                </>
-              )}
-
-              {/* Chat Tab */}
-              {activeTab === 'chat' && (
-                <>
-                  {/* Conversation Settings */}
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Conversation Settings
-                    </h3>
-                    {/* Messages in Context */}
-                    <div
-                      className={cn(
-                        'rounded-lg border border-border-subtle p-4',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="mr-3 flex-1">
-                          <div className="font-aeonik text-sm font-medium text-content-primary">
-                            Messages in Context
-                          </div>
-                          <div className="font-aeonik-fono text-xs text-content-muted">
-                            Maximum number of recent messages sent to the model
-                            (1-
-                            {CONSTANTS.MAX_PROMPT_MESSAGES_LIMIT}). Longer
-                            contexts increase network usage and slow down
-                            responses.
-                          </div>
-                        </div>
-                        <input
-                          type="number"
-                          min="1"
-                          max={CONSTANTS.MAX_PROMPT_MESSAGES_LIMIT}
-                          value={maxMessages}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value, 10)
-                            if (!isNaN(value)) {
-                              handleMaxMessagesChange(value)
-                            }
-                          }}
-                          className={cn(
-                            'w-16 rounded-md border px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
-                            isDarkMode
-                              ? 'border-border-strong bg-surface-chat text-content-secondary'
-                              : 'border-border-subtle bg-surface-sidebar text-content-primary',
-                          )}
-                        />
-                      </div>
-                    </div>
-
                     {/* Response Language */}
                     <div
                       className={cn(
@@ -2297,103 +2247,76 @@ ${encryptionKey.replace('key_', '')}
 
                   {/* Advanced Settings */}
                   <div className="space-y-3">
-                    <button
-                      onClick={() =>
-                        setAdvancedSettingsOpen(!advancedSettingsOpen)
-                      }
-                      className="flex w-full items-center justify-between"
-                    >
-                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                        Advanced Settings
-                      </h3>
-                      <ChevronDownIcon
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Advanced Settings
+                    </h3>
+                    <div className="space-y-4">
+                      {/* Web Search PII Detection */}
+                      <div
                         className={cn(
-                          'h-4 w-4 text-content-muted transition-transform',
-                          advancedSettingsOpen && 'rotate-180',
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
-                      />
-                    </button>
-
-                    {advancedSettingsOpen && (
-                      <div className="space-y-4">
-                        {/* Web Search PII Detection */}
-                        <div
-                          className={cn(
-                            'rounded-lg border border-border-subtle p-4',
-                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          )}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="mr-3 flex-1">
-                              <div className="font-aeonik text-sm font-medium text-content-primary">
-                                Automatic PII Blocking in Web Search
-                              </div>
-                              <div className="font-aeonik-fono text-xs text-content-muted">
-                                When web search is enabled, queries containing
-                                personal information will be blocked.
-                              </div>
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="mr-3 flex-1">
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Automatic PII Blocking in Web Search
                             </div>
-                            <label className="relative inline-flex cursor-pointer items-center">
-                              <input
-                                type="checkbox"
-                                checked={piiCheckEnabled}
-                                onChange={(e) => {
-                                  const newValue = e.target.checked
-                                  setPiiCheckEnabled(newValue)
-                                  if (isClient) {
-                                    localStorage.setItem(
-                                      SETTINGS_PII_CHECK_ENABLED,
-                                      newValue.toString(),
-                                    )
-                                    window.dispatchEvent(
-                                      new CustomEvent(
-                                        'piiCheckEnabledChanged',
-                                        {
-                                          detail: { enabled: newValue },
-                                        },
-                                      ),
-                                    )
-                                  }
-                                }}
-                                className="peer sr-only"
-                              />
-                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
-                            </label>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              When web search is enabled, queries containing
+                              personal information will be blocked.
+                            </div>
                           </div>
+                          <label className="relative inline-flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={piiCheckEnabled}
+                              onChange={(e) => {
+                                const newValue = e.target.checked
+                                setPiiCheckEnabled(newValue)
+                                if (isClient) {
+                                  localStorage.setItem(
+                                    SETTINGS_PII_CHECK_ENABLED,
+                                    newValue.toString(),
+                                  )
+                                  window.dispatchEvent(
+                                    new CustomEvent('piiCheckEnabledChanged', {
+                                      detail: { enabled: newValue },
+                                    }),
+                                  )
+                                }
+                              }}
+                              className="peer sr-only"
+                            />
+                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                          </label>
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
+                </>
+              )}
 
-                  {/* Danger Zone */}
+              {/* General Tab: Data (danger zone) */}
+              {activeTab === 'general' && (
+                <>
                   <div className="space-y-3">
-                    <button
-                      onClick={() => setDangerZoneOpen(!dangerZoneOpen)}
-                      className="flex w-full items-center justify-between"
-                    >
-                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                        Danger Zone
-                      </h3>
-                      <ChevronDownIcon
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Data
+                    </h3>
+                    <>
+                      {/* Delete all saved chats */}
+                      <div
                         className={cn(
-                          'h-4 w-4 text-content-muted transition-transform',
-                          dangerZoneOpen && 'rotate-180',
+                          'rounded-lg border p-4',
+                          isDarkMode
+                            ? 'border-red-500/30 bg-red-950/10'
+                            : 'border-red-200 bg-red-50/50',
                         )}
-                      />
-                    </button>
-
-                    {dangerZoneOpen && (
-                      <>
-                        {/* Delete all saved chats */}
-                        <div
-                          className={cn(
-                            'rounded-lg border p-4',
-                            isDarkMode
-                              ? 'border-red-500/30 bg-red-950/10'
-                              : 'border-red-200 bg-red-50/50',
-                          )}
-                        >
-                          <div className="space-y-3">
+                      >
+                        <div className="space-y-3">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
                             <div>
                               <div className="font-aeonik text-sm font-medium text-content-primary">
                                 Delete all saved chats
@@ -2404,13 +2327,147 @@ ${encryptionKey.replace('key_', '')}
                                   : 'Permanently delete every chat from this browser. This cannot be undone.'}
                               </div>
                             </div>
-                            {showDeleteAllChatsConfirm ? (
+                            {!showDeleteAllChatsConfirm && (
+                              <button
+                                onClick={() =>
+                                  setShowDeleteAllChatsConfirm(true)
+                                }
+                                className={cn(
+                                  'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
+                                  isDarkMode
+                                    ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                    : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                )}
+                              >
+                                Delete all saved chats
+                              </button>
+                            )}
+                          </div>
+                          {showDeleteAllChatsConfirm && (
+                            <div className="space-y-2">
+                              <label className="block">
+                                <span className="font-aeonik-fono text-xs text-content-muted">
+                                  Type{' '}
+                                  <code className="font-mono text-content-primary">
+                                    {DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                  </code>{' '}
+                                  to confirm.
+                                </span>
+                                <input
+                                  type="text"
+                                  autoComplete="off"
+                                  autoCorrect="off"
+                                  autoCapitalize="off"
+                                  spellCheck={false}
+                                  value={deleteAllChatsConfirmText}
+                                  onChange={(e) =>
+                                    setDeleteAllChatsConfirmText(e.target.value)
+                                  }
+                                  disabled={isDeletingAllChats}
+                                  placeholder={DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                  className={cn(
+                                    'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                    isDarkMode
+                                      ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                      : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                  )}
+                                />
+                              </label>
+                              <div className="flex flex-col gap-2 sm:flex-row">
+                                <button
+                                  onClick={handleDeleteAllChats}
+                                  disabled={
+                                    isDeletingAllChats ||
+                                    deleteAllChatsConfirmText
+                                      .trim()
+                                      .toLowerCase() !==
+                                      DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                  }
+                                  className={cn(
+                                    'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                      : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                  )}
+                                >
+                                  {isDeletingAllChats && (
+                                    <PiSpinner
+                                      className="h-4 w-4 animate-spin"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <span>
+                                    {isDeletingAllChats
+                                      ? 'Requesting…'
+                                      : 'Yes, delete all my chats'}
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setShowDeleteAllChatsConfirm(false)
+                                    setDeleteAllChatsConfirmText('')
+                                  }}
+                                  disabled={isDeletingAllChats}
+                                  className={cn(
+                                    'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                      : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                  )}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Delete all projects (signed-in premium users only) */}
+                      {isSignedIn && isPremium && (
+                        <div
+                          className={cn(
+                            'rounded-lg border p-4',
+                            isDarkMode
+                              ? 'border-red-500/30 bg-red-950/10'
+                              : 'border-red-200 bg-red-50/50',
+                          )}
+                        >
+                          <div className="space-y-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                              <div>
+                                <div className="font-aeonik text-sm font-medium text-content-primary">
+                                  Delete all projects
+                                </div>
+                                <div className="font-aeonik-fono text-xs text-content-muted">
+                                  Permanently delete every project and its
+                                  documents. Chats inside projects will be
+                                  detached but kept. This cannot be undone.
+                                </div>
+                              </div>
+                              {!showDeleteAllProjectsConfirm && (
+                                <button
+                                  onClick={() =>
+                                    setShowDeleteAllProjectsConfirm(true)
+                                  }
+                                  className={cn(
+                                    'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
+                                    isDarkMode
+                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                  )}
+                                >
+                                  Delete all projects
+                                </button>
+                              )}
+                            </div>
+                            {showDeleteAllProjectsConfirm && (
                               <div className="space-y-2">
                                 <label className="block">
                                   <span className="font-aeonik-fono text-xs text-content-muted">
                                     Type{' '}
                                     <code className="font-mono text-content-primary">
-                                      {DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                      {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
                                     </code>{' '}
                                     to confirm.
                                   </span>
@@ -2420,15 +2477,15 @@ ${encryptionKey.replace('key_', '')}
                                     autoCorrect="off"
                                     autoCapitalize="off"
                                     spellCheck={false}
-                                    value={deleteAllChatsConfirmText}
+                                    value={deleteAllProjectsConfirmText}
                                     onChange={(e) =>
-                                      setDeleteAllChatsConfirmText(
+                                      setDeleteAllProjectsConfirmText(
                                         e.target.value,
                                       )
                                     }
-                                    disabled={isDeletingAllChats}
+                                    disabled={isDeletingAllProjects}
                                     placeholder={
-                                      DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
                                     }
                                     className={cn(
                                       'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
@@ -2440,31 +2497,39 @@ ${encryptionKey.replace('key_', '')}
                                 </label>
                                 <div className="flex flex-col gap-2 sm:flex-row">
                                   <button
-                                    onClick={handleDeleteAllChats}
+                                    onClick={handleDeleteAllProjects}
                                     disabled={
-                                      isDeletingAllChats ||
-                                      deleteAllChatsConfirmText
+                                      isDeletingAllProjects ||
+                                      deleteAllProjectsConfirmText
                                         .trim()
                                         .toLowerCase() !==
-                                        DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
                                     }
                                     className={cn(
-                                      'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                      'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                                       isDarkMode
                                         ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
                                         : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
                                     )}
                                   >
-                                    {isDeletingAllChats
-                                      ? 'Deleting…'
-                                      : 'Yes, delete all my chats'}
+                                    {isDeletingAllProjects && (
+                                      <PiSpinner
+                                        className="h-4 w-4 animate-spin"
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                    <span>
+                                      {isDeletingAllProjects
+                                        ? 'Requesting…'
+                                        : 'Yes, delete all my projects'}
+                                    </span>
                                   </button>
                                   <button
                                     onClick={() => {
-                                      setShowDeleteAllChatsConfirm(false)
-                                      setDeleteAllChatsConfirmText('')
+                                      setShowDeleteAllProjectsConfirm(false)
+                                      setDeleteAllProjectsConfirmText('')
                                     }}
-                                    disabled={isDeletingAllChats}
+                                    disabled={isDeletingAllProjects}
                                     className={cn(
                                       'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
                                       isDarkMode
@@ -2476,137 +2541,11 @@ ${encryptionKey.replace('key_', '')}
                                   </button>
                                 </div>
                               </div>
-                            ) : (
-                              <button
-                                onClick={() =>
-                                  setShowDeleteAllChatsConfirm(true)
-                                }
-                                className={cn(
-                                  'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                  isDarkMode
-                                    ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                    : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                )}
-                              >
-                                Delete all saved chats
-                              </button>
                             )}
                           </div>
                         </div>
-
-                        {/* Delete all projects (signed-in premium users only) */}
-                        {isSignedIn && isPremium && (
-                          <div
-                            className={cn(
-                              'rounded-lg border p-4',
-                              isDarkMode
-                                ? 'border-red-500/30 bg-red-950/10'
-                                : 'border-red-200 bg-red-50/50',
-                            )}
-                          >
-                            <div className="space-y-3">
-                              <div>
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  Delete all projects
-                                </div>
-                                <div className="font-aeonik-fono text-xs text-content-muted">
-                                  Permanently delete every project and its
-                                  documents. Chats inside projects will be
-                                  detached but kept. This cannot be undone.
-                                </div>
-                              </div>
-                              {showDeleteAllProjectsConfirm ? (
-                                <div className="space-y-2">
-                                  <label className="block">
-                                    <span className="font-aeonik-fono text-xs text-content-muted">
-                                      Type{' '}
-                                      <code className="font-mono text-content-primary">
-                                        {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
-                                      </code>{' '}
-                                      to confirm.
-                                    </span>
-                                    <input
-                                      type="text"
-                                      autoComplete="off"
-                                      autoCorrect="off"
-                                      autoCapitalize="off"
-                                      spellCheck={false}
-                                      value={deleteAllProjectsConfirmText}
-                                      onChange={(e) =>
-                                        setDeleteAllProjectsConfirmText(
-                                          e.target.value,
-                                        )
-                                      }
-                                      disabled={isDeletingAllProjects}
-                                      placeholder={
-                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                      }
-                                      className={cn(
-                                        'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                        isDarkMode
-                                          ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                          : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                      )}
-                                    />
-                                  </label>
-                                  <div className="flex flex-col gap-2 sm:flex-row">
-                                    <button
-                                      onClick={handleDeleteAllProjects}
-                                      disabled={
-                                        isDeletingAllProjects ||
-                                        deleteAllProjectsConfirmText
-                                          .trim()
-                                          .toLowerCase() !==
-                                          DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                      }
-                                      className={cn(
-                                        'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                        isDarkMode
-                                          ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                          : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                      )}
-                                    >
-                                      {isDeletingAllProjects
-                                        ? 'Deleting…'
-                                        : 'Yes, delete all my projects'}
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setShowDeleteAllProjectsConfirm(false)
-                                        setDeleteAllProjectsConfirmText('')
-                                      }}
-                                      disabled={isDeletingAllProjects}
-                                      className={cn(
-                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                        isDarkMode
-                                          ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                          : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                      )}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() =>
-                                    setShowDeleteAllProjectsConfirm(true)
-                                  }
-                                  className={cn(
-                                    'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                    isDarkMode
-                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                  )}
-                                >
-                                  Delete all projects
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
+                      )}
+                    </>
                   </div>
                 </>
               )}
@@ -2965,7 +2904,7 @@ ${encryptionKey.replace('key_', '')}
                   >
                     <button
                       type="button"
-                      onClick={() => setIsHowItWorksOpen(!isHowItWorksOpen)}
+                      onClick={() => setIsHowItWorksOpen((prev) => !prev)}
                       className="flex w-full items-center justify-between p-4"
                     >
                       <div className="flex items-center gap-2">
@@ -2976,7 +2915,7 @@ ${encryptionKey.replace('key_', '')}
                       </div>
                       <ChevronDownIcon
                         className={cn(
-                          'h-4 w-4 text-content-muted transition-transform duration-200',
+                          'h-4 w-4 text-content-muted transition-transform',
                           isHowItWorksOpen && 'rotate-180',
                         )}
                       />
@@ -2986,8 +2925,9 @@ ${encryptionKey.replace('key_', '')}
                         <div className="flex items-start gap-3">
                           <div className={STEP_CIRCLE_CLASSES}>1</div>
                           <div className="font-aeonik-fono text-sm text-content-muted">
-                            Your chats are encrypted on your device before being
-                            sent to the cloud.
+                            Your chats are encrypted with a key that only you
+                            possess and stored encrypted in the cloud. Nobody
+                            but you can access your backed up chats.
                           </div>
                         </div>
                         <div className="flex items-start gap-3">
@@ -3053,384 +2993,364 @@ ${encryptionKey.replace('key_', '')}
                         isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                       )}
                     >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setIsEncryptionKeyOpen(!isEncryptionKeyOpen)
-                        }
-                        className="flex w-full items-center justify-between p-4"
-                      >
+                      <div className="flex w-full items-center justify-between p-4">
                         <div className="flex items-center gap-2">
                           <RiShieldKeyholeFill className="h-4 w-4 text-content-muted" />
                           <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                             Your Personal Encryption Key
                           </h3>
                         </div>
-                        <ChevronDownIcon
-                          className={cn(
-                            'h-4 w-4 text-content-muted transition-transform duration-200',
-                            isEncryptionKeyOpen && 'rotate-180',
-                          )}
-                        />
-                      </button>
-                      {isEncryptionKeyOpen && (
-                        <div className="space-y-3 border-t border-border-subtle p-4">
-                          {encryptionKey ? (
-                            <div className="flex w-full items-end gap-2">
+                      </div>
+                      <div className="space-y-3 border-t border-border-subtle p-4">
+                        {encryptionKey ? (
+                          <div className="flex w-full items-end gap-2">
+                            <motion.div
+                              layout="size"
+                              transition={{
+                                type: 'spring',
+                                damping: 25,
+                                stiffness: 400,
+                                mass: 0.5,
+                              }}
+                              className={cn(
+                                'relative min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-chat transition-colors duration-300 hover:border-blue-500/50',
+                                isQRCodeExpanded ? 'p-3' : 'pr-2',
+                              )}
+                            >
+                              {/* Key row (always visible) */}
+                              <div className="flex items-center">
+                                <div
+                                  onClick={handleCopyKey}
+                                  className="min-w-0 flex-1 cursor-pointer overflow-hidden px-3 py-2 text-left"
+                                >
+                                  <code className="block h-5 overflow-hidden whitespace-nowrap font-mono text-sm leading-5 text-blue-500">
+                                    <ScrambleText
+                                      text={encryptionKey}
+                                      isKeyVisible={isKeyVisible}
+                                    />
+                                  </code>
+                                </div>
+                                <div className="group relative z-10 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setIsKeyVisible(!isKeyVisible)
+                                    }
+                                    aria-label={
+                                      isKeyVisible ? 'Hide key' : 'Show key'
+                                    }
+                                    className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
+                                  >
+                                    {isKeyVisible ? (
+                                      <EyeSlashIcon className="h-4 w-4" />
+                                    ) : (
+                                      <EyeIcon className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                                    {isKeyVisible ? 'Hide key' : 'Show key'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* QR code (below key, pushes container open) */}
                               <motion.div
-                                layout="size"
+                                initial={false}
+                                animate={isQRCodeExpanded ? 'open' : 'closed'}
+                                variants={{
+                                  open: {
+                                    height: 140,
+                                    marginTop: 12,
+                                    opacity: 1,
+                                  },
+                                  closed: {
+                                    height: 0,
+                                    marginTop: 0,
+                                    opacity: 0,
+                                  },
+                                }}
                                 transition={{
                                   type: 'spring',
                                   damping: 25,
                                   stiffness: 400,
                                   mass: 0.5,
                                 }}
-                                className={cn(
-                                  'relative min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-chat transition-colors duration-300 hover:border-blue-500/50',
-                                  isQRCodeExpanded ? 'p-3' : 'pr-2',
-                                )}
+                                className="overflow-hidden"
                               >
-                                {/* Key row (always visible) */}
-                                <div className="flex items-center">
-                                  <div
-                                    onClick={handleCopyKey}
-                                    className="min-w-0 flex-1 cursor-pointer overflow-hidden px-3 py-2 text-left"
-                                  >
-                                    <code className="block h-5 overflow-hidden whitespace-nowrap font-mono text-sm leading-5 text-blue-500">
-                                      <ScrambleText
-                                        text={encryptionKey}
-                                        isKeyVisible={isKeyVisible}
-                                      />
-                                    </code>
-                                  </div>
-                                  <div className="group relative z-10 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setIsKeyVisible(!isKeyVisible)
-                                      }
-                                      aria-label={
-                                        isKeyVisible ? 'Hide key' : 'Show key'
-                                      }
-                                      className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
-                                    >
-                                      {isKeyVisible ? (
-                                        <EyeSlashIcon className="h-4 w-4" />
-                                      ) : (
-                                        <EyeIcon className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                    <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                                      {isKeyVisible ? 'Hide key' : 'Show key'}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* QR code (below key, pushes container open) */}
                                 <motion.div
                                   initial={false}
-                                  animate={isQRCodeExpanded ? 'open' : 'closed'}
-                                  variants={{
-                                    open: {
-                                      height: 140,
-                                      marginTop: 12,
-                                      opacity: 1,
-                                    },
-                                    closed: {
-                                      height: 0,
-                                      marginTop: 0,
-                                      opacity: 0,
-                                    },
-                                  }}
+                                  animate={
+                                    isQRCodeExpanded
+                                      ? { scale: 1 }
+                                      : { scale: 0.85 }
+                                  }
                                   transition={{
                                     type: 'spring',
                                     damping: 25,
                                     stiffness: 400,
                                     mass: 0.5,
                                   }}
-                                  className="overflow-hidden"
+                                  style={{ transformOrigin: 'top' }}
+                                  className="flex justify-center"
                                 >
-                                  <motion.div
-                                    initial={false}
-                                    animate={
-                                      isQRCodeExpanded
-                                        ? { scale: 1 }
-                                        : { scale: 0.85 }
+                                  <QRCode
+                                    value={encryptionKey}
+                                    size={140}
+                                    level="H"
+                                    bgColor={
+                                      isDarkMode
+                                        ? TINFOIL_COLORS.surface.cardDark
+                                        : TINFOIL_COLORS.surface.cardLight
                                     }
-                                    transition={{
-                                      type: 'spring',
-                                      damping: 25,
-                                      stiffness: 400,
-                                      mass: 0.5,
-                                    }}
-                                    style={{ transformOrigin: 'top' }}
-                                    className="flex justify-center"
-                                  >
-                                    <QRCode
-                                      value={encryptionKey}
-                                      size={140}
-                                      level="H"
-                                      bgColor={
-                                        isDarkMode
-                                          ? TINFOIL_COLORS.surface.cardDark
-                                          : TINFOIL_COLORS.surface.cardLight
-                                      }
-                                      fgColor="#3b82f6"
-                                    />
-                                  </motion.div>
+                                    fgColor="#3b82f6"
+                                  />
                                 </motion.div>
-
-                                {/* Copied overlay */}
-                                <AnimatePresence>
-                                  {isCopied && (
-                                    <motion.span
-                                      initial={{
-                                        opacity: 0,
-                                        filter: 'blur(4px)',
-                                        scale: 0.9,
-                                      }}
-                                      animate={{
-                                        opacity: 1,
-                                        filter: 'blur(0px)',
-                                        scale: 1,
-                                      }}
-                                      exit={{
-                                        opacity: 0,
-                                        filter: 'blur(4px)',
-                                        scale: 1.1,
-                                      }}
-                                      className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-blue-500/90 text-sm font-medium text-white backdrop-blur-sm"
-                                    >
-                                      Copied!
-                                    </motion.span>
-                                  )}
-                                </AnimatePresence>
                               </motion.div>
-                              <div className="flex shrink-0 items-center gap-1">
-                                <div className="group relative">
-                                  <button
-                                    onClick={() =>
-                                      setIsQRCodeExpanded(!isQRCodeExpanded)
-                                    }
-                                    aria-label="Show QR code"
-                                    className={cn(
-                                      'flex items-center justify-center rounded-lg p-2 transition-all hover:text-content-primary',
-                                      isQRCodeExpanded
-                                        ? 'text-blue-500'
-                                        : 'text-content-muted',
-                                    )}
+
+                              {/* Copied overlay */}
+                              <AnimatePresence>
+                                {isCopied && (
+                                  <motion.span
+                                    initial={{
+                                      opacity: 0,
+                                      filter: 'blur(4px)',
+                                      scale: 0.9,
+                                    }}
+                                    animate={{
+                                      opacity: 1,
+                                      filter: 'blur(0px)',
+                                      scale: 1,
+                                    }}
+                                    exit={{
+                                      opacity: 0,
+                                      filter: 'blur(4px)',
+                                      scale: 1.1,
+                                    }}
+                                    className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-blue-500/90 text-sm font-medium text-white backdrop-blur-sm"
                                   >
-                                    <BsQrCode className="h-4 w-4" />
-                                  </button>
-                                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                                    QR code
-                                  </span>
-                                </div>
-                                <div className="group relative">
-                                  <button
-                                    onClick={downloadKeyAsPEM}
-                                    aria-label="Download encryption key as PEM file"
-                                    className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
-                                  >
-                                    <ArrowDownTrayIcon className="h-4 w-4" />
-                                  </button>
-                                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                                    Download
-                                  </span>
-                                </div>
+                                    Copied!
+                                  </motion.span>
+                                )}
+                              </AnimatePresence>
+                            </motion.div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <div className="group relative">
+                                <button
+                                  onClick={() =>
+                                    setIsQRCodeExpanded(!isQRCodeExpanded)
+                                  }
+                                  aria-label="Show QR code"
+                                  className={cn(
+                                    'flex items-center justify-center rounded-lg p-2 transition-all hover:text-content-primary',
+                                    isQRCodeExpanded
+                                      ? 'text-blue-500'
+                                      : 'text-content-muted',
+                                  )}
+                                >
+                                  <BsQrCode className="h-4 w-4" />
+                                </button>
+                                <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                                  QR code
+                                </span>
+                              </div>
+                              <div className="group relative">
+                                <button
+                                  onClick={downloadKeyAsPEM}
+                                  aria-label="Download encryption key as PEM file"
+                                  className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
+                                >
+                                  <ArrowDownTrayIcon className="h-4 w-4" />
+                                </button>
+                                <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                                  Download
+                                </span>
                               </div>
                             </div>
-                          ) : (
-                            <p className="text-sm text-content-muted">
-                              No encryption key set
-                            </p>
-                          )}
-                          <p className="text-xs text-content-muted">
-                            Do not share this key with anyone. Only save it in a
-                            secure location.
+                          </div>
+                        ) : (
+                          <p className="text-sm text-content-muted">
+                            No encryption key set
                           </p>
+                        )}
+                        <p className="text-xs text-content-muted">
+                          Do not share this key with anyone. Only save it in a
+                          secure location.
+                        </p>
 
-                          {/* Restore or Update Encryption Key */}
-                          <div className="space-y-2 pt-2">
-                            <h4 className="font-aeonik text-xs font-medium text-content-secondary">
-                              {passkeyActive
-                                ? 'Add Decryption Key'
-                                : 'Recovery and Primary Keys'}
-                            </h4>
-                            <p className="text-xs text-content-muted">
-                              {passkeyActive
-                                ? 'Add an older key to decrypt data from before a key rotation. Your passkey manages the primary key.'
-                                : 'Add a recovery key to decrypt older data without changing your current primary key, or replace the primary key used for future cloud writes.'}
-                            </p>
-                            {!passkeyActive && (
-                              <div className="space-y-2 rounded-lg border border-border-subtle bg-surface-chat p-3">
-                                <div className="grid grid-cols-2 gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setPrimaryKeyMode('recoverExisting')
-                                    }
-                                    className={cn(
-                                      'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                                      primaryKeyMode === 'recoverExisting'
-                                        ? 'border border-blue-500 bg-blue-500/10 text-blue-500'
-                                        : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
-                                    )}
-                                  >
-                                    Recover Existing
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setPrimaryKeyMode('explicitStartFresh')
-                                    }
-                                    className={cn(
-                                      'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                                      primaryKeyMode === 'explicitStartFresh'
-                                        ? 'border border-amber-500 bg-amber-500/10 text-amber-500'
-                                        : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
-                                    )}
-                                  >
-                                    Start Fresh
-                                  </button>
-                                </div>
-                                <p className="text-xs text-content-muted">
-                                  {primaryKeyMode === 'recoverExisting'
-                                    ? 'Verify this key against your existing cloud data before this device resumes writing.'
-                                    : 'Use this key for future cloud writes on this device without validating it against older cloud data.'}
-                                </p>
-                              </div>
-                            )}
-                            <form
-                              onSubmit={(e) => {
-                                e.preventDefault()
-                                if (!isUpdating && inputKey.trim()) {
-                                  if (passkeyActive) {
-                                    handleAddRecoveryKey()
-                                  } else {
-                                    handleUpdateKey()
+                        {/* Restore or Update Encryption Key */}
+                        <div className="space-y-2 pt-2">
+                          <h4 className="font-aeonik text-xs font-medium text-content-secondary">
+                            {passkeyActive
+                              ? 'Add Decryption Key'
+                              : 'Recovery and Primary Keys'}
+                          </h4>
+                          <p className="text-xs text-content-muted">
+                            {passkeyActive
+                              ? 'Add an older key to decrypt data from before a key rotation. Your passkey manages the primary key.'
+                              : 'Add a recovery key to decrypt older data without changing your current primary key, or replace the primary key used for future cloud writes.'}
+                          </p>
+                          {!passkeyActive && (
+                            <div className="space-y-2 rounded-lg border border-border-subtle bg-surface-chat p-3">
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPrimaryKeyMode('recoverExisting')
                                   }
+                                  className={cn(
+                                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                    primaryKeyMode === 'recoverExisting'
+                                      ? 'border border-blue-500 bg-blue-500/10 text-blue-500'
+                                      : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
+                                  )}
+                                >
+                                  Recover Existing
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPrimaryKeyMode('explicitStartFresh')
+                                  }
+                                  className={cn(
+                                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                    primaryKeyMode === 'explicitStartFresh'
+                                      ? 'border border-amber-500 bg-amber-500/10 text-amber-500'
+                                      : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
+                                  )}
+                                >
+                                  Start Fresh
+                                </button>
+                              </div>
+                              <p className="text-xs text-content-muted">
+                                {primaryKeyMode === 'recoverExisting'
+                                  ? 'Verify this key against your existing cloud data before this device resumes writing.'
+                                  : 'Use this key for future cloud writes on this device without validating it against older cloud data.'}
+                              </p>
+                            </div>
+                          )}
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              if (!isUpdating && inputKey.trim()) {
+                                if (passkeyActive) {
+                                  handleAddRecoveryKey()
+                                } else {
+                                  handleUpdateKey()
                                 }
-                              }}
-                              onDragOver={handleDragOver}
-                              onDragLeave={handleDragLeave}
-                              onDrop={handleDrop}
-                              className="space-y-2"
-                              id="encryption-key-form"
-                            >
-                              <div className="flex gap-2">
-                                <div className="relative flex-1">
-                                  <input
-                                    type="text"
-                                    style={
-                                      isInputKeyVisible
-                                        ? undefined
-                                        : ({
-                                            WebkitTextSecurity: 'disc',
-                                          } as React.CSSProperties)
-                                    }
-                                    name="encryption-key"
-                                    value={inputKey}
-                                    onChange={(e) =>
-                                      setInputKey(e.target.value)
-                                    }
-                                    placeholder={
-                                      isDragging
-                                        ? ''
-                                        : 'Enter key (e.g., key_abc123...)'
-                                    }
-                                    autoComplete="off"
-                                    aria-label="Encryption key input"
-                                    className={cn(
-                                      'w-full rounded-lg border border-blue-500 bg-surface-input px-3 py-2 pr-9 font-mono text-sm text-blue-500 placeholder:font-sans placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-blue-500',
-                                      isDragging && 'ring-2 ring-blue-500',
-                                    )}
-                                  />
+                              }
+                            }}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                            className="space-y-2"
+                            id="encryption-key-form"
+                          >
+                            <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                <input
+                                  type="text"
+                                  style={
+                                    isInputKeyVisible
+                                      ? undefined
+                                      : ({
+                                          WebkitTextSecurity: 'disc',
+                                        } as React.CSSProperties)
+                                  }
+                                  name="encryption-key"
+                                  value={inputKey}
+                                  onChange={(e) => setInputKey(e.target.value)}
+                                  placeholder={
+                                    isDragging
+                                      ? ''
+                                      : 'Enter key (e.g., key_abc123...)'
+                                  }
+                                  autoComplete="off"
+                                  aria-label="Encryption key input"
+                                  className={cn(
+                                    'w-full rounded-lg border border-blue-500 bg-surface-input px-3 py-2 pr-9 font-mono text-sm text-blue-500 placeholder:font-sans placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-blue-500',
+                                    isDragging && 'ring-2 ring-blue-500',
+                                  )}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setIsInputKeyVisible(!isInputKeyVisible)
+                                  }
+                                  aria-label={
+                                    isInputKeyVisible ? 'Hide key' : 'Show key'
+                                  }
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-content-muted transition-all hover:text-content-primary"
+                                >
+                                  {isInputKeyVisible ? (
+                                    <EyeSlashIcon className="h-4 w-4" />
+                                  ) : (
+                                    <EyeIcon className="h-4 w-4" />
+                                  )}
+                                </button>
+                                {isDragging && (
+                                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-blue-500/10">
+                                    <span className="text-sm text-blue-500">
+                                      Drop your PEM file here
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              {passkeyActive ? (
+                                <button
+                                  type="submit"
+                                  disabled={isUpdating || !inputKey.trim()}
+                                  aria-label="Add decryption key"
+                                  className={cn(
+                                    'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+                                    isUpdating || !inputKey.trim()
+                                      ? 'cursor-not-allowed bg-surface-chat text-content-muted'
+                                      : 'bg-blue-500 text-white hover:bg-blue-600',
+                                  )}
+                                >
+                                  {isUpdating ? 'Saving...' : 'Add Key'}
+                                </button>
+                              ) : (
+                                <div className="flex gap-2">
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      setIsInputKeyVisible(!isInputKeyVisible)
-                                    }
-                                    aria-label={
-                                      isInputKeyVisible
-                                        ? 'Hide key'
-                                        : 'Show key'
-                                    }
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-content-muted transition-all hover:text-content-primary"
-                                  >
-                                    {isInputKeyVisible ? (
-                                      <EyeSlashIcon className="h-4 w-4" />
-                                    ) : (
-                                      <EyeIcon className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                  {isDragging && (
-                                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-blue-500/10">
-                                      <span className="text-sm text-blue-500">
-                                        Drop your PEM file here
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                                {passkeyActive ? (
-                                  <button
-                                    type="submit"
+                                    onClick={handleAddRecoveryKey}
                                     disabled={isUpdating || !inputKey.trim()}
-                                    aria-label="Add decryption key"
+                                    aria-label="Add recovery key"
                                     className={cn(
                                       'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
                                       isUpdating || !inputKey.trim()
                                         ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                        : 'bg-blue-500 text-white hover:bg-blue-600',
+                                        : 'border border-border-subtle bg-surface-chat text-content-primary hover:bg-surface-chat/80',
                                     )}
                                   >
-                                    {isUpdating ? 'Saving...' : 'Add Key'}
+                                    {isUpdating ? 'Saving...' : 'Add Recovery'}
                                   </button>
-                                ) : (
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={handleAddRecoveryKey}
-                                      disabled={isUpdating || !inputKey.trim()}
-                                      aria-label="Add recovery key"
-                                      className={cn(
-                                        'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                        isUpdating || !inputKey.trim()
-                                          ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                          : 'border border-border-subtle bg-surface-chat text-content-primary hover:bg-surface-chat/80',
-                                      )}
-                                    >
-                                      {isUpdating
-                                        ? 'Saving...'
-                                        : 'Add Recovery'}
-                                    </button>
-                                    <button
-                                      type="submit"
-                                      disabled={isUpdating || !inputKey.trim()}
-                                      aria-label="Replace primary encryption key"
-                                      className={cn(
-                                        'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                        isUpdating || !inputKey.trim()
-                                          ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                          : primaryKeyMode ===
-                                              'explicitStartFresh'
-                                            ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                            : 'bg-blue-500 text-white hover:bg-blue-600',
-                                      )}
-                                    >
-                                      {isUpdating
-                                        ? 'Saving...'
-                                        : primaryKeyMode === 'recoverExisting'
-                                          ? 'Recover Existing'
-                                          : 'Start Fresh'}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </form>
-                          </div>
+                                  <button
+                                    type="submit"
+                                    disabled={isUpdating || !inputKey.trim()}
+                                    aria-label="Replace primary encryption key"
+                                    className={cn(
+                                      'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+                                      isUpdating || !inputKey.trim()
+                                        ? 'cursor-not-allowed bg-surface-chat text-content-muted'
+                                        : primaryKeyMode ===
+                                            'explicitStartFresh'
+                                          ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                          : 'bg-blue-500 text-white hover:bg-blue-600',
+                                    )}
+                                  >
+                                    {isUpdating
+                                      ? 'Saving...'
+                                      : primaryKeyMode === 'recoverExisting'
+                                        ? 'Recover Existing'
+                                        : 'Start Fresh'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </form>
                         </div>
-                      )}
+                      </div>
                     </div>
                   )}
 
@@ -3581,12 +3501,7 @@ ${encryptionKey.replace('key_', '')}
                       </div>
                     </div>
                   )}
-                </>
-              )}
 
-              {/* Import Tab */}
-              {activeTab === 'import' && (
-                <>
                   {/* Import Progress */}
                   {isImporting && importProgress && (
                     <div className="space-y-3">
@@ -3942,19 +3857,14 @@ ${encryptionKey.replace('key_', '')}
                           Projects
                           {!isPremium && (
                             <span className="ml-1 rounded-full bg-brand-accent-light/20 px-1.5 py-px text-[10px] font-medium text-brand-accent-light">
-                              Pro
+                              Premium
                             </span>
                           )}
                         </button>
                       </div>
                     </div>
                   </div>
-                </>
-              )}
 
-              {/* Export Tab */}
-              {activeTab === 'export' && (
-                <>
                   {/* Export Chats */}
                   <div className="space-y-3">
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">
@@ -3998,31 +3908,22 @@ ${encryptionKey.replace('key_', '')}
                     </div>
                   </div>
 
-                  {/* Export Projects */}
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Export Projects
-                    </h3>
-                    <div
-                      className={cn(
-                        'space-y-3 rounded-lg border border-border-subtle p-4',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <div className="font-aeonik-fono text-xs text-content-muted">
-                        Download all your projects including their settings,
-                        system instructions, memory, and documents.
-                      </div>
-                      {!isPremium ? (
-                        <div className="flex items-center gap-2 rounded-lg border border-brand-accent-light/30 bg-brand-accent-light/10 px-3 py-2">
-                          <span className="text-xs text-content-muted">
-                            Projects are a premium feature.
-                          </span>
-                          <span className="rounded-full bg-brand-accent-light/20 px-1.5 py-px text-[10px] font-medium text-brand-accent-light">
-                            Pro
-                          </span>
+                  {/* Export Projects (premium only) */}
+                  {isPremium && (
+                    <div className="space-y-3">
+                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                        Export Projects
+                      </h3>
+                      <div
+                        className={cn(
+                          'space-y-3 rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="font-aeonik-fono text-xs text-content-muted">
+                          Download all your projects including their settings,
+                          system instructions, memory, and documents.
                         </div>
-                      ) : (
                         <button
                           onClick={() => downloadProjects(projects)}
                           disabled={
@@ -4055,9 +3956,9 @@ ${encryptionKey.replace('key_', '')}
                               ? 'Loading projects...'
                               : 'Export Projects'}
                         </button>
-                      )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
 
@@ -4127,11 +4028,8 @@ ${encryptionKey.replace('key_', '')}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <div className="flex items-center gap-3">
-                                <SparklesIcon className="h-5 w-5 text-content-muted" />
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  {isPremium ? 'Premium' : 'Free Tier'}
-                                </div>
+                              <div className="font-aeonik text-sm font-medium text-content-primary">
+                                {isPremium ? 'Premium' : 'Free Tier'}
                               </div>
                               <div className="mt-1 font-aeonik-fono text-xs text-content-muted">
                                 {isPremium
@@ -4150,9 +4048,27 @@ ${encryptionKey.replace('key_', '')}
                               {isPremium ? 'Active' : 'Free'}
                             </div>
                           </div>
+                          {!isPremium && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleUpgradeToPro()
+                              }}
+                              disabled={upgradeLoading}
+                              className={cn(
+                                'mt-4 w-full rounded-md bg-brand-accent-dark px-4 py-3 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90',
+                                upgradeLoading &&
+                                  'cursor-not-allowed opacity-70',
+                              )}
+                            >
+                              {upgradeLoading
+                                ? 'Redirecting…'
+                                : 'Subscribe to Premium'}
+                            </button>
+                          )}
                         </div>
 
-                        {isPremium ? (
+                        {isPremium && (
                           <button
                             onClick={() => {
                               void handleManageBilling()
@@ -4178,22 +4094,6 @@ ${encryptionKey.replace('key_', '')}
                             <div className="text-sm text-content-muted">
                               {billingLoading ? '...' : '→'}
                             </div>
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void handleUpgradeToPro()
-                            }}
-                            disabled={upgradeLoading}
-                            className={cn(
-                              'w-full rounded-md bg-brand-accent-dark px-4 py-3 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90',
-                              upgradeLoading && 'cursor-not-allowed opacity-70',
-                            )}
-                          >
-                            {upgradeLoading
-                              ? 'Redirecting…'
-                              : 'Subscribe to Premium'}
                           </button>
                         )}
 

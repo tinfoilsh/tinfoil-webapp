@@ -28,8 +28,6 @@ export const SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL =
 export const SETTINGS_SELECTED_MODEL = 'tinfoil-settings-selected-model'
 export const SETTINGS_REASONING_EFFORT = 'tinfoil-settings-reasoning-effort'
 export const SETTINGS_THINKING_ENABLED = 'tinfoil-settings-thinking-enabled'
-export const SETTINGS_MAX_PROMPT_MESSAGES =
-  'tinfoil-settings-max-prompt-messages'
 export const SETTINGS_WEB_SEARCH_ENABLED = 'tinfoil-settings-web-search-enabled'
 export const SETTINGS_CODE_EXECUTION_ENABLED =
   'tinfoil-settings-code-execution-enabled'

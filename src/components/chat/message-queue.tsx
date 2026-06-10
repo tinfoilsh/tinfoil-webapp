@@ -1,9 +1,42 @@
 import { cn } from '@/components/ui/utils'
 import { TrashIcon } from '@heroicons/react/24/outline'
 import { HiOutlineQueueList } from 'react-icons/hi2'
-import type { QueuedMessage } from './types'
+import type { Attachment, QueuedMessage } from './types'
 
 const QUEUED_PREVIEW_MAX_LENGTH = 240
+
+function QueuedImagePreview({ attachments }: { attachments?: Attachment[] }) {
+  const imageAttachments =
+    attachments?.filter(
+      (attachment) =>
+        attachment.type === 'image' &&
+        (attachment.thumbnailBase64 || attachment.base64),
+    ) ?? []
+
+  if (imageAttachments.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {imageAttachments.map((attachment) => {
+        const src = attachment.thumbnailBase64 || attachment.base64
+
+        return (
+          <div
+            key={attachment.id}
+            className="h-12 w-12 overflow-hidden rounded-lg border border-border-subtle bg-surface-card"
+          >
+            <img
+              src={`data:${attachment.mimeType || 'image/jpeg'};base64,${src}`}
+              alt={attachment.fileName}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 type MessageQueueProps = {
   queue: QueuedMessage[]
@@ -38,9 +71,12 @@ export function MessageQueue({ queue, onRemove }: MessageQueueProps) {
             )}
           >
             <HiOutlineQueueList className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary" />
-            <p className="line-clamp-2 flex-1 whitespace-pre-wrap break-words text-sm text-content-secondary">
-              {truncated || fallbackLabel}
-            </p>
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <QueuedImagePreview attachments={item.attachments} />
+              <p className="line-clamp-2 whitespace-pre-wrap break-words text-sm text-content-secondary">
+                {truncated || fallbackLabel}
+              </p>
+            </div>
             <button
               type="button"
               onClick={() => onRemove(item.id)}

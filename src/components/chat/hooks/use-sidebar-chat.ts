@@ -24,7 +24,6 @@ interface UseSidebarChatProps {
   rules?: string
   models: BaseModel[]
   selectedModel: AIModel
-  maxMessages: number
   reasoningEffort?: ReasoningEffort
   thinkingEnabled?: boolean
   webSearchEnabled?: boolean
@@ -80,7 +79,6 @@ export function useSidebarChat({
   rules = '',
   models,
   selectedModel,
-  maxMessages,
   reasoningEffort,
   thinkingEnabled,
   webSearchEnabled,
@@ -212,7 +210,6 @@ export function useSidebarChat({
               setRetryInfo({ attempt, maxRetries: max, error })
             },
             updatedMessages: apiMessages,
-            maxMessages,
             signal: controller.signal,
             reasoningEffort,
             thinkingEnabled,
@@ -289,7 +286,6 @@ export function useSidebarChat({
       selectedModel,
       systemPrompt,
       rules,
-      maxMessages,
       reasoningEffort,
       thinkingEnabled,
       webSearchEnabled,

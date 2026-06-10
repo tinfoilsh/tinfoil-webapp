@@ -358,7 +358,6 @@ export function useProfileSync() {
 
     const events = [
       'themeChanged',
-      'maxPromptMessagesChanged',
       'personalizationChanged',
       'languageChanged',
       'customSystemPromptChanged',

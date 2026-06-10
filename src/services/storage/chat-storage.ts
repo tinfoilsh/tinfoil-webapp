@@ -179,6 +179,7 @@ export class ChatStorageService {
   async deleteAllChats(): Promise<{
     localDeleted: number
     cloudDeleted: number
+    notificationSent: boolean
   }> {
     await this.initialize()
 
@@ -193,10 +194,12 @@ export class ChatStorageService {
     // and skip both the tracker update and the local wipe so the user can
     // retry without partial-deletion side effects.
     let cloudDeleted = 0
+    let notificationSent = false
     if (await cloudStorage.isAuthenticated()) {
       try {
         const result = await cloudStorage.deleteAllChats()
         cloudDeleted = result.deleted
+        notificationSent = result.notificationSent ?? false
       } catch (error) {
         logError('Failed to bulk-delete cloud chats', error, {
           component: 'ChatStorageService',
@@ -221,7 +224,7 @@ export class ChatStorageService {
       metadata: { localDeleted, cloudDeleted },
     })
 
-    return { localDeleted, cloudDeleted }
+    return { localDeleted, cloudDeleted, notificationSent }
   }
 
   async getAllChats(): Promise<Chat[]> {
@@ -246,6 +249,11 @@ export class ChatStorageService {
         syncedAt: baseChat.syncedAt,
       }),
     )
+  }
+
+  async getChatCount(): Promise<number> {
+    await this.initialize()
+    return indexedDBStorage.getChatCount()
   }
 
   async getAllChatsWithSyncStatus(): Promise<Chat[]> {

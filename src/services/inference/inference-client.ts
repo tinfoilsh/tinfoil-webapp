@@ -108,7 +108,6 @@ export interface SendChatStreamParams {
   rules?: string
   onRetry?: (attempt: number, maxRetries: number, error?: string) => void
   updatedMessages: Message[]
-  maxMessages: number
   signal: AbortSignal
   reasoningEffort?: ReasoningEffort
   thinkingEnabled?: boolean
@@ -139,7 +138,6 @@ export async function sendChatStream(
     rules,
     onRetry,
     updatedMessages,
-    maxMessages,
     signal,
     reasoningEffort,
     thinkingEnabled,
@@ -161,7 +159,6 @@ export async function sendChatStream(
       systemPrompt,
       rules,
       messages: updatedMessages,
-      maxMessages,
       includeGenUIHint: genUIEnabled,
     })
 
@@ -267,7 +264,6 @@ export async function sendChatStream(
     systemPrompt,
     rules,
     messages: updatedMessages,
-    maxMessages,
     includeGenUIHint: genUIEnabled,
   })
 

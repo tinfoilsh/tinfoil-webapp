@@ -88,7 +88,6 @@ interface ProjectSidebarProps {
   onSelectChat: (chatId: string) => void
   currentChatId?: string
   isClient: boolean
-  isPremium?: boolean
   chats?: ProjectChat[]
   deleteChat?: (chatId: string) => void
   updateChatTitle?: (chatId: string, newTitle: string) => void
@@ -189,7 +188,6 @@ export function ProjectSidebar({
   onSelectChat,
   currentChatId,
   isClient,
-  isPremium,
   chats: chatsProp,
   deleteChat,
   updateChatTitle,
@@ -217,7 +215,7 @@ export function ProjectSidebar({
     removeUploadingFile,
   } = useProject()
   const { handleDocumentUpload: processDocument, isDocumentUploading } =
-    useDocumentUploader(isPremium)
+    useDocumentUploader()
   const [settingsExpanded, setSettingsExpanded] = useState(false)
   const [documentsExpanded, setDocumentsExpanded] = useState(false)
   const [memoryExpanded, setMemoryExpanded] = useState(false)

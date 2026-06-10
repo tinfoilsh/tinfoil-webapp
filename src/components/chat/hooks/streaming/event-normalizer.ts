@@ -31,6 +31,15 @@ import type { NormalizedEvent } from './types'
 
 type SSEJson = any
 
+/**
+ * A reasoning resume is only treated as real thinking once it contains a
+ * letter or digit. Routers interleave trailing punctuation/whitespace crumbs
+ * of the previous reasoning (e.g. ". ") into the content stream, and opening
+ * a thinking block for those splits the reply around an empty "Thought for
+ * 0.0 seconds" block.
+ */
+const SUBSTANTIVE_REASONING_RE = /[\p{L}\p{N}]/u
+
 function extractReasoningContent(json: SSEJson): string | null {
   const delta =
     json.choices?.[0]?.delta?.reasoning_content ??
@@ -219,6 +228,7 @@ export function createEventNormalizer(): EventNormalizer {
   let initialBuffer = ''
   let isInThinking = false
   let isReasoningFormat = false
+  let pendingReasoningTail = ''
   const toolCallIndexToId = new Map<number, string>()
   const toolCallStartedIds = new Set<string>()
 
@@ -310,16 +320,23 @@ export function createEventNormalizer(): EventNormalizer {
       if (isReasoningFormat && reasoningContent !== null) {
         // Continued reasoning chunks
         if (reasoningContent) {
-          // If we were out of thinking (content interrupted), restart —
-          // but not for whitespace-only tails, which would otherwise
-          // create an empty thinking block and split the content
-          // timeline mid-word.
-          if (!isInThinking && reasoningContent.trim()) {
-            isInThinking = true
-            events.push({ type: 'thinking_start' })
-          }
           if (isInThinking) {
             events.push({ type: 'thinking_delta', content: reasoningContent })
+          } else {
+            // We were out of thinking (content interrupted). Hold the
+            // resume in a buffer and only reopen a thinking block once it
+            // contains substantive text, so trailing punctuation crumbs
+            // don't split the content timeline mid-word.
+            pendingReasoningTail += reasoningContent
+            if (SUBSTANTIVE_REASONING_RE.test(pendingReasoningTail)) {
+              isInThinking = true
+              events.push({ type: 'thinking_start' })
+              events.push({
+                type: 'thinking_delta',
+                content: pendingReasoningTail,
+              })
+              pendingReasoningTail = ''
+            }
           }
         }
         // Content must be emitted regardless of thinking state: the
@@ -330,6 +347,7 @@ export function createEventNormalizer(): EventNormalizer {
             events.push({ type: 'thinking_end' })
             isInThinking = false
           }
+          pendingReasoningTail = ''
           events.push({ type: 'content_delta', content })
         }
         return events
@@ -341,6 +359,7 @@ export function createEventNormalizer(): EventNormalizer {
           events.push({ type: 'thinking_end' })
           isInThinking = false
         }
+        pendingReasoningTail = ''
         events.push({ type: 'content_delta', content })
         return events
       }

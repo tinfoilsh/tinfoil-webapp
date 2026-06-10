@@ -189,16 +189,22 @@ export class ProjectStorageService {
     }
   }
 
-  async deleteAllProjects(): Promise<{ deleted: number }> {
+  async deleteAllProjects(): Promise<{
+    deleted: number
+    notificationSent?: boolean
+  }> {
     if (!(await canWriteToCloud())) {
       throw new Error(
         'Cloud writes are blocked until your encryption key is verified',
       )
     }
 
+    // keepalive lets the browser finish the request even if the tab is
+    // closed right after the user confirms the deletion.
     const response = await fetch(`${API_BASE_URL}/api/storage/projects`, {
       method: 'DELETE',
       headers: await this.getHeaders(),
+      keepalive: true,
     })
 
     if (!response.ok) {

@@ -8,6 +8,8 @@ import { logError } from '@/utils/error-handling'
 import {
   getFileIconType as getFileIcon,
   isPlainTextFile,
+  isProbablyTextFile,
+  isSupportedFile,
 } from '@/utils/file-types'
 import {
   generateThumbnailBase64,
@@ -27,10 +29,7 @@ export const getFileIconType = getFileIcon
 /**
  * Handles the document upload and processing logic
  */
-export const useDocumentUploader = (
-  isPremium?: boolean,
-  isCurrentModelMultimodal?: boolean,
-) => {
+export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
   const [uploadingDocuments, setUploadingDocuments] = useState<
     Record<string, boolean>
   >({})
@@ -165,6 +164,28 @@ export const useDocumentUploader = (
         [documentId]: true,
       }))
 
+      // Handle plain text and code files directly in the browser. Files with
+      // unknown extensions that sniff as text are read the same way.
+      // Text files are not subject to the byte-size limit; the caller
+      // validates their token estimate against the model's context window.
+      if (
+        isPlainTextFile(file.name) ||
+        (!isSupportedFile(file.name) && (await isProbablyTextFile(file)))
+      ) {
+        if (file.size > CONSTANTS.MAX_TEXT_DOCUMENT_SIZE_BYTES) {
+          onError(
+            new Error(
+              `Text file exceeds the limit of ${CONSTANTS.MAX_TEXT_DOCUMENT_SIZE_MB}MB.`,
+            ),
+            documentId,
+          )
+          return
+        }
+        const formattedContent = await handleTextFile(file)
+        onSuccess(formattedContent, documentId)
+        return
+      }
+
       if (file.size > CONSTANTS.MAX_DOCUMENT_SIZE_BYTES) {
         onError(
           new Error(
@@ -175,23 +196,8 @@ export const useDocumentUploader = (
         return
       }
 
-      // Handle plain text and code files directly in the browser
-      if (isPlainTextFile(file.name)) {
-        const formattedContent = await handleTextFile(file)
-        onSuccess(formattedContent, documentId)
-        return
-      }
-
-      // For image files, get description from multimodal model (premium only)
+      // For image files, get description from multimodal model
       if (isImageFile(file)) {
-        if (!isPremium) {
-          onError(
-            new Error('Image upload requires a premium subscription'),
-            documentId,
-          )
-          return
-        }
-
         try {
           const scaled = await scaleAndEncodeImage(file, {
             maxWidth: 768,
@@ -240,18 +246,8 @@ export const useDocumentUploader = (
         }
       }
 
-      // For audio files, transcribe via audio model (premium only)
+      // For audio files, transcribe via audio model
       if (isAudioFile(file)) {
-        if (!isPremium) {
-          onError(
-            new Error(
-              'Audio file transcription requires a premium subscription',
-            ),
-            documentId,
-          )
-          return
-        }
-
         const models = await getAIModels()
         const audioModel = (
           models.find((m) => m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL) ||

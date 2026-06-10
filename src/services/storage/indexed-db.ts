@@ -419,6 +419,20 @@ export class IndexedDBStorage {
     })
   }
 
+  async getChatCount(): Promise<number> {
+    await this.saveQueue.catch(() => {})
+    const db = await this.ensureDB()
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([CHATS_STORE], 'readonly')
+      const store = transaction.objectStore(CHATS_STORE)
+      const request = store.count()
+
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(new Error('Failed to count chats'))
+    })
+  }
+
   async deleteAllChats(): Promise<number> {
     // Serialize through saveQueue so a clear() can't race with an in-flight
     // saveChatInternal that would re-insert a row after the wipe.

@@ -48,7 +48,7 @@ function FadeInFavicon({
 
 function InlineSourceFavicons({ sources }: { sources: WebSearchSource[] }) {
   return (
-    <span className="mt-1 inline-flex shrink-0 items-center align-middle">
+    <span className="ml-1 inline-flex shrink-0 items-center align-middle">
       {sources.map((source, index) => (
         <FadeInFavicon
           key={`${source.url}-${index}`}

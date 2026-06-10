@@ -5,6 +5,7 @@ import {
 import { buildGenUIPromptHint } from '@/components/chat/genui/system-prompt'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import { selectMessagesWithinBudget } from '@/utils/token-estimation'
 import type {
   ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
@@ -30,7 +31,6 @@ export interface ChatQueryBuilderParams {
   systemPrompt: string
   rules?: string
   messages: Message[]
-  maxMessages: number
   /**
    * Append GenUI widget guidance to the system prompt. Defaults to `false`
    * so non-chat callers (title gen, memory) stay unaffected.
@@ -50,7 +50,6 @@ export class ChatQueryBuilder {
       systemPrompt,
       rules,
       messages: conversationMessages,
-      maxMessages,
       includeGenUIHint,
     } = params
     const modelId = model.modelName
@@ -86,8 +85,11 @@ export class ChatQueryBuilder {
       }
     }
 
-    // Add conversation history
-    const recentMessages = conversationMessages.slice(-maxMessages)
+    // Add conversation history that fits within the model's context budget
+    const recentMessages = selectMessagesWithinBudget(
+      conversationMessages,
+      model.contextWindow,
+    )
     let addedSystemInstructions = useSystemRole
 
     for (let index = 0; index < recentMessages.length; index++) {
