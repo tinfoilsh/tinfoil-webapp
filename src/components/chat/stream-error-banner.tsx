@@ -42,7 +42,7 @@ export function StreamErrorBanner({
   return (
     <div
       role="alert"
-      className="pointer-events-none absolute left-0 right-0 top-2 z-10 flex w-full justify-center px-4"
+      className="pointer-events-none absolute left-0 right-0 top-16 z-10 flex w-full justify-center px-4 md:top-2"
     >
       <div
         className={cn(
