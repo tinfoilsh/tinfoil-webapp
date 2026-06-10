@@ -597,17 +597,15 @@ export function ChatInput({
               : 'border-border-subtle',
           )}
         >
+          {/* No accept filter: unknown extensions are sniffed for text
+              content and rejected gracefully after selection instead of
+              being blocked by the picker. */}
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
             className="hidden"
             multiple
-            accept={
-              isPremium
-                ? '.pdf,.docx,.xlsx,.pptx,.md,.html,.xhtml,.csv,.png,.jpg,.jpeg,.tiff,.bmp,.webp,.txt,.py,.js,.jsx,.ts,.tsx,.css,.json,.xml,.yaml,.yml,.toml,.sh,.rb,.java,.cpp,.c,.h,.hpp,.go,.rs,.swift,.kt,.r,.sql,.lua,.pl,.php,.env,.ini,.cfg,.conf,.log,.rtf,.mp3,.wav,.ogg,.m4a,.aac,.flac,.webm,.wma,.qfx,.qif,.ofx,.ifs,.qbo,.qbx,.bai,.bai2,.mt940,.sta,.tsv,.ics,.vcf'
-                : '.pdf,.docx,.xlsx,.pptx,.md,.html,.xhtml,.csv,.txt,.py,.js,.jsx,.ts,.tsx,.css,.json,.xml,.yaml,.yml,.toml,.sh,.rb,.java,.cpp,.c,.h,.hpp,.go,.rs,.swift,.kt,.r,.sql,.lua,.pl,.php,.env,.ini,.cfg,.conf,.log,.rtf,.qfx,.qif,.ofx,.ifs,.qbo,.qbx,.bai,.bai2,.mt940,.sta,.tsv,.ics,.vcf'
-            }
           />
 
           {quote && (

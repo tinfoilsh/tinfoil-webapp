@@ -83,11 +83,55 @@ const PLAIN_TEXT_EXTENSIONS = [
   '.rs',
   '.swift',
   '.kt',
+  '.kts',
   '.r',
   '.sql',
   '.lua',
   '.pl',
   '.php',
+  '.cs',
+  '.csx',
+  '.vb',
+  '.fs',
+  '.fsx',
+  '.scala',
+  '.dart',
+  '.ex',
+  '.exs',
+  '.erl',
+  '.hs',
+  '.ml',
+  '.mli',
+  '.clj',
+  '.cljs',
+  '.groovy',
+  '.gradle',
+  '.m',
+  '.mm',
+  '.zig',
+  '.nim',
+  '.jl',
+  '.ps1',
+  '.psm1',
+  '.bat',
+  '.cmd',
+  '.asm',
+  '.s',
+  '.proto',
+  '.graphql',
+  '.gql',
+  '.tf',
+  '.tfvars',
+  '.dockerfile',
+  '.makefile',
+  '.cmake',
+  '.tex',
+  '.bib',
+  '.svg',
+  '.properties',
+  '.lock',
+  '.diff',
+  '.patch',
   '.env',
   '.ini',
   '.cfg',
@@ -112,6 +156,37 @@ const ALL_SUPPORTED_EXTENSIONS = [
 export function isSupportedFile(filename: string): boolean {
   const lowerFilename = filename.toLowerCase()
   return ALL_SUPPORTED_EXTENSIONS.some((ext) => lowerFilename.endsWith(ext))
+}
+
+// Number of leading bytes sampled when sniffing whether a file is text
+const TEXT_SNIFF_SAMPLE_BYTES = 8192
+// Maximum fraction of invalid UTF-8 sequences tolerated in a text file
+const TEXT_SNIFF_MAX_INVALID_RATIO = 0.05
+
+/**
+ * Heuristically determines whether a file contains plain text by sampling
+ * its leading bytes. Used as a fallback for unknown extensions so files
+ * like ".cs" or other source code are not rejected outright.
+ */
+export async function isProbablyTextFile(file: File): Promise<boolean> {
+  try {
+    const buffer = await file.slice(0, TEXT_SNIFF_SAMPLE_BYTES).arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    if (bytes.length === 0) return false
+
+    for (const byte of bytes) {
+      if (byte === 0) return false
+    }
+
+    const decoded = new TextDecoder('utf-8').decode(bytes)
+    let invalidCount = 0
+    for (const char of decoded) {
+      if (char === '\uFFFD') invalidCount++
+    }
+    return invalidCount / decoded.length <= TEXT_SNIFF_MAX_INVALID_RATIO
+  } catch {
+    return false
+  }
 }
 
 /**

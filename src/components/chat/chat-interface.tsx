@@ -61,7 +61,7 @@ import {
   setCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
-import { isSupportedFile } from '@/utils/file-types'
+import { isProbablyTextFile, isSupportedFile } from '@/utils/file-types'
 import {
   getProjectUploadPreference,
   setProjectUploadPreference,
@@ -1693,7 +1693,7 @@ export function ChatInterface({
     async (file: File) => {
       const tempDocId = crypto.randomUUID()
 
-      if (!isSupportedFile(file.name)) {
+      if (!isSupportedFile(file.name) && !(await isProbablyTextFile(file))) {
         setProcessedDocuments((prev) => [
           ...prev,
           {

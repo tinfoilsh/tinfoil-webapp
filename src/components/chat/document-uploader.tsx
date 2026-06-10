@@ -8,6 +8,8 @@ import { logError } from '@/utils/error-handling'
 import {
   getFileIconType as getFileIcon,
   isPlainTextFile,
+  isProbablyTextFile,
+  isSupportedFile,
 } from '@/utils/file-types'
 import {
   generateThumbnailBase64,
@@ -165,6 +167,28 @@ export const useDocumentUploader = (
         [documentId]: true,
       }))
 
+      // Handle plain text and code files directly in the browser. Files with
+      // unknown extensions that sniff as text are read the same way.
+      // Text files are not subject to the byte-size limit; the caller
+      // validates their token estimate against the model's context window.
+      if (
+        isPlainTextFile(file.name) ||
+        (!isSupportedFile(file.name) && (await isProbablyTextFile(file)))
+      ) {
+        if (file.size > CONSTANTS.MAX_TEXT_DOCUMENT_SIZE_BYTES) {
+          onError(
+            new Error(
+              `Text file exceeds the limit of ${CONSTANTS.MAX_TEXT_DOCUMENT_SIZE_MB}MB.`,
+            ),
+            documentId,
+          )
+          return
+        }
+        const formattedContent = await handleTextFile(file)
+        onSuccess(formattedContent, documentId)
+        return
+      }
+
       if (file.size > CONSTANTS.MAX_DOCUMENT_SIZE_BYTES) {
         onError(
           new Error(
@@ -172,13 +196,6 @@ export const useDocumentUploader = (
           ),
           documentId,
         )
-        return
-      }
-
-      // Handle plain text and code files directly in the browser
-      if (isPlainTextFile(file.name)) {
-        const formattedContent = await handleTextFile(file)
-        onSuccess(formattedContent, documentId)
         return
       }
 
