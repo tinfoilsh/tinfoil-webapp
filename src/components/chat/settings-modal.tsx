@@ -2862,8 +2862,9 @@ ${encryptionKey.replace('key_', '')}
                       <div className="flex items-start gap-3">
                         <div className={STEP_CIRCLE_CLASSES}>1</div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Your chats are encrypted on your device before being
-                          sent to the cloud.
+                          Your chats are encrypted with a key that only you
+                          possess and stored encrypted in the cloud. Nobody but
+                          you can access your backed up chats.
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
