@@ -65,11 +65,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  AiOutlineCloudSync,
-  AiOutlineExport,
-  AiOutlineImport,
-} from 'react-icons/ai'
+import { AiOutlineCloudSync, AiOutlineExport } from 'react-icons/ai'
 import { BsQrCode } from 'react-icons/bs'
 import { GoPasskeyFill } from 'react-icons/go'
 import { HiOutlineAdjustmentsVertical } from 'react-icons/hi2'
@@ -178,8 +174,6 @@ export type SettingsTab =
   | 'personalization'
   | 'prompts'
   | 'cloud-sync'
-  | 'import'
-  | 'export'
   | 'account'
 
 import type { ThemeMode } from './hooks/use-ui-state'
@@ -1922,16 +1916,6 @@ ${encryptionKey.replace('key_', '')}
           },
         ]
       : []),
-    {
-      id: 'import' as const,
-      label: 'Import Chats',
-      icon: AiOutlineImport,
-    },
-    {
-      id: 'export' as const,
-      label: 'Export Chats',
-      icon: AiOutlineExport,
-    },
   ]
 
   return (
@@ -2103,7 +2087,18 @@ ${encryptionKey.replace('key_', '')}
                         ))}
                       </div>
                     </div>
+                  </div>
+                </>
+              )}
 
+              {/* Chat Tab */}
+              {activeTab === 'chat' && (
+                <>
+                  {/* Conversation Settings */}
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Conversation Settings
+                    </h3>
                     {/* Chat Font */}
                     <div
                       className={cn(
@@ -2169,18 +2164,6 @@ ${encryptionKey.replace('key_', '')}
                         ))}
                       </div>
                     </div>
-                  </div>
-                </>
-              )}
-
-              {/* Chat Tab */}
-              {activeTab === 'chat' && (
-                <>
-                  {/* Conversation Settings */}
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Conversation Settings
-                    </h3>
                     {/* Response Language */}
                     <div
                       className={cn(
@@ -3523,7 +3506,7 @@ ${encryptionKey.replace('key_', '')}
               )}
 
               {/* Import Tab */}
-              {activeTab === 'import' && (
+              {activeTab === 'chat' && (
                 <>
                   {/* Import Progress */}
                   {isImporting && importProgress && (
@@ -3891,7 +3874,7 @@ ${encryptionKey.replace('key_', '')}
               )}
 
               {/* Export Tab */}
-              {activeTab === 'export' && (
+              {activeTab === 'chat' && (
                 <>
                   {/* Export Chats */}
                   <div className="space-y-3">

@@ -35,15 +35,18 @@ export function UrlHashSettingsHandler({
         return
       }
 
-      const tabName = parts[1]
+      // Import/export now live inside the chat tab; keep old links working.
+      const legacyTabAliases: Record<string, SettingsTab> = {
+        import: 'chat',
+        export: 'chat',
+      }
+      const tabName = legacyTabAliases[parts[1]] ?? parts[1]
       const validTabs: SettingsTab[] = [
         'general',
         'chat',
         'personalization',
         'prompts',
         'cloud-sync',
-        'import',
-        'export',
         'account',
       ]
 
