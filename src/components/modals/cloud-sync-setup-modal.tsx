@@ -225,6 +225,15 @@ export function CloudSyncSetupModal({
         onClose()
         return
       }
+      // Fall through to the manual key-display step so the user can
+      // save the key and retry via Done, but tell them why the
+      // automatic activation did not complete.
+      const { title, description } = describeCloudKeySetupFailure(result.reason)
+      toast({
+        title,
+        description,
+        variant: 'destructive',
+      })
     }
 
     setCurrentStep('key-display')
