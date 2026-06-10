@@ -1,20 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockGetKey = vi.fn<() => string | null>()
+// The mocked service stores keys directly as base64 strings: the
+// "current" key backs getKeyBytesOrThrow (staged or loaded), while
+// the "persisted" key + alternatives back getKey/getStoredAlternatives
+// (localStorage history used by migrationKeys()).
+const mockCurrentKey = vi.fn<() => string | null>()
+const mockPersistedKey = vi.fn<() => string | null>()
+const mockStoredAlternatives = vi.fn<() => string[]>()
 const mockKeyCurrent = vi.fn()
 const mockProbeLegacyDataWithLocalKeys = vi.fn()
 
+function b64ToBytes(key: string): Uint8Array {
+  const bin = atob(key)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
-    getKey: () => mockGetKey(),
+    getKey: () => mockPersistedKey(),
     getKeyBytesOrThrow: () => {
-      const key = mockGetKey()
+      const key = mockCurrentKey()
       if (!key) throw new Error('no key')
-      const bin = atob(key)
-      const out = new Uint8Array(bin.length)
-      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
-      return out
+      return b64ToBytes(key)
     },
+    getStoredAlternatives: () => mockStoredAlternatives(),
+    getAlternativeKeyBytes: (key: string) => b64ToBytes(key),
   },
 }))
 
@@ -41,9 +53,9 @@ import {
 } from '@/services/cloud/cloud-key-preflight'
 import { deriveKeyIdHex } from '@/services/sync-enclave/key-bundle'
 
-function cekHexToBase64(): { cek: Uint8Array; b64: string } {
+function cekHexToBase64(offset = 1): { cek: Uint8Array; b64: string } {
   const cek = new Uint8Array(32)
-  for (let i = 0; i < 32; i++) cek[i] = i + 1
+  for (let i = 0; i < 32; i++) cek[i] = (i + offset) % 256
   let bin = ''
   for (let i = 0; i < cek.length; i++) bin += String.fromCharCode(cek[i])
   return { cek, b64: btoa(bin) }
@@ -51,7 +63,10 @@ function cekHexToBase64(): { cek: Uint8Array; b64: string } {
 
 describe('cloud-key-preflight', () => {
   beforeEach(() => {
-    mockGetKey.mockReset()
+    mockCurrentKey.mockReset()
+    mockPersistedKey.mockReset()
+    mockStoredAlternatives.mockReset()
+    mockStoredAlternatives.mockReturnValue([])
     mockKeyCurrent.mockReset()
     mockProbeLegacyDataWithLocalKeys.mockReset()
   })
@@ -97,7 +112,8 @@ describe('cloud-key-preflight', () => {
 
   describe('validateCurrentPrimaryKey', () => {
     it('returns unknown/none with message when no local key is loaded', async () => {
-      mockGetKey.mockReturnValue(null)
+      mockCurrentKey.mockReturnValue(null)
+      mockPersistedKey.mockReturnValue(null)
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('unknown')
       expect(result.canWrite).toBe(false)
@@ -107,7 +123,8 @@ describe('cloud-key-preflight', () => {
 
     it('returns empty/writable when the enclave has no key', async () => {
       const { b64 } = cekHexToBase64()
-      mockGetKey.mockReturnValue(b64)
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('empty')
@@ -116,7 +133,8 @@ describe('cloud-key-preflight', () => {
 
     it('probes legacy data before accepting a key when no key is registered', async () => {
       const { b64 } = cekHexToBase64()
-      mockGetKey.mockReturnValue(b64)
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
         key_id: null,
         bundles: {},
@@ -131,13 +149,84 @@ describe('cloud-key-preflight', () => {
       expect(result.remoteState).toBe('exists')
       expect(result.canWrite).toBe(true)
       expect(mockProbeLegacyDataWithLocalKeys).toHaveBeenCalledWith({
+        keys: [{ key: b64 }],
+        action: 'validateCurrentPrimaryKey',
+      })
+    })
+
+    it('probes a staged key on a fresh device with no persisted keys', async () => {
+      const { b64 } = cekHexToBase64()
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(null)
+      mockKeyCurrent.mockResolvedValue({
+        key_id: null,
+        bundles: {},
+        has_data: true,
+      })
+      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
+        outcome: 'decryptable',
+      })
+
+      const result = await validateCurrentPrimaryKey()
+
+      expect(result.canWrite).toBe(true)
+      expect(mockProbeLegacyDataWithLocalKeys).toHaveBeenCalledWith({
+        keys: [{ key: b64 }],
+        action: 'validateCurrentPrimaryKey',
+      })
+    })
+
+    it('does not let a persisted key vouch for a different staged key', async () => {
+      const { b64: stagedB64 } = cekHexToBase64(1)
+      const { b64: persistedB64 } = cekHexToBase64(7)
+      mockCurrentKey.mockReturnValue(stagedB64)
+      mockPersistedKey.mockReturnValue(persistedB64)
+      mockKeyCurrent.mockResolvedValue({
+        key_id: null,
+        bundles: {},
+        has_data: true,
+      })
+      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
+        outcome: 'undecryptable',
+      })
+
+      const result = await validateCurrentPrimaryKey()
+
+      expect(result.canWrite).toBe(false)
+      expect(mockProbeLegacyDataWithLocalKeys).toHaveBeenCalledWith({
+        keys: [{ key: stagedB64 }],
+        action: 'validateCurrentPrimaryKey',
+      })
+    })
+
+    it('probes with persisted alternatives when the loaded key is the persisted primary', async () => {
+      const { b64 } = cekHexToBase64(1)
+      const { b64: altB64 } = cekHexToBase64(7)
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
+      mockStoredAlternatives.mockReturnValue([altB64])
+      mockKeyCurrent.mockResolvedValue({
+        key_id: null,
+        bundles: {},
+        has_data: true,
+      })
+      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
+        outcome: 'decryptable',
+      })
+
+      const result = await validateCurrentPrimaryKey()
+
+      expect(result.canWrite).toBe(true)
+      expect(mockProbeLegacyDataWithLocalKeys).toHaveBeenCalledWith({
+        keys: [{ key: b64 }, { key: altB64 }],
         action: 'validateCurrentPrimaryKey',
       })
     })
 
     it('blocks a key that cannot decrypt legacy data before registration', async () => {
       const { b64 } = cekHexToBase64()
-      mockGetKey.mockReturnValue(b64)
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
         key_id: null,
         bundles: {},
@@ -156,7 +245,8 @@ describe('cloud-key-preflight', () => {
 
     it('treats transient legacy-data probe failure as unknown', async () => {
       const { b64 } = cekHexToBase64()
-      mockGetKey.mockReturnValue(b64)
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
         key_id: null,
         bundles: {},
@@ -175,7 +265,8 @@ describe('cloud-key-preflight', () => {
     it('allows writes when local KeyID matches enclave KeyID', async () => {
       const { cek, b64 } = cekHexToBase64()
       const expectedKid = await deriveKeyIdHex(cek)
-      mockGetKey.mockReturnValue(b64)
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
         key_id: expectedKid,
         bundles: {},
@@ -187,7 +278,8 @@ describe('cloud-key-preflight', () => {
 
     it('blocks writes when local KeyID does not match the enclave KeyID', async () => {
       const { b64 } = cekHexToBase64()
-      mockGetKey.mockReturnValue(b64)
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({
         key_id: 'ff'.repeat(16),
         bundles: {},
@@ -200,7 +292,8 @@ describe('cloud-key-preflight', () => {
 
     it('returns unknown when the enclave probe fails', async () => {
       const { b64 } = cekHexToBase64()
-      mockGetKey.mockReturnValue(b64)
+      mockCurrentKey.mockReturnValue(b64)
+      mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockRejectedValue(new Error('network'))
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('unknown')

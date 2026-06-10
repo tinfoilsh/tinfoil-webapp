@@ -18,8 +18,9 @@ import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import {
   base64ToBytes,
   keyCurrent as enclaveKeyCurrent,
+  type PullKey,
 } from '../sync-enclave/sync-api'
-import { requirePrimaryKeyB64 } from './cek-encoding'
+import { migrationKeys, requirePrimaryKeyB64 } from './cek-encoding'
 import {
   legacyKeyProbeAllowsBinding,
   probeLegacyDataWithLocalKeys,
@@ -111,6 +112,7 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
 
   if (!resp.key_id && resp.has_data) {
     const probe = await probeLegacyDataWithLocalKeys({
+      keys: legacyProbeKeys(primaryKeyB64),
       action: 'validateCurrentPrimaryKey',
     })
     if (probe.outcome === 'transient_failure') {
@@ -145,6 +147,26 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
   }
 
   return blockedResult('none')
+}
+
+/**
+ * Keys to probe legacy (pre-key-registration) cloud data with. When
+ * the loaded primary is one of the device's persisted keys, probe
+ * with the full persisted set: historical alternatives belong to the
+ * same user and the migration sweep can rewrap rows sealed under
+ * them. When the loaded primary is a newly entered key that has not
+ * been persisted yet (staged via `setKey(..., { persist: false })`),
+ * probe with that key alone — a leftover persisted key must not
+ * vouch for a different key that cannot actually unlock the data,
+ * and a fresh device with no persisted keys must still get its
+ * staged key probed.
+ */
+function legacyProbeKeys(primaryKeyB64: string): PullKey[] {
+  const persisted = migrationKeys()
+  if (persisted.some(({ key }) => key === primaryKeyB64)) {
+    return persisted
+  }
+  return [{ key: primaryKeyB64 }]
 }
 
 function unknownResult(
