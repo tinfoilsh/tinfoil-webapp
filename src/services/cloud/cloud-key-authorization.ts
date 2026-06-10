@@ -24,6 +24,7 @@ import {
   AUTH_ACTIVE_USER_ID,
   SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX,
 } from '@/constants/storage-keys'
+import { logError } from '@/utils/error-handling'
 import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import {
   base64ToBytes,
@@ -98,7 +99,48 @@ export async function getCurrentCloudKeyAuthorizationMode(): Promise<CloudKeyAut
 
 export async function canWriteToCloud(): Promise<boolean> {
   const validation = await validateCurrentPrimaryKey()
-  return validation.canWrite
+  if (!validation.canWrite) return false
+  if (validation.remoteState === 'empty') {
+    return registerKeyForEmptyRemote()
+  }
+  return true
+}
+
+let emptyRemoteRegistration: Promise<boolean> | null = null
+
+/**
+ * Bind the loaded primary CEK as the enclave's current key when the
+ * remote is completely empty. The controlplane rejects every push as
+ * a stale key until a user_keys row exists, and nothing else
+ * registers a manually generated/imported key on a brand-new
+ * account, so the write gate performs the registration itself. The
+ * AnyKey sentinel keeps this race-safe across devices: registration
+ * only succeeds while no key is registered, and a loss just defers
+ * the push until the next validation pass sees the winner's key.
+ */
+function registerKeyForEmptyRemote(): Promise<boolean> {
+  if (!emptyRemoteRegistration) {
+    emptyRemoteRegistration = (async () => {
+      try {
+        await registerKey({
+          keyB64: requirePrimaryKeyB64(),
+          ifMatch: IF_MATCH_SENTINELS.AnyKey,
+          createdVia: 'manual',
+          idempotencyKey: newIdempotencyKey(),
+        })
+        return true
+      } catch (err) {
+        logError('Failed to register key for empty remote', err, {
+          component: 'CloudKeyAuthorization',
+          action: 'registerKeyForEmptyRemote',
+        })
+        return false
+      } finally {
+        emptyRemoteRegistration = null
+      }
+    })()
+  }
+  return emptyRemoteRegistration
 }
 
 /**

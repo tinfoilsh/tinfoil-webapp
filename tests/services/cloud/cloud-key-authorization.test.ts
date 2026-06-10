@@ -89,6 +89,34 @@ describe('cloud-key-authorization', () => {
       })
       expect(await canWriteToCloud()).toBe(false)
     })
+
+    it('registers the key before allowing writes to an empty remote', async () => {
+      mockValidateCurrentPrimaryKey.mockResolvedValue({
+        remoteState: 'empty',
+        canWrite: true,
+        probe: 'none',
+      })
+      mockRegisterKey.mockResolvedValue({ ok: true, key_id: 'new-key-id' })
+
+      expect(await canWriteToCloud()).toBe(true)
+
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      const arg = mockRegisterKey.mock.calls[0][0]
+      expect(arg.createdVia).toBe('manual')
+      expect(arg.ifMatch).toBe('*')
+      expect(arg.keyB64).toBe(TEST_KEY_B64)
+    })
+
+    it('defers writes when empty-remote registration fails', async () => {
+      mockValidateCurrentPrimaryKey.mockResolvedValue({
+        remoteState: 'empty',
+        canWrite: true,
+        probe: 'none',
+      })
+      mockRegisterKey.mockRejectedValue(new Error('conflict'))
+
+      expect(await canWriteToCloud()).toBe(false)
+    })
   })
 
   describe('getCurrentCloudKeyAuthorizationMode', () => {
