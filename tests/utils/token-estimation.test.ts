@@ -52,7 +52,7 @@ describe('getContextTokenBudget', () => {
 })
 
 describe('estimateMessageTokens', () => {
-  it('includes thoughts, quote, and attachment text', () => {
+  it('includes quote and attachment text but not thoughts', () => {
     const msg: Message = {
       role: 'user',
       content: 'a'.repeat(40),
@@ -68,7 +68,24 @@ describe('estimateMessageTokens', () => {
       ],
       timestamp: new Date(),
     }
-    expect(estimateMessageTokens(msg)).toBe(40)
+    expect(estimateMessageTokens(msg)).toBe(30)
+  })
+
+  it('counts assistant tool calls and search reasoning', () => {
+    const msg: Message = {
+      role: 'assistant',
+      content: 'a'.repeat(40),
+      searchReasoning: 'b'.repeat(40),
+      toolCalls: [
+        {
+          id: 'call_1',
+          name: 'cccc',
+          arguments: 'd'.repeat(40),
+        },
+      ],
+      timestamp: new Date(),
+    }
+    expect(estimateMessageTokens(msg)).toBe(31)
   })
 })
 

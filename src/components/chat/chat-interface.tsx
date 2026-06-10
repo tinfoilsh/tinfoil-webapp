@@ -69,6 +69,7 @@ import {
 import {
   estimateMessageTokens,
   estimateTokenCount,
+  findContextStartIndex,
   getContextTokenBudget,
 } from '@/utils/token-estimation'
 import { TfTinSad } from '@tinfoilsh/tinfoil-icons'
@@ -1984,11 +1985,14 @@ export function ChatInterface({
 
     let usedTokens = estimateTokenCount(input)
 
-    // Count tokens from messages (including their attachments)
+    // Count tokens from messages (including their attachments), skipping
+    // archived messages that are excluded from the prompt
     if (currentChat?.messages) {
-      currentChat.messages.forEach((msg) => {
-        usedTokens += estimateMessageTokens(msg)
-      })
+      const messages = currentChat.messages
+      const startIndex = findContextStartIndex(messages, limitTokens)
+      for (let i = startIndex; i < messages.length; i++) {
+        usedTokens += estimateMessageTokens(messages[i])
+      }
     }
 
     // Count tokens from pending documents not yet attached to a message

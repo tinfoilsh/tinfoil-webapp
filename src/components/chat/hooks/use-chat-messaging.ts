@@ -965,7 +965,13 @@ export function useChatMessaging({
 
   // Fire the deferred regenerate once cancellation has settled the state.
   useEffect(() => {
-    if (loadingState !== 'idle') return
+    if (
+      loadingState !== 'idle' ||
+      isStreaming ||
+      isWaitingForResponse ||
+      isThinking
+    )
+      return
     const pending = pendingRegenerateRef.current
     if (pending === null || !currentChat) return
 
@@ -985,7 +991,14 @@ export function useChatMessaging({
 
     pendingRegenerateRef.current = null
     editMessage(pending.messageIndex, originalMessage.content || '')
-  }, [loadingState, currentChat, editMessage])
+  }, [
+    loadingState,
+    isStreaming,
+    isWaitingForResponse,
+    isThinking,
+    currentChat,
+    editMessage,
+  ])
 
   // Re-send the most recent user message, e.g. after a failed stream
   const retryLastMessage = useCallback(() => {

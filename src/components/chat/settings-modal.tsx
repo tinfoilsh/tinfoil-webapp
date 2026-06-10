@@ -681,7 +681,10 @@ export function SettingsModal({
   const handleTogglePersonalization = (enabled: boolean) => {
     setIsUsingPersonalization(enabled)
     if (isClient) {
-      savePersonalizationSettings({ isEnabled: enabled })
+      savePersonalizationSettings({
+        ...savedPersonalization,
+        isEnabled: enabled,
+      })
     }
   }
 

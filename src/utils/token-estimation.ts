@@ -25,11 +25,19 @@ export function parseContextWindowTokens(contextWindow?: string): number {
 }
 
 // Estimate the tokens a message contributes to the prompt, including
-// quoted text and attachment contents that get inlined into user content.
+// quoted text, attachment contents that get inlined into user content,
+// and assistant tool calls. Thoughts are excluded: they are never sent
+// back in chat prompt payloads.
 export function estimateMessageTokens(msg: Message): number {
   let tokens = estimateTokenCount(msg.content)
-  if (msg.thoughts) {
-    tokens += estimateTokenCount(msg.thoughts)
+  if (msg.searchReasoning) {
+    tokens += estimateTokenCount(msg.searchReasoning)
+  }
+  if (msg.toolCalls) {
+    for (const toolCall of msg.toolCalls) {
+      tokens += estimateTokenCount(toolCall.name)
+      tokens += estimateTokenCount(toolCall.arguments)
+    }
   }
   if (msg.quote) {
     tokens += estimateTokenCount(msg.quote)
