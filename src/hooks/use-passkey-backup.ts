@@ -17,6 +17,10 @@ import {
   inspectRemoteEncryptedState,
   validateCurrentPrimaryKey,
 } from '@/services/cloud/cloud-key-preflight'
+import {
+  legacyKeyProbeAllowsBinding,
+  probeLegacyDataWithLocalKeys,
+} from '@/services/cloud/legacy-key-probe'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import {
   authenticatePrfPasskey,
@@ -529,6 +533,33 @@ export function usePasskeyBackup({
       return
     }
     const cekHex = cekBytesToHex(cekBytes)
+    try {
+      const current = await enclaveKeyCurrent()
+      if (!current.key_id && current.has_data) {
+        const probe = await probeLegacyDataWithLocalKeys({
+          action: 'maybePromoteLegacyKey',
+        })
+        if (!legacyKeyProbeAllowsBinding(probe)) {
+          logError(
+            'skipping legacy passkey promotion: recovered key cannot unlock remote data',
+            new Error(probe.outcome),
+            {
+              component: 'usePasskeyBackup',
+              action: 'maybePromoteLegacyKey',
+              metadata: { reason: probe.outcome },
+            },
+          )
+          return
+        }
+      }
+    } catch (err) {
+      logError(
+        'skipping legacy passkey promotion: key probe unavailable',
+        err,
+        { component: 'usePasskeyBackup', action: 'maybePromoteLegacyKey' },
+      )
+      return
+    }
     const result = await promoteRecoveredCekToEnclave({
       cekHex,
       credentialId: recovery.credentialId,

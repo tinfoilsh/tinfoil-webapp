@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   addBundleForCurrentKey: vi.fn(),
   promoteRecoveredCekToEnclave: vi.fn(),
   keyCurrent: vi.fn(),
+  probeLegacyDataWithLocalKeys: vi.fn(),
   setCloudSyncEnabled: vi.fn(),
   passkeyEventsOn: vi.fn(),
   passkeyEventsEmit: vi.fn(),
@@ -42,6 +43,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/services/cloud/cloud-key-preflight', () => ({
   inspectRemoteEncryptedState: mocks.inspectRemoteEncryptedState,
   validateCurrentPrimaryKey: mocks.validateCurrentPrimaryKey,
+}))
+
+vi.mock('@/services/cloud/legacy-key-probe', () => ({
+  legacyKeyProbeAllowsBinding: (result: { outcome: string }) =>
+    result.outcome === 'decryptable' || result.outcome === 'no_sample',
+  probeLegacyDataWithLocalKeys: mocks.probeLegacyDataWithLocalKeys,
 }))
 
 vi.mock('@/services/cloud/cloud-key-authorization', () => ({
@@ -151,6 +158,9 @@ describe('usePasskeyBackup', () => {
     mocks.getPasskeyCredentialState.mockResolvedValue('empty')
     mocks.getPasskeyDeviceState.mockResolvedValue('empty')
     mocks.loadPasskeyCredentials.mockResolvedValue([])
+    mocks.probeLegacyDataWithLocalKeys.mockResolvedValue({
+      outcome: 'decryptable',
+    })
     mocks.getCachedPrfResult.mockReturnValue(null)
     mocks.getLocalPasskeyCredentialId.mockReturnValue(null)
     mocks.getKey.mockReturnValue(null)

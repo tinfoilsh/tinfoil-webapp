@@ -20,6 +20,10 @@ import {
   keyCurrent as enclaveKeyCurrent,
 } from '../sync-enclave/sync-api'
 import { requirePrimaryKeyB64 } from './cek-encoding'
+import {
+  legacyKeyProbeAllowsBinding,
+  probeLegacyDataWithLocalKeys,
+} from './legacy-key-probe'
 
 export type CloudRemoteState = 'empty' | 'exists' | 'unknown'
 export type CloudKeyValidationProbe = 'none' | 'profile' | 'project' | 'chat'
@@ -72,7 +76,8 @@ export async function inspectRemoteEncryptedState(): Promise<CloudRemoteState> {
  * Behavior matches the legacy probe at the API boundary:
  *
  *  - No local key loaded                       → unknown / canWrite=false
- *  - No remote key registered                  → empty   / canWrite=true
+ *  - No remote key/data registered             → empty   / canWrite=true
+ *  - Legacy data but no registered key         → exists  / probe local keys
  *  - Local KeyID matches enclave KeyID         → exists  / canWrite=true
  *  - Local KeyID differs from enclave KeyID    → exists  / canWrite=false
  *                                                + "doesn't match" message
@@ -96,9 +101,29 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
     )
   }
 
-  if (!resp.key_id) {
+  if (!resp.key_id && !resp.has_data) {
     return {
       remoteState: 'empty',
+      canWrite: true,
+      probe: 'none',
+    }
+  }
+
+  if (!resp.key_id && resp.has_data) {
+    const probe = await probeLegacyDataWithLocalKeys({
+      action: 'validateCurrentPrimaryKey',
+    })
+    if (probe.outcome === 'transient_failure') {
+      return unknownResult(
+        'none',
+        "We couldn't verify whether this key unlocks your encrypted cloud data.",
+      )
+    }
+    if (!legacyKeyProbeAllowsBinding(probe)) {
+      return blockedResult('none')
+    }
+    return {
+      remoteState: 'exists',
       canWrite: true,
       probe: 'none',
     }
