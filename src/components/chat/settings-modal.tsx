@@ -3844,7 +3844,7 @@ ${encryptionKey.replace('key_', '')}
                           Projects
                           {!isPremium && (
                             <span className="ml-1 rounded-full bg-brand-accent-light/20 px-1.5 py-px text-[10px] font-medium text-brand-accent-light">
-                              Pro
+                              Premium
                             </span>
                           )}
                         </button>
