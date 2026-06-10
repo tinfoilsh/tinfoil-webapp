@@ -47,7 +47,6 @@ import {
   ArrowUpTrayIcon,
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
-  ChevronDownIcon,
   ComputerDesktopIcon,
   CreditCardIcon,
   EyeIcon,
@@ -247,8 +246,6 @@ export function SettingsModal({
   const [isSettingUpPasskey, setIsSettingUpPasskey] = useState(false)
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
-  const [isEncryptionKeyOpen, setIsEncryptionKeyOpen] = useState(false)
   const [primaryKeyMode, setPrimaryKeyMode] = useState<
     'recoverExisting' | 'explicitStartFresh'
   >('recoverExisting')
@@ -325,10 +322,6 @@ export function SettingsModal({
       }
     }
   }, [isOpen, activeTab])
-
-  // Advanced settings collapsed state
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false)
-  const [dangerZoneOpen, setDangerZoneOpen] = useState(false)
 
   // Placeholder animation state
   const [placeholderIndex, setPlaceholderIndex] = useState(0)
@@ -2202,94 +2195,179 @@ ${encryptionKey.replace('key_', '')}
 
                   {/* Advanced Settings */}
                   <div className="space-y-3">
-                    <button
-                      onClick={() =>
-                        setAdvancedSettingsOpen(!advancedSettingsOpen)
-                      }
-                      className="flex w-full items-center justify-between"
-                    >
-                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                        Advanced Settings
-                      </h3>
-                      <ChevronDownIcon
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Advanced Settings
+                    </h3>
+                    <div className="space-y-4">
+                      {/* Web Search PII Detection */}
+                      <div
                         className={cn(
-                          'h-4 w-4 text-content-muted transition-transform',
-                          advancedSettingsOpen && 'rotate-180',
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
-                      />
-                    </button>
-
-                    {advancedSettingsOpen && (
-                      <div className="space-y-4">
-                        {/* Web Search PII Detection */}
-                        <div
-                          className={cn(
-                            'rounded-lg border border-border-subtle p-4',
-                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          )}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="mr-3 flex-1">
-                              <div className="font-aeonik text-sm font-medium text-content-primary">
-                                Automatic PII Blocking in Web Search
-                              </div>
-                              <div className="font-aeonik-fono text-xs text-content-muted">
-                                When web search is enabled, queries containing
-                                personal information will be blocked.
-                              </div>
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="mr-3 flex-1">
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Automatic PII Blocking in Web Search
                             </div>
-                            <label className="relative inline-flex cursor-pointer items-center">
-                              <input
-                                type="checkbox"
-                                checked={piiCheckEnabled}
-                                onChange={(e) => {
-                                  const newValue = e.target.checked
-                                  setPiiCheckEnabled(newValue)
-                                  if (isClient) {
-                                    localStorage.setItem(
-                                      SETTINGS_PII_CHECK_ENABLED,
-                                      newValue.toString(),
-                                    )
-                                    window.dispatchEvent(
-                                      new CustomEvent(
-                                        'piiCheckEnabledChanged',
-                                        {
-                                          detail: { enabled: newValue },
-                                        },
-                                      ),
-                                    )
-                                  }
-                                }}
-                                className="peer sr-only"
-                              />
-                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
-                            </label>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              When web search is enabled, queries containing
+                              personal information will be blocked.
+                            </div>
                           </div>
+                          <label className="relative inline-flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={piiCheckEnabled}
+                              onChange={(e) => {
+                                const newValue = e.target.checked
+                                setPiiCheckEnabled(newValue)
+                                if (isClient) {
+                                  localStorage.setItem(
+                                    SETTINGS_PII_CHECK_ENABLED,
+                                    newValue.toString(),
+                                  )
+                                  window.dispatchEvent(
+                                    new CustomEvent('piiCheckEnabledChanged', {
+                                      detail: { enabled: newValue },
+                                    }),
+                                  )
+                                }
+                              }}
+                              className="peer sr-only"
+                            />
+                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                          </label>
                         </div>
                       </div>
-                    )}
+                    </div>
                   </div>
+                </>
+              )}
 
-                  {/* Danger Zone */}
+              {/* General Tab: Data (danger zone) */}
+              {activeTab === 'general' && (
+                <>
                   <div className="space-y-3">
-                    <button
-                      onClick={() => setDangerZoneOpen(!dangerZoneOpen)}
-                      className="flex w-full items-center justify-between"
-                    >
-                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                        Danger Zone
-                      </h3>
-                      <ChevronDownIcon
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Data
+                    </h3>
+                    <>
+                      {/* Delete all saved chats */}
+                      <div
                         className={cn(
-                          'h-4 w-4 text-content-muted transition-transform',
-                          dangerZoneOpen && 'rotate-180',
+                          'rounded-lg border p-4',
+                          isDarkMode
+                            ? 'border-red-500/30 bg-red-950/10'
+                            : 'border-red-200 bg-red-50/50',
                         )}
-                      />
-                    </button>
+                      >
+                        <div className="space-y-3">
+                          <div>
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Delete all saved chats
+                            </div>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              {isSignedIn
+                                ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
+                                : 'Permanently delete every chat from this browser. This cannot be undone.'}
+                            </div>
+                          </div>
+                          {showDeleteAllChatsConfirm ? (
+                            <div className="space-y-2">
+                              <label className="block">
+                                <span className="font-aeonik-fono text-xs text-content-muted">
+                                  Type{' '}
+                                  <code className="font-mono text-content-primary">
+                                    {DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                  </code>{' '}
+                                  to confirm.
+                                </span>
+                                <input
+                                  type="text"
+                                  autoComplete="off"
+                                  autoCorrect="off"
+                                  autoCapitalize="off"
+                                  spellCheck={false}
+                                  value={deleteAllChatsConfirmText}
+                                  onChange={(e) =>
+                                    setDeleteAllChatsConfirmText(e.target.value)
+                                  }
+                                  disabled={isDeletingAllChats}
+                                  placeholder={DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                  className={cn(
+                                    'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                    isDarkMode
+                                      ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                      : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                  )}
+                                />
+                              </label>
+                              <div className="flex flex-col gap-2 sm:flex-row">
+                                <button
+                                  onClick={handleDeleteAllChats}
+                                  disabled={
+                                    isDeletingAllChats ||
+                                    deleteAllChatsConfirmText
+                                      .trim()
+                                      .toLowerCase() !==
+                                      DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                  }
+                                  className={cn(
+                                    'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                      : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                  )}
+                                >
+                                  {isDeletingAllChats && (
+                                    <PiSpinner
+                                      className="h-4 w-4 animate-spin"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <span>
+                                    {isDeletingAllChats
+                                      ? 'Requesting…'
+                                      : 'Yes, delete all my chats'}
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setShowDeleteAllChatsConfirm(false)
+                                    setDeleteAllChatsConfirmText('')
+                                  }}
+                                  disabled={isDeletingAllChats}
+                                  className={cn(
+                                    'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                      : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                  )}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setShowDeleteAllChatsConfirm(true)}
+                              className={cn(
+                                'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                isDarkMode
+                                  ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                  : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                              )}
+                            >
+                              Delete all saved chats
+                            </button>
+                          )}
+                        </div>
+                      </div>
 
-                    {dangerZoneOpen && (
-                      <>
-                        {/* Delete all saved chats */}
+                      {/* Delete all projects (signed-in premium users only) */}
+                      {isSignedIn && isPremium && (
                         <div
                           className={cn(
                             'rounded-lg border p-4',
@@ -2301,21 +2379,21 @@ ${encryptionKey.replace('key_', '')}
                           <div className="space-y-3">
                             <div>
                               <div className="font-aeonik text-sm font-medium text-content-primary">
-                                Delete all saved chats
+                                Delete all projects
                               </div>
                               <div className="font-aeonik-fono text-xs text-content-muted">
-                                {isSignedIn
-                                  ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
-                                  : 'Permanently delete every chat from this browser. This cannot be undone.'}
+                                Permanently delete every project and its
+                                documents. Chats inside projects will be
+                                detached but kept. This cannot be undone.
                               </div>
                             </div>
-                            {showDeleteAllChatsConfirm ? (
+                            {showDeleteAllProjectsConfirm ? (
                               <div className="space-y-2">
                                 <label className="block">
                                   <span className="font-aeonik-fono text-xs text-content-muted">
                                     Type{' '}
                                     <code className="font-mono text-content-primary">
-                                      {DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                      {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
                                     </code>{' '}
                                     to confirm.
                                   </span>
@@ -2325,15 +2403,15 @@ ${encryptionKey.replace('key_', '')}
                                     autoCorrect="off"
                                     autoCapitalize="off"
                                     spellCheck={false}
-                                    value={deleteAllChatsConfirmText}
+                                    value={deleteAllProjectsConfirmText}
                                     onChange={(e) =>
-                                      setDeleteAllChatsConfirmText(
+                                      setDeleteAllProjectsConfirmText(
                                         e.target.value,
                                       )
                                     }
-                                    disabled={isDeletingAllChats}
+                                    disabled={isDeletingAllProjects}
                                     placeholder={
-                                      DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
                                     }
                                     className={cn(
                                       'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
@@ -2345,13 +2423,13 @@ ${encryptionKey.replace('key_', '')}
                                 </label>
                                 <div className="flex flex-col gap-2 sm:flex-row">
                                   <button
-                                    onClick={handleDeleteAllChats}
+                                    onClick={handleDeleteAllProjects}
                                     disabled={
-                                      isDeletingAllChats ||
-                                      deleteAllChatsConfirmText
+                                      isDeletingAllProjects ||
+                                      deleteAllProjectsConfirmText
                                         .trim()
                                         .toLowerCase() !==
-                                        DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
                                     }
                                     className={cn(
                                       'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
@@ -2360,24 +2438,24 @@ ${encryptionKey.replace('key_', '')}
                                         : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
                                     )}
                                   >
-                                    {isDeletingAllChats && (
+                                    {isDeletingAllProjects && (
                                       <PiSpinner
                                         className="h-4 w-4 animate-spin"
                                         aria-hidden="true"
                                       />
                                     )}
                                     <span>
-                                      {isDeletingAllChats
+                                      {isDeletingAllProjects
                                         ? 'Requesting…'
-                                        : 'Yes, delete all my chats'}
+                                        : 'Yes, delete all my projects'}
                                     </span>
                                   </button>
                                   <button
                                     onClick={() => {
-                                      setShowDeleteAllChatsConfirm(false)
-                                      setDeleteAllChatsConfirmText('')
+                                      setShowDeleteAllProjectsConfirm(false)
+                                      setDeleteAllProjectsConfirmText('')
                                     }}
-                                    disabled={isDeletingAllChats}
+                                    disabled={isDeletingAllProjects}
                                     className={cn(
                                       'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
                                       isDarkMode
@@ -2392,7 +2470,7 @@ ${encryptionKey.replace('key_', '')}
                             ) : (
                               <button
                                 onClick={() =>
-                                  setShowDeleteAllChatsConfirm(true)
+                                  setShowDeleteAllProjectsConfirm(true)
                                 }
                                 className={cn(
                                   'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
@@ -2401,133 +2479,13 @@ ${encryptionKey.replace('key_', '')}
                                     : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
                                 )}
                               >
-                                Delete all saved chats
+                                Delete all projects
                               </button>
                             )}
                           </div>
                         </div>
-
-                        {/* Delete all projects (signed-in premium users only) */}
-                        {isSignedIn && isPremium && (
-                          <div
-                            className={cn(
-                              'rounded-lg border p-4',
-                              isDarkMode
-                                ? 'border-red-500/30 bg-red-950/10'
-                                : 'border-red-200 bg-red-50/50',
-                            )}
-                          >
-                            <div className="space-y-3">
-                              <div>
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  Delete all projects
-                                </div>
-                                <div className="font-aeonik-fono text-xs text-content-muted">
-                                  Permanently delete every project and its
-                                  documents. Chats inside projects will be
-                                  detached but kept. This cannot be undone.
-                                </div>
-                              </div>
-                              {showDeleteAllProjectsConfirm ? (
-                                <div className="space-y-2">
-                                  <label className="block">
-                                    <span className="font-aeonik-fono text-xs text-content-muted">
-                                      Type{' '}
-                                      <code className="font-mono text-content-primary">
-                                        {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
-                                      </code>{' '}
-                                      to confirm.
-                                    </span>
-                                    <input
-                                      type="text"
-                                      autoComplete="off"
-                                      autoCorrect="off"
-                                      autoCapitalize="off"
-                                      spellCheck={false}
-                                      value={deleteAllProjectsConfirmText}
-                                      onChange={(e) =>
-                                        setDeleteAllProjectsConfirmText(
-                                          e.target.value,
-                                        )
-                                      }
-                                      disabled={isDeletingAllProjects}
-                                      placeholder={
-                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                      }
-                                      className={cn(
-                                        'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                        isDarkMode
-                                          ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                          : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                      )}
-                                    />
-                                  </label>
-                                  <div className="flex flex-col gap-2 sm:flex-row">
-                                    <button
-                                      onClick={handleDeleteAllProjects}
-                                      disabled={
-                                        isDeletingAllProjects ||
-                                        deleteAllProjectsConfirmText
-                                          .trim()
-                                          .toLowerCase() !==
-                                          DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                      }
-                                      className={cn(
-                                        'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                        isDarkMode
-                                          ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                          : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                      )}
-                                    >
-                                      {isDeletingAllProjects && (
-                                        <PiSpinner
-                                          className="h-4 w-4 animate-spin"
-                                          aria-hidden="true"
-                                        />
-                                      )}
-                                      <span>
-                                        {isDeletingAllProjects
-                                          ? 'Requesting…'
-                                          : 'Yes, delete all my projects'}
-                                      </span>
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setShowDeleteAllProjectsConfirm(false)
-                                        setDeleteAllProjectsConfirmText('')
-                                      }}
-                                      disabled={isDeletingAllProjects}
-                                      className={cn(
-                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                        isDarkMode
-                                          ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                          : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                      )}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() =>
-                                    setShowDeleteAllProjectsConfirm(true)
-                                  }
-                                  className={cn(
-                                    'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                    isDarkMode
-                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                  )}
-                                >
-                                  Delete all projects
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
+                      )}
+                    </>
                   </div>
                 </>
               )}
@@ -2884,49 +2842,37 @@ ${encryptionKey.replace('key_', '')}
                       isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                     )}
                   >
-                    <button
-                      type="button"
-                      onClick={() => setIsHowItWorksOpen(!isHowItWorksOpen)}
-                      className="flex w-full items-center justify-between p-4"
-                    >
+                    <div className="flex w-full items-center justify-between p-4">
                       <div className="flex items-center gap-2">
                         <RiLightbulbFill className="h-4 w-4 text-content-muted" />
                         <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                           How It Works
                         </h3>
                       </div>
-                      <ChevronDownIcon
-                        className={cn(
-                          'h-4 w-4 text-content-muted transition-transform duration-200',
-                          isHowItWorksOpen && 'rotate-180',
-                        )}
-                      />
-                    </button>
-                    {isHowItWorksOpen && (
-                      <div className="space-y-3 border-t border-border-subtle p-4">
-                        <div className="flex items-start gap-3">
-                          <div className={STEP_CIRCLE_CLASSES}>1</div>
-                          <div className="font-aeonik-fono text-sm text-content-muted">
-                            Your chats are encrypted on your device before being
-                            sent to the cloud.
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-3">
-                          <div className={STEP_CIRCLE_CLASSES}>2</div>
-                          <div className="font-aeonik-fono text-sm text-content-muted">
-                            Only you have the encryption key. Tinfoil cannot
-                            read your messages.
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-3">
-                          <div className={STEP_CIRCLE_CLASSES}>3</div>
-                          <div className="font-aeonik-fono text-sm text-content-muted">
-                            Use a passkey to seamlessly sync your chats across
-                            devices, or manually enter your encryption key.
-                          </div>
+                    </div>
+                    <div className="space-y-3 border-t border-border-subtle p-4">
+                      <div className="flex items-start gap-3">
+                        <div className={STEP_CIRCLE_CLASSES}>1</div>
+                        <div className="font-aeonik-fono text-sm text-content-muted">
+                          Your chats are encrypted on your device before being
+                          sent to the cloud.
                         </div>
                       </div>
-                    )}
+                      <div className="flex items-start gap-3">
+                        <div className={STEP_CIRCLE_CLASSES}>2</div>
+                        <div className="font-aeonik-fono text-sm text-content-muted">
+                          Only you have the encryption key. Tinfoil cannot read
+                          your messages.
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <div className={STEP_CIRCLE_CLASSES}>3</div>
+                        <div className="font-aeonik-fono text-sm text-content-muted">
+                          Use a passkey to seamlessly sync your chats across
+                          devices, or manually enter your encryption key.
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Cloud Sync */}
@@ -2974,384 +2920,364 @@ ${encryptionKey.replace('key_', '')}
                         isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                       )}
                     >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setIsEncryptionKeyOpen(!isEncryptionKeyOpen)
-                        }
-                        className="flex w-full items-center justify-between p-4"
-                      >
+                      <div className="flex w-full items-center justify-between p-4">
                         <div className="flex items-center gap-2">
                           <RiShieldKeyholeFill className="h-4 w-4 text-content-muted" />
                           <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                             Your Personal Encryption Key
                           </h3>
                         </div>
-                        <ChevronDownIcon
-                          className={cn(
-                            'h-4 w-4 text-content-muted transition-transform duration-200',
-                            isEncryptionKeyOpen && 'rotate-180',
-                          )}
-                        />
-                      </button>
-                      {isEncryptionKeyOpen && (
-                        <div className="space-y-3 border-t border-border-subtle p-4">
-                          {encryptionKey ? (
-                            <div className="flex w-full items-end gap-2">
+                      </div>
+                      <div className="space-y-3 border-t border-border-subtle p-4">
+                        {encryptionKey ? (
+                          <div className="flex w-full items-end gap-2">
+                            <motion.div
+                              layout="size"
+                              transition={{
+                                type: 'spring',
+                                damping: 25,
+                                stiffness: 400,
+                                mass: 0.5,
+                              }}
+                              className={cn(
+                                'relative min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-chat transition-colors duration-300 hover:border-blue-500/50',
+                                isQRCodeExpanded ? 'p-3' : 'pr-2',
+                              )}
+                            >
+                              {/* Key row (always visible) */}
+                              <div className="flex items-center">
+                                <div
+                                  onClick={handleCopyKey}
+                                  className="min-w-0 flex-1 cursor-pointer overflow-hidden px-3 py-2 text-left"
+                                >
+                                  <code className="block h-5 overflow-hidden whitespace-nowrap font-mono text-sm leading-5 text-blue-500">
+                                    <ScrambleText
+                                      text={encryptionKey}
+                                      isKeyVisible={isKeyVisible}
+                                    />
+                                  </code>
+                                </div>
+                                <div className="group relative z-10 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setIsKeyVisible(!isKeyVisible)
+                                    }
+                                    aria-label={
+                                      isKeyVisible ? 'Hide key' : 'Show key'
+                                    }
+                                    className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
+                                  >
+                                    {isKeyVisible ? (
+                                      <EyeSlashIcon className="h-4 w-4" />
+                                    ) : (
+                                      <EyeIcon className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                                    {isKeyVisible ? 'Hide key' : 'Show key'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* QR code (below key, pushes container open) */}
                               <motion.div
-                                layout="size"
+                                initial={false}
+                                animate={isQRCodeExpanded ? 'open' : 'closed'}
+                                variants={{
+                                  open: {
+                                    height: 140,
+                                    marginTop: 12,
+                                    opacity: 1,
+                                  },
+                                  closed: {
+                                    height: 0,
+                                    marginTop: 0,
+                                    opacity: 0,
+                                  },
+                                }}
                                 transition={{
                                   type: 'spring',
                                   damping: 25,
                                   stiffness: 400,
                                   mass: 0.5,
                                 }}
-                                className={cn(
-                                  'relative min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-chat transition-colors duration-300 hover:border-blue-500/50',
-                                  isQRCodeExpanded ? 'p-3' : 'pr-2',
-                                )}
+                                className="overflow-hidden"
                               >
-                                {/* Key row (always visible) */}
-                                <div className="flex items-center">
-                                  <div
-                                    onClick={handleCopyKey}
-                                    className="min-w-0 flex-1 cursor-pointer overflow-hidden px-3 py-2 text-left"
-                                  >
-                                    <code className="block h-5 overflow-hidden whitespace-nowrap font-mono text-sm leading-5 text-blue-500">
-                                      <ScrambleText
-                                        text={encryptionKey}
-                                        isKeyVisible={isKeyVisible}
-                                      />
-                                    </code>
-                                  </div>
-                                  <div className="group relative z-10 shrink-0">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        setIsKeyVisible(!isKeyVisible)
-                                      }
-                                      aria-label={
-                                        isKeyVisible ? 'Hide key' : 'Show key'
-                                      }
-                                      className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
-                                    >
-                                      {isKeyVisible ? (
-                                        <EyeSlashIcon className="h-4 w-4" />
-                                      ) : (
-                                        <EyeIcon className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                    <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                                      {isKeyVisible ? 'Hide key' : 'Show key'}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                {/* QR code (below key, pushes container open) */}
                                 <motion.div
                                   initial={false}
-                                  animate={isQRCodeExpanded ? 'open' : 'closed'}
-                                  variants={{
-                                    open: {
-                                      height: 140,
-                                      marginTop: 12,
-                                      opacity: 1,
-                                    },
-                                    closed: {
-                                      height: 0,
-                                      marginTop: 0,
-                                      opacity: 0,
-                                    },
-                                  }}
+                                  animate={
+                                    isQRCodeExpanded
+                                      ? { scale: 1 }
+                                      : { scale: 0.85 }
+                                  }
                                   transition={{
                                     type: 'spring',
                                     damping: 25,
                                     stiffness: 400,
                                     mass: 0.5,
                                   }}
-                                  className="overflow-hidden"
+                                  style={{ transformOrigin: 'top' }}
+                                  className="flex justify-center"
                                 >
-                                  <motion.div
-                                    initial={false}
-                                    animate={
-                                      isQRCodeExpanded
-                                        ? { scale: 1 }
-                                        : { scale: 0.85 }
+                                  <QRCode
+                                    value={encryptionKey}
+                                    size={140}
+                                    level="H"
+                                    bgColor={
+                                      isDarkMode
+                                        ? TINFOIL_COLORS.surface.cardDark
+                                        : TINFOIL_COLORS.surface.cardLight
                                     }
-                                    transition={{
-                                      type: 'spring',
-                                      damping: 25,
-                                      stiffness: 400,
-                                      mass: 0.5,
-                                    }}
-                                    style={{ transformOrigin: 'top' }}
-                                    className="flex justify-center"
-                                  >
-                                    <QRCode
-                                      value={encryptionKey}
-                                      size={140}
-                                      level="H"
-                                      bgColor={
-                                        isDarkMode
-                                          ? TINFOIL_COLORS.surface.cardDark
-                                          : TINFOIL_COLORS.surface.cardLight
-                                      }
-                                      fgColor="#3b82f6"
-                                    />
-                                  </motion.div>
+                                    fgColor="#3b82f6"
+                                  />
                                 </motion.div>
-
-                                {/* Copied overlay */}
-                                <AnimatePresence>
-                                  {isCopied && (
-                                    <motion.span
-                                      initial={{
-                                        opacity: 0,
-                                        filter: 'blur(4px)',
-                                        scale: 0.9,
-                                      }}
-                                      animate={{
-                                        opacity: 1,
-                                        filter: 'blur(0px)',
-                                        scale: 1,
-                                      }}
-                                      exit={{
-                                        opacity: 0,
-                                        filter: 'blur(4px)',
-                                        scale: 1.1,
-                                      }}
-                                      className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-blue-500/90 text-sm font-medium text-white backdrop-blur-sm"
-                                    >
-                                      Copied!
-                                    </motion.span>
-                                  )}
-                                </AnimatePresence>
                               </motion.div>
-                              <div className="flex shrink-0 items-center gap-1">
-                                <div className="group relative">
-                                  <button
-                                    onClick={() =>
-                                      setIsQRCodeExpanded(!isQRCodeExpanded)
-                                    }
-                                    aria-label="Show QR code"
-                                    className={cn(
-                                      'flex items-center justify-center rounded-lg p-2 transition-all hover:text-content-primary',
-                                      isQRCodeExpanded
-                                        ? 'text-blue-500'
-                                        : 'text-content-muted',
-                                    )}
+
+                              {/* Copied overlay */}
+                              <AnimatePresence>
+                                {isCopied && (
+                                  <motion.span
+                                    initial={{
+                                      opacity: 0,
+                                      filter: 'blur(4px)',
+                                      scale: 0.9,
+                                    }}
+                                    animate={{
+                                      opacity: 1,
+                                      filter: 'blur(0px)',
+                                      scale: 1,
+                                    }}
+                                    exit={{
+                                      opacity: 0,
+                                      filter: 'blur(4px)',
+                                      scale: 1.1,
+                                    }}
+                                    className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-blue-500/90 text-sm font-medium text-white backdrop-blur-sm"
                                   >
-                                    <BsQrCode className="h-4 w-4" />
-                                  </button>
-                                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                                    QR code
-                                  </span>
-                                </div>
-                                <div className="group relative">
-                                  <button
-                                    onClick={downloadKeyAsPEM}
-                                    aria-label="Download encryption key as PEM file"
-                                    className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
-                                  >
-                                    <ArrowDownTrayIcon className="h-4 w-4" />
-                                  </button>
-                                  <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                                    Download
-                                  </span>
-                                </div>
+                                    Copied!
+                                  </motion.span>
+                                )}
+                              </AnimatePresence>
+                            </motion.div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <div className="group relative">
+                                <button
+                                  onClick={() =>
+                                    setIsQRCodeExpanded(!isQRCodeExpanded)
+                                  }
+                                  aria-label="Show QR code"
+                                  className={cn(
+                                    'flex items-center justify-center rounded-lg p-2 transition-all hover:text-content-primary',
+                                    isQRCodeExpanded
+                                      ? 'text-blue-500'
+                                      : 'text-content-muted',
+                                  )}
+                                >
+                                  <BsQrCode className="h-4 w-4" />
+                                </button>
+                                <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                                  QR code
+                                </span>
+                              </div>
+                              <div className="group relative">
+                                <button
+                                  onClick={downloadKeyAsPEM}
+                                  aria-label="Download encryption key as PEM file"
+                                  className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
+                                >
+                                  <ArrowDownTrayIcon className="h-4 w-4" />
+                                </button>
+                                <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                                  Download
+                                </span>
                               </div>
                             </div>
-                          ) : (
-                            <p className="text-sm text-content-muted">
-                              No encryption key set
-                            </p>
-                          )}
-                          <p className="text-xs text-content-muted">
-                            Do not share this key with anyone. Only save it in a
-                            secure location.
+                          </div>
+                        ) : (
+                          <p className="text-sm text-content-muted">
+                            No encryption key set
                           </p>
+                        )}
+                        <p className="text-xs text-content-muted">
+                          Do not share this key with anyone. Only save it in a
+                          secure location.
+                        </p>
 
-                          {/* Restore or Update Encryption Key */}
-                          <div className="space-y-2 pt-2">
-                            <h4 className="font-aeonik text-xs font-medium text-content-secondary">
-                              {passkeyActive
-                                ? 'Add Decryption Key'
-                                : 'Recovery and Primary Keys'}
-                            </h4>
-                            <p className="text-xs text-content-muted">
-                              {passkeyActive
-                                ? 'Add an older key to decrypt data from before a key rotation. Your passkey manages the primary key.'
-                                : 'Add a recovery key to decrypt older data without changing your current primary key, or replace the primary key used for future cloud writes.'}
-                            </p>
-                            {!passkeyActive && (
-                              <div className="space-y-2 rounded-lg border border-border-subtle bg-surface-chat p-3">
-                                <div className="grid grid-cols-2 gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setPrimaryKeyMode('recoverExisting')
-                                    }
-                                    className={cn(
-                                      'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                                      primaryKeyMode === 'recoverExisting'
-                                        ? 'border border-blue-500 bg-blue-500/10 text-blue-500'
-                                        : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
-                                    )}
-                                  >
-                                    Recover Existing
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setPrimaryKeyMode('explicitStartFresh')
-                                    }
-                                    className={cn(
-                                      'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                                      primaryKeyMode === 'explicitStartFresh'
-                                        ? 'border border-amber-500 bg-amber-500/10 text-amber-500'
-                                        : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
-                                    )}
-                                  >
-                                    Start Fresh
-                                  </button>
-                                </div>
-                                <p className="text-xs text-content-muted">
-                                  {primaryKeyMode === 'recoverExisting'
-                                    ? 'Verify this key against your existing cloud data before this device resumes writing.'
-                                    : 'Use this key for future cloud writes on this device without validating it against older cloud data.'}
-                                </p>
-                              </div>
-                            )}
-                            <form
-                              onSubmit={(e) => {
-                                e.preventDefault()
-                                if (!isUpdating && inputKey.trim()) {
-                                  if (passkeyActive) {
-                                    handleAddRecoveryKey()
-                                  } else {
-                                    handleUpdateKey()
+                        {/* Restore or Update Encryption Key */}
+                        <div className="space-y-2 pt-2">
+                          <h4 className="font-aeonik text-xs font-medium text-content-secondary">
+                            {passkeyActive
+                              ? 'Add Decryption Key'
+                              : 'Recovery and Primary Keys'}
+                          </h4>
+                          <p className="text-xs text-content-muted">
+                            {passkeyActive
+                              ? 'Add an older key to decrypt data from before a key rotation. Your passkey manages the primary key.'
+                              : 'Add a recovery key to decrypt older data without changing your current primary key, or replace the primary key used for future cloud writes.'}
+                          </p>
+                          {!passkeyActive && (
+                            <div className="space-y-2 rounded-lg border border-border-subtle bg-surface-chat p-3">
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPrimaryKeyMode('recoverExisting')
                                   }
+                                  className={cn(
+                                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                    primaryKeyMode === 'recoverExisting'
+                                      ? 'border border-blue-500 bg-blue-500/10 text-blue-500'
+                                      : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
+                                  )}
+                                >
+                                  Recover Existing
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPrimaryKeyMode('explicitStartFresh')
+                                  }
+                                  className={cn(
+                                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                                    primaryKeyMode === 'explicitStartFresh'
+                                      ? 'border border-amber-500 bg-amber-500/10 text-amber-500'
+                                      : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
+                                  )}
+                                >
+                                  Start Fresh
+                                </button>
+                              </div>
+                              <p className="text-xs text-content-muted">
+                                {primaryKeyMode === 'recoverExisting'
+                                  ? 'Verify this key against your existing cloud data before this device resumes writing.'
+                                  : 'Use this key for future cloud writes on this device without validating it against older cloud data.'}
+                              </p>
+                            </div>
+                          )}
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              if (!isUpdating && inputKey.trim()) {
+                                if (passkeyActive) {
+                                  handleAddRecoveryKey()
+                                } else {
+                                  handleUpdateKey()
                                 }
-                              }}
-                              onDragOver={handleDragOver}
-                              onDragLeave={handleDragLeave}
-                              onDrop={handleDrop}
-                              className="space-y-2"
-                              id="encryption-key-form"
-                            >
-                              <div className="flex gap-2">
-                                <div className="relative flex-1">
-                                  <input
-                                    type="text"
-                                    style={
-                                      isInputKeyVisible
-                                        ? undefined
-                                        : ({
-                                            WebkitTextSecurity: 'disc',
-                                          } as React.CSSProperties)
-                                    }
-                                    name="encryption-key"
-                                    value={inputKey}
-                                    onChange={(e) =>
-                                      setInputKey(e.target.value)
-                                    }
-                                    placeholder={
-                                      isDragging
-                                        ? ''
-                                        : 'Enter key (e.g., key_abc123...)'
-                                    }
-                                    autoComplete="off"
-                                    aria-label="Encryption key input"
-                                    className={cn(
-                                      'w-full rounded-lg border border-blue-500 bg-surface-input px-3 py-2 pr-9 font-mono text-sm text-blue-500 placeholder:font-sans placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-blue-500',
-                                      isDragging && 'ring-2 ring-blue-500',
-                                    )}
-                                  />
+                              }
+                            }}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                            className="space-y-2"
+                            id="encryption-key-form"
+                          >
+                            <div className="flex gap-2">
+                              <div className="relative flex-1">
+                                <input
+                                  type="text"
+                                  style={
+                                    isInputKeyVisible
+                                      ? undefined
+                                      : ({
+                                          WebkitTextSecurity: 'disc',
+                                        } as React.CSSProperties)
+                                  }
+                                  name="encryption-key"
+                                  value={inputKey}
+                                  onChange={(e) => setInputKey(e.target.value)}
+                                  placeholder={
+                                    isDragging
+                                      ? ''
+                                      : 'Enter key (e.g., key_abc123...)'
+                                  }
+                                  autoComplete="off"
+                                  aria-label="Encryption key input"
+                                  className={cn(
+                                    'w-full rounded-lg border border-blue-500 bg-surface-input px-3 py-2 pr-9 font-mono text-sm text-blue-500 placeholder:font-sans placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-blue-500',
+                                    isDragging && 'ring-2 ring-blue-500',
+                                  )}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setIsInputKeyVisible(!isInputKeyVisible)
+                                  }
+                                  aria-label={
+                                    isInputKeyVisible ? 'Hide key' : 'Show key'
+                                  }
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-content-muted transition-all hover:text-content-primary"
+                                >
+                                  {isInputKeyVisible ? (
+                                    <EyeSlashIcon className="h-4 w-4" />
+                                  ) : (
+                                    <EyeIcon className="h-4 w-4" />
+                                  )}
+                                </button>
+                                {isDragging && (
+                                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-blue-500/10">
+                                    <span className="text-sm text-blue-500">
+                                      Drop your PEM file here
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              {passkeyActive ? (
+                                <button
+                                  type="submit"
+                                  disabled={isUpdating || !inputKey.trim()}
+                                  aria-label="Add decryption key"
+                                  className={cn(
+                                    'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+                                    isUpdating || !inputKey.trim()
+                                      ? 'cursor-not-allowed bg-surface-chat text-content-muted'
+                                      : 'bg-blue-500 text-white hover:bg-blue-600',
+                                  )}
+                                >
+                                  {isUpdating ? 'Saving...' : 'Add Key'}
+                                </button>
+                              ) : (
+                                <div className="flex gap-2">
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      setIsInputKeyVisible(!isInputKeyVisible)
-                                    }
-                                    aria-label={
-                                      isInputKeyVisible
-                                        ? 'Hide key'
-                                        : 'Show key'
-                                    }
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-content-muted transition-all hover:text-content-primary"
-                                  >
-                                    {isInputKeyVisible ? (
-                                      <EyeSlashIcon className="h-4 w-4" />
-                                    ) : (
-                                      <EyeIcon className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                  {isDragging && (
-                                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-blue-500/10">
-                                      <span className="text-sm text-blue-500">
-                                        Drop your PEM file here
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                                {passkeyActive ? (
-                                  <button
-                                    type="submit"
+                                    onClick={handleAddRecoveryKey}
                                     disabled={isUpdating || !inputKey.trim()}
-                                    aria-label="Add decryption key"
+                                    aria-label="Add recovery key"
                                     className={cn(
                                       'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
                                       isUpdating || !inputKey.trim()
                                         ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                        : 'bg-blue-500 text-white hover:bg-blue-600',
+                                        : 'border border-border-subtle bg-surface-chat text-content-primary hover:bg-surface-chat/80',
                                     )}
                                   >
-                                    {isUpdating ? 'Saving...' : 'Add Key'}
+                                    {isUpdating ? 'Saving...' : 'Add Recovery'}
                                   </button>
-                                ) : (
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={handleAddRecoveryKey}
-                                      disabled={isUpdating || !inputKey.trim()}
-                                      aria-label="Add recovery key"
-                                      className={cn(
-                                        'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                        isUpdating || !inputKey.trim()
-                                          ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                          : 'border border-border-subtle bg-surface-chat text-content-primary hover:bg-surface-chat/80',
-                                      )}
-                                    >
-                                      {isUpdating
-                                        ? 'Saving...'
-                                        : 'Add Recovery'}
-                                    </button>
-                                    <button
-                                      type="submit"
-                                      disabled={isUpdating || !inputKey.trim()}
-                                      aria-label="Replace primary encryption key"
-                                      className={cn(
-                                        'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                        isUpdating || !inputKey.trim()
-                                          ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                          : primaryKeyMode ===
-                                              'explicitStartFresh'
-                                            ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                            : 'bg-blue-500 text-white hover:bg-blue-600',
-                                      )}
-                                    >
-                                      {isUpdating
-                                        ? 'Saving...'
-                                        : primaryKeyMode === 'recoverExisting'
-                                          ? 'Recover Existing'
-                                          : 'Start Fresh'}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </form>
-                          </div>
+                                  <button
+                                    type="submit"
+                                    disabled={isUpdating || !inputKey.trim()}
+                                    aria-label="Replace primary encryption key"
+                                    className={cn(
+                                      'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
+                                      isUpdating || !inputKey.trim()
+                                        ? 'cursor-not-allowed bg-surface-chat text-content-muted'
+                                        : primaryKeyMode ===
+                                            'explicitStartFresh'
+                                          ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                          : 'bg-blue-500 text-white hover:bg-blue-600',
+                                    )}
+                                  >
+                                    {isUpdating
+                                      ? 'Saving...'
+                                      : primaryKeyMode === 'recoverExisting'
+                                        ? 'Recover Existing'
+                                        : 'Start Fresh'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </form>
                         </div>
-                      )}
+                      </div>
                     </div>
                   )}
 
