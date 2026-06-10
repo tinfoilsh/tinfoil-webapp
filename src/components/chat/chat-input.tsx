@@ -4,7 +4,6 @@ import { cn } from '@/components/ui/utils'
 import { useToast } from '@/hooks/use-toast'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
-import { isImageFile } from '@/utils/preprocessing'
 import {
   FolderIcon,
   MicrophoneIcon,
@@ -301,9 +300,6 @@ export function ChatInput({
       if (e.target.files && e.target.files.length > 0 && handleDocumentUpload) {
         const files = Array.from(e.target.files)
         for (const file of files) {
-          if (!isPremium && isImageFile(file)) {
-            continue
-          }
           handleDocumentUpload(file)
         }
         if (fileInputRef.current) {
@@ -311,7 +307,7 @@ export function ChatInput({
         }
       }
     },
-    [handleDocumentUpload, isPremium],
+    [handleDocumentUpload],
   )
 
   const triggerFileInput = () => {
