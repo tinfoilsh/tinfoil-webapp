@@ -297,8 +297,14 @@ export async function deletePasskeyCredential(
 ): Promise<boolean> {
   try {
     const resp = await enclaveKeyCurrent()
-    if (!resp.key_id) return true
-    if (!resp.bundles[credentialId]) return true
+    if (!resp.key_id || !resp.bundles[credentialId]) {
+      // No enclave bundle to remove. If the credential only exists in
+      // the read-only legacy table the client cannot delete it, so
+      // report failure instead of a false success that would leave the
+      // passkey able to unlock the user's data.
+      const legacy = await fetchLegacyPasskeyCredentials()
+      return !legacy.some((entry) => entry.id === credentialId)
+    }
     await enclaveRemoveBundle({
       keyId: resp.key_id,
       keyB64: requirePrimaryKeyB64(),
