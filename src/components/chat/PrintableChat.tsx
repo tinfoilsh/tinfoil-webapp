@@ -258,11 +258,7 @@ export const PrintableChat = memo(function PrintableChat({
   printRef,
 }: PrintableChatProps) {
   return (
-    <div
-      ref={printRef as React.Ref<HTMLDivElement>}
-      className="printable-chat hidden"
-      aria-hidden="true"
-    >
+    <div ref={printRef} className="printable-chat hidden" aria-hidden="true">
       {messages.map((message, index) => (
         <PrintableMessage
           key={`print-${message.role}-${message.timestamp instanceof Date ? message.timestamp.getTime() : index}`}
