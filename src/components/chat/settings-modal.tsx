@@ -47,6 +47,7 @@ import {
   ArrowUpTrayIcon,
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
+  ChevronDownIcon,
   ComputerDesktopIcon,
   CreditCardIcon,
   EyeIcon,
@@ -283,6 +284,8 @@ export function SettingsModal({
 
   // Chat font setting
   const [chatFont, setChatFont] = useState<ChatFont>('system')
+
+  const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
 
   // Prompt library management state
   const {
@@ -2899,38 +2902,50 @@ ${encryptionKey.replace('key_', '')}
                       isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                     )}
                   >
-                    <div className="flex w-full items-center justify-between p-4">
+                    <button
+                      type="button"
+                      onClick={() => setIsHowItWorksOpen((prev) => !prev)}
+                      className="flex w-full items-center justify-between p-4"
+                    >
                       <div className="flex items-center gap-2">
                         <RiLightbulbFill className="h-4 w-4 text-content-muted" />
                         <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                           How It Works
                         </h3>
                       </div>
-                    </div>
-                    <div className="space-y-3 border-t border-border-subtle p-4">
-                      <div className="flex items-start gap-3">
-                        <div className={STEP_CIRCLE_CLASSES}>1</div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          Your chats are encrypted with a key that only you
-                          possess and stored encrypted in the cloud. Nobody but
-                          you can access your backed up chats.
+                      <ChevronDownIcon
+                        className={cn(
+                          'h-4 w-4 text-content-muted transition-transform',
+                          isHowItWorksOpen && 'rotate-180',
+                        )}
+                      />
+                    </button>
+                    {isHowItWorksOpen && (
+                      <div className="space-y-3 border-t border-border-subtle p-4">
+                        <div className="flex items-start gap-3">
+                          <div className={STEP_CIRCLE_CLASSES}>1</div>
+                          <div className="font-aeonik-fono text-sm text-content-muted">
+                            Your chats are encrypted with a key that only you
+                            possess and stored encrypted in the cloud. Nobody
+                            but you can access your backed up chats.
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className={STEP_CIRCLE_CLASSES}>2</div>
+                          <div className="font-aeonik-fono text-sm text-content-muted">
+                            Only you have the encryption key. Tinfoil cannot
+                            read your messages.
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <div className={STEP_CIRCLE_CLASSES}>3</div>
+                          <div className="font-aeonik-fono text-sm text-content-muted">
+                            Use a passkey to seamlessly sync your chats across
+                            devices, or manually enter your encryption key.
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-start gap-3">
-                        <div className={STEP_CIRCLE_CLASSES}>2</div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          Only you have the encryption key. Tinfoil cannot read
-                          your messages.
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div className={STEP_CIRCLE_CLASSES}>3</div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          Use a passkey to seamlessly sync your chats across
-                          devices, or manually enter your encryption key.
-                        </div>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Cloud Sync */}
