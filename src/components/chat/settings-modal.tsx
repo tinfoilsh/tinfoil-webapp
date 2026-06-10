@@ -258,6 +258,14 @@ export function SettingsModal({
   const [additionalContext, setAdditionalContext] = useState<string>('')
   const [isUsingPersonalization, setIsUsingPersonalization] =
     useState<boolean>(true)
+  // Last persisted personalization values; edits stay local until the user
+  // hits Save, and this baseline is what dirty-checking compares against.
+  const [savedPersonalization, setSavedPersonalization] = useState<{
+    nickname: string
+    profession: string
+    traits: string[]
+    additionalContext: string
+  }>({ nickname: '', profession: '', traits: [], additionalContext: '' })
 
   // Language setting (separate from personalization)
   const [language, setLanguage] = useState<string>('')
@@ -452,16 +460,24 @@ export function SettingsModal({
       USER_PREFS_PERSONALIZATION_ENABLED,
     )
 
-    if (savedNickname !== null) setNickname(savedNickname)
-    if (savedProfession !== null) setProfession(savedProfession)
+    let parsedTraits: string[] = []
     if (savedTraits) {
       try {
-        setSelectedTraits(JSON.parse(savedTraits))
+        parsedTraits = JSON.parse(savedTraits)
       } catch {
-        setSelectedTraits([])
+        parsedTraits = []
       }
     }
+    if (savedNickname !== null) setNickname(savedNickname)
+    if (savedProfession !== null) setProfession(savedProfession)
+    if (savedTraits) setSelectedTraits(parsedTraits)
     if (savedContext !== null) setAdditionalContext(savedContext)
+    setSavedPersonalization({
+      nickname: savedNickname ?? '',
+      profession: savedProfession ?? '',
+      traits: parsedTraits,
+      additionalContext: savedContext ?? '',
+    })
     if (savedUsingPersonalization !== null) {
       setIsUsingPersonalization(savedUsingPersonalization === 'true')
     }
@@ -617,19 +633,14 @@ export function SettingsModal({
     }
   }
 
-  // Handle individual field changes
+  // Handle individual field changes. Edits are buffered locally and only
+  // persisted when the user hits Save.
   const handleNicknameChange = (value: string) => {
     setNickname(value)
-    if (isClient) {
-      savePersonalizationSettings({ nickname: value })
-    }
   }
 
   const handleProfessionChange = (value: string) => {
     setProfession(value)
-    if (isClient) {
-      savePersonalizationSettings({ profession: value })
-    }
   }
 
   const handleTraitToggle = (trait: string) => {
@@ -637,16 +648,28 @@ export function SettingsModal({
       ? selectedTraits.filter((t) => t !== trait)
       : [...selectedTraits, trait]
     setSelectedTraits(newTraits)
-    if (isClient) {
-      savePersonalizationSettings({ traits: newTraits })
-    }
   }
 
   const handleContextChange = (value: string) => {
     setAdditionalContext(value)
-    if (isClient) {
-      savePersonalizationSettings({ additionalContext: value })
-    }
+  }
+
+  const hasUnsavedPersonalization =
+    nickname !== savedPersonalization.nickname ||
+    profession !== savedPersonalization.profession ||
+    additionalContext !== savedPersonalization.additionalContext ||
+    selectedTraits.length !== savedPersonalization.traits.length ||
+    selectedTraits.some((t, i) => t !== savedPersonalization.traits[i])
+
+  const handleSavePersonalization = () => {
+    if (!isClient) return
+    savePersonalizationSettings()
+    setSavedPersonalization({
+      nickname,
+      profession,
+      traits: selectedTraits,
+      additionalContext,
+    })
   }
 
   const handleLanguageChange = (value: string) => {
@@ -669,6 +692,12 @@ export function SettingsModal({
     setSelectedTraits([])
     setAdditionalContext('')
     setLanguage('English')
+    setSavedPersonalization({
+      nickname: '',
+      profession: '',
+      traits: [],
+      additionalContext: '',
+    })
 
     if (isClient) {
       localStorage.removeItem(USER_PREFS_NICKNAME)
@@ -1941,12 +1970,22 @@ ${encryptionKey.replace('key_', '')}
             <h2 className="font-aeonik text-base font-semibold text-content-primary">
               {navItems.find((item) => item.id === activeTab)?.label}
             </h2>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {activeTab === 'personalization' && hasUnsavedPersonalization && (
+                <button
+                  onClick={handleSavePersonalization}
+                  className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                >
+                  Save
+                </button>
+              )}
+              <button
+                onClick={() => setIsOpen(false)}
+                className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {/* Horizontal tabs */}
@@ -2012,10 +2051,18 @@ ${encryptionKey.replace('key_', '')}
         {/* Right content area */}
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* Header (desktop only) */}
-          <div className="hidden h-14 items-center border-b border-border-subtle px-6 md:flex">
+          <div className="hidden h-14 items-center justify-between border-b border-border-subtle px-6 md:flex">
             <h2 className="font-aeonik text-lg font-semibold text-content-primary">
               {navItems.find((item) => item.id === activeTab)?.label}
             </h2>
+            {activeTab === 'personalization' && hasUnsavedPersonalization && (
+              <button
+                onClick={handleSavePersonalization}
+                className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+              >
+                Save
+              </button>
+            )}
           </div>
 
           {/* Content */}
