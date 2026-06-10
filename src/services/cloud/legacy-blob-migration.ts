@@ -36,6 +36,8 @@ import { migrationKeys, requirePrimaryKeyB64 } from './cek-encoding'
 
 const MIGRATION_POLL_INTERVAL_MS = 2_000
 const MIGRATION_POLL_TIMEOUT_MS = 15 * 60_000
+/** Terminal coordinator status for a job that died mid-run. */
+const FAILED_JOB_STATUS = 'failed'
 
 export interface ScopeMigrationResult {
   scope: Scope
@@ -142,7 +144,14 @@ export async function runLegacyBlobMigration(): Promise<MigrationReport> {
 
   const snapshot = lastResp ? snapshotScopeReports(lastResp.scopes) : new Map()
   const report = toReport(snapshot)
-  if (lastResp?.partial !== false) {
+  // A failed coordinator job can report partial=false: the flag
+  // starts false and only flips when the run hits its budget, so a
+  // job that dies before any scope makes progress finishes as
+  // status=failed + partial=false with empty scopes. Treating that
+  // as a clean drain would clear the alternative keys after nothing
+  // was rewrapped, stranding every legacy row.
+  const jobFailed = lastResp?.status === FAILED_JOB_STATUS
+  if (lastResp?.partial !== false || jobFailed) {
     report.fullyMigrated = false
   }
   logInfo('legacy-blob-migration complete', {
@@ -166,7 +175,7 @@ export async function runLegacyBlobMigration(): Promise<MigrationReport> {
   //      be allowed to clear alternatives.
   //   3. Normal case — snapshot has entries; trust `toReport`.
   if (snapshot.size === 0) {
-    if (lastResp && !lastResp.partial) {
+    if (lastResp && !lastResp.partial && !jobFailed) {
       return { ...emptyReport(), fullyMigrated: true }
     }
     return emptyReport()
