@@ -1,7 +1,7 @@
 import { LOCAL_PASSKEY_CREDENTIAL_ID } from '@/constants/storage-keys'
 
 export function setLocalPasskeyCredentialId(credentialId: string): void {
-  if (typeof window === 'undefined' || !credentialId) return
+  if (typeof window === 'undefined') return
   try {
     localStorage.setItem(LOCAL_PASSKEY_CREDENTIAL_ID, credentialId)
   } catch {
@@ -13,8 +13,7 @@ export function setLocalPasskeyCredentialId(credentialId: string): void {
 export function getLocalPasskeyCredentialId(): string | null {
   if (typeof window === 'undefined') return null
   try {
-    const value = localStorage.getItem(LOCAL_PASSKEY_CREDENTIAL_ID)
-    return value && value.length > 0 ? value : null
+    return localStorage.getItem(LOCAL_PASSKEY_CREDENTIAL_ID) || null
   } catch {
     return null
   }
