@@ -248,6 +248,11 @@ export class ChatStorageService {
     )
   }
 
+  async getChatCount(): Promise<number> {
+    await this.initialize()
+    return indexedDBStorage.getChatCount()
+  }
+
   async getAllChatsWithSyncStatus(): Promise<Chat[]> {
     await this.initialize()
 

@@ -1,4 +1,5 @@
 import { TextureGrid } from '@/components/texture-grid'
+import { Progress } from '@/components/ui/progress'
 import { cn } from '@/components/ui/utils'
 import { UserAvatar } from '@/components/user-avatar'
 import { API_BASE_URL } from '@/config'
@@ -75,7 +76,7 @@ import { BsQrCode } from 'react-icons/bs'
 import { GoPasskeyFill } from 'react-icons/go'
 import { HiOutlineAdjustmentsVertical } from 'react-icons/hi2'
 import { IoShieldCheckmark } from 'react-icons/io5'
-import { PiSignIn } from 'react-icons/pi'
+import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
 import { ConfirmDialog } from './components/confirm-dialog'
@@ -96,6 +97,7 @@ const DASHBOARD_URL = 'https://dash.tinfoil.sh'
 
 const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
+const DELETE_ALL_CHATS_COMPLETE_PERCENT = 100
 
 const ScrambleText = ({
   text,
@@ -381,12 +383,25 @@ export function SettingsModal({
   const [showDeleteAllChatsConfirm, setShowDeleteAllChatsConfirm] =
     useState(false)
   const [isDeletingAllChats, setIsDeletingAllChats] = useState(false)
+  const [deleteAllChatsProgress, setDeleteAllChatsProgress] = useState<{
+    deleted: number
+    total: number
+  } | null>(null)
   const [deleteAllChatsConfirmText, setDeleteAllChatsConfirmText] = useState('')
   const [showDeleteAllProjectsConfirm, setShowDeleteAllProjectsConfirm] =
     useState(false)
   const [isDeletingAllProjects, setIsDeletingAllProjects] = useState(false)
   const [deleteAllProjectsConfirmText, setDeleteAllProjectsConfirmText] =
     useState('')
+  const deleteAllChatsProgressValue = deleteAllChatsProgress
+    ? deleteAllChatsProgress.total === 0
+      ? 0
+      : Math.min(
+          DELETE_ALL_CHATS_COMPLETE_PERCENT,
+          (deleteAllChatsProgress.deleted / deleteAllChatsProgress.total) *
+            DELETE_ALL_CHATS_COMPLETE_PERCENT,
+        )
+    : 0
 
   // Available personality traits
   const availableTraits = [
@@ -1544,16 +1559,39 @@ export function SettingsModal({
     }
 
     setIsDeletingAllChats(true)
+    setDeleteAllChatsProgress(null)
     try {
       if (isSignedIn) {
+        const localCount = await chatStorage.getChatCount()
+        let cloudCount = 0
+        try {
+          const status = await cloudStorage.getAllChatsSyncStatus()
+          cloudCount = status.count
+        } catch (error) {
+          logError('Failed to count cloud chats before deletion', error, {
+            component: 'SettingsModal',
+            action: 'handleDeleteAllChats',
+          })
+        }
+        const expectedTotal = Math.max(localCount, cloudCount)
+        setDeleteAllChatsProgress({ deleted: 0, total: expectedTotal })
+
         const result = await chatStorage.deleteAllChats()
-        const total = result.localDeleted + result.cloudDeleted
+        const total = Math.max(
+          expectedTotal,
+          result.localDeleted,
+          result.cloudDeleted,
+        )
+        setDeleteAllChatsProgress({ deleted: total, total })
         toast({
           title: 'All chats deleted',
           description: `Removed ${total} chat${total !== 1 ? 's' : ''} from this device${result.cloudDeleted > 0 ? ' and the cloud' : ''}.`,
         })
       } else {
+        const total = sessionChatStorage.getAllChats().length
+        setDeleteAllChatsProgress({ deleted: 0, total })
         sessionChatStorage.clearAll()
+        setDeleteAllChatsProgress({ deleted: total, total })
         toast({
           title: 'All chats deleted',
           description: 'Removed all chats from this browser session.',
@@ -1575,6 +1613,7 @@ export function SettingsModal({
       })
     } finally {
       setIsDeletingAllChats(false)
+      setDeleteAllChatsProgress(null)
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
     }
@@ -2449,15 +2488,23 @@ ${encryptionKey.replace('key_', '')}
                                         DELETE_ALL_CHATS_CONFIRM_PHRASE
                                     }
                                     className={cn(
-                                      'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                      'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                                       isDarkMode
                                         ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
                                         : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
                                     )}
                                   >
-                                    {isDeletingAllChats
-                                      ? 'Deleting…'
-                                      : 'Yes, delete all my chats'}
+                                    {isDeletingAllChats && (
+                                      <PiSpinner
+                                        className="h-4 w-4 animate-spin"
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                    <span>
+                                      {isDeletingAllChats
+                                        ? 'Deleting…'
+                                        : 'Yes, delete all my chats'}
+                                    </span>
                                   </button>
                                   <button
                                     onClick={() => {
@@ -2475,6 +2522,23 @@ ${encryptionKey.replace('key_', '')}
                                     Cancel
                                   </button>
                                 </div>
+                                {isDeletingAllChats && (
+                                  <div className="space-y-2 rounded-md border border-red-500/20 bg-red-500/5 p-3">
+                                    <Progress
+                                      value={deleteAllChatsProgressValue}
+                                      aria-label="Delete all chats progress"
+                                      className="bg-red-500/20"
+                                    />
+                                    <div className="flex flex-col gap-1 font-aeonik-fono text-xs text-content-muted sm:flex-row sm:items-center sm:justify-between">
+                                      <span>
+                                        {deleteAllChatsProgress
+                                          ? `Deleted ${deleteAllChatsProgress.deleted} of ${deleteAllChatsProgress.total} chat${deleteAllChatsProgress.total !== 1 ? 's' : ''}`
+                                          : 'Counting chats to delete…'}
+                                      </span>
+                                      <span>Do not close this window.</span>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ) : (
                               <button
