@@ -690,19 +690,33 @@ export class CloudStorageService {
     includeContent?: boolean
     continuationToken?: string
   }): Promise<ChatListResponse> {
-    const status = await enclaveListStatus({
-      scope: 'chat',
-      cursor: options.continuationToken ?? options.since,
-      limit: ENCLAVE_CHAT_LIST_LIMIT,
-    })
-    const conversations = status.updates.map(chatUpdateToMeta)
+    // Keep paging while a window contains only deletes: a page with
+    // zero updates but a next cursor must not look like "nothing
+    // changed" to the caller, or updates past it are never fetched.
+    // Mirrors getProjectsUpdatedSince in project-storage.
+    let cursor: string | undefined = options.continuationToken ?? options.since
+    let nextContinuationToken: string | undefined
+    const conversations: ChatListResponse['conversations'] = []
+    do {
+      const status = await enclaveListStatus({
+        scope: 'chat',
+        cursor,
+        limit: ENCLAVE_CHAT_LIST_LIMIT,
+      })
+      conversations.push(...status.updates.map(chatUpdateToMeta))
+      cursor = status.next_cursor
+      nextContinuationToken = status.next_cursor
+    } while (
+      conversations.length < ENCLAVE_CHAT_LIST_LIMIT &&
+      hasNextCursor(cursor)
+    )
     if (options.includeContent && conversations.length > 0) {
       await this.attachInlineContent(conversations)
     }
     return {
       conversations,
-      nextContinuationToken: status.next_cursor,
-      hasMore: hasNextCursor(status.next_cursor),
+      nextContinuationToken,
+      hasMore: hasNextCursor(nextContinuationToken),
     }
   }
 
