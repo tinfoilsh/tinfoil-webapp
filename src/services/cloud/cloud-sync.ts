@@ -1214,6 +1214,11 @@ export class CloudSyncService {
         passkeyEvents.emit({ type: 'bundle-state-maybe-changed' })
       })
       .catch((err) => {
+        // Release the once-per-session latch so a transient kickoff
+        // failure (network blip, enclave restart) does not block the
+        // migration for the rest of the session — the next sync
+        // re-enters this gate and retries.
+        this.legacyMigrationKicked = false
         logError('Legacy blob migration kickoff failed', err, {
           component: 'CloudSync',
           action: 'kickLegacyBlobMigration',
