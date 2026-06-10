@@ -2264,17 +2264,34 @@ ${encryptionKey.replace('key_', '')}
                         )}
                       >
                         <div className="space-y-3">
-                          <div>
-                            <div className="font-aeonik text-sm font-medium text-content-primary">
-                              Delete all saved chats
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                            <div>
+                              <div className="font-aeonik text-sm font-medium text-content-primary">
+                                Delete all saved chats
+                              </div>
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                {isSignedIn
+                                  ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
+                                  : 'Permanently delete every chat from this browser. This cannot be undone.'}
+                              </div>
                             </div>
-                            <div className="font-aeonik-fono text-xs text-content-muted">
-                              {isSignedIn
-                                ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
-                                : 'Permanently delete every chat from this browser. This cannot be undone.'}
-                            </div>
+                            {!showDeleteAllChatsConfirm && (
+                              <button
+                                onClick={() =>
+                                  setShowDeleteAllChatsConfirm(true)
+                                }
+                                className={cn(
+                                  'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
+                                  isDarkMode
+                                    ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                    : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                )}
+                              >
+                                Delete all saved chats
+                              </button>
+                            )}
                           </div>
-                          {showDeleteAllChatsConfirm ? (
+                          {showDeleteAllChatsConfirm && (
                             <div className="space-y-2">
                               <label className="block">
                                 <span className="font-aeonik-fono text-xs text-content-muted">
@@ -2350,18 +2367,6 @@ ${encryptionKey.replace('key_', '')}
                                 </button>
                               </div>
                             </div>
-                          ) : (
-                            <button
-                              onClick={() => setShowDeleteAllChatsConfirm(true)}
-                              className={cn(
-                                'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                isDarkMode
-                                  ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                  : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                              )}
-                            >
-                              Delete all saved chats
-                            </button>
                           )}
                         </div>
                       </div>
@@ -2377,17 +2382,34 @@ ${encryptionKey.replace('key_', '')}
                           )}
                         >
                           <div className="space-y-3">
-                            <div>
-                              <div className="font-aeonik text-sm font-medium text-content-primary">
-                                Delete all projects
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                              <div>
+                                <div className="font-aeonik text-sm font-medium text-content-primary">
+                                  Delete all projects
+                                </div>
+                                <div className="font-aeonik-fono text-xs text-content-muted">
+                                  Permanently delete every project and its
+                                  documents. Chats inside projects will be
+                                  detached but kept. This cannot be undone.
+                                </div>
                               </div>
-                              <div className="font-aeonik-fono text-xs text-content-muted">
-                                Permanently delete every project and its
-                                documents. Chats inside projects will be
-                                detached but kept. This cannot be undone.
-                              </div>
+                              {!showDeleteAllProjectsConfirm && (
+                                <button
+                                  onClick={() =>
+                                    setShowDeleteAllProjectsConfirm(true)
+                                  }
+                                  className={cn(
+                                    'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
+                                    isDarkMode
+                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                  )}
+                                >
+                                  Delete all projects
+                                </button>
+                              )}
                             </div>
-                            {showDeleteAllProjectsConfirm ? (
+                            {showDeleteAllProjectsConfirm && (
                               <div className="space-y-2">
                                 <label className="block">
                                   <span className="font-aeonik-fono text-xs text-content-muted">
@@ -2467,20 +2489,6 @@ ${encryptionKey.replace('key_', '')}
                                   </button>
                                 </div>
                               </div>
-                            ) : (
-                              <button
-                                onClick={() =>
-                                  setShowDeleteAllProjectsConfirm(true)
-                                }
-                                className={cn(
-                                  'w-full rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                  isDarkMode
-                                    ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                    : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                )}
-                              >
-                                Delete all projects
-                              </button>
                             )}
                           </div>
                         </div>
@@ -3845,31 +3853,22 @@ ${encryptionKey.replace('key_', '')}
                     </div>
                   </div>
 
-                  {/* Export Projects */}
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Export Projects
-                    </h3>
-                    <div
-                      className={cn(
-                        'space-y-3 rounded-lg border border-border-subtle p-4',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <div className="font-aeonik-fono text-xs text-content-muted">
-                        Download all your projects including their settings,
-                        system instructions, memory, and documents.
-                      </div>
-                      {!isPremium ? (
-                        <div className="flex items-center gap-2 rounded-lg border border-brand-accent-light/30 bg-brand-accent-light/10 px-3 py-2">
-                          <span className="text-xs text-content-muted">
-                            Projects are a premium feature.
-                          </span>
-                          <span className="rounded-full bg-brand-accent-light/20 px-1.5 py-px text-[10px] font-medium text-brand-accent-light">
-                            Pro
-                          </span>
+                  {/* Export Projects (premium only) */}
+                  {isPremium && (
+                    <div className="space-y-3">
+                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                        Export Projects
+                      </h3>
+                      <div
+                        className={cn(
+                          'space-y-3 rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="font-aeonik-fono text-xs text-content-muted">
+                          Download all your projects including their settings,
+                          system instructions, memory, and documents.
                         </div>
-                      ) : (
                         <button
                           onClick={() => downloadProjects(projects)}
                           disabled={
@@ -3902,9 +3901,9 @@ ${encryptionKey.replace('key_', '')}
                               ? 'Loading projects...'
                               : 'Export Projects'}
                         </button>
-                      )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
 
