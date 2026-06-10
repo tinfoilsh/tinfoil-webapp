@@ -54,7 +54,6 @@ import {
   MoonIcon,
   PencilSquareIcon,
   PlusIcon,
-  SparklesIcon,
   Squares2X2Icon,
   SunIcon,
   TrashIcon,
@@ -4021,11 +4020,8 @@ ${encryptionKey.replace('key_', '')}
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <div className="flex items-center gap-3">
-                                <SparklesIcon className="h-5 w-5 text-content-muted" />
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  {isPremium ? 'Premium' : 'Free Tier'}
-                                </div>
+                              <div className="font-aeonik text-sm font-medium text-content-primary">
+                                {isPremium ? 'Premium' : 'Free Tier'}
                               </div>
                               <div className="mt-1 font-aeonik-fono text-xs text-content-muted">
                                 {isPremium
@@ -4044,9 +4040,27 @@ ${encryptionKey.replace('key_', '')}
                               {isPremium ? 'Active' : 'Free'}
                             </div>
                           </div>
+                          {!isPremium && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleUpgradeToPro()
+                              }}
+                              disabled={upgradeLoading}
+                              className={cn(
+                                'mt-4 w-full rounded-md bg-brand-accent-dark px-4 py-3 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90',
+                                upgradeLoading &&
+                                  'cursor-not-allowed opacity-70',
+                              )}
+                            >
+                              {upgradeLoading
+                                ? 'Redirecting…'
+                                : 'Subscribe to Premium'}
+                            </button>
+                          )}
                         </div>
 
-                        {isPremium ? (
+                        {isPremium && (
                           <button
                             onClick={() => {
                               void handleManageBilling()
@@ -4072,22 +4086,6 @@ ${encryptionKey.replace('key_', '')}
                             <div className="text-sm text-content-muted">
                               {billingLoading ? '...' : '→'}
                             </div>
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void handleUpgradeToPro()
-                            }}
-                            disabled={upgradeLoading}
-                            className={cn(
-                              'w-full rounded-md bg-brand-accent-dark px-4 py-3 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90',
-                              upgradeLoading && 'cursor-not-allowed opacity-70',
-                            )}
-                          >
-                            {upgradeLoading
-                              ? 'Redirecting…'
-                              : 'Subscribe to Premium'}
                           </button>
                         )}
 
