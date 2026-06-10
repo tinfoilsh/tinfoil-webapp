@@ -3240,7 +3240,6 @@ ${encryptionKey.replace('key_', '')}
                           Do not share this key with anyone. Only save it in a
                           secure location.
                         </p>
-                        </div>
                       </div>
                     </div>
                   )}
