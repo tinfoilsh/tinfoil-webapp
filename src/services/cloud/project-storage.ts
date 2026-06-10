@@ -312,12 +312,15 @@ export class ProjectStorageService {
       }
       return result
     } catch (error) {
+      // A failed batch pull is a transport/sync error, not "every
+      // project is encrypted" — rethrow so the caller can surface an
+      // error state instead of rendering placeholder projects.
       logError('Failed to batch-get projects', error, {
         component: 'ProjectStorage',
         action: 'getProjects',
         metadata: { count: projectIds.length },
       })
-      return result
+      throw error
     }
   }
 
