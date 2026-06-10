@@ -177,4 +177,34 @@ describe('runWithRetry', () => {
     expect(setTimeoutSpy).not.toHaveBeenCalled()
     setTimeoutSpy.mockRestore()
   })
+
+  it('still runs once when maxAttempts is zero or negative', async () => {
+    const { scheduler } = makeScheduler()
+    for (const maxAttempts of [0, -3]) {
+      const fn = vi.fn().mockResolvedValue('ok')
+      const result = await runWithRetry(fn, () => true, {
+        maxAttempts,
+        scheduler,
+      })
+      expect(result).toBe('ok')
+      expect(fn).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('falls back to the default attempt count when maxAttempts is NaN', async () => {
+    const err = new Error('flake')
+    const fn = vi.fn().mockRejectedValue(err)
+    const { scheduler } = makeScheduler()
+
+    await expect(
+      runWithRetry(fn, () => true, {
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+        maxAttempts: Number.NaN,
+        scheduler,
+      }),
+    ).rejects.toBe(err)
+
+    expect(fn).toHaveBeenCalledTimes(4)
+  })
 })

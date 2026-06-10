@@ -75,10 +75,14 @@ export async function runWithRetry<T>(
 ): Promise<T> {
   const baseDelayMs = config.baseDelayMs ?? DEFAULT_BASE_DELAY_MS
   const maxDelayMs = config.maxDelayMs ?? DEFAULT_MAX_DELAY_MS
-  // Clamp to at least one attempt so a caller passing 0 (or a
-  // negative override) cannot skip execution entirely and end up
-  // throwing `undefined` from the empty for-loop tail.
-  const maxAttempts = Math.max(1, config.maxAttempts ?? DEFAULT_MAX_ATTEMPTS)
+  // Clamp to at least one attempt so a caller passing 0, a negative
+  // override, or NaN cannot skip execution entirely and end up
+  // throwing `undefined` from the empty for-loop tail. NaN fails the
+  // `Math.max` clamp (`Math.max(1, NaN)` is `NaN`), so it falls back
+  // to the default instead.
+  const maxAttempts = Number.isFinite(config.maxAttempts)
+    ? Math.max(1, Math.floor(config.maxAttempts as number))
+    : DEFAULT_MAX_ATTEMPTS
   const scheduler = config.scheduler ?? realScheduler
 
   let lastError: unknown
