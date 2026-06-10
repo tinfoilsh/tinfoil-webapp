@@ -932,11 +932,19 @@ export function useChatMessaging({
   const regenerateMessage = useCallback(
     (messageIndex: number) => {
       if (!currentChat) return
+      if (pendingRegenerateRef.current !== null) return
 
       const originalMessage = currentChat.messages[messageIndex]
       if (!originalMessage || originalMessage.role !== 'user') return
 
-      if (loadingState !== 'idle') {
+      const isGenerationActive =
+        loadingState !== 'idle' ||
+        isStreaming ||
+        isWaitingForResponse ||
+        isThinking ||
+        isStreamingRef.current
+
+      if (isGenerationActive) {
         pendingRegenerateRef.current = {
           chatId: currentChat.id,
           messageIndex,
@@ -947,7 +955,15 @@ export function useChatMessaging({
 
       editMessage(messageIndex, originalMessage.content || '')
     },
-    [loadingState, currentChat, editMessage, cancelGeneration],
+    [
+      loadingState,
+      isStreaming,
+      isWaitingForResponse,
+      isThinking,
+      currentChat,
+      editMessage,
+      cancelGeneration,
+    ],
   )
 
   // Fire the deferred regenerate once cancellation has settled the state.
