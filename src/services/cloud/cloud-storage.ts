@@ -464,7 +464,10 @@ export class CloudStorageService {
     }
   }
 
-  async deleteAllChats(): Promise<{ deleted: number }> {
+  async deleteAllChats(): Promise<{
+    deleted: number
+    notificationSent?: boolean
+  }> {
     const response = await fetch(`${API_BASE_URL}/api/storage/conversations`, {
       method: 'DELETE',
       headers: await this.getHeaders(),

@@ -189,7 +189,10 @@ export class ProjectStorageService {
     }
   }
 
-  async deleteAllProjects(): Promise<{ deleted: number }> {
+  async deleteAllProjects(): Promise<{
+    deleted: number
+    notificationSent?: boolean
+  }> {
     if (!(await canWriteToCloud())) {
       throw new Error(
         'Cloud writes are blocked until your encryption key is verified',

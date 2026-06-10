@@ -381,9 +381,6 @@ export function SettingsModal({
   const [showDeleteAllChatsConfirm, setShowDeleteAllChatsConfirm] =
     useState(false)
   const [isDeletingAllChats, setIsDeletingAllChats] = useState(false)
-  const [deleteAllChatsCount, setDeleteAllChatsCount] = useState<number | null>(
-    null,
-  )
   const [deleteAllChatsConfirmText, setDeleteAllChatsConfirmText] = useState('')
   const [showDeleteAllProjectsConfirm, setShowDeleteAllProjectsConfirm] =
     useState(false)
@@ -1547,36 +1544,16 @@ export function SettingsModal({
     }
 
     setIsDeletingAllChats(true)
-    setDeleteAllChatsCount(null)
     try {
       if (isSignedIn) {
-        const localCount = await chatStorage.getChatCount()
-        let cloudCount = 0
-        try {
-          const status = await cloudStorage.getAllChatsSyncStatus()
-          cloudCount = status.count
-        } catch (error) {
-          logError('Failed to count cloud chats before deletion', error, {
-            component: 'SettingsModal',
-            action: 'handleDeleteAllChats',
-          })
-        }
-        const expectedTotal = Math.max(localCount, cloudCount)
-        setDeleteAllChatsCount(expectedTotal)
-
         const result = await chatStorage.deleteAllChats()
-        const total = Math.max(
-          expectedTotal,
-          result.localDeleted,
-          result.cloudDeleted,
-        )
         toast({
           title: 'All chats deleted',
-          description: `Removed ${total} chat${total !== 1 ? 's' : ''} from this device${result.cloudDeleted > 0 ? ' and the cloud' : ''}.`,
+          description: result.notificationSent
+            ? 'We will email you a confirmation.'
+            : 'Email confirmation could not be sent.',
         })
       } else {
-        const total = sessionChatStorage.getAllChats().length
-        setDeleteAllChatsCount(total)
         sessionChatStorage.clearAll()
         toast({
           title: 'All chats deleted',
@@ -1599,7 +1576,6 @@ export function SettingsModal({
       })
     } finally {
       setIsDeletingAllChats(false)
-      setDeleteAllChatsCount(null)
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
     }
@@ -1620,16 +1596,10 @@ export function SettingsModal({
       const result = await projectStorage.deleteAllProjects()
       toast({
         title: 'All projects deleted',
-        description: `Removed ${result.deleted} project${result.deleted !== 1 ? 's' : ''}.`,
+        description: result.notificationSent
+          ? 'We will email you a confirmation.'
+          : 'Email confirmation could not be sent.',
       })
-
-      await refreshProjects()
-
-      // Project deletion detaches chats from projects on the server, so the
-      // chat list in the sidebar may need to refresh too.
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
     } catch (error) {
       logError('Failed to delete all projects', error, {
         component: 'SettingsModal',
@@ -2488,7 +2458,7 @@ ${encryptionKey.replace('key_', '')}
                                     )}
                                     <span>
                                       {isDeletingAllChats
-                                        ? 'Deleting…'
+                                        ? 'Requesting…'
                                         : 'Yes, delete all my chats'}
                                     </span>
                                   </button>
@@ -2508,18 +2478,6 @@ ${encryptionKey.replace('key_', '')}
                                     Cancel
                                   </button>
                                 </div>
-                                {isDeletingAllChats && (
-                                  <div className="space-y-2 rounded-md border border-red-500/20 bg-red-500/5 p-3">
-                                    <div className="flex flex-col gap-1 font-aeonik-fono text-xs text-content-muted sm:flex-row sm:items-center sm:justify-between">
-                                      <span>
-                                        {deleteAllChatsCount !== null
-                                          ? `Deleting ${deleteAllChatsCount} chat${deleteAllChatsCount !== 1 ? 's' : ''}…`
-                                          : 'Counting chats to delete…'}
-                                      </span>
-                                      <span>Do not close this window.</span>
-                                    </div>
-                                  </div>
-                                )}
                               </div>
                             ) : (
                               <button
@@ -2605,15 +2563,23 @@ ${encryptionKey.replace('key_', '')}
                                           DELETE_ALL_PROJECTS_CONFIRM_PHRASE
                                       }
                                       className={cn(
-                                        'flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                        'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                                         isDarkMode
                                           ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
                                           : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
                                       )}
                                     >
-                                      {isDeletingAllProjects
-                                        ? 'Deleting…'
-                                        : 'Yes, delete all my projects'}
+                                      {isDeletingAllProjects && (
+                                        <PiSpinner
+                                          className="h-4 w-4 animate-spin"
+                                          aria-hidden="true"
+                                        />
+                                      )}
+                                      <span>
+                                        {isDeletingAllProjects
+                                          ? 'Requesting…'
+                                          : 'Yes, delete all my projects'}
+                                      </span>
                                     </button>
                                     <button
                                       onClick={() => {
