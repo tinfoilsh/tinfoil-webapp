@@ -227,19 +227,13 @@ export function ChatListItem({
     onDragEnd?.()
   }
 
-  const getTimestamp = (): Date | null => {
-    if (chat.updatedAt) {
-      return new Date(chat.updatedAt)
-    }
-    if (chat.createdAt) {
-      return chat.createdAt instanceof Date
-        ? chat.createdAt
-        : new Date(chat.createdAt)
-    }
-    return null
+  const toDate = (value?: Date | string): Date | null => {
+    if (!value) return null
+    return value instanceof Date ? value : new Date(value)
   }
 
-  const timestamp = getTimestamp()
+  const createdAt = toDate(chat.createdAt)
+  const timestamp = toDate(chat.updatedAt) ?? createdAt
 
   return (
     <div
@@ -359,6 +353,9 @@ export function ChatListItem({
                   </div>
                 ) : messageCount > 0 && timestamp ? (
                   <div className="text-xs leading-none text-content-muted">
+                    {createdAt
+                      ? `Created ${formatRelativeTime(createdAt)} · `
+                      : ''}
                     Updated {formatRelativeTime(timestamp)}
                   </div>
                 ) : null}
