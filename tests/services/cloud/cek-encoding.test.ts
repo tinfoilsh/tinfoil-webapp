@@ -112,6 +112,24 @@ describe('cek-encoding', () => {
       expect(keys).toEqual([])
     })
 
+    it('never emits alternatives without a primary at keys[0]', () => {
+      mockGetKey.mockReturnValue(null)
+      mockGetStoredAlternatives.mockReturnValue(['key_alt1'])
+      mockGetAlternativeKeyBytes.mockReturnValue(new Uint8Array(32))
+      const keys = migrationKeys()
+      expect(keys).toEqual([])
+    })
+
+    it('returns an empty array when the primary bytes are unreadable', () => {
+      mockGetKey.mockReturnValue('key_primary')
+      mockGetStoredAlternatives.mockReturnValue(['key_alt1'])
+      mockGetAlternativeKeyBytes.mockImplementation((k) =>
+        k === 'key_alt1' ? new Uint8Array(32) : null,
+      )
+      const keys = migrationKeys()
+      expect(keys).toEqual([])
+    })
+
     it('sources primary bytes from persisted storage, not the in-memory decoder', () => {
       mockGetKey.mockReturnValue('key_primary')
       mockGetStoredAlternatives.mockReturnValue([])

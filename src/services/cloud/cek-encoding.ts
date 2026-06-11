@@ -82,19 +82,22 @@ export function pullKey(): PullKey[] {
  * target. Once the one-shot sweep reports `fullyMigrated`, the
  * alternatives are cleared from local state and this helper
  * collapses to the same shape as `pullKey()`.
+ *
+ * Returns an empty array when the primary is missing or unreadable
+ * so callers never see alternatives without the primary at
+ * `keys[0]`.
  */
 export function migrationKeys(): PullKey[] {
-  const out: PullKey[] = []
   // Source both primary and alternatives from localStorage so a
   // freshly-loaded service (page refresh before `initialize()` runs)
   // still surfaces every historical key on the migration sweep. The
   // in-memory `getAllKeys()` cache lags `setKey()` and would drop
   // alternatives that the persisted history has on file.
   const primary = encryptionService.getKey()
-  if (primary) {
-    const bytes = encryptionService.getAlternativeKeyBytes(primary)
-    if (bytes) out.push({ key: bytesToBase64(bytes) })
-  }
+  if (!primary) return []
+  const primaryBytes = encryptionService.getAlternativeKeyBytes(primary)
+  if (!primaryBytes) return []
+  const out: PullKey[] = [{ key: bytesToBase64(primaryBytes) }]
   const alternatives = encryptionService.getStoredAlternatives()
   for (const alt of alternatives) {
     if (alt === primary) continue
