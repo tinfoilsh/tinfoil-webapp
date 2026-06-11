@@ -359,7 +359,7 @@ export function ChatListItem({
                   </div>
                 ) : messageCount > 0 && timestamp ? (
                   <div className="text-xs leading-none text-content-muted">
-                    {formatRelativeTime(timestamp)}
+                    Updated {formatRelativeTime(timestamp)}
                   </div>
                 ) : null}
                 {showSyncStatus && (
