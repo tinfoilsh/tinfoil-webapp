@@ -234,6 +234,12 @@ export function ChatListItem({
 
   const createdAt = toDate(chat.createdAt)
   const timestamp = toDate(chat.updatedAt) ?? createdAt
+  // Skip the updated time when it would read the same as the created
+  // time, so rows don't repeat "9h ago · Updated 9h ago".
+  const showUpdatedTime =
+    timestamp !== null &&
+    (createdAt === null ||
+      formatRelativeTime(timestamp) !== formatRelativeTime(createdAt))
 
   return (
     <div
@@ -358,8 +364,12 @@ export function ChatListItem({
                         {formatRelativeTime(createdAt)}
                       </span>
                     )}
-                    {createdAt && ' · '}
-                    Updated {formatRelativeTime(timestamp)}
+                    {showUpdatedTime && (
+                      <>
+                        {createdAt && ' · '}
+                        Updated {formatRelativeTime(timestamp)}
+                      </>
+                    )}
                   </div>
                 ) : null}
                 {showSyncStatus && (
