@@ -953,6 +953,47 @@ export function usePasskeyBackup({
     const initializePasskey = async () => {
       const prfSupported = await isPrfSupported()
 
+      if (encryptionKey) {
+        // A local key that derives a different key id than the
+        // enclave's registered one can never write or migrate — this
+        // device is stale and needs to converge onto the registered
+        // key to enter v2. Route to passkey recovery when the
+        // registered key has bundles to unlock it with, or to manual
+        // key entry when it was adopted bundleless (e.g. by the
+        // migration path on another device).
+        const validation = await validateCurrentPrimaryKey()
+        if (!validation.canWrite && validation.remoteState === 'exists') {
+          let hasRemoteBundles = false
+          try {
+            const current = await enclaveKeyCurrent()
+            hasRemoteBundles = Object.keys(current.bundles).length > 0
+          } catch {
+            // Transient enclave failure: fall through to the manual
+            // prompt, which is dismissible and retried next visit.
+          }
+          if (!isMountedRef.current) return
+          if (hasRemoteBundles && prfSupported) {
+            if (!passkeyRecoveryDismissedFlag.isSet()) {
+              setState((prev) => ({
+                ...prev,
+                passkeyRecoveryNeeded: true,
+              }))
+            }
+          } else if (!manualRecoveryDismissedFlag.isSet()) {
+            setState((prev) => ({
+              ...prev,
+              manualRecoveryNeeded: true,
+              passkeySetupFailed: setupWarningDismissedFlag.isSet()
+                ? prev.passkeySetupFailed
+                : true,
+              passkeyRetryAvailable: false,
+            }))
+          }
+          return
+        }
+        if (!isMountedRef.current) return
+      }
+
       if (!prfSupported) {
         // The device/provider can't do PRF, so passkey-backed cloud sync is
         // unavailable here. If the user has no local key and no remote data

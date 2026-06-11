@@ -194,6 +194,71 @@ describe('usePasskeyBackup', () => {
     expect(result.current.passkeyRetryAvailable).toBe(true)
   })
 
+  describe('stale local key recovery routing', () => {
+    const blockedValidation = {
+      canWrite: false,
+      remoteState: 'exists',
+      probe: 'none',
+      message: 'mismatch',
+    }
+
+    it('prompts passkey recovery when the registered key has bundles', async () => {
+      mocks.validateCurrentPrimaryKey.mockResolvedValue(blockedValidation)
+      mocks.keyCurrent.mockResolvedValue({
+        key_id: 'kid-remote',
+        has_data: true,
+        bundles: { 'cred-1': { credential_id: 'cred-1' } },
+      })
+
+      const { result } = renderHook(() =>
+        usePasskeyBackup({ ...baseOptions, encryptionKey: 'key_stale' }),
+      )
+
+      await waitFor(() =>
+        expect(result.current.passkeyRecoveryNeeded).toBe(true),
+      )
+      expect(result.current.manualRecoveryNeeded).toBe(false)
+      expect(result.current.passkeyActive).toBe(false)
+    })
+
+    it('prompts manual recovery when the registered key has no bundles', async () => {
+      mocks.validateCurrentPrimaryKey.mockResolvedValue(blockedValidation)
+      mocks.keyCurrent.mockResolvedValue({
+        key_id: 'kid-remote',
+        has_data: true,
+        bundles: {},
+      })
+
+      const { result } = renderHook(() =>
+        usePasskeyBackup({ ...baseOptions, encryptionKey: 'key_stale' }),
+      )
+
+      await waitFor(() =>
+        expect(result.current.manualRecoveryNeeded).toBe(true),
+      )
+      expect(result.current.passkeyRecoveryNeeded).toBe(false)
+      expect(result.current.passkeyRetryAvailable).toBe(false)
+    })
+
+    it('stays silent when validation only failed transiently', async () => {
+      mocks.validateCurrentPrimaryKey.mockResolvedValue({
+        canWrite: false,
+        remoteState: 'unknown',
+        probe: 'none',
+      })
+
+      const { result } = renderHook(() =>
+        usePasskeyBackup({ ...baseOptions, encryptionKey: 'key_local' }),
+      )
+
+      await waitFor(() =>
+        expect(mocks.validateCurrentPrimaryKey).toHaveBeenCalled(),
+      )
+      expect(result.current.passkeyRecoveryNeeded).toBe(false)
+      expect(result.current.manualRecoveryNeeded).toBe(false)
+    })
+  })
+
   describe('addPasskeyToThisDevice legacy promotion', () => {
     beforeEach(() => {
       mocks.getAllKeys.mockReturnValue({ primary: 'key_x', alternatives: [] })
