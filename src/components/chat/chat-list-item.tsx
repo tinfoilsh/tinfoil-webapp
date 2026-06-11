@@ -353,9 +353,7 @@ export function ChatListItem({
                   </div>
                 ) : messageCount > 0 && timestamp ? (
                   <div className="text-xs leading-none text-content-muted">
-                    {createdAt
-                      ? `Created ${formatRelativeTime(createdAt)} · `
-                      : ''}
+                    {createdAt ? `${formatRelativeTime(createdAt)} · ` : ''}
                     Updated {formatRelativeTime(timestamp)}
                   </div>
                 ) : null}
