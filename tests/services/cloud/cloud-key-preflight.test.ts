@@ -8,7 +8,6 @@ const mockCurrentKey = vi.fn<() => string | null>()
 const mockPersistedKey = vi.fn<() => string | null>()
 const mockStoredAlternatives = vi.fn<() => string[]>()
 const mockKeyCurrent = vi.fn()
-const mockProbeLegacyDataWithLocalKeys = vi.fn()
 
 function b64ToBytes(key: string): Uint8Array {
   const bin = atob(key)
@@ -40,13 +39,6 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
   }
 })
 
-vi.mock('@/services/cloud/legacy-key-probe', () => ({
-  legacyKeyProbeAllowsBinding: (result: { outcome: string }) =>
-    result.outcome === 'decryptable' || result.outcome === 'no_sample',
-  probeLegacyDataWithLocalKeys: (...args: unknown[]) =>
-    mockProbeLegacyDataWithLocalKeys(...args),
-}))
-
 import {
   inspectRemoteEncryptedState,
   validateCurrentPrimaryKey,
@@ -68,7 +60,6 @@ describe('cloud-key-preflight', () => {
     mockStoredAlternatives.mockReset()
     mockStoredAlternatives.mockReturnValue([])
     mockKeyCurrent.mockReset()
-    mockProbeLegacyDataWithLocalKeys.mockReset()
   })
 
   afterEach(() => {
@@ -131,7 +122,7 @@ describe('cloud-key-preflight', () => {
       expect(result.canWrite).toBe(true)
     })
 
-    it('probes legacy data before accepting a key when no key is registered', async () => {
+    it('accepts the local key over legacy data when no key is registered', async () => {
       const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
@@ -140,21 +131,14 @@ describe('cloud-key-preflight', () => {
         bundles: {},
         has_data: true,
       })
-      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
-        outcome: 'decryptable',
-      })
 
       const result = await validateCurrentPrimaryKey()
 
       expect(result.remoteState).toBe('exists')
       expect(result.canWrite).toBe(true)
-      expect(mockProbeLegacyDataWithLocalKeys).toHaveBeenCalledWith({
-        keys: [{ key: b64 }],
-        action: 'validateCurrentPrimaryKey',
-      })
     })
 
-    it('probes a staged key on a fresh device with no persisted keys', async () => {
+    it('accepts a staged key on a fresh device with no persisted keys', async () => {
       const { b64 } = makeDeterministicCek()
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(null)
@@ -163,103 +147,10 @@ describe('cloud-key-preflight', () => {
         bundles: {},
         has_data: true,
       })
-      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
-        outcome: 'decryptable',
-      })
 
       const result = await validateCurrentPrimaryKey()
 
       expect(result.canWrite).toBe(true)
-      expect(mockProbeLegacyDataWithLocalKeys).toHaveBeenCalledWith({
-        keys: [{ key: b64 }],
-        action: 'validateCurrentPrimaryKey',
-      })
-    })
-
-    it('does not let a persisted key vouch for a different staged key', async () => {
-      const { b64: stagedB64 } = makeDeterministicCek(1)
-      const { b64: persistedB64 } = makeDeterministicCek(7)
-      mockCurrentKey.mockReturnValue(stagedB64)
-      mockPersistedKey.mockReturnValue(persistedB64)
-      mockKeyCurrent.mockResolvedValue({
-        key_id: null,
-        bundles: {},
-        has_data: true,
-      })
-      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
-        outcome: 'undecryptable',
-      })
-
-      const result = await validateCurrentPrimaryKey()
-
-      expect(result.canWrite).toBe(false)
-      expect(mockProbeLegacyDataWithLocalKeys).toHaveBeenCalledWith({
-        keys: [{ key: stagedB64 }],
-        action: 'validateCurrentPrimaryKey',
-      })
-    })
-
-    it('probes with persisted alternatives when the loaded key is the persisted primary', async () => {
-      const { b64 } = makeDeterministicCek(1)
-      const { b64: altB64 } = makeDeterministicCek(7)
-      mockCurrentKey.mockReturnValue(b64)
-      mockPersistedKey.mockReturnValue(b64)
-      mockStoredAlternatives.mockReturnValue([altB64])
-      mockKeyCurrent.mockResolvedValue({
-        key_id: null,
-        bundles: {},
-        has_data: true,
-      })
-      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
-        outcome: 'decryptable',
-      })
-
-      const result = await validateCurrentPrimaryKey()
-
-      expect(result.canWrite).toBe(true)
-      expect(mockProbeLegacyDataWithLocalKeys).toHaveBeenCalledWith({
-        keys: [{ key: b64 }, { key: altB64 }],
-        action: 'validateCurrentPrimaryKey',
-      })
-    })
-
-    it('blocks a key that cannot decrypt legacy data before registration', async () => {
-      const { b64 } = makeDeterministicCek()
-      mockCurrentKey.mockReturnValue(b64)
-      mockPersistedKey.mockReturnValue(b64)
-      mockKeyCurrent.mockResolvedValue({
-        key_id: null,
-        bundles: {},
-        has_data: true,
-      })
-      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
-        outcome: 'undecryptable',
-      })
-
-      const result = await validateCurrentPrimaryKey()
-
-      expect(result.remoteState).toBe('exists')
-      expect(result.canWrite).toBe(false)
-      expect(result.message).toMatch(/doesn't match/)
-    })
-
-    it('treats transient legacy-data probe failure as unknown', async () => {
-      const { b64 } = makeDeterministicCek()
-      mockCurrentKey.mockReturnValue(b64)
-      mockPersistedKey.mockReturnValue(b64)
-      mockKeyCurrent.mockResolvedValue({
-        key_id: null,
-        bundles: {},
-        has_data: true,
-      })
-      mockProbeLegacyDataWithLocalKeys.mockResolvedValue({
-        outcome: 'transient_failure',
-      })
-
-      const result = await validateCurrentPrimaryKey()
-
-      expect(result.remoteState).toBe('unknown')
-      expect(result.canWrite).toBe(false)
     })
 
     it('allows writes when local KeyID matches enclave KeyID', async () => {

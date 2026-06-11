@@ -1,5 +1,4 @@
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
-import { LegacyKeyMismatchError } from '@/services/cloud/legacy-key-probe'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -33,7 +32,6 @@ const mocks = vi.hoisted(() => ({
   addBundleForCurrentKey: vi.fn(),
   promoteRecoveredCekToEnclave: vi.fn(),
   keyCurrent: vi.fn(),
-  probeLegacyDataWithLocalKeys: vi.fn(),
   setCloudSyncEnabled: vi.fn(),
   passkeyEventsOn: vi.fn(),
   passkeyEventsEmit: vi.fn(),
@@ -44,13 +42,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/services/cloud/cloud-key-preflight', () => ({
   inspectRemoteEncryptedState: mocks.inspectRemoteEncryptedState,
   validateCurrentPrimaryKey: mocks.validateCurrentPrimaryKey,
-}))
-
-vi.mock('@/services/cloud/legacy-key-probe', () => ({
-  legacyKeyProbeAllowsBinding: (result: { outcome: string }) =>
-    result.outcome === 'decryptable' || result.outcome === 'no_sample',
-  probeLegacyDataWithLocalKeys: mocks.probeLegacyDataWithLocalKeys,
-  LegacyKeyMismatchError: class MockLegacyKeyMismatchError extends Error {},
 }))
 
 vi.mock('@/services/cloud/cloud-key-authorization', () => ({
@@ -160,9 +151,6 @@ describe('usePasskeyBackup', () => {
     mocks.getPasskeyCredentialState.mockResolvedValue('empty')
     mocks.getPasskeyDeviceState.mockResolvedValue('empty')
     mocks.loadPasskeyCredentials.mockResolvedValue([])
-    mocks.probeLegacyDataWithLocalKeys.mockResolvedValue({
-      outcome: 'decryptable',
-    })
     mocks.getCachedPrfResult.mockReturnValue(null)
     mocks.getLocalPasskeyCredentialId.mockReturnValue(null)
     mocks.getKey.mockReturnValue(null)
@@ -222,29 +210,8 @@ describe('usePasskeyBackup', () => {
       mocks.promoteRecoveredCekToEnclave.mockResolvedValue({ ok: true })
     })
 
-    it('refuses promotion when the local key cannot unlock existing data', async () => {
+    it('proceeds with promotion when remote legacy data exists', async () => {
       mocks.keyCurrent.mockResolvedValue({ key_id: null, has_data: true })
-      mocks.probeLegacyDataWithLocalKeys.mockResolvedValue({
-        outcome: 'undecryptable',
-      })
-
-      const { result } = renderHook(() => usePasskeyBackup(baseOptions))
-
-      await expect(
-        act(async () => {
-          await result.current.addPasskeyToThisDevice()
-        }),
-      ).rejects.toBeInstanceOf(LegacyKeyMismatchError)
-
-      expect(mocks.authenticatePrfPasskey).not.toHaveBeenCalled()
-      expect(mocks.promoteRecoveredCekToEnclave).not.toHaveBeenCalled()
-    })
-
-    it('proceeds with promotion when the probe fails transiently', async () => {
-      mocks.keyCurrent.mockResolvedValue({ key_id: null, has_data: true })
-      mocks.probeLegacyDataWithLocalKeys.mockResolvedValue({
-        outcome: 'transient_failure',
-      })
 
       const { result } = renderHook(() => usePasskeyBackup(baseOptions))
 
@@ -258,7 +225,7 @@ describe('usePasskeyBackup', () => {
       expect(mocks.promoteRecoveredCekToEnclave).toHaveBeenCalledOnce()
     })
 
-    it('skips the probe entirely when no remote data exists', async () => {
+    it('proceeds with promotion when no remote data exists', async () => {
       mocks.keyCurrent.mockResolvedValue({ key_id: null, has_data: false })
 
       const { result } = renderHook(() => usePasskeyBackup(baseOptions))
@@ -269,7 +236,6 @@ describe('usePasskeyBackup', () => {
       })
 
       expect(success).toBe(true)
-      expect(mocks.probeLegacyDataWithLocalKeys).not.toHaveBeenCalled()
       expect(mocks.promoteRecoveredCekToEnclave).toHaveBeenCalledOnce()
     })
   })

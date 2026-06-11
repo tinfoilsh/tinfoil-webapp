@@ -18,13 +18,8 @@ import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import {
   base64ToBytes,
   keyCurrent as enclaveKeyCurrent,
-  type PullKey,
 } from '../sync-enclave/sync-api'
-import { migrationKeys, requirePrimaryKeyB64 } from './cek-encoding'
-import {
-  legacyKeyProbeAllowsBinding,
-  probeLegacyDataWithLocalKeys,
-} from './legacy-key-probe'
+import { requirePrimaryKeyB64 } from './cek-encoding'
 
 export type CloudRemoteState = 'empty' | 'exists' | 'unknown'
 export type CloudKeyValidationProbe = 'none' | 'profile' | 'project' | 'chat'
@@ -78,11 +73,19 @@ export async function inspectRemoteEncryptedState(): Promise<CloudRemoteState> {
  *
  *  - No local key loaded                       → unknown / canWrite=false
  *  - No remote key/data registered             → empty   / canWrite=true
- *  - Legacy data but no registered key         → exists  / probe local keys
+ *  - Legacy data but no registered key         → exists  / canWrite=true
  *  - Local KeyID matches enclave KeyID         → exists  / canWrite=true
  *  - Local KeyID differs from enclave KeyID    → exists  / canWrite=false
  *                                                + "doesn't match" message
  *  - Enclave probe fails (network, 5xx)        → unknown / canWrite=false
+ *
+ * Legacy (un-keyed) data never blocks the local key: which rows the
+ * key can actually unseal is only provable by decrypting, and the
+ * migration sweep is self-guarding — the enclave rewraps only rows it
+ * successfully decrypts, and anything else stays legacy with a
+ * cooldown stamp. Blocking here on a decrypt probe produced false
+ * negatives for mixed-key v1 accounts (rows sealed under several
+ * historical keys) and silently prevented any migration at all.
  */
 export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationResult> {
   let primaryKeyB64: string
@@ -111,19 +114,6 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
   }
 
   if (!resp.key_id && resp.has_data) {
-    const probe = await probeLegacyDataWithLocalKeys({
-      keys: legacyProbeKeys(primaryKeyB64),
-      action: 'validateCurrentPrimaryKey',
-    })
-    if (probe.outcome === 'transient_failure') {
-      return unknownResult(
-        'none',
-        "We couldn't verify whether this key unlocks your encrypted cloud data.",
-      )
-    }
-    if (!legacyKeyProbeAllowsBinding(probe)) {
-      return blockedResult('none')
-    }
     return {
       remoteState: 'exists',
       canWrite: true,
@@ -147,26 +137,6 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
   }
 
   return blockedResult('none')
-}
-
-/**
- * Keys to probe legacy (pre-key-registration) cloud data with. When
- * the loaded primary is one of the device's persisted keys, probe
- * with the full persisted set: historical alternatives belong to the
- * same user and the migration sweep can rewrap rows sealed under
- * them. When the loaded primary is a newly entered key that has not
- * been persisted yet (staged via `setKey(..., { persist: false })`),
- * probe with that key alone — a leftover persisted key must not
- * vouch for a different key that cannot actually unlock the data,
- * and a fresh device with no persisted keys must still get its
- * staged key probed.
- */
-function legacyProbeKeys(primaryKeyB64: string): PullKey[] {
-  const persisted = migrationKeys()
-  if (persisted.some(({ key }) => key === primaryKeyB64)) {
-    return persisted
-  }
-  return [{ key: primaryKeyB64 }]
 }
 
 function unknownResult(

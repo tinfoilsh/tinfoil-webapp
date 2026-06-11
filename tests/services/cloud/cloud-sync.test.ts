@@ -682,21 +682,22 @@ describe('CloudSyncService', () => {
       expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
     })
 
-    it('does not adopt the local key when it cannot unseal the remote data', async () => {
+    it('adopts the local key even when remote rows are sealed under another key', async () => {
       mockGetUnsyncedChats.mockResolvedValue([])
       mockGetAllChats.mockResolvedValue([])
       mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
       const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-      // Stale local CEK: the server has legacy data, but every sampled
-      // row refuses to unseal under the local key set. Adopting would
-      // permanently register the wrong key and block the correct one
-      // from ever being promoted, so adoption and migration must not run.
-      mockGetKey.mockReturnValue('key_stale')
-      mockPrimaryKeyIdHex.mockResolvedValue('kid-stale')
+      // Mixed-key v1 account: legacy rows sealed under several
+      // historical keys. Adoption is not gated on a decrypt probe —
+      // the migration sweep rewraps only what the key set actually
+      // decrypts and leaves the rest on cooldown, so adoption and
+      // migration must still run.
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
       mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
-      mockRequirePrimaryKeyB64.mockReturnValue('stale-b64')
-      mockMigrationKeys.mockReturnValue([{ key: 'stale-b64' }])
+      mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
       mockPull.mockResolvedValue({
         items: [{ id: 'chat-1', ok: false, code: 'UNKNOWN_KEY' }],
       })
@@ -705,29 +706,8 @@ describe('CloudSyncService', () => {
       await service.syncAllChats()
       await flush()
 
-      expect(mockRegisterKey).not.toHaveBeenCalled()
-      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
-    })
-
-    it('does not adopt the local key when the decrypt probe fails transiently', async () => {
-      mockGetUnsyncedChats.mockResolvedValue([])
-      mockGetAllChats.mockResolvedValue([])
-      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
-      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
-
-      mockGetKey.mockReturnValue('key_local')
-      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
-      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
-      mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
-      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
-      mockPull.mockRejectedValue(new Error('network down'))
-
-      const service = new CloudSyncService()
-      await service.syncAllChats()
-      await flush()
-
-      expect(mockRegisterKey).not.toHaveBeenCalled()
-      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
     })
 
     it('does not adopt the local key when the server reports no legacy data', async () => {

@@ -31,10 +31,6 @@ import {
 } from './cloud-storage'
 import { runLegacyBlobMigrationAndFinalize } from './legacy-blob-migration'
 import { runLegacyChatEvictionIfNeeded } from './legacy-chat-eviction'
-import {
-  legacyKeyProbeAllowsBinding,
-  probeLegacyDataWithLocalKeys,
-} from './legacy-key-probe'
 import { projectStorage } from './project-storage'
 import { streamingTracker } from './streaming-tracker'
 import { isUploadableChat } from './sync-predicates'
@@ -1173,11 +1169,14 @@ export class CloudSyncService {
     // would migrate them. Adopt the local CEK as the current key here so
     // the rewrap gate below passes. Safe because we already hold the CEK
     // and a legacy passkey wrapping it stays promotable afterwards.
+    // Adoption is not gated on a decrypt probe: the migration sweep is
+    // self-guarding (the enclave rewraps only rows it successfully
+    // decrypts; the rest stay legacy with a cooldown stamp), and probing
+    // a sample of rows misclassified mixed-key accounts — rows sealed
+    // under several historical keys — as total mismatches, silently
+    // blocking any migration at all.
     if (!currentKeyId && current.has_data && localKeyId) {
-      if (
-        (await this.localKeysCanDecryptRemoteData()) &&
-        (await this.adoptLocalKeyForMigration())
-      ) {
+      if (await this.adoptLocalKeyForMigration()) {
         currentKeyId = localKeyId
       }
     }
@@ -1224,25 +1223,6 @@ export class CloudSyncService {
           action: 'kickLegacyBlobMigration',
         })
       })
-  }
-
-  /**
-   * Probe whether the local key set can actually unseal the user's
-   * existing remote data before adopting the local CEK as the registered
-   * current key. Adoption permanently binds the registry to this key, so
-   * registering a stale local CEK over data sealed under a different key
-   * would strand the data and block the correct key from ever being
-   * promoted. Pulls a few rows per scope with the full candidate set:
-   * any successful decrypt proves the keys match; rows that all fail
-   * with UNKNOWN_KEY prove they don't. When no row can be sampled at
-   * all, adoption proceeds (nothing observable contradicts the key, and
-   * a wrong adoption only blocks rewraps, which recovery can later fix).
-   */
-  private async localKeysCanDecryptRemoteData(): Promise<boolean> {
-    const result = await probeLegacyDataWithLocalKeys({
-      action: 'localKeysCanDecryptRemoteData',
-    })
-    return legacyKeyProbeAllowsBinding(result)
   }
 
   /**
