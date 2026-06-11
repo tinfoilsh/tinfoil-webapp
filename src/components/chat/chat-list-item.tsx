@@ -375,18 +375,16 @@ export function ChatListItem({
                     ) : !chat.isBlankChat &&
                       chat.pendingSave &&
                       !isStreaming ? (
-                      <>
-                        {messageCount > 0 && (
-                          <span className="text-xs text-content-muted">·</span>
-                        )}
-                        <span className="flex items-center gap-0.5 text-xs leading-none text-orange-500">
-                          <CloudArrowUpIcon
-                            className="h-3 w-3"
-                            aria-hidden="true"
-                          />
-                          Syncing with cloud
-                        </span>
-                      </>
+                      <span
+                        className="flex items-center text-blue-500"
+                        title="Syncing with cloud"
+                      >
+                        <CloudArrowUpIcon
+                          className="h-3 w-3"
+                          aria-hidden="true"
+                        />
+                        <span className="sr-only">Syncing with cloud</span>
+                      </span>
                     ) : null}
                   </>
                 )}
