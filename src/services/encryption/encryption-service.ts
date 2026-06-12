@@ -216,7 +216,12 @@ export class EncryptionService {
 
       this.currentKeyString = keyString
       this.fallbackKeyStrings = history
-      dispatchEncryptionKeyChanged()
+      // Listeners derive from the persisted key (getKey reads
+      // localStorage), so a staged key must not announce a change
+      // yet; persistCurrentKeyState emits once the commit lands.
+      if (persist) {
+        dispatchEncryptionKeyChanged()
+      }
     } catch (error) {
       if (
         error instanceof Error &&
@@ -258,6 +263,7 @@ export class EncryptionService {
         rollbackAction: 'setKeyRollback',
       },
     )
+    dispatchEncryptionKeyChanged()
   }
 
   // Get current encryption key as alphanumeric string
