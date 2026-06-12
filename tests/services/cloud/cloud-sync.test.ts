@@ -32,8 +32,13 @@ const mockKeyCurrent = vi.fn()
 const mockPrimaryKeyIdHex = vi.fn()
 const mockRegisterKey = vi.fn()
 const mockRequirePrimaryKeyB64 = vi.fn()
+const mockRequirePrimaryKeyBytes = vi.fn()
 const mockPull = vi.fn()
 const mockMigrationKeys = vi.fn()
+const mockGetCachedPrfResult = vi.fn()
+const mockDeriveKeyEncryptionKey = vi.fn()
+const mockLoadPasskeyCredentials = vi.fn()
+const mockWrapCekForCredential = vi.fn()
 
 const mockIsStreaming = vi.fn()
 const mockOnStreamEnd = vi.fn()
@@ -110,7 +115,24 @@ vi.mock('@/services/cloud/cek-encoding', () => ({
   hasPrimaryKey: () => mockGetKey() != null,
   primaryKeyIdHexOrNull: (...args: any[]) => mockPrimaryKeyIdHex(...args),
   requirePrimaryKeyB64: (...args: any[]) => mockRequirePrimaryKeyB64(...args),
+  requirePrimaryKeyBytes: (...args: any[]) =>
+    mockRequirePrimaryKeyBytes(...args),
   migrationKeys: (...args: any[]) => mockMigrationKeys(...args),
+}))
+
+vi.mock('@/services/passkey/passkey-service', () => ({
+  getCachedPrfResult: (...args: any[]) => mockGetCachedPrfResult(...args),
+  deriveKeyEncryptionKey: (...args: any[]) =>
+    mockDeriveKeyEncryptionKey(...args),
+}))
+
+vi.mock('@/services/passkey/passkey-key-storage', () => ({
+  loadPasskeyCredentials: (...args: any[]) =>
+    mockLoadPasskeyCredentials(...args),
+}))
+
+vi.mock('@/services/sync-enclave/key-bundle', () => ({
+  wrapCekForCredential: (...args: any[]) => mockWrapCekForCredential(...args),
 }))
 
 vi.mock('@/services/cloud/streaming-tracker', () => ({
@@ -157,6 +179,16 @@ describe('CloudSyncService', () => {
     mockPrimaryKeyIdHex.mockResolvedValue(null)
     mockRegisterKey.mockResolvedValue({ key_id: 'kid-local' })
     mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
+    mockRequirePrimaryKeyBytes.mockReturnValue(new Uint8Array(32))
+    mockGetCachedPrfResult.mockReturnValue(null)
+    mockLoadPasskeyCredentials.mockResolvedValue([])
+    mockDeriveKeyEncryptionKey.mockResolvedValue('kek')
+    mockWrapCekForCredential.mockResolvedValue({
+      credentialId: 'cred-1',
+      kekIvHex: 'iv-hex',
+      wrappedKeyHex: 'wrapped-hex',
+      saltHex: '',
+    })
     mockRunLegacyBlobMigration.mockResolvedValue({
       scopes: [],
       totalMigrated: 0,
@@ -707,6 +739,110 @@ describe('CloudSyncService', () => {
       await flush()
 
       expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('attaches an initial bundle when a cached PRF matches a stored credential', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
+
+      const prfOutput = new Uint8Array(32).buffer
+      mockGetCachedPrfResult.mockReturnValue({
+        credentialId: 'cred-1',
+        prfOutput,
+      })
+      mockLoadPasskeyCredentials.mockResolvedValue([{ id: 'cred-1' }])
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockDeriveKeyEncryptionKey).toHaveBeenCalledWith(prfOutput)
+      expect(mockWrapCekForCredential).toHaveBeenCalledWith({
+        credentialId: 'cred-1',
+        kek: 'kek',
+        cek: new Uint8Array(32),
+      })
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRegisterKey.mock.calls[0]?.[0]).toMatchObject({
+        keyB64: 'cek-b64',
+        createdVia: 'recovery',
+        initialBundle: {
+          credentialId: 'cred-1',
+          kekIvHex: 'iv-hex',
+          encryptedKeysHex: 'wrapped-hex',
+        },
+      })
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('adopts bundleless when the cached PRF credential is not on the account', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
+
+      // Stale cache: the passkey was deleted or re-created, so the
+      // cached credential id no longer appears in the user's stored
+      // credentials. Attaching a bundle wrapped under it would make the
+      // account look passkey-recoverable when it is not.
+      mockGetCachedPrfResult.mockReturnValue({
+        credentialId: 'cred-stale',
+        prfOutput: new Uint8Array(32).buffer,
+      })
+      mockLoadPasskeyCredentials.mockResolvedValue([{ id: 'cred-other' }])
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockWrapCekForCredential).not.toHaveBeenCalled()
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRegisterKey.mock.calls[0]?.[0]).not.toHaveProperty(
+        'initialBundle',
+      )
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('still adopts the key when bundle building fails', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
+
+      // The bundle is best-effort: a credentials lookup failure must
+      // not block adoption, or the migration gate would never open.
+      mockGetCachedPrfResult.mockReturnValue({
+        credentialId: 'cred-1',
+        prfOutput: new Uint8Array(32).buffer,
+      })
+      mockLoadPasskeyCredentials.mockRejectedValue(new Error('offline'))
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRegisterKey.mock.calls[0]?.[0]).not.toHaveProperty(
+        'initialBundle',
+      )
       expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
     })
 

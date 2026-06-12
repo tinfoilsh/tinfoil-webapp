@@ -21,6 +21,15 @@ export function requirePrimaryKeyB64(): string {
 }
 
 /**
+ * Raw bytes of the current primary CEK. Throws when no key is
+ * loaded. For callers that wrap the CEK (e.g. passkey bundles)
+ * rather than ship it over the wire.
+ */
+export function requirePrimaryKeyBytes(): Uint8Array {
+  return encryptionService.getKeyBytesOrThrow()
+}
+
+/**
  * Encode the persisted (committed) primary CEK as base64, or null
  * when no key has been committed to storage. Unlike
  * `requirePrimaryKeyB64()` this ignores a staged in-memory key, so
