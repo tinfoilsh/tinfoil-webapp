@@ -67,6 +67,12 @@ export function useSyncEnclaveSession(
   const [lastError, setLastError] = useState<Error | null>(null)
 
   const generationRef = useRef(0)
+  // The CEK the session currently considers live. `clear()` nulls it
+  // synchronously, so retry ticks or late `retry()` calls scheduled
+  // before React tears the timer down see a mismatch and bail instead
+  // of re-attesting with a stale CEK. The generation counter alone
+  // cannot stop them: each new attestAndDerive call self-bumps it.
+  const activeCekRef = useRef<string | null>(null)
   const isMountedRef = useRef(true)
   const onReadyRef = useRef(options?.onReady)
   onReadyRef.current = options?.onReady
@@ -87,12 +93,14 @@ export function useSyncEnclaveSession(
   }, [])
 
   const attestAndDerive = useCallback(async (cekHexValue: string) => {
+    if (cekHexValue !== activeCekRef.current) return
     const gen = ++generationRef.current
     setStatus('attesting')
     setLastError(null)
     try {
       await getSyncEnclaveClient()
       if (!isMountedRef.current || gen !== generationRef.current) return
+      if (cekHexValue !== activeCekRef.current) return
       setCekHex(cekHexValue)
       setStatus('ready')
       logInfo('sync enclave session ready', {
@@ -125,6 +133,7 @@ export function useSyncEnclaveSession(
   // Eager (re)-attest when the unlocked CEK changes.
   useEffect(() => {
     if (!unlockedCekHex) {
+      activeCekRef.current = null
       generationRef.current++
       setStatus('idle')
       setCekHex(null)
@@ -132,6 +141,7 @@ export function useSyncEnclaveSession(
       setLastError(null)
       return
     }
+    activeCekRef.current = unlockedCekHex
     void attestAndDerive(unlockedCekHex)
   }, [unlockedCekHex, attestAndDerive])
 
@@ -150,6 +160,7 @@ export function useSyncEnclaveSession(
   }, [unlockedCekHex, attestAndDerive])
 
   const clear = useCallback(() => {
+    activeCekRef.current = null
     generationRef.current++
     setStatus('idle')
     setCekHex(null)
