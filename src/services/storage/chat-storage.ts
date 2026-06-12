@@ -108,6 +108,7 @@ export class ChatStorageService {
     return {
       ...chatToSave,
       isLocalOnly: storageChat.isLocalOnly,
+      updatedAt: storageChat.updatedAt,
       createdAt:
         chatToSave.createdAt instanceof Date
           ? chatToSave.createdAt
@@ -131,7 +132,6 @@ export class ChatStorageService {
       locallyModified,
       syncVersion,
       decryptionFailed,
-      updatedAt,
       model,
       version,
       pendingSave,
@@ -241,7 +241,6 @@ export class ChatStorageService {
         locallyModified,
         syncVersion,
         decryptionFailed,
-        updatedAt,
         model,
         version,
         pendingSave,
@@ -268,7 +267,6 @@ export class ChatStorageService {
       ({
         lastAccessedAt,
         syncVersion,
-        updatedAt,
         model,
         version,
         pendingSave,
