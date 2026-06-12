@@ -40,6 +40,7 @@ import {
   CloudKeySetupError,
   validateCurrentPrimaryKey,
 } from './cloud-key-preflight'
+import { reportKeyHealthy } from './sync-health'
 
 export type CloudKeyAuthorizationMode = 'validated' | 'explicit_start_fresh'
 
@@ -101,6 +102,9 @@ export async function getCurrentCloudKeyAuthorizationMode(): Promise<CloudKeyAut
 export async function canWriteToCloud(): Promise<boolean> {
   const validation = await validateCurrentPrimaryKey()
   if (!validation.canWrite) return false
+  // The enclave just confirmed the local key is authoritative, so any
+  // surfaced key problem is stale — clear the sync-health gate.
+  reportKeyHealthy()
   if (validation.remoteState === 'empty' && isCloudSyncEnabled()) {
     return registerKeyForEmptyRemote()
   }

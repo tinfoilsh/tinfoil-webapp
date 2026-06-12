@@ -5,6 +5,7 @@ import {
   CloudArrowUpIcon,
   CloudIcon,
   EllipsisVerticalIcon,
+  ExclamationTriangleIcon,
   FolderIcon,
   PencilSquareIcon,
   TrashIcon,
@@ -68,6 +69,12 @@ interface ChatListItemProps {
    * "Syncing with cloud" badge stays hidden until then.
    */
   isStreaming?: boolean
+  /**
+   * True when this chat's last upload attempt failed terminally
+   * (per the sync-health store). Shows a quiet warning icon so the
+   * failure is visible without blocking anything.
+   */
+  syncFailed?: boolean
   enableTitleAnimation?: boolean
   isDraggable?: boolean
   showMoveToProject?: boolean
@@ -95,6 +102,7 @@ export function ChatListItem({
   showEncryptionStatus = false,
   showSyncStatus = false,
   isStreaming = false,
+  syncFailed = false,
   enableTitleAnimation = false,
   isDraggable = false,
   showMoveToProject = false,
@@ -347,6 +355,7 @@ export function ChatListItem({
               (messageCount > 0 && timestamp) ||
               (showSyncStatus &&
                 (chat.isLocalOnly ||
+                  (!chat.isBlankChat && syncFailed) ||
                   (!chat.isBlankChat &&
                     chat.pendingSave &&
                     !isStreaming)))) && (
@@ -387,6 +396,19 @@ export function ChatListItem({
                           Only saved locally
                         </span>
                       </>
+                    ) : !chat.isBlankChat && syncFailed ? (
+                      <span
+                        className="flex items-center text-orange-500"
+                        title="This chat couldn't be synced"
+                      >
+                        <ExclamationTriangleIcon
+                          className="h-3 w-3"
+                          aria-hidden="true"
+                        />
+                        <span className="sr-only">
+                          This chat couldn&apos;t be synced
+                        </span>
+                      </span>
                     ) : !chat.isBlankChat &&
                       chat.pendingSave &&
                       !isStreaming ? (

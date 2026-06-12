@@ -79,6 +79,7 @@ import { IoShieldCheckmark } from 'react-icons/io5'
 import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
+import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -3040,6 +3041,19 @@ ${encryptionKey.replace('key_', '')}
                         </label>
                       </div>
                     </div>
+                    {cloudSyncEnabled && (
+                      <CloudSyncHealthCard
+                        isDarkMode={isDarkMode}
+                        onRecoverClick={
+                          onCloudSyncSetupClick
+                            ? () => {
+                                setIsOpen(false)
+                                onCloudSyncSetupClick()
+                              }
+                            : undefined
+                        }
+                      />
+                    )}
                   </div>
 
                   {/* Your Personal Encryption Key - Collapsible */}

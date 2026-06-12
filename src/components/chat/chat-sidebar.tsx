@@ -8,6 +8,7 @@ import {
   UI_SIDEBAR_PROJECTS_EXPANDED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
+import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -187,6 +188,7 @@ export function ChatSidebar({
   chatDecryptionProgress,
   isStreaming,
 }: ChatSidebarProps) {
+  const syncNeedsAttention = useSyncHealthAttention()
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -790,6 +792,13 @@ export function ChatSidebar({
                 aria-label="Settings"
               >
                 <Cog6ToothIcon className="h-5 w-5" />
+                {syncNeedsAttention && (
+                  <span
+                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings
@@ -843,9 +852,16 @@ export function ChatSidebar({
                 type="button"
                 onClick={onSettingsClick}
                 aria-label="Settings"
-                className="rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
+                className="relative rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
               >
                 <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
+                {syncNeedsAttention && (
+                  <span
+                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
               <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings

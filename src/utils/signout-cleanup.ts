@@ -6,6 +6,7 @@ import {
 } from '@/constants/storage-keys'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { profileSync } from '@/services/cloud/profile-sync'
+import { resetSyncHealth } from '@/services/cloud/sync-health'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
 import { projectEvents } from '@/services/project/project-events'
@@ -48,6 +49,7 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   // Clear sync caches so stale state doesn't leak into the next session
   cloudSync.clearSyncStatus()
   deletedChatsTracker.clear()
+  resetSyncHealth()
 
   // Clear project event handlers
   projectEvents.clear()

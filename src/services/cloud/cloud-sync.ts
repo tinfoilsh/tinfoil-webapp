@@ -41,6 +41,13 @@ import { runLegacyBlobMigrationAndFinalize } from './legacy-blob-migration'
 import { runLegacyChatEvictionIfNeeded } from './legacy-chat-eviction'
 import { projectStorage } from './project-storage'
 import { streamingTracker } from './streaming-tracker'
+import {
+  reportChatSynced,
+  reportChatSyncFailed,
+  reportKeyActionRequired,
+  reportSyncPaused,
+  reportSyncSuccess,
+} from './sync-health'
 import { isUploadableChat } from './sync-predicates'
 import { SyncStatusCache } from './sync-status-cache'
 import { UploadCoalescer } from './upload-coalescer'
@@ -512,6 +519,12 @@ export class CloudSyncService {
 
       // Detect cross-scope moves (chats moving between projects)
       await this.syncCrossScope(result)
+      // Only a clean pass may clear a paused gate: a pass that
+      // accumulated errors (e.g. attestation trouble) "completing"
+      // must not hide the very problem it hit.
+      if (result.errors.length === 0) {
+        reportSyncSuccess()
+      }
     } catch (error) {
       result.errors.push(
         `Sync failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -752,6 +765,7 @@ export class CloudSyncService {
         preUploadUpdatedAt,
         syncVersion: syncVersion ?? preUploadVersion + 1,
       })
+      reportChatSynced(chatId)
     } catch (error) {
       // Silently fail if no auth token set
       if (
@@ -764,10 +778,10 @@ export class CloudSyncService {
       // that have a defined client-side recovery (§C5). For STALE_BLOB
       // / SYNC_CONFLICT, last-write-wins by pulling the remote and
       // replacing the local row so the chat exits `locallyModified`
-      // and stops re-attempting. For STALE_KEY / UNKNOWN_KEY, fire
-      // the rotation-check signal and abort without retrying. Other
-      // codes still bubble up so the coalescer can retry where the
-      // recovery table says transient.
+      // and stops re-attempting. Terminal failures report into the
+      // sync-health store so the settings status row and the sidebar
+      // badge surface them. Other codes still bubble up so the
+      // coalescer can retry where the recovery table says transient.
       const decision = decideRecovery(error)
       logInfo('upload-chat recovery decision', {
         component: 'CloudSync',
@@ -784,31 +798,36 @@ export class CloudSyncService {
         return
       }
       if (decision.action.type === 'refresh-current-key-and-retry') {
-        this.notifyKeyRefreshNeeded()
+        reportKeyActionRequired('key-mismatch')
         return
       }
       if (decision.action.type === 'trigger-recovery-wizard') {
-        this.notifyRecoveryNeeded()
+        reportKeyActionRequired('key-recovery')
         return
       }
       if (decision.action.type === 'block-all-sync') {
-        this.notifyAttestationFailure()
+        reportSyncPaused('attestation')
         return
       }
       if (decision.action.type === 'surface-existing-data-under-other-key') {
-        this.notifyExistingDataUnderOtherKey()
+        reportKeyActionRequired('key-conflict')
         return
       }
       if (decision.action.type === 'surface-not-found') {
-        this.notifyChatNotFound(chatId)
+        reportChatSyncFailed(chatId, 'This chat no longer exists in the cloud')
         return
       }
       if (decision.action.type === 'migrate-legacy-and-retry') {
-        this.notifyLegacyMigrationNeeded(decision.action.scope)
+        // Handled out-of-band by the migration kick on the next sync
+        // pass; nothing for the user to act on.
         return
       }
       if (decision.action.type === 'abort') {
-        this.notifyUploadAborted(chatId, decision.action.reason)
+        if (decision.action.reason === 'FORBIDDEN') {
+          reportKeyActionRequired('account-blocked')
+        } else {
+          reportChatSyncFailed(chatId, "This chat couldn't be synced")
+        }
         return
       }
       throw error
@@ -842,56 +861,6 @@ export class CloudSyncService {
         metadata: { chatId },
       })
     }
-  }
-
-  private notifyKeyRefreshNeeded(): void {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(new CustomEvent('tinfoil:sync-key-refresh-needed'))
-  }
-
-  private notifyRecoveryNeeded(): void {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(new CustomEvent('tinfoil:sync-recovery-needed'))
-  }
-
-  private notifyAttestationFailure(): void {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(new CustomEvent('tinfoil:sync-attestation-failed'))
-  }
-
-  private notifyExistingDataUnderOtherKey(): void {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(
-      new CustomEvent('tinfoil:sync-existing-data-under-other-key'),
-    )
-  }
-
-  private notifyChatNotFound(chatId: string): void {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(
-      new CustomEvent('tinfoil:sync-chat-not-found', { detail: { chatId } }),
-    )
-  }
-
-  private notifyLegacyMigrationNeeded(scope?: string): void {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(
-      new CustomEvent('tinfoil:sync-legacy-migration-needed', {
-        detail: { scope },
-      }),
-    )
-  }
-
-  private notifyUploadAborted(
-    chatId: string,
-    reason: 'IDEMPOTENCY_CONFLICT' | 'FORBIDDEN' | 'UNKNOWN',
-  ): void {
-    if (typeof window === 'undefined') return
-    window.dispatchEvent(
-      new CustomEvent('tinfoil:sync-upload-aborted', {
-        detail: { chatId, reason },
-      }),
-    )
   }
 
   // Backup all unsynced chats
@@ -935,6 +904,7 @@ export class CloudSyncService {
           await this.uploadCoalescer.enqueueAndWait(chat.id)
           result.uploaded++
         } catch (error) {
+          reportChatSyncFailed(chat.id, "This chat couldn't be synced")
           result.errors.push(
             `Failed to backup chat ${chat.id}: ${error instanceof Error ? error.message : String(error)}`,
           )
@@ -1120,6 +1090,12 @@ export class CloudSyncService {
       // Detect cross-scope moves (chats moving between projects)
       await this.syncCrossScope(result)
       void this.kickLegacyBlobMigration()
+      // Only a clean pass may clear a paused gate: a pass that
+      // accumulated errors (e.g. attestation trouble) "completing"
+      // must not hide the very problem it hit.
+      if (result.errors.length === 0) {
+        reportSyncSuccess()
+      }
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error))
     }
@@ -1413,6 +1389,7 @@ export class CloudSyncService {
       // Successfully deleted from cloud, can remove from tracker
       // This allows the chat to be re-created with the same ID if needed
       deletedChatsTracker.removeFromDeleted(chatId)
+      reportChatSynced(chatId)
 
       logInfo('Chat successfully deleted from cloud', {
         component: 'CloudSync',
