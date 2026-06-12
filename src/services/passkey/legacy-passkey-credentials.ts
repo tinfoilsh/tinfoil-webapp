@@ -40,7 +40,11 @@ export async function fetchLegacyPasskeyCredentials(): Promise<
       component: 'LegacyPasskeyCredentials',
       action: 'fetchLegacyPasskeyCredentials',
     })
-    return []
+    // Re-throw so callers can tell "no credentials exist" (404/401 or
+    // an empty array) apart from "could not find out"; swallowing the
+    // failure as [] would misroute recovery into first-time setup and
+    // let deletePasskeyCredential report a false success.
+    throw err
   }
 }
 
