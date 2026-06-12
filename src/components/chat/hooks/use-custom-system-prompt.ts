@@ -195,9 +195,11 @@ export const useCustomSystemPrompt = (
 
   // Shared helper to replace placeholders in text
   const replacePlaceholders = (text: string): string => {
-    // Personalization applies whenever any field is filled. The
-    // generator returns an empty string when nothing is set.
-    const userPreferencesXML = generateUserPreferencesXML()
+    // Personalization is opt-in: even when fields are filled, nothing
+    // is sent to the model unless the user enabled the toggle.
+    const userPreferencesXML = personalization.isEnabled
+      ? generateUserPreferencesXML()
+      : ''
 
     // Get the effective language (default to English if not set)
     const effectiveLanguage = personalization.language.trim() || 'English'
@@ -251,6 +253,7 @@ export const useCustomSystemPrompt = (
   return {
     effectiveSystemPrompt,
     processedRules: processRules(),
-    isUsingPersonalization: generateUserPreferencesXML().length > 0,
+    isUsingPersonalization:
+      personalization.isEnabled && generateUserPreferencesXML().length > 0,
   }
 }
