@@ -3,10 +3,15 @@ import { CloudSyncService } from '@/services/cloud/cloud-sync'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetAllChats = vi.fn()
+const mockGetCloudChatCount = vi.fn()
 const mockGetUnsyncedChats = vi.fn()
 const mockGetChat = vi.fn()
 const mockSaveChat = vi.fn()
+const mockSaveExistingChat = vi.fn()
 const mockMarkAsSynced = vi.fn()
+const mockFinalizeUpload = vi.fn()
+const mockApplyRemoteChatIfFresh = vi.fn()
+const mockResetSyncMetadataForAllChats = vi.fn()
 const mockDeleteChat = vi.fn()
 
 const mockIsAuthenticated = vi.fn()
@@ -20,6 +25,20 @@ const mockListProjectChats = vi.fn()
 const mockGetProjectChatsSyncStatus = vi.fn()
 
 const mockEncryptionInitialize = vi.fn()
+const mockGetKey = vi.fn()
+const mockRunLegacyBlobMigration = vi.fn()
+const mockRunLegacyChatEviction = vi.fn()
+const mockKeyCurrent = vi.fn()
+const mockPrimaryKeyIdHex = vi.fn()
+const mockRegisterKey = vi.fn()
+const mockRequirePrimaryKeyB64 = vi.fn()
+const mockRequirePrimaryKeyBytes = vi.fn()
+const mockPull = vi.fn()
+const mockMigrationKeys = vi.fn()
+const mockGetCachedPrfResult = vi.fn()
+const mockDeriveKeyEncryptionKey = vi.fn()
+const mockLoadPasskeyCredentials = vi.fn()
+const mockWrapCekForCredential = vi.fn()
 
 const mockIsStreaming = vi.fn()
 const mockOnStreamEnd = vi.fn()
@@ -38,9 +57,16 @@ vi.mock('@/utils/error-handling', () => ({
 vi.mock('@/services/storage/indexed-db', () => ({
   indexedDBStorage: {
     getAllChats: (...args: any[]) => mockGetAllChats(...args),
+    getCloudChatCount: (...args: any[]) => mockGetCloudChatCount(...args),
     getUnsyncedChats: (...args: any[]) => mockGetUnsyncedChats(...args),
     saveChat: (...args: any[]) => mockSaveChat(...args),
+    saveExistingChat: (...args: any[]) => mockSaveExistingChat(...args),
     markAsSynced: (...args: any[]) => mockMarkAsSynced(...args),
+    finalizeUpload: (...args: any[]) => mockFinalizeUpload(...args),
+    applyRemoteChatIfFresh: (...args: any[]) =>
+      mockApplyRemoteChatIfFresh(...args),
+    resetSyncMetadataForAllChats: (...args: any[]) =>
+      mockResetSyncMetadataForAllChats(...args),
     getChat: (...args: any[]) => mockGetChat(...args),
     deleteChat: (...args: any[]) => mockDeleteChat(...args),
   },
@@ -74,7 +100,39 @@ vi.mock('@/services/cloud/cloud-key-authorization', () => ({
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
     initialize: (...args: any[]) => mockEncryptionInitialize(...args),
+    getKey: (...args: any[]) => mockGetKey(...args),
   },
+}))
+
+vi.mock('@/services/sync-enclave/sync-api', () => ({
+  keyCurrent: (...args: any[]) => mockKeyCurrent(...args),
+  newIdempotencyKey: () => 'idem-test-key',
+  registerKey: (...args: any[]) => mockRegisterKey(...args),
+  pull: (...args: any[]) => mockPull(...args),
+}))
+
+vi.mock('@/services/cloud/cek-encoding', () => ({
+  hasPrimaryKey: () => mockGetKey() != null,
+  primaryKeyIdHexOrNull: (...args: any[]) => mockPrimaryKeyIdHex(...args),
+  requirePrimaryKeyB64: (...args: any[]) => mockRequirePrimaryKeyB64(...args),
+  requirePrimaryKeyBytes: (...args: any[]) =>
+    mockRequirePrimaryKeyBytes(...args),
+  migrationKeys: (...args: any[]) => mockMigrationKeys(...args),
+}))
+
+vi.mock('@/services/passkey/passkey-service', () => ({
+  getCachedPrfResult: (...args: any[]) => mockGetCachedPrfResult(...args),
+  deriveKeyEncryptionKey: (...args: any[]) =>
+    mockDeriveKeyEncryptionKey(...args),
+}))
+
+vi.mock('@/services/passkey/passkey-key-storage', () => ({
+  loadPasskeyCredentials: (...args: any[]) =>
+    mockLoadPasskeyCredentials(...args),
+}))
+
+vi.mock('@/services/sync-enclave/key-bundle', () => ({
+  wrapCekForCredential: (...args: any[]) => mockWrapCekForCredential(...args),
 }))
 
 vi.mock('@/services/cloud/streaming-tracker', () => ({
@@ -95,15 +153,52 @@ vi.mock('@/services/cloud/chat-ingestion', () => ({
   syncRemoteDeletions: (...args: any[]) => mockSyncRemoteDeletions(...args),
 }))
 
+vi.mock('@/services/cloud/legacy-blob-migration', () => ({
+  runLegacyBlobMigrationAndFinalize: (...args: any[]) =>
+    mockRunLegacyBlobMigration(...args),
+}))
+
+vi.mock('@/services/cloud/legacy-chat-eviction', () => ({
+  runLegacyChatEvictionIfNeeded: (...args: any[]) =>
+    mockRunLegacyChatEviction(...args),
+}))
+
 describe('CloudSyncService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.removeItem(SYNC_CHAT_STATUS)
     mockSaveChat.mockResolvedValue(undefined)
+    mockSaveExistingChat.mockResolvedValue(undefined)
     mockMarkAsSynced.mockResolvedValue(undefined)
+    mockFinalizeUpload.mockResolvedValue(undefined)
+    mockApplyRemoteChatIfFresh.mockResolvedValue({ applied: true })
+    mockResetSyncMetadataForAllChats.mockResolvedValue(undefined)
     mockDeleteChat.mockResolvedValue(undefined)
+    mockGetKey.mockReturnValue(null)
+    mockKeyCurrent.mockResolvedValue({ key_id: null })
+    mockPrimaryKeyIdHex.mockResolvedValue(null)
+    mockRegisterKey.mockResolvedValue({ key_id: 'kid-local' })
+    mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
+    mockRequirePrimaryKeyBytes.mockReturnValue(new Uint8Array(32))
+    mockGetCachedPrfResult.mockReturnValue(null)
+    mockLoadPasskeyCredentials.mockResolvedValue([])
+    mockDeriveKeyEncryptionKey.mockResolvedValue('kek')
+    mockWrapCekForCredential.mockResolvedValue({
+      credentialId: 'cred-1',
+      kekIvHex: 'iv-hex',
+      wrappedKeyHex: 'wrapped-hex',
+      saltHex: '',
+    })
+    mockRunLegacyBlobMigration.mockResolvedValue({
+      scopes: [],
+      totalMigrated: 0,
+      totalRemaining: 0,
+      totalBlocked: 0,
+      fullyMigrated: true,
+    })
+    mockRunLegacyChatEviction.mockResolvedValue(undefined)
     mockIsAuthenticated.mockResolvedValue(true)
-    mockUploadChat.mockResolvedValue(null)
+    mockUploadChat.mockResolvedValue({ syncVersion: null, rewrites: [] })
     mockGetChatSyncStatus.mockResolvedValue({ count: 0, lastUpdated: null })
     mockGetAllChatsSyncStatus.mockResolvedValue({
       count: 0,
@@ -137,54 +232,6 @@ describe('CloudSyncService', () => {
     mockSyncRemoteDeletions.mockResolvedValue(undefined)
   })
 
-  describe('reencryptAndUploadChats', () => {
-    it('does not upload local-only chats', async () => {
-      mockGetAllChats.mockResolvedValue([
-        {
-          id: 'local-only-1',
-          title: 'Local only',
-          messages: [],
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: false,
-          isLocalOnly: true,
-          decryptionFailed: false,
-          encryptedData: undefined,
-          syncVersion: 10,
-        },
-        {
-          id: 'cloud-1',
-          title: 'Cloud',
-          messages: [],
-          createdAt: '2024-01-02T00:00:00.000Z',
-          updatedAt: '2024-01-02T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: false,
-          isLocalOnly: false,
-          decryptionFailed: false,
-          encryptedData: undefined,
-          syncVersion: 1,
-        },
-      ])
-
-      const service = new CloudSyncService()
-      const result = await service.reencryptAndUploadChats()
-
-      expect(mockUploadChat).toHaveBeenCalledTimes(1)
-      expect(mockUploadChat.mock.calls[0]?.[0]?.id).toBe('cloud-1')
-
-      // We persist the chat (with bumped syncVersion) only for the one we upload
-      expect(mockSaveChat).toHaveBeenCalledTimes(1)
-      expect(mockSaveChat.mock.calls[0]?.[0]?.id).toBe('cloud-1')
-      expect(mockMarkAsSynced).toHaveBeenCalledTimes(1)
-
-      expect(result.uploaded).toBe(1)
-      expect(result.reencrypted).toBe(1)
-      expect(result.errors).toEqual([])
-    })
-  })
-
   describe('backupChat', () => {
     it('skips local-only chats', async () => {
       mockGetChat.mockResolvedValue({
@@ -203,7 +250,7 @@ describe('CloudSyncService', () => {
       await service.backupChat('local-only-1')
 
       expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(mockMarkAsSynced).not.toHaveBeenCalled()
+      expect(mockFinalizeUpload).not.toHaveBeenCalled()
     })
 
     it('skips blank chats', async () => {
@@ -223,7 +270,7 @@ describe('CloudSyncService', () => {
       await service.backupChat('blank-1')
 
       expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(mockMarkAsSynced).not.toHaveBeenCalled()
+      expect(mockFinalizeUpload).not.toHaveBeenCalled()
     })
 
     it('marks chat as synced with incremented version on success', async () => {
@@ -245,13 +292,19 @@ describe('CloudSyncService', () => {
       await service.waitForUpload('cloud-1')
 
       expect(mockUploadChat).toHaveBeenCalledTimes(1)
-      expect(mockMarkAsSynced).toHaveBeenCalledTimes(1)
-      expect(mockMarkAsSynced).toHaveBeenCalledWith('cloud-1', 8)
+      expect(mockFinalizeUpload).toHaveBeenCalledTimes(1)
+      expect(mockFinalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: 'cloud-1',
+          syncVersion: 8,
+          rewrites: [],
+        }),
+      )
     })
   })
 
   describe('backupUnsyncedChats', () => {
-    it('filters out local-only, streaming, blank, failed-decryption and encryptedData chats', async () => {
+    it('filters out local-only, streaming, blank, and failed-decryption chats', async () => {
       const good = {
         id: 'cloud-1',
         title: 'Good',
@@ -262,7 +315,6 @@ describe('CloudSyncService', () => {
         isBlankChat: false,
         isLocalOnly: false,
         decryptionFailed: false,
-        encryptedData: undefined,
         syncVersion: 3,
       }
 
@@ -270,7 +322,6 @@ describe('CloudSyncService', () => {
         { ...good, id: 'local-only', isLocalOnly: true },
         { ...good, id: 'blank', isBlankChat: true },
         { ...good, id: 'failed', decryptionFailed: true },
-        { ...good, id: 'encrypted', encryptedData: '{"x":"y"}' },
         { ...good, id: 'streaming' },
         good,
       ])
@@ -287,7 +338,9 @@ describe('CloudSyncService', () => {
 
       expect(mockUploadChat).toHaveBeenCalledTimes(1)
       expect(mockUploadChat.mock.calls[0]?.[0]?.id).toBe('cloud-1')
-      expect(mockMarkAsSynced).toHaveBeenCalledWith('cloud-1', 4)
+      expect(mockFinalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: 'cloud-1', syncVersion: 4 }),
+      )
       expect(result.uploaded).toBe(1)
       expect(result.errors).toEqual([])
     })
@@ -358,6 +411,78 @@ describe('CloudSyncService', () => {
       expect(status.reason).toBe('no_changes')
       expect(status.remoteCount).toBe(5)
       expect(status.remoteLastUpdated).toBe('2024-01-01T00:00:00.000Z')
+    })
+
+    it('forces a full pull when the live local chat count has dropped below the cached snapshot', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetChatSyncStatus.mockResolvedValue({
+        count: 1873,
+        lastUpdated: '2026-05-25T18:04:30.182Z',
+      })
+      mockGetCloudChatCount.mockResolvedValue(6)
+
+      localStorage.setItem(
+        SYNC_CHAT_STATUS,
+        JSON.stringify({
+          count: 1873,
+          lastUpdated: '2026-05-25T18:04:30.182Z',
+          localCount: 1633,
+        }),
+      )
+
+      const service = new CloudSyncService()
+      const status = await service.checkSyncStatus()
+
+      expect(status.needsSync).toBe(true)
+      expect(status.reason).toBe('count_changed')
+      expect(status.remoteCount).toBe(1873)
+    })
+
+    it('stays at no_changes when remote and live local counts both match the cached snapshot', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetChatSyncStatus.mockResolvedValue({
+        count: 1873,
+        lastUpdated: '2026-05-25T18:04:30.182Z',
+      })
+      mockGetCloudChatCount.mockResolvedValue(1633)
+
+      localStorage.setItem(
+        SYNC_CHAT_STATUS,
+        JSON.stringify({
+          count: 1873,
+          lastUpdated: '2026-05-25T18:04:30.182Z',
+          localCount: 1633,
+        }),
+      )
+
+      const service = new CloudSyncService()
+      const status = await service.checkSyncStatus()
+
+      expect(status.needsSync).toBe(false)
+      expect(status.reason).toBe('no_changes')
+    })
+
+    it('falls back to remote-only comparison when the snapshot predates the localCount field', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetChatSyncStatus.mockResolvedValue({
+        count: 12,
+        lastUpdated: '2024-01-01T00:00:00.000Z',
+      })
+      mockGetCloudChatCount.mockResolvedValue(0)
+
+      localStorage.setItem(
+        SYNC_CHAT_STATUS,
+        JSON.stringify({
+          count: 12,
+          lastUpdated: '2024-01-01T00:00:00.000Z',
+        }),
+      )
+
+      const service = new CloudSyncService()
+      const status = await service.checkSyncStatus()
+
+      expect(status.needsSync).toBe(false)
+      expect(status.reason).toBe('no_changes')
     })
 
     it('filters out project chats when checking non-project sync status', async () => {
@@ -432,6 +557,315 @@ describe('CloudSyncService', () => {
 
       await expect(service.syncAllChats()).rejects.toThrow('still failing')
       expect(mockListChats).toHaveBeenCalledTimes(2)
+    })
+
+    it('fetches only the first page for a default (non-deep) full sync', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({
+        conversations: [{ id: 'c1' }],
+        hasMore: true,
+        nextContinuationToken: 'tok1',
+      })
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+
+      expect(mockListChats).toHaveBeenCalledTimes(1)
+      expect(
+        mockListChats.mock.calls[0]?.[0]?.continuationToken,
+      ).toBeUndefined()
+    })
+
+    it('pages through every remote chat when a deep sync is requested', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats
+        .mockResolvedValueOnce({
+          conversations: [{ id: 'c1' }],
+          hasMore: true,
+          nextContinuationToken: 'tok1',
+        })
+        .mockResolvedValueOnce({
+          conversations: [{ id: 'c2' }],
+          hasMore: true,
+          nextContinuationToken: 'tok2',
+        })
+        .mockResolvedValueOnce({
+          conversations: [{ id: 'c3' }],
+          hasMore: false,
+        })
+      mockIngestRemoteChats.mockResolvedValue({
+        downloaded: 1,
+        errors: [],
+        savedIds: ['x'],
+      })
+
+      const service = new CloudSyncService()
+      const result = await service.syncAllChats({ deep: true })
+
+      expect(mockListChats).toHaveBeenCalledTimes(3)
+      expect(
+        mockListChats.mock.calls[0]?.[0]?.continuationToken,
+      ).toBeUndefined()
+      expect(mockListChats.mock.calls[1]?.[0]?.continuationToken).toBe('tok1')
+      expect(mockListChats.mock.calls[2]?.[0]?.continuationToken).toBe('tok2')
+      // One ingest per fetched page, all counted toward downloaded.
+      expect(mockIngestRemoteChats).toHaveBeenCalledTimes(3)
+      expect(result.downloaded).toBe(3)
+    })
+
+    it('stops deep paging when a page returns no continuation token', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({
+        conversations: [{ id: 'only' }],
+        hasMore: false,
+      })
+
+      const service = new CloudSyncService()
+      await service.syncAllChats({ deep: true })
+
+      expect(mockListChats).toHaveBeenCalledTimes(1)
+    })
+
+    it('defers the legacy blob migration until the local key is the registered current key', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({
+        conversations: [],
+        hasMore: false,
+      })
+
+      // The migration kick is fire-and-forget, so flush microtasks
+      // after each sync before asserting on its async gate.
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+      const service = new CloudSyncService()
+
+      // 1. Keyless device (e.g. a v1->v2 user still waiting on passkey
+      // recovery): the migration must not be kicked yet, and the
+      // once-per-session latch must not be consumed.
+      mockGetKey.mockReturnValue(null)
+      await service.syncAllChats()
+      await flush()
+      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
+
+      // 2. Key loaded locally but not yet registered as the
+      // controlplane's current key. migrate-all would storm the rewrap
+      // endpoint with 409 stale key, so it must not fire and the latch
+      // must stay free for a later retry.
+      mockGetKey.mockReturnValue('key_recovered')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null })
+      await service.syncAllChats()
+      await flush()
+      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
+
+      // 3. A different key is registered as current: still a mismatch,
+      // still no kick.
+      mockKeyCurrent.mockResolvedValue({ key_id: 'kid-other' })
+      await service.syncAllChats()
+      await flush()
+      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
+
+      // 4. Once the local key is the registered current key the
+      // migration kicks exactly once.
+      mockKeyCurrent.mockResolvedValue({ key_id: 'kid-local' })
+      await service.syncAllChats()
+      await flush()
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+
+      // Subsequent syncs in the same session are a no-op.
+      await service.syncAllChats()
+      await flush()
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('adopts the local key so legacy data can migrate without a passkey', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      // v1->v2 user with a local CEK and legacy data on the server, but
+      // no registered current key. The CEK is adopted as the current key
+      // (bundleless, recovery) so the rewrap gate passes and migration
+      // runs — no passkey required, and a legacy passkey wrapping the
+      // same CEK would stay promotable afterwards.
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
+      mockPull.mockResolvedValue({
+        items: [{ id: 'chat-1', ok: true, plaintext: 'cGxhaW4=' }],
+      })
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRegisterKey.mock.calls[0]?.[0]).toMatchObject({
+        keyB64: 'cek-b64',
+        ifMatch: '*',
+        createdVia: 'recovery',
+      })
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('adopts the local key even when remote rows are sealed under another key', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      // Mixed-key v1 account: legacy rows sealed under several
+      // historical keys. Adoption is not gated on a decrypt probe —
+      // the migration sweep rewraps only what the key set actually
+      // decrypts and leaves the rest on cooldown, so adoption and
+      // migration must still run.
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockRequirePrimaryKeyB64.mockReturnValue('cek-b64')
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
+      mockPull.mockResolvedValue({
+        items: [{ id: 'chat-1', ok: false, code: 'UNKNOWN_KEY' }],
+      })
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('attaches an initial bundle when a cached PRF matches a stored credential', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
+
+      const prfOutput = new Uint8Array(32).buffer
+      mockGetCachedPrfResult.mockReturnValue({
+        credentialId: 'cred-1',
+        prfOutput,
+      })
+      mockLoadPasskeyCredentials.mockResolvedValue([{ id: 'cred-1' }])
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockDeriveKeyEncryptionKey).toHaveBeenCalledWith(prfOutput)
+      expect(mockWrapCekForCredential).toHaveBeenCalledWith({
+        credentialId: 'cred-1',
+        kek: 'kek',
+        cek: new Uint8Array(32),
+      })
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRegisterKey.mock.calls[0]?.[0]).toMatchObject({
+        keyB64: 'cek-b64',
+        createdVia: 'recovery',
+        initialBundle: {
+          credentialId: 'cred-1',
+          kekIvHex: 'iv-hex',
+          encryptedKeysHex: 'wrapped-hex',
+        },
+      })
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('adopts bundleless when the cached PRF credential is not on the account', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
+
+      // Stale cache: the passkey was deleted or re-created, so the
+      // cached credential id no longer appears in the user's stored
+      // credentials. Attaching a bundle wrapped under it would make the
+      // account look passkey-recoverable when it is not.
+      mockGetCachedPrfResult.mockReturnValue({
+        credentialId: 'cred-stale',
+        prfOutput: new Uint8Array(32).buffer,
+      })
+      mockLoadPasskeyCredentials.mockResolvedValue([{ id: 'cred-other' }])
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockWrapCekForCredential).not.toHaveBeenCalled()
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRegisterKey.mock.calls[0]?.[0]).not.toHaveProperty(
+        'initialBundle',
+      )
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('still adopts the key when bundle building fails', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: true })
+      mockMigrationKeys.mockReturnValue([{ key: 'cek-b64' }])
+
+      // The bundle is best-effort: a credentials lookup failure must
+      // not block adoption, or the migration gate would never open.
+      mockGetCachedPrfResult.mockReturnValue({
+        credentialId: 'cred-1',
+        prfOutput: new Uint8Array(32).buffer,
+      })
+      mockLoadPasskeyCredentials.mockRejectedValue(new Error('offline'))
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockRegisterKey).toHaveBeenCalledTimes(1)
+      expect(mockRegisterKey.mock.calls[0]?.[0]).not.toHaveProperty(
+        'initialBundle',
+      )
+      expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not adopt the local key when the server reports no legacy data', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+      // Local CEK present and no registered key, but the server has no
+      // legacy data to migrate (has_data false). Adopting would register
+      // a key for a user who has nothing to re-seal, so it must be
+      // skipped and migration must not run.
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: null, has_data: false })
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await flush()
+
+      expect(mockRegisterKey).not.toHaveBeenCalled()
+      expect(mockRunLegacyBlobMigration).not.toHaveBeenCalled()
     })
   })
 
@@ -532,7 +966,9 @@ describe('CloudSyncService', () => {
       mockGetChat.mockResolvedValue(chat)
 
       // Make uploadChat slow so we can queue multiple calls
-      const resolvers: Array<(value: null) => void> = []
+      const resolvers: Array<
+        (value: { syncVersion: number | null; rewrites: never[] }) => void
+      > = []
       mockUploadChat.mockImplementation(
         () =>
           new Promise((resolve) => {
@@ -550,91 +986,18 @@ describe('CloudSyncService', () => {
 
       // Resolve first upload
       await new Promise((resolve) => setTimeout(resolve, 10))
-      resolvers[0]?.(null)
+      resolvers[0]?.({ syncVersion: null, rewrites: [] })
 
       await backup1
 
       // Wait and resolve second
       await new Promise((resolve) => setTimeout(resolve, 10))
-      resolvers[1]?.(null)
+      resolvers[1]?.({ syncVersion: null, rewrites: [] })
 
       await backup2
 
       // Should have uploaded twice (original + queued re-run)
       expect(mockUploadChat).toHaveBeenCalledTimes(2)
-    })
-  })
-
-  describe('reencryptAndUploadChats edge cases', () => {
-    it('skips chats that failed to decrypt', async () => {
-      mockGetAllChats.mockResolvedValue([
-        {
-          id: 'failed-decrypt',
-          title: 'Encrypted',
-          messages: [],
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: false,
-          isLocalOnly: false,
-          decryptionFailed: true,
-          encryptedData: '{"encrypted":"data"}',
-          syncVersion: 1,
-        },
-      ])
-
-      const service = new CloudSyncService()
-      const result = await service.reencryptAndUploadChats()
-
-      expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(result.uploaded).toBe(0)
-      expect(result.reencrypted).toBe(0)
-    })
-
-    it('skips blank chats during re-encryption', async () => {
-      mockGetAllChats.mockResolvedValue([
-        {
-          id: 'blank-chat',
-          title: '',
-          messages: [],
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: true,
-          isLocalOnly: false,
-          syncVersion: 1,
-        },
-      ])
-
-      const service = new CloudSyncService()
-      const result = await service.reencryptAndUploadChats()
-
-      expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(result.uploaded).toBe(0)
-    })
-
-    it('skips chats with encryptedData that need decryption first', async () => {
-      mockGetAllChats.mockResolvedValue([
-        {
-          id: 'needs-decrypt',
-          title: 'Encrypted',
-          messages: [],
-          createdAt: '2024-01-01T00:00:00.000Z',
-          updatedAt: '2024-01-01T00:00:00.000Z',
-          lastAccessedAt: Date.now(),
-          isBlankChat: false,
-          isLocalOnly: false,
-          decryptionFailed: false,
-          encryptedData: '{"still":"encrypted"}',
-          syncVersion: 1,
-        },
-      ])
-
-      const service = new CloudSyncService()
-      const result = await service.reencryptAndUploadChats()
-
-      expect(mockUploadChat).not.toHaveBeenCalled()
-      expect(result.uploaded).toBe(0)
     })
   })
 
@@ -654,7 +1017,6 @@ describe('CloudSyncService', () => {
       isBlankChat: false,
       isLocalOnly: false,
       decryptionFailed: false,
-      encryptedData: undefined,
       syncVersion: 1,
     }
 
@@ -669,11 +1031,6 @@ describe('CloudSyncService', () => {
           { ...uploadableChat, id: 'local-only', isLocalOnly: true },
           { ...uploadableChat, id: 'blank', isBlankChat: true, messages: [] },
           { ...uploadableChat, id: 'decrypt-failed', decryptionFailed: true },
-          {
-            ...uploadableChat,
-            id: 'has-encrypted-data',
-            encryptedData: '{"iv":"x"}',
-          },
           { ...uploadableChat, id: 'streaming' },
         ])
 
@@ -800,7 +1157,9 @@ describe('CloudSyncService', () => {
       // Wait for the coalesced upload to complete
       await service.waitForUpload('cloud-1')
 
-      expect(mockMarkAsSynced).toHaveBeenCalledWith('cloud-1', 6)
+      expect(mockFinalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: 'cloud-1', syncVersion: 6 }),
+      )
     })
 
     it('defaults syncVersion to 1 when not present', async () => {
@@ -822,7 +1181,9 @@ describe('CloudSyncService', () => {
       await service.waitForUpload('cloud-1')
 
       // Should increment from default 0 to 1
-      expect(mockMarkAsSynced).toHaveBeenCalledWith('cloud-1', 1)
+      expect(mockFinalizeUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: 'cloud-1', syncVersion: 1 }),
+      )
     })
   })
 })

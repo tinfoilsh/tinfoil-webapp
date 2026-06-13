@@ -742,7 +742,7 @@ export function ChatInput({
           <textarea
             id="chat-input"
             aria-label="Message"
-            ref={inputRef}
+            ref={inputRef as React.Ref<HTMLTextAreaElement>}
             key={textareaResetNonce}
             value={input}
             onFocus={handleInputFocus}

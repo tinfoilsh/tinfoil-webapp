@@ -671,7 +671,13 @@ export function useChatMessaging({
             title: resolvedTitle,
             titleState: resolvedTitleState,
             messages: finalMessages,
-            pendingSave: false,
+            // Keep the pending flag set through the real upload. The
+            // sidebar badge is suppressed while streaming, so it now
+            // surfaces only here - once the stream stops and the chat
+            // is actually syncing - and clears when the save resolves.
+            // Temporary chats skip persistence entirely, so the flag
+            // would never clear for them.
+            pendingSave: !updatedChat.isTemporary,
           }
 
           // Update React state with resolved title

@@ -22,10 +22,14 @@ import {
   authenticatePrfPasskey,
   createPrfPasskey,
   decryptKeyBundle,
+  deletePasskeyCredential,
   deriveKeyEncryptionKey,
   getCachedPrfResult,
+  getLocalPasskeyCredentialId,
   getPasskeyCredentialState,
+  getPasskeyDeviceState,
   loadPasskeyCredentials,
+  loadRecoveryCandidates,
   PasskeyCredentialConflictError,
   PasskeyTimeoutError,
   PrfNotSupportedError,
@@ -33,6 +37,13 @@ import {
   storeEncryptedKeys,
 } from '@/services/passkey'
 import { isPrfSupported } from '@/services/passkey/prf-support'
+import { cekBytesToHex } from '@/services/sync-enclave/key-bundle'
+import { passkeyEvents } from '@/services/sync-enclave/passkey-events'
+import {
+  addBundleForCurrentKey,
+  promoteRecoveredCekToEnclave,
+} from '@/services/sync-enclave/passkey-key-flow'
+import { keyCurrent as enclaveKeyCurrent } from '@/services/sync-enclave/sync-api'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import type { useUser } from '@clerk/nextjs'
@@ -49,6 +60,15 @@ export interface PasskeyBackupState {
   manualRecoveryNeeded: boolean
   /** PRF supported + keys exist locally; user can register a passkey backup from settings */
   passkeySetupAvailable: boolean
+  /**
+   * Local CEK already has bundle(s) on the server, but none of them
+   * belong to this device's last-known credential id. Surfaces a
+   * "Set Up Passkey on This Device" prompt so the user can enroll a
+   * second authenticator (e.g. Windows Hello after already having an
+   * Apple passkey on another device). The data model already supports
+   * many bundles per key — this flag exposes that capability in the UI.
+   */
+  passkeyAddDeviceAvailable: boolean
   /**
    * Passkey backup setup was attempted but failed because the user's passkey
    * provider doesn't actually support PRF or hung. Surfaces the
@@ -70,7 +90,26 @@ export interface PasskeyBackupState {
    * prompt automatically on page load.
    */
   passkeyFirstTimePromptAvailable: boolean
+  /** Specific passkey recovery failure to show users a useful next step. */
+  passkeyRecoveryFailure: PasskeyRecoveryFailure | null
 }
+
+export type PasskeyRecoveryFailure = 'auth_failed' | 'stale_backup'
+
+type StoredPasskeyBackup = {
+  credentialId: string
+  syncVersion: number
+  bundleVersion: number
+}
+
+type GeneratedPasskeyKey = {
+  key: string
+  credentialId: string
+}
+
+type ApplyRecoveredKeyBundleResult =
+  | { mode: CloudKeyAuthorizationMode }
+  | { mode: null; reason: PasskeyRecoveryFailure }
 
 export interface UsePasskeyBackupOptions {
   /** Current encryption key from useCloudSync (null if not yet set) */
@@ -214,9 +253,11 @@ export function usePasskeyBackup({
     passkeyRecoveryNeeded: false,
     manualRecoveryNeeded: false,
     passkeySetupAvailable: false,
+    passkeyAddDeviceAvailable: false,
     passkeySetupFailed: false,
     passkeyRetryAvailable: true,
     passkeyFirstTimePromptAvailable: false,
+    passkeyRecoveryFailure: null,
   })
 
   const isMountedRef = useRef(true)
@@ -266,9 +307,11 @@ export function usePasskeyBackup({
           passkeyRecoveryNeeded: false,
           manualRecoveryNeeded: false,
           passkeySetupAvailable: false,
+          passkeyAddDeviceAvailable: false,
           passkeySetupFailed: false,
           passkeyRetryAvailable: true,
           passkeyFirstTimePromptAvailable: false,
+          passkeyRecoveryFailure: null,
         })
       }
       previousUserIdRef.current = currentUserId
@@ -310,13 +353,13 @@ export function usePasskeyBackup({
       incrementBundleVersion?: boolean
       enforceRemoteBundleVersion?: boolean
     },
-  ): Promise<boolean> => {
+  ): Promise<StoredPasskeyBackup | null> => {
     const passkeyResult = await createPrfPasskey(
       userInfo.userId,
       userInfo.userName,
       userInfo.displayName,
     )
-    if (!passkeyResult) return false
+    if (!passkeyResult) return null
 
     const kek = await deriveKeyEncryptionKey(passkeyResult.prfOutput)
     const result = await storeEncryptedKeys(
@@ -329,11 +372,15 @@ export function usePasskeyBackup({
         enforceRemoteBundleVersion: options?.enforceRemoteBundleVersion,
       },
     )
-    if (!result) return false
+    if (!result) return null
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
     setLocalSyncVersion(passkeyResult.credentialId, result.syncVersion)
     setLocalBundleVersion(result.bundleVersion)
-    return true
+    return {
+      credentialId: passkeyResult.credentialId,
+      syncVersion: result.syncVersion,
+      bundleVersion: result.bundleVersion,
+    }
   }
 
   /**
@@ -348,7 +395,7 @@ export function usePasskeyBackup({
         incrementBundleVersion?: boolean
         enforceRemoteBundleVersion?: boolean
       },
-    ): Promise<string | null> => {
+    ): Promise<GeneratedPasskeyKey | null> => {
       const userInfo = getPasskeyUserInfo()
       if (!userInfo) return null
 
@@ -370,7 +417,7 @@ export function usePasskeyBackup({
       if (!created) return null
 
       await encryptionService.setKey(newKey)
-      return newKey
+      return { key: newKey, credentialId: created.credentialId }
     },
     [],
   )
@@ -379,6 +426,13 @@ export function usePasskeyBackup({
    * Core passkey recovery: load credentials, authenticate, derive KEK, decrypt bundle.
    * Returns the recovered KeyBundle on success, null on failure/cancellation.
    * Throws on unexpected errors (callers decide how to handle).
+   *
+   * When the matched credential came from the legacy
+   * `/api/passkey-credentials/` JSONB (rather than the enclave's
+   * `user_key_bundles`), the recovered CEK is also returned along
+   * with the KEK so the caller can promote it to a real `user_keys`
+   * row via `promoteRecoveredCekToEnclave`. Without that promotion
+   * the next session would fall back to the legacy endpoint again.
    */
   const performPasskeyRecovery = async (): Promise<{
     keyBundle: {
@@ -389,8 +443,9 @@ export function usePasskeyBackup({
     credentialId: string
     syncVersion: number | null
     bundleVersion: number
+    legacyKek?: CryptoKey
   } | null> => {
-    const entries = await loadPasskeyCredentials()
+    const entries = await loadRecoveryCandidates()
     if (entries.length === 0) return null
 
     const credentialIds = entries.map((e) => e.id)
@@ -402,11 +457,13 @@ export function usePasskeyBackup({
     if (!keyBundle) return null
 
     const entry = entries.find((e) => e.id === result.credentialId)
+    const isLegacy = entry?.source === 'legacy'
     return {
       keyBundle,
       credentialId: result.credentialId,
       syncVersion: entry?.sync_version ?? null,
       bundleVersion: entry?.bundle_version ?? 0,
+      legacyKek: isLegacy ? kek : undefined,
     }
   }
 
@@ -437,7 +494,56 @@ export function usePasskeyBackup({
         passkeyActive: true,
         passkeyRecoveryNeeded: false,
         manualRecoveryNeeded: false,
+        passkeyRecoveryFailure: null,
       }))
+    }
+  }
+
+  /**
+   * If the recovered bundle came from the legacy
+   * `/api/passkey-credentials/` JSONB (no `user_keys` row on the
+   * enclave yet), promote the recovered CEK by writing a real
+   * `user_keys` row + initial bundle through the enclave wire.
+   * Subsequent sessions will then find the user via the new wire
+   * and the legacy fallback won't trigger again.
+   *
+   * Failure is non-fatal — the user is already unlocked locally and
+   * will simply hit the legacy fallback on the next session. The
+   * structured log line surfaces the failure so we can investigate.
+   */
+  const maybePromoteLegacyKey = async (recovery: {
+    keyBundle: { primary: string }
+    credentialId: string
+    legacyKek?: CryptoKey
+  }): Promise<void> => {
+    if (!recovery.legacyKek) return
+    const cekBytes = encryptionService.getAlternativeKeyBytes(
+      recovery.keyBundle.primary,
+    )
+    if (!cekBytes) {
+      logError(
+        'cannot promote legacy passkey CEK: primary key bytes unavailable',
+        new Error('missing cek bytes'),
+        { component: 'usePasskeyBackup', action: 'maybePromoteLegacyKey' },
+      )
+      return
+    }
+    const cekHex = cekBytesToHex(cekBytes)
+    const result = await promoteRecoveredCekToEnclave({
+      cekHex,
+      credentialId: recovery.credentialId,
+      kek: recovery.legacyKek,
+    })
+    if (!result.ok) {
+      logError(
+        'failed to promote legacy passkey credential to enclave',
+        new Error(result.reason),
+        {
+          component: 'usePasskeyBackup',
+          action: 'maybePromoteLegacyKey',
+          metadata: { reason: result.reason },
+        },
+      )
     }
   }
 
@@ -455,6 +561,7 @@ export function usePasskeyBackup({
         passkeyActive: true,
         passkeyRecoveryNeeded: false,
         manualRecoveryNeeded: false,
+        passkeyRecoveryFailure: null,
       }))
     }
   }
@@ -536,7 +643,7 @@ export function usePasskeyBackup({
         primary: string | null
         alternatives: string[]
       },
-    ): Promise<CloudKeyAuthorizationMode | null> => {
+    ): Promise<ApplyRecoveredKeyBundleResult> => {
       await encryptionService.setAllKeys(bundle.primary, bundle.alternatives)
 
       const authorizationMode = getRecoveredAuthorizationMode(
@@ -546,10 +653,10 @@ export function usePasskeyBackup({
       if (authorizationMode === 'explicit_start_fresh') {
         try {
           await authorizeCurrentPrimaryKeyOrThrow('explicit_start_fresh')
-          return 'explicit_start_fresh'
+          return { mode: 'explicit_start_fresh' }
         } catch {
           await rollbackToPreviousKeys(previousKeys)
-          return null
+          return { mode: null, reason: 'stale_backup' }
         }
       }
 
@@ -558,20 +665,20 @@ export function usePasskeyBackup({
         validation = await validateCurrentPrimaryKey()
       } catch {
         await rollbackToPreviousKeys(previousKeys)
-        return null
+        return { mode: null, reason: 'auth_failed' }
       }
 
       if (!validation.canWrite) {
         await rollbackToPreviousKeys(previousKeys)
-        return null
+        return { mode: null, reason: 'stale_backup' }
       }
 
       try {
         await authorizeCurrentPrimaryKeyOrThrow('validated')
-        return 'validated'
+        return { mode: 'validated' }
       } catch {
         await rollbackToPreviousKeys(previousKeys)
-        return null
+        return { mode: null, reason: 'auth_failed' }
       }
     },
     [getRecoveredAuthorizationMode, rollbackToPreviousKeys],
@@ -582,6 +689,16 @@ export function usePasskeyBackup({
    * Called after key changes to keep the backup in sync.
    */
   const updatePasskeyBackup = useCallback(async (): Promise<void> => {
+    const markBackupUpdateNeeded = (): void => {
+      if (!isMountedRef.current) return
+      setState((prev) => ({
+        ...prev,
+        passkeySetupFailed: true,
+        passkeySetupAvailable: true,
+        passkeyRetryAvailable: true,
+      }))
+    }
+
     try {
       const authorizationMode = await getCurrentCloudKeyAuthorizationMode()
       if (!authorizationMode) return
@@ -597,7 +714,10 @@ export function usePasskeyBackup({
         cached && entries.some((e) => e.id === cached.credentialId)
           ? cached
           : await authenticatePrfPasskey(entries.map((e) => e.id))
-      if (!result) return
+      if (!result) {
+        markBackupUpdateNeeded()
+        return
+      }
 
       const kek = await deriveKeyEncryptionKey(result.prfOutput)
       const keys = encryptionService.getAllKeys()
@@ -638,9 +758,20 @@ export function usePasskeyBackup({
         },
       )
 
-      if (stored) {
-        setLocalSyncVersion(result.credentialId, stored.syncVersion)
-        setLocalBundleVersion(stored.bundleVersion)
+      if (!stored) {
+        markBackupUpdateNeeded()
+        return
+      }
+
+      setLocalSyncVersion(result.credentialId, stored.syncVersion)
+      setLocalBundleVersion(stored.bundleVersion)
+      if (isMountedRef.current) {
+        setState((prev) => ({
+          ...prev,
+          passkeySetupFailed: false,
+          passkeySetupAvailable: false,
+          passkeyActive: true,
+        }))
       }
 
       logInfo('Updated passkey backup after key change', {
@@ -660,12 +791,14 @@ export function usePasskeyBackup({
             },
           },
         )
+        markBackupUpdateNeeded()
         return
       }
       logError('Failed to update passkey backup after key change', error, {
         component: 'usePasskeyBackup',
         action: 'updatePasskeyBackup',
       })
+      markBackupUpdateNeeded()
     }
   }, [doesCurrentStateMatchBundle])
 
@@ -703,8 +836,10 @@ export function usePasskeyBackup({
       }
 
       const previousKeys = encryptionService.getAllKeys()
-      const appliedMode = await applyRecoveredKeyBundle(bundle, previousKeys)
-      if (!appliedMode) return
+      const applied = await applyRecoveredKeyBundle(bundle, previousKeys)
+      if (!applied.mode) {
+        return
+      }
 
       setLocalSyncVersion(cached.credentialId, entry.sync_version)
       if (entry.bundle_version !== undefined) {
@@ -737,18 +872,42 @@ export function usePasskeyBackup({
     // "warning dismissed" flag, so a dismissal from an earlier failure
     // flow doesn't silently suppress the warning on a new attempt.
     setupWarningDismissedFlag.clear()
+    if (isMountedRef.current) {
+      setState((prev) => ({ ...prev, passkeyRecoveryFailure: null }))
+    }
     try {
       const previousKeys = encryptionService.getAllKeys()
       const recovery = await performPasskeyRecovery()
-      if (!recovery) return null
+      if (!recovery) {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            passkeyRecoveryFailure: 'auth_failed',
+          }))
+        }
+        return null
+      }
 
-      const appliedMode = await applyRecoveredKeyBundle(
+      const applied = await applyRecoveredKeyBundle(
         recovery.keyBundle,
         previousKeys,
       )
-      if (!appliedMode) return null
+      if (!applied.mode) {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            passkeyRecoveryFailure: applied.reason,
+            manualRecoveryNeeded:
+              applied.reason === 'stale_backup'
+                ? true
+                : prev.manualRecoveryNeeded,
+          }))
+        }
+        return null
+      }
 
       applyRecoveredKeys(recovery)
+      await maybePromoteLegacyKey(recovery)
       passkeyRecoveryDismissedFlag.clear()
 
       logInfo('Recovered encryption keys via passkey retry', {
@@ -794,6 +953,47 @@ export function usePasskeyBackup({
     const initializePasskey = async () => {
       const prfSupported = await isPrfSupported()
 
+      if (encryptionKey) {
+        // A local key that derives a different key id than the
+        // enclave's registered one can never write or migrate — this
+        // device is stale and needs to converge onto the registered
+        // key to enter v2. Route to passkey recovery when the
+        // registered key has bundles to unlock it with, or to manual
+        // key entry when it was adopted bundleless (e.g. by the
+        // migration path on another device).
+        const validation = await validateCurrentPrimaryKey()
+        if (!validation.canWrite && validation.remoteState === 'exists') {
+          let hasRemoteBundles = false
+          try {
+            const current = await enclaveKeyCurrent()
+            hasRemoteBundles = Object.keys(current.bundles).length > 0
+          } catch {
+            // Transient enclave failure: fall through to the manual
+            // prompt, which is dismissible and retried next visit.
+          }
+          if (!isMountedRef.current) return
+          if (hasRemoteBundles && prfSupported) {
+            if (!passkeyRecoveryDismissedFlag.isSet()) {
+              setState((prev) => ({
+                ...prev,
+                passkeyRecoveryNeeded: true,
+              }))
+            }
+          } else if (!manualRecoveryDismissedFlag.isSet()) {
+            setState((prev) => ({
+              ...prev,
+              manualRecoveryNeeded: true,
+              passkeySetupFailed: setupWarningDismissedFlag.isSet()
+                ? prev.passkeySetupFailed
+                : true,
+              passkeyRetryAvailable: false,
+            }))
+          }
+          return
+        }
+        if (!isMountedRef.current) return
+      }
+
       if (!prfSupported) {
         // The device/provider can't do PRF, so passkey-backed cloud sync is
         // unavailable here. If the user has no local key and no remote data
@@ -812,7 +1012,10 @@ export function usePasskeyBackup({
                 passkeyRetryAvailable: false,
               }))
             }
-          } else if (!manualRecoveryDismissedFlag.isSet()) {
+          } else if (
+            remoteState === 'exists' &&
+            !manualRecoveryDismissedFlag.isSet()
+          ) {
             // Remote data exists but PRF is unavailable on this device.
             // Surface both the recovery-needed flag (so the unlock modal
             // can open when sync is enabled) and the warning (so the user
@@ -828,6 +1031,15 @@ export function usePasskeyBackup({
                 : true,
               passkeyRetryAvailable: false,
             }))
+          } else if (
+            remoteState === 'unknown' &&
+            !backupWarningDismissedFlag.isSet()
+          ) {
+            setState((prev) => ({
+              ...prev,
+              passkeySetupFailed: true,
+              passkeyRetryAvailable: false,
+            }))
           }
         }
         return
@@ -835,26 +1047,47 @@ export function usePasskeyBackup({
 
       if (encryptionKey) {
         // User has local keys — check for existing backup
-        const credentialState = await getPasskeyCredentialState()
+        const localCredentialId = getLocalPasskeyCredentialId()
+        const deviceState = await getPasskeyDeviceState(localCredentialId)
 
-        if (credentialState === 'exists') {
-          // Already backed up — show green badge, hide setup button
+        if (deviceState === 'this-device') {
+          // This device already has its own bundle — show green badge,
+          // hide every flavour of setup button.
           localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
           if (isMountedRef.current) {
             setState((prev) => ({
               ...prev,
               passkeyActive: true,
+              passkeySetupAvailable: false,
+              passkeyAddDeviceAvailable: false,
               manualRecoveryNeeded: false,
             }))
           }
         } else if (
-          credentialState === 'empty' &&
+          deviceState === 'other-device-only' &&
+          !passkeyFlowInProgressRef.current
+        ) {
+          // The user's key has a bundle, but it was registered on a
+          // different device. Surface a prompt so they can enroll a
+          // passkey on this device too — the enclave / CP already
+          // support many bundles per key.
+          if (isMountedRef.current) {
+            setState((prev) => ({
+              ...prev,
+              passkeyAddDeviceAvailable: true,
+              passkeySetupAvailable: false,
+              passkeyActive: false,
+            }))
+          }
+        } else if (
+          deviceState === 'empty' &&
           !passkeyFlowInProgressRef.current
         ) {
           if (isMountedRef.current) {
             setState((prev) => ({
               ...prev,
               passkeySetupAvailable: true,
+              passkeyAddDeviceAvailable: false,
             }))
           }
         }
@@ -889,6 +1122,7 @@ export function usePasskeyBackup({
               }))
             }
           } else if (
+            remoteState === 'exists' &&
             isMountedRef.current &&
             !manualRecoveryDismissedFlag.isSet()
           ) {
@@ -910,6 +1144,18 @@ export function usePasskeyBackup({
                 ? prev.passkeySetupFailed
                 : true,
               passkeyRetryAvailable: false,
+            }))
+          } else if (
+            remoteState === 'unknown' &&
+            isMountedRef.current &&
+            !setupWarningDismissedFlag.isSet()
+          ) {
+            setState((prev) => ({
+              ...prev,
+              manualRecoveryNeeded: false,
+              passkeyFirstTimePromptAvailable: false,
+              passkeySetupFailed: true,
+              passkeyRetryAvailable: true,
             }))
           }
         } else if (
@@ -938,6 +1184,29 @@ export function usePasskeyBackup({
       firstTimePromptDismissedFlag.clear()
       manualRecoveryDismissedFlag.clear()
       backupWarningDismissedFlag.clear()
+      if (isMountedRef.current) {
+        // Once the user has a working key, the sidebar warning's
+        // raison d'être disappears. Without this update the
+        // "Can't access your existing backup" banner sticks around
+        // until the next mount (full page reload).
+        setState((prev) => {
+          if (
+            !prev.manualRecoveryNeeded &&
+            !prev.passkeySetupFailed &&
+            !prev.passkeyRecoveryNeeded &&
+            prev.passkeyRecoveryFailure === null
+          ) {
+            return prev
+          }
+          return {
+            ...prev,
+            manualRecoveryNeeded: false,
+            passkeySetupFailed: false,
+            passkeyRecoveryNeeded: false,
+            passkeyRecoveryFailure: null,
+          }
+        })
+      }
     }
   }, [encryptionKey])
 
@@ -1043,7 +1312,7 @@ export function usePasskeyBackup({
         component: 'usePasskeyBackup',
         action: 'setupNewKeySplit',
       })
-      return newKey
+      return newKey.key
     } catch (error) {
       if (error instanceof PrfNotSupportedError) throw error
       if (error instanceof PasskeyTimeoutError) throw error
@@ -1103,31 +1372,62 @@ export function usePasskeyBackup({
     }
 
     try {
-      const previousKeys = encryptionService.getAllKeys()
-      const newKey = await generateKeyWithPasskeyBackup('validated')
+      const remoteState = await inspectRemoteEncryptedState()
+      if (remoteState === 'exists') {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            manualRecoveryNeeded: true,
+            passkeyFirstTimePromptAvailable: false,
+            passkeySetupFailed: true,
+            passkeyRetryAvailable: false,
+          }))
+        }
+        return false
+      }
+      if (remoteState === 'unknown') {
+        // The probe failed (network, transient enclave error). The
+        // remote may be empty or already have a key — we cannot tell
+        // safely. Surface as retriable so the user can try again
+        // instead of locking them out of setup.
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            passkeyFirstTimePromptAvailable: false,
+            passkeySetupFailed: true,
+            passkeyRetryAvailable: true,
+          }))
+        }
+        return false
+      }
 
-      if (newKey) {
-        const appliedMode = await applyRecoveredKeyBundle(
+      const previousKeys = encryptionService.getAllKeys()
+      const generated = await generateKeyWithPasskeyBackup('validated')
+
+      if (generated) {
+        const applied = await applyRecoveredKeyBundle(
           {
-            primary: newKey,
+            primary: generated.key,
             alternatives: [],
             authorizationMode: 'validated',
           },
           previousKeys,
         )
-        if (!appliedMode) {
+        if (!applied.mode) {
+          await deletePasskeyCredential(generated.credentialId)
           if (isMountedRef.current) {
             setState((prev) => ({
               ...prev,
               manualRecoveryNeeded: true,
               passkeyFirstTimePromptAvailable: false,
+              passkeyRecoveryFailure: applied.reason,
             }))
           }
           return false
         }
 
         applyNewPasskeyKey()
-        onEncryptionKeyRecoveredRef.current?.(newKey)
+        onEncryptionKeyRecoveredRef.current?.(generated.key)
         if (isMountedRef.current) {
           setState((prev) => ({
             ...prev,
@@ -1238,7 +1538,23 @@ export function usePasskeyBackup({
         getPasskeyCredentialState(),
         inspectRemoteEncryptedState(),
       ])
-      if (credentialState !== 'empty' || remoteState !== 'empty') {
+      if (credentialState !== 'empty') {
+        return false
+      }
+      if (remoteState === 'exists') {
+        return false
+      }
+      if (remoteState === 'unknown') {
+        setupWarningDismissedFlag.clear()
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            manualRecoveryNeeded: false,
+            passkeyFirstTimePromptAvailable: false,
+            passkeySetupFailed: true,
+            passkeyRetryAvailable: true,
+          }))
+        }
         return false
       }
     } catch {
@@ -1286,6 +1602,187 @@ export function usePasskeyBackup({
     })
   }, [])
 
+  /**
+   * Re-evaluate per-device bundle state. Safe to call any time the
+   * server's `user_key_bundles` may have changed (e.g. another device
+   * just added a bundle, the legacy-blob migration finished and
+   * promoted a CEK, the user removed a credential from settings).
+   * Pure read: never triggers a WebAuthn prompt.
+   */
+  const refreshBundleState = useCallback(async (): Promise<void> => {
+    if (!encryptionKey) return
+    if (passkeyFlowInProgressRef.current) return
+    const localCredentialId = getLocalPasskeyCredentialId()
+    const deviceState = await getPasskeyDeviceState(localCredentialId)
+    if (!isMountedRef.current) return
+
+    if (deviceState === 'this-device') {
+      localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+      setState((prev) => ({
+        ...prev,
+        passkeyActive: true,
+        passkeySetupAvailable: false,
+        passkeyAddDeviceAvailable: false,
+        manualRecoveryNeeded: false,
+      }))
+    } else if (deviceState === 'other-device-only') {
+      setState((prev) => ({
+        ...prev,
+        passkeyAddDeviceAvailable: true,
+        passkeySetupAvailable: false,
+        passkeyActive: false,
+      }))
+    } else if (deviceState === 'empty') {
+      setState((prev) => ({
+        ...prev,
+        passkeySetupAvailable: true,
+        passkeyAddDeviceAvailable: false,
+      }))
+    }
+  }, [encryptionKey])
+
+  // Subscribe to bundle-state-maybe-changed events so the hook stays in
+  // sync after the legacy-blob migration finishes, a different tab adds
+  // a bundle via storage events, etc.
+  useEffect(() => {
+    const unsubscribe = passkeyEvents.on('bundle-state-maybe-changed', () => {
+      void refreshBundleState()
+    })
+    return () => {
+      unsubscribe()
+    }
+  }, [refreshBundleState])
+
+  /**
+   * Re-authenticate the user's legacy `/api/passkey-credentials/`
+   * passkey and use the resulting PRF to write a v2 initial bundle
+   * via `promoteRecoveredCekToEnclave`. Used when the user has a
+   * local CEK and a legacy passkey credential, but no v2
+   * `user_keys` row yet — the historical promotion only fires
+   * during a recovery flow (which never happens for users whose
+   * local CEK is still valid). Returns true on a successful
+   * register-key.
+   */
+  const promoteLegacyPasskeyForCurrentDevice = useCallback(
+    async (cekHex: string): Promise<boolean> => {
+      const legacyEntries = (await loadRecoveryCandidates()).filter(
+        (entry) => entry.source === 'legacy',
+      )
+      if (legacyEntries.length === 0) return false
+
+      const credentialIds = legacyEntries.map((entry) => entry.id)
+      const prf = await authenticatePrfPasskey(credentialIds)
+      if (!prf) return false
+
+      const kek = await deriveKeyEncryptionKey(prf.prfOutput)
+      const result = await promoteRecoveredCekToEnclave({
+        cekHex,
+        credentialId: prf.credentialId,
+        kek,
+      })
+      if (!result.ok) {
+        logInfo('legacy promotion via add-device button failed', {
+          component: 'usePasskeyBackup',
+          action: 'promoteLegacyPasskeyForCurrentDevice',
+          metadata: { reason: result.reason },
+        })
+        return false
+      }
+      return true
+    },
+    [],
+  )
+
+  /**
+   * Add a passkey bundle for *this device* against the existing key.
+   * Used when `passkeyAddDeviceAvailable === true` (another device
+   * already has a bundle but this one doesn't). Wraps the local CEK
+   * under a freshly-derived KEK from a new WebAuthn ceremony and
+   * pushes it as an additional bundle via `add-bundle`. Returns true
+   * on success.
+   *
+   * Also handles the legacy v1 case: if the enclave has no
+   * `user_keys` row yet but the user has a credential in
+   * `/api/passkey-credentials/`, this re-authenticates that
+   * credential and uses the legacy promotion path so they keep
+   * their original passkey on the v2 wire.
+   */
+  const addPasskeyToThisDevice = useCallback(async (): Promise<boolean> => {
+    const userInfo = getPasskeyUserInfo()
+    if (!userInfo) return false
+
+    const keys = encryptionService.getAllKeys()
+    if (!keys.primary) return false
+
+    const cekBytes = encryptionService.getAlternativeKeyBytes(keys.primary)
+    if (!cekBytes) return false
+    const cekHex = cekBytesToHex(cekBytes)
+
+    let keyIdHex: string | null
+    try {
+      const resp = await enclaveKeyCurrent()
+      keyIdHex = resp.key_id ?? null
+    } catch (error) {
+      logError('Failed to read enclave key state for add-bundle', error, {
+        component: 'usePasskeyBackup',
+        action: 'addPasskeyToThisDevice',
+      })
+      return false
+    }
+
+    passkeyFlowInProgressRef.current = true
+    try {
+      if (keyIdHex) {
+        const result = await addBundleForCurrentKey({
+          cekHex,
+          keyIdHex,
+          user: userInfo,
+        })
+        if (!result.ok) {
+          logInfo('add-bundle attempt failed', {
+            component: 'usePasskeyBackup',
+            action: 'addPasskeyToThisDevice',
+            metadata: { reason: result.reason },
+          })
+          return false
+        }
+      } else {
+        // Legacy v1 user: local CEK already exists, the enclave has
+        // no `user_keys` row yet, but `/api/passkey-credentials/`
+        // still holds the original PRF credential. Re-authenticate
+        // that credential, derive the KEK, and call the legacy
+        // promotion path so the user lands on the v2 wire reusing
+        // their existing passkey instead of being asked to enroll
+        // a brand-new one.
+        const promoted = await promoteLegacyPasskeyForCurrentDevice(cekHex)
+        if (!promoted) return false
+      }
+
+      localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+      if (isMountedRef.current) {
+        setState((prev) => ({
+          ...prev,
+          passkeyActive: true,
+          passkeyAddDeviceAvailable: false,
+          passkeySetupAvailable: false,
+          passkeySetupFailed: false,
+        }))
+      }
+      passkeyEvents.emit({ type: 'bundle-state-maybe-changed' })
+      return true
+    } catch (error) {
+      if (error instanceof PrfNotSupportedError) throw error
+      if (error instanceof PasskeyTimeoutError) throw error
+      logError('Failed to add passkey for this device', error, {
+        component: 'usePasskeyBackup',
+        action: 'addPasskeyToThisDevice',
+      })
+      return false
+    } finally {
+      passkeyFlowInProgressRef.current = false
+    }
+  }, [promoteLegacyPasskeyForCurrentDevice])
+
   return {
     ...state,
     setupPasskey,
@@ -1298,5 +1795,7 @@ export function usePasskeyBackup({
     updatePasskeyBackup,
     dismissBackupWarning,
     skipPasskeyRecovery,
+    addPasskeyToThisDevice,
+    refreshBundleState,
   }
 }

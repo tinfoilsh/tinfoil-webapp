@@ -1,6 +1,8 @@
 import {
+  describeCloudKeySetupFailure,
   determineGeneratedKeySetupMode,
   type CloudKeySetupMode,
+  type CloudKeySetupResult,
 } from '@/components/modals/cloud-sync-setup-mode'
 import { SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL } from '@/constants/storage-keys'
 import { useToast } from '@/hooks/use-toast'
@@ -35,11 +37,12 @@ interface CloudSyncSetupModalBaseProps {
   onSetupComplete: (
     encryptionKey: string,
     mode: CloudKeySetupMode,
-  ) => Promise<boolean>
+  ) => Promise<CloudKeySetupResult>
   isDarkMode: boolean
   initialCloudSyncEnabled?: boolean
   prfSupported?: boolean
   manualRecoveryNeeded?: boolean
+  passkeyRecoveryFailure?: 'auth_failed' | 'stale_backup' | null
   /**
    * When true, the modal skips the passkey-based flow entirely and opens
    * directly on the manual "generate or restore key" step. Used when the
@@ -85,6 +88,7 @@ export function CloudSyncSetupModal({
   passkeyRecoveryNeeded = false,
   prfSupported = false,
   manualRecoveryNeeded = false,
+  passkeyRecoveryFailure = null,
   forceManualFlow = false,
   onSkipRecovery,
   onRecoverWithPasskey,
@@ -114,6 +118,9 @@ export function CloudSyncSetupModal({
   const [isDragging, setIsDragging] = useState(false)
   const [isQRCodeExpanded, setIsQRCodeExpanded] = useState(false)
   const [isStartingFresh, setIsStartingFresh] = useState(false)
+  const [startFreshOrigin, setStartFreshOrigin] = useState<
+    'passkey-recovery' | 'generate-or-restore'
+  >('passkey-recovery')
   const { toast } = useToast()
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -125,6 +132,21 @@ export function CloudSyncSetupModal({
       }
     }
   }, [])
+
+  // The modal can be opened before the caller's background passkey
+  // probe resolves (so the popup appears instantly instead of waiting
+  // on a slow enclave round-trip). When the probe later confirms a
+  // passkey recovery is possible, advance into the recovery step — but
+  // only from the neutral auto-routed entry steps, so we never yank the
+  // user out of a step they navigated to deliberately.
+  useEffect(() => {
+    if (!passkeyRecoveryNeeded) return
+    setCurrentStep((step) =>
+      step === 'generate-or-restore' || step === 'intro'
+        ? 'passkey-recovery'
+        : step,
+    )
+  }, [passkeyRecoveryNeeded])
 
   const handleEnableToggle = (enabled: boolean) => {
     setCloudSyncEnabled(enabled)
@@ -162,21 +184,16 @@ export function CloudSyncSetupModal({
         action: 'handleGenerateKey',
       })
 
-      // When the user has a PRF-capable passkey, the passkey wraps the
-      // encryption key for them — they don't need to manually save a recovery
-      // copy. Skip the "Save this key securely" step and complete the flow
-      // immediately. They can reveal the backup key from Settings later if
-      // they want a paper copy.
-      if (prfSupported && !manualRecoveryNeeded) {
-        const success = await onSetupComplete(newKey, keySetupMode)
-        if (success) {
-          persistCloudSyncEnabled(true)
-          onClose()
-          return
-        }
+      // Activating a generated key over existing cloud data wipes that
+      // data (start_fresh), so it must never happen on a single click —
+      // route through the explicit confirmation step first.
+      if (keySetupMode === 'explicitStartFresh') {
+        setStartFreshOrigin('generate-or-restore')
+        setCurrentStep('confirm-start-fresh')
+        return
       }
 
-      setCurrentStep('key-display')
+      await proceedWithGeneratedKey(newKey, keySetupMode)
     } catch (error) {
       logError('Failed to generate encryption key', error, {
         component: 'CloudSyncSetupModal',
@@ -192,6 +209,36 @@ export function CloudSyncSetupModal({
     }
   }
 
+  // When the user has a PRF-capable passkey, the passkey wraps the
+  // encryption key for them — they don't need to manually save a recovery
+  // copy. Skip the "Save this key securely" step and complete the flow
+  // immediately. They can reveal the backup key from Settings later if
+  // they want a paper copy.
+  const proceedWithGeneratedKey = async (
+    newKey: string,
+    keySetupMode: CloudKeySetupMode,
+  ) => {
+    if (prfSupported && !manualRecoveryNeeded) {
+      const result = await onSetupComplete(newKey, keySetupMode)
+      if (result.ok) {
+        persistCloudSyncEnabled(true)
+        onClose()
+        return
+      }
+      // Fall through to the manual key-display step so the user can
+      // save the key and retry via Done, but tell them why the
+      // automatic activation did not complete.
+      const { title, description } = describeCloudKeySetupFailure(result.reason)
+      toast({
+        title,
+        description,
+        variant: 'destructive',
+      })
+    }
+
+    setCurrentStep('key-display')
+  }
+
   const handleRestoreKey = async () => {
     if (!inputKey.trim()) {
       toast({
@@ -204,13 +251,15 @@ export function CloudSyncSetupModal({
 
     setIsProcessing(true)
     try {
-      const success = await onSetupComplete(inputKey, 'recoverExisting')
+      const result = await onSetupComplete(inputKey, 'recoverExisting')
 
-      if (!success) {
+      if (!result.ok) {
+        const { title, description } = describeCloudKeySetupFailure(
+          result.reason,
+        )
         toast({
-          title: 'Invalid key',
-          description:
-            "This key doesn't match your existing cloud data. Try using your existing key instead.",
+          title,
+          description,
           variant: 'destructive',
         })
         return
@@ -376,12 +425,14 @@ ${generatedKey.replace('key_', '')}
 
     setIsProcessing(true)
     void onSetupComplete(generatedKey, generatedKeyMode)
-      .then((success) => {
-        if (!success) {
+      .then((result) => {
+        if (!result.ok) {
+          const { title, description } = describeCloudKeySetupFailure(
+            result.reason,
+          )
           toast({
-            title: 'Setup failed',
-            description:
-              "This key couldn't be verified for cloud sync. Try using your existing key instead.",
+            title,
+            description,
             variant: 'destructive',
           })
           return
@@ -792,8 +843,9 @@ ${generatedKey.replace('key_', '')}
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
           <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
           <p className="text-xs text-amber-700 dark:text-amber-400">
-            Passkey authentication failed. You can try again or enter your
-            encryption key manually.
+            {passkeyRecoveryFailure === 'stale_backup'
+              ? "This passkey is valid, but its backup key doesn't match your existing cloud data. Enter your backup key manually, or start fresh if you no longer need the old data."
+              : 'Passkey authentication failed. You can try again or enter your encryption key manually.'}
           </p>
         </div>
       )}
@@ -827,7 +879,10 @@ ${generatedKey.replace('key_', '')}
 
       {onSetupNewKey && (
         <button
-          onClick={() => setCurrentStep('confirm-start-fresh')}
+          onClick={() => {
+            setStartFreshOrigin('passkey-recovery')
+            setCurrentStep('confirm-start-fresh')
+          }}
           disabled={isRecovering || isStartingFresh}
           className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80 disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -844,6 +899,31 @@ ${generatedKey.replace('key_', '')}
       </button>
     </div>
   )
+
+  const handleConfirmStartFresh = async () => {
+    if (startFreshOrigin === 'generate-or-restore') {
+      if (!generatedKey) return
+      setIsStartingFresh(true)
+      try {
+        await proceedWithGeneratedKey(generatedKey, 'explicitStartFresh')
+      } catch (error) {
+        logError('Start fresh with generated key failed', error, {
+          component: 'CloudSyncSetupModal',
+          action: 'handleConfirmStartFresh',
+        })
+        toast({
+          title: 'Setup failed',
+          description:
+            'Could not activate the new encryption key. Please try again.',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsStartingFresh(false)
+      }
+      return
+    }
+    await handleStartFresh()
+  }
 
   const renderConfirmStartFreshStep = () => (
     <div className="space-y-4">
@@ -862,12 +942,13 @@ ${generatedKey.replace('key_', '')}
           that is not compatible with your existing one.
         </p>
         <p className="font-semibold text-content-primary">
-          Chats encrypted with the old key will not decrypt on this device.
+          Your existing encrypted cloud data will be deleted, and chats
+          encrypted with the old key will not decrypt on this device.
         </p>
       </div>
 
       <button
-        onClick={handleStartFresh}
+        onClick={handleConfirmStartFresh}
         disabled={isStartingFresh}
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
@@ -875,7 +956,7 @@ ${generatedKey.replace('key_', '')}
       </button>
 
       <button
-        onClick={() => setCurrentStep('passkey-recovery')}
+        onClick={() => setCurrentStep(startFreshOrigin)}
         disabled={isStartingFresh}
         className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
       >

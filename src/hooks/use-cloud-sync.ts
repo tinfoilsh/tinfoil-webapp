@@ -7,10 +7,15 @@ import {
   authorizeCurrentPrimaryKeyOrThrow,
   canWriteToCloud,
   clearCloudKeyAuthorization,
+  registerStartFreshKeyIfNeeded,
 } from '@/services/cloud/cloud-key-authorization'
-import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
+import {
+  CloudKeySetupError,
+  validateCurrentPrimaryKey,
+} from '@/services/cloud/cloud-key-preflight'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
   isCloudSyncEnabled,
   setCloudSyncEnabled,
@@ -173,8 +178,10 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     initializeSync()
   }, [isSignedIn, getToken])
 
-  // Full sync chats (always fetches first page)
-  const syncChats = useCallback(async () => {
+  // Full sync chats. By default only the first page is fetched; pass
+  // `{ deep: true }` (manual "Sync" action) to page through the entire
+  // remote history so older chats land locally.
+  const syncChats = useCallback(async (options?: { deep?: boolean }) => {
     if (!isCloudSyncEnabled()) {
       logInfo('Cloud sync is disabled, skipping sync', {
         component: 'useCloudSync',
@@ -197,7 +204,7 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     }
 
     try {
-      const result = await cloudSync.syncAllChats()
+      const result = await cloudSync.syncAllChats(options)
 
       if (isMountedRef.current) {
         setState((prev) => ({
@@ -435,7 +442,12 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
           return prev
         })
 
-        await encryptionService.setKey(key)
+        // Stage the key in memory only. The enclave handshake below
+        // reads the active CEK from the service, so it operates on this
+        // key without committing it to storage. We persist only after
+        // the enclave accepts it, so an interrupted activation can never
+        // strand a local-only key the enclave would reject.
+        await encryptionService.setKey(key, { persist: false })
         didSetKey = true
 
         if (mode === 'recoverExisting') {
@@ -450,21 +462,44 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
           if (!validation.canWrite) {
             await rollbackToPreviousKeys(previousKeys)
             rolledBack = true
-            throw new Error(
+            throw new CloudKeySetupError(
               validation.message ??
                 "This key doesn't match your existing cloud data.",
+              validation.remoteState,
             )
           }
           await authorizeCurrentPrimaryKeyOrThrow('validated')
         } else {
           try {
+            await registerStartFreshKeyIfNeeded()
             await authorizeCurrentPrimaryKeyOrThrow('explicit_start_fresh')
           } catch (authorizationError) {
             await rollbackToPreviousKeys(previousKeys)
             rolledBack = true
             throw authorizationError
           }
+          // §H4 — `start_fresh` wipes the cloud, so any local
+          // `syncVersion` numbers no longer match a row anywhere.
+          // Reset them all so the next push goes up as a fresh
+          // create instead of failing the next ETag CAS in a forever
+          // 409 loop.
+          try {
+            await indexedDBStorage.resetSyncMetadataForAllChats()
+            cloudSync.clearSyncStatus()
+          } catch (resetError) {
+            logError(
+              'Failed to reset local sync metadata after start_fresh',
+              resetError,
+              {
+                component: 'useCloudSync',
+                action: 'setEncryptionKey.resetSyncMetadata',
+              },
+            )
+          }
         }
+
+        // The enclave has accepted the key — commit it to storage now.
+        encryptionService.persistCurrentKeyState()
 
         if (isMountedRef.current) {
           setState((prev) => ({
@@ -477,21 +512,36 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
         const stateNeedsSync = !stateKey
 
         if (keyValueChanged || stateNeedsSync) {
-          // Sync immediately to fetch encrypted chats from cloud
-          // Don't let sync failures block key updates
-          try {
-            await syncChats()
-          } catch (syncError) {
-            logError('Failed to sync after setting encryption key', syncError, {
-              component: 'useCloudSync',
-              action: 'setEncryptionKey.initialSync',
-            })
+          // Pull encrypted chats from the cloud and decrypt them in the
+          // background so callers (e.g. the passkey recovery modal) can
+          // dismiss as soon as the key is authorized, instead of blocking
+          // the whole UI until every chat is decrypted. The sidebar shows
+          // a "Loading chats" indicator driven by `decryptionProgress`
+          // until the decryption pass finishes.
+          if (isMountedRef.current) {
+            setState((prev) => ({
+              ...prev,
+              decryptionProgress: { isDecrypting: true, current: 0, total: 0 },
+            }))
           }
-
-          // Run decryption in background to avoid UI hang
-          void retryDecryptionWithNewKey({
-            runInBackground: true,
-          })
+          void (async () => {
+            try {
+              await syncChats()
+            } catch (syncError) {
+              logError(
+                'Failed to sync after setting encryption key',
+                syncError,
+                {
+                  component: 'useCloudSync',
+                  action: 'setEncryptionKey.initialSync',
+                },
+              )
+            }
+            // Run decryption in background to avoid UI hang
+            await retryDecryptionWithNewKey({ runInBackground: true }).catch(
+              () => {},
+            )
+          })()
 
           // Re-encrypt the passkey backup only when the key VALUE actually changed
           // (not when state is merely catching up to what encryptionService already holds,
@@ -524,34 +574,19 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
           component: 'useCloudSync',
           action: 'setEncryptionKey',
         })
+        // Preserve CloudKeySetupError so callers can tell a genuine key
+        // mismatch / verification outage apart from a malformed key.
+        // Flattening to a plain Error here makes every failure look like
+        // an "invalid key" to classifyCloudKeySetupError.
+        if (error instanceof CloudKeySetupError) {
+          throw error
+        }
         throw new Error(
           error instanceof Error ? error.message : 'Invalid encryption key',
         )
       }
     },
     [rollbackToPreviousKeys, syncChats, retryDecryptionWithNewKey],
-  )
-
-  const addRecoveryKey = useCallback(
-    async (key: string) => {
-      try {
-        encryptionService.addDecryptionKey(key)
-        void retryDecryptionWithNewKey({
-          runInBackground: true,
-        })
-
-        if (hasPasskeyBackup()) {
-          onKeyChangedRef.current?.()
-        }
-      } catch (error) {
-        logError('Failed to add recovery key', error, {
-          component: 'useCloudSync',
-          action: 'addRecoveryKey',
-        })
-        throw new Error('Invalid encryption key')
-      }
-    },
-    [retryDecryptionWithNewKey],
   )
 
   return {
@@ -561,7 +596,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     syncProjectChats,
     backupChat,
     setEncryptionKey,
-    addRecoveryKey,
     retryDecryptionWithNewKey,
   }
 }

@@ -38,6 +38,7 @@ import {
   shouldShowRateLimitBanner,
 } from '@/components/chat/rate-limit-banner'
 import { StreamErrorBanner } from '@/components/chat/stream-error-banner'
+import { classifyCloudKeySetupError } from '@/components/modals/cloud-sync-setup-mode'
 import {
   ProjectModeBanner,
   ProjectSidebar,
@@ -54,6 +55,7 @@ import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-s
 
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
@@ -127,19 +129,24 @@ import { initializeRenderers } from './renderers/client'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
 import type { Attachment, Chat, DocumentPage } from './types'
-// Lazy-load modals that aren't shown on initial load
+// Lazy-load modals that aren't shown on initial load. The loaders are
+// hoisted so they can be pre-warmed (see preloadCloudSyncModals) before
+// the user clicks, keeping the chunk fetch off the click critical path.
+const loadCloudSyncSetupModal = () => import('../modals/cloud-sync-setup-modal')
+const loadPasskeySetupPromptModal = () =>
+  import('../modals/passkey-setup-prompt-modal')
+
+function preloadCloudSyncModals(): void {
+  void loadCloudSyncSetupModal()
+  void loadPasskeySetupPromptModal()
+}
+
 const CloudSyncSetupModal = dynamic(
-  () =>
-    import('../modals/cloud-sync-setup-modal').then(
-      (m) => m.CloudSyncSetupModal,
-    ),
+  () => loadCloudSyncSetupModal().then((m) => m.CloudSyncSetupModal),
   { ssr: false },
 )
 const PasskeySetupPromptModal = dynamic(
-  () =>
-    import('../modals/passkey-setup-prompt-modal').then(
-      (m) => m.PasskeySetupPromptModal,
-    ),
+  () => loadPasskeySetupPromptModal().then((m) => m.PasskeySetupPromptModal),
   { ssr: false },
 )
 const AddToProjectContextModal = dynamic(
@@ -189,50 +196,6 @@ type ChatInterfaceProps = {
    * can still open these flows manually from settings.
    */
   suppressIntroModals?: boolean
-}
-
-// Generate a silly privacy-themed project name
-function generateProjectName(): string {
-  const adjectives = [
-    'Private',
-    'Secret',
-    'Encrypted',
-    'Anonymous',
-    'Stealth',
-    'Incognito',
-    'Covert',
-    'Hidden',
-    'Shadowy',
-    'Mysterious',
-    'Whispered',
-    'Cloaked',
-    'Veiled',
-    'Masked',
-    'Undercover',
-  ]
-
-  const animals = [
-    'Orangutan',
-    'Penguin',
-    'Platypus',
-    'Armadillo',
-    'Chameleon',
-    'Pangolin',
-    'Narwhal',
-    'Capybara',
-    'Axolotl',
-    'Quokka',
-    'Wombat',
-    'Hedgehog',
-    'Otter',
-    'Sloth',
-    'Lemur',
-  ]
-
-  const adjective = adjectives[Math.floor(Math.random() * adjectives.length)]
-  const animal = animals[Math.floor(Math.random() * animals.length)]
-
-  return `${adjective} ${animal}`
 }
 
 function buildAttachment(opts: {
@@ -378,7 +341,6 @@ export function ChatInterface({
     encryptionKey,
     initialized: cloudSyncInitialized,
     setEncryptionKey,
-    addRecoveryKey,
     retryDecryptionWithNewKey,
     decryptionProgress,
   } = useCloudSync({
@@ -392,7 +354,9 @@ export function ChatInterface({
     passkeyRecoveryNeeded,
     manualRecoveryNeeded,
     passkeySetupAvailable,
+    passkeyAddDeviceAvailable,
     passkeySetupFailed,
+    passkeyRecoveryFailure,
     passkeyFirstTimePromptAvailable,
     setupPasskey,
     setupFirstTimePasskey,
@@ -404,6 +368,8 @@ export function ChatInterface({
     updatePasskeyBackup,
     dismissBackupWarning,
     skipPasskeyRecovery,
+    addPasskeyToThisDevice,
+    refreshBundleState,
   } = usePasskeyBackup({
     encryptionKey,
     initialized: cloudSyncInitialized && !showOnboarding,
@@ -1380,6 +1346,21 @@ export function ChatInterface({
       window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, handler)
   }, [reloadChats])
 
+  // Manual full sync triggered from the sidebar "Sync" button. Pages
+  // through the entire remote history (deep) so older chats that aren't on
+  // the first page land locally, then refreshes the visible list.
+  const handleManualSync = useCallback(async () => {
+    try {
+      await syncChats({ deep: true })
+      await reloadChats()
+    } catch (error) {
+      logError('Manual chat sync failed', error, {
+        component: 'ChatInterface',
+        action: 'handleManualSync',
+      })
+    }
+  }, [syncChats, reloadChats])
+
   // Handler for opening verifier sidebar
   const handleOpenVerifierSidebar = () => {
     if (isVerifierSidebarOpen) {
@@ -1450,16 +1431,48 @@ export function ChatInterface({
   // remote data without a passkey, or PRF unsupported).
   const handleOpenCloudSyncSetup = useCallback(async () => {
     if (!encryptionService.getKey()) {
+      // Open the modal immediately for instant feedback. It renders
+      // its recovery / manual UI from the live hook state, so we don't
+      // block the popup on the slow enclave key-state probe. The
+      // probes below run in the background and the modal reacts to the
+      // resulting state changes (e.g. a manual-recovery warning getting
+      // upgraded to a passkey-recovery flow).
+      setShowCloudSyncSetupModal(true)
       const recovered = await showPasskeyRecoveryPrompt()
-      if (recovered) {
-        setShowCloudSyncSetupModal(true)
-        return
-      }
+      if (recovered) return
       const routed = await showFirstTimePasskeyPrompt()
-      if (routed) return
+      if (routed) {
+        // A brand-new user with no remote data is better served by the
+        // dedicated first-time prompt; hand off to it.
+        setShowCloudSyncSetupModal(false)
+      }
+      return
     }
     setShowCloudSyncSetupModal(true)
   }, [showPasskeyRecoveryPrompt, showFirstTimePasskeyPrompt])
+
+  // Pre-warm the cloud-sync modal chunks as soon as a cloud-sync entry
+  // point is reachable, so clicking the sidebar prompt opens the popup
+  // without first paying for an on-demand chunk fetch.
+  useEffect(() => {
+    if (!isSignedIn) return
+    if (
+      passkeyRecoveryNeeded ||
+      manualRecoveryNeeded ||
+      passkeySetupFailed ||
+      passkeySetupAvailable ||
+      passkeyAddDeviceAvailable
+    ) {
+      preloadCloudSyncModals()
+    }
+  }, [
+    isSignedIn,
+    passkeyRecoveryNeeded,
+    manualRecoveryNeeded,
+    passkeySetupFailed,
+    passkeySetupAvailable,
+    passkeyAddDeviceAvailable,
+  ])
 
   const handleKeyChanged = useCallback(
     async (
@@ -1479,19 +1492,34 @@ export function ChatInterface({
     [setEncryptionKey, retryProfileDecryption, reloadChats],
   )
 
-  const handleAddRecoveryKey = useCallback(
-    async (key: string) => {
-      await addRecoveryKey(key)
-      await retryProfileDecryption()
-      await reloadChats()
-    },
-    [addRecoveryKey, retryProfileDecryption, reloadChats],
-  )
+  // After an explicit "start fresh" the new key lives only on this
+  // device. If the platform supports passkeys and the user doesn't
+  // already have one, create a passkey now so the fresh key stays
+  // recoverable. Users who already have an active passkey get their
+  // backup re-encrypted by the key-change handler in useCloudSync, so
+  // there's nothing to do for them here. Best-effort: a cancel or
+  // failure just leaves the sidebar backup warning in place.
+  const backupStartFreshKeyWithPasskey = useCallback(async () => {
+    if (passkeyActive) return
+    try {
+      if (!(await isPrfSupported())) return
+      await setupPasskey()
+    } catch (error) {
+      if (error instanceof PrfNotSupportedError) return
+      logError(
+        'Failed to back up new key with passkey after start fresh',
+        error,
+        {
+          component: 'ChatInterface',
+          action: 'backupStartFreshKeyWithPasskey',
+        },
+      )
+    }
+  }, [passkeyActive, setupPasskey])
 
-  // Handler for creating a new project with a random name
   const handleCreateProject = useCallback(async () => {
     try {
-      const name = generateProjectName()
+      const name = `My Project #${projects.length + 1}`
       const project = await createProject({ name, description: '' })
       await enterProjectMode(project.id)
     } catch (error) {
@@ -1505,7 +1533,7 @@ export function ChatInterface({
         variant: 'destructive',
       })
     }
-  }, [createProject, enterProjectMode, toast])
+  }, [createProject, enterProjectMode, projects.length, toast])
 
   // Handler for exiting project mode - creates a new chat and exits
   const handleExitProject = useCallback(() => {
@@ -2773,6 +2801,8 @@ export function ChatInterface({
                 }
                 onSetupPasskey={setupPasskey}
                 passkeySetupAvailable={passkeySetupAvailable}
+                onAddPasskeyToThisDevice={addPasskeyToThisDevice}
+                passkeyAddDeviceAvailable={passkeyAddDeviceAvailable}
                 backupWarningVisible={
                   isSignedIn &&
                   (passkeySetupFailed || manualRecoveryNeeded) &&
@@ -2781,6 +2811,8 @@ export function ChatInterface({
                 backupWarningNeedsRecovery={manualRecoveryNeeded}
                 onDismissBackupWarning={dismissBackupWarning}
                 onChatsUpdated={reloadChats}
+                onManualSync={handleManualSync}
+                isSyncing={syncing}
                 isProjectMode={isProjectMode}
                 activeProjectName={activeProject?.name}
                 onEnterProject={async (projectId, projectName) => {
@@ -2796,6 +2828,8 @@ export function ChatInterface({
                 onConvertChatToLocal={handleConvertChatToLocal}
                 onSettingsClick={handleOpenSettingsModal}
                 windowWidth={windowWidth}
+                chatDecryptionProgress={decryptionProgress}
+                isStreaming={isStreaming}
               />
             </motion.div>
           )}
@@ -2905,11 +2939,12 @@ export function ChatInterface({
         isSignedIn={isSignedIn}
         isPremium={isPremium}
         encryptionKey={encryptionKey}
-        onKeyChange={handleKeyChanged}
-        onAddRecoveryKey={handleAddRecoveryKey}
         passkeyActive={passkeyActive}
         passkeySetupAvailable={passkeySetupAvailable}
+        passkeyAddDeviceAvailable={passkeyAddDeviceAvailable}
         onSetupPasskey={setupPasskey}
+        onAddPasskeyToThisDevice={addPasskeyToThisDevice}
+        onRefreshBundleState={refreshBundleState}
         initialTab={settingsInitialTab}
         chats={chats}
       />
@@ -2970,25 +3005,6 @@ export function ChatInterface({
                 isDarkMode={isDarkMode}
                 className="hidden md:flex"
               />
-            )}
-
-            {/* Decryption Progress Banner */}
-            {decryptionProgress && decryptionProgress.isDecrypting && (
-              <div className="border-b border-border-subtle bg-surface-chat px-4 py-2 text-content-secondary">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <PiSpinner className="h-4 w-4 animate-spin text-content-secondary" />
-                    <span className="text-sm">
-                      Decrypting chats with new key...
-                    </span>
-                  </div>
-                  {decryptionProgress.total > 0 && (
-                    <span className="text-sm">
-                      {decryptionProgress.current} / {decryptionProgress.total}
-                    </span>
-                  )}
-                </div>
-              </div>
             )}
 
             {/* Messages Area */}
@@ -3322,18 +3338,25 @@ export function ChatInterface({
             try {
               await handleKeyChanged(key, { mode })
               setShowCloudSyncSetupModal(false)
-              return true
-            } catch {
-              return false
+              if (mode === 'explicitStartFresh') {
+                void backupStartFreshKeyWithPasskey()
+              }
+              return { ok: true }
+            } catch (error) {
+              return { ok: false, reason: classifyCloudKeySetupError(error) }
             }
           }}
           isDarkMode={isDarkMode}
           initialCloudSyncEnabled={true}
           prfSupported={
-            passkeyActive || passkeyRecoveryNeeded || passkeySetupAvailable
+            passkeyActive ||
+            passkeyRecoveryNeeded ||
+            passkeySetupAvailable ||
+            passkeyAddDeviceAvailable
           }
           passkeyRecoveryNeeded={passkeyRecoveryNeeded}
           manualRecoveryNeeded={manualRecoveryNeeded}
+          passkeyRecoveryFailure={passkeyRecoveryFailure}
           onSkipRecovery={() => {
             skipPasskeyRecovery()
             setShowCloudSyncSetupModal(false)

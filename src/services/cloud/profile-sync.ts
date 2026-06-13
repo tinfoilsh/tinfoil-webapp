@@ -1,10 +1,30 @@
-import { logError, logInfo } from '@/utils/error-handling'
+import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
-import { encryptionService } from '../encryption/encryption-service'
+import {
+  listStatus as enclaveListStatus,
+  pull as enclavePull,
+  push as enclavePush,
+  newIdempotencyKey,
+  pullItemPlaintext,
+} from '../sync-enclave/sync-api'
+import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
+import { WIRE_CODES } from '../sync-enclave/wire-contract'
+import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
+import { ProfileDataSchema } from './schemas'
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
+const PROFILE_SCOPE = 'profile'
+const PROFILE_ROW_ID = 'profile'
+
+// A STALE_BLOB (HTTP 412) push means our If-Match version no longer
+// matches the server: either the row advanced under another writer or
+// we tried to create a profile that already exists.
+function isStaleBlobConflict(error: unknown): boolean {
+  return (
+    error instanceof SyncEnclaveError &&
+    (error.code === WIRE_CODES.StaleBlob || error.status === 412)
+  )
+}
 
 export interface ProfileData {
   // Theme settings
@@ -34,39 +54,16 @@ export class ProfileSyncService {
   private cachedProfile: ProfileData | null = null
   private failedDecryptionData: string | null = null
 
-  private async getHeaders(): Promise<Record<string, string>> {
-    return authTokenManager.getAuthHeaders()
-  }
-
   async isAuthenticated(): Promise<boolean> {
     return authTokenManager.isAuthenticated()
   }
 
-  async fetchEncryptedProfilePayload(): Promise<string | null> {
-    if (!(await this.isAuthenticated())) {
-      return null
-    }
-
-    const response = await fetch(`${API_BASE_URL}/api/profile/`, {
-      headers: await this.getHeaders(),
-    })
-
-    if (response.status === 401 || response.status === 404) {
-      return null
-    }
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch profile: ${response.statusText}`)
-    }
-
-    const data = await response.json()
-    return data.data as string
-  }
-
+  // Get profile from cloud via the sync enclave. The enclave unseals
+  // the row server-side and returns plaintext, so there is no
+  // client-side decryption step.
   async fetchProfile(): Promise<ProfileData | null> {
     try {
-      const payload = await this.fetchEncryptedProfilePayload()
-      if (!payload) {
+      if (!(await this.isAuthenticated())) {
         logInfo('Skipping profile fetch - not authenticated', {
           component: 'ProfileSync',
           action: 'fetchProfile',
@@ -74,43 +71,56 @@ export class ProfileSyncService {
         return null
       }
 
-      try {
-        const encrypted = JSON.parse(payload)
-        const decrypted = await encryptionService.decrypt(encrypted)
+      const keys = pullKey()
+      if (keys.length === 0) return null
 
-        this.cachedProfile = decrypted
-        this.failedDecryptionData = null
+      const resp = await enclavePull({
+        scope: PROFILE_SCOPE,
+        ids: [PROFILE_ROW_ID],
+        keys,
+      })
+      const item = resp.items[0]
+      if (!item || !item.ok) {
+        if (item && item.code === 'NOT_FOUND') return null
+        throw new Error(
+          item?.code || 'Failed to pull profile from sync enclave',
+        )
+      }
+      const plaintextBytes = pullItemPlaintext(item)
+      if (!plaintextBytes) return null
 
-        logInfo('Profile fetched and decrypted successfully', {
+      const validation = ProfileDataSchema.safeParse(
+        JSON.parse(new TextDecoder().decode(plaintextBytes)),
+      )
+      if (!validation.success) {
+        logWarning('Discarding profile with invalid shape from enclave', {
           component: 'ProfileSync',
           action: 'fetchProfile',
-          metadata: {
-            version: decrypted.version,
-            hasNickname: !!decrypted.nickname,
-            hasLanguage: !!decrypted.language,
-            hasPersonalization: !!decrypted.isUsingPersonalization,
-          },
+          metadata: { issues: validation.error.message },
         })
-
-        return decrypted
-      } catch (decryptError) {
-        // Failed to decrypt - store for later retry
-        this.failedDecryptionData = payload
-        this.cachedProfile = null
-
-        logInfo('Profile decryption failed, stored for retry', {
-          component: 'ProfileSync',
-          action: 'fetchProfile',
-          metadata: {
-            error:
-              decryptError instanceof Error
-                ? decryptError.message
-                : 'Unknown error',
-          },
-        })
-
         return null
       }
+      const decoded = validation.data as ProfileData
+      const etagVersion = item.etag ? parseInt(item.etag, 10) : NaN
+      if (Number.isFinite(etagVersion)) {
+        decoded.version = etagVersion
+      }
+
+      this.cachedProfile = decoded
+      this.failedDecryptionData = null
+
+      logInfo('Profile fetched via enclave', {
+        component: 'ProfileSync',
+        action: 'fetchProfile',
+        metadata: {
+          version: decoded.version,
+          hasNickname: !!decoded.nickname,
+          hasLanguage: !!decoded.language,
+          hasPersonalization: !!decoded.isUsingPersonalization,
+        },
+      })
+
+      return decoded
     } catch (error) {
       // Silently fail if no auth token
       if (
@@ -129,10 +139,11 @@ export class ProfileSyncService {
         action: 'fetchProfile',
       })
 
-      return null
+      throw error
     }
   }
 
+  // Save profile to cloud
   async saveProfile(
     profile: ProfileData,
   ): Promise<{ success: boolean; version?: number }> {
@@ -155,54 +166,71 @@ export class ProfileSyncService {
         },
       })
 
-      const profileWithMetadata: ProfileData = {
-        ...profile,
-        updatedAt: new Date().toISOString(),
-        version: (profile.version || 0) + 1,
+      // Push the local profile under a given base version. The
+      // controlplane treats a missing/zero version as create-only and
+      // any positive version as a CAS update gated on the row's etag.
+      const pushAtVersion = async (
+        baseVersion: number,
+      ): Promise<{ success: boolean; version?: number }> => {
+        const profileWithMetadata: ProfileData = {
+          ...profile,
+          updatedAt: new Date().toISOString(),
+          version: baseVersion + 1,
+        }
+
+        const plaintext = new TextEncoder().encode(
+          JSON.stringify(profileWithMetadata),
+        )
+        const ifMatch = baseVersion > 0 ? String(baseVersion) : null
+
+        const pushResp = await enclavePush({
+          scope: PROFILE_SCOPE,
+          id: PROFILE_ROW_ID,
+          keyB64: requirePrimaryKeyB64(),
+          plaintext,
+          ifMatch,
+          idempotencyKey: newIdempotencyKey(),
+          metadata: {
+            version: profileWithMetadata.version,
+          },
+        })
+        const pushedVersion = parseInt(pushResp.etag, 10)
+        if (Number.isFinite(pushedVersion)) {
+          profileWithMetadata.version = pushedVersion
+        }
+
+        // Update cache
+        this.cachedProfile = profileWithMetadata
+
+        logInfo('Profile saved via enclave', {
+          component: 'ProfileSync',
+          action: 'saveProfile',
+          metadata: {
+            version: profileWithMetadata.version,
+            size: plaintext.byteLength,
+          },
+        })
+
+        return { success: true, version: profileWithMetadata.version }
       }
 
-      const encrypted = await encryptionService.encrypt(profileWithMetadata)
-
-      logInfo('Encrypted profile data', {
-        component: 'ProfileSync',
-        action: 'saveProfile',
-        metadata: {
-          hasIv: !!encrypted.iv,
-          hasData: !!encrypted.data,
-          ivLength: encrypted.iv?.length || 0,
-          dataLength: encrypted.data?.length || 0,
-          stringifiedLength: JSON.stringify(encrypted).length,
-        },
-      })
-
-      const response = await fetch(`${API_BASE_URL}/api/profile/`, {
-        method: 'PUT',
-        headers: await this.getHeaders(),
-        body: JSON.stringify({
-          data: JSON.stringify(encrypted),
-        }),
-      })
-
-      if (response.status === 401) {
-        return { success: false }
+      try {
+        return await pushAtVersion(profile.version || 0)
+      } catch (pushError) {
+        if (!isStaleBlobConflict(pushError)) {
+          throw pushError
+        }
+        // Optimistic-concurrency conflict: our base version is behind
+        // the server, or we tried to create a profile that already
+        // exists. Re-read the current version and retry once so local
+        // settings win instead of looping on STALE_BLOB forever.
+        logInfo('Profile push conflicted; rebasing on current version', {
+          component: 'ProfileSync',
+          action: 'saveProfile',
+        })
+        const remote = await this.fetchProfile()
+        return await pushAtVersion(remote?.version ?? 0)
       }
-
-      if (!response.ok) {
-        throw new Error(`Failed to save profile: ${response.statusText}`)
-      }
-
-      this.cachedProfile = profileWithMetadata
-
-      logInfo('Profile saved successfully', {
-        component: 'ProfileSync',
-        action: 'saveProfile',
-        metadata: {
-          version: profileWithMetadata.version,
-          size: JSON.stringify(encrypted).length,
-        },
-      })
-
-      return { success: true, version: profileWithMetadata.version }
     } catch (error) {
       // Silently fail if no auth token
       if (
@@ -225,32 +253,22 @@ export class ProfileSyncService {
     }
   }
 
+  // Retry decryption with the now-current key. With the sync enclave
+  // the enclave already tries every key the client supplied on each
+  // pull, so a retry is just another pull through the standard path.
   async retryDecryptionWithNewKey(): Promise<ProfileData | null> {
     if (!this.failedDecryptionData) {
       return null
     }
 
-    try {
-      const encrypted = JSON.parse(this.failedDecryptionData)
-      const decrypted = await encryptionService.decrypt(encrypted)
-
-      this.cachedProfile = decrypted
-      this.failedDecryptionData = null
-
-      logInfo('Profile decrypted successfully with new key', {
+    const refreshed = await this.fetchProfile()
+    if (refreshed) {
+      logInfo('Profile re-fetched successfully with new key', {
         component: 'ProfileSync',
         action: 'retryDecryptionWithNewKey',
       })
-
-      return decrypted
-    } catch (error) {
-      logInfo('Profile decryption with new key failed', {
-        component: 'ProfileSync',
-        action: 'retryDecryptionWithNewKey',
-      })
-
-      return null
     }
+    return refreshed
   }
 
   // Get cached profile (for quick access)
@@ -262,6 +280,7 @@ export class ProfileSyncService {
     return this.failedDecryptionData !== null
   }
 
+  // Clear cache
   clearCache(): void {
     this.cachedProfile = null
     this.failedDecryptionData = null
@@ -274,25 +293,24 @@ export class ProfileSyncService {
         return null
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/profile/sync-status`, {
-        headers: await this.getHeaders(),
-      })
-
-      if (response.status === 401) {
-        return null
+      const status = await enclaveListStatus({ scope: PROFILE_SCOPE })
+      const current = status.updates.find((u) => u.id === PROFILE_ROW_ID)
+      const deleted = status.deletes.find(
+        (d) => d.scope === PROFILE_SCOPE && d.id === PROFILE_ROW_ID,
+      )
+      if (!current) {
+        return {
+          exists: false,
+          deleted: !!deleted,
+          lastUpdated: deleted?.deleted_at,
+        }
       }
-
-      if (response.status === 404) {
-        return { exists: false }
+      const version = parseInt(current.etag, 10)
+      return {
+        exists: true,
+        version: Number.isFinite(version) ? version : undefined,
+        lastUpdated: current.updated_at,
       }
-
-      if (!response.ok) {
-        throw new Error(
-          `Failed to get profile sync status: ${response.statusText}`,
-        )
-      }
-
-      return await response.json()
     } catch (error) {
       if (
         error instanceof Error &&

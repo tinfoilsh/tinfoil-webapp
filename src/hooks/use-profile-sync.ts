@@ -9,6 +9,7 @@ import {
   applySettingsToLocal,
   hasProfileChanged,
   loadLocalSettings,
+  resetSettingsToLocalDefaults,
 } from '@/services/cloud/profile-settings-serializer'
 import { profileSync, type ProfileData } from '@/services/cloud/profile-sync'
 import { SyncStatusCache } from '@/services/cloud/sync-status-cache'
@@ -146,8 +147,28 @@ export function useProfileSync() {
         return
       }
 
-      // If no profile exists on server, nothing to sync
       if (!remoteStatus.exists) {
+        if (remoteStatus.deleted) {
+          const cached = profileSyncCache.current.load()
+          const needsReset =
+            !cached ||
+            cached.exists ||
+            cached.lastUpdated !== remoteStatus.lastUpdated
+
+          if (needsReset && !hasLocalProfileChanges()) {
+            isApplyingRemoteProfile.current = true
+            try {
+              const defaults = resetSettingsToLocalDefaults()
+              clearLocalProfileChanged()
+              lastSyncedVersion.current = 0
+              lastSyncedProfile.current = defaults
+              profileSync.clearCache()
+              profileSyncCache.current.save(remoteStatus)
+            } finally {
+              isApplyingRemoteProfile.current = false
+            }
+          }
+        }
         return
       }
 

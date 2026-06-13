@@ -164,6 +164,10 @@ export type Chat = {
   titleState?: TitleState
   messages: Message[]
   createdAt: Date
+  // Latest server-bumped write time, used as the canonical sort
+  // key for the sidebar. Absent for chats that have never been
+  // stored (blank chats kept purely in component state).
+  updatedAt?: string
   // Sync metadata - optional for backward compatibility
   syncedAt?: number
   locallyModified?: boolean
