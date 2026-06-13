@@ -102,16 +102,21 @@ export async function getCurrentCloudKeyAuthorizationMode(): Promise<CloudKeyAut
 export async function canWriteToCloud(): Promise<boolean> {
   const validation = await validateCurrentPrimaryKey()
   if (!validation.canWrite) return false
-  // The enclave just confirmed the local key is authoritative, so any
-  // surfaced key problem is stale — clear the sync-health gate.
-  reportKeyHealthy()
   if (validation.remoteState === 'empty' && isCloudSyncEnabled()) {
-    return registerKeyForEmptyRemote()
+    const registered = await registerKeyForEmptyRemote()
+    if (!registered) return false
   }
+  // The enclave confirmed the local key is authoritative and, for an
+  // empty remote, registration succeeded — only now is any surfaced
+  // key problem known to be stale, so clear the sync-health gate.
+  reportKeyHealthy()
   return true
 }
 
-let emptyRemoteRegistration: Promise<boolean> | null = null
+let emptyRemoteRegistration: {
+  keyB64: string
+  promise: Promise<boolean>
+} | null = null
 
 /**
  * Bind the loaded primary CEK as the enclave's current key when the
@@ -131,8 +136,11 @@ function registerKeyForEmptyRemote(): Promise<boolean> {
   // back while the server stays bound to the discarded key).
   const persistedKeyB64 = persistedPrimaryKeyB64()
   if (!persistedKeyB64) return Promise.resolve(false)
-  if (!emptyRemoteRegistration) {
-    emptyRemoteRegistration = (async () => {
+  // Dedupe in-flight registrations per key: a pending promise started
+  // for a previous user/key must not be handed to a caller whose
+  // persisted key has since changed.
+  if (emptyRemoteRegistration?.keyB64 !== persistedKeyB64) {
+    const promise = (async () => {
       try {
         await registerKey({
           keyB64: persistedKeyB64,
@@ -148,11 +156,14 @@ function registerKeyForEmptyRemote(): Promise<boolean> {
         })
         return false
       } finally {
-        emptyRemoteRegistration = null
+        if (emptyRemoteRegistration?.promise === promise) {
+          emptyRemoteRegistration = null
+        }
       }
     })()
+    emptyRemoteRegistration = { keyB64: persistedKeyB64, promise }
   }
-  return emptyRemoteRegistration
+  return emptyRemoteRegistration.promise
 }
 
 /**
@@ -234,6 +245,7 @@ export async function registerStartFreshKeyIfNeeded(): Promise<void> {
 
 export function clearCloudKeyAuthorization(userId?: string | null): void {
   if (typeof window === 'undefined') return
+  emptyRemoteRegistration = null
   const resolvedUserId = userId ?? getActiveUserId()
   if (!resolvedUserId) return
   localStorage.removeItem(storageKey(resolvedUserId))
