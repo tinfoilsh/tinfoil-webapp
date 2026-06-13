@@ -140,7 +140,11 @@ function registerKeyForEmptyRemote(): Promise<boolean> {
   // for a previous user/key must not be handed to a caller whose
   // persisted key has since changed.
   if (emptyRemoteRegistration?.keyB64 !== persistedKeyB64) {
-    const promise = (async () => {
+    const entry: { keyB64: string; promise: Promise<boolean> } = {
+      keyB64: persistedKeyB64,
+      promise: Promise.resolve(false),
+    }
+    entry.promise = (async () => {
       try {
         await registerKey({
           keyB64: persistedKeyB64,
@@ -156,12 +160,12 @@ function registerKeyForEmptyRemote(): Promise<boolean> {
         })
         return false
       } finally {
-        if (emptyRemoteRegistration?.promise === promise) {
+        if (emptyRemoteRegistration === entry) {
           emptyRemoteRegistration = null
         }
       }
     })()
-    emptyRemoteRegistration = { keyB64: persistedKeyB64, promise }
+    emptyRemoteRegistration = entry
   }
   return emptyRemoteRegistration.promise
 }
