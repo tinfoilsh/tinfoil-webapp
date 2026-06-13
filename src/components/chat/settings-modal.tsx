@@ -277,7 +277,7 @@ function PasskeyBundleInventory({
                 onClick={() => {
                   void onRemove(entry.id)
                 }}
-                disabled={isRemoving || isLegacy || !canManage}
+                disabled={removingId !== null || isLegacy || !canManage}
                 title={
                   isLegacy
                     ? 'Legacy credentials cannot be removed from settings yet'
@@ -287,7 +287,7 @@ function PasskeyBundleInventory({
                 }
                 className={cn(
                   'shrink-0 rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium transition-colors',
-                  isRemoving || isLegacy || !canManage
+                  removingId !== null || isLegacy || !canManage
                     ? 'cursor-not-allowed opacity-50'
                     : 'hover:bg-surface-chat/80',
                 )}
@@ -387,6 +387,7 @@ export function SettingsModal({
   const [passkeyKeyStatus, setPasskeyKeyStatus] = useState<
     'match' | 'mismatch' | 'unverified'
   >('unverified')
+  const passkeyRefreshSeqRef = useRef(0)
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -718,6 +719,10 @@ export function SettingsModal({
   }, [isClient, loadSettingsFromStorage])
 
   const refreshPasskeyBundles = useCallback(async () => {
+    // Latest-wins sequencing: overlapping refreshes (panel-open effect
+    // racing a post-removal refresh) must not let a stale response
+    // overwrite newer inventory or key status.
+    const seq = ++passkeyRefreshSeqRef.current
     if (!cloudSyncEnabled) {
       setPasskeyBundles([])
       setPasskeyKeyStatus('unverified')
@@ -725,16 +730,19 @@ export function SettingsModal({
     }
     try {
       const entries = await loadPasskeyCredentials()
+      if (seq !== passkeyRefreshSeqRef.current) return
       setPasskeyBundles(entries)
     } catch (error) {
       logError('Failed to load passkey bundle inventory', error, {
         component: 'SettingsModal',
         action: 'refreshPasskeyBundles',
       })
+      if (seq !== passkeyRefreshSeqRef.current) return
       setPasskeyBundles([])
     }
     try {
       const validation = await validateCurrentPrimaryKey()
+      if (seq !== passkeyRefreshSeqRef.current) return
       setPasskeyKeyStatus(
         validation.canWrite
           ? 'match'
@@ -743,6 +751,7 @@ export function SettingsModal({
             : 'unverified',
       )
     } catch {
+      if (seq !== passkeyRefreshSeqRef.current) return
       setPasskeyKeyStatus('unverified')
     }
   }, [cloudSyncEnabled])
@@ -3299,6 +3308,9 @@ ${encryptionKey.replace('key_', '')}
                             removingId={removingPasskeyId}
                             keyStatus={passkeyKeyStatus}
                             onRemove={async (credentialId) => {
+                              // Guard non-pointer activation paths;
+                              // one removal at a time.
+                              if (removingPasskeyId !== null) return
                               setRemovingPasskeyId(credentialId)
                               try {
                                 const ok =

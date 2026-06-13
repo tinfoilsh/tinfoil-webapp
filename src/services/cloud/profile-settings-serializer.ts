@@ -122,7 +122,11 @@ export function resetSettingsToLocalDefaults(): ProfileData {
   }
 
   applySettingsToLocal(defaults)
-  return defaults
+  // Return the round-tripped snapshot rather than `defaults`: applying
+  // populates derived keys (e.g. the legacy dark-mode flag) that
+  // loadLocalSettings always reads back, and a baseline missing them
+  // would make every later change comparison report a diff.
+  return loadLocalSettings()
 }
 
 /**
