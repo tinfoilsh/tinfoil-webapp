@@ -45,10 +45,10 @@ const eslintConfig = [
   // §9.6 R2 — sync reliability contract.
   //
   // Bare `catch {}` and empty-body `catch (e) {}` blocks let server
-  // and network failures vanish silently. Every catch in the cloud
-  // adapter layer and in the two sync hooks must route through
-  // `classifyEnclaveError` (or re-throw); the built-in `no-empty`
-  // rule enforces this once `allowEmptyCatch` is left off.
+  // and network failures vanish silently. In the cloud adapter layer
+  // and the two sync hooks, `no-empty` (with `allowEmptyCatch` left
+  // off) forces every catch body to at least say what it does with
+  // the error, instead of swallowing it invisibly.
   {
     files: [
       'src/services/cloud/**/*.ts',

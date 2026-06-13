@@ -37,7 +37,6 @@ export const ProfileDataSchema = z
   .object({
     isDarkMode: z.boolean().optional(),
     themeMode: z.enum(['light', 'dark', 'system']).optional(),
-    maxPromptMessages: z.number().optional(),
     language: z.string().optional(),
     nickname: z.string().optional(),
     profession: z.string().optional(),

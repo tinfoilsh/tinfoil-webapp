@@ -18,12 +18,3 @@ export function getLocalPasskeyCredentialId(): string | null {
     return null
   }
 }
-
-export function clearLocalPasskeyCredentialId(): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.removeItem(LOCAL_PASSKEY_CREDENTIAL_ID)
-  } catch {
-    // best-effort
-  }
-}

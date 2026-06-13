@@ -1,5 +1,4 @@
 export {
-  clearLocalPasskeyCredentialId,
   getLocalPasskeyCredentialId,
   setLocalPasskeyCredentialId,
 } from './local-passkey-credential'
