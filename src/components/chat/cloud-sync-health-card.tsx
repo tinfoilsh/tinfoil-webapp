@@ -65,6 +65,18 @@ function describeStatus(health: SyncHealthSnapshot): {
       cta: null,
     }
   }
+  // An open gate with terminally failed chats is not a success state;
+  // a green "Synced" headline would contradict the failure list below.
+  if (Object.keys(health.failedChats).length > 0) {
+    return {
+      tone: 'warning',
+      headline: "Some chats aren't syncing",
+      detail: health.lastSyncedAt
+        ? `Last synced ${formatRelativeTime(new Date(health.lastSyncedAt))}`
+        : null,
+      cta: null,
+    }
+  }
   return {
     tone: 'ok',
     headline: health.lastSyncedAt

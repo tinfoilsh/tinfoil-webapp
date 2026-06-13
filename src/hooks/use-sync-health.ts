@@ -20,6 +20,20 @@ export function useSyncHealth(): SyncHealthSnapshot {
 }
 
 /**
+ * Narrow subscription for per-chat failure badges. The store keeps
+ * the `failedChats` reference stable across unrelated updates (e.g.
+ * the lastSyncedAt stamp on every sync pass), so consumers re-render
+ * only when a chat's failure state actually changes.
+ */
+export function useSyncFailedChats(): SyncHealthSnapshot['failedChats'] {
+  return useSyncExternalStore(
+    subscribeSyncHealth,
+    () => getSyncHealthSnapshot().failedChats,
+    () => getSyncHealthServerSnapshot().failedChats,
+  )
+}
+
+/**
  * Whether the settings entry point should show the attention badge.
  * Re-evaluates on store changes and once a minute, because a paused
  * gate only starts deserving attention after it has persisted past

@@ -127,11 +127,19 @@ export function reportSyncPaused(reason: SyncPausedReason): void {
 
 /**
  * The enclave confirmed the local key is the registered current key.
- * Clears any gate — reaching that verdict required a healthy enclave
- * round trip, so a paused gate is stale too.
+ * Clears any key gate — reaching that verdict required a healthy
+ * enclave round trip, so a paused gate is stale too. An account-level
+ * block is NOT cleared: key validation can succeed while writes stay
+ * forbidden, so only a successful write (`reportChatSynced`) lifts it.
  */
 export function reportKeyHealthy(): void {
   if (snapshot.gate.kind === 'ok') return
+  if (
+    snapshot.gate.kind === 'action-required' &&
+    snapshot.gate.reason === 'account-blocked'
+  ) {
+    return
+  }
   publish({ ...snapshot, gate: OK_GATE })
 }
 
@@ -157,12 +165,23 @@ export function reportChatSyncFailed(chatId: string, message: string): void {
   })
 }
 
-/** Clears a chat's failure entry (successful upload or deletion). */
+/**
+ * Clears a chat's failure entry (successful upload or deletion). A
+ * successful write also proves the account is not blocked, so it
+ * lifts the account-blocked gate that key validation alone cannot.
+ */
 export function reportChatSynced(chatId: string): void {
-  if (!(chatId in snapshot.failedChats)) return
+  const accountUnblocked =
+    snapshot.gate.kind === 'action-required' &&
+    snapshot.gate.reason === 'account-blocked'
+  if (!(chatId in snapshot.failedChats) && !accountUnblocked) return
   const failedChats = { ...snapshot.failedChats }
   delete failedChats[chatId]
-  publish({ ...snapshot, failedChats })
+  publish({
+    ...snapshot,
+    gate: accountUnblocked ? OK_GATE : snapshot.gate,
+    failedChats,
+  })
 }
 
 /** Full reset (sign-out, tests). */

@@ -1,6 +1,6 @@
 'use client'
 
-import { useSyncHealth } from '@/hooks/use-sync-health'
+import { useSyncFailedChats } from '@/hooks/use-sync-health'
 import { Fragment, useEffect, useState } from 'react'
 import { cn } from '../ui/utils'
 import {
@@ -94,7 +94,7 @@ export function ChatList({
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
-  const syncHealth = useSyncHealth()
+  const syncFailedChats = useSyncFailedChats()
   // Track chat IDs that were manually edited - skip animation for these
   const [manuallyEditedChatId, setManuallyEditedChatId] = useState<
     string | null
@@ -213,7 +213,7 @@ export function ChatList({
                 showEncryptionStatus={showEncryptionStatus}
                 showSyncStatus={showSyncStatus}
                 isStreaming={!chat.isBlankChat && chat.id === streamingChatId}
-                syncFailed={Boolean(syncHealth.failedChats[chat.id])}
+                syncFailed={Boolean(syncFailedChats[chat.id])}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id
                 }
