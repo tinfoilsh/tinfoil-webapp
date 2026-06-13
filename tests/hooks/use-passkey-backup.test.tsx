@@ -1,6 +1,6 @@
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   inspectRemoteEncryptedState: vi.fn(),
@@ -156,10 +156,6 @@ describe('usePasskeyBackup', () => {
     mocks.getKey.mockReturnValue(null)
     mocks.getAllKeys.mockReturnValue({ primary: null, alternatives: [] })
     mocks.passkeyEventsOn.mockReturnValue(() => {})
-  })
-
-  afterEach(() => {
-    vi.clearAllMocks()
   })
 
   it('keeps transient remote-state failures retriable during initialization', async () => {

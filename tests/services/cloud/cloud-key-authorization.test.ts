@@ -151,7 +151,7 @@ describe('cloud-key-authorization', () => {
   })
 
   describe('getCurrentCloudKeyAuthorizationMode', () => {
-    it('returns null when the enclave disagrees, even if localStorage hints validated', () => {
+    it('returns null when the enclave disagrees, even if localStorage hints validated', async () => {
       // Pre-seed a legitimate-looking record from a previous session.
       localStorage.setItem(
         `${SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX}${USER_ID}`,
@@ -162,9 +162,7 @@ describe('cloud-key-authorization', () => {
         canWrite: false,
         probe: 'none',
       })
-      return getCurrentCloudKeyAuthorizationMode().then((mode) => {
-        expect(mode).toBeNull()
-      })
+      expect(await getCurrentCloudKeyAuthorizationMode()).toBeNull()
     })
 
     it('returns the persisted mode hint when the enclave agrees', async () => {

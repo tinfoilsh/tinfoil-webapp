@@ -2,9 +2,9 @@
  * §9.6 R6 + §14 #15 — local-only-chat invariant.
  *
  * A chat the user marked `isLocalOnly` MUST NEVER reach the enclave
- * write surface. This file intercepts every enclave call the cloud
- * adapters make and asserts the local-only chat id is absent from
- * push, bulk-upload, and the upload-coalescer enqueue path.
+ * write surface. This file spies on the enclave `push` wire — the
+ * call both uploadChat and bulkUploadChats bottom out in — and
+ * asserts the local-only chat id never appears in a push.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'

@@ -61,7 +61,6 @@ describe.skipIf(!enabled)('sync-enclave live smoke', () => {
   )
 
   beforeAll(async () => {
-    if (!enabled) return
     // The enclave client pulls the JWT from authTokenManager; for a
     // standalone integration run we override with the CI-provided
     // token without touching production auth wiring.
@@ -77,7 +76,6 @@ describe.skipIf(!enabled)('sync-enclave live smoke', () => {
   })
 
   afterAll(async () => {
-    if (!enabled) return
     // Best-effort cleanup. The enclave is the source of truth, so a
     // leftover key wastes nothing but it does muddy subsequent runs.
     if (registeredKeyId) {

@@ -1,9 +1,12 @@
 import { resetSyncEnclaveClient } from '@/services/sync-enclave/sync-enclave-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockReady = vi.fn().mockResolvedValue(undefined)
-const mockFetch =
-  vi.fn<(input: string, init?: RequestInit) => Promise<Response>>()
+// vi.mock factories are hoisted above module-scope consts; vi.hoisted
+// guarantees the shared mock state exists when the factory runs.
+const { mockReady, mockFetch } = vi.hoisted(() => ({
+  mockReady: vi.fn().mockResolvedValue(undefined),
+  mockFetch: vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(),
+}))
 
 vi.mock('tinfoil', () => ({
   SecureClient: class {

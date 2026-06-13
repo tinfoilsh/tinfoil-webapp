@@ -161,21 +161,24 @@ describe('runWithRetry', () => {
 
   it('does not leak real setTimeout calls', async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
-    const fn = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('x'))
-      .mockResolvedValueOnce('ok')
-    const { scheduler } = makeScheduler()
+    try {
+      const fn = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('x'))
+        .mockResolvedValueOnce('ok')
+      const { scheduler } = makeScheduler()
 
-    await runWithRetry(fn, () => true, {
-      baseDelayMs: 1,
-      maxDelayMs: 1,
-      maxAttempts: 2,
-      scheduler,
-    })
+      await runWithRetry(fn, () => true, {
+        baseDelayMs: 1,
+        maxDelayMs: 1,
+        maxAttempts: 2,
+        scheduler,
+      })
 
-    expect(setTimeoutSpy).not.toHaveBeenCalled()
-    setTimeoutSpy.mockRestore()
+      expect(setTimeoutSpy).not.toHaveBeenCalled()
+    } finally {
+      setTimeoutSpy.mockRestore()
+    }
   })
 
   it('still runs once when maxAttempts is zero or negative', async () => {

@@ -43,6 +43,7 @@ jobs:
     # staging access don't fail.
     runs-on: ubuntu-latest
     if: ${{ vars.SYNC_ENCLAVE_URL != '' }}
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
