@@ -56,7 +56,10 @@ export async function processRemoteChat(
     remote.id,
   )
 
-  if (!remote.plaintext) {
+  // Only a missing plaintext is "no content"; an empty string is a
+  // zero-byte (corrupt) row and must fall through to the parse so it
+  // surfaces as v2_plaintext_invalid instead of a benign placeholder.
+  if (remote.plaintext == null) {
     logInfo('Remote chat has no plaintext', {
       component: 'ChatCodec',
       action: 'processRemoteChat',

@@ -675,7 +675,9 @@ export function useChatMessaging({
             // sidebar badge is suppressed while streaming, so it now
             // surfaces only here - once the stream stops and the chat
             // is actually syncing - and clears when the save resolves.
-            pendingSave: true,
+            // Temporary chats skip persistence entirely, so the flag
+            // would never clear for them.
+            pendingSave: !updatedChat.isTemporary,
           }
 
           // Update React state with resolved title

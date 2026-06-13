@@ -358,6 +358,12 @@ function shouldRetryUploadError(error: Error): boolean {
   if (decision.classification.code || error instanceof SyncEnclaveError) {
     return false
   }
+  // Deliberately retry codeless non-enclave unknowns even though
+  // decideRecovery defaults them to abort: the transport layer throws
+  // plain Errors for genuine network flakes that isNetworkError's
+  // narrow TypeError check cannot recognize. The same idempotency key
+  // covers every attempt, so the extra tries are safe and only delay
+  // terminal failure by a few seconds.
   return true
 }
 

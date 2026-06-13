@@ -104,7 +104,12 @@ export async function runWithRetry<T>(
       // Hook fires on every observed failure, retriable or not, so
       // callers can count terminal/final errors in the same metric
       // stream as the transient ones.
-      config.onAttemptFailed?.({ attempt, delayMs, error: err })
+      try {
+        config.onAttemptFailed?.({ attempt, delayMs, error: err })
+      } catch {
+        // The hook is metrics-only; a hook bug must not cancel
+        // retries or replace the original sync failure.
+      }
       if (!willRetry) break
       await scheduler.sleep(delayMs)
     }
