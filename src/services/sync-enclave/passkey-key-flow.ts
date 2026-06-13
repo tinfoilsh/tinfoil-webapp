@@ -107,6 +107,16 @@ function failureFromEnclaveError(err: unknown): PasskeyFlowFailure {
       err.code === WIRE_CODES.ExistingDataUnderOtherKey ||
       err.status === 409
     ) {
+      // 409 multiplexes several conflicts. STALE_KEY on the AnyKey
+      // register CAS still means "a key is already registered", but an
+      // idempotency replay or blob conflict must not route the user
+      // into the unlock-existing-key path.
+      if (
+        err.code === WIRE_CODES.IdempotencyConflict ||
+        err.code === WIRE_CODES.StaleBlob
+      ) {
+        return 'register_failed'
+      }
       return 'remote_key_exists'
     }
     if (err.status && err.status >= 500) return 'enclave_unavailable'
@@ -337,11 +347,15 @@ export function bundlesFromKeyCurrent(resp: KeyCurrentResponse): BundleBody[] {
 
 /**
  * Probe the server for the current key id + bundles. Returns
- * `{ status: 'empty' }` when the user has no key registered yet, or
- * `{ status: 'exists', keyIdHex, candidates }` otherwise.
+ * `{ status: 'empty' }` when the user has no key and no data yet,
+ * `{ status: 'has_data' }` when legacy (key_id IS NULL) data exists
+ * without a registered key — the caller must route to recovery, not
+ * first-time setup — or `{ status: 'exists', keyIdHex, candidates }`
+ * otherwise.
  */
 export async function fetchServerKeyState(): Promise<
   | { status: 'empty' }
+  | { status: 'has_data' }
   | {
       status: 'exists'
       keyIdHex: string
@@ -351,7 +365,7 @@ export async function fetchServerKeyState(): Promise<
 > {
   const resp = await enclaveKeyCurrent()
   if (!resp.key_id) {
-    return { status: 'empty' }
+    return resp.has_data ? { status: 'has_data' } : { status: 'empty' }
   }
   return {
     status: 'exists',
@@ -377,6 +391,12 @@ export async function unlockFromServer(opts?: {
   }
   if (state.status === 'empty') {
     return { ok: false, reason: 'no_remote_key' }
+  }
+  if (state.status === 'has_data') {
+    // Legacy data exists without a registered key: there is nothing
+    // to unlock against, but the caller must offer recovery rather
+    // than treat this as a first-time user.
+    return { ok: false, reason: 'no_remote_bundle' }
   }
   const result = await unlockWithPasskey({
     candidates: state.candidates,

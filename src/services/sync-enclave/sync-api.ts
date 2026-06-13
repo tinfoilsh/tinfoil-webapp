@@ -447,7 +447,12 @@ export async function removeBundle(
 export async function keyCurrent(): Promise<KeyCurrentResponse> {
   const client = await getSyncEnclaveClient()
   try {
-    return await client.post<KeyCurrentResponse>('/v1/key/current', {})
+    const resp = await client.post<KeyCurrentResponse>('/v1/key/current', {})
+    // The server is a Go service; a nil bundle map marshals to JSON
+    // null. Normalize so callers can Object.values/index the map
+    // without crashing on edge shapes (e.g. a key registered via
+    // migrate-all bootstrap before any bundle exists).
+    return { ...resp, key_id: resp.key_id ?? null, bundles: resp.bundles ?? {} }
   } catch (err) {
     if (err instanceof SyncEnclaveError && err.status === 404) {
       return { key_id: null, bundles: {}, has_data: false }
