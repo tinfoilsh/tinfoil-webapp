@@ -118,8 +118,9 @@ describe('Chat Codec - processRemoteChat', () => {
         createdAt: '2024-01-01T00:00:00.000Z',
       }
 
-      const result = await processRemoteChat(remoteChat)
-      expect(result.status).toBe('no_content')
+      await expect(processRemoteChat(remoteChat)).rejects.toThrow(
+        /v2_plaintext_invalid/,
+      )
     })
 
     it('throws v2_plaintext_invalid on malformed JSON', async () => {

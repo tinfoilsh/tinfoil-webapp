@@ -228,12 +228,9 @@ describe('runLegacyBlobMigration', () => {
     expect(report.totalRemaining).toBe(99)
   })
 
-  it('returns an empty report when the enclave errors on the first pass', async () => {
+  it('rethrows when the enclave errors on the first pass so callers can retry', async () => {
     mockMigrateAll.mockRejectedValue(new Error('boom'))
-    const report = await runLegacyBlobMigration()
-    expect(report.fullyMigrated).toBe(false)
-    expect(report.totalMigrated).toBe(0)
-    expect(report.scopes).toEqual([])
+    await expect(runLegacyBlobMigration()).rejects.toThrow('boom')
   })
 })
 
