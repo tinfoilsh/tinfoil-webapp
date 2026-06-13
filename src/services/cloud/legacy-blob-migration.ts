@@ -123,7 +123,10 @@ export async function runLegacyBlobMigration(): Promise<MigrationReport> {
       component: 'LegacyBlobMigration',
       action: 'runLegacyBlobMigration',
     })
-    return emptyReport()
+    // Rethrow so the caller's once-per-session latch is released and
+    // a later sync can retry; resolving with an empty report would
+    // make a transient kickoff failure look like a finished run.
+    throw err
   }
 
   while (lastResp?.partial && (lastResp.status ?? 'running') === 'running') {

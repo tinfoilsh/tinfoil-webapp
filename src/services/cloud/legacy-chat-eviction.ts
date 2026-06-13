@@ -29,7 +29,9 @@ export async function runLegacyChatEvictionIfNeeded(): Promise<void> {
   try {
     flag = localStorage.getItem(MIGRATION_LEGACY_CLOUD_CHATS_EVICTED)
   } catch {
-    return
+    // An unreadable flag must not strand legacy rows. The sweep is
+    // idempotent, so run it as if the one-shot had not happened yet.
+    flag = null
   }
   if (flag === '1') return
 

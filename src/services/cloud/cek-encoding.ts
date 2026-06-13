@@ -69,7 +69,13 @@ export function hasPrimaryKey(): boolean {
  */
 export async function primaryKeyIdHexOrNull(): Promise<string | null> {
   if (encryptionService.getKey() == null) return null
-  return deriveKeyIdHex(encryptionService.getKeyBytesOrThrow())
+  try {
+    return await deriveKeyIdHex(encryptionService.getKeyBytesOrThrow())
+  } catch {
+    // A malformed persisted key cannot be the registered current key;
+    // report "no derivable key id" instead of aborting the caller.
+    return null
+  }
 }
 
 /**
