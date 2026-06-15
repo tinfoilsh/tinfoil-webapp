@@ -1,0 +1,41 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "早安，{{name}}！",
+    "afternoon": "午安，{{name}}！",
+    "evening": "晚上好，{{name}}！",
+    "late": "還沒睡嗎，{{name}}？"
+  },
+  "privacy": {
+    "toggle": "您的對話在設計上即為私密",
+    "body1": "您的訊息會直接加密傳送給在安全硬體飛地內執行的 AI 模型。",
+    "body2": " 這些是硬體隔離的環境，由具備可驗證機密性與完整性保證的機密運算 GPU 提供支援。即使是 Tinfoil 也無法存取您的資料。這適用於所有對話、影像、文件與語音輸入。我們的開放原始碼技術堆疊讓您可以透過檢查硬體證明親自驗證這一點。",
+    "technology": "技術",
+    "source": "來源"
+  },
+  "model": {
+    "selectAria": "選擇模型",
+    "others": "其他模型"
+  },
+  "rateLimit": {
+    "exhausted": "您已用完今天所有的免費要求",
+    "remaining_other": "您今天還剩 {{count}} 次免費要求"
+  },
+  "error": {
+    "expandDetails": "顯示錯誤詳情：{{title}}",
+    "collapseDetails": "隱藏錯誤詳情：{{title}}",
+    "dismiss": "關閉錯誤"
+  },
+  "input": {
+    "replyPlaceholder": "回覆 Tin...",
+    "messageAria": "訊息",
+    "send": "傳送",
+    "stop": "停止產生",
+    "placeholders": {
+      "mind": "在想什麼？",
+      "anything": "儘管問我……",
+      "help": "今天我能幫你什麼？",
+      "secrets": "你的祕密在這裡很安全……"
+    }
+  }
+}

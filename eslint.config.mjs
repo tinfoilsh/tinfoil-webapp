@@ -1,4 +1,5 @@
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals'
+import i18next from 'eslint-plugin-i18next'
 
 // eslint-config-next@16 ships a native flat config. Going through
 // `FlatCompat` triggers a "Converting circular structure to JSON" crash
@@ -58,6 +59,16 @@ const eslintConfig = [
     ],
     rules: {
       'no-empty': ['error', { allowEmptyCatch: false }],
+    },
+  },
+  {
+    // Surface (without blocking CI) any hardcoded user-facing JSX text in the
+    // UI so new strings get routed through the i18n catalogs. Translate with
+    // useTranslation()/t() and add the key to src/i18n/locales/<lng>/*.json.
+    files: ['src/components/**/*.{ts,tsx}', 'src/pages/**/*.{ts,tsx}'],
+    plugins: { i18next },
+    rules: {
+      'i18next/no-literal-string': ['warn', { mode: 'jsx-text-only' }],
     },
   },
 ]

@@ -1,0 +1,6 @@
+{
+  "language": {
+    "label": "Anzeigesprache",
+    "description": "Sprache der App-Oberfläche. Unabhängig von der Sprache, in der die KI antwortet."
+  }
+}

@@ -1,3 +1,5 @@
+import { SETTINGS_UI_LOCALE } from '@/constants/storage-keys'
+import { RTL_LOCALES } from '@/i18n/config'
 import { Head, Html, Main, NextScript } from 'next/document'
 import Script from 'next/script'
 
@@ -54,11 +56,37 @@ export default function Document() {
     })();
   `
 
+  // Inline script to set the document language and text direction before first
+  // paint, so RTL locales (e.g. Arabic) don't flash an LTR layout on load. The
+  // stored preference is written by the i18n layer; when absent we fall back to
+  // the browser's language. React re-applies the same attributes after hydration.
+  const localeScript = `
+    (function() {
+      try {
+        var rtl = ${JSON.stringify(RTL_LOCALES)};
+        var rtlBase = ['ar', 'fa', 'ur', 'he'];
+        var stored = localStorage.getItem('${SETTINGS_UI_LOCALE}');
+        var locale = stored;
+        if (!locale) {
+          locale = (navigator.languages && navigator.languages[0])
+            || navigator.language || '';
+        }
+        if (locale) {
+          var base = locale.toLowerCase().split('-')[0];
+          var isRtl = rtl.indexOf(locale) !== -1 || rtlBase.indexOf(base) !== -1;
+          document.documentElement.lang = locale;
+          document.documentElement.dir = isRtl ? 'rtl' : 'ltr';
+        }
+      } catch (_) {}
+    })();
+  `
+
   return (
     <Html lang="en" data-theme="light" className="overflow-x-hidden">
       <Head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <script dangerouslySetInnerHTML={{ __html: appHeightScript }} />
+        <script dangerouslySetInnerHTML={{ __html: localeScript }} />
         <link rel="preconnect" href="https://clerk.accounts.dev" />
 
         <link rel="manifest" href="/site.webmanifest" />

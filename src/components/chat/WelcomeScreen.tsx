@@ -4,6 +4,7 @@ import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
 import { useUser } from '@clerk/nextjs'
 import { AnimatePresence, motion } from 'framer-motion'
 import React, { memo, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { BiSolidLock } from 'react-icons/bi'
 import { ChatInput } from './chat-input'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
@@ -255,6 +256,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   onSelectPromptPreset,
 }: WelcomeScreenProps) {
   const { user } = useUser()
+  const { t } = useTranslation('chat')
   const [nickname, setNickname] = useState<string>('')
   const [privacyExpanded, setPrivacyExpanded] = useState(false)
   const [lockPop, setLockPop] = useState(false)
@@ -297,18 +299,18 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   const getGreeting = () => {
     const name = nickname || user?.firstName
     if (!name) {
-      return 'Tinfoil Private Chat'
+      return t('greeting.default')
     }
 
     const hour = new Date().getHours()
     if (hour >= 5 && hour < 12) {
-      return `Good morning, ${name}!`
+      return t('greeting.morning', { name })
     } else if (hour >= 12 && hour < 17) {
-      return `Good afternoon, ${name}!`
+      return t('greeting.afternoon', { name })
     } else if (hour >= 17 && hour < 22) {
-      return `Good evening, ${name}!`
+      return t('greeting.evening', { name })
     } else {
-      return `Up late, ${name}?`
+      return t('greeting.late', { name })
     }
   }
 
@@ -383,7 +385,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                 />
               </motion.span>
               <span className="shrink-0 whitespace-nowrap">
-                Your chats are private by design
+                {t('privacy.toggle')}
               </span>
               <svg
                 className={`h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-300 ${privacyExpanded ? 'rotate-180' : ''}`}
@@ -425,22 +427,20 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                       segments={[
                         {
                           type: 'text',
-                          content:
-                            'Your messages are encrypted directly to the AI models running inside secure hardware enclaves.',
+                          content: t('privacy.body1'),
                         },
                         {
                           type: 'citation',
-                          content: 'Technology',
+                          content: t('privacy.technology'),
                           href: 'https://tinfoil.sh/technology',
                         },
                         {
                           type: 'text',
-                          content:
-                            ' These are hardware-isolated environments powered by confidential computing GPUs with verifiable confidentiality and integrity guarantees. Not even Tinfoil can access your data. This applies to all chats, images, documents, and voice input. Our open-source stack lets you verify this yourself by inspecting the hardware attestation.',
+                          content: t('privacy.body2'),
                         },
                         {
                           type: 'citation',
-                          content: 'Source',
+                          content: t('privacy.source'),
                           href: 'https://github.com/tinfoilsh',
                         },
                       ]}

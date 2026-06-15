@@ -1,0 +1,42 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "Guten Morgen, {{name}}!",
+    "afternoon": "Guten Tag, {{name}}!",
+    "evening": "Guten Abend, {{name}}!",
+    "late": "Noch wach, {{name}}?"
+  },
+  "privacy": {
+    "toggle": "Deine Chats sind von Grund auf privat",
+    "body1": "Deine Nachrichten werden direkt an die KI-Modelle verschlüsselt, die in sicheren Hardware-Enklaven ausgeführt werden.",
+    "body2": " Dies sind hardwareisolierte Umgebungen, die von Confidential-Computing-GPUs mit überprüfbaren Garantien für Vertraulichkeit und Integrität betrieben werden. Nicht einmal Tinfoil kann auf deine Daten zugreifen. Das gilt für alle Chats, Bilder, Dokumente und Spracheingaben. Unser Open-Source-Stack ermöglicht es dir, dies selbst durch Prüfung der Hardware-Attestierung zu verifizieren.",
+    "technology": "Technologie",
+    "source": "Quelle"
+  },
+  "model": {
+    "selectAria": "Modell auswählen",
+    "others": "Weitere Modelle"
+  },
+  "rateLimit": {
+    "exhausted": "Du hast heute alle deine kostenlosen Anfragen aufgebraucht",
+    "remaining_one": "Dir bleibt heute noch {{count}} kostenlose Anfrage",
+    "remaining_other": "Dir bleiben heute noch {{count}} kostenlose Anfragen"
+  },
+  "error": {
+    "expandDetails": "Fehlerdetails anzeigen: {{title}}",
+    "collapseDetails": "Fehlerdetails ausblenden: {{title}}",
+    "dismiss": "Fehler schließen"
+  },
+  "input": {
+    "replyPlaceholder": "Antworte Tin...",
+    "messageAria": "Nachricht",
+    "send": "Senden",
+    "stop": "Generierung stoppen",
+    "placeholders": {
+      "mind": "Woran denkst du?",
+      "anything": "Frag mich alles...",
+      "help": "Wie kann ich dir heute helfen?",
+      "secrets": "Deine Geheimnisse sind hier sicher..."
+    }
+  }
+}

@@ -1,6 +1,7 @@
 'use client'
 
 import { motion } from 'framer-motion'
+import { useTranslation } from 'react-i18next'
 import { cn } from '../ui/utils'
 
 interface DeleteConfirmationProps {
@@ -16,6 +17,7 @@ export function DeleteConfirmation({
   isDarkMode,
   animated = true,
 }: DeleteConfirmationProps) {
+  const { t } = useTranslation('common')
   const content = (
     <>
       <button
@@ -31,7 +33,7 @@ export function DeleteConfirmation({
         }}
         autoFocus
       >
-        Cancel
+        {t('cancel')}
       </button>
       <button
         className={cn(
@@ -45,7 +47,7 @@ export function DeleteConfirmation({
           onConfirm()
         }}
       >
-        Delete
+        {t('delete')}
       </button>
     </>
   )

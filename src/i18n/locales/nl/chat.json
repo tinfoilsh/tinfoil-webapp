@@ -1,0 +1,42 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "Goedemorgen, {{name}}!",
+    "afternoon": "Goedemiddag, {{name}}!",
+    "evening": "Goedenavond, {{name}}!",
+    "late": "Nog laat op, {{name}}?"
+  },
+  "privacy": {
+    "toggle": "Je chats zijn privé door ontwerp",
+    "body1": "Je berichten worden rechtstreeks versleuteld naar de AI-modellen die binnen beveiligde hardware-enclaves draaien.",
+    "body2": " Dit zijn hardware-geïsoleerde omgevingen, aangedreven door confidential-computing-GPU's met verifieerbare garanties voor vertrouwelijkheid en integriteit. Zelfs Tinfoil kan niet bij je gegevens. Dit geldt voor alle chats, afbeeldingen, documenten en spraakinvoer. Met onze open-source stack kun je dit zelf verifiëren door de hardware-attestatie te inspecteren.",
+    "technology": "Technologie",
+    "source": "Bron"
+  },
+  "model": {
+    "selectAria": "Een model selecteren",
+    "others": "Andere modellen"
+  },
+  "rateLimit": {
+    "exhausted": "Je hebt al je gratis verzoeken voor vandaag gebruikt",
+    "remaining_one": "Je hebt vandaag nog {{count}} gratis verzoek over",
+    "remaining_other": "Je hebt vandaag nog {{count}} gratis verzoeken over"
+  },
+  "error": {
+    "expandDetails": "Foutdetails tonen: {{title}}",
+    "collapseDetails": "Foutdetails verbergen: {{title}}",
+    "dismiss": "Fout negeren"
+  },
+  "input": {
+    "replyPlaceholder": "Antwoord Tin...",
+    "messageAria": "Bericht",
+    "send": "Verzenden",
+    "stop": "Generatie stoppen",
+    "placeholders": {
+      "mind": "Waar denk je aan?",
+      "anything": "Vraag me wat je wilt...",
+      "help": "Hoe kan ik je vandaag helpen?",
+      "secrets": "Jouw geheimen zijn hier veilig..."
+    }
+  }
+}

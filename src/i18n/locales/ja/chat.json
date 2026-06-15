@@ -1,0 +1,41 @@
+{
+  "greeting": {
+    "default": "Tinfoil Private Chat",
+    "morning": "おはようございます、{{name}}さん！",
+    "afternoon": "こんにちは、{{name}}さん！",
+    "evening": "こんばんは、{{name}}さん！",
+    "late": "まだ起きているのですか、{{name}}さん？"
+  },
+  "privacy": {
+    "toggle": "あなたのチャットは設計上プライベートです",
+    "body1": "あなたのメッセージは、安全なハードウェアエンクレーブ内で動作するAIモデルに直接暗号化されます。",
+    "body2": " これらは、検証可能な機密性と完全性の保証を備えた機密コンピューティングGPUで動作する、ハードウェアで分離された環境です。Tinfoilでさえあなたのデータにアクセスできません。これはすべてのチャット、画像、ドキュメント、音声入力に適用されます。私たちのオープンソーススタックにより、ハードウェアの証明を検査して、ご自身でこれを検証できます。",
+    "technology": "テクノロジー",
+    "source": "ソース"
+  },
+  "model": {
+    "selectAria": "モデルを選択",
+    "others": "その他のモデル"
+  },
+  "rateLimit": {
+    "exhausted": "本日の無料リクエストをすべて使い切りました",
+    "remaining_other": "本日の残りの無料リクエストは{{count}}件です"
+  },
+  "error": {
+    "expandDetails": "エラーの詳細を表示: {{title}}",
+    "collapseDetails": "エラーの詳細を非表示: {{title}}",
+    "dismiss": "エラーを閉じる"
+  },
+  "input": {
+    "replyPlaceholder": "Tinに返信...",
+    "messageAria": "メッセージ",
+    "send": "送信",
+    "stop": "生成を停止",
+    "placeholders": {
+      "mind": "何を考えていますか？",
+      "anything": "何でも聞いてください…",
+      "help": "今日はどんなお手伝いをしましょうか？",
+      "secrets": "あなたの秘密はここで安全です…"
+    }
+  }
+}

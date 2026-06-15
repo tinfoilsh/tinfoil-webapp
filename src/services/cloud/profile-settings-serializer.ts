@@ -1,6 +1,7 @@
 import {
   SETTINGS_THEME,
   SETTINGS_THEME_MODE,
+  SETTINGS_UI_LOCALE,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
   USER_PREFS_CUSTOM_SYSTEM_PROMPT,
@@ -28,6 +29,7 @@ export function hasProfileChanged(
   return (
     profile1.isDarkMode !== profile2.isDarkMode ||
     profile1.themeMode !== profile2.themeMode ||
+    profile1.uiLocale !== profile2.uiLocale ||
     profile1.language !== profile2.language ||
     profile1.nickname !== profile2.nickname ||
     profile1.profession !== profile2.profession ||
@@ -57,6 +59,12 @@ export function loadLocalSettings(): ProfileData {
     savedThemeMode === 'system'
   ) {
     settings.themeMode = savedThemeMode
+  }
+
+  // UI display language
+  const uiLocale = localStorage.getItem(SETTINGS_UI_LOCALE)
+  if (uiLocale) {
+    settings.uiLocale = uiLocale
   }
 
   const language = localStorage.getItem(USER_PREFS_LANGUAGE)
@@ -171,6 +179,16 @@ export function applySettingsToLocal(settings: ProfileData): void {
     window.dispatchEvent(
       new CustomEvent('themeChanged', {
         detail: theme,
+      }),
+    )
+  }
+
+  // UI display language
+  if (settings.uiLocale !== undefined) {
+    localStorage.setItem(SETTINGS_UI_LOCALE, settings.uiLocale)
+    window.dispatchEvent(
+      new CustomEvent('uiLocaleChanged', {
+        detail: { locale: settings.uiLocale },
       }),
     )
   }
