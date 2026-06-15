@@ -1,5 +1,6 @@
 import { cn } from '@/components/ui/utils'
-import { Squares2X2Icon } from '@heroicons/react/24/outline'
+import { ChevronDownIcon, Squares2X2Icon } from '@heroicons/react/24/outline'
+import { useState } from 'react'
 import { BUILT_IN_PROMPT_PRESETS } from '../prompts/built-in-presets'
 import type { PromptPreset } from '../prompts/types'
 
@@ -16,12 +17,13 @@ export function PromptPresetSuggestions({
   onSetActive,
   onOpenLibrary,
 }: PromptPresetSuggestionsProps) {
+  const [isMobileExpanded, setIsMobileExpanded] = useState(false)
   const suggested = BUILT_IN_PROMPT_PRESETS.slice(0, SUGGESTION_COUNT)
   const pillBase =
     'inline-flex h-14 w-full items-center justify-center gap-1.5 rounded-lg border px-3 text-sm transition-colors md:h-auto md:w-auto md:py-1.5'
 
-  return (
-    <div className="grid auto-rows-fr grid-cols-1 gap-2 md:flex md:flex-wrap md:items-center md:justify-center">
+  const renderSuggestions = () => (
+    <>
       {suggested.map((preset) => {
         const Icon = preset.Icon
         const isActive = activePreset?.id === preset.id
@@ -54,6 +56,36 @@ export function PromptPresetSuggestions({
         <Squares2X2Icon className="h-3.5 w-3.5" aria-hidden="true" />
         <span>More</span>
       </button>
-    </div>
+    </>
+  )
+
+  return (
+    <>
+      <div className="md:hidden">
+        <button
+          type="button"
+          onClick={() => setIsMobileExpanded((expanded) => !expanded)}
+          aria-expanded={isMobileExpanded}
+          className="flex h-14 w-full items-center justify-between rounded-lg border border-border-subtle bg-surface-chat-background px-4 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
+        >
+          <span>Prompts</span>
+          <ChevronDownIcon
+            className={cn(
+              'h-4 w-4 transition-transform',
+              isMobileExpanded ? 'rotate-180' : '',
+            )}
+            aria-hidden="true"
+          />
+        </button>
+        {isMobileExpanded && (
+          <div className="mt-2 grid auto-rows-fr grid-cols-1 gap-2">
+            {renderSuggestions()}
+          </div>
+        )}
+      </div>
+      <div className="hidden auto-rows-fr grid-cols-1 gap-2 md:flex md:flex-wrap md:items-center md:justify-center">
+        {renderSuggestions()}
+      </div>
+    </>
   )
 }
