@@ -29,6 +29,13 @@ export interface CloudKeyValidationResult {
   canWrite: boolean
   probe: CloudKeyValidationProbe
   message?: string
+  /**
+   * Set when the remote holds legacy data but no registered current
+   * key. The local CEK can write, but only after it is adopted as the
+   * current key — otherwise every push is rejected as a stale key. The
+   * write gate uses this to adopt before pushing.
+   */
+  needsAdoption?: boolean
 }
 
 /**
@@ -118,6 +125,7 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
       remoteState: 'exists',
       canWrite: true,
       probe: 'none',
+      needsAdoption: true,
     }
   }
 

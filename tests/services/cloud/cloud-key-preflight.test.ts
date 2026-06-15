@@ -136,6 +136,7 @@ describe('cloud-key-preflight', () => {
 
       expect(result.remoteState).toBe('exists')
       expect(result.canWrite).toBe(true)
+      expect(result.needsAdoption).toBe(true)
     })
 
     it('accepts a staged key on a fresh device with no persisted keys', async () => {
@@ -165,6 +166,7 @@ describe('cloud-key-preflight', () => {
       const result = await validateCurrentPrimaryKey()
       expect(result.remoteState).toBe('exists')
       expect(result.canWrite).toBe(true)
+      expect(result.needsAdoption).toBeFalsy()
     })
 
     it('blocks writes when local KeyID does not match the enclave KeyID', async () => {

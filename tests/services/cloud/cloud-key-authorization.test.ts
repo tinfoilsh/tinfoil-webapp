@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mockValidateCurrentPrimaryKey = vi.fn()
 const mockKeyCurrent = vi.fn()
 const mockRegisterKey = vi.fn()
+const mockAdoptLocalKey = vi.fn()
+
+vi.mock('@/services/cloud/ensure-current-key', () => ({
+  adoptLocalKeyForMigration: (...args: unknown[]) => mockAdoptLocalKey(...args),
+}))
 
 vi.mock('@/services/cloud/cloud-key-preflight', () => ({
   CloudKeySetupError: class extends Error {
@@ -66,6 +71,8 @@ describe('cloud-key-authorization', () => {
     mockValidateCurrentPrimaryKey.mockReset()
     mockKeyCurrent.mockReset()
     mockRegisterKey.mockReset()
+    mockAdoptLocalKey.mockReset()
+    mockAdoptLocalKey.mockResolvedValue(true)
     mockPersistedPrimaryKeyB64.mockReset()
     mockPersistedPrimaryKeyB64.mockReturnValue(TEST_KEY_B64)
     localStorage.setItem(AUTH_ACTIVE_USER_ID, USER_ID)
@@ -135,6 +142,44 @@ describe('cloud-key-authorization', () => {
 
       expect(await canWriteToCloud()).toBe(true)
       expect(mockRegisterKey).not.toHaveBeenCalled()
+    })
+
+    it('adopts the local key before writing legacy data with no registered key', async () => {
+      mockValidateCurrentPrimaryKey.mockResolvedValue({
+        remoteState: 'exists',
+        canWrite: true,
+        probe: 'none',
+        needsAdoption: true,
+      })
+
+      expect(await canWriteToCloud()).toBe(true)
+      expect(mockAdoptLocalKey).toHaveBeenCalledTimes(1)
+    })
+
+    it('defers writes when legacy-data adoption fails', async () => {
+      mockAdoptLocalKey.mockResolvedValue(false)
+      mockValidateCurrentPrimaryKey.mockResolvedValue({
+        remoteState: 'exists',
+        canWrite: true,
+        probe: 'none',
+        needsAdoption: true,
+      })
+
+      expect(await canWriteToCloud()).toBe(false)
+      expect(mockAdoptLocalKey).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not adopt the legacy key when cloud sync is disabled', async () => {
+      localStorage.removeItem(SETTINGS_CLOUD_SYNC_ENABLED)
+      mockValidateCurrentPrimaryKey.mockResolvedValue({
+        remoteState: 'exists',
+        canWrite: true,
+        probe: 'none',
+        needsAdoption: true,
+      })
+
+      expect(await canWriteToCloud()).toBe(true)
+      expect(mockAdoptLocalKey).not.toHaveBeenCalled()
     })
 
     it('does not register a staged key that has not been committed', async () => {
