@@ -200,11 +200,23 @@ describe('cek-encoding', () => {
       expect(await migrationKeySetFingerprint()).toBeNull()
     })
 
-    it('skips keys whose bytes are unreadable', async () => {
+    it('skips alternatives whose bytes are unreadable', async () => {
       mockGetKey.mockReturnValue('key_primary')
       mockGetStoredAlternatives.mockReturnValue(['key_missing'])
       const fp = await migrationKeySetFingerprint()
       expect(fp).toBe('id_10')
+    })
+
+    it('returns null when the primary bytes are unreadable, even with readable alternatives', async () => {
+      // Mirrors migrationKeys(), which returns [] without a readable
+      // primary: the fingerprint must not be built from alternatives
+      // alone, or the gate would diverge from the sweep.
+      mockGetKey.mockReturnValue('key_primary')
+      mockGetStoredAlternatives.mockReturnValue(['key_alt1'])
+      mockGetAlternativeKeyBytes.mockImplementation((k) =>
+        k === 'key_alt1' ? bytesByKey.key_alt1 : null,
+      )
+      expect(await migrationKeySetFingerprint()).toBeNull()
     })
   })
 })
