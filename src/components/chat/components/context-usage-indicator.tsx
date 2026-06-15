@@ -38,7 +38,7 @@ export function ContextUsageIndicator({ usage }: { usage: ContextUsage }) {
     : `Context window ${percentage}% used (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens)`
 
   return (
-    <div className="group relative flex items-center">
+    <div className="group relative hidden items-center md:flex">
       <span
         role="status"
         aria-label={tooltip}
