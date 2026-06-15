@@ -1070,6 +1070,18 @@ export function ChatInput({
                           )}
                         </button>
                       )}
+                      {contextUsage && (
+                        <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary">
+                          <span className="flex-1">Context</span>
+                          <ContextUsageIndicator usage={contextUsage} />
+                        </div>
+                      )}
+                      {reasoningSelectorButton && (
+                        <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary">
+                          <span className="flex-1">Thinking</span>
+                          {reasoningSelectorButton}
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
@@ -1164,9 +1176,16 @@ export function ChatInput({
             </div>
 
             <div className="flex items-center gap-2">
-              {contextUsage && <ContextUsageIndicator usage={contextUsage} />}
+              {contextUsage && (
+                <ContextUsageIndicator
+                  usage={contextUsage}
+                  className="hidden md:flex"
+                />
+              )}
               {modelSelectorButton && <div>{modelSelectorButton}</div>}
-              {reasoningSelectorButton && <div>{reasoningSelectorButton}</div>}
+              {reasoningSelectorButton && (
+                <div className="hidden md:block">{reasoningSelectorButton}</div>
+              )}
               {isPremium && audioModel && (
                 <button
                   type="button"

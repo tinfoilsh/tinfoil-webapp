@@ -362,7 +362,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   return !prev
                 })
               }}
-              className={`group flex w-full items-center gap-2 py-1.5 text-base text-content-secondary transition-colors hover:text-content-primary md:justify-start ${privacyExpanded ? 'justify-start' : 'justify-center'}`}
+              className={`group flex w-full items-center gap-1.5 py-1.5 text-sm text-content-secondary transition-colors hover:text-content-primary sm:gap-2 sm:text-base md:justify-start ${privacyExpanded ? 'justify-start' : 'justify-center'}`}
             >
               <motion.span
                 className="inline-flex shrink-0"
@@ -382,7 +382,9 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   aria-hidden="true"
                 />
               </motion.span>
-              <span>Your chats are private by design</span>
+              <span className="shrink-0 whitespace-nowrap">
+                Your chats are private by design
+              </span>
               <svg
                 className={`h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-300 ${privacyExpanded ? 'rotate-180' : ''}`}
                 fill="none"
@@ -559,11 +561,17 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                     const m = models?.find(
                       (mm) => mm.modelName === selectedModel,
                     )
-                    if (!isReasoningModel(m)) return undefined
+                    const supportsEffort = supportsReasoningEffort(m)
+                    const supportsToggle = supportsThinkingToggle(m)
+                    if (
+                      !isReasoningModel(m) ||
+                      (!supportsEffort && !supportsToggle)
+                    )
+                      return undefined
                     return (
                       <ReasoningEffortSelector
-                        supportsEffort={supportsReasoningEffort(m)}
-                        supportsToggle={supportsThinkingToggle(m)}
+                        supportsEffort={supportsEffort}
+                        supportsToggle={supportsToggle}
                         reasoningEffort={reasoningEffort}
                         onEffortChange={setReasoningEffort}
                         thinkingEnabled={thinkingEnabled}

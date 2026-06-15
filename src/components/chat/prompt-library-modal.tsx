@@ -442,12 +442,12 @@ function PresetDetail({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-none items-start justify-between gap-4 border-b border-border-subtle px-6 py-4">
-        <div className="flex min-w-0 items-start gap-3">
+      <div className="flex flex-none items-start justify-between gap-4 border-b border-border-subtle px-4 py-4 md:px-6">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-surface-chat text-content-secondary">
             <Icon className="h-5 w-5" aria-hidden="true" />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             {isEditingName && !preset.isBuiltIn ? (
               <input
                 type="text"
@@ -471,7 +471,7 @@ function PresetDetail({
             ) : (
               <h3
                 className={cn(
-                  'truncate rounded-md px-1.5 py-0.5 text-base font-semibold text-content-primary',
+                  'line-clamp-2 rounded-md px-1.5 py-0.5 text-base font-semibold text-content-primary md:truncate',
                   !preset.isBuiltIn && 'cursor-text hover:bg-surface-chat',
                 )}
                 title={preset.isBuiltIn ? undefined : 'Click to rename'}
@@ -500,12 +500,32 @@ function PresetDetail({
                 {preset.description}
               </p>
             )}
+            <div className="mt-3 flex items-center px-1.5 md:hidden">
+              {isActive ? (
+                <button
+                  type="button"
+                  onClick={onClearActive}
+                  className="w-full rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat"
+                >
+                  Stop using
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onUseThis}
+                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-brand-accent-dark px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90"
+                >
+                  <SparklesIcon className="h-4 w-4" />
+                  Use for this chat
+                </button>
+              )}
+            </div>
             <span className="mt-1 inline-block px-1.5 text-[11px] uppercase tracking-wide text-content-muted">
               {preset.isBuiltIn ? 'Built-in' : 'Custom'}
             </span>
           </div>
         </div>
-        <div className="flex flex-none items-center gap-2">
+        <div className="hidden flex-none items-center gap-2 md:flex md:justify-end">
           {isActive ? (
             <button
               type="button"
@@ -518,7 +538,7 @@ function PresetDetail({
             <button
               type="button"
               onClick={onUseThis}
-              className="flex items-center gap-1.5 rounded-lg bg-brand-accent-dark px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90"
+              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-brand-accent-dark px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90 md:w-auto"
             >
               <SparklesIcon className="h-4 w-4" />
               Use for this chat
