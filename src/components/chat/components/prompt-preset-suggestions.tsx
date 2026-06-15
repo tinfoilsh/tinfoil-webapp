@@ -59,11 +59,11 @@ export function PromptPresetSuggestions({
 
   return (
     <>
-      <div className="md:hidden">
+      <div className="flex justify-center md:hidden">
         <button
           type="button"
           onClick={onOpenLibrary}
-          className="flex h-14 w-full items-center justify-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-4 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
+          className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-4 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
         >
           <Squares2X2Icon className="h-3.5 w-3.5" aria-hidden="true" />
           <span>Prompts</span>
