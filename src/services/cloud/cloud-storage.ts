@@ -113,9 +113,9 @@ export interface UploadChatResult {
 
 /**
  * Plaintext envelope-v2 JSON returned by the sync enclave. The `2`
- * here mirrors the wire `tinfoil-sync-envelope-v2` AAD (see
- * syncplan.md §5) — the row is sealed under v2 on the controlplane,
- * the enclave unsealed it, so what we hand back is plaintext.
+ * here mirrors the wire `tinfoil-sync-envelope-v2` AAD — the row is
+ * sealed under v2 on the controlplane, the enclave unsealed it, so
+ * what we hand back is plaintext.
  */
 export type RawChatContent = {
   plaintext: string

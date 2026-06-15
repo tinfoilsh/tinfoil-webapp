@@ -331,8 +331,8 @@ export class ProjectStorageService {
       )
     }
 
-    // syncplan §16.6: a UI-driven single-row delete passes
-    // `if_match=null`. The enclave retries on STALE_BLOB up to three
+    // A UI-driven single-row delete passes `if_match=null`. The
+    // enclave retries on STALE_BLOB up to three
     // times, so we do not need to fetch the current etag first. The
     // previous approach scanned only the first 500 list-status rows
     // and silently no-op'd when the target lived past the boundary.
@@ -369,7 +369,7 @@ export class ProjectStorageService {
         // the page fetch and the delete (concurrent write from another
         // device). Passing ifMatch=null avoids spurious STALE_BLOB
         // failures that would leave the batch partially completed.
-        // Mirrors the single-row deleteProject path; see syncplan §16.6.
+        // Mirrors the single-row deleteProject path.
         await enclaveDeleteRow({
           scope: PROJECT_SCOPE,
           id: update.id,
@@ -682,8 +682,8 @@ export class ProjectStorageService {
     }
 
     const id = projectDocumentId(projectId, documentId)
-    // syncplan §16.6: a UI-driven single-row delete passes
-    // `if_match=null`. The PROJECT_DOCUMENT_SCOPE pools every
+    // A UI-driven single-row delete passes `if_match=null`. The
+    // PROJECT_DOCUMENT_SCOPE pools every
     // project's documents under one user, so the previous
     // first-page-only list-status lookup was even more likely to
     // miss the target than the project case.

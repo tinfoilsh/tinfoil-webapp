@@ -35,6 +35,7 @@ const mockRequirePrimaryKeyB64 = vi.fn()
 const mockRequirePrimaryKeyBytes = vi.fn()
 const mockPull = vi.fn()
 const mockMigrationKeys = vi.fn()
+const mockMigrationKeySetFingerprint = vi.fn(async () => null)
 const mockGetCachedPrfResult = vi.fn()
 const mockDeriveKeyEncryptionKey = vi.fn()
 const mockLoadPasskeyCredentials = vi.fn()
@@ -118,6 +119,8 @@ vi.mock('@/services/cloud/cek-encoding', () => ({
   requirePrimaryKeyBytes: (...args: any[]) =>
     mockRequirePrimaryKeyBytes(...args),
   migrationKeys: (...args: any[]) => mockMigrationKeys(...args),
+  migrationKeySetFingerprint: (...args: any[]) =>
+    mockMigrationKeySetFingerprint(...args),
 }))
 
 vi.mock('@/services/passkey/passkey-service', () => ({

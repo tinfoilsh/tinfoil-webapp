@@ -2,8 +2,8 @@
  * Wrap / unwrap the user's content encryption key (CEK) under a
  * passkey-PRF-derived KEK, in the shape the sync enclave expects.
  *
- * The enclave wire format (see syncplan.md §6, BundleBody in
- * sync-api.ts) carries one wrapped CEK per registered passkey
+ * The enclave wire format (BundleBody in sync-api.ts) carries one
+ * wrapped CEK per registered passkey
  * credential. There is no list of "alternative" keys: the enclave is
  * the single source of truth, and legacy alternatives are left to
  * Phase 4 opportunistic migration.

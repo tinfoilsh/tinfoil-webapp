@@ -1,5 +1,7 @@
 import { PAGINATION } from '@/config'
 import {
+  AUTH_ACTIVE_USER_ID,
+  MIGRATION_EXHAUSTED_KEYSET_PREFIX,
   SYNC_ALL_CHATS_STATUS,
   SYNC_CHAT_STATUS,
   SYNC_PROJECT_CHAT_STATUS_PREFIX,
@@ -25,6 +27,7 @@ import {
 import { IF_MATCH_SENTINELS } from '../sync-enclave/wire-contract'
 import {
   hasPrimaryKey,
+  migrationKeySetFingerprint,
   primaryKeyIdHexOrNull,
   requirePrimaryKeyB64,
   requirePrimaryKeyBytes,
@@ -37,7 +40,10 @@ import {
   type ChatSyncStatus,
   type UploadChatOptions,
 } from './cloud-storage'
-import { runLegacyBlobMigrationAndFinalize } from './legacy-blob-migration'
+import {
+  runLegacyBlobMigrationAndFinalize,
+  type MigrationReport,
+} from './legacy-blob-migration'
 import { runLegacyChatEvictionIfNeeded } from './legacy-chat-eviction'
 import { projectStorage } from './project-storage'
 import { streamingTracker } from './streaming-tracker'
@@ -1125,6 +1131,24 @@ export class CloudSyncService {
     if (!hasPrimaryKey()) {
       return
     }
+    // Don't re-drive a sweep that already exhausted this exact candidate
+    // key set. When a prior completed sweep left rows blocked under every
+    // key this client holds, retrying with the same keys fails those rows
+    // identically and re-stamps them on the controlplane — the per-open
+    // sync_migration_failure storm. The gate clears itself the moment the
+    // key set changes (a newly recovered key has a different fingerprint),
+    // so a genuinely actionable retry still runs. Computed before the
+    // network key-current lookup so the skip stays cheap. The server 24h
+    // cooldown remains as a backstop.
+    const activeUserId = this.readActiveUserId()
+    const keysetFp = await migrationKeySetFingerprint()
+    if (
+      keysetFp &&
+      activeUserId &&
+      this.loadExhaustedMigrationKeyset(activeUserId) === keysetFp
+    ) {
+      return
+    }
     // Only migrate once the local primary CEK is the controlplane's
     // registered current key. migrate-all re-seals every legacy row
     // under that CEK via Rewrap, which the controlplane rejects with
@@ -1184,6 +1208,7 @@ export class CloudSyncService {
             totalBlocked: report.totalBlocked,
           },
         })
+        this.recordMigrationKeysetOutcome(activeUserId, keysetFp, report)
         await runLegacyChatEvictionIfNeeded()
         // Eviction deletes local rows but the server still has them,
         // so the cached `(count, lastUpdated)` snapshot now lies. Drop
@@ -1207,6 +1232,65 @@ export class CloudSyncService {
           action: 'kickLegacyBlobMigration',
         })
       })
+  }
+
+  /**
+   * Active clerk user id this browser is signed in as, or null. Scopes
+   * the per-user migration key-set fingerprint so a different account on
+   * the same browser never inherits another user's gate.
+   */
+  private readActiveUserId(): string | null {
+    if (typeof window === 'undefined') return null
+    try {
+      return localStorage.getItem(AUTH_ACTIVE_USER_ID)
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Persisted fingerprint of the candidate key set whose last completed
+   * sweep left rows blocked, or null when none is recorded.
+   */
+  private loadExhaustedMigrationKeyset(userId: string): string | null {
+    if (typeof window === 'undefined') return null
+    try {
+      return localStorage.getItem(
+        `${MIGRATION_EXHAUSTED_KEYSET_PREFIX}${userId}`,
+      )
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * Persist or clear the exhausted-key-set fingerprint from a sweep
+   * result. A completed sweep (no retryable rows remaining) that still
+   * leaves rows blocked marks this exact key set exhausted, so later page
+   * loads skip the doomed re-sweep until the key set changes; a sweep
+   * that drained everything clears the gate. A partial sweep (retryable
+   * rows remaining) leaves the gate untouched so the next sync keeps
+   * making progress.
+   */
+  private recordMigrationKeysetOutcome(
+    userId: string | null,
+    keysetFp: string | null,
+    report: MigrationReport,
+  ): void {
+    if (typeof window === 'undefined' || !userId) return
+    const storageKey = `${MIGRATION_EXHAUSTED_KEYSET_PREFIX}${userId}`
+    try {
+      if (report.fullyMigrated && report.totalBlocked === 0) {
+        localStorage.removeItem(storageKey)
+        return
+      }
+      if (report.fullyMigrated && report.totalBlocked > 0 && keysetFp) {
+        localStorage.setItem(storageKey, keysetFp)
+      }
+    } catch {
+      // A localStorage failure is non-fatal: the gate simply does not
+      // engage and the server-side 24h cooldown remains the backstop.
+    }
   }
 
   /**

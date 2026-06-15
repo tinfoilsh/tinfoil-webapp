@@ -121,3 +121,46 @@ export function migrationKeys(): PullKey[] {
   }
   return out
 }
+
+/**
+ * Stable, non-secret fingerprint of the migration candidate key set
+ * (primary plus alternatives) the way `migrationKeys()` assembles it.
+ * Derived from each key's controlplane key_id (a hex digest, never the
+ * raw CEK), sorted and joined so the value is order-independent and
+ * safe to persist. Callers use it to tell whether the set of keys the
+ * migration sweep can try has changed since the last attempt, so a
+ * doomed sweep is not re-driven on every page load with an unchanged
+ * key set. Returns null when no primary key is loaded or its bytes are
+ * unreadable.
+ */
+export async function migrationKeySetFingerprint(): Promise<string | null> {
+  const primary = encryptionService.getKey()
+  if (!primary) return null
+  // Mirror migrationKeys(): without a readable primary there is no
+  // candidate key set, so the fingerprint must be null rather than one
+  // built from alternatives alone. Otherwise the gate's retry decision
+  // would diverge from the sweep, which never runs without a primary at
+  // keys[0].
+  const primaryBytes = encryptionService.getAlternativeKeyBytes(primary)
+  if (!primaryBytes) return null
+  let primaryId: string
+  try {
+    primaryId = await deriveKeyIdHex(primaryBytes)
+  } catch {
+    return null
+  }
+  const ids: string[] = [primaryId]
+  const alternatives = encryptionService.getStoredAlternatives()
+  for (const alt of alternatives) {
+    if (alt === primary) continue
+    const bytes = encryptionService.getAlternativeKeyBytes(alt)
+    if (!bytes) continue
+    try {
+      ids.push(await deriveKeyIdHex(bytes))
+    } catch {
+      // Skip an unreadable alternative rather than abort the fingerprint.
+    }
+  }
+  ids.sort()
+  return ids.join(',')
+}

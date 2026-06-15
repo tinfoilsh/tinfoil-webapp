@@ -14,7 +14,16 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   },
 }))
 
+// Map each candidate CEK to a deterministic id by its fill byte so the
+// fingerprint test exercises the helper's sorting/dedup/join logic
+// without depending on the crypto-backed key-id derivation.
+vi.mock('@/services/sync-enclave/key-bundle', () => ({
+  deriveKeyIdHex: async (cek: Uint8Array) =>
+    `id_${cek[0].toString(16).padStart(2, '0')}`,
+}))
+
 import {
+  migrationKeySetFingerprint,
   migrationKeys,
   pullKey,
   requirePrimaryKeyB64,
@@ -140,6 +149,74 @@ describe('cek-encoding', () => {
       expect(keys).toHaveLength(1)
       expect(atob(keys[0].key).charCodeAt(0)).toBe(0x42)
       expect(mockGetKeyBytesOrThrow).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('migrationKeySetFingerprint', () => {
+    const bytesByKey: Record<string, Uint8Array> = {
+      key_primary: new Uint8Array(32).fill(0x10),
+      key_alt1: new Uint8Array(32).fill(0x20),
+      key_alt2: new Uint8Array(32).fill(0x30),
+    }
+
+    beforeEach(() => {
+      mockGetAlternativeKeyBytes.mockImplementation(
+        (k) => bytesByKey[k] ?? null,
+      )
+    })
+
+    it('fingerprints the sorted ids of the primary and unique alternatives', async () => {
+      mockGetKey.mockReturnValue('key_primary')
+      mockGetStoredAlternatives.mockReturnValue([
+        'key_alt2',
+        'key_alt1',
+        'key_primary',
+      ])
+      const fp = await migrationKeySetFingerprint()
+      expect(fp).toBe('id_10,id_20,id_30')
+    })
+
+    it('is order-independent: the same key set yields the same fingerprint', async () => {
+      mockGetKey.mockReturnValue('key_primary')
+      mockGetStoredAlternatives.mockReturnValue(['key_alt1', 'key_alt2'])
+      const a = await migrationKeySetFingerprint()
+      mockGetStoredAlternatives.mockReturnValue(['key_alt2', 'key_alt1'])
+      const b = await migrationKeySetFingerprint()
+      expect(a).toBe(b)
+    })
+
+    it('changes when a new key joins the candidate set', async () => {
+      mockGetKey.mockReturnValue('key_primary')
+      mockGetStoredAlternatives.mockReturnValue(['key_alt1'])
+      const before = await migrationKeySetFingerprint()
+      mockGetStoredAlternatives.mockReturnValue(['key_alt1', 'key_alt2'])
+      const after = await migrationKeySetFingerprint()
+      expect(after).not.toBe(before)
+    })
+
+    it('returns null when no primary key is loaded', async () => {
+      mockGetKey.mockReturnValue(null)
+      mockGetStoredAlternatives.mockReturnValue([])
+      expect(await migrationKeySetFingerprint()).toBeNull()
+    })
+
+    it('skips alternatives whose bytes are unreadable', async () => {
+      mockGetKey.mockReturnValue('key_primary')
+      mockGetStoredAlternatives.mockReturnValue(['key_missing'])
+      const fp = await migrationKeySetFingerprint()
+      expect(fp).toBe('id_10')
+    })
+
+    it('returns null when the primary bytes are unreadable, even with readable alternatives', async () => {
+      // Mirrors migrationKeys(), which returns [] without a readable
+      // primary: the fingerprint must not be built from alternatives
+      // alone, or the gate would diverge from the sweep.
+      mockGetKey.mockReturnValue('key_primary')
+      mockGetStoredAlternatives.mockReturnValue(['key_alt1'])
+      mockGetAlternativeKeyBytes.mockImplementation((k) =>
+        k === 'key_alt1' ? bytesByKey.key_alt1 : null,
+      )
+      expect(await migrationKeySetFingerprint()).toBeNull()
     })
   })
 })
