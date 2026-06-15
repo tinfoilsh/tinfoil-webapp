@@ -26,7 +26,13 @@ function formatTokens(tokens: number): string {
  * current conversation occupies. Once usage passes 100%, older messages get
  * archived and are no longer sent to the model.
  */
-export function ContextUsageIndicator({ usage }: { usage: ContextUsage }) {
+export function ContextUsageIndicator({
+  usage,
+  className,
+}: {
+  usage: ContextUsage
+  className?: string
+}) {
   const percentage = Math.min(Math.round(usage.percentage), 100)
 
   const isNearLimit = percentage >= WARNING_THRESHOLD_PERCENT
@@ -38,7 +44,7 @@ export function ContextUsageIndicator({ usage }: { usage: ContextUsage }) {
     : `Context window ${percentage}% used (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens)`
 
   return (
-    <div className="group relative hidden items-center md:flex">
+    <div className={cn('group relative flex items-center', className)}>
       <span
         role="status"
         aria-label={tooltip}

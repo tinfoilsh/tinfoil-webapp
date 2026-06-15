@@ -21,7 +21,7 @@ export function PromptPresetSuggestions({
     'inline-flex h-14 w-full items-center justify-center gap-1.5 rounded-lg border px-3 text-sm transition-colors md:h-auto md:w-auto md:py-1.5'
 
   return (
-    <div className="grid auto-rows-fr grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center md:justify-center">
+    <div className="grid auto-rows-fr grid-cols-1 gap-2 md:flex md:flex-wrap md:items-center md:justify-center">
       {suggested.map((preset) => {
         const Icon = preset.Icon
         const isActive = activePreset?.id === preset.id
