@@ -561,11 +561,17 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                     const m = models?.find(
                       (mm) => mm.modelName === selectedModel,
                     )
-                    if (!isReasoningModel(m)) return undefined
+                    const supportsEffort = supportsReasoningEffort(m)
+                    const supportsToggle = supportsThinkingToggle(m)
+                    if (
+                      !isReasoningModel(m) ||
+                      (!supportsEffort && !supportsToggle)
+                    )
+                      return undefined
                     return (
                       <ReasoningEffortSelector
-                        supportsEffort={supportsReasoningEffort(m)}
-                        supportsToggle={supportsThinkingToggle(m)}
+                        supportsEffort={supportsEffort}
+                        supportsToggle={supportsToggle}
                         reasoningEffort={reasoningEffort}
                         onEffortChange={setReasoningEffort}
                         thinkingEnabled={thinkingEnabled}
