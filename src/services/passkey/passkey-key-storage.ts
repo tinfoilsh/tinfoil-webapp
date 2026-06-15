@@ -1,43 +1,109 @@
 /**
- * Passkey Key Storage
+ * Passkey Key Storage — enclave-backed.
  *
- * Encrypts/decrypts the user's encryption key bundle (primary + alternatives)
- * using a passkey-derived KEK, and stores/retrieves the encrypted blobs via
- * the backend API.
+ * The legacy implementation talked to `/api/passkey-credentials/` and
+ * persisted a JSONB array of credentials directly. After Phase 2 the
+ * enclave is the source of truth: passkey bundles live under
+ * `user_key_bundles` rows scoped to a single `user_keys.key_id`. We
+ * preserve this module's public exports verbatim so the
+ * `usePasskeyBackup` hook and recovery flows keep importing the same
+ * names, but the internals route through the enclave's
+ * `key-current` / `register-key` / `add-bundle` / `remove-bundle`
+ * wire.
  *
- * The backend is a dumb JSONB store — all crypto happens client-side.
+ * `KeyBundle.alternatives` is preserved end-to-end. The enclave treats
+ * the bundle ciphertext as an opaque blob, so any legacy decryption
+ * history the caller hands in survives unchanged. Alternatives are
+ * dropped from the local model only after the client-side migration
+ * loop has re-sealed every legacy row under the current primary CEK.
+ *
+ * The encrypt/decrypt primitives (`encryptKeyBundle`,
+ * `decryptKeyBundle`) are pure client-side AES-256-GCM. Optimistic
+ * concurrency is enforced by the enclave: register-key uses
+ * `if_match='*'` for first-time writes and returns
+ * EXISTING_DATA_UNDER_OTHER_KEY when a key already exists;
+ * add-bundle is idempotent per credential_id. The legacy
+ * `sync_version` / `bundle_version` counters are synthesized from the
+ * enclave's `bundle_version` so callers that read them keep working.
  */
 
-import { PASSKEY } from '@/config'
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
-import { authTokenManager } from '../auth'
+import { requirePrimaryKeyB64 } from '../cloud/cek-encoding'
 import type { CloudKeyAuthorizationMode } from '../cloud/cloud-key-authorization'
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
+import { encryptionService } from '../encryption/encryption-service'
+import {
+  deriveKeyIdHex,
+  unwrapCekFromBundle,
+  wrapCekForCredential,
+} from '../sync-enclave/key-bundle'
+import {
+  bytesToBase64,
+  addBundle as enclaveAddBundle,
+  keyCurrent as enclaveKeyCurrent,
+  registerKey as enclaveRegisterKey,
+  removeBundle as enclaveRemoveBundle,
+  hexToB64,
+  newIdempotencyKey,
+} from '../sync-enclave/sync-api'
+import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
+import { IF_MATCH_SENTINELS, WIRE_CODES } from '../sync-enclave/wire-contract'
+import { fetchLegacyPasskeyCredentials } from './legacy-passkey-credentials'
 
 const AES_GCM_IV_BYTES = 12
 
 export interface KeyBundle {
   primary: string
+  /**
+   * Decryption-only history retained for legacy v0/v1 rows. New
+   * bundles persist whatever the caller hands in (the enclave is a
+   * blob store at the bundle layer). Removed in Layer C of the
+   * sync-enclave refactor once the client-side migration loop has
+   * re-sealed every legacy row under `primary`.
+   */
   alternatives: string[]
   authorizationMode?: CloudKeyAuthorizationMode
 }
 
 export interface PasskeyCredentialEntry {
   id: string
-  encrypted_keys: string // base64
-  iv: string // base64
+  encrypted_keys: string
+  iv: string
   created_at: string
-  version: number // schema version (1 = AES-256-GCM + HKDF-SHA256 KEK)
-  sync_version: number // monotonic counter, incremented each time the key bundle is re-encrypted
-  bundle_version?: number // logical key-bundle version shared across credential updates
+  version: number
+  sync_version: number
+  bundle_version?: number
+  /**
+   * Set on entries that came from the legacy
+   * `/api/passkey-credentials/` JSONB rather than the enclave's
+   * `user_key_bundles` table. Used by the recovery flow to know
+   * whether the unwrapped CEK needs to be promoted into a real
+   * `user_keys` row after unlock. Not persisted; populated only on
+   * the in-memory list returned by `loadPasskeyCredentials`.
+   */
+  source?: 'enclave' | 'legacy'
 }
 
 const CURRENT_CREDENTIAL_VERSION = 1
 
 export type PasskeyCredentialState = 'exists' | 'empty' | 'unknown'
+
+/**
+ * Per-device classification of the user's passkey bundle state.
+ *
+ *  - `this-device`: a bundle for the credential id that this device
+ *    last enrolled / authenticated against is registered server-side.
+ *  - `other-device-only`: at least one bundle exists but none of them
+ *    match this device's local credential id, so the user must
+ *    enroll a passkey on this device to back up their key here.
+ *  - `empty`: no bundles registered for the current key at all.
+ *  - `unknown`: enclave was unreachable; caller should leave state alone.
+ */
+export type PasskeyDeviceState =
+  | 'this-device'
+  | 'other-device-only'
+  | 'empty'
+  | 'unknown'
 
 export interface StoreEncryptedKeysOptions {
   expectedSyncVersion?: number | null
@@ -64,50 +130,38 @@ export class PasskeyCredentialConflictError extends Error {
   }
 }
 
-// --- Encrypt / Decrypt ---
+// --- Crypto primitives -----------------------------------------------------
 
-/**
- * Encrypt a key bundle with an AES-256-GCM KEK.
- * Returns base64-encoded IV and ciphertext.
- */
 export async function encryptKeyBundle(
   kek: CryptoKey,
   keys: KeyBundle,
 ): Promise<{ iv: string; data: string }> {
   const iv = crypto.getRandomValues(new Uint8Array(AES_GCM_IV_BYTES))
   const plaintext = new TextEncoder().encode(JSON.stringify(keys))
-
   const ciphertext = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     kek,
     plaintext,
   )
-
   return {
     iv: uint8ArrayToBase64(iv),
     data: uint8ArrayToBase64(new Uint8Array(ciphertext)),
   }
 }
 
-/**
- * Decrypt a key bundle from base64-encoded IV and ciphertext.
- */
 export async function decryptKeyBundle(
   kek: CryptoKey,
   encrypted: { iv: string; data: string },
 ): Promise<KeyBundle> {
   const iv = base64ToUint8Array(encrypted.iv)
   const ciphertext = base64ToUint8Array(encrypted.data)
-
   const plaintext = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: iv as BufferSource },
     kek,
     ciphertext as BufferSource,
   )
-
   const json = new TextDecoder().decode(plaintext)
-  const parsed = JSON.parse(json) as KeyBundle
-
+  const parsed = JSON.parse(json) as Partial<KeyBundle>
   if (
     typeof parsed.primary !== 'string' ||
     !Array.isArray(parsed.alternatives) ||
@@ -117,126 +171,161 @@ export async function decryptKeyBundle(
   ) {
     throw new Error('Invalid key bundle structure')
   }
-
-  return parsed
+  return {
+    primary: parsed.primary,
+    alternatives: parsed.alternatives,
+    authorizationMode: parsed.authorizationMode,
+  }
 }
 
-// --- Backend API ---
+// --- Wire reshape ----------------------------------------------------------
 
-function isValidCredentialEntry(
-  entry: unknown,
-): entry is PasskeyCredentialEntry {
-  if (typeof entry !== 'object' || entry === null) return false
-  const e = entry as Record<string, unknown>
-  return (
-    typeof e.id === 'string' &&
-    typeof e.encrypted_keys === 'string' &&
-    typeof e.iv === 'string' &&
-    typeof e.created_at === 'string' &&
-    typeof e.version === 'number' &&
-    typeof e.sync_version === 'number' &&
-    (e.bundle_version === undefined || typeof e.bundle_version === 'number')
-  )
+function reshapeBundleToEntry(bundle: {
+  credential_id: string
+  kek_iv: string
+  encrypted_keys: string
+  bundle_version?: number
+  created_at?: string
+}): PasskeyCredentialEntry {
+  const bundleVersion = bundle.bundle_version ?? 1
+  // The enclave wire carries kek_iv / encrypted_keys as hex
+  // (matching BundleBody), but PasskeyCredentialEntry is the legacy
+  // base64-flavoured shape that decryptKeyBundle / use-passkey-backup
+  // consume. Convert at this boundary so the entry contract stays
+  // uniform with the values coming back from
+  // fetchLegacyPasskeyCredentials.
+  return {
+    id: bundle.credential_id,
+    iv: hexToB64(bundle.kek_iv),
+    encrypted_keys: hexToB64(bundle.encrypted_keys),
+    created_at: bundle.created_at ?? new Date(0).toISOString(),
+    version: CURRENT_CREDENTIAL_VERSION,
+    sync_version: bundleVersion,
+    bundle_version: bundleVersion,
+  }
 }
 
-function getCredentialBundleVersion(
-  entry: Pick<PasskeyCredentialEntry, 'bundle_version'>,
-): number {
-  return entry.bundle_version ?? 0
-}
+// --- Public API ------------------------------------------------------------
 
-function getHighestBundleVersion(entries: PasskeyCredentialEntry[]): number {
-  return entries.reduce(
-    (highest, entry) => Math.max(highest, getCredentialBundleVersion(entry)),
-    0,
-  )
-}
-
-function hasStoredCredentialEntry(
-  entry: PasskeyCredentialEntry,
-  expected: PasskeyCredentialEntry,
-): boolean {
-  return (
-    entry.sync_version === expected.sync_version &&
-    getCredentialBundleVersion(entry) ===
-      getCredentialBundleVersion(expected) &&
-    entry.iv === expected.iv &&
-    entry.encrypted_keys === expected.encrypted_keys
-  )
-}
-
-/**
- * Load all passkey credential entries for the authenticated user.
- */
 export async function loadPasskeyCredentials(): Promise<
   PasskeyCredentialEntry[]
 > {
-  const headers = await authTokenManager.getAuthHeaders()
-  const response = await fetch(`${API_BASE_URL}/api/passkey-credentials/`, {
-    method: 'GET',
-    headers,
-  })
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      return []
+  try {
+    const resp = await enclaveKeyCurrent()
+    if (resp.key_id) {
+      const entries = Object.values(resp.bundles).map((bundle) => ({
+        ...reshapeBundleToEntry(bundle),
+        source: 'enclave' as const,
+      }))
+      if (entries.length > 0) return entries
+      // A registered key with zero bundles is an orphan: the enclave's
+      // migrate-all bootstrap stamps a current key before any passkey
+      // bundle is written, so a key_id can exist with no way to unlock
+      // it. Fall back to the legacy passkey so the user can still
+      // recover instead of being forced into manual key entry.
+      return await loadLegacyFallback()
     }
-    throw new Error(
-      `Failed to load passkey credentials: ${response.statusText}`,
-    )
+    return await loadLegacyFallback()
+  } catch (err) {
+    if (err instanceof SyncEnclaveError && err.status === 404) {
+      return loadLegacyFallback()
+    }
+    throw err
   }
+}
 
-  const data = await response.json()
-  if (!Array.isArray(data)) {
-    throw new Error('Invalid passkey credentials response: expected array')
-  }
-
-  return data.filter(isValidCredentialEntry)
+async function loadLegacyFallback(): Promise<PasskeyCredentialEntry[]> {
+  const legacy = await fetchLegacyPasskeyCredentials()
+  if (legacy.length === 0) return []
+  logInfo('falling back to legacy passkey credentials for recovery', {
+    component: 'PasskeyKeyStorage',
+    action: 'loadLegacyFallback',
+    metadata: { count: legacy.length },
+  })
+  return legacy.map((entry) => ({ ...entry, source: 'legacy' as const }))
 }
 
 /**
- * Save the full array of passkey credential entries for the authenticated user.
- * The backend overwrites the entire JSONB column — the client owns the structure.
+ * Candidate set for the recovery wizard. Unlike loadPasskeyCredentials
+ * — which prefers enclave bundles and hides legacy credentials once any
+ * bundle exists — this returns the UNION of the enclave bundles and the
+ * user's legacy credentials (deduped by id, enclave winning conflicts).
+ * That lets a device whose own pre-enclave passkey predates the v2 key
+ * registry still be offered for recovery after another platform has
+ * registered the key, so it can unlock the shared CEK and enroll itself.
+ */
+export async function loadRecoveryCandidates(): Promise<
+  PasskeyCredentialEntry[]
+> {
+  let enclaveEntries: PasskeyCredentialEntry[] = []
+  try {
+    const resp = await enclaveKeyCurrent()
+    if (resp.key_id) {
+      enclaveEntries = Object.values(resp.bundles).map((bundle) => ({
+        ...reshapeBundleToEntry(bundle),
+        source: 'enclave' as const,
+      }))
+    }
+  } catch (err) {
+    if (!(err instanceof SyncEnclaveError) || err.status !== 404) throw err
+  }
+  const legacyEntries = await loadLegacyFallback()
+  const byId = new Map<string, PasskeyCredentialEntry>()
+  for (const entry of legacyEntries) byId.set(entry.id, entry)
+  for (const entry of enclaveEntries) byId.set(entry.id, entry)
+  return [...byId.values()]
+}
+
+/**
+ * Legacy bulk-replace. The enclave wire doesn't expose a put-all
+ * endpoint — bundles are added/removed individually — so this helper
+ * is now a no-op kept only for source compatibility. Callers must
+ * use `storeEncryptedKeys` and `deletePasskeyCredential`.
  */
 export async function savePasskeyCredentials(
-  entries: PasskeyCredentialEntry[],
+  _entries: PasskeyCredentialEntry[],
+): Promise<boolean> {
+  logInfo('savePasskeyCredentials is a no-op under the enclave wire', {
+    component: 'PasskeyKeyStorage',
+    action: 'savePasskeyCredentials',
+  })
+  return true
+}
+
+export async function deletePasskeyCredential(
+  credentialId: string,
 ): Promise<boolean> {
   try {
-    const headers = await authTokenManager.getAuthHeaders()
-    const response = await fetch(`${API_BASE_URL}/api/passkey-credentials/`, {
-      method: 'PUT',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(entries),
-    })
-
-    if (!response.ok) {
-      throw new Error(
-        `Failed to save passkey credentials: ${response.statusText}`,
-      )
+    const resp = await enclaveKeyCurrent()
+    if (!resp.key_id || !resp.bundles[credentialId]) {
+      // No enclave bundle to remove. If the credential only exists in
+      // the read-only legacy table the client cannot delete it, so
+      // report failure instead of a false success that would leave the
+      // passkey able to unlock the user's data.
+      const legacy = await fetchLegacyPasskeyCredentials()
+      return !legacy.some((entry) => entry.id === credentialId)
     }
-
+    await enclaveRemoveBundle({
+      keyId: resp.key_id,
+      keyB64: requirePrimaryKeyB64(),
+      credentialId,
+      idempotencyKey: newIdempotencyKey(),
+    })
     return true
   } catch (error) {
-    logError('Failed to save passkey credentials', error, {
+    logError('Failed to delete passkey credential', error, {
       component: 'PasskeyKeyStorage',
-      action: 'savePasskeyCredentials',
+      action: 'deletePasskeyCredential',
     })
     return false
   }
 }
 
-/**
- * Check if any passkey credentials exist for the authenticated user.
- */
 export async function hasPasskeyCredentials(): Promise<boolean> {
   try {
     const entries = await loadPasskeyCredentials()
     return entries.length > 0
-  } catch (error) {
-    logError('Failed to check passkey credentials', error, {
-      component: 'PasskeyKeyStorage',
-      action: 'hasPasskeyCredentials',
-    })
+  } catch {
     return false
   }
 }
@@ -245,21 +334,55 @@ export async function getPasskeyCredentialState(): Promise<PasskeyCredentialStat
   try {
     const entries = await loadPasskeyCredentials()
     return entries.length > 0 ? 'exists' : 'empty'
-  } catch (error) {
-    logError('Failed to check passkey credentials', error, {
-      component: 'PasskeyKeyStorage',
-      action: 'getPasskeyCredentialState',
-    })
+  } catch {
     return 'unknown'
   }
 }
 
-// --- High-level operations ---
+/**
+ * Classify the user's passkey bundle state from the perspective of
+ * the current device. The data model already supports many bundles
+ * per user (one per WebAuthn credential id), so the right question
+ * is not "does any bundle exist?" but "does *this* device have its
+ * own bundle?". A user with an Apple passkey on a Mac and Windows
+ * Hello on a PC should see "active" on each device and a
+ * "set up passkey on this device" prompt when signing in on a new
+ * machine.
+ */
+export async function getPasskeyDeviceState(
+  localCredentialId: string | null,
+): Promise<PasskeyDeviceState> {
+  try {
+    const entries = await loadPasskeyCredentials()
+    if (entries.length === 0) return 'empty'
+    if (
+      localCredentialId &&
+      entries.some((entry) => entry.id === localCredentialId)
+    ) {
+      return 'this-device'
+    }
+    return 'other-device-only'
+  } catch {
+    return 'unknown'
+  }
+}
 
 /**
- * Encrypt the key bundle and upsert a credential entry, then save to backend.
- * If a credential with the same ID already exists, it is replaced (preserving
- * the original `created_at` value).
+ * Wrap the user's KeyBundle under a passkey-derived KEK and ship the
+ * bundle to the enclave. Behavior mirrors the legacy contract the
+ * hook expects:
+ *
+ *  - No remote key yet → register-key with initial_bundle.
+ *  - Remote key exists under the SAME primary CEK → add-bundle for
+ *    this credential.
+ *  - Remote key exists under a DIFFERENT CEK → throw
+ *    PasskeyCredentialConflictError so the hook routes the user to
+ *    the recovery wizard instead of clobbering.
+ *
+ * The version-counter knobs in `StoreEncryptedKeysOptions` are
+ * accepted for source compat; the enclave owns concurrency so there
+ * is no client-side rev loop. The returned counters mirror what the
+ * enclave reports for the freshly written bundle.
  */
 export async function storeEncryptedKeys(
   credentialId: string,
@@ -268,103 +391,125 @@ export async function storeEncryptedKeys(
   options: StoreEncryptedKeysOptions = {},
 ): Promise<{ syncVersion: number; bundleVersion: number } | null> {
   try {
-    const encrypted = await encryptKeyBundle(kek, keys)
+    const current = await enclaveKeyCurrent()
+    const primaryBytes = encryptionService.getAlternativeKeyBytes(keys.primary)
+    if (!primaryBytes) {
+      throw new Error('passkey-key-storage: primary key is not decodable')
+    }
+    const localKeyId = await deriveKeyIdHex(primaryBytes)
+    // Bundle the raw CEK bytes — same wire shape iOS and every other
+    // v2 client uses. The legacy `{primary, alternatives, ...}` JSON
+    // envelope is no longer written by anyone.
+    const wrapped = await wrapCekForCredential({
+      credentialId,
+      kek,
+      cek: primaryBytes,
+    })
 
-    for (
-      let attempt = 0;
-      attempt < PASSKEY.CREDENTIAL_SAVE_MAX_ATTEMPTS;
-      attempt++
-    ) {
-      const existing = await loadPasskeyCredentials()
-      const previous = existing.find((e) => e.id === credentialId)
-      const remoteBundleVersion = getHighestBundleVersion(existing)
-
-      if (
-        options.expectedSyncVersion !== undefined &&
-        options.expectedSyncVersion !== null &&
-        (!previous || previous.sync_version > options.expectedSyncVersion)
-      ) {
-        throw new PasskeyCredentialConflictError(
-          'A newer passkey backup already exists for this credential. Recover the latest backup before updating it.',
-          {
-            remoteSyncVersion: previous?.sync_version ?? null,
-            remoteBundleVersion,
-          },
-        )
-      }
-
-      if (options.enforceRemoteBundleVersion) {
-        if (
-          options.knownBundleVersion === undefined ||
-          options.knownBundleVersion === null
-        ) {
-          if (remoteBundleVersion > 0) {
-            throw new PasskeyCredentialConflictError(
-              'This device needs the latest passkey backup before it can save changes.',
-              {
-                remoteSyncVersion: previous?.sync_version ?? null,
-                remoteBundleVersion,
-              },
-            )
-          }
-        } else if (remoteBundleVersion > options.knownBundleVersion) {
-          throw new PasskeyCredentialConflictError(
-            'A newer passkey backup already exists on another device. Recover the latest backup before updating it.',
-            {
-              remoteSyncVersion: previous?.sync_version ?? null,
-              remoteBundleVersion,
-            },
-          )
-        }
-      }
-
-      const newSyncVersion = previous ? previous.sync_version + 1 : 1
-      const baseBundleVersion = Math.max(
-        remoteBundleVersion,
-        options.knownBundleVersion ?? 0,
-      )
-      const newBundleVersion = options.incrementBundleVersion
-        ? Math.max(baseBundleVersion + 1, 1)
-        : Math.max(baseBundleVersion, 1)
-
-      const entry: PasskeyCredentialEntry = {
-        id: credentialId,
-        encrypted_keys: encrypted.data,
-        iv: encrypted.iv,
-        created_at: previous?.created_at ?? new Date().toISOString(),
-        version: CURRENT_CREDENTIAL_VERSION,
-        sync_version: newSyncVersion,
-        bundle_version: newBundleVersion,
-      }
-
-      const updated = existing.filter((e) => e.id !== credentialId)
-      updated.push(entry)
-
-      const saved = await savePasskeyCredentials(updated)
-      if (!saved) {
-        continue
-      }
-
-      const verifiedEntries = await loadPasskeyCredentials()
-      const verifiedEntry = verifiedEntries.find((e) => e.id === credentialId)
-      if (verifiedEntry && hasStoredCredentialEntry(verifiedEntry, entry)) {
-        logInfo('Stored encrypted keys for passkey credential', {
-          component: 'PasskeyKeyStorage',
-          action: 'storeEncryptedKeys',
-          metadata: {
+    if (!current.key_id) {
+      try {
+        await enclaveRegisterKey({
+          keyB64: bytesToBase64(primaryBytes),
+          ifMatch: IF_MATCH_SENTINELS.AnyKey,
+          // When the controlplane reports un-migrated legacy data
+          // (key_id IS NULL rows) but no current key, this CEK is the
+          // existing v1 key being adopted into v2, not a brand-new one.
+          // Register it as 'recovery' so the cross-key guard allows it
+          // (a fresh 'passkey' key is refused over legacy data) and the
+          // legacy rows can then re-seal under it. The bundle is still
+          // attached, so the key is never stranded without a passkey.
+          createdVia:
+            keys.authorizationMode === 'explicit_start_fresh'
+              ? 'start_fresh'
+              : current.has_data
+                ? 'recovery'
+                : 'passkey',
+          idempotencyKey: newIdempotencyKey(),
+          initialBundle: {
             credentialId,
-            totalEntries: updated.length,
-            bundleVersion: newBundleVersion,
+            kekIvHex: wrapped.kekIvHex,
+            encryptedKeysHex: wrapped.wrappedKeyHex,
           },
         })
-        return {
-          syncVersion: newSyncVersion,
-          bundleVersion: newBundleVersion,
+      } catch (err) {
+        if (
+          err instanceof SyncEnclaveError &&
+          err.code === WIRE_CODES.ExistingDataUnderOtherKey
+        ) {
+          throw new PasskeyCredentialConflictError(
+            'Remote key already exists under a different CEK; recover first.',
+            { remoteSyncVersion: null, remoteBundleVersion: 0 },
+          )
         }
+        throw err
       }
+      const created = await enclaveKeyCurrent()
+      const bundleVersion = created.bundles[credentialId]?.bundle_version ?? 1
+      logInfo('Registered initial key + bundle with enclave', {
+        component: 'PasskeyKeyStorage',
+        action: 'storeEncryptedKeys',
+        metadata: { credentialId, bundleVersion },
+      })
+      return { syncVersion: bundleVersion, bundleVersion }
     }
 
-    throw new Error('Failed to confirm the latest passkey backup update')
+    if (current.key_id !== localKeyId) {
+      if (keys.authorizationMode === 'explicit_start_fresh') {
+        // The user has chosen to wipe everything and bind a brand-new
+        // CEK. Route through register-key with created_via=start_fresh
+        // so the controlplane atomically drops every blob row, returns
+        // the v2 attachment ids it removed, and lets the enclave drain
+        // those from buckets — all without the cross-key conflict
+        // guard firing.
+        await enclaveRegisterKey({
+          keyB64: bytesToBase64(primaryBytes),
+          ifMatch: current.etag || IF_MATCH_SENTINELS.AnyKey,
+          createdVia: 'start_fresh',
+          idempotencyKey: newIdempotencyKey(),
+          initialBundle: {
+            credentialId,
+            kekIvHex: wrapped.kekIvHex,
+            encryptedKeysHex: wrapped.wrappedKeyHex,
+          },
+        })
+        const created = await enclaveKeyCurrent()
+        const bundleVersion = created.bundles[credentialId]?.bundle_version ?? 1
+        logInfo('start_fresh wipe + key register completed', {
+          component: 'PasskeyKeyStorage',
+          action: 'storeEncryptedKeys',
+          metadata: { credentialId, bundleVersion },
+        })
+        return { syncVersion: bundleVersion, bundleVersion }
+      }
+      throw new PasskeyCredentialConflictError(
+        "The remote key does not match this device's CEK. Recover the existing key first.",
+        {
+          remoteSyncVersion: null,
+          remoteBundleVersion:
+            current.bundles[credentialId]?.bundle_version ?? 0,
+        },
+      )
+    }
+
+    await enclaveAddBundle({
+      keyId: current.key_id,
+      keyB64: bytesToBase64(primaryBytes),
+      credentialId,
+      kekIvHex: wrapped.kekIvHex,
+      encryptedKeysHex: wrapped.wrappedKeyHex,
+      idempotencyKey: newIdempotencyKey(),
+    })
+
+    const refreshed = await enclaveKeyCurrent()
+    const bundleVersion =
+      refreshed.bundles[credentialId]?.bundle_version ??
+      (options.knownBundleVersion ?? 0) + 1
+    logInfo('Added passkey bundle for current enclave key', {
+      component: 'PasskeyKeyStorage',
+      action: 'storeEncryptedKeys',
+      metadata: { credentialId, bundleVersion },
+    })
+    return { syncVersion: bundleVersion, bundleVersion }
   } catch (error) {
     if (error instanceof PasskeyCredentialConflictError) {
       throw error
@@ -377,29 +522,142 @@ export async function storeEncryptedKeys(
   }
 }
 
-/**
- * Decrypt the key bundle for a specific credential entry.
- */
 export async function retrieveEncryptedKeys(
   credentialId: string,
   kek: CryptoKey,
 ): Promise<KeyBundle | null> {
   try {
-    const entries = await loadPasskeyCredentials()
-    const entry = entries.find((e) => e.id === credentialId)
-    if (!entry) {
-      return null
+    const lookup = await tryRetrieveFromEnclave(credentialId, kek)
+    if (lookup.bundle) return lookup.bundle
+    if (!lookup.enclaveKeyExists) {
+      // No registered key yet (or an orphan key with no bundles) — safe
+      // to revive any legacy bundle for this credential.
+      return await tryRetrieveFromLegacy(credentialId, kek)
     }
-
-    return await decryptKeyBundle(kek, {
-      iv: entry.iv,
-      data: entry.encrypted_keys,
-    })
-  } catch (error) {
-    logError('Failed to retrieve encrypted keys', error, {
+    // A key exists but this credential has no enclave bundle. Revive the
+    // legacy bundle only when it wraps the SAME current CEK — i.e. a v1
+    // user with the same passkey on another platform that hasn't been
+    // enrolled yet. A legacy bundle deriving a different key_id is a
+    // rotated-away CEK and must never be adopted as primary.
+    return await tryRetrieveFromLegacyIfCurrent(
+      credentialId,
+      kek,
+      lookup.currentKeyId,
+    )
+  } catch (err) {
+    logError('Failed to retrieve encrypted keys', err, {
       component: 'PasskeyKeyStorage',
       action: 'retrieveEncryptedKeys',
     })
     return null
   }
+}
+
+interface EnclaveBundleLookup {
+  bundle: KeyBundle | null
+  enclaveKeyExists: boolean
+  currentKeyId: string | null
+}
+
+async function tryRetrieveFromEnclave(
+  credentialId: string,
+  kek: CryptoKey,
+): Promise<EnclaveBundleLookup> {
+  try {
+    const resp = await enclaveKeyCurrent()
+    if (!resp.key_id) {
+      return { bundle: null, enclaveKeyExists: false, currentKeyId: null }
+    }
+    const bundle = resp.bundles[credentialId]
+    if (!bundle) {
+      // Treat a key with no bundles at all as "no enclave key" so the
+      // legacy passkey fallback runs (orphan key from the migrate-all
+      // bootstrap). When other bundles exist but none for this
+      // credential, the caller verifies the legacy bundle still wraps
+      // the current key before reviving it.
+      const hasAnyBundle = Object.keys(resp.bundles).length > 0
+      return {
+        bundle: null,
+        enclaveKeyExists: hasAnyBundle,
+        currentKeyId: resp.key_id,
+      }
+    }
+    // Try the v2 raw-CEK shape first — what iOS and the modern
+    // webapp flow write. If that succeeds we synthesize the legacy
+    // {primary, alternatives:[]} envelope the hook still consumes.
+    try {
+      const cekBytes = await unwrapCekFromBundle(kek, {
+        kekIvHex: bundle.kek_iv,
+        wrappedKeyHex: bundle.encrypted_keys,
+      } as Parameters<typeof unwrapCekFromBundle>[1])
+      return {
+        bundle: {
+          primary: encryptionService.encodeKeyFromBytes(cekBytes),
+          alternatives: [],
+        },
+        enclaveKeyExists: true,
+        currentKeyId: resp.key_id,
+      }
+    } catch {
+      // Pre-v2 webapp wrapped a JSON envelope. Keep the legacy decode
+      // as a fallback so users who registered on the old wire still
+      // unlock without re-enrolling.
+      const decrypted = await decryptKeyBundle(kek, {
+        iv: hexToB64(bundle.kek_iv),
+        data: hexToB64(bundle.encrypted_keys),
+      })
+      return {
+        bundle: decrypted,
+        enclaveKeyExists: true,
+        currentKeyId: resp.key_id,
+      }
+    }
+  } catch (err) {
+    if (err instanceof SyncEnclaveError && err.status === 404) {
+      return { bundle: null, enclaveKeyExists: false, currentKeyId: null }
+    }
+    throw err
+  }
+}
+
+async function tryRetrieveFromLegacy(
+  credentialId: string,
+  kek: CryptoKey,
+): Promise<KeyBundle | null> {
+  const legacy = await fetchLegacyPasskeyCredentials()
+  const entry = legacy.find((e) => e.id === credentialId)
+  if (!entry) return null
+  return await decryptKeyBundle(kek, {
+    iv: entry.iv,
+    data: entry.encrypted_keys,
+  })
+}
+
+/**
+ * Revive a legacy bundle for a credential that has no enclave bundle,
+ * but only when the CEK it unwraps matches the enclave's current
+ * key_id. This is the multi-platform case: a v1 user with the same
+ * passkey on another device, where the legacy bundle wraps the very
+ * CEK already registered. A mismatch means the legacy bundle is a
+ * rotated-away key and must not be adopted.
+ */
+async function tryRetrieveFromLegacyIfCurrent(
+  credentialId: string,
+  kek: CryptoKey,
+  currentKeyId: string | null,
+): Promise<KeyBundle | null> {
+  if (!currentKeyId) return null
+  const bundle = await tryRetrieveFromLegacy(credentialId, kek)
+  if (!bundle) return null
+  const primaryBytes = encryptionService.getAlternativeKeyBytes(bundle.primary)
+  if (!primaryBytes) return null
+  const legacyKeyId = await deriveKeyIdHex(primaryBytes)
+  if (legacyKeyId !== currentKeyId) {
+    logInfo('skipping legacy passkey bundle for a rotated-away key', {
+      component: 'PasskeyKeyStorage',
+      action: 'retrieveEncryptedKeys',
+    })
+    return null
+  }
+  return bundle
 }

@@ -356,7 +356,10 @@ const MarkdownPreview = ({
   code: string
   contentRef: React.RefObject<HTMLDivElement | null>
 }) => (
-  <div ref={contentRef} className="prose prose-sm max-w-none dark:prose-invert">
+  <div
+    ref={contentRef as React.Ref<HTMLDivElement>}
+    className="prose prose-sm max-w-none dark:prose-invert"
+  >
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{

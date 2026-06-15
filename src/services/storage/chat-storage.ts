@@ -67,9 +67,12 @@ export class ChatStorageService {
       !isCloudSyncEnabled() ||
       existingChat?.isLocalOnly
 
-    // Save the chat
+    // Save the chat. pendingSave is a transient UI flag that drives the
+    // "Syncing with cloud" badge; persisting it makes the badge resurface
+    // on every reload, so strip it before writing to storage.
+    const { pendingSave, ...persistableChat } = chatToSave
     const storageChat: StorageChat = {
-      ...chatToSave,
+      ...persistableChat,
       createdAt:
         chatToSave.createdAt instanceof Date
           ? chatToSave.createdAt.toISOString()
@@ -105,6 +108,7 @@ export class ChatStorageService {
     return {
       ...chatToSave,
       isLocalOnly: storageChat.isLocalOnly,
+      updatedAt: storageChat.updatedAt,
       createdAt:
         chatToSave.createdAt instanceof Date
           ? chatToSave.createdAt
@@ -128,10 +132,9 @@ export class ChatStorageService {
       locallyModified,
       syncVersion,
       decryptionFailed,
-      encryptedData,
-      updatedAt,
       model,
       version,
+      pendingSave,
       ...baseChat
     } = storedChat
     return {
@@ -238,10 +241,9 @@ export class ChatStorageService {
         locallyModified,
         syncVersion,
         decryptionFailed,
-        encryptedData,
-        updatedAt,
         model,
         version,
+        pendingSave,
         ...baseChat
       }) => ({
         ...baseChat,
@@ -265,10 +267,9 @@ export class ChatStorageService {
       ({
         lastAccessedAt,
         syncVersion,
-        encryptedData,
-        updatedAt,
         model,
         version,
+        pendingSave,
         ...chatWithSyncData
       }) => ({
         ...chatWithSyncData,

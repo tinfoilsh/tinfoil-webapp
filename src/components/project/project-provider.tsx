@@ -3,7 +3,6 @@
 import { UI_EXPAND_PROJECTS_ON_MOUNT } from '@/constants/storage-keys'
 import { useMemory } from '@/hooks/use-memory'
 import { projectStorage } from '@/services/cloud/project-storage'
-import { encryptionService } from '@/services/encryption/encryption-service'
 import { projectEvents } from '@/services/project/project-events'
 import type { Fact, MemoryState } from '@/types/memory'
 import type {
@@ -141,42 +140,30 @@ export function ProjectProvider({
           throw new Error('Project not found')
         }
 
-        const documentsResponse = await projectStorage.listDocuments(
+        const documentsResponse = await projectStorage.listDocuments(projectId)
+
+        const fullById = await projectStorage.getDocuments(
           projectId,
-          {
-            includeContent: true,
-          },
+          documentsResponse.documents.map((doc) => doc.id),
         )
 
-        const documents: ProjectDocument[] = await Promise.all(
-          documentsResponse.documents.map(async (doc) => {
-            if (doc.content) {
-              try {
-                const decrypted = (await encryptionService.decrypt(
-                  JSON.parse(doc.content),
-                )) as { content: string; filename: string; contentType: string }
-                return {
-                  ...doc,
-                  content: decrypted.content,
-                  filename: decrypted.filename,
-                  contentType: decrypted.contentType,
-                }
-              } catch (decryptError) {
-                logError('Failed to decrypt document', decryptError, {
-                  component: 'ProjectProvider',
-                  action: 'enterProjectMode',
-                  metadata: { documentId: doc.id },
-                })
-                return {
-                  ...doc,
-                  content: undefined,
-                  filename: '',
-                  contentType: '',
-                }
-              }
+        const documents: ProjectDocument[] = documentsResponse.documents.map(
+          (doc) => {
+            const full = fullById.get(doc.id)
+            if (!full) {
+              return { ...doc, filename: '', contentType: '' }
             }
-            return { ...doc, filename: '', contentType: '' }
-          }),
+            return {
+              ...doc,
+              content: full.content,
+              filename: full.filename,
+              contentType: full.contentType,
+              // The list surface only carries metadata and stamps
+              // sizeBytes as 0; the real size comes from the decoded
+              // document content.
+              sizeBytes: full.sizeBytes,
+            }
+          },
         )
 
         setActiveProject(project)
@@ -406,40 +393,26 @@ export function ProjectProvider({
     try {
       const documentsResponse = await projectStorage.listDocuments(
         activeProject.id,
-        {
-          includeContent: true,
-        },
       )
 
-      const documents: ProjectDocument[] = await Promise.all(
-        documentsResponse.documents.map(async (doc) => {
-          if (doc.content) {
-            try {
-              const decrypted = (await encryptionService.decrypt(
-                JSON.parse(doc.content),
-              )) as { content: string; filename: string; contentType: string }
-              return {
-                ...doc,
-                content: decrypted.content,
-                filename: decrypted.filename,
-                contentType: decrypted.contentType,
-              }
-            } catch (decryptError) {
-              logError('Failed to decrypt document', decryptError, {
-                component: 'ProjectProvider',
-                action: 'refreshDocuments',
-                metadata: { documentId: doc.id },
-              })
-              return {
-                ...doc,
-                content: undefined,
-                filename: '',
-                contentType: '',
-              }
-            }
+      const fullById = await projectStorage.getDocuments(
+        activeProject.id,
+        documentsResponse.documents.map((doc) => doc.id),
+      )
+
+      const documents: ProjectDocument[] = documentsResponse.documents.map(
+        (doc) => {
+          const full = fullById.get(doc.id)
+          if (!full) {
+            return { ...doc, filename: '', contentType: '' }
           }
-          return { ...doc, filename: '', contentType: '' }
-        }),
+          return {
+            ...doc,
+            content: full.content,
+            filename: full.filename,
+            contentType: full.contentType,
+          }
+        },
       )
 
       setProjectDocuments(documents)

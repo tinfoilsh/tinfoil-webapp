@@ -1,12 +1,8 @@
 import { TextureGrid } from '@/components/texture-grid'
 import { useToast } from '@/hooks/use-toast'
 import { uploadSharedChat } from '@/services/share-api'
-import { compressAndEncrypt } from '@/utils/binary-codec'
+import { shareSeal as enclaveShareSeal } from '@/services/sync-enclave/sync-api'
 import type { ShareableChatData } from '@/utils/compression'
-import {
-  exportKeyToBase64url,
-  generateShareKey,
-} from '@/utils/share-encryption'
 import {
   CheckIcon,
   DocumentDuplicateIcon,
@@ -264,45 +260,33 @@ export function ShareModal({
         createdAt: chatCreatedAt ? chatCreatedAt.getTime() : Date.now(),
       }
 
-      // Generate throwaway key and encrypt
-      let key: CryptoKey
+      // Seal through the sync enclave: the enclave generates a fresh
+      // share key, gzips, AES-GCM-seals, and returns key + ciphertext.
+      // The owner uploads ciphertext to controlplane and embeds the
+      // key in the URL fragment with a `v2:` prefix so the recipient
+      // can tell which decryption path to use.
+      const plaintext = new TextEncoder().encode(JSON.stringify(shareableData))
+      let sealed: { share_key: string; ciphertext: string }
       try {
-        key = await generateShareKey()
+        sealed = await enclaveShareSeal({ plaintext })
       } catch (e) {
         throw new Error(
-          `Key generation failed: ${e instanceof Error ? e.message : String(e)}`,
+          `Share seal failed: ${e instanceof Error ? e.message : String(e)}`,
         )
       }
 
-      let encrypted: Uint8Array
       try {
-        encrypted = await compressAndEncrypt(shareableData, key)
-      } catch (e) {
-        throw new Error(
-          `Encryption failed: ${e instanceof Error ? e.message : String(e)}`,
+        const bin = Uint8Array.from(atob(sealed.ciphertext), (c) =>
+          c.charCodeAt(0),
         )
-      }
-
-      let keyBase64url: string
-      try {
-        keyBase64url = await exportKeyToBase64url(key)
-      } catch (e) {
-        throw new Error(
-          `Key export failed: ${e instanceof Error ? e.message : String(e)}`,
-        )
-      }
-
-      // Upload encrypted binary to server
-      try {
-        await uploadSharedChat(chatId, encrypted)
+        await uploadSharedChat(chatId, bin)
       } catch (e) {
         throw new Error(
           `Upload failed: ${e instanceof Error ? e.message : String(e)}`,
         )
       }
 
-      // Build share URL with key in fragment
-      const url = `${window.location.origin}/share/${chatId}#${keyBase64url}`
+      const url = `${window.location.origin}/share/${chatId}#v2:${sealed.share_key}`
       setShareUrl(url)
     } catch (error) {
       const errorMessage =

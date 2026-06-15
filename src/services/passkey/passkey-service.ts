@@ -20,6 +20,8 @@ import {
 } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
 
+import { setLocalPasskeyCredentialId } from './local-passkey-credential'
+
 export class PrfNotSupportedError extends Error {
   constructor() {
     super(
@@ -93,6 +95,21 @@ function cachePrfResult(result: PrfPasskeyResult): void {
     localStorage.setItem(SECRET_PASSKEY_PRF_OUTPUT, JSON.stringify(entry))
   } catch {
     // best-effort
+  }
+}
+
+// Cross-device hybrid (QR-paired phone, etc.) reports
+// `authenticatorAttachment === 'cross-platform'` on the resulting
+// credential. Caching the cred id in that case would make this
+// device look like it has its own bundle when in reality the user
+// just borrowed another device's passkey for a one-shot unlock —
+// hiding the "Set Up Passkey on This Device" prompt forever.
+// Per WebAuthn L3 §5.2.1, we only treat `authenticatorAttachment`
+// of `'platform'` as "this device truly owns this credential".
+function rememberCredentialIfLocal(credential: PublicKeyCredential): void {
+  if (credential.authenticatorAttachment === 'platform') {
+    const credentialId = uint8ArrayToBase64Url(new Uint8Array(credential.rawId))
+    setLocalPasskeyCredentialId(credentialId)
   }
 }
 
@@ -198,6 +215,7 @@ export async function createPrfPasskey(
         prfOutput: bufferSourceToArrayBuffer(prfResults.results.first),
       }
       cachePrfResult(result)
+      rememberCredentialIfLocal(credential)
       return result
     }
 
@@ -299,6 +317,7 @@ export async function authenticatePrfPasskey(
       prfOutput: bufferSourceToArrayBuffer(prfOutput),
     }
     cachePrfResult(result)
+    rememberCredentialIfLocal(assertion)
     return result
   } catch (error) {
     if (error instanceof PasskeyTimeoutError) throw error

@@ -4,6 +4,7 @@ import { initializeRenderers } from '@/components/chat/renderers/client'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
 import { getAIModels, type BaseModel } from '@/config/models'
 import { fetchSharedChat } from '@/services/share-api'
+import { shareOpen as enclaveShareOpen } from '@/services/sync-enclave/sync-api'
 import { decryptAndDecompress } from '@/utils/binary-codec'
 import {
   validateShareableChatData,
@@ -77,17 +78,41 @@ export default function SharePage() {
         return
       }
 
-      const keyBase64url = window.location.hash.slice(1)
-      if (!keyBase64url) {
+      const rawHash = window.location.hash.slice(1)
+      if (!rawHash) {
         setErrorMessage('Missing decryption key')
         setLoadingState('error')
         return
       }
 
+      const isV2Share = rawHash.startsWith('v2:')
+      const keyBase64url = isV2Share ? '' : rawHash
+      const shareKeyHex = isV2Share ? rawHash.slice(3) : ''
+
       try {
         const fetched = await fetchSharedChat(chatId)
         let decrypted: object | null
-        if (fetched.formatVersion === 1) {
+        if (isV2Share) {
+          // v2 shares are sealed by the sync enclave and opened by it
+          // again here. The binary fetched from controlplane is the
+          // [IV || AES-GCM ciphertext] envelope the enclave produced.
+          if (fetched.formatVersion !== 1) {
+            setErrorMessage('Share link / payload format mismatch')
+            setLoadingState('error')
+            return
+          }
+          const plaintext = await enclaveShareOpen({
+            shareKeyHex,
+            ciphertext: new Uint8Array(fetched.binary),
+          })
+          try {
+            decrypted = JSON.parse(
+              new TextDecoder().decode(plaintext),
+            ) as object
+          } catch {
+            decrypted = null
+          }
+        } else if (fetched.formatVersion === 1) {
           const key = await importKeyFromBase64url(keyBase64url)
           decrypted = (await decryptAndDecompress(
             new Uint8Array(fetched.binary),

@@ -5,6 +5,7 @@ import {
   CloudArrowUpIcon,
   CloudIcon,
   EllipsisVerticalIcon,
+  ExclamationTriangleIcon,
   FolderIcon,
   PencilSquareIcon,
   TrashIcon,
@@ -62,6 +63,18 @@ interface ChatListItemProps {
   isDarkMode: boolean
   showEncryptionStatus?: boolean
   showSyncStatus?: boolean
+  /**
+   * True while this chat's assistant response is actively streaming.
+   * The cloud upload is deferred until the stream finishes, so the
+   * "Syncing with cloud" badge stays hidden until then.
+   */
+  isStreaming?: boolean
+  /**
+   * True when this chat's last upload attempt failed terminally
+   * (per the sync-health store). Shows a quiet warning icon so the
+   * failure is visible without blocking anything.
+   */
+  syncFailed?: boolean
   enableTitleAnimation?: boolean
   isDraggable?: boolean
   showMoveToProject?: boolean
@@ -88,6 +101,8 @@ export function ChatListItem({
   isDarkMode,
   showEncryptionStatus = false,
   showSyncStatus = false,
+  isStreaming = false,
+  syncFailed = false,
   enableTitleAnimation = false,
   isDraggable = false,
   showMoveToProject = false,
@@ -220,19 +235,22 @@ export function ChatListItem({
     onDragEnd?.()
   }
 
-  const getTimestamp = (): Date | null => {
-    if (chat.updatedAt) {
-      return new Date(chat.updatedAt)
-    }
-    if (chat.createdAt) {
-      return chat.createdAt instanceof Date
-        ? chat.createdAt
-        : new Date(chat.createdAt)
-    }
-    return null
+  const toDate = (value?: Date | string): Date | null => {
+    if (!value) return null
+    return value instanceof Date ? value : new Date(value)
   }
 
-  const timestamp = getTimestamp()
+  const createdAt = toDate(chat.createdAt)
+  const timestamp = toDate(chat.updatedAt) ?? createdAt
+  // Skip the updated time when it would read the same as the created
+  // time, so rows don't repeat "9h ago · Updated 9h ago". Without a
+  // createdAt there is nothing to compare against and the timestamp
+  // may itself be the creation time, so show it unlabeled instead of
+  // claiming "Updated".
+  const showUpdatedTime =
+    timestamp !== null &&
+    createdAt !== null &&
+    formatRelativeTime(timestamp) !== formatRelativeTime(createdAt)
 
   return (
     <div
@@ -340,7 +358,10 @@ export function ChatListItem({
               (messageCount > 0 && timestamp) ||
               (showSyncStatus &&
                 (chat.isLocalOnly ||
-                  (!chat.isBlankChat && chat.pendingSave)))) && (
+                  (!chat.isBlankChat && syncFailed) ||
+                  (!chat.isBlankChat &&
+                    chat.pendingSave &&
+                    !isStreaming)))) && (
               <div className="mt-1 flex min-h-[16px] w-full items-center gap-2">
                 {chat.decryptionFailed ? (
                   <div className="text-xs text-red-500">
@@ -350,7 +371,12 @@ export function ChatListItem({
                   </div>
                 ) : messageCount > 0 && timestamp ? (
                   <div className="text-xs leading-none text-content-muted">
-                    {formatRelativeTime(timestamp)}
+                    <span className="text-content-secondary">
+                      {formatRelativeTime(createdAt ?? timestamp)}
+                    </span>
+                    {showUpdatedTime && (
+                      <> · Updated {formatRelativeTime(timestamp)}</>
+                    )}
                   </div>
                 ) : null}
                 {showSyncStatus && (
@@ -368,19 +394,32 @@ export function ChatListItem({
                           Only saved locally
                         </span>
                       </>
-                    ) : !chat.isBlankChat && chat.pendingSave ? (
-                      <>
-                        {messageCount > 0 && (
-                          <span className="text-xs text-content-muted">·</span>
-                        )}
-                        <span className="flex items-center gap-0.5 text-xs leading-none text-orange-500">
-                          <CloudArrowUpIcon
-                            className="h-3 w-3"
-                            aria-hidden="true"
-                          />
-                          Syncing with cloud
+                    ) : !chat.isBlankChat && syncFailed ? (
+                      <span
+                        className="flex items-center text-orange-500"
+                        title="This chat couldn't be synced"
+                      >
+                        <ExclamationTriangleIcon
+                          className="h-3 w-3"
+                          aria-hidden="true"
+                        />
+                        <span className="sr-only">
+                          This chat couldn&apos;t be synced
                         </span>
-                      </>
+                      </span>
+                    ) : !chat.isBlankChat &&
+                      chat.pendingSave &&
+                      !isStreaming ? (
+                      <span
+                        className="flex items-center text-blue-500"
+                        title="Syncing with cloud"
+                      >
+                        <CloudArrowUpIcon
+                          className="h-3 w-3"
+                          aria-hidden="true"
+                        />
+                        <span className="sr-only">Syncing with cloud</span>
+                      </span>
                     ) : null}
                   </>
                 )}

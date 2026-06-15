@@ -8,6 +8,7 @@ import {
   UI_SIDEBAR_PROJECTS_EXPANDED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
+import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -35,7 +36,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion'
 import { CiFloppyDisk } from 'react-icons/ci'
 import { FaLock } from 'react-icons/fa6'
-import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
+import { GoSidebarCollapse, GoSidebarExpand, GoSync } from 'react-icons/go'
 import { IoChatbubblesOutline } from 'react-icons/io5'
 import {
   PiFolder,
@@ -52,8 +53,7 @@ import { useDrag } from './drag-context'
 import { useProject } from '@/components/project/project-context'
 import { cn } from '@/components/ui/utils'
 import { useCloudPagination } from '@/hooks/use-cloud-pagination'
-import { type StoredChat } from '@/services/storage/indexed-db'
-import { getConversationTimestampFromId } from '@/utils/chat-timestamps'
+
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '../link'
@@ -84,6 +84,8 @@ type ChatSidebarProps = {
   onCloudSyncSetupClick?: () => void
   onSetupPasskey?: () => Promise<boolean>
   passkeySetupAvailable?: boolean
+  onAddPasskeyToThisDevice?: () => Promise<boolean>
+  passkeyAddDeviceAvailable?: boolean
   backupWarningVisible?: boolean
   /**
    * True when remote encrypted data exists but this device can't decrypt it
@@ -93,6 +95,10 @@ type ChatSidebarProps = {
   backupWarningNeedsRecovery?: boolean
   onDismissBackupWarning?: () => void
   onChatsUpdated?: () => void
+  /** Triggers a deep (all-pages) cloud sync from the sidebar "Sync" button. */
+  onManualSync?: () => Promise<void>
+  /** True while a cloud sync is in progress; drives the Sync button spinner. */
+  isSyncing?: boolean
   verificationComplete?: boolean
   verificationSuccess?: boolean
   onVerificationComplete?: (success: boolean) => void
@@ -107,6 +113,23 @@ type ChatSidebarProps = {
   onConvertChatToLocal?: (chatId: string) => Promise<void>
   onSettingsClick?: () => void
   windowWidth: number
+  /**
+   * Progress of the post-unlock background chat decryption. When
+   * `isDecrypting` is true the sidebar shows a "Loading chats"
+   * indicator so users see work is happening after the recovery modal
+   * dismisses, without the modal blocking the whole UI.
+   */
+  chatDecryptionProgress?: {
+    isDecrypting: boolean
+    current: number
+    total: number
+  } | null
+  /**
+   * True while the active chat's assistant response is streaming. Used
+   * to defer the sidebar "Syncing with cloud" badge until the stream
+   * finishes and the real upload runs.
+   */
+  isStreaming?: boolean
 }
 
 const MOBILE_BREAKPOINT = 1024 // Same as in chat-interface.tsx
@@ -144,10 +167,14 @@ export function ChatSidebar({
   onCloudSyncSetupClick,
   onSetupPasskey,
   passkeySetupAvailable,
+  onAddPasskeyToThisDevice,
+  passkeyAddDeviceAvailable,
   backupWarningVisible = false,
   backupWarningNeedsRecovery = false,
   onDismissBackupWarning,
   onChatsUpdated,
+  onManualSync,
+  isSyncing = false,
   isProjectMode,
   activeProjectName,
   onEnterProject,
@@ -158,7 +185,10 @@ export function ChatSidebar({
   onConvertChatToLocal,
   onSettingsClick,
   windowWidth,
+  chatDecryptionProgress,
+  isStreaming,
 }: ChatSidebarProps) {
+  const syncNeedsAttention = useSyncHealthAttention()
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -570,73 +600,19 @@ export function ChatSidebar({
     isChatHistoryExpanded,
   ])
 
-  const getChatSortTimestamp = useCallback((chat: Chat) => {
-    const createdValue =
-      chat.createdAt instanceof Date
-        ? chat.createdAt.getTime()
-        : new Date(chat.createdAt).getTime()
-
-    if (!Number.isNaN(createdValue)) {
-      return createdValue
-    }
-
-    const storedChat = chat as unknown as StoredChat
-    const candidateTimes: Array<number | undefined> = [
-      typeof storedChat.syncedAt === 'number' ? storedChat.syncedAt : undefined,
-      storedChat.updatedAt
-        ? new Date(storedChat.updatedAt).getTime()
-        : undefined,
-      storedChat.loadedAt,
-    ]
-
-    for (const candidate of candidateTimes) {
-      if (typeof candidate === 'number' && !Number.isNaN(candidate)) {
-        return candidate
-      }
-    }
-
-    return getConversationTimestampFromId(chat.id) ?? 0
-  }, [])
-
   const sortedChats = useMemo(() => {
-    // Filter chats based on active tab and cloud sync status
-    // Also exclude chats that belong to a project
-    const filteredChats =
-      isSignedIn && cloudSyncEnabled
-        ? localOnlyModeEnabled && activeTab === 'local'
-          ? chats.filter((chat) => {
-              // Filter for local-only chats and not in a project
-              return chat.isLocalOnly && !chat.projectId
-            })
-          : chats.filter((chat) => {
-              // Filter for cloud chats (not local-only) and not in a project
-              return !chat.isLocalOnly && !chat.projectId
-            })
-        : chats.filter((chat) => {
-            // When cloud sync is disabled, only show local chats that aren't in a project
-            return (chat as any).isLocalOnly && !chat.projectId
-          })
-
-    return [...filteredChats].sort((a, b) => {
-      // Blank chats should always be at the top
-      const aIsBlank = a.isBlankChat === true
-      const bIsBlank = b.isBlankChat === true
-
-      if (aIsBlank && !bIsBlank) return -1
-      if (!aIsBlank && bIsBlank) return 1
-
-      const timeA = getChatSortTimestamp(a)
-      const timeB = getChatSortTimestamp(b)
-      return timeB - timeA
-    })
-  }, [
-    chats,
-    getChatSortTimestamp,
-    activeTab,
-    isSignedIn,
-    cloudSyncEnabled,
-    localOnlyModeEnabled,
-  ])
+    // The incoming `chats` array is already sorted by `sortChats`
+    // (blank-first, then most-recently-updated). We only filter
+    // here; the display order matches the server's pagination so
+    // newly-loaded pages slot in at the bottom without reshuffling.
+    if (isSignedIn && cloudSyncEnabled) {
+      if (localOnlyModeEnabled && activeTab === 'local') {
+        return chats.filter((chat) => chat.isLocalOnly && !chat.projectId)
+      }
+      return chats.filter((chat) => !chat.isLocalOnly && !chat.projectId)
+    }
+    return chats.filter((chat) => (chat as any).isLocalOnly && !chat.projectId)
+  }, [chats, activeTab, isSignedIn, cloudSyncEnabled, localOnlyModeEnabled])
 
   const handleCloudSyncToggle = async (enabled: boolean) => {
     if (enabled) {
@@ -816,6 +792,13 @@ export function ChatSidebar({
                 aria-label="Settings"
               >
                 <Cog6ToothIcon className="h-5 w-5" />
+                {syncNeedsAttention && (
+                  <span
+                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings
@@ -869,9 +852,16 @@ export function ChatSidebar({
                 type="button"
                 onClick={onSettingsClick}
                 aria-label="Settings"
-                className="rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
+                className="relative rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
               >
                 <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
+                {syncNeedsAttention && (
+                  <span
+                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
               <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings
@@ -1530,6 +1520,27 @@ export function ChatSidebar({
                 <span className="truncate font-aeonik font-medium">Chats</span>
               </span>
               <div className="flex items-center gap-1">
+                {isSignedIn && cloudSyncEnabled && onManualSync && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (isSyncing) return
+                      void onManualSync()
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                    disabled={isSyncing}
+                    aria-label="Sync chats"
+                    title="Sync chats"
+                    className="rounded p-1 text-content-muted transition-colors hover:text-content-secondary disabled:cursor-default disabled:opacity-60"
+                  >
+                    {isSyncing ? (
+                      <PiSpinner className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <GoSync className="h-4 w-4" />
+                    )}
+                  </button>
+                )}
                 {isChatHistoryExpanded ? (
                   <ChevronDownIcon className="h-4 w-4" />
                 ) : (
@@ -1841,6 +1852,9 @@ export function ChatSidebar({
                       isDarkMode={isDarkMode}
                       showEncryptionStatus={true}
                       showSyncStatus={true}
+                      streamingChatId={
+                        isStreaming ? currentChat?.id : undefined
+                      }
                       enableTitleAnimation={true}
                       isDraggable={
                         isSignedIn &&
@@ -1879,6 +1893,19 @@ export function ChatSidebar({
                               await onMoveChatToProject(chatId, projectId)
                             }
                           : undefined
+                      }
+                      loadingIndicator={
+                        chatDecryptionProgress?.isDecrypting ? (
+                          <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
+                            <PiSpinner className="h-4 w-4 animate-spin" />
+                            <span className="text-sm">
+                              Loading chats
+                              {chatDecryptionProgress.total > 0
+                                ? ` (${chatDecryptionProgress.current}/${chatDecryptionProgress.total})`
+                                : '...'}
+                            </span>
+                          </div>
+                        ) : undefined
                       }
                       onConvertToCloud={onConvertChatToCloud}
                       onConvertToLocal={onConvertChatToLocal}

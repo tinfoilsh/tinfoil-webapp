@@ -6,7 +6,6 @@
  * appears in every sync method.
  */
 
-import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError } from '@/utils/error-handling'
 import { chatEvents, type ChatChangeReason } from '../storage/chat-events'
 import { deletedChatsTracker } from '../storage/deleted-chats-tracker'
@@ -20,15 +19,20 @@ import { cloudStorage } from './cloud-storage'
 import { shouldIngestRemoteChat } from './sync-predicates'
 
 /**
- * A remote chat from any API response that carries at least an id and timestamps.
- * The `content` field may be absent if the listing didn't include inline content.
+ * A remote chat from any API response that carries at least an id.
+ * The enclave only ever returns plaintext v2 rows. `content` carries
+ * that plaintext when present; otherwise the ingestion loop fetches
+ * it via `cloudStorage.fetchRawChatContent`. `createdAt` is optional
+ * because the list-status surface only emits `updated_at` — the
+ * codec derives `createdAt` from the reverse-timestamp encoded in
+ * `id` when needed.
  */
 export interface RemoteChatEntry {
   id: string
   content?: string | null
-  createdAt: string
+  createdAt?: string
   updatedAt?: string
-  formatVersion?: number
+  syncVersion?: number
 }
 
 export interface IngestOptions {
@@ -46,14 +50,19 @@ export interface IngestOptions {
   setLoadedAt?: boolean
   /** Event reason emitted via chatEvents when chats are saved */
   eventReason?: ChatChangeReason
+  /**
+   * Last-write-wins conflict resolution (§C5): write the remote chat
+   * even if the local copy is `locallyModified` or moved since the
+   * snapshot. Default false enforces the §H6 CAS so routine ingest
+   * never silently overwrites in-progress local edits.
+   */
+  forceOverwriteLocal?: boolean
 }
 
 export interface IngestResult {
   savedIds: string[]
   downloaded: number
   errors: string[]
-  /** IDs of chats that were decrypted with a fallback key and should be re-encrypted with the current key */
-  needsReencryption: string[]
 }
 
 /**
@@ -74,13 +83,13 @@ export async function ingestRemoteChats(
     fetchMissingContent = false,
     setLoadedAt = false,
     eventReason = 'sync',
+    forceOverwriteLocal = false,
   } = options
 
   const result: IngestResult = {
     savedIds: [],
     downloaded: 0,
     errors: [],
-    needsReencryption: [],
   }
 
   for (const remoteChat of remoteChats) {
@@ -94,43 +103,34 @@ export async function ingestRemoteChats(
       ? (localChatMap.get(remoteChat.id) ?? null)
       : await indexedDBStorage.getChat(remoteChat.id)
 
-    if (checkShouldIngest && !shouldIngestRemoteChat(remoteChat, localChat)) {
+    if (
+      !forceOverwriteLocal &&
+      checkShouldIngest &&
+      !shouldIngestRemoteChat(remoteChat, localChat)
+    ) {
       continue
     }
 
     try {
-      // Resolve content: use inline if present, otherwise optionally fetch
-      let codecInput: RemoteChatData = {
+      const codecInput: RemoteChatData = {
         id: remoteChat.id,
         createdAt: remoteChat.createdAt,
         updatedAt: remoteChat.updatedAt,
-        formatVersion: remoteChat.formatVersion,
+        formatVersion: 2,
+        syncVersion: remoteChat.syncVersion,
       }
 
       if (remoteChat.content) {
-        if (remoteChat.formatVersion === 1) {
-          // Inline v1 content is base64-encoded binary from the list endpoint
-          const bytes = base64ToUint8Array(remoteChat.content)
-          codecInput.binaryContent = bytes.buffer as ArrayBuffer
-          codecInput.formatVersion = 1
-        } else {
-          codecInput.content = remoteChat.content
-        }
+        codecInput.plaintext = remoteChat.content
       } else if (fetchMissingContent) {
         const fetched = await cloudStorage.fetchRawChatContent(remoteChat.id)
         if (fetched) {
-          if (fetched.formatVersion === 1) {
-            codecInput.binaryContent = fetched.binaryContent
-            codecInput.formatVersion = 1
-          } else {
-            codecInput.content = fetched.content
-            codecInput.formatVersion = 0
-          }
+          codecInput.plaintext = fetched.plaintext
+          codecInput.syncVersion = fetched.syncVersion
         }
       }
 
-      // Skip if no content available (either not requested or fetch returned nothing)
-      if (!codecInput.content && !codecInput.binaryContent) {
+      if (!codecInput.plaintext) {
         continue
       }
 
@@ -143,17 +143,21 @@ export async function ingestRemoteChats(
       const chat = codecResult.chat
 
       if (chat) {
-        if (setLoadedAt) {
-          chat.loadedAt = Date.now()
-        }
-
-        await indexedDBStorage.saveChat(chat)
-        await indexedDBStorage.markAsSynced(chat.id, chat.syncVersion ?? 0)
-        result.savedIds.push(chat.id)
-        result.downloaded++
-
-        if (codecResult.needsReencryption) {
-          result.needsReencryption.push(chat.id)
+        // §H6 CAS: only apply the remote write when the on-disk row
+        // still matches the snapshot we observed. `forceOverwriteLocal`
+        // bypasses the CAS for conflict resolution (§C5 last-write-wins).
+        const expectedLocalUpdatedAt = forceOverwriteLocal
+          ? undefined
+          : (localChat?.updatedAt ?? null)
+        const applyResult = await indexedDBStorage.applyRemoteChatIfFresh({
+          chat,
+          syncVersion: chat.syncVersion ?? 0,
+          expectedLocalUpdatedAt,
+          setLoadedAt,
+        })
+        if (applyResult.applied) {
+          result.savedIds.push(chat.id)
+          result.downloaded++
         }
       }
     } catch (error) {
@@ -184,7 +188,16 @@ export async function syncRemoteDeletions(
     for (const id of deletedIds) {
       try {
         const localChat = await indexedDBStorage.getChat(id)
-        if (localChat?.isLocalOnly) {
+        // Already gone locally (e.g. a prior reconciliation pass handled
+        // it) or a local-only chat the cloud never owned. Skipping keeps
+        // repeated reconciliation passes idempotent and event-free.
+        if (!localChat || localChat.isLocalOnly) {
+          if (!localChat) {
+            // Still record the tombstone: a concurrent ingest pass may
+            // have listed this chat before it was deleted remotely and
+            // would otherwise save it back after this pass moves on.
+            deletedChatsTracker.markAsDeleted(id)
+          }
           continue
         }
 

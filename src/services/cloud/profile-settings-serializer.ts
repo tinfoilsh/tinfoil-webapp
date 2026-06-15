@@ -11,6 +11,10 @@ import {
   USER_PREFS_TRAITS,
 } from '@/constants/storage-keys'
 import type { ProfileData } from '@/services/cloud/profile-sync'
+import { logWarning } from '@/utils/error-handling'
+import { ProfileDataSchema } from './schemas'
+
+const DEFAULT_PROFILE_LANGUAGE = 'English'
 
 /**
  * Check if two profile data objects differ in any meaningful field (excluding metadata).
@@ -104,11 +108,42 @@ export function loadLocalSettings(): ProfileData {
   return settings
 }
 
+export function resetSettingsToLocalDefaults(): ProfileData {
+  const defaults: ProfileData = {
+    themeMode: 'system',
+    language: DEFAULT_PROFILE_LANGUAGE,
+    nickname: '',
+    profession: '',
+    traits: [],
+    additionalContext: '',
+    isUsingPersonalization: false,
+    isUsingCustomPrompt: false,
+    customSystemPrompt: '',
+  }
+
+  applySettingsToLocal(defaults)
+  // Return the round-tripped snapshot rather than `defaults`: applying
+  // populates derived keys (e.g. the legacy dark-mode flag) that
+  // loadLocalSettings always reads back, and a baseline missing them
+  // would make every later change comparison report a diff.
+  return loadLocalSettings()
+}
+
 /**
  * Apply cloud-synced settings to localStorage and dispatch change events
  * so the UI reacts to the updated values.
  */
 export function applySettingsToLocal(settings: ProfileData): void {
+  const validation = ProfileDataSchema.safeParse(settings)
+  if (!validation.success) {
+    logWarning('Skipping settings apply for invalid profile shape', {
+      component: 'ProfileSettingsSerializer',
+      action: 'applySettingsToLocal',
+      metadata: { issues: validation.error.message },
+    })
+    return
+  }
+
   // Theme - prefer themeMode if available, fall back to isDarkMode for backwards compatibility
   if (settings.themeMode) {
     localStorage.setItem(SETTINGS_THEME_MODE, settings.themeMode)

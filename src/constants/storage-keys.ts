@@ -11,6 +11,12 @@ export const LEGACY_ENCRYPTION_KEY = 'tinfoil-encryption-key'
 export const LEGACY_ENCRYPTION_KEY_HISTORY = 'tinfoil-encryption-key-history'
 export const SECRET_PASSKEY_PRF_OUTPUT = 'tinfoil-secret-passkey-prf-output'
 export const SECRET_PASSKEY_BACKED_UP = 'tinfoil-secret-passkey-backed-up'
+// Per-device record of the WebAuthn credential id the user most recently
+// authenticated or registered on this browser/installation. Used by the
+// passkey hook to distinguish "this device has its own bundle" from
+// "another device has a bundle but this one doesn't yet" so the
+// multi-device setup prompt surfaces correctly.
+export const LOCAL_PASSKEY_CREDENTIAL_ID = 'tinfoil-local-passkey-credential-id'
 export const PASSKEY_SYNC_VERSION = 'tinfoil-passkey-sync-version'
 export const PASSKEY_BUNDLE_VERSION = 'tinfoil-passkey-bundle-version'
 export const SECRET_CLOUD_KEY_AUTHORIZATION_PREFIX =
@@ -103,6 +109,13 @@ export const SYNC_PROJECT_CHAT_STATUS_PREFIX =
   'tinfoil-sync-project-chat-status-'
 export const SYNC_PROFILE_STATUS = 'tinfoil-sync-profile-status'
 export const SYNC_PROFILE_DIRTY = 'tinfoil-sync-profile-dirty'
+
+// --- localStorage: Migration flags -----------------------------------------
+// Set the first time a build evicts locally-cached cloud chats that the
+// legacy v0/v1 client decrypt path used to handle. The enclave rewraps any
+// orphan rows server-side; the next sync repopulates fresh plaintext.
+export const MIGRATION_LEGACY_CLOUD_CHATS_EVICTED =
+  'tinfoil-migration-legacy-cloud-chats-evicted'
 
 // --- localStorage: Development ---------------------------------------------
 export const DEV_ENABLE_DEBUG_LOGS = 'tinfoil-dev-enable-debug-logs'

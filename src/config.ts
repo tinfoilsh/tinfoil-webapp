@@ -2,9 +2,34 @@
 // We'll provide fallback values for development if not set
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || ''
 
-// Local dev mode: bypass TinfoilAI client and connect to local router
-export const IS_DEV = process.env.NEXT_PUBLIC_DEV === 'true'
+// Local dev mode: bypass TinfoilAI client and connect to local router.
+// Gated on BOTH the build flag and a localhost runtime origin. Dev mode only
+// ever targets a local proxy, so a production bundle accidentally built with
+// NEXT_PUBLIC_DEV=true still fails closed (attestation stays on) when served
+// from a public origin.
+function isLocalRuntimeOrigin(): boolean {
+  if (typeof window === 'undefined') return false
+  const { hostname } = window.location
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.startsWith('192.168.') ||
+    hostname.startsWith('10.')
+  )
+}
+
+export const IS_DEV =
+  process.env.NEXT_PUBLIC_DEV === 'true' && isLocalRuntimeOrigin()
 export const DEV_API_KEY = process.env.NEXT_PUBLIC_DEV_API_KEY || ''
+
+// Sync enclave URL. The web client speaks only to this attested enclave
+// for blob reads/writes; the enclave is the only encryptor.
+export const SYNC_ENCLAVE_URL =
+  process.env.NEXT_PUBLIC_SYNC_ENCLAVE_URL || 'https://sync.tinfoil.sh'
+
+// GitHub repo used for sync-enclave code-measurement verification.
+export const SYNC_ENCLAVE_REPO =
+  process.env.NEXT_PUBLIC_SYNC_ENCLAVE_REPO || 'tinfoilsh/confidential-sync'
 
 // Pagination settings
 export const PAGINATION = {

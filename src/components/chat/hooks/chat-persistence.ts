@@ -124,6 +124,24 @@ export function createUpdateChatWithHistoryCheck({
               prevChats.map((c) => (c.id === updatedChat.id ? savedChat : c)),
             )
           }
+
+          // The save (and cloud sync, when applicable) has resolved, so
+          // clear the pending flag that drives the "Syncing with cloud"
+          // sidebar badge. Streaming chunks skip the save path above, so
+          // this only fires for real persistence.
+          const savedId = savedChat.id
+          setChats((prevChats) =>
+            prevChats.map((c) =>
+              c.id === savedId && c.pendingSave
+                ? { ...c, pendingSave: false }
+                : c,
+            ),
+          )
+          setCurrentChat((prev) =>
+            prev.id === savedId && prev.pendingSave
+              ? { ...prev, pendingSave: false }
+              : prev,
+          )
         })
         .catch((error) => {
           logError('Failed to save chat during update', error, {
@@ -133,6 +151,21 @@ export function createUpdateChatWithHistoryCheck({
               isLocalOnly: updatedChat.isLocalOnly,
             },
           })
+          // Clear the pending flag even on failure so the badge can't
+          // get stuck; the chat stays usable and will retry on the next
+          // edit or periodic sync.
+          setChats((prevChats) =>
+            prevChats.map((c) =>
+              c.id === updatedChat.id && c.pendingSave
+                ? { ...c, pendingSave: false }
+                : c,
+            ),
+          )
+          setCurrentChat((prev) =>
+            prev.id === updatedChat.id && prev.pendingSave
+              ? { ...prev, pendingSave: false }
+              : prev,
+          )
         })
     } else {
       sessionChatStorage.saveChat(updatedChat)

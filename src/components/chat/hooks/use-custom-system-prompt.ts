@@ -154,10 +154,6 @@ export const useCustomSystemPrompt = (
 
   // Generate the user preferences XML
   const generateUserPreferencesXML = (): string => {
-    if (!personalization.isEnabled) {
-      return ''
-    }
-
     // Check if any personalization fields are filled
     const hasPersonalization =
       personalization.nickname.trim() ||
@@ -199,7 +195,8 @@ export const useCustomSystemPrompt = (
 
   // Shared helper to replace placeholders in text
   const replacePlaceholders = (text: string): string => {
-    // Generate user preferences XML only if personalization is enabled
+    // Personalization is opt-in: even when fields are filled, nothing
+    // is sent to the model unless the user enabled the toggle.
     const userPreferencesXML = personalization.isEnabled
       ? generateUserPreferencesXML()
       : ''
@@ -256,6 +253,7 @@ export const useCustomSystemPrompt = (
   return {
     effectiveSystemPrompt,
     processedRules: processRules(),
-    isUsingPersonalization: personalization.isEnabled,
+    isUsingPersonalization:
+      personalization.isEnabled && generateUserPreferencesXML().length > 0,
   }
 }

@@ -18,11 +18,18 @@ import {
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
+import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { projectStorage } from '@/services/cloud/project-storage'
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { PrfNotSupportedError } from '@/services/passkey'
+import {
+  deletePasskeyCredential,
+  getLocalPasskeyCredentialId,
+  loadPasskeyCredentials,
+  PrfNotSupportedError,
+  type PasskeyCredentialEntry,
+} from '@/services/passkey'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { TINFOIL_COLORS } from '@/theme/colors'
@@ -72,6 +79,7 @@ import { IoShieldCheckmark } from 'react-icons/io5'
 import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
+import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
@@ -177,6 +185,123 @@ export type SettingsTab =
 
 import type { ThemeMode } from './hooks/use-ui-state'
 
+function PasskeyBundleInventory({
+  entries,
+  isDarkMode,
+  removingId,
+  keyStatus,
+  onRemove,
+}: {
+  entries: PasskeyCredentialEntry[]
+  isDarkMode: boolean
+  removingId: string | null
+  keyStatus: 'match' | 'mismatch' | 'unverified'
+  onRemove: (credentialId: string) => Promise<void>
+}) {
+  const canManage = keyStatus === 'match'
+  const localCredentialId = getLocalPasskeyCredentialId()
+  const sorted = [...entries].sort((a, b) => {
+    if (a.id === localCredentialId) return -1
+    if (b.id === localCredentialId) return 1
+    return (b.created_at ?? '').localeCompare(a.created_at ?? '')
+  })
+
+  const formatAddedAt = (iso: string | undefined) => {
+    if (!iso) return 'Date unknown'
+    const epoch = new Date(0).toISOString()
+    if (iso === epoch) return 'Date unknown'
+    try {
+      return new Date(iso).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    } catch {
+      return 'Date unknown'
+    }
+  }
+
+  const formatCredentialId = (id: string) =>
+    id.length <= 12 ? id : `${id.slice(0, 6)}…${id.slice(-4)}`
+
+  return (
+    <div
+      className={cn(
+        'rounded-lg border border-border-subtle',
+        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+      )}
+    >
+      <div className="border-b border-border-subtle px-4 py-2.5">
+        <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+          Registered platforms ({sorted.length})
+        </span>
+      </div>
+      {!canManage && (
+        <div className="border-b border-border-subtle bg-surface-chat/50 px-4 py-2.5">
+          <p className="text-xs text-content-muted">
+            {keyStatus === 'mismatch'
+              ? "This device's encryption key doesn't match your current cloud key, so passkeys can't be changed here. Recover or re-enter your current key first."
+              : "We couldn't verify your encryption key on this device. Make sure your key is loaded, then reopen this panel."}
+          </p>
+        </div>
+      )}
+      <ul className="divide-y divide-border-subtle">
+        {sorted.map((entry) => {
+          const isCurrentPlatform = entry.id === localCredentialId
+          const isLegacy = entry.source === 'legacy'
+          const isRemoving = removingId === entry.id
+          return (
+            <li
+              key={entry.id}
+              className="flex items-center justify-between gap-3 px-4 py-3"
+            >
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <GoPasskeyFill className="h-4 w-4 shrink-0 text-content-secondary" />
+                  <span className="truncate text-sm font-medium text-content-primary">
+                    {isCurrentPlatform ? 'This platform' : 'Other platform'}
+                  </span>
+                  {isLegacy && (
+                    <span className="rounded bg-surface-chat px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-content-muted">
+                      Legacy
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate font-mono text-xs text-content-muted">
+                  {formatCredentialId(entry.id)} ·{' '}
+                  {formatAddedAt(entry.created_at)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void onRemove(entry.id)
+                }}
+                disabled={removingId !== null || isLegacy || !canManage}
+                title={
+                  isLegacy
+                    ? 'Legacy credentials cannot be removed from settings yet'
+                    : !canManage
+                      ? "This device's key must match your current cloud key to remove passkeys"
+                      : undefined
+                }
+                className={cn(
+                  'shrink-0 rounded-md border border-border-subtle px-2.5 py-1 text-xs font-medium transition-colors',
+                  removingId !== null || isLegacy || !canManage
+                    ? 'cursor-not-allowed opacity-50'
+                    : 'hover:bg-surface-chat/80',
+                )}
+              >
+                {isRemoving ? 'Removing…' : 'Remove'}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 type SettingsModalProps = {
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
@@ -190,16 +315,28 @@ type SettingsModalProps = {
   isSignedIn?: boolean
   isPremium?: boolean
   encryptionKey: string | null
-  onKeyChange: (
-    key: string,
-    options?: { mode?: 'recoverExisting' | 'explicitStartFresh' },
-  ) => Promise<void>
-  onAddRecoveryKey: (key: string) => Promise<void>
   passkeyActive?: boolean
   passkeySetupAvailable?: boolean
+  passkeyAddDeviceAvailable?: boolean
   onSetupPasskey?: () => Promise<boolean>
+  onAddPasskeyToThisDevice?: () => Promise<boolean>
+  onRefreshBundleState?: () => Promise<void>
   initialTab?: SettingsTab
   chats?: Chat[]
+}
+
+function getAddPasskeyErrorTitle(error: unknown): string {
+  if (error instanceof PrfNotSupportedError) {
+    return 'Passkey provider not supported'
+  }
+  return 'Passkey setup failed'
+}
+
+function getAddPasskeyErrorDescription(error: unknown): string {
+  if (error instanceof PrfNotSupportedError) {
+    return error.message
+  }
+  return 'Could not add passkey for this device. You can try again later.'
 }
 
 export function SettingsModal({
@@ -215,11 +352,12 @@ export function SettingsModal({
   isSignedIn,
   isPremium,
   encryptionKey,
-  onKeyChange,
-  onAddRecoveryKey,
   passkeyActive,
   passkeySetupAvailable,
+  passkeyAddDeviceAvailable,
   onSetupPasskey,
+  onAddPasskeyToThisDevice,
+  onRefreshBundleState,
   initialTab,
   chats = [],
 }: SettingsModalProps) {
@@ -236,19 +374,22 @@ export function SettingsModal({
     autoLoad: isSignedIn && isPremium,
   })
   // Encryption key management state
-  const [inputKey, setInputKey] = useState('')
-  const [isInputKeyVisible, setIsInputKeyVisible] = useState(false)
-  const [isUpdating, setIsUpdating] = useState(false)
   const [isCopied, setIsCopied] = useState(false)
-  const [isDragging, setIsDragging] = useState(false)
   const [isQRCodeExpanded, setIsQRCodeExpanded] = useState(false)
   const [isKeyVisible, setIsKeyVisible] = useState(false)
   const [isSettingUpPasskey, setIsSettingUpPasskey] = useState(false)
+  const [passkeyBundles, setPasskeyBundles] = useState<
+    PasskeyCredentialEntry[]
+  >([])
+  const [removingPasskeyId, setRemovingPasskeyId] = useState<string | null>(
+    null,
+  )
+  const [passkeyKeyStatus, setPasskeyKeyStatus] = useState<
+    'match' | 'mismatch' | 'unverified'
+  >('unverified')
+  const passkeyRefreshSeqRef = useRef(0)
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [isSigningOut, setIsSigningOut] = useState(false)
-  const [primaryKeyMode, setPrimaryKeyMode] = useState<
-    'recoverExisting' | 'explicitStartFresh'
-  >('recoverExisting')
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Structured personalization fields
@@ -576,6 +717,59 @@ export function SettingsModal({
       )
     }
   }, [isClient, loadSettingsFromStorage])
+
+  const refreshPasskeyBundles = useCallback(async () => {
+    // Latest-wins sequencing: overlapping refreshes (panel-open effect
+    // racing a post-removal refresh) must not let a stale response
+    // overwrite newer inventory or key status.
+    const seq = ++passkeyRefreshSeqRef.current
+    if (!cloudSyncEnabled) {
+      setPasskeyBundles([])
+      setPasskeyKeyStatus('unverified')
+      return
+    }
+    try {
+      const entries = await loadPasskeyCredentials()
+      if (seq !== passkeyRefreshSeqRef.current) return
+      setPasskeyBundles(entries)
+    } catch (error) {
+      logError('Failed to load passkey bundle inventory', error, {
+        component: 'SettingsModal',
+        action: 'refreshPasskeyBundles',
+      })
+      if (seq !== passkeyRefreshSeqRef.current) return
+      setPasskeyBundles([])
+    }
+    try {
+      const validation = await validateCurrentPrimaryKey()
+      if (seq !== passkeyRefreshSeqRef.current) return
+      setPasskeyKeyStatus(
+        validation.canWrite
+          ? 'match'
+          : validation.remoteState === 'exists'
+            ? 'mismatch'
+            : 'unverified',
+      )
+    } catch {
+      if (seq !== passkeyRefreshSeqRef.current) return
+      setPasskeyKeyStatus('unverified')
+    }
+  }, [cloudSyncEnabled])
+
+  // Reload the bundle inventory whenever the Cloud Sync panel
+  // becomes visible or the user's passkey state may have changed
+  // (active / add-device / setup transitions).
+  useEffect(() => {
+    if (!isOpen) return
+    if (activeTab !== 'cloud-sync') return
+    void refreshPasskeyBundles()
+  }, [
+    isOpen,
+    activeTab,
+    refreshPasskeyBundles,
+    passkeyActive,
+    passkeyAddDeviceAvailable,
+  ])
 
   // Save personalization settings and notify components
   const savePersonalizationSettings = (values?: {
@@ -1738,7 +1932,6 @@ export function SettingsModal({
       setDeleteAllChatsConfirmText('')
       setShowDeleteAllProjectsConfirm(false)
       setDeleteAllProjectsConfirmText('')
-      setPrimaryKeyMode('recoverExisting')
     }
   }, [isOpen])
 
@@ -1766,57 +1959,6 @@ export function SettingsModal({
     }
   }
 
-  const handleKeyAction = async (
-    action: (key: string) => Promise<void>,
-    successTitle: string,
-    successDescription: string,
-  ) => {
-    if (!inputKey.trim()) {
-      toast({
-        title: 'Invalid key',
-        description: 'Please enter a valid encryption key',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setIsUpdating(true)
-    try {
-      await action(inputKey)
-      toast({ title: successTitle, description: successDescription })
-      setInputKey('')
-    } catch (error) {
-      toast({
-        title: 'Invalid key',
-        description:
-          error instanceof Error
-            ? error.message
-            : 'The encryption key you entered is invalid',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsUpdating(false)
-    }
-  }
-
-  const handleUpdateKey = () =>
-    handleKeyAction(
-      (key) => onKeyChange(key, { mode: primaryKeyMode }),
-      primaryKeyMode === 'recoverExisting'
-        ? 'Primary key verified'
-        : 'Primary key replaced',
-      primaryKeyMode === 'recoverExisting'
-        ? 'This device verified the key against your existing cloud data'
-        : 'Future cloud writes will use the new primary key on this device',
-    )
-
-  const handleAddRecoveryKey = () =>
-    handleKeyAction(
-      onAddRecoveryKey,
-      'Recovery key added',
-      'Older encrypted data can now be retried with this key',
-    )
-
   const downloadKeyAsPEM = () => {
     if (!encryptionKey) return
 
@@ -1834,81 +1976,6 @@ ${encryptionKey.replace('key_', '')}
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
-
-  const extractKeyFromPEM = (pemContent: string): string | null => {
-    const lines = pemContent.split('\n')
-    const startIndex = lines.findIndex((line) =>
-      line.includes('BEGIN TINFOIL CHAT ENCRYPTION KEY'),
-    )
-    const endIndex = lines.findIndex((line) =>
-      line.includes('END TINFOIL CHAT ENCRYPTION KEY'),
-    )
-
-    if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex) {
-      const keyLines = lines.slice(startIndex + 1, endIndex)
-      const keyContent = keyLines.join('').trim()
-      return keyContent ? `key_${keyContent}` : null
-    }
-
-    return null
-  }
-
-  const handleFileImport = useCallback(
-    async (file: File) => {
-      try {
-        const content = await file.text()
-        const extractedKey = extractKeyFromPEM(content)
-
-        if (extractedKey) {
-          setInputKey(extractedKey)
-        } else {
-          toast({
-            title: 'Invalid file',
-            description: 'Could not extract encryption key from the PEM file',
-            variant: 'destructive',
-          })
-        }
-      } catch {
-        toast({
-          title: 'Import failed',
-          description: 'Failed to read the PEM file',
-          variant: 'destructive',
-        })
-      }
-    },
-    [toast],
-  )
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }, [])
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault()
-      setIsDragging(false)
-
-      const files = Array.from(e.dataTransfer.files)
-      const pemFile = files.find((file) => file.name.endsWith('.pem'))
-
-      if (pemFile) {
-        await handleFileImport(pemFile)
-      } else {
-        toast({
-          title: 'Invalid file',
-          description: 'Please drop a .pem file',
-          variant: 'destructive',
-        })
-      }
-    },
-    [handleFileImport, toast],
-  )
 
   if (!isOpen) return null
 
@@ -2983,6 +3050,19 @@ ${encryptionKey.replace('key_', '')}
                         </label>
                       </div>
                     </div>
+                    {cloudSyncEnabled && (
+                      <CloudSyncHealthCard
+                        isDarkMode={isDarkMode}
+                        onRecoverClick={
+                          onCloudSyncSetupClick
+                            ? () => {
+                                setIsOpen(false)
+                                onCloudSyncSetupClick()
+                              }
+                            : undefined
+                        }
+                      />
+                    )}
                   </div>
 
                   {/* Your Personal Encryption Key - Collapsible */}
@@ -3176,180 +3256,6 @@ ${encryptionKey.replace('key_', '')}
                           Do not share this key with anyone. Only save it in a
                           secure location.
                         </p>
-
-                        {/* Restore or Update Encryption Key */}
-                        <div className="space-y-2 pt-2">
-                          <h4 className="font-aeonik text-xs font-medium text-content-secondary">
-                            {passkeyActive
-                              ? 'Add Decryption Key'
-                              : 'Recovery and Primary Keys'}
-                          </h4>
-                          <p className="text-xs text-content-muted">
-                            {passkeyActive
-                              ? 'Add an older key to decrypt data from before a key rotation. Your passkey manages the primary key.'
-                              : 'Add a recovery key to decrypt older data without changing your current primary key, or replace the primary key used for future cloud writes.'}
-                          </p>
-                          {!passkeyActive && (
-                            <div className="space-y-2 rounded-lg border border-border-subtle bg-surface-chat p-3">
-                              <div className="grid grid-cols-2 gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPrimaryKeyMode('recoverExisting')
-                                  }
-                                  className={cn(
-                                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                                    primaryKeyMode === 'recoverExisting'
-                                      ? 'border border-blue-500 bg-blue-500/10 text-blue-500'
-                                      : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
-                                  )}
-                                >
-                                  Recover Existing
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setPrimaryKeyMode('explicitStartFresh')
-                                  }
-                                  className={cn(
-                                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                                    primaryKeyMode === 'explicitStartFresh'
-                                      ? 'border border-amber-500 bg-amber-500/10 text-amber-500'
-                                      : 'border border-border-subtle bg-surface-input text-content-secondary hover:text-content-primary',
-                                  )}
-                                >
-                                  Start Fresh
-                                </button>
-                              </div>
-                              <p className="text-xs text-content-muted">
-                                {primaryKeyMode === 'recoverExisting'
-                                  ? 'Verify this key against your existing cloud data before this device resumes writing.'
-                                  : 'Use this key for future cloud writes on this device without validating it against older cloud data.'}
-                              </p>
-                            </div>
-                          )}
-                          <form
-                            onSubmit={(e) => {
-                              e.preventDefault()
-                              if (!isUpdating && inputKey.trim()) {
-                                if (passkeyActive) {
-                                  handleAddRecoveryKey()
-                                } else {
-                                  handleUpdateKey()
-                                }
-                              }
-                            }}
-                            onDragOver={handleDragOver}
-                            onDragLeave={handleDragLeave}
-                            onDrop={handleDrop}
-                            className="space-y-2"
-                            id="encryption-key-form"
-                          >
-                            <div className="flex gap-2">
-                              <div className="relative flex-1">
-                                <input
-                                  type="text"
-                                  style={
-                                    isInputKeyVisible
-                                      ? undefined
-                                      : ({
-                                          WebkitTextSecurity: 'disc',
-                                        } as React.CSSProperties)
-                                  }
-                                  name="encryption-key"
-                                  value={inputKey}
-                                  onChange={(e) => setInputKey(e.target.value)}
-                                  placeholder={
-                                    isDragging
-                                      ? ''
-                                      : 'Enter key (e.g., key_abc123...)'
-                                  }
-                                  autoComplete="off"
-                                  aria-label="Encryption key input"
-                                  className={cn(
-                                    'w-full rounded-lg border border-blue-500 bg-surface-input px-3 py-2 pr-9 font-mono text-sm text-blue-500 placeholder:font-sans placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-blue-500',
-                                    isDragging && 'ring-2 ring-blue-500',
-                                  )}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setIsInputKeyVisible(!isInputKeyVisible)
-                                  }
-                                  aria-label={
-                                    isInputKeyVisible ? 'Hide key' : 'Show key'
-                                  }
-                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-content-muted transition-all hover:text-content-primary"
-                                >
-                                  {isInputKeyVisible ? (
-                                    <EyeSlashIcon className="h-4 w-4" />
-                                  ) : (
-                                    <EyeIcon className="h-4 w-4" />
-                                  )}
-                                </button>
-                                {isDragging && (
-                                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-blue-500/10">
-                                    <span className="text-sm text-blue-500">
-                                      Drop your PEM file here
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                              {passkeyActive ? (
-                                <button
-                                  type="submit"
-                                  disabled={isUpdating || !inputKey.trim()}
-                                  aria-label="Add decryption key"
-                                  className={cn(
-                                    'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                    isUpdating || !inputKey.trim()
-                                      ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                      : 'bg-blue-500 text-white hover:bg-blue-600',
-                                  )}
-                                >
-                                  {isUpdating ? 'Saving...' : 'Add Key'}
-                                </button>
-                              ) : (
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={handleAddRecoveryKey}
-                                    disabled={isUpdating || !inputKey.trim()}
-                                    aria-label="Add recovery key"
-                                    className={cn(
-                                      'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                      isUpdating || !inputKey.trim()
-                                        ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                        : 'border border-border-subtle bg-surface-chat text-content-primary hover:bg-surface-chat/80',
-                                    )}
-                                  >
-                                    {isUpdating ? 'Saving...' : 'Add Recovery'}
-                                  </button>
-                                  <button
-                                    type="submit"
-                                    disabled={isUpdating || !inputKey.trim()}
-                                    aria-label="Replace primary encryption key"
-                                    className={cn(
-                                      'rounded-lg px-4 py-2 text-sm font-medium transition-colors',
-                                      isUpdating || !inputKey.trim()
-                                        ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                                        : primaryKeyMode ===
-                                            'explicitStartFresh'
-                                          ? 'bg-amber-500 text-white hover:bg-amber-600'
-                                          : 'bg-blue-500 text-white hover:bg-blue-600',
-                                    )}
-                                  >
-                                    {isUpdating
-                                      ? 'Saving...'
-                                      : primaryKeyMode === 'recoverExisting'
-                                        ? 'Recover Existing'
-                                        : 'Start Fresh'}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </form>
-                        </div>
                       </div>
                     </div>
                   )}
@@ -3357,7 +3263,9 @@ ${encryptionKey.replace('key_', '')}
                   {/* Passkey Section */}
                   {cloudSyncEnabled &&
                     (passkeyActive ||
-                      (passkeySetupAvailable && onSetupPasskey)) && (
+                      (passkeySetupAvailable && onSetupPasskey) ||
+                      (passkeyAddDeviceAvailable &&
+                        onAddPasskeyToThisDevice)) && (
                       <div className="space-y-3">
                         <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                           Passkey
@@ -3390,6 +3298,60 @@ ${encryptionKey.replace('key_', '')}
                               </span>
                             </div>
                           </div>
+                        )}
+
+                        {/* Per-device passkey inventory */}
+                        {passkeyBundles.length > 0 && (
+                          <PasskeyBundleInventory
+                            entries={passkeyBundles}
+                            isDarkMode={isDarkMode}
+                            removingId={removingPasskeyId}
+                            keyStatus={passkeyKeyStatus}
+                            onRemove={async (credentialId) => {
+                              // Guard non-pointer activation paths;
+                              // one removal at a time.
+                              if (removingPasskeyId !== null) return
+                              setRemovingPasskeyId(credentialId)
+                              try {
+                                const ok =
+                                  await deletePasskeyCredential(credentialId)
+                                if (ok) {
+                                  toast({
+                                    title: 'Passkey removed',
+                                    description:
+                                      'That platform can no longer unlock your chats with this passkey.',
+                                  })
+                                  await refreshPasskeyBundles()
+                                  if (onRefreshBundleState) {
+                                    await onRefreshBundleState()
+                                  }
+                                } else {
+                                  toast({
+                                    title: 'Could not remove passkey',
+                                    description:
+                                      'Please try again in a moment.',
+                                    variant: 'destructive',
+                                  })
+                                }
+                              } catch (error) {
+                                logError(
+                                  'Failed to remove passkey credential',
+                                  error,
+                                  {
+                                    component: 'SettingsModal',
+                                    action: 'onRemovePasskey',
+                                  },
+                                )
+                                toast({
+                                  title: 'Could not remove passkey',
+                                  description: 'Please try again in a moment.',
+                                  variant: 'destructive',
+                                })
+                              } finally {
+                                setRemovingPasskeyId(null)
+                              }
+                            }}
+                          />
                         )}
 
                         {/* Passkey Setup Prompt */}
@@ -3444,6 +3406,60 @@ ${encryptionKey.replace('key_', '')}
                                   <p className="text-xs text-content-muted">
                                     Use Face ID or Touch ID to sync chats across
                                     devices
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+                          )}
+
+                        {/* Add Passkey on This Device Prompt */}
+                        {!passkeyActive &&
+                          passkeyAddDeviceAvailable &&
+                          onAddPasskeyToThisDevice && (
+                            <button
+                              onClick={async () => {
+                                setIsSettingUpPasskey(true)
+                                try {
+                                  const success =
+                                    await onAddPasskeyToThisDevice()
+                                  if (success) {
+                                    toast({
+                                      title: 'Passkey added for this device',
+                                      description:
+                                        'You can now unlock your chats on this device with Face ID or Touch ID',
+                                    })
+                                  }
+                                } catch (error) {
+                                  toast({
+                                    title: getAddPasskeyErrorTitle(error),
+                                    description:
+                                      getAddPasskeyErrorDescription(error),
+                                    variant: 'destructive',
+                                  })
+                                } finally {
+                                  setIsSettingUpPasskey(false)
+                                }
+                              }}
+                              disabled={isSettingUpPasskey}
+                              className={cn(
+                                'w-full rounded-lg border border-border-subtle p-4 text-left transition-colors',
+                                isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                                isSettingUpPasskey
+                                  ? 'cursor-not-allowed opacity-50'
+                                  : 'hover:bg-surface-chat/80',
+                              )}
+                            >
+                              <div className="flex gap-2">
+                                <GoPasskeyFill className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary" />
+                                <div>
+                                  <span className="text-sm font-medium leading-tight text-content-primary">
+                                    {isSettingUpPasskey
+                                      ? 'Setting up...'
+                                      : 'Set Up Passkey on This Device'}
+                                  </span>
+                                  <p className="text-xs text-content-muted">
+                                    Your other devices use a passkey already.
+                                    Add one here for one-tap access.
                                   </p>
                                 </div>
                               </div>
