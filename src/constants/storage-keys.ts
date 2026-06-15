@@ -116,6 +116,15 @@ export const SYNC_PROFILE_DIRTY = 'tinfoil-sync-profile-dirty'
 // orphan rows server-side; the next sync repopulates fresh plaintext.
 export const MIGRATION_LEGACY_CLOUD_CHATS_EVICTED =
   'tinfoil-migration-legacy-cloud-chats-evicted'
+// Per-user fingerprint (suffixed with the clerk user id) of the
+// migration candidate key set whose last completed migrate-all sweep
+// left rows blocked under every key this client holds. While the
+// fingerprint matches the current key set the client skips re-kicking a
+// doomed sweep on each page load; a changed key set (a newly recovered
+// key) no longer matches, so the sweep runs again. Cleared once a sweep
+// reports everything migrated.
+export const MIGRATION_EXHAUSTED_KEYSET_PREFIX =
+  'tinfoil-migration-exhausted-keyset-'
 
 // --- localStorage: Development ---------------------------------------------
 export const DEV_ENABLE_DEBUG_LOGS = 'tinfoil-dev-enable-debug-logs'

@@ -121,3 +121,35 @@ export function migrationKeys(): PullKey[] {
   }
   return out
 }
+
+/**
+ * Stable, non-secret fingerprint of the migration candidate key set
+ * (primary plus alternatives) the way `migrationKeys()` assembles it.
+ * Derived from each key's controlplane key_id (a hex digest, never the
+ * raw CEK), sorted and joined so the value is order-independent and
+ * safe to persist. Callers use it to tell whether the set of keys the
+ * migration sweep can try has changed since the last attempt, so a
+ * doomed sweep is not re-driven on every page load with an unchanged
+ * key set. Returns null when no primary key is loaded.
+ */
+export async function migrationKeySetFingerprint(): Promise<string | null> {
+  const primary = encryptionService.getKey()
+  if (!primary) return null
+  const keys = [
+    primary,
+    ...encryptionService.getStoredAlternatives().filter((a) => a !== primary),
+  ]
+  const ids: string[] = []
+  for (const k of keys) {
+    const bytes = encryptionService.getAlternativeKeyBytes(k)
+    if (!bytes) continue
+    try {
+      ids.push(await deriveKeyIdHex(bytes))
+    } catch {
+      // Skip an unreadable key rather than abort the whole fingerprint.
+    }
+  }
+  if (ids.length === 0) return null
+  ids.sort()
+  return ids.join(',')
+}
