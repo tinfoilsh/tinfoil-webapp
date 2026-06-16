@@ -273,9 +273,18 @@ export class ProfileSyncService {
       }
 
       try {
+        // DEBUG[profile-sync]: remove before merge.
+        console.log('[profile-sync] saveProfile push', {
+          baseVersion: profile.version || 0,
+          updatedAt: profile.updatedAt,
+        })
         return await pushAtVersion(profile.version || 0)
       } catch (pushError) {
         if (!isStaleBlobConflict(pushError)) {
+          // DEBUG[profile-sync]: remove before merge.
+          console.log('[profile-sync] saveProfile push failed (non-conflict)', {
+            error: pushError instanceof Error ? pushError.message : pushError,
+          })
           throw pushError
         }
         // Optimistic-concurrency conflict: the server holds a version
@@ -286,6 +295,16 @@ export class ProfileSyncService {
           action: 'saveProfile',
         })
         const remote = await this.fetchProfile()
+
+        // DEBUG[profile-sync]: remove before merge.
+        console.log('[profile-sync] saveProfile conflict (STALE_BLOB)', {
+          localUpdatedAt: profile.updatedAt,
+          remoteUpdatedAt: remote?.updatedAt,
+          remoteVersion: remote?.version,
+          remoteWins:
+            !!remote &&
+            remoteWinsLastWrite(profile.updatedAt, remote.updatedAt),
+        })
 
         if (
           remote &&

@@ -8,6 +8,7 @@ import { getCurrentCloudKeyAuthorizationMode } from '@/services/cloud/cloud-key-
 import type { ProfileSyncStatus } from '@/services/cloud/cloud-storage'
 import {
   applySettingsToLocal,
+  diffProfileFields,
   hasProfileChanged,
   loadLocalSettings,
   resetSettingsToLocalDefaults,
@@ -120,6 +121,17 @@ export function useProfileSync() {
         if (cloudVersion < lastSyncedVersion.current) {
           return
         }
+
+        // DEBUG[profile-sync]: remove before merge.
+        console.log('[profile-sync] syncFromCloud', {
+          cloudVersion,
+          lastSyncedVersion: lastSyncedVersion.current,
+          willApply: hasProfileChanged(cloudProfile, lastSyncedProfile.current),
+          diffFields: diffProfileFields(
+            cloudProfile,
+            lastSyncedProfile.current,
+          ),
+        })
 
         if (hasProfileChanged(cloudProfile, lastSyncedProfile.current)) {
           isApplyingRemoteProfile.current = true
@@ -240,6 +252,17 @@ export function useProfileSync() {
           return
         }
 
+        // DEBUG[profile-sync]: remove before merge.
+        console.log('[profile-sync] smartSyncFromCloud', {
+          cloudVersion,
+          lastSyncedVersion: lastSyncedVersion.current,
+          willApply: hasProfileChanged(cloudProfile, lastSyncedProfile.current),
+          diffFields: diffProfileFields(
+            cloudProfile,
+            lastSyncedProfile.current,
+          ),
+        })
+
         if (hasProfileChanged(cloudProfile, lastSyncedProfile.current)) {
           isApplyingRemoteProfile.current = true
           try {
@@ -295,6 +318,18 @@ export function useProfileSync() {
         }
 
         const localSettings = loadLocalSettings()
+
+        // DEBUG[profile-sync]: remove before merge.
+        console.log('[profile-sync] syncToCloud decide', {
+          dirty: hasLocalProfileChanges(),
+          willPush: hasProfileChanged(localSettings, lastSyncedProfile.current),
+          diffFields: diffProfileFields(
+            localSettings,
+            lastSyncedProfile.current,
+          ),
+          baseVersion: lastSyncedVersion.current,
+          changedAt: getLocalProfileChangedAt(),
+        })
 
         if (!hasProfileChanged(localSettings, lastSyncedProfile.current)) {
           logInfo('Skipping cloud sync - no changes detected', {
@@ -360,7 +395,12 @@ export function useProfileSync() {
         })
       }
     }, 2000) // 2 second debounce
-  }, [clearLocalProfileChanged, getLocalProfileChangedAt, isSignedIn])
+  }, [
+    clearLocalProfileChanged,
+    getLocalProfileChangedAt,
+    hasLocalProfileChanges,
+    isSignedIn,
+  ])
 
   // Initial sync when authenticated and periodic sync (only if cloud sync is enabled)
   useEffect(() => {
