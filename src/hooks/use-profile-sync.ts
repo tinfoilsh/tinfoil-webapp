@@ -391,7 +391,14 @@ export function useProfileSync() {
             if (cachedProfile.version) {
               lastSyncedVersion.current = cachedProfile.version
             }
-            lastSyncedProfile.current = loadLocalSettings()
+            // If a local edit landed while the initial pull was in
+            // flight, syncFromCloud skipped applying it. Keep the remote
+            // as the baseline so the pending change is still detected and
+            // pushed; only baseline from the round-tripped local snapshot
+            // when there is no pending edit to preserve.
+            lastSyncedProfile.current = hasLocalProfileChanges()
+              ? cachedProfile
+              : loadLocalSettings()
           }
         })
       }
