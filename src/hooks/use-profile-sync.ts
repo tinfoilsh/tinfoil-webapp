@@ -97,22 +97,22 @@ export function useProfileSync() {
   const syncFromCloud = useCallback(async () => {
     if (!isSignedIn || !isCloudSyncEnabled()) return
 
-    if (hasLocalProfileChanges()) {
-      logInfo('Skipping cloud sync - local changes pending', {
-        component: 'ProfileSync',
-        action: 'syncFromCloud',
-      })
-      return
-    }
-
     try {
       const cloudProfile = await profileSync.fetchProfile()
 
       if (cloudProfile) {
         const cloudVersion = cloudProfile.version || 0
 
-        // Re-check pending changes after fetch to avoid race with local edits
+        // A pending local edit must not be overwritten by the remote,
+        // but we still record the server's current version so the
+        // pending push rebases onto it as a CAS update instead of
+        // looping on a create-at-zero that would block every future
+        // pull behind a never-clearing dirty flag. Last-write-wins on
+        // push decides the winner.
         if (hasLocalProfileChanges()) {
+          if (cloudVersion > lastSyncedVersion.current) {
+            lastSyncedVersion.current = cloudVersion
+          }
           return
         }
 
@@ -130,7 +130,13 @@ export function useProfileSync() {
           }
           clearLocalProfileChanged()
           lastSyncedVersion.current = cloudVersion
-          lastSyncedProfile.current = cloudProfile
+          // Baseline must mirror what loadLocalSettings would
+          // re-serialize, not the raw remote: the remote may omit
+          // fields this client derives (e.g. themeMode from isDarkMode),
+          // which would otherwise read back as a phantom local change
+          // and wedge every future pull behind a never-clearing dirty
+          // flag while looping STALE_BLOB pushes.
+          lastSyncedProfile.current = loadLocalSettings()
 
           logInfo('Profile synced from cloud', {
             component: 'ProfileSync',
@@ -243,7 +249,13 @@ export function useProfileSync() {
           }
           clearLocalProfileChanged()
           lastSyncedVersion.current = cloudVersion
-          lastSyncedProfile.current = cloudProfile
+          // Baseline must mirror what loadLocalSettings would
+          // re-serialize, not the raw remote: the remote may omit
+          // fields this client derives (e.g. themeMode from isDarkMode),
+          // which would otherwise read back as a phantom local change
+          // and wedge every future pull behind a never-clearing dirty
+          // flag while looping STALE_BLOB pushes.
+          lastSyncedProfile.current = loadLocalSettings()
         }
 
         // Update cached sync status only after successful processing
@@ -323,7 +335,10 @@ export function useProfileSync() {
             } finally {
               isApplyingRemoteProfile.current = false
             }
-            lastSyncedProfile.current = result.remoteProfile
+            // Adopt the round-tripped local snapshot, not the raw
+            // remote, so fields we derive but the peer omits don't read
+            // back as a phantom change and re-trigger the push loop.
+            lastSyncedProfile.current = loadLocalSettings()
           } else {
             lastSyncedProfile.current = localSettings
           }
@@ -366,7 +381,10 @@ export function useProfileSync() {
         action: 'initialize',
       })
       if (hasLocalProfileChanges()) {
-        syncToCloud()
+        // A pending edit exists. Learn the server version first (without
+        // overwriting the edit) so the push is a CAS update rather than a
+        // create that could loop on STALE_BLOB, then push.
+        syncFromCloud().then(() => syncToCloud())
       } else {
         // Initial sync on page load - this will also set lastSyncedVersion
         syncFromCloud().then(() => {
@@ -376,7 +394,14 @@ export function useProfileSync() {
             if (cachedProfile.version) {
               lastSyncedVersion.current = cachedProfile.version
             }
-            lastSyncedProfile.current = cachedProfile
+            // If a local edit landed while the initial pull was in
+            // flight, syncFromCloud skipped applying it. Keep the remote
+            // as the baseline so the pending change is still detected and
+            // pushed; only baseline from the round-tripped local snapshot
+            // when there is no pending edit to preserve.
+            lastSyncedProfile.current = hasLocalProfileChanges()
+              ? cachedProfile
+              : loadLocalSettings()
           }
         })
       }
@@ -385,7 +410,14 @@ export function useProfileSync() {
     // Use smart sync at regular intervals to reduce bandwidth
     const interval = setInterval(() => {
       if (hasLocalProfileChanges()) {
-        syncToCloud()
+        if (lastSyncedVersion.current === 0) {
+          // Never established a base version; learn it first so the push
+          // is a CAS update instead of a create that can loop on
+          // STALE_BLOB and block all future pulls.
+          syncFromCloud().then(() => syncToCloud())
+        } else {
+          syncToCloud()
+        }
       } else {
         smartSyncFromCloud()
       }
@@ -460,7 +492,7 @@ export function useProfileSync() {
       if (decryptedProfile.version) {
         lastSyncedVersion.current = decryptedProfile.version
       }
-      lastSyncedProfile.current = decryptedProfile
+      lastSyncedProfile.current = loadLocalSettings()
       logInfo('Profile decrypted and applied with new key', {
         component: 'ProfileSync',
         action: 'retryDecryption',
