@@ -111,7 +111,10 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
     }
   }, [])
 
-  const userPresets: PromptPreset[] = userPresetsRaw.map(toPromptPreset)
+  const userPresets: PromptPreset[] = useMemo(
+    () => userPresetsRaw.map(toPromptPreset),
+    [userPresetsRaw],
+  )
 
   const allPresets = useMemo(
     () => [...BUILT_IN_PROMPT_PRESETS, ...userPresets],
