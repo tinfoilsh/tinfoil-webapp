@@ -882,15 +882,24 @@ export class CloudSyncService {
         return
       }
 
-      // Remote is the last write — force the overwrite (bypassing the
-      // §H6 CAS) since we have just established it is the winner.
+      // Remote is the last write — overwrite local with it. Bind the
+      // write to the local snapshot we arbitrated against so an
+      // interleaved edit during the remote download is not clobbered;
+      // such an edit makes this a no-op and the next cycle re-arbitrates
+      // with the now-fresher local copy. `allowLocallyModified` lets the
+      // overwrite proceed over the in-conflict (still locallyModified)
+      // row that the remote has already beaten.
       const applied = await indexedDBStorage.applyRemoteChatIfFresh({
         chat: remoteChat,
         syncVersion: remoteChat.syncVersion ?? 0,
-        expectedLocalUpdatedAt: undefined,
+        expectedLocalUpdatedAt: localChat ? localChat.updatedAt : null,
+        allowLocallyModified: true,
       })
       if (applied.applied) {
         chatEvents.emit({ reason: 'sync', ids: [chatId] })
+        // The conflict is resolved; clear any prior failure badge so a
+        // chat that failed an earlier cycle no longer shows as unsynced.
+        reportChatSynced(chatId)
       }
       logInfo('Conflict resolved by pulling remote', {
         component: 'CloudSync',

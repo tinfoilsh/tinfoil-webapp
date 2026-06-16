@@ -57,16 +57,20 @@ export function useProfileSync() {
   }, [])
 
   // Edit time of the pending local profile change, used to arbitrate
-  // last-write-wins against the remote. Falls back to now so a local
-  // edit is never treated as older than the remote it is replacing.
-  const getLocalProfileChangedAt = useCallback((): string => {
+  // last-write-wins against the remote. Returns undefined when the edit
+  // time is unknown (e.g. a dirty flag left by an older build, or
+  // partially cleared storage) so unknown-age local data cannot win the
+  // arbitration and clobber a genuinely newer remote: conflict
+  // resolution then defers to the remote, while a non-conflicting push
+  // still stamps the current time.
+  const getLocalProfileChangedAt = useCallback((): string | undefined => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem(SYNC_PROFILE_CHANGED_AT)
       if (stored && !Number.isNaN(new Date(stored).getTime())) {
         return stored
       }
     }
-    return new Date().toISOString()
+    return undefined
   }, [])
 
   // Listen for cloud sync setting changes

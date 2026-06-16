@@ -753,12 +753,19 @@ export class IndexedDBStorage {
    *
    * Pass `expectedLocalUpdatedAt: undefined` to force the write
    * (e.g. last-write-wins conflict resolution).
+   *
+   * Pass `allowLocallyModified: true` to keep the timestamp CAS while
+   * permitting an overwrite of a `locallyModified` row. Last-write-wins
+   * conflict resolution uses this: the remote has already been judged
+   * the winner, but the apply must still no-op if the local row changed
+   * since that judgement (a TOCTOU edit during the remote download).
    */
   async applyRemoteChatIfFresh(opts: {
     chat: Chat
     syncVersion: number
     expectedLocalUpdatedAt: string | null | undefined
     setLoadedAt?: boolean
+    allowLocallyModified?: boolean
   }): Promise<{ applied: boolean }> {
     return this.enqueueSave('applyRemoteChatIfFresh', async () => {
       const db = await this.ensureDB()
@@ -772,7 +779,7 @@ export class IndexedDBStorage {
         } else if (
           !existing ||
           existing.updatedAt !== opts.expectedLocalUpdatedAt ||
-          existing.locallyModified === true
+          (existing.locallyModified === true && !opts.allowLocallyModified)
         ) {
           return { applied: false }
         }

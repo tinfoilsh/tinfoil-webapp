@@ -48,6 +48,8 @@ const mockIsStreaming = vi.fn()
 const mockOnStreamEnd = vi.fn()
 
 const mockChatEventsEmit = vi.fn()
+const mockReportChatSynced = vi.fn()
+const mockReportChatSyncFailed = vi.fn()
 const mockIngestRemoteChats = vi.fn()
 const mockSyncRemoteDeletions = vi.fn()
 const mockCanWriteToCloud = vi.fn()
@@ -155,6 +157,14 @@ vi.mock('@/services/storage/chat-events', () => ({
   chatEvents: {
     emit: (...args: any[]) => mockChatEventsEmit(...args),
   },
+}))
+
+vi.mock('@/services/cloud/sync-health', () => ({
+  reportChatSynced: (...args: any[]) => mockReportChatSynced(...args),
+  reportChatSyncFailed: (...args: any[]) => mockReportChatSyncFailed(...args),
+  reportKeyActionRequired: vi.fn(),
+  reportSyncPaused: vi.fn(),
+  reportSyncSuccess: vi.fn(),
 }))
 
 vi.mock('@/services/cloud/chat-ingestion', () => ({
@@ -971,17 +981,52 @@ describe('CloudSyncService', () => {
       await service.waitForUpload('conflict-1')
       await flush()
 
+      // The overwrite is bound to the local snapshot we arbitrated
+      // against (CAS), not forced, so a TOCTOU edit during the download
+      // cannot be clobbered.
       expect(mockApplyRemoteChatIfFresh).toHaveBeenCalledWith(
         expect.objectContaining({
           syncVersion: 9,
-          expectedLocalUpdatedAt: undefined,
+          expectedLocalUpdatedAt: '2024-06-01T00:00:00.000Z',
+          allowLocallyModified: true,
         }),
       )
       expect(mockChatEventsEmit).toHaveBeenCalledWith({
         reason: 'sync',
         ids: ['conflict-1'],
       })
+      // A successful resolution clears any prior failure badge.
+      expect(mockReportChatSynced).toHaveBeenCalledWith('conflict-1')
       expect(mockRebaseSyncVersion).not.toHaveBeenCalled()
+    })
+
+    it('preserves an interleaved local edit when the CAS no longer matches', async () => {
+      mockGetChat.mockResolvedValue(localChat('2024-06-01T00:00:00.000Z', 1))
+      mockDownloadChat.mockResolvedValue({
+        id: 'conflict-1',
+        title: 'Conflict',
+        messages: [
+          { role: 'user', content: 'hi' },
+          { role: 'assistant', content: 'remote is ahead' },
+        ],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-06-01T00:00:10.000Z',
+        syncVersion: 9,
+      })
+      // The local row changed during the remote download, so the CAS
+      // ingest reports it did not apply.
+      mockApplyRemoteChatIfFresh.mockResolvedValue({ applied: false })
+      mockUploadChat.mockRejectedValueOnce(staleBlob())
+
+      const service = new CloudSyncService()
+      await service.backupChat('conflict-1')
+      await service.waitForUpload('conflict-1')
+      await flush()
+
+      // No overwrite event and no synced report: the chat stays
+      // locallyModified for the next cycle to re-arbitrate.
+      expect(mockChatEventsEmit).not.toHaveBeenCalled()
+      expect(mockReportChatSynced).not.toHaveBeenCalled()
     })
 
     it('leaves the local copy untouched when the remote row is gone', async () => {
