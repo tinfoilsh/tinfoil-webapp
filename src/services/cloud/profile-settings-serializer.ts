@@ -12,6 +12,7 @@ import {
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_CUSTOM_SYSTEM_PROMPT,
+  USER_PREFS_FAVORITE_PROMPT_PRESETS,
   USER_PREFS_LANGUAGE,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
@@ -49,6 +50,17 @@ function safeParsePromptPresets(raw: string | null): ProfilePromptPreset[] {
   }
 }
 
+function safeParseFavoritePresetIds(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((id): id is string => typeof id === 'string')
+  } catch {
+    return []
+  }
+}
+
 /**
  * Check if two profile data objects differ in any meaningful field (excluding metadata).
  */
@@ -71,6 +83,8 @@ export function hasProfileChanged(
     profile1.customSystemPrompt !== profile2.customSystemPrompt ||
     JSON.stringify(profile1.customPromptPresets) !==
       JSON.stringify(profile2.customPromptPresets) ||
+    JSON.stringify(profile1.favoritePromptPresetIds) !==
+      JSON.stringify(profile2.favoritePromptPresetIds) ||
     profile1.selectedModel !== profile2.selectedModel ||
     profile1.reasoningEffort !== profile2.reasoningEffort ||
     profile1.thinkingEnabled !== profile2.thinkingEnabled ||
@@ -155,6 +169,15 @@ export function loadLocalSettings(): ProfileData {
     settings.customPromptPresets = safeParsePromptPresets(customPromptPresets)
   }
 
+  const favoritePromptPresetIds = localStorage.getItem(
+    USER_PREFS_FAVORITE_PROMPT_PRESETS,
+  )
+  if (favoritePromptPresetIds !== null) {
+    settings.favoritePromptPresetIds = safeParseFavoritePresetIds(
+      favoritePromptPresetIds,
+    )
+  }
+
   const selectedModel = localStorage.getItem(SETTINGS_SELECTED_MODEL)
   if (selectedModel !== null) {
     settings.selectedModel = selectedModel
@@ -226,6 +249,7 @@ export function resetSettingsToLocalDefaults(): ProfileData {
     isUsingCustomPrompt: false,
     customSystemPrompt: '',
     customPromptPresets: [],
+    favoritePromptPresetIds: [],
     reasoningEffort: 'medium',
     thinkingEnabled: true,
     webSearchEnabled: true,
@@ -347,6 +371,14 @@ export function applySettingsToLocal(settings: ProfileData): void {
     localStorage.setItem(
       USER_PREFS_CUSTOM_PROMPT_PRESETS,
       JSON.stringify(settings.customPromptPresets),
+    )
+    window.dispatchEvent(new CustomEvent('promptLibraryChanged'))
+  }
+
+  if (settings.favoritePromptPresetIds !== undefined) {
+    localStorage.setItem(
+      USER_PREFS_FAVORITE_PROMPT_PRESETS,
+      JSON.stringify(settings.favoritePromptPresetIds),
     )
     window.dispatchEvent(new CustomEvent('promptLibraryChanged'))
   }

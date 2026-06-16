@@ -9,6 +9,7 @@ import {
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_CUSTOM_SYSTEM_PROMPT,
+  USER_PREFS_FAVORITE_PROMPT_PRESETS,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
   USER_PREFS_PROFESSION,
@@ -91,6 +92,10 @@ describe('profile-settings-serializer', () => {
       USER_PREFS_CUSTOM_PROMPT_PRESETS,
       JSON.stringify(presets),
     )
+    localStorage.setItem(
+      USER_PREFS_FAVORITE_PROMPT_PRESETS,
+      JSON.stringify(['builtin:tutor', 'user:abc']),
+    )
     localStorage.setItem(SETTINGS_SELECTED_MODEL, 'gpt-oss-120b')
     localStorage.setItem(SETTINGS_REASONING_EFFORT, 'high')
     localStorage.setItem(SETTINGS_THINKING_ENABLED, 'false')
@@ -102,6 +107,7 @@ describe('profile-settings-serializer', () => {
 
     expect(loadLocalSettings()).toMatchObject({
       customPromptPresets: presets,
+      favoritePromptPresetIds: ['builtin:tutor', 'user:abc'],
       selectedModel: 'gpt-oss-120b',
       reasoningEffort: 'high',
       thinkingEnabled: false,
@@ -127,6 +133,7 @@ describe('profile-settings-serializer', () => {
 
     applySettingsToLocal({
       customPromptPresets: presets,
+      favoritePromptPresetIds: ['builtin:translator', 'user:def'],
       selectedModel: 'gpt-oss-120b',
       reasoningEffort: 'low',
       thinkingEnabled: true,
@@ -139,6 +146,9 @@ describe('profile-settings-serializer', () => {
 
     expect(localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_PRESETS)).toBe(
       JSON.stringify(presets),
+    )
+    expect(localStorage.getItem(USER_PREFS_FAVORITE_PROMPT_PRESETS)).toBe(
+      JSON.stringify(['builtin:translator', 'user:def']),
     )
     expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBe('gpt-oss-120b')
     expect(localStorage.getItem(SETTINGS_REASONING_EFFORT)).toBe('low')
