@@ -262,16 +262,28 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
     [favoritePresetIds],
   )
 
-  const canAddFavorite = favoritePresetIds.length < MAX_FAVORITE_PRESETS
+  // Capacity is measured against favorites that actually resolve to a
+  // preset. Stale ids (e.g. a custom preset deleted on another device, or
+  // one not yet synced here) must never count toward the cap and block
+  // adding a valid favorite.
+  const canAddFavorite = favoritePresets.length < MAX_FAVORITE_PRESETS
 
-  const toggleFavorite = useCallback((id: string) => {
-    const current = safeReadFavoriteIds()
-    if (current.includes(id)) {
-      safeWriteFavoriteIds(current.filter((favoriteId) => favoriteId !== id))
-    } else if (current.length < MAX_FAVORITE_PRESETS) {
-      safeWriteFavoriteIds([...current, id])
-    }
-  }, [])
+  const toggleFavorite = useCallback(
+    (id: string) => {
+      const current = safeReadFavoriteIds()
+      if (current.includes(id)) {
+        safeWriteFavoriteIds(current.filter((favoriteId) => favoriteId !== id))
+        return
+      }
+      const resolvableCount = current.filter((favoriteId) =>
+        allPresets.some((preset) => preset.id === favoriteId),
+      ).length
+      if (resolvableCount < MAX_FAVORITE_PRESETS) {
+        safeWriteFavoriteIds([...current, id])
+      }
+    },
+    [allPresets],
+  )
 
   return {
     builtInPresets: BUILT_IN_PROMPT_PRESETS,
