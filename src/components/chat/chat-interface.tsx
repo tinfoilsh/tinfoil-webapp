@@ -1031,6 +1031,18 @@ export function ChatInterface({
     localStorage.setItem(SETTINGS_WEB_SEARCH_ENABLED, String(webSearchEnabled))
   }, [webSearchEnabled])
 
+  const handleWebSearchToggle = useCallback(() => {
+    setWebSearchEnabled((prev) => {
+      const next = !prev
+      window.dispatchEvent(
+        new CustomEvent('webSearchEnabledChanged', {
+          detail: { enabled: next },
+        }),
+      )
+      return next
+    })
+  }, [])
+
   // Persist code execution toggle to localStorage
   useEffect(() => {
     localStorage.setItem(
@@ -1038,6 +1050,51 @@ export function ChatInterface({
       String(codeExecutionEnabled),
     )
   }, [codeExecutionEnabled])
+
+  const handleCodeExecutionToggle = useCallback(() => {
+    setCodeExecutionEnabled((prev) => {
+      const next = !prev
+      window.dispatchEvent(
+        new CustomEvent('codeExecutionEnabledChanged', {
+          detail: { enabled: next },
+        }),
+      )
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    const handleWebSearchChange = (
+      event: CustomEvent<{ enabled: boolean }>,
+    ) => {
+      setWebSearchEnabled(event.detail.enabled)
+    }
+    const handleCodeExecutionChange = (
+      event: CustomEvent<{ enabled: boolean }>,
+    ) => {
+      setCodeExecutionEnabled(event.detail.enabled)
+    }
+
+    window.addEventListener(
+      'webSearchEnabledChanged',
+      handleWebSearchChange as EventListener,
+    )
+    window.addEventListener(
+      'codeExecutionEnabledChanged',
+      handleCodeExecutionChange as EventListener,
+    )
+
+    return () => {
+      window.removeEventListener(
+        'webSearchEnabledChanged',
+        handleWebSearchChange as EventListener,
+      )
+      window.removeEventListener(
+        'codeExecutionEnabledChanged',
+        handleCodeExecutionChange as EventListener,
+      )
+    }
+  }, [])
 
   // Listen for PII check setting changes from settings modal
   useEffect(() => {
@@ -1573,6 +1630,7 @@ export function ChatInterface({
     createNewChat,
     currentChat?.id,
     currentChat?.isTemporary,
+    currentChat?.presetId,
     setCurrentChat,
   ])
 
@@ -3081,9 +3139,7 @@ export function ChatInterface({
                     onRegenerateMessage={regenerateMessage}
                     showScrollButton={showScrollButton}
                     webSearchEnabled={webSearchEnabled}
-                    onWebSearchToggle={() =>
-                      setWebSearchEnabled((prev) => !prev)
-                    }
+                    onWebSearchToggle={handleWebSearchToggle}
                     reasoningEffort={reasoningEffort}
                     setReasoningEffort={setReasoningEffort}
                     thinkingEnabled={thinkingEnabled}
@@ -3093,7 +3149,7 @@ export function ChatInterface({
                     }
                     onCodeExecutionToggle={
                       canEnableCodeExecution
-                        ? () => setCodeExecutionEnabled((prev) => !prev)
+                        ? handleCodeExecutionToggle
                         : undefined
                     }
                     onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
@@ -3293,15 +3349,13 @@ export function ChatInterface({
                           )
                         })()}
                         webSearchEnabled={webSearchEnabled}
-                        onWebSearchToggle={() =>
-                          setWebSearchEnabled((prev) => !prev)
-                        }
+                        onWebSearchToggle={handleWebSearchToggle}
                         codeExecutionEnabled={
                           canEnableCodeExecution ? codeExecutionEnabled : false
                         }
                         onCodeExecutionToggle={
                           canEnableCodeExecution
-                            ? () => setCodeExecutionEnabled((prev) => !prev)
+                            ? handleCodeExecutionToggle
                             : undefined
                         }
                       />

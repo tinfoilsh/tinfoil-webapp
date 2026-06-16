@@ -51,6 +51,15 @@ export function useModelManagement({
   const [verificationComplete, setVerificationComplete] = useState(false)
   const [verificationSuccess, setVerificationSuccess] = useState(false)
 
+  const persistSelectedModel = useCallback((modelName: AIModel) => {
+    localStorage.setItem(SETTINGS_SELECTED_MODEL, modelName)
+    window.dispatchEvent(
+      new CustomEvent('selectedModelChanged', {
+        detail: modelName,
+      }),
+    )
+  }, [])
+
   // Effect to validate selected model when models are available
   useEffect(() => {
     if (models.length > 0 && isClient && !hasValidated) {
@@ -83,6 +92,26 @@ export function useModelManagement({
     }
   }, [models, isClient, hasValidated, selectedModel])
 
+  useEffect(() => {
+    const handleSelectedModelChanged = (event: CustomEvent<string>): void => {
+      const modelName = event.detail as AIModel
+      if (!modelName || !isModelNameAvailable(modelName, models)) return
+      setSelectedModel(modelName)
+      setExpandedLabel(null)
+    }
+
+    window.addEventListener(
+      'selectedModelChanged',
+      handleSelectedModelChanged as EventListener,
+    )
+    return () => {
+      window.removeEventListener(
+        'selectedModelChanged',
+        handleSelectedModelChanged as EventListener,
+      )
+    }
+  }, [models])
+
   // Handle model selection
   const handleModelSelect = useCallback(
     (modelName: AIModel) => {
@@ -100,9 +129,9 @@ export function useModelManagement({
       setExpandedLabel(null)
 
       // Save to local storage
-      localStorage.setItem(SETTINGS_SELECTED_MODEL, modelName)
+      persistSelectedModel(modelName)
     },
-    [models],
+    [models, persistSelectedModel],
   )
 
   // Handle label click

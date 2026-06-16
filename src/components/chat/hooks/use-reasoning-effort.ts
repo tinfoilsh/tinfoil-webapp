@@ -20,9 +20,42 @@ export function useReasoningEffort() {
     }
   }, [])
 
+  useEffect(() => {
+    const handleReasoningSettingsChanged = (
+      event: CustomEvent<{
+        reasoningEffort?: ReasoningEffort
+      }>,
+    ) => {
+      const effort = event.detail.reasoningEffort
+      if (effort === 'low' || effort === 'medium' || effort === 'high') {
+        setReasoningEffortState(effort)
+      }
+    }
+
+    window.addEventListener(
+      'reasoningSettingsChanged',
+      handleReasoningSettingsChanged as EventListener,
+    )
+    return () => {
+      window.removeEventListener(
+        'reasoningSettingsChanged',
+        handleReasoningSettingsChanged as EventListener,
+      )
+    }
+  }, [])
+
   const setReasoningEffort = useCallback((effort: ReasoningEffort) => {
     setReasoningEffortState(effort)
     localStorage.setItem(SETTINGS_REASONING_EFFORT, effort)
+    window.dispatchEvent(
+      new CustomEvent('reasoningSettingsChanged', {
+        detail: {
+          reasoningEffort: effort,
+          thinkingEnabled:
+            localStorage.getItem(SETTINGS_THINKING_ENABLED) !== 'false',
+        },
+      }),
+    )
   }, [])
 
   return { reasoningEffort, setReasoningEffort }
@@ -48,6 +81,38 @@ export function useThinkingEnabled() {
   const setThinkingEnabled = useCallback((enabled: boolean) => {
     setThinkingEnabledState(enabled)
     localStorage.setItem(SETTINGS_THINKING_ENABLED, String(enabled))
+    window.dispatchEvent(
+      new CustomEvent('reasoningSettingsChanged', {
+        detail: {
+          reasoningEffort:
+            localStorage.getItem(SETTINGS_REASONING_EFFORT) ?? DEFAULT_EFFORT,
+          thinkingEnabled: enabled,
+        },
+      }),
+    )
+  }, [])
+
+  useEffect(() => {
+    const handleReasoningSettingsChanged = (
+      event: CustomEvent<{
+        thinkingEnabled?: boolean
+      }>,
+    ) => {
+      if (event.detail.thinkingEnabled !== undefined) {
+        setThinkingEnabledState(event.detail.thinkingEnabled)
+      }
+    }
+
+    window.addEventListener(
+      'reasoningSettingsChanged',
+      handleReasoningSettingsChanged as EventListener,
+    )
+    return () => {
+      window.removeEventListener(
+        'reasoningSettingsChanged',
+        handleReasoningSettingsChanged as EventListener,
+      )
+    }
   }, [])
 
   return { thinkingEnabled, setThinkingEnabled }
