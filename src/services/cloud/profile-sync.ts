@@ -27,6 +27,25 @@ function isStaleBlobConflict(error: unknown): boolean {
   )
 }
 
+// Top-level keys this client models. The profile is a single
+// full-replace blob shared across clients, so anything else in a
+// fetched profile belongs to a newer or other-platform client (e.g. an
+// iOS-only setting) and must survive our next push rather than being
+// dropped when we re-serialize only the keys we know about.
+const KNOWN_PROFILE_KEYS = new Set<string>(Object.keys(ProfileDataSchema.shape))
+
+function extractUnknownProfileFields(
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  const extra: Record<string, unknown> = {}
+  for (const key of Object.keys(source)) {
+    if (!KNOWN_PROFILE_KEYS.has(key)) {
+      extra[key] = source[key]
+    }
+  }
+  return extra
+}
+
 export interface ProfileData {
   // Theme settings
   isDarkMode?: boolean
@@ -76,6 +95,10 @@ export interface ProfilePromptPreset {
 export class ProfileSyncService {
   private cachedProfile: ProfileData | null = null
   private failedDecryptionData: string | null = null
+  // Fields from the last fetched profile that this client does not
+  // model, carried forward on every push so we never wipe settings
+  // owned by another client.
+  private unknownRemoteFields: Record<string, unknown> = {}
 
   async isAuthenticated(): Promise<boolean> {
     return authTokenManager.isAuthenticated()
@@ -104,7 +127,10 @@ export class ProfileSyncService {
       })
       const item = resp.items[0]
       if (!item || !item.ok) {
-        if (item && item.code === 'NOT_FOUND') return null
+        if (item && item.code === 'NOT_FOUND') {
+          this.unknownRemoteFields = {}
+          return null
+        }
         throw new Error(
           item?.code || 'Failed to pull profile from sync enclave',
         )
@@ -124,6 +150,9 @@ export class ProfileSyncService {
         return null
       }
       const decoded = validation.data as ProfileData
+      this.unknownRemoteFields = extractUnknownProfileFields(
+        validation.data as Record<string, unknown>,
+      )
       const etagVersion = item.etag ? parseInt(item.etag, 10) : NaN
       if (Number.isFinite(etagVersion)) {
         decoded.version = etagVersion
@@ -167,9 +196,7 @@ export class ProfileSyncService {
   }
 
   // Save profile to cloud
-  async saveProfile(
-    profile: ProfileData,
-  ): Promise<{
+  async saveProfile(profile: ProfileData): Promise<{
     success: boolean
     version?: number
     remoteProfile?: ProfileData
@@ -207,9 +234,11 @@ export class ProfileSyncService {
           version: baseVersion + 1,
         }
 
-        const plaintext = new TextEncoder().encode(
-          JSON.stringify(profileWithMetadata),
-        )
+        // Carry forward fields we do not model under our own known
+        // fields, so a push never drops settings owned by another
+        // client. Known fields always win the merge.
+        const payload = { ...this.unknownRemoteFields, ...profileWithMetadata }
+        const plaintext = new TextEncoder().encode(JSON.stringify(payload))
         const ifMatch = baseVersion > 0 ? String(baseVersion) : null
 
         const pushResp = await enclavePush({
@@ -335,6 +364,7 @@ export class ProfileSyncService {
   clearCache(): void {
     this.cachedProfile = null
     this.failedDecryptionData = null
+    this.unknownRemoteFields = {}
   }
 
   // Get sync status to check if profile changed without fetching full data

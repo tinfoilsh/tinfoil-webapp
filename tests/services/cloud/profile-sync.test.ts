@@ -118,6 +118,78 @@ describe('ProfileSyncService', () => {
     expect(service.getCachedProfile()).toMatchObject({ nickname: 'Remote' })
   })
 
+  it('preserves unknown profile fields across a fetch and re-push', async () => {
+    mockPull.mockResolvedValue({
+      items: [
+        {
+          ok: true,
+          etag: '7',
+          plaintext: btoa(
+            JSON.stringify({
+              nickname: 'Remote',
+              experimentalSetting: { foo: 1 },
+              updatedAt: '2026-06-16T09:00:00.000Z',
+            }),
+          ),
+        },
+      ],
+    })
+
+    const service = new ProfileSyncService()
+    await service.fetchProfile()
+    const result = await service.saveProfile({ nickname: 'Sacha', version: 7 })
+
+    expect(result.success).toBe(true)
+    const pushed = JSON.parse(
+      new TextDecoder().decode(mockPush.mock.calls[0][0].plaintext),
+    )
+    // The field we do not model survives the round-trip, and our own
+    // known field still wins.
+    expect(pushed.experimentalSetting).toEqual({ foo: 1 })
+    expect(pushed.nickname).toBe('Sacha')
+  })
+
+  it('carries unknown remote fields onto the rebased push when local wins', async () => {
+    mockPush
+      .mockRejectedValueOnce(
+        new SyncEnclaveError('STALE_BLOB', 412, 'STALE_BLOB'),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        etag: '10',
+        key_id: 'aa'.repeat(16),
+      })
+    mockPull.mockResolvedValue({
+      items: [
+        {
+          ok: true,
+          etag: '9',
+          plaintext: btoa(
+            JSON.stringify({
+              nickname: 'Remote',
+              experimentalSetting: 'keep-me',
+              updatedAt: '2026-06-16T09:00:00.000Z',
+            }),
+          ),
+        },
+      ],
+    })
+
+    const service = new ProfileSyncService()
+    const result = await service.saveProfile({
+      nickname: 'Sacha',
+      version: 0,
+      updatedAt: '2026-06-16T10:00:00.000Z',
+    })
+
+    expect(result.success).toBe(true)
+    const rebased = JSON.parse(
+      new TextDecoder().decode(mockPush.mock.calls[1][0].plaintext),
+    )
+    expect(rebased.experimentalSetting).toBe('keep-me')
+    expect(rebased.nickname).toBe('Sacha')
+  })
+
   it('saves profile updates with the caller last-synced etag', async () => {
     const service = new ProfileSyncService()
     const result = await service.saveProfile({ nickname: 'Sacha', version: 7 })
