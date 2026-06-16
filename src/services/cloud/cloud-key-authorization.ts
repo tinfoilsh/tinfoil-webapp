@@ -40,6 +40,7 @@ import {
   CloudKeySetupError,
   validateCurrentPrimaryKey,
 } from './cloud-key-preflight'
+import { adoptLocalKeyForMigration } from './ensure-current-key'
 import { reportKeyHealthy } from './sync-health'
 
 export type CloudKeyAuthorizationMode = 'validated' | 'explicit_start_fresh'
@@ -105,10 +106,19 @@ export async function canWriteToCloud(): Promise<boolean> {
   if (validation.remoteState === 'empty' && isCloudSyncEnabled()) {
     const registered = await registerKeyForEmptyRemote()
     if (!registered) return false
+  } else if (validation.needsAdoption && isCloudSyncEnabled()) {
+    // Legacy v1→v2 data with no registered key: the controlplane
+    // rejects every push as a stale key until the local CEK is adopted
+    // as the current key. Adopt it here so the write path establishes
+    // its own precondition, instead of optimistically storming
+    // STALE_KEY while it waits for the out-of-band migration kick.
+    const adopted = await adoptLocalKeyForMigration()
+    if (!adopted) return false
   }
-  // The enclave confirmed the local key is authoritative and, for an
-  // empty remote, registration succeeded — only now is any surfaced
-  // key problem known to be stale, so clear the sync-health gate.
+  // The enclave confirmed the local key is authoritative and any
+  // required registration/adoption succeeded — only now is any
+  // surfaced key problem known to be stale, so clear the sync-health
+  // gate.
   reportKeyHealthy()
   return true
 }
