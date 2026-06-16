@@ -96,52 +96,6 @@ export function hasProfileChanged(
   )
 }
 
-// DEBUG[profile-sync]: temporary diagnostic. Names the fields that
-// differ between two profiles so we can see exactly what keeps a
-// profile "dirty". Remove before merging to main.
-export function diffProfileFields(
-  a: ProfileData | null,
-  b: ProfileData | null,
-): string[] {
-  if (!a || !b) return a === b ? [] : ['<one-side-null>']
-  const j = (v: unknown) => JSON.stringify(v)
-  const fields: Array<[string, boolean]> = [
-    ['isDarkMode', a.isDarkMode !== b.isDarkMode],
-    ['themeMode', a.themeMode !== b.themeMode],
-    ['language', a.language !== b.language],
-    ['nickname', a.nickname !== b.nickname],
-    ['profession', a.profession !== b.profession],
-    ['traits', j(a.traits) !== j(b.traits)],
-    ['additionalContext', a.additionalContext !== b.additionalContext],
-    [
-      'isUsingPersonalization',
-      a.isUsingPersonalization !== b.isUsingPersonalization,
-    ],
-    ['isUsingCustomPrompt', a.isUsingCustomPrompt !== b.isUsingCustomPrompt],
-    ['customSystemPrompt', a.customSystemPrompt !== b.customSystemPrompt],
-    [
-      'customPromptPresets',
-      j(a.customPromptPresets) !== j(b.customPromptPresets),
-    ],
-    [
-      'favoritePromptPresetIds',
-      j(a.favoritePromptPresetIds) !== j(b.favoritePromptPresetIds),
-    ],
-    ['selectedModel', a.selectedModel !== b.selectedModel],
-    ['reasoningEffort', a.reasoningEffort !== b.reasoningEffort],
-    ['thinkingEnabled', a.thinkingEnabled !== b.thinkingEnabled],
-    ['webSearchEnabled', a.webSearchEnabled !== b.webSearchEnabled],
-    ['codeExecutionEnabled', a.codeExecutionEnabled !== b.codeExecutionEnabled],
-    ['piiCheckEnabled', a.piiCheckEnabled !== b.piiCheckEnabled],
-    ['chatFont', a.chatFont !== b.chatFont],
-    [
-      'projectUploadPreference',
-      a.projectUploadPreference !== b.projectUploadPreference,
-    ],
-  ]
-  return fields.filter(([, changed]) => changed).map(([name]) => name)
-}
-
 /**
  * Load the current user settings from localStorage into a ProfileData object.
  */
