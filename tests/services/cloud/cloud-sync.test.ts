@@ -1,5 +1,6 @@
 import { SYNC_CHAT_STATUS } from '@/constants/storage-keys'
 import { CloudSyncService } from '@/services/cloud/cloud-sync'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetAllChats = vi.fn()
@@ -11,11 +12,13 @@ const mockSaveExistingChat = vi.fn()
 const mockMarkAsSynced = vi.fn()
 const mockFinalizeUpload = vi.fn()
 const mockApplyRemoteChatIfFresh = vi.fn()
+const mockRebaseSyncVersion = vi.fn()
 const mockResetSyncMetadataForAllChats = vi.fn()
 const mockDeleteChat = vi.fn()
 
 const mockIsAuthenticated = vi.fn()
 const mockUploadChat = vi.fn()
+const mockDownloadChat = vi.fn()
 const mockGetChatSyncStatus = vi.fn()
 const mockGetAllChatsSyncStatus = vi.fn()
 const mockGetAllChatsUpdatedSince = vi.fn()
@@ -66,6 +69,7 @@ vi.mock('@/services/storage/indexed-db', () => ({
     finalizeUpload: (...args: any[]) => mockFinalizeUpload(...args),
     applyRemoteChatIfFresh: (...args: any[]) =>
       mockApplyRemoteChatIfFresh(...args),
+    rebaseSyncVersion: (...args: any[]) => mockRebaseSyncVersion(...args),
     resetSyncMetadataForAllChats: (...args: any[]) =>
       mockResetSyncMetadataForAllChats(...args),
     getChat: (...args: any[]) => mockGetChat(...args),
@@ -77,6 +81,7 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
   cloudStorage: {
     isAuthenticated: (...args: any[]) => mockIsAuthenticated(...args),
     uploadChat: (...args: any[]) => mockUploadChat(...args),
+    downloadChat: (...args: any[]) => mockDownloadChat(...args),
     getChatSyncStatus: (...args: any[]) => mockGetChatSyncStatus(...args),
     getAllChatsSyncStatus: (...args: any[]) =>
       mockGetAllChatsSyncStatus(...args),
@@ -176,6 +181,7 @@ describe('CloudSyncService', () => {
     mockMarkAsSynced.mockResolvedValue(undefined)
     mockFinalizeUpload.mockResolvedValue(undefined)
     mockApplyRemoteChatIfFresh.mockResolvedValue({ applied: true })
+    mockRebaseSyncVersion.mockResolvedValue(undefined)
     mockResetSyncMetadataForAllChats.mockResolvedValue(undefined)
     mockDeleteChat.mockResolvedValue(undefined)
     mockGetKey.mockReturnValue(null)
@@ -203,6 +209,7 @@ describe('CloudSyncService', () => {
     mockRunLegacyChatEviction.mockResolvedValue(undefined)
     mockIsAuthenticated.mockResolvedValue(true)
     mockUploadChat.mockResolvedValue({ syncVersion: null, rewrites: [] })
+    mockDownloadChat.mockResolvedValue(null)
     mockGetChatSyncStatus.mockResolvedValue({ count: 0, lastUpdated: null })
     mockGetAllChatsSyncStatus.mockResolvedValue({
       count: 0,
@@ -888,6 +895,107 @@ describe('CloudSyncService', () => {
 
       expect(mockListProjectChats).toHaveBeenCalledTimes(2)
       expect(result).toEqual({ uploaded: 0, downloaded: 0, errors: [] })
+    })
+  })
+
+  describe('conflict resolution (last-write-wins by modification time)', () => {
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+    const staleBlob = () =>
+      new SyncEnclaveError('stale blob', 409, 'STALE_BLOB')
+
+    const localChat = (updatedAt: string, syncVersion = 1) => ({
+      id: 'conflict-1',
+      title: 'Conflict',
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'hello' },
+        { role: 'user', content: 'newest local turn' },
+      ],
+      createdAt: '2024-01-01T00:00:00.000Z',
+      updatedAt,
+      syncVersion,
+      locallyModified: true,
+    })
+
+    it('re-uploads the local copy when it is fresher than the remote', async () => {
+      // Local has a later edit than the server snapshot that caused the
+      // STALE_BLOB. LWW by time means our edit is the last write, so we
+      // must NOT pull the older remote over it.
+      mockGetChat.mockResolvedValue(localChat('2024-06-01T00:00:05.000Z', 1))
+      mockDownloadChat.mockResolvedValue({
+        id: 'conflict-1',
+        title: 'Conflict',
+        messages: [{ role: 'user', content: 'hi' }],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-06-01T00:00:00.000Z',
+        syncVersion: 7,
+      })
+      // First upload conflicts; the rebased re-upload succeeds.
+      mockUploadChat
+        .mockRejectedValueOnce(staleBlob())
+        .mockResolvedValue({ syncVersion: 8, rewrites: [] })
+
+      const service = new CloudSyncService()
+      await service.backupChat('conflict-1')
+      // Drive the conflicting upload and the rebased re-upload, which
+      // runs on a fresh coalescer worker after the dirty re-enqueue.
+      for (let i = 0; i < 5; i++) {
+        await service.waitForUpload('conflict-1')
+        await flush()
+      }
+
+      // Rebased onto the server's current version so the next If-Match
+      // matches, and the local row was never clobbered.
+      expect(mockRebaseSyncVersion).toHaveBeenCalledWith('conflict-1', 7)
+      expect(mockApplyRemoteChatIfFresh).not.toHaveBeenCalled()
+      expect(mockUploadChat).toHaveBeenCalledTimes(2)
+    })
+
+    it('overwrites the local copy when the remote is strictly newer', async () => {
+      mockGetChat.mockResolvedValue(localChat('2024-06-01T00:00:00.000Z', 1))
+      mockDownloadChat.mockResolvedValue({
+        id: 'conflict-1',
+        title: 'Conflict',
+        messages: [
+          { role: 'user', content: 'hi' },
+          { role: 'assistant', content: 'remote is ahead' },
+        ],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-06-01T00:00:10.000Z',
+        syncVersion: 9,
+      })
+      mockUploadChat.mockRejectedValueOnce(staleBlob())
+
+      const service = new CloudSyncService()
+      await service.backupChat('conflict-1')
+      await service.waitForUpload('conflict-1')
+      await flush()
+
+      expect(mockApplyRemoteChatIfFresh).toHaveBeenCalledWith(
+        expect.objectContaining({
+          syncVersion: 9,
+          expectedLocalUpdatedAt: undefined,
+        }),
+      )
+      expect(mockChatEventsEmit).toHaveBeenCalledWith({
+        reason: 'sync',
+        ids: ['conflict-1'],
+      })
+      expect(mockRebaseSyncVersion).not.toHaveBeenCalled()
+    })
+
+    it('leaves the local copy untouched when the remote row is gone', async () => {
+      mockGetChat.mockResolvedValue(localChat('2024-06-01T00:00:00.000Z', 1))
+      mockDownloadChat.mockResolvedValue(null)
+      mockUploadChat.mockRejectedValueOnce(staleBlob())
+
+      const service = new CloudSyncService()
+      await service.backupChat('conflict-1')
+      await service.waitForUpload('conflict-1')
+      await flush()
+
+      expect(mockApplyRemoteChatIfFresh).not.toHaveBeenCalled()
+      expect(mockRebaseSyncVersion).not.toHaveBeenCalled()
     })
   })
 

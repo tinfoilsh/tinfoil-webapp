@@ -828,24 +828,78 @@ export class CloudSyncService {
   }
 
   /**
-   * Last-write-wins conflict resolution (§C5). Pulls the remote chat
-   * fresh from the enclave and overwrites the local copy, clearing
-   * `locallyModified` so the chat exits the stuck-row retry loop. If
-   * the pull itself fails, the chat stays `locallyModified` and the
-   * next sync cycle will retry — but at least we are no longer
-   * burning enclave calls in a tight retry storm.
+   * Last-write-wins conflict resolution (§C5), arbitrated by content
+   * modification time so the winner is the same on every device.
+   *
+   * On a STALE_BLOB / SYNC_CONFLICT the server holds a version our
+   * upload was not based on. We download that remote row and compare
+   * its `updatedAt` against the local copy:
+   *
+   *   - Remote is strictly newer (or we have no local copy): the
+   *     remote is the last write, so overwrite local with it.
+   *   - Local is at least as fresh: OUR edit is the last write, so we
+   *     must NOT clobber unsynced local messages with the older remote
+   *     snapshot. Rebase the local row onto the server's current
+   *     version (so the next If-Match matches) and re-upload, letting
+   *     local win the race instead of looping on STALE_BLOB forever.
+   *
+   * If the pull itself fails, the chat stays `locallyModified` and the
+   * next sync cycle retries.
    */
   private async resolveConflictByPullingRemote(chatId: string): Promise<void> {
     try {
-      const result = await ingestRemoteChats([{ id: chatId }], {
-        fetchMissingContent: true,
-        eventReason: 'sync',
-        forceOverwriteLocal: true,
+      const [localChat, remoteChat] = await Promise.all([
+        indexedDBStorage.getChat(chatId),
+        cloudStorage.downloadChat(chatId),
+      ])
+
+      // The remote row vanished (concurrent delete). Leave the local
+      // copy untouched; it stays `locallyModified` and the deletion
+      // reconciles on the next sync cycle.
+      if (!remoteChat) {
+        return
+      }
+
+      const remoteTime = new Date(remoteChat.updatedAt).getTime()
+      const localTime = localChat
+        ? new Date(localChat.updatedAt).getTime()
+        : Number.NaN
+      const remoteWins =
+        !localChat ||
+        Number.isNaN(localTime) ||
+        (!Number.isNaN(remoteTime) && remoteTime > localTime)
+
+      if (!remoteWins) {
+        await indexedDBStorage.rebaseSyncVersion(
+          chatId,
+          remoteChat.syncVersion ?? 0,
+        )
+        logInfo('Conflict resolved by re-uploading fresher local copy', {
+          component: 'CloudSync',
+          action: 'resolveConflictByPullingRemote',
+          metadata: { chatId },
+        })
+        // Re-enqueue rather than await: we are inside the coalescer
+        // worker, which will pick up the dirty flag and re-run the
+        // upload with the rebased version.
+        void this.backupChat(chatId)
+        return
+      }
+
+      // Remote is the last write — force the overwrite (bypassing the
+      // §H6 CAS) since we have just established it is the winner.
+      const applied = await indexedDBStorage.applyRemoteChatIfFresh({
+        chat: remoteChat,
+        syncVersion: remoteChat.syncVersion ?? 0,
+        expectedLocalUpdatedAt: undefined,
       })
+      if (applied.applied) {
+        chatEvents.emit({ reason: 'sync', ids: [chatId] })
+      }
       logInfo('Conflict resolved by pulling remote', {
         component: 'CloudSync',
         action: 'resolveConflictByPullingRemote',
-        metadata: { chatId, applied: result.savedIds.length > 0 },
+        metadata: { chatId, applied: applied.applied },
       })
     } catch (err) {
       logError('Failed to resolve conflict by pulling remote', err, {
