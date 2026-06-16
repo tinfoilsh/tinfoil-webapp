@@ -130,7 +130,13 @@ export function useProfileSync() {
           }
           clearLocalProfileChanged()
           lastSyncedVersion.current = cloudVersion
-          lastSyncedProfile.current = cloudProfile
+          // Baseline must mirror what loadLocalSettings would
+          // re-serialize, not the raw remote: the remote may omit
+          // fields this client derives (e.g. themeMode from isDarkMode),
+          // which would otherwise read back as a phantom local change
+          // and wedge every future pull behind a never-clearing dirty
+          // flag while looping STALE_BLOB pushes.
+          lastSyncedProfile.current = loadLocalSettings()
 
           logInfo('Profile synced from cloud', {
             component: 'ProfileSync',
@@ -243,7 +249,13 @@ export function useProfileSync() {
           }
           clearLocalProfileChanged()
           lastSyncedVersion.current = cloudVersion
-          lastSyncedProfile.current = cloudProfile
+          // Baseline must mirror what loadLocalSettings would
+          // re-serialize, not the raw remote: the remote may omit
+          // fields this client derives (e.g. themeMode from isDarkMode),
+          // which would otherwise read back as a phantom local change
+          // and wedge every future pull behind a never-clearing dirty
+          // flag while looping STALE_BLOB pushes.
+          lastSyncedProfile.current = loadLocalSettings()
         }
 
         // Update cached sync status only after successful processing
@@ -323,7 +335,10 @@ export function useProfileSync() {
             } finally {
               isApplyingRemoteProfile.current = false
             }
-            lastSyncedProfile.current = result.remoteProfile
+            // Adopt the round-tripped local snapshot, not the raw
+            // remote, so fields we derive but the peer omits don't read
+            // back as a phantom change and re-trigger the push loop.
+            lastSyncedProfile.current = loadLocalSettings()
           } else {
             lastSyncedProfile.current = localSettings
           }
@@ -376,7 +391,7 @@ export function useProfileSync() {
             if (cachedProfile.version) {
               lastSyncedVersion.current = cachedProfile.version
             }
-            lastSyncedProfile.current = cachedProfile
+            lastSyncedProfile.current = loadLocalSettings()
           }
         })
       }
@@ -460,7 +475,7 @@ export function useProfileSync() {
       if (decryptedProfile.version) {
         lastSyncedVersion.current = decryptedProfile.version
       }
-      lastSyncedProfile.current = decryptedProfile
+      lastSyncedProfile.current = loadLocalSettings()
       logInfo('Profile decrypted and applied with new key', {
         component: 'ProfileSync',
         action: 'retryDecryption',

@@ -18,6 +18,7 @@ import {
 } from '@/constants/storage-keys'
 import {
   applySettingsToLocal,
+  hasProfileChanged,
   loadLocalSettings,
 } from '@/services/cloud/profile-settings-serializer'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -117,6 +118,33 @@ describe('profile-settings-serializer', () => {
       chatFont: 'mono',
       projectUploadPreference: 'project',
     })
+  })
+
+  it('does not report a phantom change after adopting a themeMode-less remote', () => {
+    // A peer (iOS) sends isDarkMode but never themeMode. Applying it
+    // derives themeMode locally, so the raw remote no longer matches
+    // what this client would re-serialize.
+    const remote = {
+      isDarkMode: true,
+      nickname: 'Alice',
+      favoritePromptPresetIds: ['builtin:tutor'],
+    }
+
+    applySettingsToLocal(remote)
+
+    // The baseline the sync layer must store is the round-tripped local
+    // snapshot, not the raw remote.
+    const baseline = loadLocalSettings()
+    const current = loadLocalSettings()
+
+    // Comparing against the raw remote falsely looks dirty (the
+    // themeMode this client derived is absent from the remote), which is
+    // exactly what wedged pulls and looped STALE_BLOB pushes.
+    expect(hasProfileChanged(current, remote)).toBe(true)
+
+    // Comparing against the round-tripped baseline converges: no phantom
+    // local change, so the dirty flag clears and pulls are not blocked.
+    expect(hasProfileChanged(current, baseline)).toBe(false)
   })
 
   it('applies synced prompt presets and shared chat defaults locally', () => {
