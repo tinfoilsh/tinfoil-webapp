@@ -12,6 +12,7 @@
 
 import {
   isUploadableChat,
+  remoteWinsLastWrite,
   shouldIngestRemoteChat,
 } from '@/services/cloud/sync-predicates'
 import type { StoredChat } from '@/services/storage/indexed-db'
@@ -209,6 +210,37 @@ describe('Sync Predicates', () => {
         locallyModified: true,
       } as StoredChat
       expect(shouldIngestRemoteChat(remote, local)).toBe(true)
+    })
+  })
+
+  describe('remoteWinsLastWrite', () => {
+    const older = '2024-01-01T00:00:00.000Z'
+    const newer = '2024-01-02T00:00:00.000Z'
+
+    it('lets remote win when it is strictly newer', () => {
+      expect(remoteWinsLastWrite(older, newer)).toBe(true)
+    })
+
+    it('lets local win when it is strictly newer', () => {
+      expect(remoteWinsLastWrite(newer, older)).toBe(false)
+    })
+
+    it('lets local win on a timestamp tie', () => {
+      expect(remoteWinsLastWrite(older, older)).toBe(false)
+    })
+
+    it('lets remote win when local has no timestamp', () => {
+      expect(remoteWinsLastWrite(undefined, newer)).toBe(true)
+      expect(remoteWinsLastWrite(null, newer)).toBe(true)
+    })
+
+    it('lets remote win when local timestamp is unparseable', () => {
+      expect(remoteWinsLastWrite('not-a-date', newer)).toBe(true)
+    })
+
+    it('lets local win when remote has no usable timestamp', () => {
+      expect(remoteWinsLastWrite(older, undefined)).toBe(false)
+      expect(remoteWinsLastWrite(older, 'not-a-date')).toBe(false)
     })
   })
 

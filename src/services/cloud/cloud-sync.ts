@@ -41,7 +41,7 @@ import {
   reportSyncPaused,
   reportSyncSuccess,
 } from './sync-health'
-import { isUploadableChat } from './sync-predicates'
+import { isUploadableChat, remoteWinsLastWrite } from './sync-predicates'
 import { SyncStatusCache } from './sync-status-cache'
 import { UploadCoalescer } from './upload-coalescer'
 
@@ -860,14 +860,10 @@ export class CloudSyncService {
         return
       }
 
-      const remoteTime = new Date(remoteChat.updatedAt).getTime()
-      const localTime = localChat
-        ? new Date(localChat.updatedAt).getTime()
-        : Number.NaN
-      const remoteWins =
-        !localChat ||
-        Number.isNaN(localTime) ||
-        (!Number.isNaN(remoteTime) && remoteTime > localTime)
+      const remoteWins = remoteWinsLastWrite(
+        localChat?.updatedAt,
+        remoteChat.updatedAt,
+      )
 
       if (!remoteWins) {
         await indexedDBStorage.rebaseSyncVersion(

@@ -88,3 +88,37 @@ export function shouldIngestRemoteChat(
 
   return false
 }
+
+/**
+ * Last-write-wins arbitration by content modification time, shared by
+ * every scope's conflict resolution (chats, profile) so the winner is
+ * the same on every device.
+ *
+ * Returns true when the remote copy is the last write and should
+ * overwrite local; false when the local copy is at least as fresh and
+ * must be preserved (re-uploaded).
+ *
+ * A missing or unparseable local timestamp means we cannot prove local
+ * is fresher, so remote wins. A missing or unparseable remote timestamp
+ * lets local win, since we have a concrete local edit time to trust.
+ *
+ * @param localUpdatedAt The local copy's content modification time
+ * @param remoteUpdatedAt The remote copy's content modification time
+ * @returns true if the remote copy should overwrite local
+ */
+export function remoteWinsLastWrite(
+  localUpdatedAt?: string | null,
+  remoteUpdatedAt?: string | null,
+): boolean {
+  const localTime = localUpdatedAt
+    ? new Date(localUpdatedAt).getTime()
+    : Number.NaN
+  if (Number.isNaN(localTime)) {
+    return true
+  }
+
+  const remoteTime = remoteUpdatedAt
+    ? new Date(remoteUpdatedAt).getTime()
+    : Number.NaN
+  return !Number.isNaN(remoteTime) && remoteTime > localTime
+}
