@@ -18,10 +18,14 @@ export function PromptPresetSuggestions({
   onOpenLibrary,
 }: PromptPresetSuggestionsProps) {
   const { favoritePresets } = usePromptLibrary()
-  const suggested =
-    favoritePresets.length > 0
-      ? favoritePresets
-      : BUILT_IN_PROMPT_PRESETS.slice(0, SUGGESTION_COUNT)
+  // Lead with the user's pinned favorites, then backfill the remaining slots
+  // with default built-ins so the home screen always offers a full set.
+  const suggested: PromptPreset[] = [...favoritePresets]
+  const pinnedIds = new Set(favoritePresets.map((preset) => preset.id))
+  for (const preset of BUILT_IN_PROMPT_PRESETS) {
+    if (suggested.length >= SUGGESTION_COUNT) break
+    if (!pinnedIds.has(preset.id)) suggested.push(preset)
+  }
   const pillBase =
     'inline-flex h-14 w-full items-center justify-center gap-1.5 rounded-lg border px-3 text-sm transition-colors md:h-auto md:w-auto md:py-1.5'
 
