@@ -45,6 +45,28 @@ export const ProfileDataSchema = z
     isUsingPersonalization: z.boolean().optional(),
     isUsingCustomPrompt: z.boolean().optional(),
     customSystemPrompt: z.string().optional(),
+    customPromptPresets: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            name: z.string(),
+            description: z.string(),
+            systemPrompt: z.string(),
+            createdAt: z.number(),
+            updatedAt: z.number(),
+          })
+          .passthrough(),
+      )
+      .optional(),
+    selectedModel: z.string().optional(),
+    reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
+    thinkingEnabled: z.boolean().optional(),
+    webSearchEnabled: z.boolean().optional(),
+    codeExecutionEnabled: z.boolean().optional(),
+    piiCheckEnabled: z.boolean().optional(),
+    chatFont: z.enum(['system', 'serif', 'mono', 'dyslexic']).optional(),
+    projectUploadPreference: z.enum(['project', 'chat']).optional(),
     version: z.number().optional(),
     updatedAt: z.string().optional(),
   })

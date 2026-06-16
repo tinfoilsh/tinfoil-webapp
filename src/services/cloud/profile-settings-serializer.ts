@@ -1,20 +1,53 @@
 import {
+  SETTINGS_CHAT_FONT,
+  SETTINGS_CODE_EXECUTION_ENABLED,
+  SETTINGS_PII_CHECK_ENABLED,
+  SETTINGS_REASONING_EFFORT,
+  SETTINGS_SELECTED_MODEL,
   SETTINGS_THEME,
   SETTINGS_THEME_MODE,
+  SETTINGS_THINKING_ENABLED,
+  SETTINGS_WEB_SEARCH_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
+  USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_CUSTOM_SYSTEM_PROMPT,
   USER_PREFS_LANGUAGE,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
   USER_PREFS_PROFESSION,
+  USER_PREFS_PROJECT_UPLOAD,
   USER_PREFS_TRAITS,
 } from '@/constants/storage-keys'
-import type { ProfileData } from '@/services/cloud/profile-sync'
+import type {
+  ProfileData,
+  ProfilePromptPreset,
+} from '@/services/cloud/profile-sync'
 import { logWarning } from '@/utils/error-handling'
 import { ProfileDataSchema } from './schemas'
 
 const DEFAULT_PROFILE_LANGUAGE = 'English'
+
+function safeParsePromptPresets(raw: string | null): ProfilePromptPreset[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (preset): preset is ProfilePromptPreset =>
+        preset &&
+        typeof preset === 'object' &&
+        typeof preset.id === 'string' &&
+        typeof preset.name === 'string' &&
+        typeof preset.description === 'string' &&
+        typeof preset.systemPrompt === 'string' &&
+        typeof preset.createdAt === 'number' &&
+        typeof preset.updatedAt === 'number',
+    )
+  } catch {
+    return []
+  }
+}
 
 /**
  * Check if two profile data objects differ in any meaningful field (excluding metadata).
@@ -35,7 +68,17 @@ export function hasProfileChanged(
     profile1.additionalContext !== profile2.additionalContext ||
     profile1.isUsingPersonalization !== profile2.isUsingPersonalization ||
     profile1.isUsingCustomPrompt !== profile2.isUsingCustomPrompt ||
-    profile1.customSystemPrompt !== profile2.customSystemPrompt
+    profile1.customSystemPrompt !== profile2.customSystemPrompt ||
+    JSON.stringify(profile1.customPromptPresets) !==
+      JSON.stringify(profile2.customPromptPresets) ||
+    profile1.selectedModel !== profile2.selectedModel ||
+    profile1.reasoningEffort !== profile2.reasoningEffort ||
+    profile1.thinkingEnabled !== profile2.thinkingEnabled ||
+    profile1.webSearchEnabled !== profile2.webSearchEnabled ||
+    profile1.codeExecutionEnabled !== profile2.codeExecutionEnabled ||
+    profile1.piiCheckEnabled !== profile2.piiCheckEnabled ||
+    profile1.chatFont !== profile2.chatFont ||
+    profile1.projectUploadPreference !== profile2.projectUploadPreference
   )
 }
 
@@ -105,6 +148,69 @@ export function loadLocalSettings(): ProfileData {
     settings.customSystemPrompt = customSystemPrompt
   }
 
+  const customPromptPresets = localStorage.getItem(
+    USER_PREFS_CUSTOM_PROMPT_PRESETS,
+  )
+  if (customPromptPresets !== null) {
+    settings.customPromptPresets = safeParsePromptPresets(customPromptPresets)
+  }
+
+  const selectedModel = localStorage.getItem(SETTINGS_SELECTED_MODEL)
+  if (selectedModel !== null) {
+    settings.selectedModel = selectedModel
+  }
+
+  const reasoningEffort = localStorage.getItem(SETTINGS_REASONING_EFFORT)
+  if (
+    reasoningEffort === 'low' ||
+    reasoningEffort === 'medium' ||
+    reasoningEffort === 'high'
+  ) {
+    settings.reasoningEffort = reasoningEffort
+  }
+
+  const thinkingEnabled = localStorage.getItem(SETTINGS_THINKING_ENABLED)
+  if (thinkingEnabled !== null) {
+    settings.thinkingEnabled = thinkingEnabled === 'true'
+  }
+
+  const webSearchEnabled = localStorage.getItem(SETTINGS_WEB_SEARCH_ENABLED)
+  if (webSearchEnabled !== null) {
+    settings.webSearchEnabled = webSearchEnabled === 'true'
+  }
+
+  const codeExecutionEnabled = localStorage.getItem(
+    SETTINGS_CODE_EXECUTION_ENABLED,
+  )
+  if (codeExecutionEnabled !== null) {
+    settings.codeExecutionEnabled = codeExecutionEnabled === 'true'
+  }
+
+  const piiCheckEnabled = localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)
+  if (piiCheckEnabled !== null) {
+    settings.piiCheckEnabled = piiCheckEnabled === 'true'
+  }
+
+  const chatFont = localStorage.getItem(SETTINGS_CHAT_FONT)
+  if (
+    chatFont === 'system' ||
+    chatFont === 'serif' ||
+    chatFont === 'mono' ||
+    chatFont === 'dyslexic'
+  ) {
+    settings.chatFont = chatFont
+  }
+
+  const projectUploadPreference = localStorage.getItem(
+    USER_PREFS_PROJECT_UPLOAD,
+  )
+  if (
+    projectUploadPreference === 'project' ||
+    projectUploadPreference === 'chat'
+  ) {
+    settings.projectUploadPreference = projectUploadPreference
+  }
+
   return settings
 }
 
@@ -119,6 +225,13 @@ export function resetSettingsToLocalDefaults(): ProfileData {
     isUsingPersonalization: false,
     isUsingCustomPrompt: false,
     customSystemPrompt: '',
+    customPromptPresets: [],
+    reasoningEffort: 'medium',
+    thinkingEnabled: true,
+    webSearchEnabled: true,
+    codeExecutionEnabled: false,
+    piiCheckEnabled: true,
+    chatFont: 'system',
   }
 
   applySettingsToLocal(defaults)
@@ -227,6 +340,111 @@ export function applySettingsToLocal(settings: ProfileData): void {
     localStorage.setItem(
       USER_PREFS_CUSTOM_SYSTEM_PROMPT,
       settings.customSystemPrompt,
+    )
+  }
+
+  if (settings.customPromptPresets !== undefined) {
+    localStorage.setItem(
+      USER_PREFS_CUSTOM_PROMPT_PRESETS,
+      JSON.stringify(settings.customPromptPresets),
+    )
+    window.dispatchEvent(new CustomEvent('promptLibraryChanged'))
+  }
+
+  if (settings.selectedModel !== undefined) {
+    localStorage.setItem(SETTINGS_SELECTED_MODEL, settings.selectedModel)
+    window.dispatchEvent(
+      new CustomEvent('selectedModelChanged', {
+        detail: settings.selectedModel,
+      }),
+    )
+  }
+
+  const shouldApplyReasoning =
+    settings.reasoningEffort !== undefined ||
+    settings.thinkingEnabled !== undefined
+
+  if (settings.reasoningEffort !== undefined) {
+    localStorage.setItem(SETTINGS_REASONING_EFFORT, settings.reasoningEffort)
+  }
+
+  if (settings.thinkingEnabled !== undefined) {
+    localStorage.setItem(
+      SETTINGS_THINKING_ENABLED,
+      String(settings.thinkingEnabled),
+    )
+  }
+
+  if (shouldApplyReasoning) {
+    window.dispatchEvent(
+      new CustomEvent('reasoningSettingsChanged', {
+        detail: {
+          reasoningEffort:
+            settings.reasoningEffort ??
+            localStorage.getItem(SETTINGS_REASONING_EFFORT) ??
+            'medium',
+          thinkingEnabled:
+            settings.thinkingEnabled ??
+            localStorage.getItem(SETTINGS_THINKING_ENABLED) !== 'false',
+        },
+      }),
+    )
+  }
+
+  if (settings.webSearchEnabled !== undefined) {
+    localStorage.setItem(
+      SETTINGS_WEB_SEARCH_ENABLED,
+      String(settings.webSearchEnabled),
+    )
+    window.dispatchEvent(
+      new CustomEvent('webSearchEnabledChanged', {
+        detail: { enabled: settings.webSearchEnabled },
+      }),
+    )
+  }
+
+  if (settings.codeExecutionEnabled !== undefined) {
+    localStorage.setItem(
+      SETTINGS_CODE_EXECUTION_ENABLED,
+      String(settings.codeExecutionEnabled),
+    )
+    window.dispatchEvent(
+      new CustomEvent('codeExecutionEnabledChanged', {
+        detail: { enabled: settings.codeExecutionEnabled },
+      }),
+    )
+  }
+
+  if (settings.piiCheckEnabled !== undefined) {
+    localStorage.setItem(
+      SETTINGS_PII_CHECK_ENABLED,
+      String(settings.piiCheckEnabled),
+    )
+    window.dispatchEvent(
+      new CustomEvent('piiCheckEnabledChanged', {
+        detail: { enabled: settings.piiCheckEnabled },
+      }),
+    )
+  }
+
+  if (settings.chatFont !== undefined) {
+    localStorage.setItem(SETTINGS_CHAT_FONT, settings.chatFont)
+    window.dispatchEvent(
+      new CustomEvent('chatFontChanged', {
+        detail: settings.chatFont,
+      }),
+    )
+  }
+
+  if (settings.projectUploadPreference !== undefined) {
+    localStorage.setItem(
+      USER_PREFS_PROJECT_UPLOAD,
+      settings.projectUploadPreference,
+    )
+    window.dispatchEvent(
+      new CustomEvent('projectUploadPreferenceChanged', {
+        detail: settings.projectUploadPreference,
+      }),
     )
   }
 

@@ -21,6 +21,11 @@ export function setProjectUploadPreference(
   if (typeof window === 'undefined') return
   try {
     localStorage.setItem(USER_PREFS_PROJECT_UPLOAD, preference)
+    window.dispatchEvent(
+      new CustomEvent('projectUploadPreferenceChanged', {
+        detail: preference,
+      }),
+    )
   } catch {
     // Storage unavailable (e.g., Safari private mode) - silently fail
   }
@@ -30,6 +35,11 @@ export function clearProjectUploadPreference(): void {
   if (typeof window === 'undefined') return
   try {
     localStorage.removeItem(USER_PREFS_PROJECT_UPLOAD)
+    window.dispatchEvent(
+      new CustomEvent('projectUploadPreferenceChanged', {
+        detail: null,
+      }),
+    )
   } catch {
     // Storage unavailable - silently fail
   }

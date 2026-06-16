@@ -1,6 +1,6 @@
 import { USER_PREFS_CUSTOM_PROMPT_PRESETS } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PiNotePencil } from 'react-icons/pi'
 import { BUILT_IN_PROMPT_PRESETS } from '../prompts/built-in-presets'
 import type { PromptPreset, UserPromptPreset } from '../prompts/types'
@@ -111,9 +111,15 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
     }
   }, [])
 
-  const userPresets: PromptPreset[] = userPresetsRaw.map(toPromptPreset)
+  const userPresets: PromptPreset[] = useMemo(
+    () => userPresetsRaw.map(toPromptPreset),
+    [userPresetsRaw],
+  )
 
-  const allPresets = [...BUILT_IN_PROMPT_PRESETS, ...userPresets]
+  const allPresets = useMemo(
+    () => [...BUILT_IN_PROMPT_PRESETS, ...userPresets],
+    [userPresets],
+  )
 
   const getPresetById = useCallback(
     (id: string | null | undefined): PromptPreset | null => {

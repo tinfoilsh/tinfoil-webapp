@@ -382,6 +382,14 @@ export function useProfileSync() {
       'personalizationChanged',
       'languageChanged',
       'customSystemPromptChanged',
+      'promptLibraryChanged',
+      'selectedModelChanged',
+      'reasoningSettingsChanged',
+      'webSearchEnabledChanged',
+      'codeExecutionEnabledChanged',
+      'piiCheckEnabledChanged',
+      'chatFontChanged',
+      'projectUploadPreferenceChanged',
     ]
 
     events.forEach((event) => {

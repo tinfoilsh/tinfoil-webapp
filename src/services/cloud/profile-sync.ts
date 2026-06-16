@@ -44,10 +44,30 @@ export interface ProfileData {
   // Custom system prompt settings
   isUsingCustomPrompt?: boolean
   customSystemPrompt?: string
+  customPromptPresets?: ProfilePromptPreset[]
+
+  // Shared chat defaults
+  selectedModel?: string
+  reasoningEffort?: 'low' | 'medium' | 'high'
+  thinkingEnabled?: boolean
+  webSearchEnabled?: boolean
+  codeExecutionEnabled?: boolean
+  piiCheckEnabled?: boolean
+  chatFont?: 'system' | 'serif' | 'mono' | 'dyslexic'
+  projectUploadPreference?: 'project' | 'chat'
 
   // Metadata
   version?: number
   updatedAt?: string
+}
+
+export interface ProfilePromptPreset {
+  id: string
+  name: string
+  description: string
+  systemPrompt: string
+  createdAt: number
+  updatedAt: number
 }
 
 export class ProfileSyncService {
