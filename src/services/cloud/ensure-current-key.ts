@@ -26,10 +26,25 @@ import {
   type KeyRegisterBundleInput,
 } from '../sync-enclave/sync-api'
 import { IF_MATCH_SENTINELS } from '../sync-enclave/wire-contract'
-import { requirePrimaryKeyB64, requirePrimaryKeyBytes } from './cek-encoding'
+import {
+  persistedPrimaryKeyB64,
+  requirePrimaryKeyB64,
+  requirePrimaryKeyBytes,
+} from './cek-encoding'
 
 let inflightAdoption: { keyB64: string; promise: Promise<boolean> } | null =
   null
+
+/**
+ * Drop any in-flight adoption registration. Called on logout / auth
+ * change so a registration started for the previous user can never be
+ * handed back to the next session. The per-key dedupe guard already
+ * prevents reuse across different keys, but a registration that never
+ * settles (network hang) would otherwise pin a stale promise.
+ */
+export function resetInflightAdoption(): void {
+  inflightAdoption = null
+}
 
 /**
  * Register the local primary CEK as the controlplane's current key for
@@ -48,14 +63,26 @@ let inflightAdoption: { keyB64: string; promise: Promise<boolean> } | null =
  * added on the next recovery), so adopting never strands a backup.
  * register-key's if_match='*' fails safely on a concurrent register.
  * Returns true when the key was adopted.
+ *
+ * Only the committed primary key is ever registered, and only when it
+ * matches the active in-memory CEK. During a key-activation ceremony
+ * the new key is staged in memory only; registering a staged
+ * (uncommitted) key — or binding the committed key while writes encrypt
+ * under the staged one — would point the server at a key the client may
+ * roll back or that the upload won't use, causing a key mismatch and
+ * blocked writes. Defer until the staged key commits or the ceremony
+ * rolls back, so the registered key and the write key always agree.
  */
 export async function adoptLocalKeyForMigration(): Promise<boolean> {
-  let keyB64: string
+  const keyB64 = persistedPrimaryKeyB64()
+  if (!keyB64) return false
+  let activeKeyB64: string
   try {
-    keyB64 = requirePrimaryKeyB64()
+    activeKeyB64 = requirePrimaryKeyB64()
   } catch {
     return false
   }
+  if (activeKeyB64 !== keyB64) return false
   // Dedupe concurrent adoptions per key. The upload coalescer fires the
   // write gate for many chats at once; without this they would each
   // race a register-key, and every loser of the if_match='*' CAS would

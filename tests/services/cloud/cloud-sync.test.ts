@@ -116,6 +116,7 @@ vi.mock('@/services/cloud/cek-encoding', () => ({
   hasPrimaryKey: () => mockGetKey() != null,
   primaryKeyIdHexOrNull: (...args: any[]) => mockPrimaryKeyIdHex(...args),
   requirePrimaryKeyB64: (...args: any[]) => mockRequirePrimaryKeyB64(...args),
+  persistedPrimaryKeyB64: (...args: any[]) => mockRequirePrimaryKeyB64(...args),
   requirePrimaryKeyBytes: (...args: any[]) =>
     mockRequirePrimaryKeyBytes(...args),
   migrationKeys: (...args: any[]) => mockMigrationKeys(...args),

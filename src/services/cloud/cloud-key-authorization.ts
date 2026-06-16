@@ -40,7 +40,10 @@ import {
   CloudKeySetupError,
   validateCurrentPrimaryKey,
 } from './cloud-key-preflight'
-import { adoptLocalKeyForMigration } from './ensure-current-key'
+import {
+  adoptLocalKeyForMigration,
+  resetInflightAdoption,
+} from './ensure-current-key'
 import { reportKeyHealthy } from './sync-health'
 
 export type CloudKeyAuthorizationMode = 'validated' | 'explicit_start_fresh'
@@ -260,6 +263,7 @@ export async function registerStartFreshKeyIfNeeded(): Promise<void> {
 export function clearCloudKeyAuthorization(userId?: string | null): void {
   if (typeof window === 'undefined') return
   emptyRemoteRegistration = null
+  resetInflightAdoption()
   const resolvedUserId = userId ?? getActiveUserId()
   if (!resolvedUserId) return
   localStorage.removeItem(storageKey(resolvedUserId))

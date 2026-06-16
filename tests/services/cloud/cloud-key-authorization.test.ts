@@ -7,6 +7,7 @@ const mockAdoptLocalKey = vi.fn()
 
 vi.mock('@/services/cloud/ensure-current-key', () => ({
   adoptLocalKeyForMigration: (...args: unknown[]) => mockAdoptLocalKey(...args),
+  resetInflightAdoption: vi.fn(),
 }))
 
 vi.mock('@/services/cloud/cloud-key-preflight', () => ({
