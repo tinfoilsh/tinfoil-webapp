@@ -8,7 +8,6 @@ import { getCurrentCloudKeyAuthorizationMode } from '@/services/cloud/cloud-key-
 import type { ProfileSyncStatus } from '@/services/cloud/cloud-storage'
 import {
   applySettingsToLocal,
-  diffProfileFields,
   hasProfileChanged,
   loadLocalSettings,
   resetSettingsToLocalDefaults,
@@ -98,22 +97,22 @@ export function useProfileSync() {
   const syncFromCloud = useCallback(async () => {
     if (!isSignedIn || !isCloudSyncEnabled()) return
 
-    if (hasLocalProfileChanges()) {
-      logInfo('Skipping cloud sync - local changes pending', {
-        component: 'ProfileSync',
-        action: 'syncFromCloud',
-      })
-      return
-    }
-
     try {
       const cloudProfile = await profileSync.fetchProfile()
 
       if (cloudProfile) {
         const cloudVersion = cloudProfile.version || 0
 
-        // Re-check pending changes after fetch to avoid race with local edits
+        // A pending local edit must not be overwritten by the remote,
+        // but we still record the server's current version so the
+        // pending push rebases onto it as a CAS update instead of
+        // looping on a create-at-zero that would block every future
+        // pull behind a never-clearing dirty flag. Last-write-wins on
+        // push decides the winner.
         if (hasLocalProfileChanges()) {
+          if (cloudVersion > lastSyncedVersion.current) {
+            lastSyncedVersion.current = cloudVersion
+          }
           return
         }
 
@@ -121,17 +120,6 @@ export function useProfileSync() {
         if (cloudVersion < lastSyncedVersion.current) {
           return
         }
-
-        // DEBUG[profile-sync]: remove before merge.
-        console.log('[profile-sync] syncFromCloud', {
-          cloudVersion,
-          lastSyncedVersion: lastSyncedVersion.current,
-          willApply: hasProfileChanged(cloudProfile, lastSyncedProfile.current),
-          diffFields: diffProfileFields(
-            cloudProfile,
-            lastSyncedProfile.current,
-          ),
-        })
 
         if (hasProfileChanged(cloudProfile, lastSyncedProfile.current)) {
           isApplyingRemoteProfile.current = true
@@ -252,17 +240,6 @@ export function useProfileSync() {
           return
         }
 
-        // DEBUG[profile-sync]: remove before merge.
-        console.log('[profile-sync] smartSyncFromCloud', {
-          cloudVersion,
-          lastSyncedVersion: lastSyncedVersion.current,
-          willApply: hasProfileChanged(cloudProfile, lastSyncedProfile.current),
-          diffFields: diffProfileFields(
-            cloudProfile,
-            lastSyncedProfile.current,
-          ),
-        })
-
         if (hasProfileChanged(cloudProfile, lastSyncedProfile.current)) {
           isApplyingRemoteProfile.current = true
           try {
@@ -318,18 +295,6 @@ export function useProfileSync() {
         }
 
         const localSettings = loadLocalSettings()
-
-        // DEBUG[profile-sync]: remove before merge.
-        console.log('[profile-sync] syncToCloud decide', {
-          dirty: hasLocalProfileChanges(),
-          willPush: hasProfileChanged(localSettings, lastSyncedProfile.current),
-          diffFields: diffProfileFields(
-            localSettings,
-            lastSyncedProfile.current,
-          ),
-          baseVersion: lastSyncedVersion.current,
-          changedAt: getLocalProfileChangedAt(),
-        })
 
         if (!hasProfileChanged(localSettings, lastSyncedProfile.current)) {
           logInfo('Skipping cloud sync - no changes detected', {
@@ -395,12 +360,7 @@ export function useProfileSync() {
         })
       }
     }, 2000) // 2 second debounce
-  }, [
-    clearLocalProfileChanged,
-    getLocalProfileChangedAt,
-    hasLocalProfileChanges,
-    isSignedIn,
-  ])
+  }, [clearLocalProfileChanged, getLocalProfileChangedAt, isSignedIn])
 
   // Initial sync when authenticated and periodic sync (only if cloud sync is enabled)
   useEffect(() => {
@@ -421,7 +381,10 @@ export function useProfileSync() {
         action: 'initialize',
       })
       if (hasLocalProfileChanges()) {
-        syncToCloud()
+        // A pending edit exists. Learn the server version first (without
+        // overwriting the edit) so the push is a CAS update rather than a
+        // create that could loop on STALE_BLOB, then push.
+        syncFromCloud().then(() => syncToCloud())
       } else {
         // Initial sync on page load - this will also set lastSyncedVersion
         syncFromCloud().then(() => {
@@ -447,7 +410,14 @@ export function useProfileSync() {
     // Use smart sync at regular intervals to reduce bandwidth
     const interval = setInterval(() => {
       if (hasLocalProfileChanges()) {
-        syncToCloud()
+        if (lastSyncedVersion.current === 0) {
+          // Never established a base version; learn it first so the push
+          // is a CAS update instead of a create that can loop on
+          // STALE_BLOB and block all future pulls.
+          syncFromCloud().then(() => syncToCloud())
+        } else {
+          syncToCloud()
+        }
       } else {
         smartSyncFromCloud()
       }
