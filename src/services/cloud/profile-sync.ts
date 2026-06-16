@@ -45,6 +45,8 @@ export interface ProfileData {
   isUsingCustomPrompt?: boolean
   customSystemPrompt?: string
   customPromptPresets?: ProfilePromptPreset[]
+  // Ordered preset ids pinned as homescreen favorites (built-in or custom)
+  favoritePromptPresetIds?: string[]
 
   // Shared chat defaults
   selectedModel?: string

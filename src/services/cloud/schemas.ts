@@ -59,6 +59,7 @@ export const ProfileDataSchema = z
           .passthrough(),
       )
       .optional(),
+    favoritePromptPresetIds: z.array(z.string()).optional(),
     selectedModel: z.string().optional(),
     reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
     thinkingEnabled: z.boolean().optional(),

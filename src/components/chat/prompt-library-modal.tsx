@@ -6,14 +6,19 @@ import {
   PlusIcon,
   SparklesIcon,
   Squares2X2Icon,
+  StarIcon,
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
+import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
-import { usePromptLibrary } from './hooks/use-prompt-library'
+import {
+  MAX_FAVORITE_PRESETS,
+  usePromptLibrary,
+} from './hooks/use-prompt-library'
 import {
   EMPTY_PRESET_EDITOR_STATE,
   PresetEditor,
@@ -48,6 +53,9 @@ export function PromptLibraryModal({
     updateUserPreset,
     deleteUserPreset,
     duplicatePreset,
+    isFavorite,
+    canAddFavorite,
+    toggleFavorite,
   } = usePromptLibrary()
 
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -196,6 +204,7 @@ export function PromptLibraryModal({
   const renderPresetCard = (preset: PromptPreset) => {
     const isSelected = selectedId === preset.id
     const isActive = activePresetId === preset.id
+    const isPinned = isFavorite(preset.id)
     const Icon = preset.Icon
     return (
       <button
@@ -227,11 +236,21 @@ export function PromptLibraryModal({
             </span>
           )}
         </span>
-        {isActive && (
-          <CheckIcon
-            className="absolute right-2 top-2 h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
-            aria-label="Active"
-          />
+        {(isPinned || isActive) && (
+          <span className="absolute right-2 top-2 flex items-center gap-1">
+            {isPinned && (
+              <StarIconSolid
+                className="h-3.5 w-3.5 text-yellow-500"
+                aria-label="Favorite"
+              />
+            )}
+            {isActive && (
+              <CheckIcon
+                className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
+                aria-label="Active"
+              />
+            )}
+          </span>
         )}
       </button>
     )
@@ -366,6 +385,9 @@ export function PromptLibraryModal({
                       key={selectedPreset.id}
                       preset={selectedPreset}
                       isActive={activePresetId === selectedPreset.id}
+                      isFavorite={isFavorite(selectedPreset.id)}
+                      canAddFavorite={canAddFavorite}
+                      onToggleFavorite={() => toggleFavorite(selectedPreset.id)}
                       onUseThis={handleUseThis}
                       onClearActive={handleClearActive}
                       onEdit={() => startEdit(selectedPreset)}
@@ -407,6 +429,9 @@ export function PromptLibraryModal({
 type PresetDetailProps = {
   preset: PromptPreset
   isActive: boolean
+  isFavorite: boolean
+  canAddFavorite: boolean
+  onToggleFavorite: () => void
   onUseThis: () => void
   onClearActive: () => void
   onEdit: () => void
@@ -418,6 +443,9 @@ type PresetDetailProps = {
 function PresetDetail({
   preset,
   isActive,
+  isFavorite,
+  canAddFavorite,
+  onToggleFavorite,
   onUseThis,
   onClearActive,
   onEdit,
@@ -548,6 +576,32 @@ function PresetDetail({
       </div>
 
       <div className="flex flex-none items-center gap-2 border-b border-border-subtle px-6 py-2">
+        <button
+          type="button"
+          onClick={onToggleFavorite}
+          disabled={!isFavorite && !canAddFavorite}
+          title={
+            !isFavorite && !canAddFavorite
+              ? `You can pin up to ${MAX_FAVORITE_PRESETS} favorites`
+              : undefined
+          }
+          className={cn(
+            'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+            isFavorite
+              ? 'text-yellow-600 hover:bg-yellow-500/10 dark:text-yellow-400'
+              : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+            !isFavorite &&
+              !canAddFavorite &&
+              'cursor-not-allowed opacity-50 hover:bg-transparent',
+          )}
+        >
+          {isFavorite ? (
+            <StarIconSolid className="h-3.5 w-3.5" />
+          ) : (
+            <StarIcon className="h-3.5 w-3.5" />
+          )}
+          {isFavorite ? 'Favorited' : 'Favorite'}
+        </button>
         {!preset.isBuiltIn && (
           <button
             type="button"

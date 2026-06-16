@@ -1,5 +1,6 @@
 import { cn } from '@/components/ui/utils'
 import { Squares2X2Icon } from '@heroicons/react/24/outline'
+import { usePromptLibrary } from '../hooks/use-prompt-library'
 import { BUILT_IN_PROMPT_PRESETS } from '../prompts/built-in-presets'
 import type { PromptPreset } from '../prompts/types'
 
@@ -16,7 +17,11 @@ export function PromptPresetSuggestions({
   onSetActive,
   onOpenLibrary,
 }: PromptPresetSuggestionsProps) {
-  const suggested = BUILT_IN_PROMPT_PRESETS.slice(0, SUGGESTION_COUNT)
+  const { favoritePresets } = usePromptLibrary()
+  const suggested =
+    favoritePresets.length > 0
+      ? favoritePresets
+      : BUILT_IN_PROMPT_PRESETS.slice(0, SUGGESTION_COUNT)
   const pillBase =
     'inline-flex h-14 w-full items-center justify-center gap-1.5 rounded-lg border px-3 text-sm transition-colors md:h-auto md:w-auto md:py-1.5'
 
