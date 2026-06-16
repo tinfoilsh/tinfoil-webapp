@@ -649,6 +649,39 @@ export class IndexedDBStorage {
   }
 
   /**
+   * Rebase a chat's sync version onto the server's current version
+   * while KEEPING `locallyModified` set. Used by last-write-wins
+   * conflict resolution (§C5) when the local copy is the fresher
+   * write: the next upload's If-Match must match the server's current
+   * ETag so the CAS succeeds and the local content wins, instead of
+   * looping on STALE_BLOB forever. Unlike `markAsSynced`, this never
+   * clears the dirty flag, so the chat is still uploaded.
+   */
+  async rebaseSyncVersion(id: string, syncVersion: number): Promise<void> {
+    return this.enqueueSave('rebaseSyncVersion', async () => {
+      const db = await this.ensureDB()
+      const chat = await this.getChatInternal(id)
+      if (!chat) {
+        return
+      }
+
+      chat.syncVersion = syncVersion
+      chat.locallyModified = true
+
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction([CHATS_STORE], 'readwrite')
+        const store = transaction.objectStore(CHATS_STORE)
+        transaction.oncomplete = () => resolve()
+        transaction.onerror = () =>
+          reject(new Error('Failed to rebase sync version'))
+        const request = store.put(chat)
+        request.onerror = () =>
+          reject(new Error('Failed to rebase sync version'))
+      })
+    })
+  }
+
+  /**
    * Atomic upload finalization (§C6 / §H5).
    *
    * Runs inside `saveQueue` so it is serialized with any concurrent
@@ -720,12 +753,19 @@ export class IndexedDBStorage {
    *
    * Pass `expectedLocalUpdatedAt: undefined` to force the write
    * (e.g. last-write-wins conflict resolution).
+   *
+   * Pass `allowLocallyModified: true` to keep the timestamp CAS while
+   * permitting an overwrite of a `locallyModified` row. Last-write-wins
+   * conflict resolution uses this: the remote has already been judged
+   * the winner, but the apply must still no-op if the local row changed
+   * since that judgement (a TOCTOU edit during the remote download).
    */
   async applyRemoteChatIfFresh(opts: {
     chat: Chat
     syncVersion: number
     expectedLocalUpdatedAt: string | null | undefined
     setLoadedAt?: boolean
+    allowLocallyModified?: boolean
   }): Promise<{ applied: boolean }> {
     return this.enqueueSave('applyRemoteChatIfFresh', async () => {
       const db = await this.ensureDB()
@@ -739,7 +779,7 @@ export class IndexedDBStorage {
         } else if (
           !existing ||
           existing.updatedAt !== opts.expectedLocalUpdatedAt ||
-          existing.locallyModified === true
+          (existing.locallyModified === true && !opts.allowLocallyModified)
         ) {
           return { applied: false }
         }

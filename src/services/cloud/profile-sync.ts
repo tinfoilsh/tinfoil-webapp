@@ -12,6 +12,7 @@ import { WIRE_CODES } from '../sync-enclave/wire-contract'
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
 import { ProfileDataSchema } from './schemas'
+import { remoteWinsLastWrite } from './sync-predicates'
 
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
@@ -166,7 +167,11 @@ export class ProfileSyncService {
   // Save profile to cloud
   async saveProfile(
     profile: ProfileData,
-  ): Promise<{ success: boolean; version?: number }> {
+  ): Promise<{
+    success: boolean
+    version?: number
+    remoteProfile?: ProfileData
+  }> {
     try {
       if (!(await this.isAuthenticated())) {
         logInfo('Skipping profile save - not authenticated', {
@@ -194,7 +199,9 @@ export class ProfileSyncService {
       ): Promise<{ success: boolean; version?: number }> => {
         const profileWithMetadata: ProfileData = {
           ...profile,
-          updatedAt: new Date().toISOString(),
+          // Preserve the caller's edit time so other devices can
+          // arbitrate last-write-wins; only stamp now when absent.
+          updatedAt: profile.updatedAt ?? new Date().toISOString(),
           version: baseVersion + 1,
         }
 
@@ -240,15 +247,37 @@ export class ProfileSyncService {
         if (!isStaleBlobConflict(pushError)) {
           throw pushError
         }
-        // Optimistic-concurrency conflict: our base version is behind
-        // the server, or we tried to create a profile that already
-        // exists. Re-read the current version and retry once so local
-        // settings win instead of looping on STALE_BLOB forever.
-        logInfo('Profile push conflicted; rebasing on current version', {
+        // Optimistic-concurrency conflict: the server holds a version
+        // our push was not based on. Re-read it and arbitrate
+        // last-write-wins by content modification time.
+        logInfo('Profile push conflicted; arbitrating last-write-wins', {
           component: 'ProfileSync',
           action: 'saveProfile',
         })
         const remote = await this.fetchProfile()
+
+        if (
+          remote &&
+          remoteWinsLastWrite(profile.updatedAt, remote.updatedAt)
+        ) {
+          // The remote is the strictly newer write. Adopt it instead of
+          // clobbering, and hand it back so the caller can apply it
+          // locally; both devices then converge on the same settings.
+          logInfo('Profile conflict resolved by adopting newer remote', {
+            component: 'ProfileSync',
+            action: 'saveProfile',
+          })
+          this.cachedProfile = remote
+          return {
+            success: true,
+            version: remote.version,
+            remoteProfile: remote,
+          }
+        }
+
+        // Our local edit is the last write. Rebase onto the server's
+        // current version and re-push so local wins instead of looping
+        // on STALE_BLOB forever.
         return await pushAtVersion(remote?.version ?? 0)
       }
     } catch (error) {

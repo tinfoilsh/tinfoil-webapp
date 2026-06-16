@@ -44,7 +44,7 @@ describe('ProfileSyncService', () => {
     mockPush.mockResolvedValue({ ok: true, etag: '8', key_id: 'aa'.repeat(16) })
   })
 
-  it('rebases on the current version after a stale-blob conflict', async () => {
+  it('re-pushes the fresher local profile after a stale-blob conflict', async () => {
     mockPush
       .mockRejectedValueOnce(
         new SyncEnclaveError('STALE_BLOB', 412, 'STALE_BLOB'),
@@ -59,19 +59,63 @@ describe('ProfileSyncService', () => {
         {
           ok: true,
           etag: '9',
-          plaintext: btoa(JSON.stringify({ nickname: 'Remote' })),
+          plaintext: btoa(
+            JSON.stringify({
+              nickname: 'Remote',
+              updatedAt: '2026-06-16T09:00:00.000Z',
+            }),
+          ),
         },
       ],
     })
 
     const service = new ProfileSyncService()
-    const result = await service.saveProfile({ nickname: 'Sacha', version: 0 })
+    const result = await service.saveProfile({
+      nickname: 'Sacha',
+      version: 0,
+      updatedAt: '2026-06-16T10:00:00.000Z',
+    })
 
     expect(result.success).toBe(true)
     expect(result.version).toBe(10)
+    expect(result.remoteProfile).toBeUndefined()
     expect(mockPush).toHaveBeenCalledTimes(2)
     expect(mockPush.mock.calls[0][0]).toMatchObject({ ifMatch: null })
     expect(mockPush.mock.calls[1][0]).toMatchObject({ ifMatch: '9' })
+  })
+
+  it('adopts the newer remote profile on a stale-blob conflict', async () => {
+    mockPush.mockRejectedValueOnce(
+      new SyncEnclaveError('STALE_BLOB', 412, 'STALE_BLOB'),
+    )
+    mockPull.mockResolvedValue({
+      items: [
+        {
+          ok: true,
+          etag: '9',
+          plaintext: btoa(
+            JSON.stringify({
+              nickname: 'Remote',
+              updatedAt: '2026-06-16T11:00:00.000Z',
+            }),
+          ),
+        },
+      ],
+    })
+
+    const service = new ProfileSyncService()
+    const result = await service.saveProfile({
+      nickname: 'Sacha',
+      version: 0,
+      updatedAt: '2026-06-16T10:00:00.000Z',
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.version).toBe(9)
+    expect(result.remoteProfile).toMatchObject({ nickname: 'Remote' })
+    // The remote write wins, so the local copy is not re-uploaded.
+    expect(mockPush).toHaveBeenCalledTimes(1)
+    expect(service.getCachedProfile()).toMatchObject({ nickname: 'Remote' })
   })
 
   it('saves profile updates with the caller last-synced etag', async () => {

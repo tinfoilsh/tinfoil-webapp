@@ -109,6 +109,9 @@ export const SYNC_PROJECT_CHAT_STATUS_PREFIX =
   'tinfoil-sync-project-chat-status-'
 export const SYNC_PROFILE_STATUS = 'tinfoil-sync-profile-status'
 export const SYNC_PROFILE_DIRTY = 'tinfoil-sync-profile-dirty'
+// Content modification time of the pending local profile edit, used to
+// arbitrate last-write-wins against a concurrently-updated remote.
+export const SYNC_PROFILE_CHANGED_AT = 'tinfoil-sync-profile-changed-at'
 
 // --- localStorage: Migration flags -----------------------------------------
 // Set the first time a build evicts locally-cached cloud chats that the

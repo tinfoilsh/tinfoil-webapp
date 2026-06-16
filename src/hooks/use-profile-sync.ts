@@ -1,5 +1,6 @@
 import { CLOUD_SYNC } from '@/config'
 import {
+  SYNC_PROFILE_CHANGED_AT,
   SYNC_PROFILE_DIRTY,
   SYNC_PROFILE_STATUS,
 } from '@/constants/storage-keys'
@@ -43,6 +44,7 @@ export function useProfileSync() {
     hasPendingChanges.current = true
     if (typeof window !== 'undefined') {
       localStorage.setItem(SYNC_PROFILE_DIRTY, 'true')
+      localStorage.setItem(SYNC_PROFILE_CHANGED_AT, new Date().toISOString())
     }
   }, [])
 
@@ -50,7 +52,25 @@ export function useProfileSync() {
     hasPendingChanges.current = false
     if (typeof window !== 'undefined') {
       localStorage.removeItem(SYNC_PROFILE_DIRTY)
+      localStorage.removeItem(SYNC_PROFILE_CHANGED_AT)
     }
+  }, [])
+
+  // Edit time of the pending local profile change, used to arbitrate
+  // last-write-wins against the remote. Returns undefined when the edit
+  // time is unknown (e.g. a dirty flag left by an older build, or
+  // partially cleared storage) so unknown-age local data cannot win the
+  // arbitration and clobber a genuinely newer remote: conflict
+  // resolution then defers to the remote, while a non-conflicting push
+  // still stamps the current time.
+  const getLocalProfileChangedAt = useCallback((): string | undefined => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(SYNC_PROFILE_CHANGED_AT)
+      if (stored && !Number.isNaN(new Date(stored).getTime())) {
+        return stored
+      }
+    }
+    return undefined
   }, [])
 
   // Listen for cloud sync setting changes
@@ -276,10 +296,13 @@ export function useProfileSync() {
         // Mark that we have pending changes only when we're actually going to sync
         hasPendingChanges.current = true
 
-        // Include the last synced version so the service can increment it
+        // Include the last synced version so the service can increment
+        // it, plus the edit time so conflict resolution can arbitrate
+        // last-write-wins against the remote.
         const profileWithVersion = {
           ...localSettings,
           version: lastSyncedVersion.current,
+          updatedAt: getLocalProfileChangedAt(),
         }
 
         const result = await profileSync.saveProfile(profileWithVersion)
@@ -289,7 +312,21 @@ export function useProfileSync() {
           if (result.version !== undefined) {
             lastSyncedVersion.current = result.version
           }
-          lastSyncedProfile.current = localSettings
+
+          if (result.remoteProfile) {
+            // A concurrently-updated device won the last-write race;
+            // adopt its settings locally so both devices converge
+            // instead of keeping our now-stale edit.
+            isApplyingRemoteProfile.current = true
+            try {
+              applySettingsToLocal(result.remoteProfile)
+            } finally {
+              isApplyingRemoteProfile.current = false
+            }
+            lastSyncedProfile.current = result.remoteProfile
+          } else {
+            lastSyncedProfile.current = localSettings
+          }
           clearLocalProfileChanged()
 
           logInfo('Profile synced to cloud', {
@@ -297,6 +334,7 @@ export function useProfileSync() {
             action: 'syncToCloud',
             metadata: {
               version: lastSyncedVersion.current,
+              adoptedRemote: !!result.remoteProfile,
             },
           })
         }
@@ -307,7 +345,7 @@ export function useProfileSync() {
         })
       }
     }, 2000) // 2 second debounce
-  }, [clearLocalProfileChanged, isSignedIn])
+  }, [clearLocalProfileChanged, getLocalProfileChangedAt, isSignedIn])
 
   // Initial sync when authenticated and periodic sync (only if cloud sync is enabled)
   useEffect(() => {

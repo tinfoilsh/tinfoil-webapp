@@ -342,9 +342,18 @@ describe('UploadCoalescer', () => {
         .mockRejectedValueOnce(new Error('Fail'))
         .mockResolvedValue(undefined)
 
+      // Pin the jitter to its upper bound so the backoff window is
+      // deterministic. A random delay of 0 would let the first retry
+      // fire inside advanceTimersByTimeAsync(0) below — before the
+      // enqueue during backoff — completing the worker and triggering
+      // an extra upload.
       const coalescer = new UploadCoalescer(uploadFn, {
         baseDelayMs: 1000,
         maxRetries: 3,
+        scheduler: {
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          random: () => 0.9999,
+        },
       })
 
       coalescer.enqueue('chat-1')
