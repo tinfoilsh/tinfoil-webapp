@@ -2378,8 +2378,8 @@ ${encryptionKey.replace('key_', '')}
                         className={cn(
                           'rounded-lg border p-4',
                           isDarkMode
-                            ? 'border-red-500/30 bg-red-950/10'
-                            : 'border-red-200 bg-red-50/50',
+                            ? 'border-border-strong bg-surface-chat'
+                            : 'border-border-subtle bg-white',
                         )}
                       >
                         <div className="space-y-3">
@@ -2496,8 +2496,8 @@ ${encryptionKey.replace('key_', '')}
                           className={cn(
                             'rounded-lg border p-4',
                             isDarkMode
-                              ? 'border-red-500/30 bg-red-950/10'
-                              : 'border-red-200 bg-red-50/50',
+                              ? 'border-border-strong bg-surface-chat'
+                              : 'border-border-subtle bg-white',
                           )}
                         >
                           <div className="space-y-3">
@@ -2916,12 +2916,7 @@ ${encryptionKey.replace('key_', '')}
                           <button
                             type="button"
                             onClick={startCreatePreset}
-                            className={cn(
-                              'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
-                              isDarkMode
-                                ? 'text-content-secondary hover:bg-surface-chat hover:text-content-primary'
-                                : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                            )}
+                            className="flex items-center gap-1 rounded-md bg-brand-accent-dark px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
                           >
                             <PlusIcon className="h-3.5 w-3.5" />
                             New
