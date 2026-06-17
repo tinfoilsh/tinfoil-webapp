@@ -2378,8 +2378,8 @@ ${encryptionKey.replace('key_', '')}
                         className={cn(
                           'rounded-lg border p-4',
                           isDarkMode
-                            ? 'border-red-500/30 bg-red-950/10'
-                            : 'border-red-200 bg-red-50/50',
+                            ? 'border-border-strong bg-surface-chat'
+                            : 'border-border-subtle bg-white',
                         )}
                       >
                         <div className="space-y-3">
@@ -2496,8 +2496,8 @@ ${encryptionKey.replace('key_', '')}
                           className={cn(
                             'rounded-lg border p-4',
                             isDarkMode
-                              ? 'border-red-500/30 bg-red-950/10'
-                              : 'border-red-200 bg-red-50/50',
+                              ? 'border-border-strong bg-surface-chat'
+                              : 'border-border-subtle bg-white',
                           )}
                         >
                           <div className="space-y-3">
