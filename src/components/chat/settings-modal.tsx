@@ -2916,12 +2916,7 @@ ${encryptionKey.replace('key_', '')}
                           <button
                             type="button"
                             onClick={startCreatePreset}
-                            className={cn(
-                              'flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-colors',
-                              isDarkMode
-                                ? 'text-content-secondary hover:bg-surface-chat hover:text-content-primary'
-                                : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                            )}
+                            className="flex items-center gap-1 rounded-md bg-brand-accent-dark px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
                           >
                             <PlusIcon className="h-3.5 w-3.5" />
                             New
