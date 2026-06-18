@@ -105,6 +105,65 @@ describe('useMessageQueue concurrency', () => {
     )
   })
 
+  it('frees the blank chat id after conversion so the next new chat can send', async () => {
+    let resolveA: (() => void) | undefined
+    const handleQuery = vi.fn((text: string) => {
+      if (text === 'A') {
+        return new Promise<void>((resolve) => {
+          resolveA = resolve
+        })
+      }
+      return Promise.resolve()
+    })
+
+    const { result, rerender } = renderHook(
+      ({ chatId, loadingState }) =>
+        useMessageQueue({
+          chatId,
+          loadingState,
+          handleQuery,
+          isRateLimited: () => false,
+        }),
+      {
+        initialProps: {
+          chatId: '',
+          loadingState: 'idle' as LoadingState,
+        },
+      },
+    )
+
+    // First message in a brand-new blank chat; its stream stays in-flight.
+    act(() => {
+      result.current.submit({ text: 'A' })
+    })
+    await flushMicrotasks()
+    expect(handleQuery).toHaveBeenCalledTimes(1)
+
+    // The blank chat converts to a real id and keeps streaming.
+    rerender({ chatId: 'real-1', loadingState: 'loading' as LoadingState })
+    await flushMicrotasks()
+
+    // User opens a fresh blank chat (the empty id is reused) and sends; it
+    // must dispatch immediately even though the first chat is still
+    // streaming.
+    rerender({ chatId: '', loadingState: 'idle' as LoadingState })
+    act(() => {
+      result.current.submit({ text: 'B' })
+    })
+    await flushMicrotasks()
+
+    expect(handleQuery).toHaveBeenCalledTimes(2)
+    expect(handleQuery).toHaveBeenLastCalledWith(
+      'B',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    )
+
+    resolveA?.()
+  })
+
   it('serializes multiple messages within the same chat', async () => {
     const resolvers: Array<() => void> = []
     const handleQuery = vi.fn(

@@ -184,19 +184,24 @@ export function useMessageQueue({
   // screen (handleQuery is bound to it), so the pump only proceeds while
   // its chat is active and stops otherwise, leaving the queue to resume
   // when the chat is reopened.
-  const pumpRunningRef = useRef<Set<string>>(new Set())
+  // Active pumps keyed by their current chat id. Each holds a mutable `id`
+  // so a blank chat's pump can follow the conversion to a real id (see the
+  // re-key in the chat-sync effect) instead of staying parked on the shared
+  // blank id ('') and blocking the next new chat.
+  const pumpsRef = useRef<Map<string, { id: string }>>(new Map())
 
   const runPump = useCallback(
-    async (id: string): Promise<void> => {
-      if (id == null) return
-      if (pumpRunningRef.current.has(id)) return
-      pumpRunningRef.current.add(id)
+    async (startId: string): Promise<void> => {
+      if (startId == null) return
+      if (pumpsRef.current.has(startId)) return
+      const pump = { id: startId }
+      pumpsRef.current.set(startId, pump)
       try {
-        while (getQueue(id).length > 0) {
+        while (getQueue(pump.id).length > 0) {
           // Only the chat on screen can dispatch; pause otherwise.
-          if (id !== currentChatIdRef.current) return
+          if (pump.id !== currentChatIdRef.current) return
           await waitForIdle()
-          if (id !== currentChatIdRef.current) return
+          if (pump.id !== currentChatIdRef.current) return
 
           if (isRateLimitedRef.current()) {
             if (!rateLimitPromptShownRef.current) {
@@ -207,9 +212,9 @@ export function useMessageQueue({
           }
           rateLimitPromptShownRef.current = false
 
-          const [next, ...rest] = getQueue(id)
+          const [next, ...rest] = getQueue(pump.id)
           if (!next) break
-          setQueueFor(id, rest)
+          setQueueFor(pump.id, rest)
           onBeforeDispatchRef.current?.()
 
           try {
@@ -231,12 +236,17 @@ export function useMessageQueue({
           }
         }
       } finally {
-        pumpRunningRef.current.delete(id)
+        if (pumpsRef.current.get(pump.id) === pump) {
+          pumpsRef.current.delete(pump.id)
+        }
         // If something was enqueued while the pump was tearing down and the
         // chat is still active, restart it on the next tick.
-        if (id === currentChatIdRef.current && getQueue(id).length > 0) {
+        if (
+          pump.id === currentChatIdRef.current &&
+          getQueue(pump.id).length > 0
+        ) {
           queueMicrotask(() => {
-            void runPump(id)
+            void runPump(pump.id)
           })
         }
       }
@@ -263,10 +273,46 @@ export function useMessageQueue({
     [getQueue, setQueueFor, runPump],
   )
 
+  // Tracks the previously-rendered chat id so we can detect a blank chat
+  // being converted to a real id (a brand-new conversation getting its
+  // server/local id on its first message).
+  const prevChatIdRef = useRef<string | null | undefined>(chatId)
+
   // Sync the rendered queue to the active chat and resume draining it (e.g.
   // messages left in sessionStorage, or queued while the chat was in the
   // background). Runs on mount and on every chat switch.
   useEffect(() => {
+    const prev = prevChatIdRef.current
+    prevChatIdRef.current = chatId
+
+    // Blank chats all share the empty-string id. When one converts to a
+    // real id, re-key its in-flight pump and queue so the freed blank id is
+    // immediately available to the next new chat. Only blank ('') ids are
+    // transient and reused this way, so this never fires on a plain switch
+    // between existing chats.
+    if (
+      prev === '' &&
+      chatId != null &&
+      chatId !== '' &&
+      pumpsRef.current.has('')
+    ) {
+      const pump = pumpsRef.current.get('')
+      const pending = queuesRef.current.get('')
+      if (pending && pending.length > 0) {
+        queuesRef.current.set(chatId, [
+          ...(queuesRef.current.get(chatId) ?? []),
+          ...pending,
+        ])
+        writeToStorage(storageKeyFor(chatId), queuesRef.current.get(chatId)!)
+      }
+      queuesRef.current.delete('')
+      if (pump) {
+        pump.id = chatId
+        pumpsRef.current.delete('')
+        pumpsRef.current.set(chatId, pump)
+      }
+    }
+
     setQueue(getQueue(chatId))
     if (chatId != null && getQueue(chatId).length > 0) {
       void runPump(chatId)
