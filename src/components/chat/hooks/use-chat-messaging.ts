@@ -158,6 +158,7 @@ export function useChatMessaging({
   // during streaming) so background streams write to their own list entry
   // without taking over the active view.
   const viewedChatIdRef = useRef<string>(currentChat?.id || '')
+  viewedChatIdRef.current = currentChat?.id || ''
 
   const dismissStreamError = useCallback(() => {
     patchStatus(viewedChatIdRef.current, { streamError: null })
@@ -1087,14 +1088,6 @@ export function useChatMessaging({
       }
     }
   }, [currentChat, regenerateMessage, patchStatus])
-
-  // Keep the viewed-chat id in sync. Unlike the old single-stream design
-  // this is never frozen during streaming, so switching to another chat
-  // mid-stream lets the background stream keep updating its own entry while
-  // the active view follows the user.
-  useEffect(() => {
-    viewedChatIdRef.current = currentChat?.id || ''
-  }, [currentChat])
 
   return {
     input,
