@@ -139,16 +139,19 @@ export function useMessageQueue({
     if (id === currentChatIdRef.current) setQueue(next)
   }, [])
 
+  // Latest-value mirrors so the async pump always calls the current
+  // handlers (in particular handleQuery, which is bound to the chat on
+  // screen) without being re-created on every render. Assigned during
+  // render so they can never be stale relative to currentChatIdRef when the
+  // pump dispatches in a microtask (an effect would lag a paint behind).
   const handleQueryRef = useRef(handleQuery)
   const isRateLimitedRef = useRef(isRateLimited)
   const onBeforeDispatchRef = useRef(onBeforeDispatch)
   const onRateLimitedRef = useRef(onRateLimited)
-  useEffect(() => {
-    handleQueryRef.current = handleQuery
-    isRateLimitedRef.current = isRateLimited
-    onBeforeDispatchRef.current = onBeforeDispatch
-    onRateLimitedRef.current = onRateLimited
-  })
+  handleQueryRef.current = handleQuery
+  isRateLimitedRef.current = isRateLimited
+  onBeforeDispatchRef.current = onBeforeDispatch
+  onRateLimitedRef.current = onRateLimited
 
   // Live mirror of the active chat's `loadingState`, used by the pump to
   // gate the next dispatch on that chat actually being idle.
@@ -174,11 +177,6 @@ export function useMessageQueue({
 
   // Rate-limit prompt latch: show at most once per exhaustion window.
   const rateLimitPromptShownRef = useRef(false)
-  useEffect(() => {
-    if (!isRateLimited()) {
-      rateLimitPromptShownRef.current = false
-    }
-  })
 
   // One single-flight pump per chat. Dispatch always targets the chat on
   // screen (handleQuery is bound to it), so the pump only proceeds while
@@ -240,10 +238,13 @@ export function useMessageQueue({
           pumpsRef.current.delete(pump.id)
         }
         // If something was enqueued while the pump was tearing down and the
-        // chat is still active, restart it on the next tick.
+        // chat is still active, restart it on the next tick. Skip while
+        // rate-limited so we don't busy-spin; the rate-limit effect resumes
+        // the queue once the limit clears.
         if (
           pump.id === currentChatIdRef.current &&
-          getQueue(pump.id).length > 0
+          getQueue(pump.id).length > 0 &&
+          !isRateLimitedRef.current()
         ) {
           queueMicrotask(() => {
             void runPump(pump.id)
@@ -253,6 +254,19 @@ export function useMessageQueue({
     },
     [getQueue, setQueueFor, waitForIdle],
   )
+
+  // When the rate limit clears, reset the one-shot prompt latch and resume
+  // the active chat's queue (the pump bails out while rate-limited rather
+  // than busy-waiting). Runs whenever the rate-limit predicate changes.
+  useEffect(() => {
+    if (!isRateLimited()) {
+      rateLimitPromptShownRef.current = false
+      const id = currentChatIdRef.current
+      if (id != null && getQueue(id).length > 0) {
+        void runPump(id)
+      }
+    }
+  }, [isRateLimited, getQueue, runPump])
 
   const submit = useCallback(
     (input: QueueSubmitInput): void => {

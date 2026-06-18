@@ -214,4 +214,171 @@ describe('useMessageQueue concurrency', () => {
 
     resolvers[1]?.()
   })
+
+  it('parks a queued message when switching away and resumes on return', async () => {
+    const handleQuery = vi.fn(() => Promise.resolve())
+
+    const { result, rerender } = renderHook(
+      ({ chatId, loadingState }) =>
+        useMessageQueue({
+          chatId,
+          loadingState,
+          handleQuery,
+          isRateLimited: () => false,
+        }),
+      {
+        initialProps: {
+          chatId: 'A',
+          loadingState: 'loading' as LoadingState,
+        },
+      },
+    )
+
+    // Chat A is mid-stream; the queued message must not dispatch yet.
+    act(() => {
+      result.current.submit({ text: 'q1' })
+    })
+    await flushMicrotasks()
+    expect(handleQuery).not.toHaveBeenCalled()
+
+    // Switch to an idle chat B; q1 stays parked on A (not dispatched to B).
+    rerender({ chatId: 'B', loadingState: 'idle' as LoadingState })
+    await flushMicrotasks()
+    expect(handleQuery).not.toHaveBeenCalled()
+
+    // Return to A, now finished streaming; the parked message dispatches.
+    rerender({ chatId: 'A', loadingState: 'idle' as LoadingState })
+    await flushMicrotasks()
+    expect(handleQuery).toHaveBeenCalledTimes(1)
+    expect(handleQuery).toHaveBeenLastCalledWith(
+      'q1',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    )
+  })
+
+  it('holds a message while rate-limited and resumes when the limit clears', async () => {
+    const handleQuery = vi.fn(() => Promise.resolve())
+    const onRateLimited = vi.fn()
+
+    const { result, rerender } = renderHook(
+      ({ isRateLimited }) =>
+        useMessageQueue({
+          chatId: 'A',
+          loadingState: 'idle' as LoadingState,
+          handleQuery,
+          isRateLimited,
+          onRateLimited,
+        }),
+      { initialProps: { isRateLimited: () => true } },
+    )
+
+    act(() => {
+      result.current.submit({ text: 'q1' })
+    })
+    await flushMicrotasks()
+
+    // Held: prompt shown once, nothing dispatched, no busy-spin.
+    expect(handleQuery).not.toHaveBeenCalled()
+    expect(onRateLimited).toHaveBeenCalledTimes(1)
+
+    // The limit clears (new predicate identity drives the resume effect).
+    rerender({ isRateLimited: () => false })
+    await flushMicrotasks()
+
+    expect(handleQuery).toHaveBeenCalledTimes(1)
+    expect(handleQuery).toHaveBeenLastCalledWith(
+      'q1',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    )
+  })
+
+  it('removes a specific queued message from the active chat', async () => {
+    const handleQuery = vi.fn(() => new Promise<void>(() => {}))
+
+    const { result } = renderHook(() =>
+      useMessageQueue({
+        chatId: 'A',
+        loadingState: 'loading' as LoadingState,
+        handleQuery,
+        isRateLimited: () => false,
+      }),
+    )
+
+    act(() => {
+      result.current.submit({ text: 'q1' })
+      result.current.submit({ text: 'q2' })
+    })
+    await flushMicrotasks()
+
+    expect(result.current.queuedMessages.map((m) => m.text)).toEqual([
+      'q1',
+      'q2',
+    ])
+    expect(handleQuery).not.toHaveBeenCalled()
+
+    const firstId = result.current.queuedMessages[0].id
+    act(() => {
+      result.current.removeQueuedMessage(firstId)
+    })
+
+    expect(result.current.queuedMessages.map((m) => m.text)).toEqual(['q2'])
+  })
+
+  it('keeps each chat queue isolated and renders the active one', async () => {
+    const handleQuery = vi.fn(() => new Promise<void>(() => {}))
+
+    const { result, rerender } = renderHook(
+      ({ chatId }) =>
+        useMessageQueue({
+          chatId,
+          loadingState: 'loading' as LoadingState,
+          handleQuery,
+          isRateLimited: () => false,
+        }),
+      { initialProps: { chatId: 'A' } },
+    )
+
+    act(() => {
+      result.current.submit({ text: 'a-msg' })
+    })
+    await flushMicrotasks()
+    expect(result.current.queuedMessages.map((m) => m.text)).toEqual(['a-msg'])
+
+    // Switching to B shows B's (empty) queue without losing A's.
+    rerender({ chatId: 'B' })
+    expect(result.current.queuedMessages).toEqual([])
+
+    rerender({ chatId: 'A' })
+    expect(result.current.queuedMessages.map((m) => m.text)).toEqual(['a-msg'])
+  })
+
+  it('drains multiple messages when handleQuery is synchronous (void)', async () => {
+    const calls: string[] = []
+    const handleQuery = vi.fn((text: string) => {
+      calls.push(text)
+    })
+
+    const { result } = renderHook(() =>
+      useMessageQueue({
+        chatId: 'A',
+        loadingState: 'idle' as LoadingState,
+        handleQuery,
+        isRateLimited: () => false,
+      }),
+    )
+
+    act(() => {
+      result.current.submit({ text: 'q1' })
+      result.current.submit({ text: 'q2' })
+    })
+    await flushMicrotasks()
+
+    expect(calls).toEqual(['q1', 'q2'])
+  })
 })
