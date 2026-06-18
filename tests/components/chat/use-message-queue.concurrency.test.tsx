@@ -78,6 +78,33 @@ describe('useMessageQueue concurrency', () => {
     resolveA?.()
   })
 
+  it('dispatches the first message of a blank chat (empty string id)', async () => {
+    const handleQuery = vi.fn(() => Promise.resolve())
+
+    const { result } = renderHook(() =>
+      useMessageQueue({
+        chatId: '',
+        loadingState: 'idle' as LoadingState,
+        handleQuery,
+        isRateLimited: () => false,
+      }),
+    )
+
+    act(() => {
+      result.current.submit({ text: 'hello' })
+    })
+    await flushMicrotasks()
+
+    expect(handleQuery).toHaveBeenCalledTimes(1)
+    expect(handleQuery).toHaveBeenLastCalledWith(
+      'hello',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    )
+  })
+
   it('serializes multiple messages within the same chat', async () => {
     const resolvers: Array<() => void> = []
     const handleQuery = vi.fn(

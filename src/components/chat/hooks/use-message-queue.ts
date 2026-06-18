@@ -112,7 +112,10 @@ export function useMessageQueue({
 
   const getQueue = useCallback(
     (id: string | null | undefined): QueuedMessage[] => {
-      if (!id) return []
+      // Only null/undefined means "no chat". A blank chat has an empty
+      // string id (see createBlankChat) and is a valid, queueable target;
+      // its messages live in memory only since storageKeyFor('') is null.
+      if (id == null) return []
       let q = queuesRef.current.get(id)
       if (!q) {
         q = loadFromStorage(storageKeyFor(id))
@@ -185,7 +188,7 @@ export function useMessageQueue({
 
   const runPump = useCallback(
     async (id: string): Promise<void> => {
-      if (!id) return
+      if (id == null) return
       if (pumpRunningRef.current.has(id)) return
       pumpRunningRef.current.add(id)
       try {
@@ -244,7 +247,7 @@ export function useMessageQueue({
   const submit = useCallback(
     (input: QueueSubmitInput): void => {
       const id = currentChatIdRef.current
-      if (!id) return
+      if (id == null) return
       const item: QueuedMessage = {
         id: generateQueuedId(),
         text: input.text,
@@ -265,7 +268,7 @@ export function useMessageQueue({
   // background). Runs on mount and on every chat switch.
   useEffect(() => {
     setQueue(getQueue(chatId))
-    if (chatId && getQueue(chatId).length > 0) {
+    if (chatId != null && getQueue(chatId).length > 0) {
       void runPump(chatId)
     }
   }, [chatId, getQueue, runPump])
@@ -273,7 +276,7 @@ export function useMessageQueue({
   const removeQueuedMessage = useCallback(
     (queuedId: string): void => {
       const id = currentChatIdRef.current
-      if (!id) return
+      if (id == null) return
       setQueueFor(
         id,
         getQueue(id).filter((item) => item.id !== queuedId),
