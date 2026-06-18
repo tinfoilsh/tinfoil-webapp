@@ -104,8 +104,10 @@ export interface StreamingContext {
   updatedMessages: Message[]
   isFirstMessage: boolean
   modelsLength: number
-  currentChatIdRef: React.MutableRefObject<string>
-  isStreamingRef: React.MutableRefObject<boolean>
+  // Tracks the id of the chat this specific stream writes to. Created per
+  // `handleQuery` call so concurrent streams never clobber each other, and
+  // updated in place if the backend swaps the id mid-flight.
+  streamChatIdRef: React.MutableRefObject<string>
   thinkingStartTimeRef: React.MutableRefObject<number | null>
   setIsThinking: (val: boolean) => void
   setIsWaitingForResponse: (val: boolean) => void

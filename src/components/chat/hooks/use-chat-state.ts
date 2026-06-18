@@ -66,7 +66,7 @@ interface UseChatStateReturn {
     action: () => void,
   ) => void
   handleModelSelect: (modelName: AIModel) => void
-  cancelGeneration: () => Promise<void>
+  cancelGeneration: (chatId?: string) => Promise<void>
   updateChatTitle: (chatId: string, newTitle: string) => void
   reloadChats: () => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
@@ -150,18 +150,9 @@ export function useChatState({
   } = useChatStorage({
     storeHistory,
     scrollToBottom,
-    beforeSwitchChat: async () => {
-      // Cancel generation will be defined after useChatMessaging hook
-      if (cancelGenerationRef.current) {
-        await cancelGenerationRef.current()
-      }
-    },
     initialChatId,
     isLocalChatUrl,
   })
-
-  // Create ref to store cancelGeneration function
-  const cancelGenerationRef = useRef<(() => Promise<void>) | null>(null)
 
   // Model Management
   const {
@@ -224,9 +215,6 @@ export function useChatState({
     piiCheckEnabled,
     codeExecutionEncryptionKey,
   })
-
-  // Update ref with cancelGeneration function
-  cancelGenerationRef.current = cancelGeneration
 
   // Add effect to handle dismissing the model/reasoning selectors
   useEffect(() => {

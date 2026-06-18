@@ -19,7 +19,6 @@ import { ChatPersistenceManager } from './chat-persistence-manager'
 interface UseChatStorageProps {
   storeHistory: boolean
   scrollToBottom?: () => void
-  beforeSwitchChat?: () => Promise<void>
   initialChatId?: string | null
   isLocalChatUrl?: boolean
 }
@@ -44,7 +43,6 @@ interface UseChatStorageReturn {
 
 export function useChatStorage({
   storeHistory,
-  beforeSwitchChat,
   initialChatId,
   isLocalChatUrl = false,
 }: UseChatStorageProps): UseChatStorageReturn {
@@ -311,32 +309,25 @@ export function useChatStorage({
     }
   }, [])
 
-  // Switch to a different chat
-  const switchChat = useCallback(
-    async (chat: Chat) => {
-      // Cancel any ongoing stream before switching
-      if (beforeSwitchChat) {
-        await beforeSwitchChat()
-      }
+  // Switch to a different chat. Streams keep running in the background, so
+  // switching never cancels an in-flight generation.
+  const switchChat = useCallback(async (chat: Chat) => {
+    // Clear any pending timer from a previous switch
+    if (switchChatTimerRef.current) {
+      clearTimeout(switchChatTimerRef.current)
+    }
 
-      // Clear any pending timer from a previous switch
-      if (switchChatTimerRef.current) {
-        clearTimeout(switchChatTimerRef.current)
-      }
+    isSwitchingChatRef.current = true
+    setCurrentChat(chat)
+    setIsInitialLoad(true)
 
-      isSwitchingChatRef.current = true
-      setCurrentChat(chat)
-      setIsInitialLoad(true)
-
-      // Brief delay to show loading state
-      switchChatTimerRef.current = setTimeout(() => {
-        setIsInitialLoad(false)
-        isSwitchingChatRef.current = false
-        switchChatTimerRef.current = null
-      }, CONSTANTS.CHAT_INIT_DELAY_MS)
-    },
-    [beforeSwitchChat],
-  )
+    // Brief delay to show loading state
+    switchChatTimerRef.current = setTimeout(() => {
+      setIsInitialLoad(false)
+      isSwitchingChatRef.current = false
+      switchChatTimerRef.current = null
+    }, CONSTANTS.CHAT_INIT_DELAY_MS)
+  }, [])
 
   // Handle chat selection
   const handleChatSelect = useCallback(
