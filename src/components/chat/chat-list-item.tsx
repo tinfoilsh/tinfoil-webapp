@@ -65,8 +65,8 @@ interface ChatListItemProps {
   showSyncStatus?: boolean
   /**
    * True while this chat's assistant response is actively streaming.
-   * The cloud upload is deferred until the stream finishes, so the
-   * "Syncing with cloud" badge stays hidden until then.
+   * Drives the live "streaming" indicator and suppresses the "Syncing
+   * with cloud" badge (the upload is deferred until the stream finishes).
    */
   isStreaming?: boolean
   /**
@@ -346,12 +346,25 @@ export function ChatListItem({
                   displayTitle
                 )}
               </div>
-              {isNewChat && (
-                <div
-                  className="h-1.5 w-1.5 rounded-full bg-blue-500"
-                  title="New chat"
-                  aria-hidden="true"
-                />
+              {isStreaming ? (
+                <span
+                  className="flex flex-shrink-0 items-center"
+                  title="Generating response"
+                >
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                  </span>
+                  <span className="sr-only">Generating response</span>
+                </span>
+              ) : (
+                isNewChat && (
+                  <div
+                    className="h-1.5 w-1.5 rounded-full bg-blue-500"
+                    title="New chat"
+                    aria-hidden="true"
+                  />
+                )
               )}
             </div>
             {(chat.decryptionFailed ||

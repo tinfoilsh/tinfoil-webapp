@@ -124,12 +124,6 @@ type ChatSidebarProps = {
     current: number
     total: number
   } | null
-  /**
-   * True while the active chat's assistant response is streaming. Used
-   * to defer the sidebar "Syncing with cloud" badge until the stream
-   * finishes and the real upload runs.
-   */
-  isStreaming?: boolean
 }
 
 const MOBILE_BREAKPOINT = 1024 // Same as in chat-interface.tsx
@@ -186,7 +180,6 @@ export function ChatSidebar({
   onSettingsClick,
   windowWidth,
   chatDecryptionProgress,
-  isStreaming,
 }: ChatSidebarProps) {
   const syncNeedsAttention = useSyncHealthAttention()
   const [isInitialLoad, setIsInitialLoad] = useState(true)
@@ -1852,9 +1845,6 @@ export function ChatSidebar({
                       isDarkMode={isDarkMode}
                       showEncryptionStatus={true}
                       showSyncStatus={true}
-                      streamingChatId={
-                        isStreaming ? currentChat?.id : undefined
-                      }
                       enableTitleAnimation={true}
                       isDraggable={
                         isSignedIn &&
