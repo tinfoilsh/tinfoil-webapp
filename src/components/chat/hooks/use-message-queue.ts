@@ -1,5 +1,5 @@
 import { MESSAGE_QUEUE_PREFIX } from '@/constants/storage-keys'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Attachment, LoadingState, Message, QueuedMessage } from '../types'
 
 type HandleQuery = (
@@ -69,18 +69,17 @@ function writeToStorage(key: string | null, queue: QueuedMessage[]): void {
   }
 }
 
-function removeFromStorage(key: string | null): void {
-  if (!key || !isBrowser) return
-  try {
-    window.sessionStorage.removeItem(key)
-  } catch {
-    /* noop */
-  }
-}
-
 /**
  * Holds user messages submitted while the assistant is busy and dispatches
- * them one-at-a-time through a single async pump.
+ * them one-at-a-time per chat.
+ *
+ * Concurrency model:
+ *
+ *   Each chat owns its own queue and its own single-flight pump, so a
+ *   conversation that is streaming never blocks a different conversation
+ *   from sending. `handleQuery` always targets the chat on screen, so a
+ *   pump only dispatches while its chat is the active one; a backgrounded
+ *   chat keeps its queued messages and resumes draining when reopened.
  *
  * Why a pump instead of an effect-per-tick:
  *
@@ -107,43 +106,35 @@ export function useMessageQueue({
   onBeforeDispatch,
   onRateLimited,
 }: UseMessageQueueArgs): UseMessageQueueReturn {
-  const initialKey = useMemo(() => storageKeyFor(chatId), [chatId])
+  // Per-chat queues so several conversations can hold pending messages at
+  // once. Hydrated lazily from sessionStorage on first access.
+  const queuesRef = useRef<Map<string, QueuedMessage[]>>(new Map())
 
-  const [queue, setQueue] = useState<QueuedMessage[]>(() =>
-    loadFromStorage(initialKey),
-  )
-  const queueRef = useRef<QueuedMessage[]>(queue)
-  const currentKeyRef = useRef<string | null>(initialKey)
-
-  const writeQueue = useCallback(
-    (updater: (prev: QueuedMessage[]) => QueuedMessage[]) => {
-      const next = updater(queueRef.current)
-      queueRef.current = next
-      setQueue(next)
-      writeToStorage(currentKeyRef.current, next)
+  const getQueue = useCallback(
+    (id: string | null | undefined): QueuedMessage[] => {
+      if (!id) return []
+      let q = queuesRef.current.get(id)
+      if (!q) {
+        q = loadFromStorage(storageKeyFor(id))
+        queuesRef.current.set(id, q)
+      }
+      return q
     },
     [],
   )
 
-  // Handle chat-id changes: migrate pending items to the new key, or load
-  // the new chat's stored queue if we have nothing pending.
-  useEffect(() => {
-    const nextKey = storageKeyFor(chatId)
-    if (nextKey === currentKeyRef.current) return
+  // Mirror of the active chat id for reads inside stable callbacks.
+  const currentChatIdRef = useRef<string | null | undefined>(chatId)
+  currentChatIdRef.current = chatId
 
-    const previousKey = currentKeyRef.current
-    currentKeyRef.current = nextKey
+  // Rendered queue tracks the chat on screen.
+  const [queue, setQueue] = useState<QueuedMessage[]>(() => getQueue(chatId))
 
-    if (queueRef.current.length > 0) {
-      removeFromStorage(previousKey)
-      writeToStorage(nextKey, queueRef.current)
-      return
-    }
-
-    const loaded = loadFromStorage(nextKey)
-    queueRef.current = loaded
-    setQueue(loaded)
-  }, [chatId])
+  const setQueueFor = useCallback((id: string, next: QueuedMessage[]) => {
+    queuesRef.current.set(id, next)
+    writeToStorage(storageKeyFor(id), next)
+    if (id === currentChatIdRef.current) setQueue(next)
+  }, [])
 
   const handleQueryRef = useRef(handleQuery)
   const isRateLimitedRef = useRef(isRateLimited)
@@ -156,10 +147,10 @@ export function useMessageQueue({
     onRateLimitedRef.current = onRateLimited
   })
 
-  // Live mirror of `loadingState`, used by the pump to gate the next
-  // dispatch on the chat actually being idle.
+  // Live mirror of the active chat's `loadingState`, used by the pump to
+  // gate the next dispatch on that chat actually being idle.
   const loadingStateRef = useRef<LoadingState>(loadingState)
-  // Pending resolvers for `waitForIdle`. Resolved whenever the chat
+  // Pending resolvers for `waitForIdle`. Resolved whenever the active chat
   // transitions to `'idle'`.
   const idleWaitersRef = useRef<Array<() => void>>([])
   useEffect(() => {
@@ -186,66 +177,74 @@ export function useMessageQueue({
     }
   })
 
-  // Single-flight pump. While running, it owns the dispatch lifecycle and
-  // drains the queue one message at a time. Awaiting `handleQuery`'s
-  // promise is the only serialization signal we trust — it resolves
-  // exactly once, when the stream we kicked off completes (success,
-  // error, or abort).
-  const pumpRunningRef = useRef(false)
+  // One single-flight pump per chat. Dispatch always targets the chat on
+  // screen (handleQuery is bound to it), so the pump only proceeds while
+  // its chat is active and stops otherwise, leaving the queue to resume
+  // when the chat is reopened.
+  const pumpRunningRef = useRef<Set<string>>(new Set())
 
-  const runPump = useCallback(async (): Promise<void> => {
-    if (pumpRunningRef.current) return
-    pumpRunningRef.current = true
-    try {
-      while (queueRef.current.length > 0) {
-        await waitForIdle()
+  const runPump = useCallback(
+    async (id: string): Promise<void> => {
+      if (!id) return
+      if (pumpRunningRef.current.has(id)) return
+      pumpRunningRef.current.add(id)
+      try {
+        while (getQueue(id).length > 0) {
+          // Only the chat on screen can dispatch; pause otherwise.
+          if (id !== currentChatIdRef.current) return
+          await waitForIdle()
+          if (id !== currentChatIdRef.current) return
 
-        if (isRateLimitedRef.current()) {
-          if (!rateLimitPromptShownRef.current) {
-            rateLimitPromptShownRef.current = true
-            onRateLimitedRef.current?.()
+          if (isRateLimitedRef.current()) {
+            if (!rateLimitPromptShownRef.current) {
+              rateLimitPromptShownRef.current = true
+              onRateLimitedRef.current?.()
+            }
+            return
           }
-          return
+          rateLimitPromptShownRef.current = false
+
+          const [next, ...rest] = getQueue(id)
+          if (!next) break
+          setQueueFor(id, rest)
+          onBeforeDispatchRef.current?.()
+
+          try {
+            const result = handleQueryRef.current(
+              next.text,
+              next.attachments,
+              undefined,
+              undefined,
+              next.quote,
+            )
+            if (
+              result &&
+              typeof (result as Promise<unknown>).then === 'function'
+            ) {
+              await (result as Promise<unknown>)
+            }
+          } catch {
+            /* errors are surfaced by the chat itself; keep draining */
+          }
         }
-        rateLimitPromptShownRef.current = false
-
-        const [next, ...rest] = queueRef.current
-        if (!next) break
-        writeQueue(() => rest)
-        onBeforeDispatchRef.current?.()
-
-        try {
-          const result = handleQueryRef.current(
-            next.text,
-            next.attachments,
-            undefined,
-            undefined,
-            next.quote,
-          )
-          if (
-            result &&
-            typeof (result as Promise<unknown>).then === 'function'
-          ) {
-            await (result as Promise<unknown>)
-          }
-        } catch {
-          /* errors are surfaced by the chat itself; keep draining */
+      } finally {
+        pumpRunningRef.current.delete(id)
+        // If something was enqueued while the pump was tearing down and the
+        // chat is still active, restart it on the next tick.
+        if (id === currentChatIdRef.current && getQueue(id).length > 0) {
+          queueMicrotask(() => {
+            void runPump(id)
+          })
         }
       }
-    } finally {
-      pumpRunningRef.current = false
-      // If something was enqueued while the pump was tearing down,
-      // restart it on the next tick.
-      if (queueRef.current.length > 0) {
-        queueMicrotask(() => {
-          void runPump()
-        })
-      }
-    }
-  }, [waitForIdle, writeQueue])
+    },
+    [getQueue, setQueueFor, waitForIdle],
+  )
 
   const submit = useCallback(
     (input: QueueSubmitInput): void => {
+      const id = currentChatIdRef.current
+      if (!id) return
       const item: QueuedMessage = {
         id: generateQueuedId(),
         text: input.text,
@@ -255,26 +254,32 @@ export function useMessageQueue({
             : undefined,
         quote: input.quote ?? undefined,
       }
-      writeQueue((prev) => [...prev, item])
-      void runPump()
+      setQueueFor(id, [...getQueue(id), item])
+      void runPump(id)
     },
-    [writeQueue, runPump],
+    [getQueue, setQueueFor, runPump],
   )
 
-  // Restart the pump if there's something queued (e.g. left over in
-  // sessionStorage from a previous session) and we're idle on mount or
-  // after a chat switch.
+  // Sync the rendered queue to the active chat and resume draining it (e.g.
+  // messages left in sessionStorage, or queued while the chat was in the
+  // background). Runs on mount and on every chat switch.
   useEffect(() => {
-    if (queue.length > 0 && !pumpRunningRef.current) {
-      void runPump()
+    setQueue(getQueue(chatId))
+    if (chatId && getQueue(chatId).length > 0) {
+      void runPump(chatId)
     }
-  }, [queue, runPump])
+  }, [chatId, getQueue, runPump])
 
   const removeQueuedMessage = useCallback(
-    (id: string): void => {
-      writeQueue((prev) => prev.filter((item) => item.id !== id))
+    (queuedId: string): void => {
+      const id = currentChatIdRef.current
+      if (!id) return
+      setQueueFor(
+        id,
+        getQueue(id).filter((item) => item.id !== queuedId),
+      )
     },
-    [writeQueue],
+    [getQueue, setQueueFor],
   )
 
   return { queuedMessages: queue, submit, removeQueuedMessage }
