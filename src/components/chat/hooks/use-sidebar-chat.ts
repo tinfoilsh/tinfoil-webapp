@@ -98,9 +98,8 @@ export function useSidebarChat({
 
   // Refs kept in sync with state so the streaming processor (which captures
   // them once) can read the latest values.
-  const isStreamingRef = useRef(false)
   const thinkingStartTimeRef = useRef<number | null>(null)
-  const currentChatIdRef = useRef<string>(EPHEMERAL_CHAT_ID)
+  const streamChatIdRef = useRef<string>(EPHEMERAL_CHAT_ID)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const cancel = useCallback(() => {
@@ -108,7 +107,6 @@ export function useSidebarChat({
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
-    isStreamingRef.current = false
     thinkingStartTimeRef.current = null
     setLoadingState('idle')
     setRetryInfo(null)
@@ -217,14 +215,12 @@ export function useSidebarChat({
             piiCheckEnabled,
           })
 
-          isStreamingRef.current = true
           const assistantMessage = await processStreamingResponse(response, {
             updatedChat: ephemeralChat as never,
             updatedMessages: apiMessages,
             isFirstMessage: true,
             modelsLength: models.length,
-            currentChatIdRef,
-            isStreamingRef,
+            streamChatIdRef,
             thinkingStartTimeRef,
             setIsThinking,
             setIsWaitingForResponse,
@@ -273,7 +269,6 @@ export function useSidebarChat({
             setRetryInfo(null)
             setIsWaitingForResponse(false)
             setIsStreaming(false)
-            isStreamingRef.current = false
             thinkingStartTimeRef.current = null
             abortControllerRef.current = null
           }

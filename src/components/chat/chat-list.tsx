@@ -1,5 +1,6 @@
 'use client'
 
+import { useStreamingChats } from '@/hooks/use-streaming-chats'
 import { useSyncFailedChats } from '@/hooks/use-sync-health'
 import { Fragment, useEffect, useState } from 'react'
 import { cn } from '../ui/utils'
@@ -29,12 +30,6 @@ interface ChatListProps {
   isLoading?: boolean
   showEncryptionStatus?: boolean
   showSyncStatus?: boolean
-  /**
-   * ID of the chat whose assistant response is currently streaming, if
-   * any. Used to suppress the "Syncing with cloud" badge until the
-   * stream finishes and the real upload happens.
-   */
-  streamingChatId?: string
   enableTitleAnimation?: boolean
   animatedDeleteConfirmation?: boolean
   isDraggable?: boolean
@@ -70,7 +65,6 @@ export function ChatList({
   isLoading = false,
   showEncryptionStatus = false,
   showSyncStatus = false,
-  streamingChatId,
   enableTitleAnimation = false,
   animatedDeleteConfirmation = true,
   isDraggable = false,
@@ -95,6 +89,9 @@ export function ChatList({
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
   const syncFailedChats = useSyncFailedChats()
+  // App-wide source of truth for which chats are streaming, so the
+  // indicator covers background streams in any chat, not just the active one.
+  const streamingChats = useStreamingChats()
   // Track chat IDs that were manually edited - skip animation for these
   const [manuallyEditedChatId, setManuallyEditedChatId] = useState<
     string | null
@@ -212,7 +209,7 @@ export function ChatList({
                 isDarkMode={isDarkMode}
                 showEncryptionStatus={showEncryptionStatus}
                 showSyncStatus={showSyncStatus}
-                isStreaming={!chat.isBlankChat && chat.id === streamingChatId}
+                isStreaming={!chat.isBlankChat && streamingChats.has(chat.id)}
                 syncFailed={Boolean(syncFailedChats[chat.id])}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id

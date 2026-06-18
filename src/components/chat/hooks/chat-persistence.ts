@@ -1,3 +1,4 @@
+import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { logError, logInfo } from '@/utils/error-handling'
@@ -16,14 +17,15 @@ import type { Chat, Message } from '../types'
 
 interface CreateUpdateChatWithHistoryCheckParams {
   storeHistory: boolean
-  isStreamingRef: React.MutableRefObject<boolean>
-  currentChatIdRef: React.MutableRefObject<string>
+  // Mirrors the id of the chat currently on screen. Used to decide whether
+  // a streamed update should also be reflected into `currentChat`. With
+  // concurrent streams this is independent of which chat is streaming.
+  viewedChatIdRef: React.MutableRefObject<string>
 }
 
 export function createUpdateChatWithHistoryCheck({
   storeHistory,
-  isStreamingRef,
-  currentChatIdRef,
+  viewedChatIdRef,
 }: CreateUpdateChatWithHistoryCheckParams) {
   return function updateChatWithHistoryCheck(
     setChats: React.Dispatch<React.SetStateAction<Chat[]>>,
@@ -34,7 +36,7 @@ export function createUpdateChatWithHistoryCheck({
     skipCloudSync = false,
     skipIndexedDBSave = false,
   ) {
-    const isCurrentChat = currentChatIdRef.current === chatId
+    const isCurrentChat = viewedChatIdRef.current === chatId
 
     // Only update messages and set isBlankChat based on message count
     // Keep all other properties from chatSnapshot (including title, isLocalOnly, etc.)
@@ -73,7 +75,9 @@ export function createUpdateChatWithHistoryCheck({
 
     if (storeHistory) {
       const shouldSkipCloudSync =
-        skipCloudSync || updatedChat.isLocalOnly || isStreamingRef.current
+        skipCloudSync ||
+        updatedChat.isLocalOnly ||
+        streamingTracker.isStreaming(chatId)
 
       // Skip IndexedDB save if explicitly requested (during streaming chunks)
       if (skipIndexedDBSave) {
@@ -87,7 +91,7 @@ export function createUpdateChatWithHistoryCheck({
           chatId,
           isLocalOnly: updatedChat.isLocalOnly,
           shouldSkipCloudSync,
-          isStreaming: isStreamingRef.current,
+          isStreaming: streamingTracker.isStreaming(chatId),
           messageCount: newMessages.length,
           title: updatedChat.title,
         },
@@ -106,18 +110,15 @@ export function createUpdateChatWithHistoryCheck({
             },
           })
           if (savedChat.id !== updatedChat.id) {
-            // ID changed (server assigned new ID)
-            if (isCurrentChat && currentChatIdRef.current === updatedChat.id) {
-              // If we're streaming, transfer the streaming state to the new ID
-              if (isStreamingRef.current) {
-                import('@/services/cloud/streaming-tracker').then(
-                  ({ streamingTracker }) => {
-                    streamingTracker.endStreaming(updatedChat.id)
-                    streamingTracker.startStreaming(savedChat.id)
-                  },
-                )
-              }
-              currentChatIdRef.current = savedChat.id
+            // ID changed (server assigned new ID).
+            // Carry the streaming marker across so cloud-sync gating and
+            // the sidebar indicator keep tracking the same conversation.
+            if (streamingTracker.isStreaming(updatedChat.id)) {
+              streamingTracker.endStreaming(updatedChat.id)
+              streamingTracker.startStreaming(savedChat.id)
+            }
+            if (isCurrentChat && viewedChatIdRef.current === updatedChat.id) {
+              viewedChatIdRef.current = savedChat.id
               setCurrentChat(savedChat)
             }
             setChats((prevChats) =>

@@ -48,6 +48,41 @@
   }
 }
 
+/* Three-dot streaming indicator shown next to a chat title in the sidebar.
+   Inherits the chat title color via currentColor. */
+.stream-loader {
+  width: 4px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  animation: stream-loader 1s infinite linear alternate;
+}
+@keyframes stream-loader {
+  0% {
+    box-shadow:
+      7px 0 currentColor,
+      -7px 0 color-mix(in srgb, currentColor 20%, transparent);
+    background: currentColor;
+  }
+  33% {
+    box-shadow:
+      7px 0 currentColor,
+      -7px 0 color-mix(in srgb, currentColor 20%, transparent);
+    background: color-mix(in srgb, currentColor 20%, transparent);
+  }
+  66% {
+    box-shadow:
+      7px 0 color-mix(in srgb, currentColor 20%, transparent),
+      -7px 0 currentColor;
+    background: color-mix(in srgb, currentColor 20%, transparent);
+  }
+  100% {
+    box-shadow:
+      7px 0 color-mix(in srgb, currentColor 20%, transparent),
+      -7px 0 currentColor;
+    background: currentColor;
+  }
+}
+
 /* Prevent vertical scrollbars in message content */
 .katex-display {
   overflow-x: auto !important;

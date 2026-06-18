@@ -9,12 +9,18 @@
  *   - streaming: hooks/streaming-processor.ts (SSE parsing and thinking mode)
  *
  * State invariants:
- * - currentChatIdRef always mirrors the canonical chat id (temporary → server id swaps)
- * - isStreamingRef is true only while processing an assistant response (used to defer cloud sync)
- * - thinkingStartTimeRef is set only while a model is in thinking/reasoning mode
+ * - Each `handleQuery` call owns a `streamChatIdRef` tracking the chat it
+ *   writes to (handles temporary → server id swaps) independently of other
+ *   concurrent streams
+ * - `viewedChatIdRef` always mirrors the chat on screen (never frozen during
+ *   streaming) so background streams update their list entry without
+ *   hijacking the active view
+ * - Per-chat stream status lives in `useChatStreams`; the values exposed by
+ *   this hook are derived for the currently-viewed chat
  */
 import { useProject } from '@/components/project'
 import { type BaseModel } from '@/config/models'
+import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { getCodeExecutionContainerAuthTokenForChat } from '@/services/exec-snapshot/use-exec-snapshot'
 import { sendChatStream } from '@/services/inference/inference-client'
@@ -36,6 +42,11 @@ import type { Chat, LoadingState, Message } from '../types'
 import { createBlankChat, sortChats } from './chat-operations'
 import { createUpdateChatWithHistoryCheck } from './chat-persistence'
 import { processStreamingResponse } from './streaming'
+import {
+  IDLE_STREAM_STATUS,
+  useChatStreams,
+  type RetryInfo,
+} from './use-chat-streams'
 import type { ReasoningEffort } from './use-reasoning-effort'
 
 interface UseChatMessagingProps {
@@ -77,7 +88,7 @@ interface UseChatMessagingReturn {
     baseMessages?: Message[],
     quote?: string,
   ) => void
-  cancelGeneration: () => Promise<void>
+  cancelGeneration: (chatId?: string) => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
   regenerateMessage: (messageIndex: number) => void
   retryLastMessage: () => void
@@ -111,124 +122,149 @@ export function useChatMessaging({
   const { isProjectMode, activeProject } = useProject()
 
   const [input, setInput] = useState('')
-  const [loadingState, setLoadingState] = useState<LoadingState>('idle')
-  const [retryInfo, setRetryInfo] = useState<{
-    attempt: number
-    maxRetries: number
-    error?: string
-  } | null>(null)
-  const [abortController, setAbortController] =
-    useState<AbortController | null>(null)
-  const [isThinking, setIsThinking] = useState(false)
-  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false)
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [streamError, setStreamError] = useState<string | null>(null)
 
-  const dismissStreamError = useCallback(() => {
-    setStreamError(null)
-  }, [])
+  // Per-chat stream status so several conversations can stream at once.
+  const {
+    statusByChat,
+    patchStatus,
+    resetStatus,
+    moveStatus,
+    registerController,
+    clearController,
+    abort,
+  } = useChatStreams()
+
+  // Live mirror for reads inside stable callbacks, so streamed status
+  // updates don't force handleQuery to be re-created on every chunk.
+  const statusByChatRef = useRef(statusByChat)
+  statusByChatRef.current = statusByChat
+
+  // Status for the chat on screen drives the input area, stop button,
+  // thinking indicator, and error banner.
+  const currentStatus =
+    statusByChat[currentChat?.id ?? ''] ?? IDLE_STREAM_STATUS
+  const {
+    loadingState,
+    retryInfo,
+    isThinking,
+    isWaitingForResponse,
+    isStreaming,
+    streamError,
+  } = currentStatus
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  const currentChatIdRef = useRef<string>(currentChat?.id || '')
-  const isStreamingRef = useRef(false)
-  const thinkingStartTimeRef = useRef<number | null>(null)
-  const earlyTitlePromiseRef = useRef<Promise<string> | null>(null)
 
-  // Helper to calculate thinking duration and reset timer
-  const getThinkingDuration = () => {
-    const duration = thinkingStartTimeRef.current
-      ? (Date.now() - thinkingStartTimeRef.current) / 1000
-      : undefined
-    thinkingStartTimeRef.current = null
-    return duration
-  }
+  // Mirrors the id of the chat on screen. Always current (never frozen
+  // during streaming) so background streams write to their own list entry
+  // without taking over the active view.
+  const viewedChatIdRef = useRef<string>(currentChat?.id || '')
+  viewedChatIdRef.current = currentChat?.id || ''
 
-  // A modified version of updateChat that respects the storeHistory flag
-  // During streaming, we persist to IndexedDB but defer cloud backup unless immediate=true
-  // When the backend assigns a new id, we atomically rewrite ids in both currentChat and chats
+  const dismissStreamError = useCallback(() => {
+    patchStatus(viewedChatIdRef.current, { streamError: null })
+  }, [patchStatus])
+
+  // A modified version of updateChat that respects the storeHistory flag.
+  // During streaming we persist to IndexedDB but defer cloud backup; the
+  // streamed update is mirrored into currentChat only when the streamed
+  // chat is the one being viewed.
   const updateChatWithHistoryCheck = useMemo(
     () =>
       createUpdateChatWithHistoryCheck({
         storeHistory,
-        isStreamingRef,
-        currentChatIdRef,
+        viewedChatIdRef,
       }),
     [storeHistory],
   )
 
-  // Cancel generation function
-  const cancelGeneration = useCallback(async () => {
-    if (abortController) {
-      abortController.abort()
-      setAbortController(null)
-    }
-    setLoadingState('idle')
-    setRetryInfo(null)
-    setIsThinking(false)
-    setIsWaitingForResponse(false)
-    thinkingStartTimeRef.current = null
+  // Cancel the stream for a specific chat (defaults to the chat on screen).
+  // Passing an explicit id lets callers stop a background stream without
+  // first switching to it.
+  const cancelGeneration = useCallback(
+    async (chatId?: string) => {
+      const targetId = chatId ?? viewedChatIdRef.current
 
-    // If we're in thinking mode, remove the last message if it's a thinking message
-    if (isStreamingRef.current) {
-      setChats((prevChats) => {
-        const newChats = prevChats.map((chat) => {
-          if (chat.id === currentChatIdRef.current) {
-            // Remove the last message if it's a thinking message
-            const messages = chat.messages.filter(
-              (msg, idx) =>
-                !(idx === chat.messages.length - 1 && msg.isThinking),
-            )
-            return { ...chat, messages, pendingSave: false }
-          }
-          return chat
-        })
-        // Find and save the updated chat
-        const updatedChat = newChats.find(
-          (c) => c.id === currentChatIdRef.current,
-        )
-        if (updatedChat && !updatedChat.isTemporary) {
-          if (storeHistory) {
-            chatStorage
-              .saveChatAndSync(updatedChat)
-              .then((savedChat) => {
-                // Only update if the ID actually changed
-                if (savedChat.id !== updatedChat.id) {
-                  currentChatIdRef.current = savedChat.id
-                  setCurrentChat(savedChat)
-                  setChats((prevChats) =>
-                    prevChats.map((c) =>
-                      c.id === updatedChat.id ? savedChat : c,
-                    ),
-                  )
+      abort(targetId)
+      patchStatus(targetId, {
+        loadingState: 'idle',
+        retryInfo: null,
+        isThinking: false,
+        isWaitingForResponse: false,
+        isStreaming: false,
+      })
+
+      // If a stream was mid-flight, drop a dangling "thinking" placeholder
+      // and persist the truncated transcript for the affected chat.
+      if (streamingTracker.isStreaming(targetId)) {
+        const stripThinking = (messages: Message[]): Message[] =>
+          messages.filter(
+            (msg, idx) => !(idx === messages.length - 1 && msg.isThinking),
+          )
+
+        setChats((prevChats) => {
+          const newChats = prevChats.map((chat) =>
+            chat.id === targetId
+              ? {
+                  ...chat,
+                  messages: stripThinking(chat.messages),
+                  pendingSave: false,
                 }
-              })
-              .catch((error) => {
-                logError('Failed to save chat after cancellation', error, {
-                  component: 'useChatMessaging',
+              : chat,
+          )
+          const updatedChat = newChats.find((c) => c.id === targetId)
+          if (updatedChat && !updatedChat.isTemporary) {
+            if (storeHistory) {
+              chatStorage
+                .saveChatAndSync(updatedChat)
+                .then((savedChat) => {
+                  // Only update if the ID actually changed
+                  if (savedChat.id !== updatedChat.id) {
+                    moveStatus(updatedChat.id, savedChat.id)
+                    if (viewedChatIdRef.current === updatedChat.id) {
+                      viewedChatIdRef.current = savedChat.id
+                      setCurrentChat(savedChat)
+                    }
+                    setChats((prev) =>
+                      prev.map((c) =>
+                        c.id === updatedChat.id ? savedChat : c,
+                      ),
+                    )
+                  }
                 })
-              })
-          } else {
-            // Save to session storage for non-signed-in users
-            sessionChatStorage.saveChat(updatedChat)
+                .catch((error) => {
+                  logError('Failed to save chat after cancellation', error, {
+                    component: 'useChatMessaging',
+                  })
+                })
+            } else {
+              // Save to session storage for non-signed-in users
+              sessionChatStorage.saveChat(updatedChat)
+            }
           }
-        }
-        return newChats
-      })
+          return newChats
+        })
 
-      // Also update current chat
-      setCurrentChat((prev) => {
-        const messages = prev.messages.filter(
-          (msg, idx) => !(idx === prev.messages.length - 1 && msg.isThinking),
+        // Mirror the truncation into the active view if it's the same chat
+        setCurrentChat((prev) =>
+          prev.id === targetId
+            ? {
+                ...prev,
+                messages: stripThinking(prev.messages),
+                pendingSave: false,
+              }
+            : prev,
         )
-        return { ...prev, messages, pendingSave: false }
-      })
-    }
 
-    // Wait for any pending state updates
-    await new Promise((resolve) =>
-      setTimeout(resolve, CONSTANTS.ASYNC_STATE_DELAY_MS),
-    )
-  }, [abortController, storeHistory, setChats, setCurrentChat])
+        streamingTracker.endStreaming(targetId)
+      }
+
+      // Wait for any pending state updates
+      await new Promise((resolve) =>
+        setTimeout(resolve, CONSTANTS.ASYNC_STATE_DELAY_MS),
+      )
+    },
+    [abort, patchStatus, moveStatus, storeHistory, setChats, setCurrentChat],
+  )
 
   // Handle chat query
   // Lifecycle overview:
@@ -246,13 +282,18 @@ export function useChatMessaging({
       baseMessages?: Message[],
       quote?: string,
     ) => {
+      // Gate on the target chat's own status so a busy background stream
+      // never blocks sending in a different chat.
+      const targetChatStatus =
+        statusByChatRef.current[currentChat?.id ?? ''] ?? IDLE_STREAM_STATUS
+
       // Allow empty query if systemPromptOverride, attachments, or a quote are provided
       if (
         (!query.trim() &&
           !systemPromptOverride &&
           !attachments?.length &&
           !quote) ||
-        loadingState !== 'idle'
+        targetChatStatus.loadingState !== 'idle'
       )
         return
 
@@ -273,12 +314,35 @@ export function useChatMessaging({
         inputRef.current.style.height = CONSTANTS.INPUT_MIN_HEIGHT
       }
 
+      // This stream owns its own id tracker, thinking timer, and title
+      // promise so it never collides with other in-flight streams. Scoped
+      // setters always target the (possibly swapped) id of this stream.
+      const streamChatIdRef = { current: currentChat.id }
+      const thinkingStartTimeRef: { current: number | null } = {
+        current: null,
+      }
+      let earlyTitlePromise: Promise<string> | null = null
+
+      const setLoadingStateFor = (s: LoadingState) =>
+        patchStatus(streamChatIdRef.current, { loadingState: s })
+      const setRetryInfoFor = (r: RetryInfo | null) =>
+        patchStatus(streamChatIdRef.current, { retryInfo: r })
+      const setIsThinkingFor = (v: boolean) =>
+        patchStatus(streamChatIdRef.current, { isThinking: v })
+      const setIsWaitingForResponseFor = (v: boolean) =>
+        patchStatus(streamChatIdRef.current, { isWaitingForResponse: v })
+      const setIsStreamingFor = (v: boolean) =>
+        patchStatus(streamChatIdRef.current, { isStreaming: v })
+      const setStreamErrorFor = (e: string | null) =>
+        patchStatus(streamChatIdRef.current, { streamError: e })
+
       const controller = new AbortController()
-      setAbortController(controller)
-      setLoadingState('loading')
-      setIsWaitingForResponse(true)
-      setIsStreaming(true)
-      setStreamError(null)
+      registerController(streamChatIdRef.current, controller)
+      resetStatus(streamChatIdRef.current, {
+        loadingState: 'loading',
+        isWaitingForResponse: true,
+        isStreaming: true,
+      })
 
       // Only create a user message if there's actual query content
       // When using system prompt override with empty query, skip user message
@@ -306,7 +370,7 @@ export function useChatMessaging({
 
       // Reset title generation for new chats
       if (isFirstMessage) {
-        earlyTitlePromiseRef.current = null
+        earlyTitlePromise = null
       }
 
       // Handle blank chat conversion: create chat immediately with server-valid ID
@@ -321,7 +385,8 @@ export function useChatMessaging({
           createdAt: new Date(),
         }
 
-        currentChatIdRef.current = updatedChat.id
+        moveStatus(streamChatIdRef.current, updatedChat.id)
+        streamChatIdRef.current = updatedChat.id
         setCurrentChat(updatedChat)
         setChats((prevChats) =>
           prevChats.map((c) => (c.id === updatedChat.id ? updatedChat : c)),
@@ -360,7 +425,8 @@ export function useChatMessaging({
         }
 
         // Update state immediately for instant UI feedback
-        currentChatIdRef.current = chatId
+        moveStatus(streamChatIdRef.current, chatId)
+        streamChatIdRef.current = chatId
         setCurrentChat(updatedChat)
 
         // Replace the blank chat with the new real chat
@@ -431,7 +497,8 @@ export function useChatMessaging({
           pendingSave: true,
         }
 
-        currentChatIdRef.current = updatedChat.id
+        moveStatus(streamChatIdRef.current, updatedChat.id)
+        streamChatIdRef.current = updatedChat.id
         setCurrentChat(updatedChat)
 
         // Replace blank chat with the new chat
@@ -500,7 +567,7 @@ export function useChatMessaging({
       }
 
       // Capture the starting chat ID before any async operations that might change it
-      const startingChatId = currentChatIdRef.current
+      const startingChatId = streamChatIdRef.current
 
       // Fire title generation in parallel with streaming (based on user's message).
       // The promise is awaited after streaming completes, before the final save.
@@ -511,7 +578,7 @@ export function useChatMessaging({
         // Prevent unhandled rejection if streaming exits early and the
         // promise is never awaited (e.g. abort, navigation, empty response)
         titlePromise.catch(() => {})
-        earlyTitlePromiseRef.current = titlePromise
+        earlyTitlePromise = titlePromise
       }
 
       // Project memory is currently disabled - uncomment to re-enable
@@ -536,7 +603,7 @@ export function useChatMessaging({
           action: 'handleQuery.startStreaming',
           metadata: {
             model: selectedModel,
-            chatId: currentChatIdRef.current,
+            chatId: streamChatIdRef.current,
             startingChatId,
             isLocalOnly: updatedChat.isLocalOnly,
             messageCount: updatedMessages.length,
@@ -551,13 +618,19 @@ export function useChatMessaging({
             )) ?? undefined)
           : undefined
 
+        // Mark the chat as streaming up front (after the initial creation
+        // save above) so the sidebar indicator and cloud-sync gating cover
+        // the whole request, including the wait for the first token. The
+        // stream processor's own startStreaming call is idempotent.
+        streamingTracker.startStreaming(streamChatIdRef.current)
+
         const response = await sendChatStream({
           model,
           systemPrompt: baseSystemPrompt,
           rules,
           onRetry: (attempt, maxRetries, error) => {
-            setLoadingState('retrying')
-            setRetryInfo({ attempt, maxRetries, error })
+            setLoadingStateFor('retrying')
+            setRetryInfoFor({ attempt, maxRetries, error })
           },
           updatedMessages,
           signal: controller.signal,
@@ -577,16 +650,15 @@ export function useChatMessaging({
           updatedMessages,
           isFirstMessage,
           modelsLength: models.length,
-          currentChatIdRef,
-          isStreamingRef,
+          streamChatIdRef,
           thinkingStartTimeRef,
-          setIsThinking,
-          setIsWaitingForResponse,
-          setIsStreaming,
+          setIsThinking: setIsThinkingFor,
+          setIsWaitingForResponse: setIsWaitingForResponseFor,
+          setIsStreaming: setIsStreamingFor,
           updateChatWithHistoryCheck,
           setChats,
           setCurrentChat,
-          setLoadingState,
+          setLoadingState: setLoadingStateFor,
           storeHistory,
           startingChatId,
         })
@@ -602,23 +674,10 @@ export function useChatMessaging({
             !!assistantMessage.timeline?.length)
 
         if (assistantMessage && hasAssistantMessageToSave) {
-          const chatId = currentChatIdRef.current
-
-          // If user navigated away during streaming, don't save to the new chat
-          if (chatId !== updatedChat.id) {
-            logInfo(
-              '[handleQuery] User navigated away during streaming, skipping save',
-              {
-                component: 'useChatMessaging',
-                action: 'handleQuery.navigationDuringStream',
-                metadata: {
-                  streamingChatId: updatedChat.id,
-                  currentChatId: chatId,
-                },
-              },
-            )
-            return
-          }
+          // Use this stream's own id (already reflects any server id swap).
+          // The response is always saved to that chat, even if the user has
+          // navigated to a different conversation while it streamed.
+          const chatId = streamChatIdRef.current
 
           logInfo('[handleQuery] Streaming completed, processing response', {
             component: 'useChatMessaging',
@@ -644,10 +703,10 @@ export function useChatMessaging({
           if (
             isFirstMessage &&
             updatedChat.title === 'Untitled' &&
-            earlyTitlePromiseRef.current
+            earlyTitlePromise
           ) {
             try {
-              const generated = await earlyTitlePromiseRef.current
+              const generated = await earlyTitlePromise
               if (generated && generated !== 'Untitled') {
                 resolvedTitle = generated
                 resolvedTitleState = 'generated'
@@ -732,11 +791,10 @@ export function useChatMessaging({
         }
       } catch (error) {
         // Ensure UI loading flags are reset on pre-stream errors
-        setIsWaitingForResponse(false)
-        setIsStreaming(false)
-        setLoadingState('idle')
-        setIsThinking(false)
-        isStreamingRef.current = false
+        setIsWaitingForResponseFor(false)
+        setIsStreamingFor(false)
+        setLoadingStateFor('idle')
+        setIsThinkingFor(false)
         thinkingStartTimeRef.current = null
         if (!(error instanceof DOMException && error.name === 'AbortError')) {
           logError('Chat query failed', error, {
@@ -766,8 +824,8 @@ export function useChatMessaging({
               isHourlyRateLimitError,
             }
 
-            // Use the current chat ID from ref which has the correct (possibly server) ID
-            const currentId = currentChatIdRef.current || updatedChat.id
+            // Use this stream's id which has the correct (possibly server) ID
+            const currentId = streamChatIdRef.current || updatedChat.id
             updateChatWithHistoryCheck(
               setChats,
               { ...updatedChat, id: currentId, pendingSave: false },
@@ -778,7 +836,7 @@ export function useChatMessaging({
             )
           } else {
             // Surface as a dismissable floating banner instead of a chat message
-            setStreamError(errorMsg)
+            setStreamErrorFor(errorMsg)
           }
         }
       } finally {
@@ -789,14 +847,22 @@ export function useChatMessaging({
           refreshRateLimit()
         }
 
-        // Ensure loading state is reset regardless of where failure occurs
-        setLoadingState('idle')
-        setRetryInfo(null)
-        setAbortController(null)
+        // Settle this stream's status (preserving any streamError so the
+        // banner can surface when the user returns to the chat).
+        patchStatus(streamChatIdRef.current, {
+          loadingState: 'idle',
+          retryInfo: null,
+          isWaitingForResponse: false,
+          isStreaming: false,
+          isThinking: false,
+        })
+        clearController(streamChatIdRef.current)
+        // Covers pre-stream failures where the processor (which normally
+        // ends streaming) never ran. Idempotent if already ended.
+        streamingTracker.endStreaming(streamChatIdRef.current)
       }
     },
     [
-      loadingState,
       currentChat,
       storeHistory,
       setChats,
@@ -815,6 +881,11 @@ export function useChatMessaging({
       codeExecutionEnabled,
       piiCheckEnabled,
       codeExecutionEncryptionKey,
+      patchStatus,
+      resetStatus,
+      moveStatus,
+      registerController,
+      clearController,
     ],
   )
 
@@ -945,7 +1016,7 @@ export function useChatMessaging({
         isStreaming ||
         isWaitingForResponse ||
         isThinking ||
-        isStreamingRef.current
+        streamingTracker.isStreaming(currentChat.id)
 
       if (isGenerationActive) {
         pendingRegenerateRef.current = {
@@ -1011,20 +1082,12 @@ export function useChatMessaging({
     if (!currentChat) return
     for (let i = currentChat.messages.length - 1; i >= 0; i--) {
       if (currentChat.messages[i].role === 'user') {
-        setStreamError(null)
+        patchStatus(currentChat.id, { streamError: null })
         regenerateMessage(i)
         return
       }
     }
-  }, [currentChat, regenerateMessage])
-
-  // Update currentChatIdRef when currentChat changes
-  // But don't overwrite during streaming to preserve ID swaps
-  useEffect(() => {
-    if (!isStreamingRef.current) {
-      currentChatIdRef.current = currentChat?.id || ''
-    }
-  }, [currentChat])
+  }, [currentChat, regenerateMessage, patchStatus])
 
   return {
     input,

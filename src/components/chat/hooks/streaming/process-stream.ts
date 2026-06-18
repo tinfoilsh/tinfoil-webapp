@@ -43,9 +43,7 @@ export async function processStreamingResponse(
   const streamLogger: StreamLogger | undefined = IS_DEV
     ? createStreamLogger()
     : undefined
-  const startingChatId = ctx.startingChatId
   const streamingChatId = ctx.updatedChat.id
-  const isSameChat = () => ctx.currentChatIdRef.current === startingChatId
 
   const preprocessor = createContentPreprocessor()
   const normalizer = createEventNormalizer()
@@ -55,16 +53,19 @@ export async function processStreamingResponse(
   let dirty = false
   let firstEventSeen = false
 
+  // Always write to the chat this stream owns, regardless of which chat is
+  // on screen. `updateChatWithHistoryCheck` mirrors the update into
+  // `currentChat` only when the streamed chat is the one being viewed, so a
+  // background stream updates the list entry without disturbing the view.
   const flushToUI = () => {
-    if (!isSameChat()) return
     dirty = false
     const message = assembler.toMessage(timeline.snapshot())
     const newMessages = [...ctx.updatedMessages, message]
     ctx.updateChatWithHistoryCheck(
       ctx.setChats,
-      { ...ctx.updatedChat, id: ctx.currentChatIdRef.current },
+      { ...ctx.updatedChat, id: ctx.streamChatIdRef.current },
       ctx.setCurrentChat,
-      ctx.currentChatIdRef.current,
+      ctx.streamChatIdRef.current,
       newMessages,
       false,
       true, // skip IndexedDB during streaming
@@ -216,12 +217,9 @@ export async function processStreamingResponse(
   }
 
   try {
-    ctx.isStreamingRef.current = true
     if (streamingChatId) streamingTracker.startStreaming(streamingChatId)
 
     for await (const sseJson of readSSEStream(response, streamLogger)) {
-      if (!isSameChat()) break
-
       const events = normalizer.processChunk(
         sseJson,
         preprocessor,
@@ -259,14 +257,14 @@ export async function processStreamingResponse(
     return assembler.toMessage(timeline.snapshot())
   } finally {
     ctx.setLoadingState('idle')
-    ctx.isStreamingRef.current = false
     ctx.setIsStreaming(false)
     if (streamingChatId) streamingTracker.endStreaming(streamingChatId)
+    // The backend may have swapped the id mid-stream; clear that too.
     if (
-      ctx.currentChatIdRef.current &&
-      ctx.currentChatIdRef.current !== streamingChatId
+      ctx.streamChatIdRef.current &&
+      ctx.streamChatIdRef.current !== streamingChatId
     ) {
-      streamingTracker.endStreaming(ctx.currentChatIdRef.current)
+      streamingTracker.endStreaming(ctx.streamChatIdRef.current)
     }
     ctx.setIsThinking(false)
     ctx.thinkingStartTimeRef.current = null
