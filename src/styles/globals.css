@@ -48,6 +48,41 @@
   }
 }
 
+/* Three-dot streaming indicator shown next to a chat title in the sidebar */
+.stream-loader {
+  width: 4px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  color: #10b981; /* emerald-500 */
+  animation: stream-loader 1s infinite linear alternate;
+}
+@keyframes stream-loader {
+  0% {
+    box-shadow:
+      7px 0 currentColor,
+      -7px 0 rgba(16, 185, 129, 0.2);
+    background: currentColor;
+  }
+  33% {
+    box-shadow:
+      7px 0 currentColor,
+      -7px 0 rgba(16, 185, 129, 0.2);
+    background: rgba(16, 185, 129, 0.2);
+  }
+  66% {
+    box-shadow:
+      7px 0 rgba(16, 185, 129, 0.2),
+      -7px 0 currentColor;
+    background: rgba(16, 185, 129, 0.2);
+  }
+  100% {
+    box-shadow:
+      7px 0 rgba(16, 185, 129, 0.2),
+      -7px 0 currentColor;
+    background: currentColor;
+  }
+}
+
 /* Prevent vertical scrollbars in message content */
 .katex-display {
   overflow-x: auto !important;

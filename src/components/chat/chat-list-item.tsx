@@ -348,13 +348,10 @@ export function ChatListItem({
               </div>
               {isStreaming ? (
                 <span
-                  className="flex flex-shrink-0 items-center"
+                  className="mx-2 flex w-[18px] flex-shrink-0 items-center justify-center"
                   title="Generating response"
                 >
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                  </span>
+                  <span className="stream-loader" />
                   <span className="sr-only">Generating response</span>
                 </span>
               ) : (
