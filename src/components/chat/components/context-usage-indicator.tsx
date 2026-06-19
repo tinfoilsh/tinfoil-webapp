@@ -80,7 +80,7 @@ export function ContextUsageIndicator({
         </svg>
         <span className="text-xs font-medium leading-none">{percentage}%</span>
       </span>
-      <span className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 w-max max-w-64 whitespace-normal rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-center text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+      <span className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 w-max max-w-xs whitespace-normal rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-center text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
         {tooltip}
       </span>
     </div>
