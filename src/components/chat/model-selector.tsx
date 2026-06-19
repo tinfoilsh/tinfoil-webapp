@@ -263,7 +263,13 @@ export function ModelSelector({
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
-              setShowOtherModels(!showOtherModels)
+              setShowOtherModels((prev) => !prev)
+            }}
+            onTouchEnd={(e) => {
+              e.stopPropagation()
+              if (isScrollingRef.current) return
+              e.preventDefault()
+              setShowOtherModels((prev) => !prev)
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
