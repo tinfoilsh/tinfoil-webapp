@@ -846,7 +846,16 @@ export function ChatSidebar({
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <Link href="/" title="Home" className="flex items-center">
+            <Link
+              href="/"
+              title="Home"
+              className="flex items-center"
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                window.open('/', '_blank', 'noopener,noreferrer')
+              }}
+            >
               <Logo className="h-6 w-auto" dark={isDarkMode} />
             </Link>
             {/* Settings button */}

@@ -680,15 +680,18 @@ export function ProjectSidebar({
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between border-b border-border-subtle p-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                window.location.href = window.location.origin
-              }}
+            <Link
+              href="/"
               title="Home"
               className="flex items-center"
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                window.open('/', '_blank', 'noopener,noreferrer')
+              }}
             >
               <Logo className="h-6 w-auto" dark={isDarkMode} />
-            </button>
+            </Link>
             {/* Settings button */}
             <div className="group relative flex items-center">
               <button
