@@ -549,7 +549,7 @@ export function ChatInput({
                 }
               : undefined
             return (
-              <div className="pointer-events-none absolute right-8 top-px z-10 -translate-y-full">
+              <div className="pointer-events-none absolute right-8 top-px z-10 hidden -translate-y-full md:block">
                 <div
                   className={cn(
                     'pointer-events-auto inline-flex items-center gap-1.5 rounded-t-lg border border-b-0 px-2.5 py-1',
