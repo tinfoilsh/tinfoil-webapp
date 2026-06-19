@@ -26,7 +26,13 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import {
   BsFile,
   BsFiletypeCss,
@@ -523,6 +529,19 @@ export function ProjectSidebar({
     }
   }, [onNewChat, windowWidth, setIsOpen])
 
+  // Let modifier/middle clicks fall through so the New chat links open in a
+  // new tab; otherwise intercept the plain click for the in-app handler.
+  const handleNewChatLinkClick = useCallback(
+    (e: ReactMouseEvent<HTMLAnchorElement>, action: () => void) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+        return
+      }
+      e.preventDefault()
+      action()
+    },
+    [],
+  )
+
   const handleRemoveDocument = useCallback(
     async (docId: string) => {
       try {
@@ -611,18 +630,7 @@ export function ProjectSidebar({
             <div className="group relative">
               <Link
                 href={projectId ? `/project/${projectId}` : '/newchat'}
-                onClick={(e) => {
-                  if (
-                    e.metaKey ||
-                    e.ctrlKey ||
-                    e.shiftKey ||
-                    e.altKey ||
-                    e.button !== 0
-                  )
-                    return
-                  e.preventDefault()
-                  onNewChat()
-                }}
+                onClick={(e) => handleNewChatLinkClick(e, onNewChat)}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
@@ -818,19 +826,12 @@ export function ProjectSidebar({
             <Link
               href={projectId ? `/project/${projectId}` : '/newchat'}
               aria-disabled={!currentChatId}
-              onClick={(e) => {
-                if (
-                  e.metaKey ||
-                  e.ctrlKey ||
-                  e.shiftKey ||
-                  e.altKey ||
-                  e.button !== 0
-                )
-                  return
-                e.preventDefault()
-                if (!currentChatId) return
-                handleNewChat()
-              }}
+              onClick={(e) =>
+                handleNewChatLinkClick(e, () => {
+                  if (!currentChatId) return
+                  handleNewChat()
+                })
+              }
               className={cn(
                 'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
                 !currentChatId
