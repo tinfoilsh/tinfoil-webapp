@@ -2376,10 +2376,8 @@ ${encryptionKey.replace('key_', '')}
                       {/* Delete all saved chats */}
                       <div
                         className={cn(
-                          'rounded-lg border p-4',
-                          isDarkMode
-                            ? 'border-border-strong bg-surface-chat'
-                            : 'border-border-subtle bg-white',
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
                       >
                         <div className="space-y-3">
@@ -2494,10 +2492,8 @@ ${encryptionKey.replace('key_', '')}
                       {isSignedIn && isPremium && (
                         <div
                           className={cn(
-                            'rounded-lg border p-4',
-                            isDarkMode
-                              ? 'border-border-strong bg-surface-chat'
-                              : 'border-border-subtle bg-white',
+                            'rounded-lg border border-border-subtle p-4',
+                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                           )}
                         >
                           <div className="space-y-3">
