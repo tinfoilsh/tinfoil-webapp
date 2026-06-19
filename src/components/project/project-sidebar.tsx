@@ -29,6 +29,7 @@ import {
   DocumentIcon,
   DocumentPlusIcon,
   FolderIcon,
+  NoSymbolIcon,
   PencilSquareIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
@@ -1087,6 +1088,20 @@ export function ProjectSidebar({
                               </button>
                             )
                           })}
+                          <button
+                            type="button"
+                            onClick={() => setEditedColor(undefined)}
+                            title="No color"
+                            aria-label="No color"
+                            aria-pressed={!editedColor}
+                            className={cn(
+                              'flex h-7 w-7 items-center justify-center rounded-full border border-border-strong text-content-muted transition-transform hover:scale-110 focus:outline-none focus:ring-1 focus:ring-border-strong',
+                              !editedColor &&
+                                'ring-2 ring-content-primary ring-offset-2 ring-offset-surface-sidebar',
+                            )}
+                          >
+                            <NoSymbolIcon className="h-4 w-4" />
+                          </button>
                         </div>
                       </div>
 

@@ -2,7 +2,7 @@
 
 import { cn } from '@/components/ui/utils'
 import { PROJECT_COLORS } from '@/constants/project-colors'
-import { CheckIcon } from '@heroicons/react/24/outline'
+import { CheckIcon, NoSymbolIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useState } from 'react'
 import { useProject } from './project-context'
 
@@ -71,21 +71,27 @@ export function ProjectSettingsContent({
   }, [activeProject, name, description, systemInstructions, updateProject])
 
   const handleColorSelect = useCallback(
-    async (nextColor: string) => {
+    async (nextColor: string | undefined) => {
       if (!activeProject) return
 
-      const selected = color === nextColor ? undefined : nextColor
-      setColor(selected)
+      setColor(nextColor)
       setSaveStatus('saving')
       try {
-        await updateProject(activeProject.id, { color: selected ?? '' })
+        await updateProject(activeProject.id, { color: nextColor ?? '' })
         setSaveStatus('saved')
         setTimeout(() => setSaveStatus('idle'), 2000)
       } catch {
         setSaveStatus('error')
       }
     },
-    [activeProject, color, updateProject],
+    [activeProject, updateProject],
+  )
+
+  const handleColorToggle = useCallback(
+    (nextColor: string) => {
+      handleColorSelect(color === nextColor ? undefined : nextColor)
+    },
+    [color, handleColorSelect],
   )
 
   if (!activeProject) return null
@@ -164,7 +170,7 @@ export function ProjectSettingsContent({
               <button
                 key={projectColor.id}
                 type="button"
-                onClick={() => handleColorSelect(projectColor.id)}
+                onClick={() => handleColorToggle(projectColor.id)}
                 title={projectColor.label}
                 aria-label={projectColor.label}
                 aria-pressed={isSelected}
@@ -181,6 +187,22 @@ export function ProjectSettingsContent({
               </button>
             )
           })}
+          <button
+            type="button"
+            onClick={() => handleColorSelect(undefined)}
+            title="No color"
+            aria-label="No color"
+            aria-pressed={!color}
+            className={cn(
+              'flex h-7 w-7 items-center justify-center rounded-full border border-border-strong text-content-muted ring-offset-2 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-500',
+              isDarkMode
+                ? 'ring-offset-surface-chat'
+                : 'ring-offset-surface-sidebar',
+              !color && 'ring-2 ring-content-primary',
+            )}
+          >
+            <NoSymbolIcon className="h-4 w-4" />
+          </button>
         </div>
       </div>
 

@@ -38,12 +38,6 @@ export const PROJECT_COLORS: ProjectColor[] = [
     rgb: [138, 223, 141],
   },
   { id: 'baby-pink', label: 'Baby Pink', hex: '#FF9EC3', rgb: [255, 158, 195] },
-  {
-    id: 'cool-steel',
-    label: 'Cool Steel',
-    hex: '#98A6B4',
-    rgb: [152, 166, 180],
-  },
 ]
 
 const PROJECT_COLOR_MAP: Record<string, ProjectColor> = PROJECT_COLORS.reduce(
