@@ -242,6 +242,7 @@ export function ProjectSidebar({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isClearingChats, setIsClearingChats] = useState(false)
   const [showClearChatsConfirm, setShowClearChatsConfirm] = useState(false)
+  const [dangerZoneExpanded, setDangerZoneExpanded] = useState(false)
 
   const [isEditingProjectName, setIsEditingProjectName] = useState(false)
   const [editingProjectName, setEditingProjectName] = useState(
@@ -971,97 +972,116 @@ export function ProjectSidebar({
 
                       {/* Danger zone */}
                       <div className="mt-2 border-t border-border-subtle pt-3">
-                        <div className="mb-2 font-aeonik text-xs font-medium uppercase tracking-wide text-content-muted">
-                          Danger zone
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDangerZoneExpanded((prev) => !prev)}
+                          aria-expanded={dangerZoneExpanded}
+                          className="flex w-full items-center justify-between font-aeonik text-xs font-medium tracking-wide text-content-muted transition-colors hover:text-content-secondary"
+                        >
+                          <span>Danger Zone</span>
+                          {dangerZoneExpanded ? (
+                            <ChevronUpIcon className="h-4 w-4" />
+                          ) : (
+                            <ChevronDownIcon className="h-4 w-4" />
+                          )}
+                        </button>
                       </div>
 
-                      {/* Delete all chats in this project */}
-                      {showClearChatsConfirm ? (
-                        <div className="rounded-lg bg-red-600 p-3">
-                          <p className="mb-3 font-aeonik-fono text-xs text-white">
-                            Delete all chats in this project? This cannot be
-                            undone. The project and its documents are kept.
-                          </p>
-                          <div className="flex gap-2">
+                      {dangerZoneExpanded && (
+                        <>
+                          {/* Delete all chats in this project */}
+                          {showClearChatsConfirm ? (
+                            <div className="rounded-lg bg-red-600 p-3">
+                              <p className="mb-3 font-aeonik-fono text-xs text-white">
+                                Delete all chats in this project? This cannot be
+                                undone. The project and its documents are kept.
+                              </p>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleClearProjectChats}
+                                  disabled={isClearingChats}
+                                  className={cn(
+                                    'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'bg-red-200 text-red-900 hover:bg-red-300'
+                                      : 'bg-white text-red-600 hover:bg-red-50',
+                                    isClearingChats &&
+                                      'cursor-not-allowed opacity-50',
+                                  )}
+                                >
+                                  {isClearingChats
+                                    ? 'Deleting...'
+                                    : 'Delete all'}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setShowClearChatsConfirm(false)
+                                  }
+                                  className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
                             <button
-                              onClick={handleClearProjectChats}
-                              disabled={isClearingChats}
+                              onClick={() => setShowClearChatsConfirm(true)}
                               className={cn(
-                                'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                                'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
                                 isDarkMode
-                                  ? 'bg-red-200 text-red-900 hover:bg-red-300'
-                                  : 'bg-white text-red-600 hover:bg-red-50',
-                                isClearingChats &&
-                                  'cursor-not-allowed opacity-50',
+                                  ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
+                                  : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
                               )}
                             >
-                              {isClearingChats ? 'Deleting...' : 'Delete all'}
+                              <TrashIcon className="h-3.5 w-3.5" />
+                              Delete all chats
                             </button>
-                            <button
-                              onClick={() => setShowClearChatsConfirm(false)}
-                              className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setShowClearChatsConfirm(true)}
-                          className={cn(
-                            'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
-                            isDarkMode
-                              ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
-                              : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
                           )}
-                        >
-                          <TrashIcon className="h-3.5 w-3.5" />
-                          Delete all chats
-                        </button>
-                      )}
 
-                      {/* Delete Project */}
-                      {showDeleteConfirm ? (
-                        <div className="rounded-lg bg-red-600 p-3">
-                          <p className="mb-3 font-aeonik-fono text-xs text-white">
-                            Delete this project? This cannot be undone.
-                          </p>
-                          <div className="flex gap-2">
+                          {/* Delete Project */}
+                          {showDeleteConfirm ? (
+                            <div className="rounded-lg bg-red-600 p-3">
+                              <p className="mb-3 font-aeonik-fono text-xs text-white">
+                                Delete this project? This cannot be undone.
+                              </p>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleDeleteProject}
+                                  disabled={isDeleting}
+                                  className={cn(
+                                    'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'bg-red-200 text-red-900 hover:bg-red-300'
+                                      : 'bg-white text-red-600 hover:bg-red-50',
+                                    isDeleting &&
+                                      'cursor-not-allowed opacity-50',
+                                  )}
+                                >
+                                  {isDeleting ? 'Deleting...' : 'Delete'}
+                                </button>
+                                <button
+                                  onClick={() => setShowDeleteConfirm(false)}
+                                  className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
                             <button
-                              onClick={handleDeleteProject}
-                              disabled={isDeleting}
+                              onClick={() => setShowDeleteConfirm(true)}
                               className={cn(
-                                'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                                'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
                                 isDarkMode
-                                  ? 'bg-red-200 text-red-900 hover:bg-red-300'
-                                  : 'bg-white text-red-600 hover:bg-red-50',
-                                isDeleting && 'cursor-not-allowed opacity-50',
+                                  ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
+                                  : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
                               )}
                             >
-                              {isDeleting ? 'Deleting...' : 'Delete'}
+                              <TrashIcon className="h-3.5 w-3.5" />
+                              Delete Project
                             </button>
-                            <button
-                              onClick={() => setShowDeleteConfirm(false)}
-                              className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setShowDeleteConfirm(true)}
-                          className={cn(
-                            'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
-                            isDarkMode
-                              ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
-                              : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
                           )}
-                        >
-                          <TrashIcon className="h-3.5 w-3.5" />
-                          Delete Project
-                        </button>
+                        </>
                       )}
                     </div>
                   </div>
