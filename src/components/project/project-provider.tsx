@@ -267,6 +267,7 @@ export function ProjectProvider({
                 description: data.description ?? prev.description,
                 systemInstructions:
                   data.systemInstructions ?? prev.systemInstructions,
+                color: data.color ?? prev.color,
                 memory: data.memory ?? prev.memory,
                 updatedAt: new Date().toISOString(),
               }

@@ -52,6 +52,11 @@ import { useDrag } from './drag-context'
 
 import { useProject } from '@/components/project/project-context'
 import { cn } from '@/components/ui/utils'
+import {
+  getProjectColor,
+  PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
+  projectColorTintLayer,
+} from '@/constants/project-colors'
 import { useCloudPagination } from '@/hooks/use-cloud-pagination'
 
 import { logError } from '@/utils/error-handling'
@@ -280,7 +285,22 @@ export function ChatSidebar({
     refresh: refreshProjects,
   } = useProjects({ autoLoad: isSignedIn && cloudSyncEnabled && isPremium })
 
-  const { deleteProject } = useProject()
+  const { deleteProject, activeProject } = useProject()
+
+  const sidebarTintColor = getProjectColor(activeProject?.color)
+  const sidebarTintStyle = sidebarTintColor
+    ? {
+        backgroundImage: projectColorTintLayer(
+          sidebarTintColor,
+          PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
+        ),
+      }
+    : undefined
+
+  // Subtle background applied to expanded section panels so they read as
+  // distinct drawers against the sidebar surface.
+  const expandedPanelClass = isDarkMode ? 'bg-white/5' : 'bg-black/5'
+
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
     null,
   )
@@ -676,130 +696,169 @@ export function ChatSidebar({
 
   return (
     <>
-      {/* Collapsed sidebar rail - always visible on desktop when sidebar is closed */}
-      {!isMobile && !isOpen && (
-        <nav
-          aria-label="Chat history"
-          className={cn(
-            'fixed left-0 top-0 z-40 flex h-dvh flex-col border-r',
-            'border-border-subtle bg-surface-sidebar text-content-primary',
-          )}
-          style={{ width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px` }}
-        >
-          {/* Logo icon - shows expand icon on hover */}
-          <div className="flex h-16 flex-none items-center justify-center">
-            <button
-              onClick={() => setIsOpen(true)}
-              className="group/logo relative rounded p-2"
-              aria-label="Expand sidebar"
-            >
-              <img
-                src={isDarkMode ? '/icon-dark.png' : '/icon-light.png'}
-                alt=""
-                className="h-6 w-6 transition-opacity group-hover/logo:opacity-0"
-              />
-              <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 transition-opacity group-hover/logo:opacity-100" />
-            </button>
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex flex-col items-center gap-1 px-2">
-            {/* New chat button */}
-            <div className="group relative">
+      {/* Collapsed sidebar rail - shown on desktop when sidebar is closed.
+          Fades in only after the expanded sidebar has slid away so the two
+          appear to swap rather than the rail sitting statically underneath. */}
+      <AnimatePresence>
+        {!isMobile && !isOpen && (
+          <motion.nav
+            key="collapsed-rail"
+            aria-label="Chat history"
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity: 1,
+              transition: {
+                duration: CONSTANTS.CHAT_SIDEBAR_RAIL_FADE_IN_DURATION_S,
+                delay: CONSTANTS.CHAT_SIDEBAR_SLIDE_DURATION_S,
+              },
+            }}
+            exit={{
+              opacity: 0,
+              transition: {
+                duration: CONSTANTS.CHAT_SIDEBAR_RAIL_FADE_OUT_DURATION_S,
+              },
+            }}
+            className={cn(
+              'fixed left-0 top-0 z-40 flex h-dvh flex-col border-r',
+              'border-border-subtle bg-surface-sidebar text-content-primary',
+            )}
+            style={{
+              width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`,
+              ...sidebarTintStyle,
+            }}
+          >
+            {/* Logo icon - shows expand icon on hover */}
+            <div className="flex h-16 flex-none items-center justify-center">
               <button
-                onClick={() => createNewChat(activeTab === 'local', true)}
-                className={cn(
-                  'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
-                  'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                )}
-                aria-label="New chat"
+                onClick={() => setIsOpen(true)}
+                className="group/logo relative rounded p-2"
+                aria-label="Expand sidebar"
               >
-                <PiNotePencilLight className="h-5 w-5" />
+                <img
+                  src={isDarkMode ? '/icon-dark.png' : '/icon-light.png'}
+                  alt=""
+                  className="h-6 w-6 transition-opacity group-hover/logo:opacity-0"
+                />
+                <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 transition-opacity group-hover/logo:opacity-100" />
               </button>
-              <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                New chat{' '}
-                <span className="text-content-muted">
-                  {modKey}
-                  {isMac ? '⇧' : 'Shift+'}O
-                </span>
-              </span>
             </div>
 
-            {/* Projects button - only for premium users */}
-            {isSignedIn && isPremium && (
+            {/* Action buttons */}
+            <div className="flex flex-col items-center gap-1 px-2">
+              {/* New chat button */}
+              <div className="group relative">
+                <Link
+                  href="/newchat"
+                  onClick={(e) => {
+                    if (
+                      e.metaKey ||
+                      e.ctrlKey ||
+                      e.shiftKey ||
+                      e.altKey ||
+                      e.button !== 0
+                    )
+                      return
+                    e.preventDefault()
+                    createNewChat(activeTab === 'local', true)
+                  }}
+                  onAuxClick={(e) => {
+                    if (e.button !== 1) return
+                    e.preventDefault()
+                    window.open('/newchat', '_blank', 'noopener,noreferrer')
+                  }}
+                  className={cn(
+                    'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
+                    'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                  )}
+                  aria-label="New chat"
+                >
+                  <PiNotePencilLight className="h-5 w-5" />
+                </Link>
+                <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                  New chat{' '}
+                  <span className="text-content-muted">
+                    {modKey}
+                    {isMac ? '⇧' : 'Shift+'}O
+                  </span>
+                </span>
+              </div>
+
+              {/* Projects button - only for premium users */}
+              {isSignedIn && isPremium && (
+                <div className="group relative">
+                  <button
+                    onClick={() => {
+                      sessionStorage.setItem(
+                        UI_SIDEBAR_EXPAND_SECTION,
+                        'projects',
+                      )
+                      setIsProjectsExpanded(true)
+                      setIsChatHistoryExpanded(false)
+                      setIsOpen(true)
+                    }}
+                    className={cn(
+                      'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
+                      'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                    )}
+                    aria-label="Projects"
+                  >
+                    <FolderIcon className="h-5 w-5" />
+                  </button>
+                  <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                    Projects
+                  </span>
+                </div>
+              )}
+
+              {/* Chats button */}
               <div className="group relative">
                 <button
                   onClick={() => {
-                    sessionStorage.setItem(
-                      UI_SIDEBAR_EXPAND_SECTION,
-                      'projects',
-                    )
-                    setIsProjectsExpanded(true)
-                    setIsChatHistoryExpanded(false)
+                    sessionStorage.setItem(UI_SIDEBAR_EXPAND_SECTION, 'chats')
+                    setIsChatHistoryExpanded(true)
+                    setIsProjectsExpanded(false)
                     setIsOpen(true)
                   }}
                   className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                     'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                   )}
-                  aria-label="Projects"
+                  aria-label="Chats"
                 >
-                  <FolderIcon className="h-5 w-5" />
+                  <IoChatbubblesOutline className="h-5 w-5" />
                 </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                  Projects
+                  Chats <span className="text-content-muted">{modKey}.</span>
                 </span>
               </div>
-            )}
 
-            {/* Chats button */}
-            <div className="group relative">
-              <button
-                onClick={() => {
-                  sessionStorage.setItem(UI_SIDEBAR_EXPAND_SECTION, 'chats')
-                  setIsChatHistoryExpanded(true)
-                  setIsProjectsExpanded(false)
-                  setIsOpen(true)
-                }}
-                className={cn(
-                  'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
-                  'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                )}
-                aria-label="Chats"
-              >
-                <IoChatbubblesOutline className="h-5 w-5" />
-              </button>
-              <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                Chats <span className="text-content-muted">{modKey}.</span>
-              </span>
+              {/* Settings button */}
+              <div className="group relative">
+                <button
+                  onClick={onSettingsClick}
+                  className={cn(
+                    'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
+                    'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                  )}
+                  aria-label="Settings"
+                >
+                  <Cog6ToothIcon className="h-5 w-5" />
+                  {syncNeedsAttention && (
+                    <span
+                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                      title="Cloud sync needs attention"
+                      aria-hidden="true"
+                    />
+                  )}
+                </button>
+                <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                  Settings
+                </span>
+              </div>
             </div>
-
-            {/* Settings button */}
-            <div className="group relative">
-              <button
-                onClick={onSettingsClick}
-                className={cn(
-                  'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
-                  'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                )}
-                aria-label="Settings"
-              >
-                <Cog6ToothIcon className="h-5 w-5" />
-                {syncNeedsAttention && (
-                  <span
-                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-              <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                Settings
-              </span>
-            </div>
-          </div>
-        </nav>
-      )}
+          </motion.nav>
+        )}
+      </AnimatePresence>
 
       {/* Expanded sidebar wrapper */}
       <nav
@@ -824,20 +883,24 @@ export function ChatSidebar({
             !isMobile && !isOpen
               ? `-${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`
               : '0',
+          ...sidebarTintStyle,
         }}
       >
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                window.location.href = window.location.origin
-              }}
+            <Link
+              href="/"
               title="Home"
               className="flex items-center"
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                window.open('/', '_blank', 'noopener,noreferrer')
+              }}
             >
               <Logo className="h-6 w-auto" dark={isDarkMode} />
-            </button>
+            </Link>
             {/* Settings button */}
             <div className="group relative flex items-center">
               <button
@@ -1025,9 +1088,27 @@ export function ChatSidebar({
 
           {/* New Chat button */}
           <div className="relative z-10 flex-none px-2 py-2">
-            <button
-              onClick={() => createNewChat(activeTab === 'local', true)}
-              disabled={currentChat?.isBlankChat}
+            <Link
+              href="/newchat"
+              aria-disabled={currentChat?.isBlankChat}
+              onClick={(e) => {
+                if (
+                  e.metaKey ||
+                  e.ctrlKey ||
+                  e.shiftKey ||
+                  e.altKey ||
+                  e.button !== 0
+                )
+                  return
+                e.preventDefault()
+                if (currentChat?.isBlankChat) return
+                createNewChat(activeTab === 'local', true)
+              }}
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                window.open('/newchat', '_blank', 'noopener,noreferrer')
+              }}
               className={cn(
                 'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
                 currentChat?.isBlankChat
@@ -1045,7 +1126,7 @@ export function ChatSidebar({
                 {modKey}
                 {isMac ? '⇧' : 'Shift+'}O
               </span>
-            </button>
+            </Link>
           </div>
 
           {/* Projects dropdown - show for premium users */}
@@ -1145,7 +1226,12 @@ export function ChatSidebar({
                     transition={{ duration: 0.2, ease: 'easeInOut' }}
                     className="overflow-hidden"
                   >
-                    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-2">
+                    <div
+                      className={cn(
+                        'min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-2',
+                        expandedPanelClass,
+                      )}
+                    >
                       {/* Cloud sync disabled message */}
                       {!cloudSyncEnabled ? (
                         <div className="px-3 py-2">
@@ -1348,7 +1434,22 @@ export function ChatSidebar({
                                   {project.decryptionFailed ? (
                                     <FaLock className="mt-0.5 h-4 w-4 shrink-0 self-start text-orange-500" />
                                   ) : (
-                                    <FolderIcon className="mt-0.5 h-4 w-4 shrink-0 self-start text-content-muted" />
+                                    <FolderIcon
+                                      className={cn(
+                                        'mt-0.5 h-4 w-4 shrink-0 self-start',
+                                        !getProjectColor(project.color) &&
+                                          'text-content-muted',
+                                      )}
+                                      style={
+                                        getProjectColor(project.color)
+                                          ? {
+                                              color: getProjectColor(
+                                                project.color,
+                                              )!.hex,
+                                            }
+                                          : undefined
+                                      }
+                                    />
                                   )}
                                   <div className="flex min-w-0 flex-1 flex-col text-left">
                                     <span
@@ -1550,7 +1651,7 @@ export function ChatSidebar({
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
-                  className="overflow-hidden"
+                  className={cn('overflow-hidden', expandedPanelClass)}
                 >
                   {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
                   {isSignedIn && cloudSyncEnabled && localOnlyModeEnabled && (
@@ -1762,7 +1863,7 @@ export function ChatSidebar({
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.2, ease: 'easeInOut' }}
-                className="flex-1 overflow-hidden"
+                className={cn('flex-1 overflow-hidden', expandedPanelClass)}
               >
                 <div
                   id="chat-storage-panel"

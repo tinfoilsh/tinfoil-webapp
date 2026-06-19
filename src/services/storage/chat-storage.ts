@@ -163,6 +163,48 @@ export class ChatStorageService {
     })
   }
 
+  async deleteChatsByProject(projectId: string): Promise<number> {
+    await this.initialize()
+
+    // Delete locally and tombstone the ids before touching the cloud. An
+    // in-flight backup re-reads the chat from local storage right before
+    // uploading, so removing the local row first stops a concurrent upload
+    // from resurrecting a chat in the cloud after the bulk delete. This
+    // mirrors the ordering used by the single-chat deleteChat path.
+    const deletedIds = await indexedDBStorage.deleteChatsByProject(projectId)
+
+    for (const id of deletedIds) {
+      deletedChatsTracker.markAsDeleted(id)
+    }
+
+    if (deletedIds.length > 0) {
+      chatEvents.emit({ reason: 'delete', ids: deletedIds })
+    }
+
+    // Bulk-delete from the cloud in a single request. Best-effort: a failure
+    // is logged but not fatal, matching deleteChat, and the ids stay
+    // tombstoned locally so they will not re-sync onto this device.
+    if (await cloudStorage.isAuthenticated()) {
+      try {
+        await cloudStorage.deleteChatsByProject(projectId)
+      } catch (error) {
+        logError('Failed to bulk-delete project chats from cloud', error, {
+          component: 'ChatStorageService',
+          action: 'deleteChatsByProject',
+          metadata: { projectId },
+        })
+      }
+    }
+
+    logInfo(`Deleted ${deletedIds.length} chats for project`, {
+      component: 'ChatStorageService',
+      action: 'deleteChatsByProject',
+      metadata: { projectId, count: deletedIds.length },
+    })
+
+    return deletedIds.length
+  }
+
   async deleteAllNonLocalChats(): Promise<number> {
     await this.initialize()
 

@@ -1,6 +1,7 @@
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { chatEvents } from '@/services/storage/chat-events'
 import { chatStorage } from '@/services/storage/chat-storage'
+import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -95,8 +96,14 @@ export function useChatStorage({
         const localBlank =
           getBlankChat(prevChats, true) || createBlankChat(true)
 
-        // Merge loaded chats with state (excluding blank chats)
-        const nonBlankChats = loadedChats.filter((c) => !c.isBlankChat)
+        // Merge loaded chats with state (excluding blank chats). Re-check the
+        // deleted tracker at apply-time: a chat can be deleted after this
+        // reload's loadChats() snapshot resolved but before this setChats runs.
+        // Without this re-filter, an in-flight reload would resurrect a chat
+        // the user just deleted until the next page refresh.
+        const nonBlankChats = loadedChats.filter(
+          (c) => !c.isBlankChat && !deletedChatsTracker.isDeleted(c.id),
+        )
 
         // Combine blank chats with loaded chats and sort
         const finalChats = sortChats([cloudBlank, localBlank, ...nonBlankChats])

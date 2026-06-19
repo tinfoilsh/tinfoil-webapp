@@ -1,6 +1,8 @@
 'use client'
 
 import { cn } from '@/components/ui/utils'
+import { PROJECT_COLORS } from '@/constants/project-colors'
+import { CheckIcon, NoSymbolIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useState } from 'react'
 import { useProject } from './project-context'
 
@@ -29,6 +31,7 @@ export function ProjectSettingsContent({
   const [systemInstructions, setSystemInstructions] = useState(
     activeProject?.systemInstructions || '',
   )
+  const [color, setColor] = useState(activeProject?.color)
   const [saveStatus, setSaveStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle')
@@ -37,6 +40,7 @@ export function ProjectSettingsContent({
     setName(activeProject?.name || '')
     setDescription(activeProject?.description || '')
     setSystemInstructions(activeProject?.systemInstructions || '')
+    setColor(activeProject?.color)
     setSaveStatus('idle')
     // Only reset form when project ID changes, not when individual fields change
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,6 +69,30 @@ export function ProjectSettingsContent({
       setSaveStatus('error')
     }
   }, [activeProject, name, description, systemInstructions, updateProject])
+
+  const handleColorSelect = useCallback(
+    async (nextColor: string | undefined) => {
+      if (!activeProject) return
+
+      setColor(nextColor)
+      setSaveStatus('saving')
+      try {
+        await updateProject(activeProject.id, { color: nextColor ?? '' })
+        setSaveStatus('saved')
+        setTimeout(() => setSaveStatus('idle'), 2000)
+      } catch {
+        setSaveStatus('error')
+      }
+    },
+    [activeProject, updateProject],
+  )
+
+  const handleColorToggle = useCallback(
+    (nextColor: string) => {
+      handleColorSelect(color === nextColor ? undefined : nextColor)
+    },
+    [color, handleColorSelect],
+  )
 
   if (!activeProject) return null
 
@@ -120,6 +148,62 @@ export function ProjectSettingsContent({
             'focus:outline-none focus:ring-2 focus:ring-emerald-500',
           )}
         />
+      </div>
+
+      {/* Project Color */}
+      <div>
+        <label
+          className={cn(
+            'mb-1 block font-aeonik text-sm font-medium',
+            'text-content-secondary',
+          )}
+        >
+          Color
+        </label>
+        <p className="mb-2 font-aeonik-fono text-xs text-content-muted">
+          Tints the project labels and sidebar
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {PROJECT_COLORS.map((projectColor) => {
+            const isSelected = color === projectColor.id
+            return (
+              <button
+                key={projectColor.id}
+                type="button"
+                onClick={() => handleColorToggle(projectColor.id)}
+                title={projectColor.label}
+                aria-label={projectColor.label}
+                aria-pressed={isSelected}
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-full ring-offset-2 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                  isDarkMode
+                    ? 'ring-offset-surface-chat'
+                    : 'ring-offset-surface-sidebar',
+                  isSelected && 'ring-2 ring-content-primary',
+                )}
+                style={{ backgroundColor: projectColor.hex }}
+              >
+                {isSelected && <CheckIcon className="h-4 w-4 text-black/70" />}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => handleColorSelect(undefined)}
+            title="No color"
+            aria-label="No color"
+            aria-pressed={!color}
+            className={cn(
+              'flex h-7 w-7 items-center justify-center rounded-full border border-border-strong text-content-muted ring-offset-2 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-500',
+              isDarkMode
+                ? 'ring-offset-surface-chat'
+                : 'ring-offset-surface-sidebar',
+              !color && 'ring-2 ring-content-primary',
+            )}
+          >
+            <NoSymbolIcon className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* System Instructions */}

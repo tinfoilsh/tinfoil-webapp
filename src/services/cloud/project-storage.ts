@@ -137,6 +137,7 @@ export class ProjectStorageService {
       name: data.name,
       description: data.description || '',
       systemInstructions: data.systemInstructions || '',
+      color: data.color,
       memory: [],
     }
 
@@ -182,6 +183,7 @@ export class ProjectStorageService {
       description: data.description ?? existing.description,
       systemInstructions:
         data.systemInstructions ?? existing.systemInstructions,
+      color: data.color ?? existing.color,
       memory: data.memory ?? existing.memory,
     }
 
@@ -239,6 +241,7 @@ export class ProjectStorageService {
         name: decoded.name,
         description: decoded.description,
         systemInstructions: decoded.systemInstructions,
+        color: decoded.color,
         memory: decoded.memory || [],
         createdAt: now,
         updatedAt: now,
@@ -297,6 +300,7 @@ export class ProjectStorageService {
             name: decoded.name,
             description: decoded.description,
             systemInstructions: decoded.systemInstructions,
+            color: decoded.color,
             memory: decoded.memory || [],
             createdAt: now,
             updatedAt: now,

@@ -572,8 +572,18 @@ export function useChatMessaging({
       // Fire title generation in parallel with streaming (based on user's message).
       // The promise is awaited after streaming completes, before the final save.
       if (isFirstMessage && userMessage) {
+        // When the user pastes long text it is captured as a document
+        // attachment rather than message text, leaving content empty. Fall
+        // back to attachment text/description so these chats still get a title.
+        const titleContent =
+          userMessage.content?.trim() ||
+          (userMessage.attachments
+            ?.map((a) => a.textContent || a.description || a.fileName)
+            .filter(Boolean)
+            .join('\n') ??
+            '')
         const titlePromise = generateTitle([
-          { role: 'user', content: userMessage.content || '' },
+          { role: 'user', content: titleContent },
         ])
         // Prevent unhandled rejection if streaming exits early and the
         // promise is never awaited (e.g. abort, navigation, empty response)

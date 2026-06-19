@@ -84,6 +84,7 @@ export const ProjectDataSchema = z
     name: z.string(),
     description: z.string().optional(),
     systemInstructions: z.string().optional(),
+    color: z.string().optional(),
     memory: z.array(FactSchema).optional(),
   })
   .passthrough()

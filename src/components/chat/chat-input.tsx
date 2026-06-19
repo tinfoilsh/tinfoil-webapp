@@ -1,6 +1,7 @@
 import { FiArrowUp } from '@/components/icons/lazy-icons'
 import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
+import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
@@ -537,16 +538,35 @@ export function ChatInput({
     <div className="flex flex-col gap-2">
       <div className="relative">
         {/* Project tab - manila folder style, absolutely positioned */}
-        {isProjectMode && activeProject && (
-          <div className="pointer-events-none absolute right-8 top-px z-10 -translate-y-full">
-            <div className="pointer-events-auto inline-flex items-center gap-1.5 rounded-t-lg border border-b-0 border-border-subtle bg-surface-chat px-2.5 py-1">
-              <FolderIcon className="h-3 w-3 text-content-secondary" />
-              <span className="text-xs font-medium text-content-secondary">
-                {activeProject.name}
-              </span>
-            </div>
-          </div>
-        )}
+        {isProjectMode &&
+          activeProject &&
+          (() => {
+            const projectColor = getProjectColor(activeProject.color)
+            const colorStyle = projectColor
+              ? {
+                  borderColor: projectColor.hex,
+                  backgroundColor: projectColor.hex,
+                }
+              : undefined
+            return (
+              <div className="pointer-events-none absolute right-8 top-px z-10 hidden -translate-y-full md:block">
+                <div
+                  className={cn(
+                    'pointer-events-auto inline-flex items-center gap-1.5 rounded-t-lg border border-b-0 px-2.5 py-1',
+                    projectColor
+                      ? 'text-gray-900'
+                      : 'border-border-subtle bg-surface-chat text-content-secondary',
+                  )}
+                  style={colorStyle}
+                >
+                  <FolderIcon className="h-3 w-3" />
+                  <span className="text-xs font-medium">
+                    {activeProject.name}
+                  </span>
+                </div>
+              </div>
+            )
+          })()}
         {/* Prompt preset tab - shows the active prompt for this chat */}
         {activePromptPreset &&
           (() => {

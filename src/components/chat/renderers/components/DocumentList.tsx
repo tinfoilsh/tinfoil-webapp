@@ -29,11 +29,26 @@ import {
   BsFiletypeXml,
 } from 'react-icons/bs'
 
+import { cn } from '@/components/ui/utils'
+
 import { getMessageAttachments } from '../../attachment-helpers'
+import {
+  attachmentToImageSrc,
+  ImageLightbox,
+  useImageGallery,
+  type GalleryImage,
+} from '../../image-gallery-context'
 import type { Attachment } from '../../types'
+
+// Number of thumbnails shown in the pile before collapsing the rest behind a
+// "+N" overlay on the last visible tile.
+const MAX_PILE_THUMBNAILS = 5
 
 interface DocumentListProps {
   attachments?: Attachment[]
+  // Index of the owning message within the conversation, used to key images
+  // into the shared gallery so the lightbox can span the whole conversation.
+  messageIndex?: number
   // Legacy props — used when attachments is not present
   documents?: Array<{ name: string }>
   documentContent?: string
@@ -135,15 +150,21 @@ function getPreviewForDocument(
 
 export const DocumentList = memo(function DocumentList({
   attachments,
+  messageIndex,
   documents,
   documentContent,
   imageData,
 }: DocumentListProps) {
+  const gallery = useImageGallery()
   const [modalOpen, setModalOpen] = useState(false)
   const [modalContent, setModalContent] = useState<{
     name: string
     content: string
   } | null>(null)
+  // Local fallback lightbox for render contexts without a gallery provider
+  // (e.g. shared/printable views); scoped to this message's images.
+  const [localLightboxOpen, setLocalLightboxOpen] = useState(false)
+  const [localLightboxIndex, setLocalLightboxIndex] = useState(0)
 
   useEffect(() => {
     if (!modalOpen) return
@@ -191,72 +212,126 @@ export const DocumentList = memo(function DocumentList({
     setModalOpen(true)
   }
 
+  const localImages: GalleryImage[] = imageAttachments
+    .map((attachment, i) => {
+      const src = attachmentToImageSrc(attachment)
+      return src
+        ? { key: String(i), src, alt: attachment.fileName || 'Image' }
+        : null
+    })
+    .filter((image): image is GalleryImage => image !== null)
+
+  const openImage = (imageIndex: number) => {
+    if (gallery && messageIndex !== undefined) {
+      gallery.openByKey(`${messageIndex}:${imageIndex}`)
+      return
+    }
+    setLocalLightboxIndex(imageIndex)
+    setLocalLightboxOpen(true)
+  }
+
+  const visibleImages = imageAttachments.slice(0, MAX_PILE_THUMBNAILS)
+  const hiddenImageCount = imageAttachments.length - visibleImages.length
+
   return (
     <>
-      <div className="mb-2 flex flex-wrap justify-end gap-2 px-4">
-        {imageAttachments.map((attachment) => {
-          const src = attachment.base64 || attachment.thumbnailBase64
-          return (
-            <div
-              key={attachment.id}
-              className="w-[300px] overflow-hidden rounded-lg"
-            >
-              {src ? (
-                <img
-                  src={`data:${attachment.mimeType || 'image/jpeg'};base64,${src}`}
-                  alt={attachment.fileName}
-                  className="h-auto w-full object-contain"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="bg-surface-secondary flex h-[200px] w-full items-center justify-center">
-                  <div className="border-content-tertiary h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" />
-                </div>
-              )}
-            </div>
-          )
-        })}
-        {docAttachments.map((attachment) => {
-          const preview = attachment.textContent
-            ? attachment.textContent
-                .split('\n')
-                .filter((l) => l.trim() && !l.trim().startsWith('# '))
-                .slice(0, 2)
-                .join('\n') || null
-            : getPreviewForDocument(documentContent, attachment.fileName)
+      {imageAttachments.length > 0 && (
+        <div className="group/pile mb-2 flex justify-end px-4">
+          <div className="flex items-center">
+            {visibleImages.map((attachment, i) => {
+              const thumb = attachment.thumbnailBase64 || attachment.base64
+              const isLastVisible = i === visibleImages.length - 1
+              const overflowBadge =
+                isLastVisible && hiddenImageCount > 0 ? hiddenImageCount : 0
+              return (
+                <button
+                  key={attachment.id}
+                  type="button"
+                  onClick={() => openImage(i)}
+                  aria-label={`View image ${attachment.fileName}`}
+                  style={{ zIndex: visibleImages.length - i }}
+                  className={cn(
+                    'bg-surface-secondary relative h-24 w-24 flex-none overflow-hidden rounded-lg border-2 border-surface-chat shadow-md transition-all duration-200 ease-out hover:z-10 hover:-translate-y-1',
+                    i > 0 && '-ml-14 group-hover/pile:ml-1',
+                  )}
+                >
+                  {thumb ? (
+                    <img
+                      src={`data:${attachment.mimeType || 'image/jpeg'};base64,${thumb}`}
+                      alt={attachment.fileName}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <div className="border-content-tertiary h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" />
+                    </div>
+                  )}
+                  {overflowBadge > 0 && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/55 text-lg font-semibold text-white">
+                      +{overflowBadge}
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+      {docAttachments.length > 0 && (
+        <div className="mb-2 flex flex-wrap justify-end gap-2 px-4">
+          {docAttachments.map((attachment) => {
+            const preview = attachment.textContent
+              ? attachment.textContent
+                  .split('\n')
+                  .filter((l) => l.trim() && !l.trim().startsWith('# '))
+                  .slice(0, 2)
+                  .join('\n') || null
+              : getPreviewForDocument(documentContent, attachment.fileName)
 
-          return (
-            <div
-              key={attachment.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => openModal(attachment)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  openModal(attachment)
-                }
-              }}
-              className="flex min-w-[200px] max-w-[300px] cursor-pointer flex-col rounded-lg bg-surface-message-user/90 p-3 shadow-sm backdrop-blur-sm transition-colors hover:bg-surface-message-user"
-            >
-              <div className="flex items-center gap-2">
-                <div className="flex items-center justify-center p-1">
-                  {getFileIcon(attachment.fileName, 20)}
+            return (
+              <div
+                key={attachment.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openModal(attachment)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    openModal(attachment)
+                  }
+                }}
+                className="flex min-w-[200px] max-w-[300px] cursor-pointer flex-col rounded-lg bg-surface-message-user/90 p-3 shadow-sm backdrop-blur-sm transition-colors hover:bg-surface-message-user"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center p-1">
+                    {getFileIcon(attachment.fileName, 20)}
+                  </div>
+                  <span className="truncate text-sm font-medium text-content-primary">
+                    {attachment.fileName}
+                  </span>
                 </div>
-                <span className="truncate text-sm font-medium text-content-primary">
-                  {attachment.fileName}
-                </span>
+
+                {preview && (
+                  <div className="mt-2 line-clamp-2 text-xs text-content-muted">
+                    {preview}
+                  </div>
+                )}
               </div>
+            )
+          })}
+        </div>
+      )}
 
-              {preview && (
-                <div className="mt-2 line-clamp-2 text-xs text-content-muted">
-                  {preview}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {!gallery && (
+        <ImageLightbox
+          images={localImages}
+          index={localLightboxIndex}
+          open={localLightboxOpen}
+          onClose={() => setLocalLightboxOpen(false)}
+          onIndexChange={setLocalLightboxIndex}
+        />
+      )}
 
       {modalOpen &&
         modalContent &&

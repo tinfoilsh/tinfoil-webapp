@@ -37,6 +37,13 @@ export const CONSTANTS = {
   // Sidebar widths
   CHAT_SIDEBAR_WIDTH_PX: 300,
   CHAT_SIDEBAR_COLLAPSED_WIDTH_PX: 48,
+  // Duration of the expanded sidebar slide in/out (seconds)
+  CHAT_SIDEBAR_SLIDE_DURATION_S: 0.2,
+  // Collapsed rail fade timings (seconds). The fade-in waits for the expanded
+  // sidebar to finish sliding away so the two appear to swap rather than
+  // overlap.
+  CHAT_SIDEBAR_RAIL_FADE_IN_DURATION_S: 0.15,
+  CHAT_SIDEBAR_RAIL_FADE_OUT_DURATION_S: 0.1,
   SETTINGS_SIDEBAR_WIDTH_PX: 345,
   VERIFIER_SIDEBAR_WIDTH_PX: 345,
   ASK_SIDEBAR_WIDTH_PX: 420,

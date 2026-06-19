@@ -253,6 +253,7 @@ const DefaultMessageComponent = ({
       {/* Display documents and images for user messages */}
       {isUser && hasMessageAttachments(message) && (
         <DocumentList
+          messageIndex={messageIndex}
           attachments={message.attachments}
           documents={message.documents}
           documentContent={message.documentContent}

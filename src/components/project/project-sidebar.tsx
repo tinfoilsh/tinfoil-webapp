@@ -9,6 +9,12 @@ import { PiSpinnerThin } from '@/components/icons/lazy-icons'
 import { Link } from '@/components/link'
 import { Logo } from '@/components/logo'
 import { cn } from '@/components/ui/utils'
+import {
+  getProjectColor,
+  PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
+  PROJECT_COLORS,
+  projectColorTintLayer,
+} from '@/constants/project-colors'
 import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
 import type { Fact } from '@/types/memory'
@@ -16,17 +22,25 @@ import type { Project } from '@/types/project'
 import { useAuth } from '@clerk/nextjs'
 import {
   ArrowLeftIcon,
+  CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   Cog6ToothIcon,
   DocumentIcon,
   DocumentPlusIcon,
   FolderIcon,
+  NoSymbolIcon,
   PencilSquareIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import {
   BsFile,
   BsFiletypeCss,
@@ -93,6 +107,7 @@ interface ProjectSidebarProps {
   updateChatTitle?: (chatId: string, newTitle: string) => void
   onEncryptionKeyClick?: () => void
   onRemoveChatFromProject?: (chatId: string) => Promise<void>
+  onDeleteProjectChats?: (projectId: string) => Promise<void>
   onAddChatToProject?: (chatId: string) => Promise<void>
   onMoveChatToProject?: (chatId: string, projectId: string) => Promise<void>
   projects?: ProjectOption[]
@@ -175,6 +190,73 @@ function getFileIcon(filename: string, className: string) {
   }
 }
 
+function DangerZoneAction({
+  isDarkMode,
+  triggerLabel,
+  confirmMessage,
+  confirmLabel,
+  pendingLabel,
+  isConfirmOpen,
+  isPending,
+  onOpenConfirm,
+  onCancel,
+  onConfirm,
+}: {
+  isDarkMode: boolean
+  triggerLabel: string
+  confirmMessage: string
+  confirmLabel: string
+  pendingLabel: string
+  isConfirmOpen: boolean
+  isPending: boolean
+  onOpenConfirm: () => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  if (isConfirmOpen) {
+    return (
+      <div className="rounded-lg bg-red-600 p-3">
+        <p role="alert" className="mb-3 font-aeonik-fono text-xs text-white">
+          {confirmMessage}
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={onConfirm}
+            disabled={isPending}
+            className={cn(
+              'flex-1 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-red-600',
+              isPending && 'cursor-not-allowed opacity-50',
+            )}
+          >
+            {isPending ? pendingLabel : confirmLabel}
+          </button>
+          <button
+            onClick={onCancel}
+            className="flex-1 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-red-600"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={onOpenConfirm}
+      className={cn(
+        'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sidebar',
+        isDarkMode
+          ? 'border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-950/50'
+          : 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100',
+      )}
+    >
+      <TrashIcon className="h-3.5 w-3.5" aria-hidden="true" />
+      {triggerLabel}
+    </button>
+  )
+}
+
 export function ProjectSidebar({
   isOpen,
   setIsOpen,
@@ -193,6 +275,7 @@ export function ProjectSidebar({
   updateChatTitle,
   onEncryptionKeyClick,
   onRemoveChatFromProject,
+  onDeleteProjectChats,
   onAddChatToProject,
   onMoveChatToProject,
   projects = [],
@@ -229,9 +312,13 @@ export function ProjectSidebar({
   const [editedInstructions, setEditedInstructions] = useState(
     project?.systemInstructions ?? '',
   )
+  const [editedColor, setEditedColor] = useState(project?.color)
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isClearingChats, setIsClearingChats] = useState(false)
+  const [showClearChatsConfirm, setShowClearChatsConfirm] = useState(false)
+  const [dangerZoneExpanded, setDangerZoneExpanded] = useState(false)
 
   const [isEditingProjectName, setIsEditingProjectName] = useState(false)
   const [editingProjectName, setEditingProjectName] = useState(
@@ -264,6 +351,7 @@ export function ProjectSidebar({
       setEditedName(project.name)
       setEditedDescription(project.description)
       setEditedInstructions(project.systemInstructions)
+      setEditedColor(project.color)
       setEditingProjectName(project.name)
 
       const shouldAnimate =
@@ -354,6 +442,7 @@ export function ProjectSidebar({
         name: editedName,
         description: editedDescription,
         systemInstructions: editedInstructions,
+        color: editedColor ?? '',
       })
     } catch {
       toast({
@@ -370,6 +459,7 @@ export function ProjectSidebar({
     editedName,
     editedDescription,
     editedInstructions,
+    editedColor,
     updateProject,
   ])
 
@@ -425,6 +515,27 @@ export function ProjectSidebar({
       setShowDeleteConfirm(false)
     }
   }, [project, deleteProject, onExitProject])
+
+  const handleClearProjectChats = useCallback(async () => {
+    if (!project || !onDeleteProjectChats) return
+    setIsClearingChats(true)
+    try {
+      await onDeleteProjectChats(project.id)
+      // The currently open chat may have been one of the deleted chats, so
+      // start a fresh blank chat in this project.
+      onNewChat()
+    } catch {
+      toast({
+        title: 'Failed to delete project chats',
+        description:
+          'The chats in this project could not be deleted. Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsClearingChats(false)
+      setShowClearChatsConfirm(false)
+    }
+  }, [project, onDeleteProjectChats, onNewChat])
 
   const handleFileUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -498,6 +609,34 @@ export function ProjectSidebar({
     }
   }, [onNewChat, windowWidth, setIsOpen])
 
+  // Let modifier/middle clicks fall through so the New chat links open in a
+  // new tab; otherwise intercept the plain click for the in-app handler.
+  const handleNewChatLinkClick = useCallback(
+    (e: ReactMouseEvent<HTMLAnchorElement>, action: () => void) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+        return
+      }
+      e.preventDefault()
+      action()
+    },
+    [],
+  )
+
+  // onClick never fires for the middle button, so open the new tab
+  // explicitly to guarantee middle-click "open in new tab" works.
+  const handleNewChatAuxClick = useCallback(
+    (e: ReactMouseEvent<HTMLAnchorElement>) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      window.open(
+        projectId ? `/project/${projectId}` : '/newchat',
+        '_blank',
+        'noopener,noreferrer',
+      )
+    },
+    [projectId],
+  )
+
   const handleRemoveDocument = useCallback(
     async (docId: string) => {
       try {
@@ -525,7 +664,8 @@ export function ProjectSidebar({
   const hasUnsavedChanges = project
     ? editedName !== project.name ||
       editedDescription !== project.description ||
-      editedInstructions !== project.systemInstructions
+      editedInstructions !== project.systemInstructions ||
+      (editedColor ?? '') !== (project.color ?? '')
     : false
 
   const blankChat: ChatItemData = {
@@ -557,6 +697,20 @@ export function ProjectSidebar({
 
   const isMobile = windowWidth < MOBILE_BREAKPOINT
 
+  const sidebarTintColor = getProjectColor(project?.color)
+  const sidebarTintStyle = sidebarTintColor
+    ? {
+        backgroundImage: projectColorTintLayer(
+          sidebarTintColor,
+          PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
+        ),
+      }
+    : undefined
+
+  // Subtle background applied to expanded section panels so they read as
+  // distinct drawers against the sidebar surface.
+  const expandedPanelClass = isDarkMode ? 'bg-white/5' : 'bg-black/5'
+
   return (
     <>
       {/* Collapsed sidebar rail - always visible on desktop when sidebar is closed */}
@@ -566,7 +720,10 @@ export function ProjectSidebar({
             'fixed left-0 top-0 z-40 flex h-dvh flex-col border-r',
             'border-border-subtle bg-surface-sidebar text-content-primary',
           )}
-          style={{ width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px` }}
+          style={{
+            width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`,
+            ...sidebarTintStyle,
+          }}
         >
           {/* Folder icon - shows expand icon on hover */}
           <div className="flex h-16 flex-none items-center justify-center">
@@ -584,8 +741,10 @@ export function ProjectSidebar({
           <div className="flex flex-col items-center gap-1 px-2">
             {/* New chat button */}
             <div className="group relative">
-              <button
-                onClick={onNewChat}
+              <Link
+                href={projectId ? `/project/${projectId}` : '/newchat'}
+                onClick={(e) => handleNewChatLinkClick(e, onNewChat)}
+                onAuxClick={handleNewChatAuxClick}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
@@ -593,7 +752,7 @@ export function ProjectSidebar({
                 aria-label="New chat"
               >
                 <PiNotePencilLight className="h-5 w-5" />
-              </button>
+              </Link>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 New chat{' '}
                 <span className="text-content-muted">
@@ -614,20 +773,26 @@ export function ProjectSidebar({
           'border-border-subtle bg-surface-sidebar text-content-primary',
           'transition-all duration-200 ease-in-out',
         )}
-        style={{ maxWidth: `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px` }}
+        style={{
+          maxWidth: `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`,
+          ...sidebarTintStyle,
+        }}
       >
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between border-b border-border-subtle p-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                window.location.href = window.location.origin
-              }}
+            <Link
+              href="/"
               title="Home"
               className="flex items-center"
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                window.open('/', '_blank', 'noopener,noreferrer')
+              }}
             >
               <Logo className="h-6 w-auto" dark={isDarkMode} />
-            </button>
+            </Link>
             {/* Settings button */}
             <div className="group relative flex items-center">
               <button
@@ -778,9 +943,16 @@ export function ProjectSidebar({
 
           {/* New Chat button */}
           <div className="relative z-10 mt-3 flex-none px-2 py-2">
-            <button
-              onClick={handleNewChat}
-              disabled={!currentChatId}
+            <Link
+              href={projectId ? `/project/${projectId}` : '/newchat'}
+              aria-disabled={!currentChatId}
+              onClick={(e) =>
+                handleNewChatLinkClick(e, () => {
+                  if (!currentChatId) return
+                  handleNewChat()
+                })
+              }
+              onAuxClick={handleNewChatAuxClick}
               className={cn(
                 'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
                 !currentChatId
@@ -798,7 +970,7 @@ export function ProjectSidebar({
                 {modKey}
                 {isMac ? '⇧' : 'Shift+'}O
               </span>
-            </button>
+            </Link>
           </div>
 
           {/* Project Settings Dropdown */}
@@ -809,7 +981,7 @@ export function ProjectSidebar({
               }
               disabled={isLoading}
               className={cn(
-                'flex w-full items-center justify-between bg-surface-sidebar px-4 py-3 text-sm transition-colors',
+                'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
                 isLoading
                   ? 'cursor-default opacity-50'
                   : isDarkMode
@@ -839,7 +1011,7 @@ export function ProjectSidebar({
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
                   className="overflow-hidden"
                 >
-                  <div className="px-4 py-4">
+                  <div className={cn('px-4 py-4', expandedPanelClass)}>
                     <div className="space-y-3">
                       {/* Description */}
                       <div className="space-y-2">
@@ -883,6 +1055,56 @@ export function ProjectSidebar({
                         />
                       </div>
 
+                      {/* Color */}
+                      <div className="space-y-2">
+                        <div className="font-aeonik text-sm font-medium text-content-secondary">
+                          Color
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {PROJECT_COLORS.map((projectColor) => {
+                            const isSelected = editedColor === projectColor.id
+                            return (
+                              <button
+                                key={projectColor.id}
+                                type="button"
+                                onClick={() =>
+                                  setEditedColor(
+                                    isSelected ? undefined : projectColor.id,
+                                  )
+                                }
+                                title={projectColor.label}
+                                aria-label={projectColor.label}
+                                aria-pressed={isSelected}
+                                className={cn(
+                                  'flex h-7 w-7 items-center justify-center rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-1 focus:ring-border-strong',
+                                  isSelected &&
+                                    'ring-2 ring-content-primary ring-offset-2 ring-offset-surface-sidebar',
+                                )}
+                                style={{ backgroundColor: projectColor.hex }}
+                              >
+                                {isSelected && (
+                                  <CheckIcon className="h-4 w-4 text-black/70" />
+                                )}
+                              </button>
+                            )
+                          })}
+                          <button
+                            type="button"
+                            onClick={() => setEditedColor(undefined)}
+                            title="No color"
+                            aria-label="No color"
+                            aria-pressed={!editedColor}
+                            className={cn(
+                              'flex h-7 w-7 items-center justify-center rounded-full border border-border-strong text-content-muted transition-transform hover:scale-110 focus:outline-none focus:ring-1 focus:ring-border-strong',
+                              !editedColor &&
+                                'ring-2 ring-content-primary ring-offset-2 ring-offset-surface-sidebar',
+                            )}
+                          >
+                            <NoSymbolIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Save button */}
                       {hasUnsavedChanges && (
                         <button
@@ -898,47 +1120,56 @@ export function ProjectSidebar({
                         </button>
                       )}
 
-                      {/* Delete Project */}
-                      {showDeleteConfirm ? (
-                        <div className="rounded-lg bg-red-600 p-3">
-                          <p className="mb-3 font-aeonik-fono text-xs text-white">
-                            Delete this project? This cannot be undone.
-                          </p>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={handleDeleteProject}
-                              disabled={isDeleting}
-                              className={cn(
-                                'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-                                isDarkMode
-                                  ? 'bg-red-200 text-red-900 hover:bg-red-300'
-                                  : 'bg-white text-red-600 hover:bg-red-50',
-                                isDeleting && 'cursor-not-allowed opacity-50',
-                              )}
-                            >
-                              {isDeleting ? 'Deleting...' : 'Delete'}
-                            </button>
-                            <button
-                              onClick={() => setShowDeleteConfirm(false)}
-                              className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
+                      {/* Danger zone */}
+                      <div className="mt-2 border-t border-border-subtle pt-3">
                         <button
-                          onClick={() => setShowDeleteConfirm(true)}
-                          className={cn(
-                            'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
-                            isDarkMode
-                              ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
-                              : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
-                          )}
+                          type="button"
+                          onClick={() => setDangerZoneExpanded((prev) => !prev)}
+                          aria-expanded={dangerZoneExpanded}
+                          className="flex w-full items-center justify-between font-aeonik text-xs font-medium tracking-wide text-content-muted transition-colors hover:text-content-secondary"
                         >
-                          <TrashIcon className="h-3.5 w-3.5" />
-                          Delete Project
+                          <span>Danger Zone</span>
+                          {dangerZoneExpanded ? (
+                            <ChevronUpIcon
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <ChevronDownIcon
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
+                          )}
                         </button>
+                      </div>
+
+                      {dangerZoneExpanded && (
+                        <>
+                          <DangerZoneAction
+                            isDarkMode={isDarkMode}
+                            triggerLabel="Delete all chats"
+                            confirmMessage="Delete all chats in this project? This cannot be undone. The project and its documents are kept."
+                            confirmLabel="Delete all"
+                            pendingLabel="Deleting..."
+                            isConfirmOpen={showClearChatsConfirm}
+                            isPending={isClearingChats}
+                            onOpenConfirm={() => setShowClearChatsConfirm(true)}
+                            onCancel={() => setShowClearChatsConfirm(false)}
+                            onConfirm={handleClearProjectChats}
+                          />
+                          <DangerZoneAction
+                            isDarkMode={isDarkMode}
+                            triggerLabel="Delete Project"
+                            confirmMessage="Delete this project? This cannot be undone."
+                            confirmLabel="Delete"
+                            pendingLabel="Deleting..."
+                            isConfirmOpen={showDeleteConfirm}
+                            isPending={isDeleting}
+                            onOpenConfirm={() => setShowDeleteConfirm(true)}
+                            onCancel={() => setShowDeleteConfirm(false)}
+                            onConfirm={handleDeleteProject}
+                          />
+                        </>
                       )}
                     </div>
                   </div>
@@ -955,7 +1186,7 @@ export function ProjectSidebar({
               }
               disabled={isLoading}
               className={cn(
-                'flex w-full items-center justify-between bg-surface-sidebar px-4 py-3 text-sm transition-colors',
+                'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
                 isLoading
                   ? 'cursor-default opacity-50'
                   : isDarkMode
@@ -994,7 +1225,12 @@ export function ProjectSidebar({
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
                   className="overflow-hidden"
                 >
-                  <div className="max-h-64 overflow-y-auto px-2 py-2">
+                  <div
+                    className={cn(
+                      'max-h-64 overflow-y-auto px-2 py-2',
+                      expandedPanelClass,
+                    )}
+                  >
                     {/* Drag and drop zone - at top */}
                     <div
                       onClick={() =>
@@ -1200,7 +1436,7 @@ export function ProjectSidebar({
           </div>
 
           {/* Terms and privacy policy */}
-          <div className="relative z-10 flex h-[56px] flex-none items-center justify-center border-t border-border-subtle bg-surface-sidebar p-3">
+          <div className="relative z-10 flex h-[56px] flex-none items-center justify-center border-t border-border-subtle p-3">
             <p className="text-center text-xs leading-relaxed text-content-secondary">
               By using this service, you agree to Tinfoil&apos;s{' '}
               <Link
