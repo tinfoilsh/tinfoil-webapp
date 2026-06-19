@@ -706,8 +706,20 @@ export function ChatSidebar({
           <div className="flex flex-col items-center gap-1 px-2">
             {/* New chat button */}
             <div className="group relative">
-              <button
-                onClick={() => createNewChat(activeTab === 'local', true)}
+              <Link
+                href="/newchat"
+                onClick={(e) => {
+                  if (
+                    e.metaKey ||
+                    e.ctrlKey ||
+                    e.shiftKey ||
+                    e.altKey ||
+                    e.button !== 0
+                  )
+                    return
+                  e.preventDefault()
+                  createNewChat(activeTab === 'local', true)
+                }}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
@@ -715,7 +727,7 @@ export function ChatSidebar({
                 aria-label="New chat"
               >
                 <PiNotePencilLight className="h-5 w-5" />
-              </button>
+              </Link>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 New chat{' '}
                 <span className="text-content-muted">
@@ -829,15 +841,9 @@ export function ChatSidebar({
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                window.location.href = window.location.origin
-              }}
-              title="Home"
-              className="flex items-center"
-            >
+            <Link href="/" title="Home" className="flex items-center">
               <Logo className="h-6 w-auto" dark={isDarkMode} />
-            </button>
+            </Link>
             {/* Settings button */}
             <div className="group relative flex items-center">
               <button
@@ -1025,9 +1031,22 @@ export function ChatSidebar({
 
           {/* New Chat button */}
           <div className="relative z-10 flex-none px-2 py-2">
-            <button
-              onClick={() => createNewChat(activeTab === 'local', true)}
-              disabled={currentChat?.isBlankChat}
+            <Link
+              href="/newchat"
+              aria-disabled={currentChat?.isBlankChat}
+              onClick={(e) => {
+                if (
+                  e.metaKey ||
+                  e.ctrlKey ||
+                  e.shiftKey ||
+                  e.altKey ||
+                  e.button !== 0
+                )
+                  return
+                e.preventDefault()
+                if (currentChat?.isBlankChat) return
+                createNewChat(activeTab === 'local', true)
+              }}
               className={cn(
                 'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
                 currentChat?.isBlankChat
@@ -1045,7 +1064,7 @@ export function ChatSidebar({
                 {modKey}
                 {isMac ? '⇧' : 'Shift+'}O
               </span>
-            </button>
+            </Link>
           </div>
 
           {/* Projects dropdown - show for premium users */}
