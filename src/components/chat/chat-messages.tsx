@@ -10,6 +10,7 @@ import { CONSTANTS } from './constants'
 import { ensureTimeline } from './ensure-timeline'
 import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
+import { ImageGalleryProvider } from './image-gallery-context'
 import { PrintableChat } from './PrintableChat'
 import type { PromptPreset } from './prompts/types'
 import { getRendererRegistry } from './renderers/client'
@@ -366,72 +367,74 @@ export function ChatMessages({
   const showLoadingPlaceholder = isWaitingForResponse && !hasAssistantThinking
 
   return (
-    <div
-      role="log"
-      aria-label="Conversation"
-      aria-live="polite"
-      className={`mx-auto w-full min-w-0 px-0 pb-6 pt-24 md:px-4 ${CHAT_FONT_CLASSES[chatFont]}`}
-    >
-      {/* Archived Messages - only shown if there are more than the max prompt messages */}
-      {archivedMessages.length > 0 && (
-        <>
-          <div className={`opacity-70`}>
-            {archivedMessages.map((message, i) => (
-              <ChatMessage
-                key={getMessageKey(`${chatId}-archived`, message, i)}
-                message={message}
-                messageIndex={i}
-                model={currentModel}
-                isDarkMode={isDarkMode}
-                isLastMessage={false}
-                isStreaming={false}
-                onEditMessage={onEditMessage}
-                onRegenerateMessage={onRegenerateMessage}
-              />
-            ))}
-          </div>
+    <ImageGalleryProvider messages={messages}>
+      <div
+        role="log"
+        aria-label="Conversation"
+        aria-live="polite"
+        className={`mx-auto w-full min-w-0 px-0 pb-6 pt-24 md:px-4 ${CHAT_FONT_CLASSES[chatFont]}`}
+      >
+        {/* Archived Messages - only shown if there are more than the max prompt messages */}
+        {archivedMessages.length > 0 && (
+          <>
+            <div className={`opacity-70`}>
+              {archivedMessages.map((message, i) => (
+                <ChatMessage
+                  key={getMessageKey(`${chatId}-archived`, message, i)}
+                  message={message}
+                  messageIndex={i}
+                  model={currentModel}
+                  isDarkMode={isDarkMode}
+                  isLastMessage={false}
+                  isStreaming={false}
+                  onEditMessage={onEditMessage}
+                  onRegenerateMessage={onRegenerateMessage}
+                />
+              ))}
+            </div>
 
-          {/* Separator */}
-          <MessagesSeparator isDarkMode={isDarkMode} />
-        </>
-      )}
+            {/* Separator */}
+            <MessagesSeparator isDarkMode={isDarkMode} />
+          </>
+        )}
 
-      {/* Live Messages - the last messages up to max prompt limit */}
-      {liveMessages.map((message, i) => (
-        <ChatMessage
-          key={getMessageKey(`${chatId}-live`, message, i)}
-          message={message}
-          messageIndex={archivedMessages.length + i}
-          model={currentModel}
-          isDarkMode={isDarkMode}
-          isLastMessage={i === liveMessages.length - 1}
-          isStreaming={i === liveMessages.length - 1 && isStreamingResponse}
-          onEditMessage={onEditMessage}
-          onRegenerateMessage={onRegenerateMessage}
-        />
-      ))}
-      {showLoadingPlaceholder && (
-        <LoadingMessage
-          isDarkMode={isDarkMode}
-          isRetrying={loadingState === 'retrying'}
-          retryInfo={retryInfo}
-        />
-      )}
-      {/* Spacer allows scrollIntoView to bring user message to top of viewport.
+        {/* Live Messages - the last messages up to max prompt limit */}
+        {liveMessages.map((message, i) => (
+          <ChatMessage
+            key={getMessageKey(`${chatId}-live`, message, i)}
+            message={message}
+            messageIndex={archivedMessages.length + i}
+            model={currentModel}
+            isDarkMode={isDarkMode}
+            isLastMessage={i === liveMessages.length - 1}
+            isStreaming={i === liveMessages.length - 1 && isStreamingResponse}
+            onEditMessage={onEditMessage}
+            onRegenerateMessage={onRegenerateMessage}
+          />
+        ))}
+        {showLoadingPlaceholder && (
+          <LoadingMessage
+            isDarkMode={isDarkMode}
+            isRetrying={loadingState === 'retrying'}
+            retryInfo={retryInfo}
+          />
+        )}
+        {/* Spacer allows scrollIntoView to bring user message to top of viewport.
           Subtracts the composer height (set on the scroll container as
           --input-area-height) so the total over-scroll is just enough for the
           fade above the input area, not a full 70dvh of empty space. */}
-      {showSpacer && (
-        <div
-          data-spacer
-          className="flex-shrink-0"
-          style={{
-            height: `max(0px, calc(70dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
-          }}
-          aria-hidden="true"
-        />
-      )}
-      <PrintableChat messages={messages} printRef={printRef} />
-    </div>
+        {showSpacer && (
+          <div
+            data-spacer
+            className="flex-shrink-0"
+            style={{
+              height: `max(0px, calc(70dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
+            }}
+            aria-hidden="true"
+          />
+        )}
+        <PrintableChat messages={messages} printRef={printRef} />
+      </div>
+    </ImageGalleryProvider>
   )
 }
