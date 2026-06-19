@@ -296,6 +296,11 @@ export function ChatSidebar({
         ),
       }
     : undefined
+
+  // Subtle background applied to expanded section panels so they read as
+  // distinct drawers against the sidebar surface.
+  const expandedPanelClass = isDarkMode ? 'bg-white/5' : 'bg-black/5'
+
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
     null,
   )
@@ -1221,7 +1226,12 @@ export function ChatSidebar({
                     transition={{ duration: 0.2, ease: 'easeInOut' }}
                     className="overflow-hidden"
                   >
-                    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-2">
+                    <div
+                      className={cn(
+                        'min-h-0 flex-1 space-y-1 overflow-y-auto px-2 py-2',
+                        expandedPanelClass,
+                      )}
+                    >
                       {/* Cloud sync disabled message */}
                       {!cloudSyncEnabled ? (
                         <div className="px-3 py-2">
@@ -1424,7 +1434,22 @@ export function ChatSidebar({
                                   {project.decryptionFailed ? (
                                     <FaLock className="mt-0.5 h-4 w-4 shrink-0 self-start text-orange-500" />
                                   ) : (
-                                    <FolderIcon className="mt-0.5 h-4 w-4 shrink-0 self-start text-content-muted" />
+                                    <FolderIcon
+                                      className={cn(
+                                        'mt-0.5 h-4 w-4 shrink-0 self-start',
+                                        !getProjectColor(project.color) &&
+                                          'text-content-muted',
+                                      )}
+                                      style={
+                                        getProjectColor(project.color)
+                                          ? {
+                                              color: getProjectColor(
+                                                project.color,
+                                              )!.hex,
+                                            }
+                                          : undefined
+                                      }
+                                    />
                                   )}
                                   <div className="flex min-w-0 flex-1 flex-col text-left">
                                     <span
@@ -1626,7 +1651,7 @@ export function ChatSidebar({
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
-                  className="overflow-hidden"
+                  className={cn('overflow-hidden', expandedPanelClass)}
                 >
                   {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
                   {isSignedIn && cloudSyncEnabled && localOnlyModeEnabled && (
@@ -1838,7 +1863,7 @@ export function ChatSidebar({
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
                 transition={{ duration: 0.2, ease: 'easeInOut' }}
-                className="flex-1 overflow-hidden"
+                className={cn('flex-1 overflow-hidden', expandedPanelClass)}
               >
                 <div
                   id="chat-storage-panel"

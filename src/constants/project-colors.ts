@@ -44,12 +44,6 @@ export const PROJECT_COLORS: ProjectColor[] = [
     hex: '#98A6B4',
     rgb: [152, 166, 180],
   },
-  {
-    id: 'cotton-candy',
-    label: 'Cotton Candy',
-    hex: '#FFA0AA',
-    rgb: [255, 160, 170],
-  },
 ]
 
 const PROJECT_COLOR_MAP: Record<string, ProjectColor> = PROJECT_COLORS.reduce(

@@ -9,7 +9,12 @@ import { PiSpinnerThin } from '@/components/icons/lazy-icons'
 import { Link } from '@/components/link'
 import { Logo } from '@/components/logo'
 import { cn } from '@/components/ui/utils'
-import { PROJECT_COLORS } from '@/constants/project-colors'
+import {
+  getProjectColor,
+  PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
+  PROJECT_COLORS,
+  projectColorTintLayer,
+} from '@/constants/project-colors'
 import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
 import type { Fact } from '@/types/memory'
@@ -691,6 +696,20 @@ export function ProjectSidebar({
 
   const isMobile = windowWidth < MOBILE_BREAKPOINT
 
+  const sidebarTintColor = getProjectColor(project?.color)
+  const sidebarTintStyle = sidebarTintColor
+    ? {
+        backgroundImage: projectColorTintLayer(
+          sidebarTintColor,
+          PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
+        ),
+      }
+    : undefined
+
+  // Subtle background applied to expanded section panels so they read as
+  // distinct drawers against the sidebar surface.
+  const expandedPanelClass = isDarkMode ? 'bg-white/5' : 'bg-black/5'
+
   return (
     <>
       {/* Collapsed sidebar rail - always visible on desktop when sidebar is closed */}
@@ -700,7 +719,10 @@ export function ProjectSidebar({
             'fixed left-0 top-0 z-40 flex h-dvh flex-col border-r',
             'border-border-subtle bg-surface-sidebar text-content-primary',
           )}
-          style={{ width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px` }}
+          style={{
+            width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`,
+            ...sidebarTintStyle,
+          }}
         >
           {/* Folder icon - shows expand icon on hover */}
           <div className="flex h-16 flex-none items-center justify-center">
@@ -750,7 +772,10 @@ export function ProjectSidebar({
           'border-border-subtle bg-surface-sidebar text-content-primary',
           'transition-all duration-200 ease-in-out',
         )}
-        style={{ maxWidth: `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px` }}
+        style={{
+          maxWidth: `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`,
+          ...sidebarTintStyle,
+        }}
       >
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between border-b border-border-subtle p-4">
@@ -955,7 +980,7 @@ export function ProjectSidebar({
               }
               disabled={isLoading}
               className={cn(
-                'flex w-full items-center justify-between bg-surface-sidebar px-4 py-3 text-sm transition-colors',
+                'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
                 isLoading
                   ? 'cursor-default opacity-50'
                   : isDarkMode
@@ -985,7 +1010,7 @@ export function ProjectSidebar({
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
                   className="overflow-hidden"
                 >
-                  <div className="px-4 py-4">
+                  <div className={cn('px-4 py-4', expandedPanelClass)}>
                     <div className="space-y-3">
                       {/* Description */}
                       <div className="space-y-2">
@@ -1146,7 +1171,7 @@ export function ProjectSidebar({
               }
               disabled={isLoading}
               className={cn(
-                'flex w-full items-center justify-between bg-surface-sidebar px-4 py-3 text-sm transition-colors',
+                'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
                 isLoading
                   ? 'cursor-default opacity-50'
                   : isDarkMode
@@ -1185,7 +1210,12 @@ export function ProjectSidebar({
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
                   className="overflow-hidden"
                 >
-                  <div className="max-h-64 overflow-y-auto px-2 py-2">
+                  <div
+                    className={cn(
+                      'max-h-64 overflow-y-auto px-2 py-2',
+                      expandedPanelClass,
+                    )}
+                  >
                     {/* Drag and drop zone - at top */}
                     <div
                       onClick={() =>
@@ -1391,7 +1421,7 @@ export function ProjectSidebar({
           </div>
 
           {/* Terms and privacy policy */}
-          <div className="relative z-10 flex h-[56px] flex-none items-center justify-center border-t border-border-subtle bg-surface-sidebar p-3">
+          <div className="relative z-10 flex h-[56px] flex-none items-center justify-center border-t border-border-subtle p-3">
             <p className="text-center text-xs leading-relaxed text-content-secondary">
               By using this service, you agree to Tinfoil&apos;s{' '}
               <Link
