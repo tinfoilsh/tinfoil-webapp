@@ -1818,6 +1818,17 @@ export function ChatInterface({
     [reloadChats, toast],
   )
 
+  // Handler for deleting every chat that belongs to a project. Reloads from
+  // storage afterwards so the deleted chats disappear locally without a
+  // page refresh.
+  const handleDeleteProjectChats = useCallback(
+    async (projectId: string): Promise<void> => {
+      await chatStorage.deleteChatsByProject(projectId)
+      await reloadChats()
+    },
+    [reloadChats],
+  )
+
   // Handler for converting a local-only chat to cloud chat via drag and drop
   const handleConvertChatToCloud = useCallback(
     async (chatId: string): Promise<void> => {
@@ -2902,6 +2913,7 @@ export function ChatInterface({
                     isSignedIn ? handleOpenEncryptionKeyModal : undefined
                   }
                   onRemoveChatFromProject={handleRemoveChatFromProject}
+                  onDeleteProjectChats={handleDeleteProjectChats}
                   onAddChatToProject={(chatId) =>
                     handleMoveChatToProject(chatId, activeProject.id)
                   }

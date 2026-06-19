@@ -11,7 +11,6 @@ import { Logo } from '@/components/logo'
 import { cn } from '@/components/ui/utils'
 import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
-import { chatStorage } from '@/services/storage/chat-storage'
 import type { Fact } from '@/types/memory'
 import type { Project } from '@/types/project'
 import { useAuth } from '@clerk/nextjs'
@@ -94,6 +93,7 @@ interface ProjectSidebarProps {
   updateChatTitle?: (chatId: string, newTitle: string) => void
   onEncryptionKeyClick?: () => void
   onRemoveChatFromProject?: (chatId: string) => Promise<void>
+  onDeleteProjectChats?: (projectId: string) => Promise<void>
   onAddChatToProject?: (chatId: string) => Promise<void>
   onMoveChatToProject?: (chatId: string, projectId: string) => Promise<void>
   projects?: ProjectOption[]
@@ -194,6 +194,7 @@ export function ProjectSidebar({
   updateChatTitle,
   onEncryptionKeyClick,
   onRemoveChatFromProject,
+  onDeleteProjectChats,
   onAddChatToProject,
   onMoveChatToProject,
   projects = [],
@@ -430,10 +431,10 @@ export function ProjectSidebar({
   }, [project, deleteProject, onExitProject])
 
   const handleClearProjectChats = useCallback(async () => {
-    if (!project) return
+    if (!project || !onDeleteProjectChats) return
     setIsClearingChats(true)
     try {
-      await chatStorage.deleteChatsByProject(project.id)
+      await onDeleteProjectChats(project.id)
       // The currently open chat may have been one of the deleted chats, so
       // start a fresh blank chat in this project.
       onNewChat()
@@ -448,7 +449,7 @@ export function ProjectSidebar({
       setIsClearingChats(false)
       setShowClearChatsConfirm(false)
     }
-  }, [project, onNewChat])
+  }, [project, onDeleteProjectChats, onNewChat])
 
   const handleFileUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
