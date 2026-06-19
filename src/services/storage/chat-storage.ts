@@ -166,6 +166,21 @@ export class ChatStorageService {
   async deleteChatsByProject(projectId: string): Promise<number> {
     await this.initialize()
 
+    // Bulk-delete from the cloud first. If it fails, skip the local wipe and
+    // tracker update so the user can retry without partial-deletion state.
+    if (await cloudStorage.isAuthenticated()) {
+      try {
+        await cloudStorage.deleteChatsByProject(projectId)
+      } catch (error) {
+        logError('Failed to bulk-delete project chats from cloud', error, {
+          component: 'ChatStorageService',
+          action: 'deleteChatsByProject',
+          metadata: { projectId },
+        })
+        throw error
+      }
+    }
+
     const deletedIds = await indexedDBStorage.deleteChatsByProject(projectId)
 
     for (const id of deletedIds) {
@@ -174,17 +189,6 @@ export class ChatStorageService {
 
     if (deletedIds.length > 0) {
       chatEvents.emit({ reason: 'delete', ids: deletedIds })
-    }
-
-    // Remove each chat from cloud storage (non-blocking per chat).
-    for (const id of deletedIds) {
-      cloudSync.deleteFromCloud(id).catch((error: unknown) => {
-        logError('Failed to delete project chat from cloud', error, {
-          component: 'ChatStorageService',
-          action: 'deleteChatsByProject',
-          metadata: { chatId: id, projectId },
-        })
-      })
     }
 
     logInfo(`Deleted ${deletedIds.length} chats for project`, {

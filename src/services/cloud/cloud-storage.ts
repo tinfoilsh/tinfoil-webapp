@@ -636,6 +636,28 @@ export class CloudStorageService {
     return { deleted }
   }
 
+  async deleteChatsByProject(projectId: string): Promise<{
+    deleted: number
+    notificationSent?: boolean
+  }> {
+    // Single server-side bulk delete: the controlplane removes every chat
+    // in the project and writes one tombstone per row, so other devices
+    // converge on the next sync without a per-chat round trip from here.
+    const response = await fetch(
+      `${API_BASE_URL}/api/projects/${encodeURIComponent(projectId)}/chats`,
+      {
+        method: 'DELETE',
+        headers: await this.getHeaders(),
+      },
+    )
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete project chats: ${response.statusText}`)
+    }
+
+    return response.json()
+  }
+
   async getChatSyncStatus(): Promise<ChatSyncStatus> {
     let count = 0
     let lastUpdated: string | null = null
