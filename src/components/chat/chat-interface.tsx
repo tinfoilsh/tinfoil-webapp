@@ -768,6 +768,11 @@ export function ChatInterface({
 
   const isTemporaryMode = currentChat?.isTemporary === true
 
+  const currentChatRef = useRef<Chat | null>(null)
+  useEffect(() => {
+    currentChatRef.current = currentChat ?? null
+  }, [currentChat])
+
   useEffect(() => {
     setActivePresetId(currentChat?.presetId ?? null)
   }, [currentChat?.id, currentChat?.presetId])
@@ -1661,6 +1666,18 @@ export function ChatInterface({
             generateTitle([{ role: 'user', content: titleContent }])
               .then((generated) => {
                 if (!generated || generated === 'Untitled') return
+                // If the user re-converted this chat to temporary (or
+                // navigated away) while the title was generating, skip
+                // persistence so the async completion can't resurrect a
+                // chat the user just removed.
+                const active = currentChatRef.current
+                if (
+                  !active ||
+                  active.id !== permanentChat.id ||
+                  active.isTemporary
+                ) {
+                  return
+                }
                 const titled: Chat = {
                   ...permanentChat,
                   title: generated,
