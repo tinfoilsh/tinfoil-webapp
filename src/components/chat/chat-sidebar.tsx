@@ -52,6 +52,11 @@ import { useDrag } from './drag-context'
 
 import { useProject } from '@/components/project/project-context'
 import { cn } from '@/components/ui/utils'
+import {
+  getProjectColor,
+  PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
+  projectColorTintLayer,
+} from '@/constants/project-colors'
 import { useCloudPagination } from '@/hooks/use-cloud-pagination'
 
 import { logError } from '@/utils/error-handling'
@@ -280,7 +285,17 @@ export function ChatSidebar({
     refresh: refreshProjects,
   } = useProjects({ autoLoad: isSignedIn && cloudSyncEnabled && isPremium })
 
-  const { deleteProject } = useProject()
+  const { deleteProject, activeProject } = useProject()
+
+  const sidebarTintColor = getProjectColor(activeProject?.color)
+  const sidebarTintStyle = sidebarTintColor
+    ? {
+        backgroundImage: projectColorTintLayer(
+          sidebarTintColor,
+          PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
+        ),
+      }
+    : undefined
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
     null,
   )
@@ -702,7 +717,10 @@ export function ChatSidebar({
               'fixed left-0 top-0 z-40 flex h-dvh flex-col border-r',
               'border-border-subtle bg-surface-sidebar text-content-primary',
             )}
-            style={{ width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px` }}
+            style={{
+              width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`,
+              ...sidebarTintStyle,
+            }}
           >
             {/* Logo icon - shows expand icon on hover */}
             <div className="flex h-16 flex-none items-center justify-center">
@@ -860,6 +878,7 @@ export function ChatSidebar({
             !isMobile && !isOpen
               ? `-${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`
               : '0',
+          ...sidebarTintStyle,
         }}
       >
         {/* Header */}

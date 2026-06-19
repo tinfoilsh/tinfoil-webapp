@@ -3201,6 +3201,7 @@ export function ChatInterface({
               <ProjectModeBanner
                 projectName={activeProject?.name || loadingProject?.name || ''}
                 isDarkMode={isDarkMode}
+                color={activeProject?.color}
               />
             ) : null}
 

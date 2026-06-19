@@ -1,26 +1,47 @@
 'use client'
 
 import { cn } from '@/components/ui/utils'
+import {
+  getProjectColor,
+  PROJECT_COLOR_LABEL_TINT_OPACITY,
+  projectColorRgba,
+} from '@/constants/project-colors'
 import { FolderIcon } from '@heroicons/react/24/outline'
 
 interface ProjectModeBannerProps {
   projectName: string
   isDarkMode: boolean
+  color?: string
 }
 
 export function ProjectModeBanner({
   projectName,
   isDarkMode,
+  color,
 }: ProjectModeBannerProps) {
+  const projectColor = getProjectColor(color)
+  const colorStyle = projectColor
+    ? {
+        borderColor: projectColor.hex,
+        backgroundColor: projectColorRgba(
+          projectColor,
+          PROJECT_COLOR_LABEL_TINT_OPACITY,
+        ),
+        color: projectColor.hex,
+      }
+    : undefined
+
   return (
     <div className="pointer-events-none relative z-10 hidden w-full flex-none justify-center md:flex">
       <div
         className={cn(
           'pointer-events-auto flex items-center gap-2 rounded-b-xl border-x border-b px-4 py-1.5 transition-colors',
-          isDarkMode
-            ? 'border-white/10 bg-white/5 text-white/60'
-            : 'border-gray-200 bg-gray-50 text-gray-500',
+          !projectColor &&
+            (isDarkMode
+              ? 'border-white/10 bg-white/5 text-white/60'
+              : 'border-gray-200 bg-gray-50 text-gray-500'),
         )}
+        style={colorStyle}
       >
         <FolderIcon className="h-3.5 w-3.5" />
         <span className="font-aeonik text-xs font-medium">

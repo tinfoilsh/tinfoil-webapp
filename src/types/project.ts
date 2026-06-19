@@ -10,6 +10,7 @@ export interface Project {
   name: string
   description: string
   systemInstructions: string
+  color?: string
   memory: Fact[]
   createdAt: string
   updatedAt: string
@@ -56,6 +57,7 @@ export interface ProjectData {
   name: string
   description: string
   systemInstructions: string
+  color?: string
   memory: Fact[]
 }
 
@@ -63,12 +65,14 @@ export interface CreateProjectData {
   name: string
   description?: string
   systemInstructions?: string
+  color?: string
 }
 
 export interface UpdateProjectData {
   name?: string
   description?: string
   systemInstructions?: string
+  color?: string
   memory?: Fact[]
 }
 
