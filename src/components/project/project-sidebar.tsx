@@ -980,9 +980,15 @@ export function ProjectSidebar({
                         >
                           <span>Danger Zone</span>
                           {dangerZoneExpanded ? (
-                            <ChevronUpIcon className="h-4 w-4" />
+                            <ChevronUpIcon
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                           ) : (
-                            <ChevronDownIcon className="h-4 w-4" />
+                            <ChevronDownIcon
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                           )}
                         </button>
                       </div>
@@ -992,7 +998,10 @@ export function ProjectSidebar({
                           {/* Delete all chats in this project */}
                           {showClearChatsConfirm ? (
                             <div className="rounded-lg bg-red-600 p-3">
-                              <p className="mb-3 font-aeonik-fono text-xs text-white">
+                              <p
+                                role="alert"
+                                className="mb-3 font-aeonik-fono text-xs text-white"
+                              >
                                 Delete all chats in this project? This cannot be
                                 undone. The project and its documents are kept.
                               </p>
@@ -1001,10 +1010,7 @@ export function ProjectSidebar({
                                   onClick={handleClearProjectChats}
                                   disabled={isClearingChats}
                                   className={cn(
-                                    'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-                                    isDarkMode
-                                      ? 'bg-red-200 text-red-900 hover:bg-red-300'
-                                      : 'bg-white text-red-600 hover:bg-red-50',
+                                    'flex-1 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-red-600',
                                     isClearingChats &&
                                       'cursor-not-allowed opacity-50',
                                   )}
@@ -1017,7 +1023,7 @@ export function ProjectSidebar({
                                   onClick={() =>
                                     setShowClearChatsConfirm(false)
                                   }
-                                  className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
+                                  className="flex-1 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-red-600"
                                 >
                                   Cancel
                                 </button>
@@ -1027,13 +1033,16 @@ export function ProjectSidebar({
                             <button
                               onClick={() => setShowClearChatsConfirm(true)}
                               className={cn(
-                                'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
+                                'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sidebar',
                                 isDarkMode
-                                  ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
-                                  : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
+                                  ? 'border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-950/50'
+                                  : 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100',
                               )}
                             >
-                              <TrashIcon className="h-3.5 w-3.5" />
+                              <TrashIcon
+                                className="h-3.5 w-3.5"
+                                aria-hidden="true"
+                              />
                               Delete all chats
                             </button>
                           )}
@@ -1041,7 +1050,10 @@ export function ProjectSidebar({
                           {/* Delete Project */}
                           {showDeleteConfirm ? (
                             <div className="rounded-lg bg-red-600 p-3">
-                              <p className="mb-3 font-aeonik-fono text-xs text-white">
+                              <p
+                                role="alert"
+                                className="mb-3 font-aeonik-fono text-xs text-white"
+                              >
                                 Delete this project? This cannot be undone.
                               </p>
                               <div className="flex gap-2">
@@ -1049,10 +1061,7 @@ export function ProjectSidebar({
                                   onClick={handleDeleteProject}
                                   disabled={isDeleting}
                                   className={cn(
-                                    'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-                                    isDarkMode
-                                      ? 'bg-red-200 text-red-900 hover:bg-red-300'
-                                      : 'bg-white text-red-600 hover:bg-red-50',
+                                    'flex-1 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition-colors hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-red-600',
                                     isDeleting &&
                                       'cursor-not-allowed opacity-50',
                                   )}
@@ -1061,7 +1070,7 @@ export function ProjectSidebar({
                                 </button>
                                 <button
                                   onClick={() => setShowDeleteConfirm(false)}
-                                  className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
+                                  className="flex-1 rounded-lg bg-red-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-red-600"
                                 >
                                   Cancel
                                 </button>
@@ -1071,13 +1080,16 @@ export function ProjectSidebar({
                             <button
                               onClick={() => setShowDeleteConfirm(true)}
                               className={cn(
-                                'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
+                                'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sidebar',
                                 isDarkMode
-                                  ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
-                                  : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
+                                  ? 'border-red-500/40 bg-red-950/30 text-red-300 hover:bg-red-950/50'
+                                  : 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100',
                               )}
                             >
-                              <TrashIcon className="h-3.5 w-3.5" />
+                              <TrashIcon
+                                className="h-3.5 w-3.5"
+                                aria-hidden="true"
+                              />
                               Delete Project
                             </button>
                           )}
