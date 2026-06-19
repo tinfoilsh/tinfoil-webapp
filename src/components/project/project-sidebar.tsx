@@ -542,6 +542,21 @@ export function ProjectSidebar({
     [],
   )
 
+  // onClick never fires for the middle button, so open the new tab
+  // explicitly to guarantee middle-click "open in new tab" works.
+  const handleNewChatAuxClick = useCallback(
+    (e: ReactMouseEvent<HTMLAnchorElement>) => {
+      if (e.button !== 1) return
+      e.preventDefault()
+      window.open(
+        projectId ? `/project/${projectId}` : '/newchat',
+        '_blank',
+        'noopener,noreferrer',
+      )
+    },
+    [projectId],
+  )
+
   const handleRemoveDocument = useCallback(
     async (docId: string) => {
       try {
@@ -631,6 +646,7 @@ export function ProjectSidebar({
               <Link
                 href={projectId ? `/project/${projectId}` : '/newchat'}
                 onClick={(e) => handleNewChatLinkClick(e, onNewChat)}
+                onAuxClick={handleNewChatAuxClick}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
@@ -832,6 +848,7 @@ export function ProjectSidebar({
                   handleNewChat()
                 })
               }
+              onAuxClick={handleNewChatAuxClick}
               className={cn(
                 'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
                 !currentChatId

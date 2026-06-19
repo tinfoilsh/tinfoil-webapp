@@ -720,6 +720,11 @@ export function ChatSidebar({
                   e.preventDefault()
                   createNewChat(activeTab === 'local', true)
                 }}
+                onAuxClick={(e) => {
+                  if (e.button !== 1) return
+                  e.preventDefault()
+                  window.open('/newchat', '_blank', 'noopener,noreferrer')
+                }}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
@@ -1046,6 +1051,11 @@ export function ChatSidebar({
                 e.preventDefault()
                 if (currentChat?.isBlankChat) return
                 createNewChat(activeTab === 'local', true)
+              }}
+              onAuxClick={(e) => {
+                if (e.button !== 1) return
+                e.preventDefault()
+                window.open('/newchat', '_blank', 'noopener,noreferrer')
               }}
               className={cn(
                 'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
