@@ -55,8 +55,14 @@ export function ModelSelector({
 
       const buttonRect = buttonElement.getBoundingClientRect()
 
+      // On mobile browsers (notably Firefox for Android) window.innerHeight
+      // does not account for the dynamic toolbar or on-screen keyboard, which
+      // can collapse the computed space and hide below-the-fold models. The
+      // visual viewport reflects the actually-visible area, so prefer it.
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+
       const spaceAbove = buttonRect.top - 20
-      const spaceBelow = window.innerHeight - buttonRect.bottom - 20
+      const spaceBelow = viewportHeight - buttonRect.bottom - 20
 
       let useAbove = preferredPosition === 'above'
 
@@ -75,7 +81,7 @@ export function ModelSelector({
       }
 
       const isMobile = window.innerWidth < 768
-      const maxHeightCap = isMobile ? 300 : window.innerHeight * 0.7
+      const maxHeightCap = isMobile ? 300 : viewportHeight * 0.7
 
       const menuWidth = 280
       const viewportWidth = window.innerWidth
@@ -127,6 +133,12 @@ export function ModelSelector({
 
     window.addEventListener('resize', throttledCalculatePosition)
     window.addEventListener('scroll', throttledCalculatePosition)
+    // The visual viewport changes when the mobile toolbar or keyboard shows
+    // or hides without firing window resize, so track it to keep the menu
+    // height and position in sync (e.g. Firefox for Android).
+    const visualViewport = window.visualViewport
+    visualViewport?.addEventListener('resize', throttledCalculatePosition)
+    visualViewport?.addEventListener('scroll', throttledCalculatePosition)
 
     return () => {
       if (animationFrameId !== null) {
@@ -134,6 +146,8 @@ export function ModelSelector({
       }
       window.removeEventListener('resize', throttledCalculatePosition)
       window.removeEventListener('scroll', throttledCalculatePosition)
+      visualViewport?.removeEventListener('resize', throttledCalculatePosition)
+      visualViewport?.removeEventListener('scroll', throttledCalculatePosition)
     }
   }, [preferredPosition])
 
