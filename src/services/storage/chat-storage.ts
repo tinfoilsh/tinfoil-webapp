@@ -163,6 +163,39 @@ export class ChatStorageService {
     })
   }
 
+  async deleteChatsByProject(projectId: string): Promise<number> {
+    await this.initialize()
+
+    const deletedIds = await indexedDBStorage.deleteChatsByProject(projectId)
+
+    for (const id of deletedIds) {
+      deletedChatsTracker.markAsDeleted(id)
+    }
+
+    if (deletedIds.length > 0) {
+      chatEvents.emit({ reason: 'delete', ids: deletedIds })
+    }
+
+    // Remove each chat from cloud storage (non-blocking per chat).
+    for (const id of deletedIds) {
+      cloudSync.deleteFromCloud(id).catch((error: unknown) => {
+        logError('Failed to delete project chat from cloud', error, {
+          component: 'ChatStorageService',
+          action: 'deleteChatsByProject',
+          metadata: { chatId: id, projectId },
+        })
+      })
+    }
+
+    logInfo(`Deleted ${deletedIds.length} chats for project`, {
+      component: 'ChatStorageService',
+      action: 'deleteChatsByProject',
+      metadata: { projectId, count: deletedIds.length },
+    })
+
+    return deletedIds.length
+  }
+
   async deleteAllNonLocalChats(): Promise<number> {
     await this.initialize()
 

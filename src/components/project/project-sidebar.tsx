@@ -11,6 +11,7 @@ import { Logo } from '@/components/logo'
 import { cn } from '@/components/ui/utils'
 import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
+import { chatStorage } from '@/services/storage/chat-storage'
 import type { Fact } from '@/types/memory'
 import type { Project } from '@/types/project'
 import { useAuth } from '@clerk/nextjs'
@@ -232,6 +233,8 @@ export function ProjectSidebar({
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [isClearingChats, setIsClearingChats] = useState(false)
+  const [showClearChatsConfirm, setShowClearChatsConfirm] = useState(false)
 
   const [isEditingProjectName, setIsEditingProjectName] = useState(false)
   const [editingProjectName, setEditingProjectName] = useState(
@@ -426,6 +429,27 @@ export function ProjectSidebar({
     }
   }, [project, deleteProject, onExitProject])
 
+  const handleClearProjectChats = useCallback(async () => {
+    if (!project) return
+    setIsClearingChats(true)
+    try {
+      await chatStorage.deleteChatsByProject(project.id)
+      // The currently open chat may have been one of the deleted chats, so
+      // start a fresh blank chat in this project.
+      onNewChat()
+    } catch {
+      toast({
+        title: 'Failed to delete project chats',
+        description:
+          'The chats in this project could not be deleted. Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsClearingChats(false)
+      setShowClearChatsConfirm(false)
+    }
+  }, [project, onNewChat])
+
   const handleFileUpload = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files
@@ -584,8 +608,20 @@ export function ProjectSidebar({
           <div className="flex flex-col items-center gap-1 px-2">
             {/* New chat button */}
             <div className="group relative">
-              <button
-                onClick={onNewChat}
+              <Link
+                href={projectId ? `/project/${projectId}` : '/newchat'}
+                onClick={(e) => {
+                  if (
+                    e.metaKey ||
+                    e.ctrlKey ||
+                    e.shiftKey ||
+                    e.altKey ||
+                    e.button !== 0
+                  )
+                    return
+                  e.preventDefault()
+                  onNewChat()
+                }}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                   'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
@@ -593,7 +629,7 @@ export function ProjectSidebar({
                 aria-label="New chat"
               >
                 <PiNotePencilLight className="h-5 w-5" />
-              </button>
+              </Link>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 New chat{' '}
                 <span className="text-content-muted">
@@ -778,9 +814,22 @@ export function ProjectSidebar({
 
           {/* New Chat button */}
           <div className="relative z-10 mt-3 flex-none px-2 py-2">
-            <button
-              onClick={handleNewChat}
-              disabled={!currentChatId}
+            <Link
+              href={projectId ? `/project/${projectId}` : '/newchat'}
+              aria-disabled={!currentChatId}
+              onClick={(e) => {
+                if (
+                  e.metaKey ||
+                  e.ctrlKey ||
+                  e.shiftKey ||
+                  e.altKey ||
+                  e.button !== 0
+                )
+                  return
+                e.preventDefault()
+                if (!currentChatId) return
+                handleNewChat()
+              }}
               className={cn(
                 'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
                 !currentChatId
@@ -798,7 +847,7 @@ export function ProjectSidebar({
                 {modKey}
                 {isMac ? '⇧' : 'Shift+'}O
               </span>
-            </button>
+            </Link>
           </div>
 
           {/* Project Settings Dropdown */}
@@ -895,6 +944,58 @@ export function ProjectSidebar({
                           )}
                         >
                           {isSaving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                      )}
+
+                      {/* Danger zone */}
+                      <div className="mt-2 border-t border-border-subtle pt-3">
+                        <div className="mb-2 font-aeonik text-xs font-medium uppercase tracking-wide text-content-muted">
+                          Danger zone
+                        </div>
+                      </div>
+
+                      {/* Delete all chats in this project */}
+                      {showClearChatsConfirm ? (
+                        <div className="rounded-lg bg-red-600 p-3">
+                          <p className="mb-3 font-aeonik-fono text-xs text-white">
+                            Delete all chats in this project? This cannot be
+                            undone. The project and its documents are kept.
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleClearProjectChats}
+                              disabled={isClearingChats}
+                              className={cn(
+                                'flex-1 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                                isDarkMode
+                                  ? 'bg-red-200 text-red-900 hover:bg-red-300'
+                                  : 'bg-white text-red-600 hover:bg-red-50',
+                                isClearingChats &&
+                                  'cursor-not-allowed opacity-50',
+                              )}
+                            >
+                              {isClearingChats ? 'Deleting...' : 'Delete all'}
+                            </button>
+                            <button
+                              onClick={() => setShowClearChatsConfirm(false)}
+                              className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-800"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setShowClearChatsConfirm(true)}
+                          className={cn(
+                            'flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
+                            isDarkMode
+                              ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
+                              : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
+                          )}
+                        >
+                          <TrashIcon className="h-3.5 w-3.5" />
+                          Delete all chats
                         </button>
                       )}
 

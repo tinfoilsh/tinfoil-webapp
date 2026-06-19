@@ -455,6 +455,38 @@ export class IndexedDBStorage {
     })
   }
 
+  async deleteChatsByProject(projectId: string): Promise<string[]> {
+    // Serialize through saveQueue so deletions can't race with an in-flight
+    // saveChatInternal that would resurrect a row after the delete.
+    return this.enqueueSave('deleteChatsByProject', async () => {
+      const db = await this.ensureDB()
+      return new Promise<string[]>((resolve, reject) => {
+        const transaction = db.transaction([CHATS_STORE], 'readwrite')
+        const store = transaction.objectStore(CHATS_STORE)
+        const request = store.openCursor()
+        const deletedIds: string[] = []
+
+        request.onsuccess = (event) => {
+          const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result
+          if (cursor) {
+            const chat = cursor.value as StoredChat
+            if (chat.projectId === projectId) {
+              deletedIds.push(chat.id)
+              cursor.delete()
+            }
+            cursor.continue()
+          }
+        }
+
+        transaction.oncomplete = () => resolve(deletedIds)
+        transaction.onerror = () =>
+          reject(new Error('Failed to delete project chats'))
+        request.onerror = () =>
+          reject(new Error('Failed to delete project chats'))
+      })
+    })
+  }
+
   async getAllChatIds(): Promise<string[]> {
     await this.saveQueue.catch(() => {})
     const db = await this.ensureDB()
