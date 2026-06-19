@@ -21,6 +21,7 @@ import {
   snapshotAndDecrementRemaining,
   type RateLimitInfo,
 } from '@/services/inference/tinfoil-client'
+import { generateTitle } from '@/services/inference/title'
 import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
 import {
   ArrowDownIcon,
@@ -55,9 +56,11 @@ import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-s
 
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { sessionChatStorage } from '@/services/storage/session-storage'
 import {
   isCloudSyncEnabled,
   setCloudSyncEnabled,
@@ -68,6 +71,7 @@ import {
   getProjectUploadPreference,
   setProjectUploadPreference,
 } from '@/utils/project-upload-preference'
+import { generateReverseId } from '@/utils/reverse-id'
 import {
   estimateMessageTokens,
   estimateTokenCount,
@@ -1599,7 +1603,80 @@ export function ChatInterface({
   }, [createNewChat, exitProjectMode])
 
   const handleToggleTemporaryMode = useCallback(() => {
+    const hasMessages = (currentChat?.messages?.length ?? 0) > 0
+    const storeHistory = isSignedIn || !isCloudSyncEnabled()
+
     if (currentChat?.isTemporary) {
+      // Deselecting temporary mode on a started chat saves it permanently.
+      if (hasMessages) {
+        const { id: newId } = generateReverseId()
+        const permanentChat: Chat = {
+          ...currentChat,
+          id: newId,
+          isTemporary: false,
+          isBlankChat: false,
+          title:
+            currentChat.title === 'Temporary Chat'
+              ? 'Untitled'
+              : currentChat.title,
+          codeExecutionAccessToken:
+            currentChat.codeExecutionAccessToken ??
+            generateCodeExecutionAccessToken(),
+          createdAt: currentChat.createdAt ?? new Date(),
+        }
+        previousChatIdRef.current = null
+        setCurrentChat(permanentChat)
+        setChats((prev) => [permanentChat, ...prev])
+        const persist = (chat: Chat) => {
+          if (storeHistory) {
+            chatStorage.saveChatAndSync(chat).catch((err) => {
+              logError('Failed to save temporary chat as permanent', err, {
+                component: 'ChatInterface',
+                action: 'handleToggleTemporaryMode.save',
+                metadata: { chatId: chat.id },
+              })
+            })
+          } else {
+            sessionChatStorage.saveChat(chat)
+          }
+        }
+        persist(permanentChat)
+
+        // Temporary chats never get titles generated during streaming, so
+        // generate one now from the first user message (falling back to
+        // attachment text) to avoid a list full of "Untitled" entries.
+        if (permanentChat.title === 'Untitled') {
+          const firstUser = permanentChat.messages.find(
+            (m) => m.role === 'user',
+          )
+          const titleContent =
+            firstUser?.content?.trim() ||
+            (firstUser?.attachments
+              ?.map((a) => a.textContent || a.description || a.fileName)
+              .filter(Boolean)
+              .join('\n') ??
+              '')
+          if (titleContent) {
+            generateTitle([{ role: 'user', content: titleContent }])
+              .then((generated) => {
+                if (!generated || generated === 'Untitled') return
+                const titled: Chat = {
+                  ...permanentChat,
+                  title: generated,
+                  titleState: 'generated',
+                }
+                setCurrentChat((cur) => (cur?.id === titled.id ? titled : cur))
+                setChats((prev) =>
+                  prev.map((c) => (c.id === titled.id ? titled : c)),
+                )
+                persist(titled)
+              })
+              .catch(() => {})
+          }
+        }
+        return
+      }
+
       const previousId = previousChatIdRef.current
       previousChatIdRef.current = null
       const restored = previousId
@@ -1609,6 +1686,33 @@ export function ChatInterface({
         setCurrentChat(restored)
       } else {
         createNewChat(false, true)
+      }
+      return
+    }
+
+    // Selecting temporary mode on a started chat removes it from history and
+    // keeps the conversation in memory only.
+    if (hasMessages && currentChat) {
+      const chatId = currentChat.id
+      const tempChat: Chat = {
+        ...currentChat,
+        id: `temp-${Date.now()}`,
+        isTemporary: true,
+        isBlankChat: false,
+      }
+      previousChatIdRef.current = null
+      setCurrentChat(tempChat)
+      setChats((prev) => prev.filter((c) => c.id !== chatId))
+      if (storeHistory) {
+        chatStorage.deleteChat(chatId).catch((err) => {
+          logError('Failed to remove chat during temporary conversion', err, {
+            component: 'ChatInterface',
+            action: 'handleToggleTemporaryMode.remove',
+            metadata: { chatId },
+          })
+        })
+      } else {
+        sessionChatStorage.deleteChat(chatId)
       }
       return
     }
@@ -1625,14 +1729,7 @@ export function ChatInterface({
       presetId: currentChat?.presetId,
     }
     setCurrentChat(tempChat)
-  }, [
-    chats,
-    createNewChat,
-    currentChat?.id,
-    currentChat?.isTemporary,
-    currentChat?.presetId,
-    setCurrentChat,
-  ])
+  }, [chats, createNewChat, currentChat, isSignedIn, setChats, setCurrentChat])
 
   useEffect(() => {
     if (!isTemporaryMode && previousChatIdRef.current) {
@@ -2667,32 +2764,42 @@ export function ChatInterface({
               </button>
             )}
 
-          {/* Temporary chat toggle - hidden once a chat has started */}
-          {!(currentChat?.messages && currentChat.messages.length > 0) && (
-            <div className="group relative">
-              <button
-                type="button"
-                onClick={handleToggleTemporaryMode}
-                aria-label={
-                  isTemporaryMode
-                    ? 'Exit temporary chat'
-                    : 'Start temporary chat'
-                }
-                aria-pressed={isTemporaryMode}
-                className={cn(
-                  'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
-                  isTemporaryMode
-                    ? 'border-orange-500/40 bg-orange-500/15 text-orange-500 hover:bg-orange-500/25'
-                    : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                )}
-              >
-                <SlGhost className="h-4 w-4" />
-              </button>
-              <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                {isTemporaryMode ? 'Exit temporary chat' : 'Temporary chat'}
-              </span>
-            </div>
-          )}
+          {/* Temporary chat toggle. Remains available after a chat has
+              started so it can convert between temporary and permanent:
+              turning it off saves the conversation, turning it on removes
+              it from history again. */}
+          {(() => {
+            const hasMessages =
+              !!currentChat?.messages && currentChat.messages.length > 0
+            const label = hasMessages
+              ? isTemporaryMode
+                ? 'Save chat'
+                : 'Make temporary'
+              : isTemporaryMode
+                ? 'Exit temporary chat'
+                : 'Temporary chat'
+            return (
+              <div className="group relative">
+                <button
+                  type="button"
+                  onClick={handleToggleTemporaryMode}
+                  aria-label={label}
+                  aria-pressed={isTemporaryMode}
+                  className={cn(
+                    'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
+                    isTemporaryMode
+                      ? 'border-orange-500/40 bg-orange-500/15 text-orange-500 hover:bg-orange-500/25'
+                      : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                  )}
+                >
+                  <SlGhost className="h-4 w-4" />
+                </button>
+                <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                  {label}
+                </span>
+              </div>
+            )
+          })()}
 
           {/* Share button - only show when there are messages and chat is not temporary */}
           {!currentChat?.isTemporary &&
