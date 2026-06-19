@@ -1,11 +1,7 @@
 import { FiArrowUp } from '@/components/icons/lazy-icons'
 import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
-import {
-  getProjectColor,
-  PROJECT_COLOR_LABEL_TINT_OPACITY,
-  projectColorRgba,
-} from '@/constants/project-colors'
+import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
@@ -549,11 +545,7 @@ export function ChatInput({
             const colorStyle = projectColor
               ? {
                   borderColor: projectColor.hex,
-                  backgroundColor: projectColorRgba(
-                    projectColor,
-                    PROJECT_COLOR_LABEL_TINT_OPACITY,
-                  ),
-                  color: projectColor.hex,
+                  backgroundColor: projectColor.hex,
                 }
               : undefined
             return (
@@ -562,7 +554,7 @@ export function ChatInput({
                   className={cn(
                     'pointer-events-auto inline-flex items-center gap-1.5 rounded-t-lg border border-b-0 px-2.5 py-1',
                     projectColor
-                      ? ''
+                      ? 'text-gray-900'
                       : 'border-border-subtle bg-surface-chat text-content-secondary',
                   )}
                   style={colorStyle}
