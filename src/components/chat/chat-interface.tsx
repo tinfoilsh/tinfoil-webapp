@@ -113,6 +113,7 @@ import {
   OPEN_ARTIFACT_PREVIEW_EVENT,
   type ArtifactPreviewSidebarDetail,
 } from './genui/widgets/ArtifactPreview'
+import { sortChats } from './hooks/chat-operations'
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
 import { useMessageQueue } from './hooks/use-message-queue'
@@ -1626,7 +1627,7 @@ export function ChatInterface({
         }
         previousChatIdRef.current = null
         setCurrentChat(permanentChat)
-        setChats((prev) => [permanentChat, ...prev])
+        setChats((prev) => sortChats([permanentChat, ...prev]))
         const persist = (chat: Chat) => {
           if (storeHistory) {
             chatStorage.saveChatAndSync(chat).catch((err) => {
