@@ -1841,8 +1841,21 @@ export function ChatInterface({
   // page refresh.
   const handleDeleteProjectChats = useCallback(
     async (projectId: string): Promise<void> => {
-      await chatStorage.deleteChatsByProject(projectId)
-      await reloadChats()
+      try {
+        await chatStorage.deleteChatsByProject(projectId)
+        await reloadChats()
+      } catch (error) {
+        logError('Failed to delete project chats', error, {
+          component: 'ChatInterface',
+          action: 'handleDeleteProjectChats',
+          metadata: { projectId },
+        })
+
+        // Rollback: reload chats to restore original state
+        await reloadChats()
+
+        throw error
+      }
     },
     [reloadChats],
   )
