@@ -9,6 +9,7 @@ import { PiSpinnerThin } from '@/components/icons/lazy-icons'
 import { Link } from '@/components/link'
 import { Logo } from '@/components/logo'
 import { cn } from '@/components/ui/utils'
+import { PROJECT_COLORS } from '@/constants/project-colors'
 import { UI_EXPAND_PROJECT_DOCUMENTS } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
 import type { Fact } from '@/types/memory'
@@ -16,6 +17,7 @@ import type { Project } from '@/types/project'
 import { useAuth } from '@clerk/nextjs'
 import {
   ArrowLeftIcon,
+  CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   Cog6ToothIcon,
@@ -237,6 +239,7 @@ export function ProjectSidebar({
   const [editedInstructions, setEditedInstructions] = useState(
     project?.systemInstructions ?? '',
   )
+  const [editedColor, setEditedColor] = useState(project?.color)
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -275,6 +278,7 @@ export function ProjectSidebar({
       setEditedName(project.name)
       setEditedDescription(project.description)
       setEditedInstructions(project.systemInstructions)
+      setEditedColor(project.color)
       setEditingProjectName(project.name)
 
       const shouldAnimate =
@@ -365,6 +369,7 @@ export function ProjectSidebar({
         name: editedName,
         description: editedDescription,
         systemInstructions: editedInstructions,
+        color: editedColor ?? '',
       })
     } catch {
       toast({
@@ -381,6 +386,7 @@ export function ProjectSidebar({
     editedName,
     editedDescription,
     editedInstructions,
+    editedColor,
     updateProject,
   ])
 
@@ -585,7 +591,8 @@ export function ProjectSidebar({
   const hasUnsavedChanges = project
     ? editedName !== project.name ||
       editedDescription !== project.description ||
-      editedInstructions !== project.systemInstructions
+      editedInstructions !== project.systemInstructions ||
+      (editedColor ?? '') !== (project.color ?? '')
     : false
 
   const blankChat: ChatItemData = {
@@ -953,6 +960,42 @@ export function ProjectSidebar({
                             'focus:outline-none focus:ring-1 focus:ring-border-strong',
                           )}
                         />
+                      </div>
+
+                      {/* Color */}
+                      <div className="space-y-2">
+                        <div className="font-aeonik text-sm font-medium text-content-secondary">
+                          Color
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {PROJECT_COLORS.map((projectColor) => {
+                            const isSelected = editedColor === projectColor.id
+                            return (
+                              <button
+                                key={projectColor.id}
+                                type="button"
+                                onClick={() =>
+                                  setEditedColor(
+                                    isSelected ? undefined : projectColor.id,
+                                  )
+                                }
+                                title={projectColor.label}
+                                aria-label={projectColor.label}
+                                aria-pressed={isSelected}
+                                className={cn(
+                                  'flex h-7 w-7 items-center justify-center rounded-full transition-transform hover:scale-110 focus:outline-none focus:ring-1 focus:ring-border-strong',
+                                  isSelected &&
+                                    'ring-2 ring-content-primary ring-offset-2 ring-offset-surface-sidebar',
+                                )}
+                                style={{ backgroundColor: projectColor.hex }}
+                              >
+                                {isSelected && (
+                                  <CheckIcon className="h-4 w-4 text-black/70" />
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
 
                       {/* Save button */}
