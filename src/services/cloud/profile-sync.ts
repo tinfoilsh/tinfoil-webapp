@@ -75,6 +75,7 @@ export interface ProfileData {
   webSearchEnabled?: boolean
   codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
+  genUIEnabled?: boolean
   chatFont?: 'system' | 'serif' | 'mono' | 'dyslexic'
   projectUploadPreference?: 'project' | 'chat'
 

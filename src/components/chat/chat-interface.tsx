@@ -5,6 +5,7 @@ import {
 } from '@/config/models'
 import {
   SETTINGS_CODE_EXECUTION_ENABLED,
+  SETTINGS_GENUI_ENABLED,
   SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_WEB_SEARCH_ENABLED,
@@ -494,6 +495,13 @@ export function ChatInterface({
     return saved === null ? true : saved === 'true'
   })
 
+  // Generative UI setting (controlled from settings modal, defaults to on)
+  const [genUIEnabled, setGenUIEnabled] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = localStorage.getItem(SETTINGS_GENUI_ENABLED)
+    return saved === null ? true : saved === 'true'
+  })
+
   // State for tracking processed documents
   const [processedDocuments, setProcessedDocuments] = useState<
     ProcessedDocument[]
@@ -764,6 +772,7 @@ export function ChatInterface({
     canUseCodeExecution,
     codeExecutionEnabled: canUseCodeExecution ? codeExecutionEnabled : false,
     piiCheckEnabled,
+    genUIEnabled,
   })
 
   const isTemporaryMode = currentChat?.isTemporary === true
@@ -1121,6 +1130,25 @@ export function ChatInterface({
       window.removeEventListener(
         'piiCheckEnabledChanged',
         handlePiiCheckChange as EventListener,
+      )
+    }
+  }, [])
+
+  // Listen for Generative UI setting changes from settings modal
+  useEffect(() => {
+    const handleGenUIChange = (event: CustomEvent<{ enabled: boolean }>) => {
+      setGenUIEnabled(event.detail.enabled)
+    }
+
+    window.addEventListener(
+      'genUIEnabledChanged',
+      handleGenUIChange as EventListener,
+    )
+
+    return () => {
+      window.removeEventListener(
+        'genUIEnabledChanged',
+        handleGenUIChange as EventListener,
       )
     }
   }, [])

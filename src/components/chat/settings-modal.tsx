@@ -5,6 +5,7 @@ import { API_BASE_URL } from '@/config'
 import {
   SETTINGS_CHAT_FONT,
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
+  SETTINGS_GENUI_ENABLED,
   SETTINGS_PII_CHECK_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
@@ -423,6 +424,9 @@ export function SettingsModal({
   // Web Search PII check setting (defaults to on)
   const [piiCheckEnabled, setPiiCheckEnabled] = useState<boolean>(true)
 
+  // Generative UI setting (defaults to on)
+  const [genUIEnabled, setGenUIEnabled] = useState<boolean>(true)
+
   // Chat font setting
   const [chatFont, setChatFont] = useState<ChatFont>('system')
 
@@ -654,6 +658,10 @@ export function SettingsModal({
     // Load PII check setting (defaults to true if not set)
     const savedPiiCheck = localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)
     setPiiCheckEnabled(savedPiiCheck === null ? true : savedPiiCheck === 'true')
+
+    // Load Generative UI setting (defaults to true if not set)
+    const savedGenUI = localStorage.getItem(SETTINGS_GENUI_ENABLED)
+    setGenUIEnabled(savedGenUI === null ? true : savedGenUI === 'true')
 
     // Load chat font setting
     const savedChatFont = localStorage.getItem(SETTINGS_CHAT_FONT)
@@ -2043,14 +2051,16 @@ ${encryptionKey.replace('key_', '')}
               {navItems.find((item) => item.id === activeTab)?.label}
             </h2>
             <div className="flex items-center gap-2">
-              {activeTab === 'personalization' && hasUnsavedPersonalization && (
-                <button
-                  onClick={handleSavePersonalization}
-                  className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
-                >
-                  Save
-                </button>
-              )}
+              {activeTab === 'personalization' &&
+                isUsingPersonalization &&
+                hasUnsavedPersonalization && (
+                  <button
+                    onClick={handleSavePersonalization}
+                    className="rounded-lg bg-brand-accent-dark px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                  >
+                    Save
+                  </button>
+                )}
               <button
                 onClick={() => setIsOpen(false)}
                 className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
@@ -2127,14 +2137,16 @@ ${encryptionKey.replace('key_', '')}
             <h2 className="font-aeonik text-lg font-semibold text-content-primary">
               {navItems.find((item) => item.id === activeTab)?.label}
             </h2>
-            {activeTab === 'personalization' && hasUnsavedPersonalization && (
-              <button
-                onClick={handleSavePersonalization}
-                className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
-              >
-                Save
-              </button>
-            )}
+            {activeTab === 'personalization' &&
+              isUsingPersonalization &&
+              hasUnsavedPersonalization && (
+                <button
+                  onClick={handleSavePersonalization}
+                  className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                >
+                  Save
+                </button>
+              )}
           </div>
 
           {/* Content */}
@@ -2349,6 +2361,50 @@ ${encryptionKey.replace('key_', '')}
                                   )
                                   window.dispatchEvent(
                                     new CustomEvent('piiCheckEnabledChanged', {
+                                      detail: { enabled: newValue },
+                                    }),
+                                  )
+                                }
+                              }}
+                              className="peer sr-only"
+                            />
+                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Generative UI */}
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="mr-3 flex-1">
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Generative UI
+                            </div>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              Let Tin render interactive widgets like charts and
+                              timelines. When off, no tool capabilities are sent
+                              to the model.
+                            </div>
+                          </div>
+                          <label className="relative inline-flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={genUIEnabled}
+                              onChange={(e) => {
+                                const newValue = e.target.checked
+                                setGenUIEnabled(newValue)
+                                if (isClient) {
+                                  localStorage.setItem(
+                                    SETTINGS_GENUI_ENABLED,
+                                    newValue.toString(),
+                                  )
+                                  window.dispatchEvent(
+                                    new CustomEvent('genUIEnabledChanged', {
                                       detail: { enabled: newValue },
                                     }),
                                   )
@@ -2616,162 +2672,203 @@ ${encryptionKey.replace('key_', '')}
               {/* Personalization Tab */}
               {activeTab === 'personalization' && (
                 <>
-                  {/* Nickname */}
+                  {/* Enable Personalization */}
                   <div
                     className={cn(
                       'rounded-lg border border-border-subtle p-4',
                       isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                     )}
                   >
-                    <div className="space-y-3">
-                      <div>
+                    <div className="flex items-start justify-between">
+                      <div className="mr-3 flex-1">
                         <div className="font-aeonik text-sm font-medium text-content-primary">
-                          Name
+                          Personalize responses
                         </div>
                         <div className="font-aeonik-fono text-xs text-content-muted">
-                          How should Tin call you?
+                          Tailor Tin&apos;s replies using the details below.
+                          When off, none of these are sent to the model.
                         </div>
                       </div>
-                      <input
-                        type="text"
-                        value={nickname}
-                        onChange={(e) => handleNicknameChange(e.target.value)}
-                        placeholder="Nickname"
-                        className={cn(
-                          'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
-                          isDarkMode
-                            ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                            : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Profession */}
-                  <div
-                    className={cn(
-                      'rounded-lg border border-border-subtle p-4',
-                      isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                    )}
-                  >
-                    <div className="space-y-3">
-                      <div>
-                        <div className="font-aeonik text-sm font-medium text-content-primary">
-                          Occupation
-                        </div>
-                        <div className="font-aeonik-fono text-xs text-content-muted">
-                          What do you do?
-                        </div>
-                      </div>
-                      <div className="relative">
+                      <label className="relative inline-flex cursor-pointer items-center">
                         <input
-                          type="text"
-                          value={profession}
+                          type="checkbox"
+                          checked={isUsingPersonalization}
                           onChange={(e) =>
-                            handleProfessionChange(e.target.value)
+                            handleTogglePersonalization(e.target.checked)
                           }
-                          className={cn(
-                            'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
-                            isDarkMode
-                              ? 'border-border-strong bg-surface-chat text-content-secondary'
-                              : 'border-border-subtle bg-surface-sidebar text-content-primary',
-                          )}
+                          className="peer sr-only"
                         />
-                        {!profession && (
-                          <span
-                            className={cn(
-                              'pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-content-muted transition-opacity duration-150',
-                              placeholderVisible ? 'opacity-100' : 'opacity-0',
-                            )}
-                          >
-                            {getCurrentPlaceholder()}
-                          </span>
-                        )}
-                      </div>
+                        <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                      </label>
                     </div>
                   </div>
 
-                  {/* Traits */}
-                  <div
-                    className={cn(
-                      'rounded-lg border border-border-subtle p-4',
-                      isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                    )}
-                  >
-                    <div className="space-y-3">
-                      <div>
-                        <div className="font-aeonik text-sm font-medium text-content-primary">
-                          Conversational Traits
-                        </div>
-                        <div className="font-aeonik-fono text-xs text-content-muted">
-                          What traits should Tin have?
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {availableTraits.map((trait) => (
-                          <button
-                            key={trait}
-                            onClick={() => handleTraitToggle(trait)}
-                            className={cn(
-                              'rounded-full px-3 py-1.5 text-sm transition-colors',
-                              selectedTraits.includes(trait)
-                                ? 'bg-brand-accent-light text-brand-accent-dark'
-                                : isDarkMode
-                                  ? 'bg-surface-chat text-content-secondary hover:bg-surface-chat'
-                                  : 'border border-border-subtle bg-surface-sidebar text-content-secondary hover:bg-surface-chat',
-                            )}
-                          >
-                            {selectedTraits.includes(trait) ? '✓ ' : '+ '}
-                            {trait}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Additional Context */}
-                  <div
-                    className={cn(
-                      'rounded-lg border border-border-subtle p-4',
-                      isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                    )}
-                  >
-                    <div className="space-y-3">
-                      <div>
-                        <div className="font-aeonik text-sm font-medium text-content-primary">
-                          Additional Context
-                        </div>
-                        <div className="font-aeonik-fono text-xs text-content-muted">
-                          Anything else Tin should know about you?
-                        </div>
-                      </div>
-                      <textarea
-                        value={additionalContext}
-                        onChange={(e) => handleContextChange(e.target.value)}
-                        placeholder="Interests and other preferences you'd like Tin to know about you."
-                        rows={3}
+                  {isUsingPersonalization && (
+                    <>
+                      {/* Nickname */}
+                      <div
                         className={cn(
-                          'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
-                          isDarkMode
-                            ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                            : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
-                      />
-                    </div>
-                  </div>
+                      >
+                        <div className="space-y-3">
+                          <div>
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Name
+                            </div>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              How should Tin call you?
+                            </div>
+                          </div>
+                          <input
+                            type="text"
+                            value={nickname}
+                            onChange={(e) =>
+                              handleNicknameChange(e.target.value)
+                            }
+                            placeholder="Nickname"
+                            className={cn(
+                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              isDarkMode
+                                ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
+                            )}
+                          />
+                        </div>
+                      </div>
 
-                  {/* Reset Button */}
-                  <button
-                    onClick={handleResetPersonalization}
-                    className={cn(
-                      'w-full rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
-                      isDarkMode
-                        ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
-                        : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
-                    )}
-                  >
-                    Reset all fields
-                  </button>
+                      {/* Profession */}
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="space-y-3">
+                          <div>
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Occupation
+                            </div>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              What do you do?
+                            </div>
+                          </div>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={profession}
+                              onChange={(e) =>
+                                handleProfessionChange(e.target.value)
+                              }
+                              className={cn(
+                                'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                                isDarkMode
+                                  ? 'border-border-strong bg-surface-chat text-content-secondary'
+                                  : 'border-border-subtle bg-surface-sidebar text-content-primary',
+                              )}
+                            />
+                            {!profession && (
+                              <span
+                                className={cn(
+                                  'pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-content-muted transition-opacity duration-150',
+                                  placeholderVisible
+                                    ? 'opacity-100'
+                                    : 'opacity-0',
+                                )}
+                              >
+                                {getCurrentPlaceholder()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Traits */}
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="space-y-3">
+                          <div>
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Conversational Traits
+                            </div>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              What traits should Tin have?
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {availableTraits.map((trait) => (
+                              <button
+                                key={trait}
+                                onClick={() => handleTraitToggle(trait)}
+                                className={cn(
+                                  'rounded-full px-3 py-1.5 text-sm transition-colors',
+                                  selectedTraits.includes(trait)
+                                    ? 'bg-brand-accent-light text-brand-accent-dark'
+                                    : isDarkMode
+                                      ? 'bg-surface-chat text-content-secondary hover:bg-surface-chat'
+                                      : 'border border-border-subtle bg-surface-sidebar text-content-secondary hover:bg-surface-chat',
+                                )}
+                              >
+                                {selectedTraits.includes(trait) ? '✓ ' : '+ '}
+                                {trait}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Additional Context */}
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="space-y-3">
+                          <div>
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Additional Context
+                            </div>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              Anything else Tin should know about you?
+                            </div>
+                          </div>
+                          <textarea
+                            value={additionalContext}
+                            onChange={(e) =>
+                              handleContextChange(e.target.value)
+                            }
+                            placeholder="Interests and other preferences you'd like Tin to know about you."
+                            rows={3}
+                            className={cn(
+                              'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              isDarkMode
+                                ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
+                            )}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Reset Button */}
+                      <button
+                        onClick={handleResetPersonalization}
+                        className={cn(
+                          'w-full rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
+                          isDarkMode
+                            ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
+                            : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
+                        )}
+                      >
+                        Reset all fields
+                      </button>
+                    </>
+                  )}
                 </>
               )}
 

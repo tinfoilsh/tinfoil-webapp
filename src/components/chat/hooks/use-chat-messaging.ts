@@ -66,6 +66,7 @@ interface UseChatMessagingProps {
   webSearchEnabled?: boolean
   codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
+  genUIEnabled?: boolean
   codeExecutionEncryptionKey?: string | null
 }
 
@@ -116,6 +117,7 @@ export function useChatMessaging({
   webSearchEnabled,
   codeExecutionEnabled,
   piiCheckEnabled,
+  genUIEnabled,
   codeExecutionEncryptionKey,
 }: UseChatMessagingProps): UseChatMessagingReturn {
   const { isSignedIn } = useAuth()
@@ -649,7 +651,7 @@ export function useChatMessaging({
           webSearchEnabled,
           codeExecutionEnabled,
           piiCheckEnabled,
-          genUIEnabled: true,
+          genUIEnabled: genUIEnabled ?? true,
           codeExecutionAccessToken: updatedChat.codeExecutionAccessToken,
           codeExecutionEncryptionKey: codeExecutionEncryptionKey ?? undefined,
           codeExecutionContainerAuthToken,
@@ -890,6 +892,7 @@ export function useChatMessaging({
       webSearchEnabled,
       codeExecutionEnabled,
       piiCheckEnabled,
+      genUIEnabled,
       codeExecutionEncryptionKey,
       patchStatus,
       resetStatus,

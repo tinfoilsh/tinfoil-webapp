@@ -1,6 +1,7 @@
 import {
   SETTINGS_CHAT_FONT,
   SETTINGS_CODE_EXECUTION_ENABLED,
+  SETTINGS_GENUI_ENABLED,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_REASONING_EFFORT,
   SETTINGS_SELECTED_MODEL,
@@ -91,6 +92,7 @@ export function hasProfileChanged(
     profile1.webSearchEnabled !== profile2.webSearchEnabled ||
     profile1.codeExecutionEnabled !== profile2.codeExecutionEnabled ||
     profile1.piiCheckEnabled !== profile2.piiCheckEnabled ||
+    profile1.genUIEnabled !== profile2.genUIEnabled ||
     profile1.chatFont !== profile2.chatFont ||
     profile1.projectUploadPreference !== profile2.projectUploadPreference
   )
@@ -214,6 +216,11 @@ export function loadLocalSettings(): ProfileData {
     settings.piiCheckEnabled = piiCheckEnabled === 'true'
   }
 
+  const genUIEnabled = localStorage.getItem(SETTINGS_GENUI_ENABLED)
+  if (genUIEnabled !== null) {
+    settings.genUIEnabled = genUIEnabled === 'true'
+  }
+
   const chatFont = localStorage.getItem(SETTINGS_CHAT_FONT)
   if (
     chatFont === 'system' ||
@@ -255,6 +262,7 @@ export function resetSettingsToLocalDefaults(): ProfileData {
     webSearchEnabled: true,
     codeExecutionEnabled: false,
     piiCheckEnabled: true,
+    genUIEnabled: true,
     chatFont: 'system',
   }
 
@@ -455,6 +463,15 @@ export function applySettingsToLocal(settings: ProfileData): void {
     window.dispatchEvent(
       new CustomEvent('piiCheckEnabledChanged', {
         detail: { enabled: settings.piiCheckEnabled },
+      }),
+    )
+  }
+
+  if (settings.genUIEnabled !== undefined) {
+    localStorage.setItem(SETTINGS_GENUI_ENABLED, String(settings.genUIEnabled))
+    window.dispatchEvent(
+      new CustomEvent('genUIEnabledChanged', {
+        detail: { enabled: settings.genUIEnabled },
       }),
     )
   }
