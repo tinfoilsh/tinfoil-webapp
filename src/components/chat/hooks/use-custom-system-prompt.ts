@@ -25,6 +25,18 @@ type UseCustomSystemPromptReturn = {
   isUsingPersonalization: boolean
 }
 
+const stripSystemTags = (prompt: string): string =>
+  prompt
+    .replace(/^<system>\s*\n?/, '')
+    .replace(/\n?<\/system>\s*$/, '')
+    .trim()
+
+const hasSystemPromptContent = (prompt: string): boolean =>
+  stripSystemTags(prompt).length > 0
+
+const normalizeSystemPrompt = (prompt: string): string =>
+  hasSystemPromptContent(prompt) ? prompt : ''
+
 export const useCustomSystemPrompt = (
   defaultSystemPrompt: string,
   rules: string = '',
@@ -84,7 +96,11 @@ export const useCustomSystemPrompt = (
       )
 
       setIsUsingCustomPrompt(savedUsingCustomPrompt === 'true')
-      setCustomPrompt(savedCustomPrompt || defaultSystemPrompt || '')
+      if (savedCustomPrompt !== null) {
+        setCustomPrompt(normalizeSystemPrompt(savedCustomPrompt))
+      } else {
+        setCustomPrompt(defaultSystemPrompt || '')
+      }
     }
   }, [defaultSystemPrompt])
 
@@ -120,7 +136,7 @@ export const useCustomSystemPrompt = (
     const handleCustomPromptChange = (event: CustomEvent) => {
       const { isEnabled, customPrompt } = event.detail
       setIsUsingCustomPrompt(isEnabled || false)
-      setCustomPrompt(customPrompt || defaultSystemPrompt || '')
+      setCustomPrompt(normalizeSystemPrompt(customPrompt ?? ''))
     }
 
     window.addEventListener(
@@ -234,7 +250,7 @@ export const useCustomSystemPrompt = (
     let basePrompt: string
     if (activePresetPrompt && activePresetPrompt.trim()) {
       basePrompt = activePresetPrompt
-    } else if (isUsingCustomPrompt && customPrompt) {
+    } else if (isUsingCustomPrompt) {
       basePrompt = customPrompt
     } else {
       basePrompt = defaultSystemPrompt
@@ -247,6 +263,13 @@ export const useCustomSystemPrompt = (
   // Apply the same replacements to rules
   const processRules = (): string => {
     if (!rules) return ''
+    if (
+      isUsingCustomPrompt &&
+      !hasSystemPromptContent(customPrompt) &&
+      !(activePresetPrompt && activePresetPrompt.trim())
+    ) {
+      return ''
+    }
     return replacePlaceholders(rules)
   }
 

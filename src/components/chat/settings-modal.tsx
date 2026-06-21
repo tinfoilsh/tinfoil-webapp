@@ -945,6 +945,7 @@ export function SettingsModal({
   // Helper to add <system> tags if not present
   const ensureSystemTags = (prompt: string): string => {
     const trimmed = prompt.trim()
+    if (!trimmed) return ''
     if (!trimmed.startsWith('<system>')) {
       return `<system>\n${trimmed}\n</system>`
     }
