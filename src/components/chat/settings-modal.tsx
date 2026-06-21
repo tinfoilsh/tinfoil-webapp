@@ -19,6 +19,8 @@ import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import { buildChatExport } from '@/services/chat-export/export-archive'
+import { runOffDeviceImport } from '@/services/chat-import/off-device-import'
+import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { cloudSync } from '@/services/cloud/cloud-sync'
@@ -1253,11 +1255,67 @@ export function SettingsModal({
     isCloudSyncEnabled: isCloudSyncEnabled(),
   })
 
+  // Cloud-sync users import off-device: the raw export is uploaded to
+  // the enclave, which parses, seals, and stores everything without the
+  // plaintext touching app servers, then emails the user on completion.
+  const shouldImportOffDevice = () =>
+    Boolean(isSignedIn) && isCloudSyncEnabled() && hasPrimaryKey()
+
+  const importOffDevice = async (
+    source: 'chatgpt' | 'claude',
+    file: File,
+    sourceLabel: string,
+  ) => {
+    setImportSource(source)
+    setIsImporting(true)
+    setImportResult(null)
+    try {
+      const { status } = await runOffDeviceImport(source, file)
+      const errors = status.errors ?? []
+      setImportResult({
+        success: status.status !== 'failed',
+        chatsImported: status.imported,
+        projectsImported: 0,
+        errors,
+      })
+      toast({
+        title: 'Import started',
+        description: `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`,
+      })
+      if (onChatsUpdated) {
+        onChatsUpdated()
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to start import'
+      setImportResult({
+        success: false,
+        chatsImported: 0,
+        projectsImported: 0,
+        errors: [message],
+      })
+      toast({
+        title: 'Import failed',
+        description: `Could not start the ${sourceLabel} import`,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsImporting(false)
+      setImportProgress(null)
+    }
+  }
+
   const handleImportChatGPT = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (shouldImportOffDevice()) {
+      await importOffDevice('chatgpt', file, 'ChatGPT')
+      e.target.value = ''
+      return
+    }
 
     setImportSource('chatgpt')
     setIsImporting(true)
@@ -1361,6 +1419,12 @@ export function SettingsModal({
   ) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (shouldImportOffDevice()) {
+      await importOffDevice('claude', file, 'Claude')
+      e.target.value = ''
+      return
+    }
 
     setImportSource('claude')
     setIsImporting(true)
@@ -3701,7 +3765,7 @@ ${encryptionKey.replace('key_', '')}
                       <input
                         ref={chatGptFileInputRef}
                         type="file"
-                        accept=".json"
+                        accept=".json,.zip"
                         onChange={handleImportChatGPT}
                         className="hidden"
                         disabled={isImporting}
@@ -3821,7 +3885,7 @@ ${encryptionKey.replace('key_', '')}
                       <input
                         ref={claudeConversationsFileInputRef}
                         type="file"
-                        accept=".json"
+                        accept=".json,.zip"
                         onChange={handleImportClaudeConversations}
                         className="hidden"
                         disabled={isImporting}
