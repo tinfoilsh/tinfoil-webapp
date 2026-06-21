@@ -66,18 +66,21 @@ function chatsHaveBinaryAttachments(chats: Chat[]): boolean {
   )
 }
 
+function cleanFilename(name: string): string {
+  const base = (name || '').split(/[\\/]/).pop() ?? ''
+  return base
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[^a-zA-Z0-9._ ()+-]/g, '_')
+    .replace(/^\.+/, '')
+    .trim()
+}
+
 /**
  * Strip path separators and control characters so an attachment file
  * name can be written as a ZIP entry without escaping its directory.
  */
 export function sanitizeFilename(name: string, fallback: string): string {
-  const base = (name || '').split(/[\\/]/).pop() ?? ''
-  const cleaned = base
-    .replace(/[\u0000-\u001f\u007f]/g, '')
-    .replace(/[^a-zA-Z0-9._ ()+-]/g, '_')
-    .replace(/^\.+/, '')
-    .trim()
-  return cleaned.length > 0 ? cleaned : fallback
+  return cleanFilename(name) || cleanFilename(fallback) || 'file'
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -122,8 +125,9 @@ export async function buildChatExport(
       for (const att of message.attachments ?? []) {
         if (isBinaryImage(att)) {
           attachmentCount++
-          const safeName = sanitizeFilename(att.fileName, `${att.id}.bin`)
-          const exportPath = `${ATTACHMENTS_DIR}/${att.id}/${safeName}`
+          const safeId = sanitizeFilename(att.id, 'attachment')
+          const safeName = sanitizeFilename(att.fileName, `${safeId}.bin`)
+          const exportPath = `${ATTACHMENTS_DIR}/${safeId}/${safeName}`
           const exported: ExportedAttachment = {
             id: att.id,
             type: 'image',

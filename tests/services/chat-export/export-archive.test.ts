@@ -147,6 +147,42 @@ describe('buildChatExport', () => {
     const att = conversations[0].chat_messages[0].attachments[0]
     expect(att.exportPath).toBeUndefined()
   })
+
+  it('sanitizes attachment IDs before using them in zip paths', async () => {
+    const imageBytes = new Uint8Array([1, 2, 3])
+    const chats = [
+      chat({
+        messages: [
+          {
+            role: 'user',
+            content: 'see pic',
+            timestamp: new Date('2023-11-14T22:13:21.000Z'),
+            attachments: [
+              {
+                id: '../evil/id',
+                type: 'image',
+                fileName: '',
+              },
+            ],
+          },
+        ],
+      }),
+    ]
+
+    const result = await buildChatExport(chats, async () => imageBytes)
+    const entries = unzipSync(result.data as Uint8Array)
+
+    expect(Object.keys(entries)).toContain('attachments/id/id.bin')
+    expect(Object.keys(entries)).not.toContain('attachments/../evil/id/id.bin')
+
+    const conversations = JSON.parse(strFromU8(entries['conversations.json']))
+    const att = conversations[0].chat_messages[0].attachments[0]
+    expect(att.id).toBe('../evil/id')
+    expect(att.exportPath).toBe('attachments/id/id.bin')
+
+    const manifest = JSON.parse(strFromU8(entries['manifest.json']))
+    expect(manifest.attachments[0].exportPath).toBe('attachments/id/id.bin')
+  })
 })
 
 describe('sanitizeFilename', () => {
@@ -154,5 +190,6 @@ describe('sanitizeFilename', () => {
     expect(sanitizeFilename('../../etc/passwd', 'fallback')).toBe('passwd')
     expect(sanitizeFilename('a/b/c.png', 'fallback')).toBe('c.png')
     expect(sanitizeFilename('', 'fallback.bin')).toBe('fallback.bin')
+    expect(sanitizeFilename('', '../fallback.bin')).toBe('fallback.bin')
   })
 })
