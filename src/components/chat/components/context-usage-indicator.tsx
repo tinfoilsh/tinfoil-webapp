@@ -46,7 +46,7 @@ export function ContextUsageIndicator({
   return (
     <div className={cn('group relative flex items-center', className)}>
       <span
-        role="status"
+        role="img"
         aria-label={tooltip}
         className={cn(
           'flex h-7 items-center gap-1 rounded-lg px-1.5',
