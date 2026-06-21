@@ -18,6 +18,7 @@ import {
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
+import { buildChatExport } from '@/services/chat-export/export-archive'
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { cloudSync } from '@/services/cloud/cloud-sync'
@@ -32,7 +33,9 @@ import {
 } from '@/services/passkey'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { sessionChatStorage } from '@/services/storage/session-storage'
+import { attachmentGet } from '@/services/sync-enclave/sync-api'
 import { TINFOIL_COLORS } from '@/theme/colors'
+import { base64ToUint8Array } from '@/utils/binary-codec'
 import {
   parseChatGPTConversations,
   parseClaudeConversations,
@@ -44,7 +47,7 @@ import {
   setCloudSyncEnabled,
   setLocalOnlyModeEnabled,
 } from '@/utils/cloud-sync-settings'
-import { logError, logInfo } from '@/utils/error-handling'
+import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
 import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
 import {
@@ -89,7 +92,7 @@ import {
   type PresetEditorState,
 } from './prompts/preset-editor'
 import type { PromptPreset } from './prompts/types'
-import type { Chat } from './types'
+import type { Attachment, Chat } from './types'
 
 const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
 
@@ -1578,37 +1581,42 @@ export function SettingsModal({
     setExportType('chats')
 
     try {
-      // Convert chats to Claude-compatible format
-      const conversations = chatsToExport.map((chat) => ({
-        uuid: chat.id,
-        name: chat.title,
-        created_at: new Date(chat.createdAt).toISOString(),
-        updated_at: new Date(chat.createdAt).toISOString(),
-        chat_messages: chat.messages.map((message, index) => ({
-          uuid: `${chat.id}_msg_${index}`,
-          text: message.content,
-          sender: message.role === 'user' ? 'human' : 'assistant',
-          created_at: new Date(message.timestamp).toISOString(),
-          ...(message.thoughts
-            ? {
-                content: [
-                  {
-                    type: 'thinking',
-                    thinking: message.thoughts,
-                  },
-                ],
-              }
-            : {}),
-        })),
-      }))
+      // Fetch one binary attachment at a time so the browser never
+      // holds every attachment's bytes in memory at once.
+      const fetchAttachmentBytes = async (
+        att: Attachment,
+      ): Promise<Uint8Array | null> => {
+        try {
+          if (att.base64) {
+            return base64ToUint8Array(att.base64)
+          }
+          if (att.encryptionKey) {
+            return await attachmentGet({
+              id: att.id,
+              attKeyB64: att.encryptionKey,
+            })
+          }
+        } catch {
+          logWarning('Failed to fetch attachment for export', {
+            component: 'SettingsModal',
+            action: 'downloadChats',
+            metadata: { attachmentId: att.id },
+          })
+        }
+        return null
+      }
 
-      // Create and download JSON file
-      const jsonContent = JSON.stringify(conversations, null, 2)
-      const blob = new Blob([jsonContent], { type: 'application/json' })
+      const archive = await buildChatExport(chatsToExport, fetchAttachmentBytes)
+      const blob =
+        typeof archive.data === 'string'
+          ? new Blob([archive.data], { type: archive.mimeType })
+          : new Blob([new Uint8Array(archive.data)], {
+              type: archive.mimeType,
+            })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'conversations.json'
+      a.download = archive.filename
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
