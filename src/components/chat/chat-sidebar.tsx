@@ -747,18 +747,13 @@ export function ChatSidebar({
             <div className="flex flex-col items-center gap-1 px-2">
               {/* New chat button */}
               <div className="group relative">
-                <Link
-                  href="/newchat"
+                <button
+                  type="button"
                   onClick={(e) => {
-                    if (
-                      e.metaKey ||
-                      e.ctrlKey ||
-                      e.shiftKey ||
-                      e.altKey ||
-                      e.button !== 0
-                    )
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+                      window.open('/newchat', '_blank', 'noopener,noreferrer')
                       return
-                    e.preventDefault()
+                    }
                     createNewChat(activeTab === 'local', true)
                   }}
                   onAuxClick={(e) => {
@@ -773,7 +768,7 @@ export function ChatSidebar({
                   aria-label="New chat"
                 >
                   <PiNotePencilLight className="h-5 w-5" />
-                </Link>
+                </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   New chat{' '}
                   <span className="text-content-muted">
@@ -1088,19 +1083,14 @@ export function ChatSidebar({
 
           {/* New Chat button */}
           <div className="relative z-10 flex-none px-2 py-2">
-            <Link
-              href="/newchat"
+            <button
+              type="button"
               aria-disabled={currentChat?.isBlankChat}
               onClick={(e) => {
-                if (
-                  e.metaKey ||
-                  e.ctrlKey ||
-                  e.shiftKey ||
-                  e.altKey ||
-                  e.button !== 0
-                )
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+                  window.open('/newchat', '_blank', 'noopener,noreferrer')
                   return
-                e.preventDefault()
+                }
                 if (currentChat?.isBlankChat) return
                 createNewChat(activeTab === 'local', true)
               }}
@@ -1126,7 +1116,7 @@ export function ChatSidebar({
                 {modKey}
                 {isMac ? '⇧' : 'Shift+'}O
               </span>
-            </Link>
+            </button>
           </div>
 
           {/* Projects dropdown - show for premium users */}

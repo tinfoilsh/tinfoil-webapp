@@ -609,32 +609,35 @@ export function ProjectSidebar({
     }
   }, [onNewChat, windowWidth, setIsOpen])
 
-  // Let modifier/middle clicks fall through so the New chat links open in a
-  // new tab; otherwise intercept the plain click for the in-app handler.
-  const handleNewChatLinkClick = useCallback(
-    (e: ReactMouseEvent<HTMLAnchorElement>, action: () => void) => {
-      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+  const newChatHref = projectId ? `/project/${projectId}` : '/newchat'
+
+  const openNewChatInNewTab = useCallback(() => {
+    window.open(newChatHref, '_blank', 'noopener,noreferrer')
+  }, [newChatHref])
+
+  // The New chat control is a button for parity with the other sidebar
+  // actions; modifier clicks still open a new tab so the link affordance is
+  // preserved, otherwise the plain click runs the in-app handler.
+  const handleNewChatButtonClick = useCallback(
+    (e: ReactMouseEvent<HTMLButtonElement>, action: () => void) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+        openNewChatInNewTab()
         return
       }
-      e.preventDefault()
       action()
     },
-    [],
+    [openNewChatInNewTab],
   )
 
   // onClick never fires for the middle button, so open the new tab
   // explicitly to guarantee middle-click "open in new tab" works.
   const handleNewChatAuxClick = useCallback(
-    (e: ReactMouseEvent<HTMLAnchorElement>) => {
+    (e: ReactMouseEvent<HTMLButtonElement>) => {
       if (e.button !== 1) return
       e.preventDefault()
-      window.open(
-        projectId ? `/project/${projectId}` : '/newchat',
-        '_blank',
-        'noopener,noreferrer',
-      )
+      openNewChatInNewTab()
     },
-    [projectId],
+    [openNewChatInNewTab],
   )
 
   const handleRemoveDocument = useCallback(
@@ -741,9 +744,9 @@ export function ProjectSidebar({
           <div className="flex flex-col items-center gap-1 px-2">
             {/* New chat button */}
             <div className="group relative">
-              <Link
-                href={projectId ? `/project/${projectId}` : '/newchat'}
-                onClick={(e) => handleNewChatLinkClick(e, onNewChat)}
+              <button
+                type="button"
+                onClick={(e) => handleNewChatButtonClick(e, onNewChat)}
                 onAuxClick={handleNewChatAuxClick}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
@@ -752,7 +755,7 @@ export function ProjectSidebar({
                 aria-label="New chat"
               >
                 <PiNotePencilLight className="h-5 w-5" />
-              </Link>
+              </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 New chat{' '}
                 <span className="text-content-muted">
@@ -943,11 +946,11 @@ export function ProjectSidebar({
 
           {/* New Chat button */}
           <div className="relative z-10 mt-3 flex-none px-2 py-2">
-            <Link
-              href={projectId ? `/project/${projectId}` : '/newchat'}
+            <button
+              type="button"
               aria-disabled={!currentChatId}
               onClick={(e) =>
-                handleNewChatLinkClick(e, () => {
+                handleNewChatButtonClick(e, () => {
                   if (!currentChatId) return
                   handleNewChat()
                 })
@@ -970,7 +973,7 @@ export function ProjectSidebar({
                 {modKey}
                 {isMac ? '⇧' : 'Shift+'}O
               </span>
-            </Link>
+            </button>
           </div>
 
           {/* Project Settings Dropdown */}
