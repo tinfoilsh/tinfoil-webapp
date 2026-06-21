@@ -23,6 +23,7 @@ export const EXPORT_VERSION = 1
 const ATTACHMENTS_DIR = 'attachments'
 const CONVERSATIONS_FILE = 'conversations.json'
 const MANIFEST_FILE = 'manifest.json'
+const FIRST_COLLISION_SUFFIX = 2
 
 /** Fetches the raw bytes for one binary attachment, or null when unavailable. */
 export type AttachmentBytesFetcher = (
@@ -94,6 +95,31 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return out
 }
 
+function uniqueAttachmentExportPath(
+  safeId: string,
+  safeName: string,
+  usedPaths: Set<string>,
+): string {
+  const basePath = `${ATTACHMENTS_DIR}/${safeId}/${safeName}`
+  if (!usedPaths.has(basePath)) {
+    usedPaths.add(basePath)
+    return basePath
+  }
+
+  const dotIndex = safeName.lastIndexOf('.')
+  const hasExtension = dotIndex > 0
+  const nameRoot = hasExtension ? safeName.slice(0, dotIndex) : safeName
+  const extension = hasExtension ? safeName.slice(dotIndex) : ''
+
+  for (let suffix = FIRST_COLLISION_SUFFIX; ; suffix++) {
+    const candidate = `${ATTACHMENTS_DIR}/${safeId}/${nameRoot}-${suffix}${extension}`
+    if (!usedPaths.has(candidate)) {
+      usedPaths.add(candidate)
+      return candidate
+    }
+  }
+}
+
 function toClaudeContent(thoughts?: string) {
   if (!thoughts) return undefined
   return [{ type: 'thinking', thinking: thoughts }]
@@ -113,6 +139,7 @@ export async function buildChatExport(
   const warnings: string[] = []
   const zipFiles: Record<string, Uint8Array> = {}
   const manifestEntries: ManifestEntry[] = []
+  const usedAttachmentPaths = new Set<string>()
   let attachmentCount = 0
 
   const conversations = []
@@ -127,7 +154,11 @@ export async function buildChatExport(
           attachmentCount++
           const safeId = sanitizeFilename(att.id, 'attachment')
           const safeName = sanitizeFilename(att.fileName, `${safeId}.bin`)
-          const exportPath = `${ATTACHMENTS_DIR}/${safeId}/${safeName}`
+          const exportPath = uniqueAttachmentExportPath(
+            safeId,
+            safeName,
+            usedAttachmentPaths,
+          )
           const exported: ExportedAttachment = {
             id: att.id,
             type: 'image',

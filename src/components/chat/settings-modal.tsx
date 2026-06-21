@@ -1781,6 +1781,7 @@ export function SettingsModal({
               title: storedChat.title,
               messages: storedChat.messages,
               createdAt: new Date(storedChat.createdAt),
+              updatedAt: storedChat.updatedAt,
               isLocalOnly: storedChat.isLocalOnly,
               isBlankChat: storedChat.isBlankChat,
               syncedAt: storedChat.syncedAt,
@@ -3785,7 +3786,9 @@ ${encryptionKey.replace('key_', '')}
                           3
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Download and unzip the file you receive by email.
+                          {shouldImportOffDevice()
+                            ? 'Download the ZIP file you receive by email.'
+                            : 'Download and unzip the file you receive by email.'}
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
@@ -3800,11 +3803,23 @@ ${encryptionKey.replace('key_', '')}
                           4
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Select{' '}
-                          <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                            conversations.json
-                          </code>{' '}
-                          from the unzipped folder.
+                          {shouldImportOffDevice() ? (
+                            <>
+                              Select the ZIP export to include attachments, or{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                conversations.json
+                              </code>{' '}
+                              for chat text only.
+                            </>
+                          ) : (
+                            <>
+                              Select{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                conversations.json
+                              </code>{' '}
+                              from the unzipped folder.
+                            </>
+                          )}
                         </div>
                       </div>
                       <input
@@ -3903,7 +3918,9 @@ ${encryptionKey.replace('key_', '')}
                           3
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Download and unzip the file you receive by email.
+                          {shouldImportOffDevice()
+                            ? 'Download the ZIP file you receive by email.'
+                            : 'Download and unzip the file you receive by email.'}
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
@@ -3918,15 +3935,28 @@ ${encryptionKey.replace('key_', '')}
                           4
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Select{' '}
-                          <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                            conversations.json
-                          </code>{' '}
-                          or{' '}
-                          <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                            projects.json
-                          </code>{' '}
-                          from the unzipped folder.
+                          {shouldImportOffDevice() ? (
+                            <>
+                              Select the ZIP export with the Conversations
+                              button to include attachments. Use{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                projects.json
+                              </code>{' '}
+                              only for project imports.
+                            </>
+                          ) : (
+                            <>
+                              Select{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                conversations.json
+                              </code>{' '}
+                              or{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                projects.json
+                              </code>{' '}
+                              from the unzipped folder.
+                            </>
+                          )}
                         </div>
                       </div>
                       <input

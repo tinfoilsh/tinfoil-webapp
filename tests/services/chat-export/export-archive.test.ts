@@ -183,6 +183,50 @@ describe('buildChatExport', () => {
     const manifest = JSON.parse(strFromU8(entries['manifest.json']))
     expect(manifest.attachments[0].exportPath).toBe('attachments/id/id.bin')
   })
+
+  it('keeps colliding sanitized attachment paths distinct', async () => {
+    const firstBytes = new Uint8Array([1, 2, 3])
+    const secondBytes = new Uint8Array([4, 5, 6])
+    const chats = [
+      chat({
+        messages: [
+          {
+            role: 'user',
+            content: 'see pics',
+            timestamp: new Date('2023-11-14T22:13:21.000Z'),
+            attachments: [
+              {
+                id: '../same/id',
+                type: 'image',
+                fileName: 'pic.png',
+              },
+              {
+                id: 'id',
+                type: 'image',
+                fileName: 'pic.png',
+              },
+            ],
+          },
+        ],
+      }),
+    ]
+
+    const result = await buildChatExport(chats, async (att) =>
+      att.id === '../same/id' ? firstBytes : secondBytes,
+    )
+    const entries = unzipSync(result.data as Uint8Array)
+
+    expect(entries['attachments/id/pic.png']).toEqual(firstBytes)
+    expect(entries['attachments/id/pic-2.png']).toEqual(secondBytes)
+
+    const conversations = JSON.parse(strFromU8(entries['conversations.json']))
+    expect(conversations[0].chat_messages[0].attachments[0].exportPath).toBe(
+      'attachments/id/pic.png',
+    )
+    expect(conversations[0].chat_messages[0].attachments[1].exportPath).toBe(
+      'attachments/id/pic-2.png',
+    )
+  })
 })
 
 describe('sanitizeFilename', () => {
