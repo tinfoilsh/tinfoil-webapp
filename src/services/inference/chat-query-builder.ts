@@ -106,10 +106,12 @@ export class ChatQueryBuilder {
           const withHint = genUIHint
             ? `${rawInstructions}\n\n${genUIHint}`
             : rawInstructions
-          result.push({
-            role: 'user',
-            content: `<system>\n${withHint}\n</system>`,
-          } as ChatCompletionUserMessageParam)
+          if (withHint.trim()) {
+            result.push({
+              role: 'user',
+              content: `<system>\n${withHint}\n</system>`,
+            } as ChatCompletionUserMessageParam)
+          }
           addedSystemInstructions = true
         }
 
@@ -180,7 +182,8 @@ export class ChatQueryBuilder {
     genUIHint: string | null,
   ): string | null {
     const base = rules ? `${systemPrompt}\n${rules}` : systemPrompt
-    return genUIHint ? `${base}\n\n${genUIHint}` : base
+    const content = genUIHint ? `${base}\n\n${genUIHint}` : base
+    return content.trim() ? content : null
   }
 
   /**

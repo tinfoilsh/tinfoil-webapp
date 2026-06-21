@@ -96,6 +96,7 @@ export function useChatState({
   canUseCodeExecution = false,
   codeExecutionEnabled,
   piiCheckEnabled,
+  genUIEnabled,
 }: {
   systemPrompt: string
   rules?: string
@@ -113,6 +114,7 @@ export function useChatState({
   canUseCodeExecution?: boolean
   codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
+  genUIEnabled?: boolean
 }): UseChatStateReturn {
   const hasCreatedInitialChatRef = useRef(false)
 
@@ -213,6 +215,7 @@ export function useChatState({
     codeExecutionEnabled:
       codeExecutionEnabled && codeExecutionEncryptionKey != null,
     piiCheckEnabled,
+    genUIEnabled,
     codeExecutionEncryptionKey,
   })
 
