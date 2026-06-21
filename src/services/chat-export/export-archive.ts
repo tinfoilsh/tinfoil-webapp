@@ -179,7 +179,7 @@ export async function buildChatExport(
       uuid: chat.id,
       name: chat.title,
       created_at: new Date(chat.createdAt).toISOString(),
-      updated_at: new Date(chat.createdAt).toISOString(),
+      updated_at: new Date(chat.updatedAt ?? chat.createdAt).toISOString(),
       ...(chat.projectId ? { projectId: chat.projectId } : {}),
       chat_messages: chatMessages,
     })

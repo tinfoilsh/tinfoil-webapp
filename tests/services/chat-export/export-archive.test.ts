@@ -21,6 +21,7 @@ describe('buildChatExport', () => {
   it('returns plain conversations.json when there are no binary attachments', async () => {
     const chats = [
       chat({
+        updatedAt: '2023-11-15T22:13:20.000Z',
         messages: [
           {
             role: 'user',
@@ -37,6 +38,7 @@ describe('buildChatExport', () => {
     expect(result.filename).toBe('conversations.json')
     const parsed = JSON.parse(result.data as string)
     expect(parsed[0].uuid).toBe('chat-1')
+    expect(parsed[0].updated_at).toBe('2023-11-15T22:13:20.000Z')
     expect(parsed[0].chat_messages[0].sender).toBe('human')
   })
 

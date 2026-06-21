@@ -3810,7 +3810,9 @@ ${encryptionKey.replace('key_', '')}
                       <input
                         ref={chatGptFileInputRef}
                         type="file"
-                        accept=".json,.zip"
+                        accept={
+                          shouldImportOffDevice() ? '.json,.zip' : '.json'
+                        }
                         onChange={handleImportChatGPT}
                         className="hidden"
                         disabled={isImporting}
@@ -3930,7 +3932,9 @@ ${encryptionKey.replace('key_', '')}
                       <input
                         ref={claudeConversationsFileInputRef}
                         type="file"
-                        accept=".json,.zip"
+                        accept={
+                          shouldImportOffDevice() ? '.json,.zip' : '.json'
+                        }
                         onChange={handleImportClaudeConversations}
                         className="hidden"
                         disabled={isImporting}
