@@ -488,9 +488,9 @@ export function SettingsModal({
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
 
   // Import state
-  const [importSource, setImportSource] = useState<'chatgpt' | 'claude' | null>(
-    null,
-  )
+  const [importSource, setImportSource] = useState<
+    'chatgpt' | 'claude' | 'tinfoil' | null
+  >(null)
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<{
     current: number
@@ -502,10 +502,13 @@ export function SettingsModal({
     chatsImported: number
     projectsImported: number
     errors: string[]
+    pending?: boolean
+    message?: string
   } | null>(null)
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
+  const tinfoilFileInputRef = useRef<HTMLInputElement>(null)
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
@@ -1262,7 +1265,7 @@ export function SettingsModal({
     Boolean(isSignedIn) && isCloudSyncEnabled() && hasPrimaryKey()
 
   const importOffDevice = async (
-    source: 'chatgpt' | 'claude',
+    source: 'chatgpt' | 'claude' | 'tinfoil',
     file: File,
     sourceLabel: string,
   ) => {
@@ -1272,17 +1275,22 @@ export function SettingsModal({
     try {
       const { status } = await runOffDeviceImport(source, file)
       const errors = status.errors ?? []
+      const pending = status.status === 'staging' || status.status === 'running'
       setImportResult({
         success: status.status !== 'failed',
         chatsImported: status.imported,
         projectsImported: 0,
         errors,
+        pending,
+        message: pending
+          ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
+          : undefined,
       })
       toast({
         title: 'Import started',
         description: `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`,
       })
-      if (onChatsUpdated) {
+      if (!pending && onChatsUpdated) {
         onChatsUpdated()
       }
     } catch (err) {
@@ -1412,6 +1420,36 @@ export function SettingsModal({
       setImportProgress(null)
       e.target.value = ''
     }
+  }
+
+  const handleImportTinfoil = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (shouldImportOffDevice()) {
+      await importOffDevice('tinfoil', file, 'Tinfoil')
+      e.target.value = ''
+      return
+    }
+
+    setImportSource('tinfoil')
+    setImportResult({
+      success: false,
+      chatsImported: 0,
+      projectsImported: 0,
+      errors: [
+        'Tinfoil exports with attachments can be re-imported when cloud sync is enabled.',
+      ],
+    })
+    toast({
+      title: 'Cloud sync required',
+      description:
+        'Turn on cloud sync to re-import Tinfoil exports securely through the enclave.',
+      variant: 'destructive',
+    })
+    e.target.value = ''
   }
 
   const handleImportClaudeConversations = async (
@@ -3639,10 +3677,17 @@ ${encryptionKey.replace('key_', '')}
                                   : 'text-red-500',
                               )}
                             >
-                              {importResult.success
-                                ? 'Import complete'
-                                : 'Import completed with errors'}
+                              {importResult.pending
+                                ? 'Import in progress'
+                                : importResult.success
+                                  ? 'Import complete'
+                                  : 'Import completed with errors'}
                             </div>
+                            {importResult.message && (
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                {importResult.message}
+                              </div>
+                            )}
                             <div className="font-aeonik-fono text-xs text-content-muted">
                               {importResult.chatsImported > 0 &&
                                 `${importResult.chatsImported} chat${importResult.chatsImported !== 1 ? 's' : ''} imported`}
@@ -3941,6 +3986,49 @@ ${encryptionKey.replace('key_', '')}
                           )}
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Tinfoil Import */}
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Import from Tinfoil
+                    </h3>
+                    <div
+                      className={cn(
+                        'space-y-3 rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="font-aeonik-fono text-xs text-content-muted">
+                        Re-import a Tinfoil conversations export through the
+                        sync enclave. We&apos;ll email you when the import is
+                        done.
+                      </div>
+                      <input
+                        ref={tinfoilFileInputRef}
+                        type="file"
+                        accept=".json,.zip"
+                        onChange={handleImportTinfoil}
+                        className="hidden"
+                        disabled={isImporting}
+                      />
+                      <button
+                        onClick={() => tinfoilFileInputRef.current?.click()}
+                        disabled={isImporting}
+                        className={cn(
+                          'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                          isImporting
+                            ? 'cursor-not-allowed opacity-50'
+                            : 'hover:bg-surface-chat',
+                          isDarkMode
+                            ? 'bg-surface-chat text-content-primary'
+                            : 'bg-surface-sidebar text-content-primary',
+                        )}
+                      >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        Select Tinfoil Export
+                      </button>
                     </div>
                   </div>
 

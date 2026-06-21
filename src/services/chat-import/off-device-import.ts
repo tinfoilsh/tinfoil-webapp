@@ -6,6 +6,7 @@ import {
   type ImportSource,
   type ImportStatusResponse,
 } from '@/services/sync-enclave/sync-api'
+import { sha256 } from '@noble/hashes/sha2.js'
 
 /**
  * Off-device chat import: upload a raw ChatGPT/Claude/Tinfoil export to
@@ -19,50 +20,74 @@ import {
 // Mirrors the enclave's MaxImportChunkBytes; both sides must agree on
 // the fixed chunk size so chunk offsets line up during reassembly.
 export const IMPORT_CHUNK_BYTES = 8 * 1024 * 1024
+export const IMPORT_MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 
 export interface OffDeviceImportResult {
   jobId: string
   status: ImportStatusResponse
 }
 
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const view = new Uint8Array(bytes.byteLength)
-  view.set(bytes)
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', view))
+function bytesToHex(bytes: Uint8Array): string {
   let out = ''
-  for (let i = 0; i < digest.length; i++) {
-    out += digest[i].toString(16).padStart(2, '0')
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0')
   }
   return out
+}
+
+async function readChunk(file: File, index: number): Promise<Uint8Array> {
+  const start = index * IMPORT_CHUNK_BYTES
+  const end = Math.min(start + IMPORT_CHUNK_BYTES, file.size)
+  return new Uint8Array(await file.slice(start, end).arrayBuffer())
+}
+
+async function hashFileByChunk(file: File): Promise<{
+  archiveSha256: string
+  chunkSha256s: string[]
+}> {
+  const totalChunks = Math.ceil(file.size / IMPORT_CHUNK_BYTES)
+  const archiveHash = sha256.create()
+  const chunkSha256s: string[] = []
+
+  for (let index = 0; index < totalChunks; index++) {
+    const chunk = await readChunk(file, index)
+    archiveHash.update(chunk)
+    chunkSha256s.push(bytesToHex(sha256(chunk)))
+  }
+
+  return {
+    archiveSha256: bytesToHex(archiveHash.digest()),
+    chunkSha256s,
+  }
 }
 
 export async function runOffDeviceImport(
   source: ImportSource,
   file: File,
 ): Promise<OffDeviceImportResult> {
-  const archive = new Uint8Array(await file.arrayBuffer())
-  if (archive.length === 0) {
+  if (file.size === 0) {
     throw new Error('The export file is empty')
   }
+  if (file.size > IMPORT_MAX_ARCHIVE_BYTES) {
+    throw new Error('The export file is too large')
+  }
 
-  const totalChunks = Math.ceil(archive.length / IMPORT_CHUNK_BYTES)
-  const archiveSha256 = await sha256Hex(archive)
+  const totalChunks = Math.ceil(file.size / IMPORT_CHUNK_BYTES)
+  const { archiveSha256, chunkSha256s } = await hashFileByChunk(file)
 
   const { job_id, upload_id } = await importCreate({
     source,
-    totalBytes: archive.length,
+    totalBytes: file.size,
     totalChunks,
     archiveSha256,
   })
 
   for (let index = 0; index < totalChunks; index++) {
-    const start = index * IMPORT_CHUNK_BYTES
-    const end = Math.min(start + IMPORT_CHUNK_BYTES, archive.length)
-    const chunk = archive.subarray(start, end)
+    const chunk = await readChunk(file, index)
     await importUploadChunk({
       uploadId: upload_id,
       chunkIndex: index,
-      chunkSha256: await sha256Hex(chunk),
+      chunkSha256: chunkSha256s[index],
       data: chunk,
     })
   }

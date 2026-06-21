@@ -25,6 +25,7 @@
     "@clerk/nextjs": "^7.3.4",
     "@headlessui/react": "^2.1.1",
     "@heroicons/react": "^2.1.4",
+    "@noble/hashes": "^2.2.0",
     "@radix-ui/react-alert-dialog": "^1.1.4",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-progress": "^1.1.1",
