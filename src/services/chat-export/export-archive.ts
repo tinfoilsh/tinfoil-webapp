@@ -76,8 +76,8 @@ function cleanFilename(name: string): string {
 }
 
 /**
- * Strip path separators and control characters so an attachment file
- * name can be written as a ZIP entry without escaping its directory.
+ * Returns a safe ZIP path segment from name, then sanitized fallback,
+ * then a static final fallback.
  */
 export function sanitizeFilename(name: string, fallback: string): string {
   return cleanFilename(name) || cleanFilename(fallback) || 'file'
