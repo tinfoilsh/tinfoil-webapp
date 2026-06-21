@@ -292,6 +292,115 @@ export interface MigrateAllResponse {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Off-device chat import                                                    */
+/* -------------------------------------------------------------------------- */
+
+export type ImportSource = 'chatgpt' | 'claude' | 'tinfoil'
+
+export type ImportJobStatus =
+  | 'idle'
+  | 'staging'
+  | 'running'
+  | 'completed'
+  | 'failed'
+
+export interface ImportCreateRequest {
+  source: ImportSource
+  /** Total size of the raw archive in bytes. */
+  totalBytes: number
+  /** Number of chunks the client will upload. */
+  totalChunks: number
+  /** Hex SHA-256 of the full archive, verified before parsing. */
+  archiveSha256: string
+}
+
+export interface ImportCreateResponse {
+  job_id: string
+  upload_id: string
+}
+
+export interface ImportUploadChunkRequest {
+  uploadId: string
+  chunkIndex: number
+  /** Hex SHA-256 of this chunk's raw bytes. */
+  chunkSha256: string
+  /** Raw chunk bytes; the client base64-encodes them on the wire. */
+  data: Uint8Array
+}
+
+export interface ImportStartRequest {
+  jobId: string
+  /** User's CEK, base64 raw 32 bytes. Held in enclave memory for the job. */
+  keyB64: string
+}
+
+export interface ImportStatusResponse {
+  status: ImportJobStatus
+  imported: number
+  failed: number
+  total: number
+  errors?: string[]
+  job_id?: string
+}
+
+/**
+ * Create an off-device import job. The enclave allocates a job id and
+ * an upload id and prepares an encrypted staging area for the archive
+ * chunks. The browser must stay open through the chunk upload and
+ * import/start; once import/start returns the tab can close.
+ */
+export async function importCreate(
+  req: ImportCreateRequest,
+): Promise<ImportCreateResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<ImportCreateResponse>('/v1/import/create', {
+    source: req.source,
+    total_bytes: req.totalBytes,
+    total_chunks: req.totalChunks,
+    archive_sha256: req.archiveSha256,
+  })
+}
+
+/** Stage one archive chunk. Replaying the same index+hash is idempotent. */
+export async function importUploadChunk(
+  req: ImportUploadChunkRequest,
+): Promise<OKResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<OKResponse>('/v1/import/upload', {
+    upload_id: req.uploadId,
+    chunk_index: req.chunkIndex,
+    chunk_sha256: req.chunkSha256,
+    data: bytesToB64(req.data),
+  })
+}
+
+/**
+ * Kick off the detached import job. The enclave validates the staged
+ * archive, parses it, seals every chat + attachment under the supplied
+ * CEK, and emails the user on completion.
+ */
+export async function importStart(
+  req: ImportStartRequest,
+): Promise<ImportStatusResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<ImportStatusResponse>('/v1/import/start', {
+    job_id: req.jobId,
+    key: req.keyB64,
+  })
+}
+
+/** Poll an import job's progress while the tab stays open. */
+export async function importStatus(
+  jobId: string,
+): Promise<ImportStatusResponse> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.post<ImportStatusResponse>('/v1/import/status', {
+    job_id: jobId,
+  })
+  return { ...resp, errors: resp.errors ?? [] }
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Health                                                                    */
 /* -------------------------------------------------------------------------- */
 
