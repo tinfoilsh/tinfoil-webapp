@@ -18,6 +18,9 @@ import {
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
+import { buildChatExport } from '@/services/chat-export/export-archive'
+import { runOffDeviceImport } from '@/services/chat-import/off-device-import'
+import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { cloudSync } from '@/services/cloud/cloud-sync'
@@ -32,7 +35,9 @@ import {
 } from '@/services/passkey'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { sessionChatStorage } from '@/services/storage/session-storage'
+import { attachmentGet } from '@/services/sync-enclave/sync-api'
 import { TINFOIL_COLORS } from '@/theme/colors'
+import { base64ToUint8Array } from '@/utils/binary-codec'
 import {
   parseChatGPTConversations,
   parseClaudeConversations,
@@ -44,7 +49,7 @@ import {
   setCloudSyncEnabled,
   setLocalOnlyModeEnabled,
 } from '@/utils/cloud-sync-settings'
-import { logError, logInfo } from '@/utils/error-handling'
+import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
 import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
 import {
@@ -89,7 +94,7 @@ import {
   type PresetEditorState,
 } from './prompts/preset-editor'
 import type { PromptPreset } from './prompts/types'
-import type { Chat } from './types'
+import type { Attachment, Chat } from './types'
 
 const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
 
@@ -483,9 +488,9 @@ export function SettingsModal({
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
 
   // Import state
-  const [importSource, setImportSource] = useState<'chatgpt' | 'claude' | null>(
-    null,
-  )
+  const [importSource, setImportSource] = useState<
+    'chatgpt' | 'claude' | 'tinfoil' | null
+  >(null)
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<{
     current: number
@@ -497,10 +502,13 @@ export function SettingsModal({
     chatsImported: number
     projectsImported: number
     errors: string[]
+    pending?: boolean
+    message?: string
   } | null>(null)
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
+  const tinfoilFileInputRef = useRef<HTMLInputElement>(null)
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
@@ -1250,11 +1258,72 @@ export function SettingsModal({
     isCloudSyncEnabled: isCloudSyncEnabled(),
   })
 
+  // Cloud-sync users import off-device: the raw export is uploaded to
+  // the enclave, which parses, seals, and stores everything without the
+  // plaintext touching app servers, then emails the user on completion.
+  const shouldImportOffDevice = () =>
+    Boolean(isSignedIn) && isCloudSyncEnabled() && hasPrimaryKey()
+
+  const importOffDevice = async (
+    source: 'chatgpt' | 'claude' | 'tinfoil',
+    file: File,
+    sourceLabel: string,
+  ) => {
+    setImportSource(source)
+    setIsImporting(true)
+    setImportResult(null)
+    try {
+      const { status } = await runOffDeviceImport(source, file)
+      const errors = status.errors ?? []
+      const pending = status.status === 'staging' || status.status === 'running'
+      setImportResult({
+        success: status.status !== 'failed',
+        chatsImported: status.imported,
+        projectsImported: 0,
+        errors,
+        pending,
+        message: pending
+          ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
+          : undefined,
+      })
+      toast({
+        title: 'Import started',
+        description: `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`,
+      })
+      if (!pending && onChatsUpdated) {
+        onChatsUpdated()
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Failed to start import'
+      setImportResult({
+        success: false,
+        chatsImported: 0,
+        projectsImported: 0,
+        errors: [message],
+      })
+      toast({
+        title: 'Import failed',
+        description: `Could not start the ${sourceLabel} import`,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsImporting(false)
+      setImportProgress(null)
+    }
+  }
+
   const handleImportChatGPT = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (shouldImportOffDevice()) {
+      await importOffDevice('chatgpt', file, 'ChatGPT')
+      e.target.value = ''
+      return
+    }
 
     setImportSource('chatgpt')
     setIsImporting(true)
@@ -1353,11 +1422,47 @@ export function SettingsModal({
     }
   }
 
+  const handleImportTinfoil = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (shouldImportOffDevice()) {
+      await importOffDevice('tinfoil', file, 'Tinfoil')
+      e.target.value = ''
+      return
+    }
+
+    setImportSource('tinfoil')
+    setImportResult({
+      success: false,
+      chatsImported: 0,
+      projectsImported: 0,
+      errors: [
+        'Tinfoil exports with attachments can be re-imported when cloud sync is enabled.',
+      ],
+    })
+    toast({
+      title: 'Cloud sync required',
+      description:
+        'Turn on cloud sync to re-import Tinfoil exports securely through the enclave.',
+      variant: 'destructive',
+    })
+    e.target.value = ''
+  }
+
   const handleImportClaudeConversations = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    if (shouldImportOffDevice()) {
+      await importOffDevice('claude', file, 'Claude')
+      e.target.value = ''
+      return
+    }
 
     setImportSource('claude')
     setIsImporting(true)
@@ -1578,37 +1683,42 @@ export function SettingsModal({
     setExportType('chats')
 
     try {
-      // Convert chats to Claude-compatible format
-      const conversations = chatsToExport.map((chat) => ({
-        uuid: chat.id,
-        name: chat.title,
-        created_at: new Date(chat.createdAt).toISOString(),
-        updated_at: new Date(chat.createdAt).toISOString(),
-        chat_messages: chat.messages.map((message, index) => ({
-          uuid: `${chat.id}_msg_${index}`,
-          text: message.content,
-          sender: message.role === 'user' ? 'human' : 'assistant',
-          created_at: new Date(message.timestamp).toISOString(),
-          ...(message.thoughts
-            ? {
-                content: [
-                  {
-                    type: 'thinking',
-                    thinking: message.thoughts,
-                  },
-                ],
-              }
-            : {}),
-        })),
-      }))
+      // Fetch one binary attachment at a time so the browser never
+      // holds every attachment's bytes in memory at once.
+      const fetchAttachmentBytes = async (
+        att: Attachment,
+      ): Promise<Uint8Array | null> => {
+        try {
+          if (att.base64) {
+            return base64ToUint8Array(att.base64)
+          }
+          if (att.encryptionKey) {
+            return await attachmentGet({
+              id: att.id,
+              attKeyB64: att.encryptionKey,
+            })
+          }
+        } catch {
+          logWarning('Failed to fetch attachment for export', {
+            component: 'SettingsModal',
+            action: 'downloadChats',
+            metadata: { attachmentId: att.id },
+          })
+        }
+        return null
+      }
 
-      // Create and download JSON file
-      const jsonContent = JSON.stringify(conversations, null, 2)
-      const blob = new Blob([jsonContent], { type: 'application/json' })
+      const archive = await buildChatExport(chatsToExport, fetchAttachmentBytes)
+      const blob =
+        typeof archive.data === 'string'
+          ? new Blob([archive.data], { type: archive.mimeType })
+          : new Blob([new Uint8Array(archive.data)], {
+              type: archive.mimeType,
+            })
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'conversations.json'
+      a.download = archive.filename
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -1671,6 +1781,7 @@ export function SettingsModal({
               title: storedChat.title,
               messages: storedChat.messages,
               createdAt: new Date(storedChat.createdAt),
+              updatedAt: storedChat.updatedAt,
               isLocalOnly: storedChat.isLocalOnly,
               isBlankChat: storedChat.isBlankChat,
               syncedAt: storedChat.syncedAt,
@@ -3567,10 +3678,17 @@ ${encryptionKey.replace('key_', '')}
                                   : 'text-red-500',
                               )}
                             >
-                              {importResult.success
-                                ? 'Import complete'
-                                : 'Import completed with errors'}
+                              {importResult.pending
+                                ? 'Import in progress'
+                                : importResult.success
+                                  ? 'Import complete'
+                                  : 'Import completed with errors'}
                             </div>
+                            {importResult.message && (
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                {importResult.message}
+                              </div>
+                            )}
                             <div className="font-aeonik-fono text-xs text-content-muted">
                               {importResult.chatsImported > 0 &&
                                 `${importResult.chatsImported} chat${importResult.chatsImported !== 1 ? 's' : ''} imported`}
@@ -3668,7 +3786,9 @@ ${encryptionKey.replace('key_', '')}
                           3
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Download and unzip the file you receive by email.
+                          {shouldImportOffDevice()
+                            ? 'Download the ZIP file you receive by email.'
+                            : 'Download and unzip the file you receive by email.'}
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
@@ -3683,17 +3803,31 @@ ${encryptionKey.replace('key_', '')}
                           4
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Select{' '}
-                          <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                            conversations.json
-                          </code>{' '}
-                          from the unzipped folder.
+                          {shouldImportOffDevice() ? (
+                            <>
+                              Select the ZIP export to include attachments, or{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                conversations.json
+                              </code>{' '}
+                              for chat text only.
+                            </>
+                          ) : (
+                            <>
+                              Select{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                conversations.json
+                              </code>{' '}
+                              from the unzipped folder.
+                            </>
+                          )}
                         </div>
                       </div>
                       <input
                         ref={chatGptFileInputRef}
                         type="file"
-                        accept=".json"
+                        accept={
+                          shouldImportOffDevice() ? '.json,.zip' : '.json'
+                        }
                         onChange={handleImportChatGPT}
                         className="hidden"
                         disabled={isImporting}
@@ -3784,7 +3918,9 @@ ${encryptionKey.replace('key_', '')}
                           3
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Download and unzip the file you receive by email.
+                          {shouldImportOffDevice()
+                            ? 'Download the ZIP file you receive by email.'
+                            : 'Download and unzip the file you receive by email.'}
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
@@ -3799,21 +3935,36 @@ ${encryptionKey.replace('key_', '')}
                           4
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          Select{' '}
-                          <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                            conversations.json
-                          </code>{' '}
-                          or{' '}
-                          <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                            projects.json
-                          </code>{' '}
-                          from the unzipped folder.
+                          {shouldImportOffDevice() ? (
+                            <>
+                              Select the ZIP export with the Conversations
+                              button to include attachments. Use{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                projects.json
+                              </code>{' '}
+                              only for project imports.
+                            </>
+                          ) : (
+                            <>
+                              Select{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                conversations.json
+                              </code>{' '}
+                              or{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                projects.json
+                              </code>{' '}
+                              from the unzipped folder.
+                            </>
+                          )}
                         </div>
                       </div>
                       <input
                         ref={claudeConversationsFileInputRef}
                         type="file"
-                        accept=".json"
+                        accept={
+                          shouldImportOffDevice() ? '.json,.zip' : '.json'
+                        }
                         onChange={handleImportClaudeConversations}
                         className="hidden"
                         disabled={isImporting}
@@ -3869,6 +4020,49 @@ ${encryptionKey.replace('key_', '')}
                           )}
                         </button>
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Tinfoil Import */}
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Import from Tinfoil
+                    </h3>
+                    <div
+                      className={cn(
+                        'space-y-3 rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="font-aeonik-fono text-xs text-content-muted">
+                        Re-import a Tinfoil conversations export through the
+                        sync enclave. We&apos;ll email you when the import is
+                        done.
+                      </div>
+                      <input
+                        ref={tinfoilFileInputRef}
+                        type="file"
+                        accept=".json,.zip"
+                        onChange={handleImportTinfoil}
+                        className="hidden"
+                        disabled={isImporting}
+                      />
+                      <button
+                        onClick={() => tinfoilFileInputRef.current?.click()}
+                        disabled={isImporting}
+                        className={cn(
+                          'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                          isImporting
+                            ? 'cursor-not-allowed opacity-50'
+                            : 'hover:bg-surface-chat',
+                          isDarkMode
+                            ? 'bg-surface-chat text-content-primary'
+                            : 'bg-surface-sidebar text-content-primary',
+                        )}
+                      >
+                        <ArrowUpTrayIcon className="h-4 w-4" />
+                        Select Tinfoil Export
+                      </button>
                     </div>
                   </div>
 
