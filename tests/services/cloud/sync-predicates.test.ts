@@ -12,6 +12,7 @@
 
 import {
   isUploadableChat,
+  remoteWins,
   remoteWinsLastWrite,
   shouldIngestRemoteChat,
 } from '@/services/cloud/sync-predicates'
@@ -241,6 +242,76 @@ describe('Sync Predicates', () => {
     it('lets local win when remote has no usable timestamp', () => {
       expect(remoteWinsLastWrite(older, undefined)).toBe(false)
       expect(remoteWinsLastWrite(older, 'not-a-date')).toBe(false)
+    })
+  })
+
+  describe('remoteWins', () => {
+    const older = '2024-01-01T00:00:00.000Z'
+    const newer = '2024-01-02T00:00:00.000Z'
+
+    it('prefers the higher clock counter over wall-clock time', () => {
+      // Remote has an older timestamp but a higher logical clock; the
+      // clock must win so wall-clock skew cannot decide the outcome.
+      expect(
+        remoteWins({
+          localClock: { v: 1, w: 'a' },
+          remoteClock: { v: 2, w: 'a' },
+          localUpdatedAt: newer,
+          remoteUpdatedAt: older,
+        }),
+      ).toBe(true)
+    })
+
+    it('lets local win when its clock counter is higher', () => {
+      expect(
+        remoteWins({
+          localClock: { v: 5, w: 'a' },
+          remoteClock: { v: 4, w: 'b' },
+        }),
+      ).toBe(false)
+    })
+
+    it('breaks an equal counter by writer id deterministically', () => {
+      expect(
+        remoteWins({
+          localClock: { v: 3, w: 'aaa' },
+          remoteClock: { v: 3, w: 'bbb' },
+        }),
+      ).toBe(true)
+      expect(
+        remoteWins({
+          localClock: { v: 3, w: 'bbb' },
+          remoteClock: { v: 3, w: 'aaa' },
+        }),
+      ).toBe(false)
+    })
+
+    it('treats an identical clock as the same write (no overwrite)', () => {
+      expect(
+        remoteWins({
+          localClock: { v: 7, w: 'a' },
+          remoteClock: { v: 7, w: 'a' },
+        }),
+      ).toBe(false)
+    })
+
+    it('falls back to updatedAt when a clock is missing', () => {
+      expect(
+        remoteWins({
+          localClock: { v: 9, w: 'a' },
+          remoteClock: undefined,
+          localUpdatedAt: older,
+          remoteUpdatedAt: newer,
+        }),
+      ).toBe(true)
+      expect(
+        remoteWins({
+          localClock: undefined,
+          remoteClock: { v: 9, w: 'a' },
+          localUpdatedAt: newer,
+          remoteUpdatedAt: older,
+        }),
+      ).toBe(false)
     })
   })
 

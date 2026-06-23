@@ -84,10 +84,16 @@ describe('ProfileSyncService', () => {
     expect(mockPush.mock.calls[1][0]).toMatchObject({ ifMatch: '9' })
   })
 
-  it('adopts the newer remote profile on a stale-blob conflict', async () => {
-    mockPush.mockRejectedValueOnce(
-      new SyncEnclaveError('STALE_BLOB', 412, 'STALE_BLOB'),
-    )
+  it('adopts the newer remote field and re-pushes the merge on conflict', async () => {
+    mockPush
+      .mockRejectedValueOnce(
+        new SyncEnclaveError('STALE_BLOB', 412, 'STALE_BLOB'),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        etag: '10',
+        key_id: 'aa'.repeat(16),
+      })
     mockPull.mockResolvedValue({
       items: [
         {
@@ -111,10 +117,12 @@ describe('ProfileSyncService', () => {
     })
 
     expect(result.success).toBe(true)
-    expect(result.version).toBe(9)
+    expect(result.version).toBe(10)
     expect(result.remoteProfile).toMatchObject({ nickname: 'Remote' })
-    // The remote write wins, so the local copy is not re-uploaded.
-    expect(mockPush).toHaveBeenCalledTimes(1)
+    // The merge re-pushes the resolved profile onto the server's
+    // current version so both devices converge.
+    expect(mockPush).toHaveBeenCalledTimes(2)
+    expect(mockPush.mock.calls[1][0]).toMatchObject({ ifMatch: '9' })
     expect(service.getCachedProfile()).toMatchObject({ nickname: 'Remote' })
   })
 
