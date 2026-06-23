@@ -39,8 +39,8 @@ export const PAGINATION = {
 // Cloud sync settings
 export const CLOUD_SYNC = {
   RETRY_DELAY: 100, // milliseconds
-  CHAT_SYNC_INTERVAL: 60000, // 60 seconds (1 minute) - frequency for syncing chats
-  PROFILE_SYNC_INTERVAL: 300000, // 5 minutes - frequency for syncing profile (less frequent)
+  CHAT_SYNC_INTERVAL: 20000, // 20 seconds - frequency for syncing chats
+  PROFILE_SYNC_INTERVAL: 60000, // 60 seconds (1 minute) - frequency for syncing profile
   KEY_VALIDATION_PROBE_LIMIT: 3,
 } as const
 
