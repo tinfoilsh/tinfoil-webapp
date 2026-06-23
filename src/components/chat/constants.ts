@@ -34,6 +34,11 @@ export const CONSTANTS = {
   CHAT_INIT_DELAY_MS: 300,
   // State update delay for async operations
   ASYNC_STATE_DELAY_MS: 50,
+  // Coalesce streaming UI updates to at most one render per this interval.
+  // Fast models emit content faster than the screen refreshes, so batching the
+  // flushes avoids re-parsing markdown on every network chunk while staying
+  // well above the threshold where streaming stops looking smooth (~30fps).
+  STREAM_FLUSH_INTERVAL_MS: 33,
   // Sidebar widths
   CHAT_SIDEBAR_WIDTH_PX: 300,
   CHAT_SIDEBAR_COLLAPSED_WIDTH_PX: 48,

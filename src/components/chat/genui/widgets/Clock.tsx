@@ -300,37 +300,18 @@ function ClockFace({
   showSeconds?: boolean
   showDate?: boolean
 }) {
-  // `frame` advances every animation frame so the analog hands sweep
-  // smoothly. We deliberately ignore its value — it's only here to trigger
-  // a re-render. The actual time is read from `Date.now()` fresh each render.
-  const [, setFrame] = useState(0)
-  // Digital readouts re-render once per second, since re-formatting the
-  // string at 60fps is wasteful.
-  const [digitalTick, setDigitalTick] = useState(() => Date.now())
-  const rafRef = useRef<number | null>(null)
+  // A single once-per-second tick drives both the analog hands and the
+  // digital readout. The second hand advances in discrete steps rather than
+  // sweeping continuously, which avoids a per-frame re-render loop.
+  const [tick, setTick] = useState(() => Date.now())
 
   useEffect(() => {
-    const loop = () => {
-      setFrame((n) => (n + 1) % 1_000_000)
-      rafRef.current = requestAnimationFrame(loop)
-    }
-    rafRef.current = requestAnimationFrame(loop)
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-    }
-  }, [])
-
-  useEffect(() => {
-    const id = setInterval(
-      () => setDigitalTick(Date.now()),
-      DIGITAL_TICK_INTERVAL_MS,
-    )
+    const id = setInterval(() => setTick(Date.now()), DIGITAL_TICK_INTERVAL_MS)
     return () => clearInterval(id)
   }, [])
 
-  const now = new Date()
-  const parts = getTimeParts(now, timeZone)
-  const digitalNow = new Date(digitalTick)
+  const digitalNow = new Date(tick)
+  const parts = getTimeParts(digitalNow, timeZone)
   return (
     <div className="my-3 flex w-full justify-center">
       <Card className="w-full max-w-xs">
