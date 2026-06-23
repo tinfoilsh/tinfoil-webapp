@@ -19,6 +19,13 @@ const MessageSchema = z
   })
   .passthrough()
 
+// Per-unit logical edit clock: `v` is a Lamport counter, `w` the
+// writing device id used as a deterministic tiebreak.
+export const EditClockSchema = z.object({
+  v: z.number(),
+  w: z.string(),
+})
+
 export const RemoteChatPlaintextSchema = z
   .object({
     title: z.string().optional(),
@@ -30,6 +37,13 @@ export const RemoteChatPlaintextSchema = z
     isBlankChat: z.boolean().optional(),
     syncVersion: z.number().optional(),
     projectId: z.string().nullable().optional(),
+    // Per-row edit clock and the row version it was last maintained at.
+    // Trusted for conflict arbitration only when clockVersion equals the
+    // row's server etag; otherwise a clock-unaware write intervened and
+    // callers fall back to updatedAt.
+    clock: z.number().optional(),
+    writer: z.string().optional(),
+    clockVersion: z.number().optional(),
   })
   .passthrough()
 
@@ -71,6 +85,11 @@ export const ProfileDataSchema = z
     projectUploadPreference: z.enum(['project', 'chat']).optional(),
     version: z.number().optional(),
     updatedAt: z.string().optional(),
+    // Per-field edit clocks and the row version they were last
+    // maintained at. fieldClocks is trusted for the field-level merge
+    // only when clockVersion equals the profile row's server etag.
+    fieldClocks: z.record(z.string(), EditClockSchema).optional(),
+    clockVersion: z.number().optional(),
   })
   .passthrough()
 
