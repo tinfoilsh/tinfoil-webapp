@@ -131,9 +131,12 @@ export function mergeProfiles(args: {
   }
 
   const merged: ProfileData = { ...local }
-  const mergedClocks: Record<string, EditClock> = {
-    ...(local.fieldClocks ?? {}),
-  }
+  // Build the merged clocks from scratch, carrying only clocks we
+  // actually trust. Seeding from local.fieldClocks would smuggle
+  // untrusted/stale clocks into the output, which the next push
+  // re-stamps as trusted (clockVersion === version) and corrupts future
+  // conflict resolution.
+  const mergedClocks: Record<string, EditClock> = {}
   let adoptedRemote = false
 
   for (const field of PROFILE_MERGE_FIELDS) {
@@ -141,6 +144,9 @@ export function mergeProfiles(args: {
     const lc = fieldClock(local, field, localTrusted)
     const rc = fieldClock(remote, field, remoteTrusted)
     if (!remoteHasField) {
+      // Remote omits this field: keep the local value and its clock, but
+      // only when the local clock is trusted.
+      if (lc) mergedClocks[field] = lc
       continue
     }
     const takeRemote = remoteWins({
@@ -153,6 +159,9 @@ export function mergeProfiles(args: {
       ;(merged as Record<string, unknown>)[field] = (
         remote as Record<string, unknown>
       )[field]
+      // Record a clock for the adopted value only if the remote clock is
+      // trusted; otherwise leave it absent so future reads fall back to
+      // updatedAt for this field.
       if (rc) mergedClocks[field] = rc
       adoptedRemote = true
     } else if (lc) {

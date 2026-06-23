@@ -57,4 +57,23 @@ describe('edit clock', () => {
     resetEditClockCache()
     expect(nextClock().v).toBe(v + 1)
   })
+
+  it('ignores a remote value above the safe-integer ceiling', () => {
+    // A crafted/corrupt remote clock must not poison the counter.
+    observe(Number.MAX_SAFE_INTEGER + 1)
+    observe(Number.POSITIVE_INFINITY)
+    // The counter is untouched, so it keeps advancing from the base.
+    expect(nextClock().v).toBe(1)
+    expect(nextClock().v).toBe(2)
+  })
+
+  it('caps the counter at the ceiling without overflowing or trapping', () => {
+    observe(Number.MAX_SAFE_INTEGER)
+    const next = nextClock()
+    expect(Number.isSafeInteger(next.v)).toBe(true)
+    expect(next.v).toBe(Number.MAX_SAFE_INTEGER)
+    // A subsequent tick stays pinned at the ceiling rather than losing
+    // precision or producing a non-finite value.
+    expect(nextClock().v).toBe(Number.MAX_SAFE_INTEGER)
+  })
 })

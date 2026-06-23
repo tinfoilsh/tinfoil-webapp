@@ -22,6 +22,13 @@ export interface EditClock {
   w: string
 }
 
+// Upper bound for the logical counter. Far above any value a legitimate
+// edit history could reach, yet capped at the JS safe-integer ceiling so
+// the counter never loses precision and an observed remote value can
+// never push it past where `+ 1` stops advancing. Matches the iOS
+// ceiling so both platforms clamp identically.
+const MAX_COUNTER = Number.MAX_SAFE_INTEGER
+
 let deviceIdCache: string | null = null
 let counterCache: number | null = null
 
@@ -72,7 +79,10 @@ function loadCounter(): number {
   try {
     const raw = localStorage.getItem(SYNC_EDIT_CLOCK)
     const parsed = raw ? parseInt(raw, 10) : 0
-    counterCache = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+    // Clamp a previously-persisted value too, so a counter poisoned
+    // before this bound existed self-heals instead of staying stuck.
+    counterCache =
+      Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_COUNTER) : 0
   } catch {
     counterCache = 0
   }
@@ -97,7 +107,12 @@ function persistCounter(value: number): void {
  * later local edit is guaranteed to outrank it.
  */
 export function observe(remoteV?: number | null): void {
-  if (remoteV == null || !Number.isFinite(remoteV)) return
+  // Remote values are untrusted input (decrypted blob); a value above
+  // the ceiling is treated as malformed and ignored rather than allowed
+  // to poison the counter to a point where it can no longer advance.
+  if (remoteV == null || !Number.isFinite(remoteV) || remoteV > MAX_COUNTER) {
+    return
+  }
   const current = loadCounter()
   if (remoteV > current) {
     persistCounter(remoteV)
@@ -110,11 +125,14 @@ export function observe(remoteV?: number | null): void {
  * still moves forward.
  */
 export function nextClock(observedMax?: number | null): EditClock {
-  const base = Math.max(
-    loadCounter(),
-    observedMax != null && Number.isFinite(observedMax) ? observedMax : 0,
+  const base = Math.min(
+    Math.max(
+      loadCounter(),
+      observedMax != null && Number.isFinite(observedMax) ? observedMax : 0,
+    ),
+    MAX_COUNTER,
   )
-  const next = base + 1
+  const next = Math.min(base + 1, MAX_COUNTER)
   persistCounter(next)
   return { v: next, w: deviceId() }
 }

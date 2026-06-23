@@ -102,6 +102,38 @@ describe('mergeProfiles', () => {
     expect(adoptedRemote).toBe(false)
   })
 
+  it('does not carry untrusted local clocks into the merged output', () => {
+    // Local clocks are untrusted (clockVersion !== version). They must
+    // not survive into the merge, or the next push would re-stamp them
+    // as trusted and corrupt future conflict resolution.
+    const local: ProfileData = {
+      nickname: 'local',
+      profession: 'local-job',
+      version: 4,
+      clockVersion: 2,
+      fieldClocks: {
+        nickname: { v: 99, w: 'A' },
+        profession: { v: 99, w: 'A' },
+      },
+      updatedAt: '2024-01-02T00:00:00.000Z',
+    }
+    // Remote omits profession, and local wins nickname by updatedAt.
+    const remote: ProfileData = {
+      nickname: 'remote',
+      version: 5,
+      clockVersion: 2,
+      fieldClocks: { nickname: { v: 1, w: 'B' } },
+      updatedAt: '2024-01-01T00:00:00.000Z',
+    }
+
+    const { merged } = mergeProfiles({ local, remote })
+
+    expect(merged.nickname).toBe('local')
+    expect(merged.profession).toBe('local-job')
+    // No trusted clock existed for either field, so none is carried.
+    expect(merged.fieldClocks).toBeUndefined()
+  })
+
   it('falls back to updatedAt when clocks are untrusted', () => {
     // clockVersion !== version means a clock-unaware client wrote since,
     // so the field clocks are ignored and the newer blob wins wholesale.
