@@ -26,6 +26,7 @@ import {
   type ChatSyncStatus,
   type UploadChatOptions,
 } from './cloud-storage'
+import type { EditClock } from './edit-clock'
 import { adoptLocalKeyForMigration } from './ensure-current-key'
 import {
   runLegacyBlobMigrationAndFinalize,
@@ -41,7 +42,7 @@ import {
   reportSyncPaused,
   reportSyncSuccess,
 } from './sync-health'
-import { isUploadableChat, remoteWinsLastWrite } from './sync-predicates'
+import { isUploadableChat, remoteWins } from './sync-predicates'
 import { SyncStatusCache } from './sync-status-cache'
 import { UploadCoalescer } from './upload-coalescer'
 
@@ -860,12 +861,32 @@ export class CloudSyncService {
         return
       }
 
-      const remoteWins = remoteWinsLastWrite(
-        localChat?.updatedAt,
-        remoteChat.updatedAt,
-      )
+      // A chat's edit clock is trusted only when it was maintained at
+      // the row's current synced version; otherwise a clock-unaware
+      // write intervened and we fall back to updatedAt arbitration.
+      const trustedClock = (
+        c: typeof localChat | typeof remoteChat,
+      ): EditClock | undefined => {
+        if (
+          !c ||
+          typeof c.clock !== 'number' ||
+          typeof c.writer !== 'string' ||
+          c.clockVersion == null ||
+          c.clockVersion !== (c.syncVersion ?? -1)
+        ) {
+          return undefined
+        }
+        return { v: c.clock, w: c.writer }
+      }
 
-      if (!remoteWins) {
+      const remoteIsWinner = remoteWins({
+        localClock: trustedClock(localChat),
+        remoteClock: trustedClock(remoteChat),
+        localUpdatedAt: localChat?.updatedAt,
+        remoteUpdatedAt: remoteChat.updatedAt,
+      })
+
+      if (!remoteIsWinner) {
         await indexedDBStorage.rebaseSyncVersion(
           chatId,
           remoteChat.syncVersion ?? 0,

@@ -1,4 +1,5 @@
 import type { Chat as ChatType } from '@/components/chat/types'
+import { nextClock } from '@/services/cloud/edit-clock'
 import { logError, logWarning } from '@/utils/error-handling'
 
 export interface Chat extends Omit<ChatType, 'createdAt'> {
@@ -19,6 +20,13 @@ export interface StoredChat extends Chat {
   loadedAt?: number
   isLocalOnly?: boolean
   isBlankChat?: boolean
+  // Logical edit clock for conflict arbitration. `clock`/`writer` are
+  // bumped on each local content edit; `clockVersion` records the
+  // syncVersion the clock was last maintained at, so a reader can tell
+  // whether a clock-unaware client wrote since (see remoteWins).
+  clock?: number
+  writer?: string
+  clockVersion?: number
 }
 
 /**
@@ -330,11 +338,32 @@ export class IndexedDBStorage {
         const isFailedDecryption =
           (chat as StoredChat).decryptionFailed === true
 
+        // Bump the edit clock only on a genuine local content edit: a
+        // changed existing chat, or a brand-new locally-created one.
+        // Re-saves that don't touch content (and synced writes) keep the
+        // existing clock so they don't outrank a real concurrent edit.
+        const bumpClock =
+          !isFailedDecryption &&
+          options.markContentChangesAsLocal !== false &&
+          (hasContentChanges ||
+            (!existingChat && ((chat as StoredChat).locallyModified ?? true)))
+        const bumpedClock = bumpClock
+          ? nextClock(existingChat?.clock ?? (chat as StoredChat).clock)
+          : null
+
         const storedChat: StoredChat = {
           ...chat,
           messages: messagesForStorage as any,
           lastAccessedAt: Date.now(),
           syncedAt: existingChat?.syncedAt ?? (chat as StoredChat).syncedAt,
+          clock:
+            bumpedClock?.v ?? existingChat?.clock ?? (chat as StoredChat).clock,
+          writer:
+            bumpedClock?.w ??
+            existingChat?.writer ??
+            (chat as StoredChat).writer,
+          clockVersion:
+            existingChat?.clockVersion ?? (chat as StoredChat).clockVersion,
           // For existing chats: mark as modified if content changed, or preserve existing modified state
           // This ensures modified chats are always picked up for sync even if they were
           // loaded with locallyModified: false from a previous sync
@@ -671,6 +700,9 @@ export class IndexedDBStorage {
           chat.syncedAt = Date.now()
           chat.locallyModified = false
           chat.syncVersion = syncVersion
+          // The clock is now current as of this synced version, so a
+          // later reader trusts it for arbitration.
+          chat.clockVersion = syncVersion
 
           const request = store.put(chat)
 
@@ -761,6 +793,10 @@ export class IndexedDBStorage {
       if (!concurrentEdit) {
         chat.locallyModified = false
         chat.syncedAt = Date.now()
+        // Clock is current as of the uploaded version. On a concurrent
+        // edit the chat stays dirty and clockVersion intentionally lags
+        // so the next upload re-stamps it.
+        chat.clockVersion = opts.syncVersion
       }
 
       return new Promise<void>((resolve, reject) => {
