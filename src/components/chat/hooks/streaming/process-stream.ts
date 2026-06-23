@@ -7,7 +7,9 @@
  * Each event updates the TimelineBuilder (canonical state). The
  * MessageAssembler only tracks citation annotations and search reasoning;
  * all other flat Message fields are derived from the timeline in toMessage().
- * UI is flushed once per reader.read() chunk — no rAF needed.
+ * UI flushes are coalesced to at most one render per
+ * CONSTANTS.STREAM_FLUSH_INTERVAL_MS (leading + trailing edge), so a fast
+ * stream does not re-parse markdown on every network chunk.
  */
 
 import { IS_DEV } from '@/config'
@@ -16,6 +18,7 @@ import {
   createStreamLogger,
   type StreamLogger,
 } from '@/utils/dev-stream-logger'
+import { CONSTANTS } from '../../constants'
 import type { Message, URLFetchState } from '../../types'
 import { createContentPreprocessor } from './content-preprocessor'
 import { createEventNormalizer } from './event-normalizer'
@@ -52,6 +55,8 @@ export async function processStreamingResponse(
 
   let dirty = false
   let firstEventSeen = false
+  let lastFlushAt = 0
+  let trailingFlushTimer: ReturnType<typeof setTimeout> | null = null
 
   // Always write to the chat this stream owns, regardless of which chat is
   // on screen. `updateChatWithHistoryCheck` mirrors the update into
@@ -70,6 +75,36 @@ export async function processStreamingResponse(
       false,
       true, // skip IndexedDB during streaming
     )
+  }
+
+  const clearTrailingFlush = () => {
+    if (trailingFlushTimer !== null) {
+      clearTimeout(trailingFlushTimer)
+      trailingFlushTimer = null
+    }
+  }
+
+  // Coalesce flushes to one render per STREAM_FLUSH_INTERVAL_MS. The leading
+  // edge keeps the first token instant and slow streams unthrottled; the
+  // trailing timer guarantees the latest content still paints when the stream
+  // pauses (e.g. before a tool call) instead of waiting for the next chunk.
+  const flushThrottled = () => {
+    if (!dirty) return
+    const now = Date.now()
+    const elapsed = now - lastFlushAt
+    if (elapsed >= CONSTANTS.STREAM_FLUSH_INTERVAL_MS) {
+      clearTrailingFlush()
+      lastFlushAt = now
+      flushToUI()
+    } else if (trailingFlushTimer === null) {
+      trailingFlushTimer = setTimeout(() => {
+        trailingFlushTimer = null
+        if (dirty) {
+          lastFlushAt = Date.now()
+          flushToUI()
+        }
+      }, CONSTANTS.STREAM_FLUSH_INTERVAL_MS - elapsed)
+    }
   }
 
   const markFirstEvent = () => {
@@ -229,7 +264,7 @@ export async function processStreamingResponse(
         applyEvent(event)
       }
 
-      if (dirty) flushToUI()
+      flushThrottled()
     }
 
     // Flush normalizer tail (buffered first-chunk or unclosed thinking)
@@ -250,12 +285,15 @@ export async function processStreamingResponse(
       dirty = true
     }
 
-    // Final flush
+    // Final flush — always immediate so the completed message paints in full
+    clearTrailingFlush()
     if (dirty) flushToUI()
 
     streamLogger?.flush(streamingChatId)
     return assembler.toMessage(timeline.snapshot())
   } finally {
+    // Drop any pending trailing flush so it can't fire after teardown.
+    clearTrailingFlush()
     ctx.setLoadingState('idle')
     ctx.setIsStreaming(false)
     if (streamingChatId) streamingTracker.endStreaming(streamingChatId)
