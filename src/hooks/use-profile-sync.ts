@@ -201,6 +201,14 @@ export function useProfileSync() {
                 action: 'smartSyncFromCloud',
               })
               lastSyncedVersion.current = 0
+              // Invalidate the change-detection baseline so syncToCloud
+              // sees the populated local profile as a change and actually
+              // re-pushes it. Without this, its hasProfileChanged guard
+              // compares local against the still-populated baseline,
+              // finds no diff, clears the dirty flag, and no-ops, leaving
+              // the remote tombstoned and local data unrecovered.
+              lastSyncedProfile.current = null
+              lastFieldClocks.current = {}
               profileSync.clearCache()
               profileSyncCache.current.save(remoteStatus)
               // Flag the local edit; the sync interval then pushes it as
