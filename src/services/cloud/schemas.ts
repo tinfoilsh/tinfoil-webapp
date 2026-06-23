@@ -20,11 +20,15 @@ const MessageSchema = z
   .passthrough()
 
 // Per-unit logical edit clock: `v` is a Lamport counter, `w` the
-// writing device id used as a deterministic tiebreak.
-export const EditClockSchema = z.object({
-  v: z.number(),
-  w: z.string(),
-})
+// writing device id used as a deterministic tiebreak. Passthrough keeps
+// any future clock fields written by a newer client intact on round-trip
+// instead of silently dropping them.
+export const EditClockSchema = z
+  .object({
+    v: z.number(),
+    w: z.string(),
+  })
+  .passthrough()
 
 export const RemoteChatPlaintextSchema = z
   .object({
