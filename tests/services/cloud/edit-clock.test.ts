@@ -6,6 +6,7 @@
  * device id for deterministic tiebreaking.
  */
 
+import { SYNC_EDIT_CLOCK } from '@/constants/storage-keys'
 import {
   deviceId,
   nextClock,
@@ -56,6 +57,33 @@ describe('edit clock', () => {
     const v = nextClock().v
     resetEditClockCache()
     expect(nextClock().v).toBe(v + 1)
+  })
+
+  it('reconciles with storage so a value another tab advanced is not reused', () => {
+    expect(nextClock().v).toBe(1)
+    // Another tab sharing this localStorage advances the counter.
+    localStorage.setItem(SYNC_EDIT_CLOCK, '8')
+    // This tab must continue past the other tab's value rather than
+    // reuse 2 from its stale in-memory cache.
+    expect(nextClock().v).toBe(9)
+  })
+
+  it('mints a distinct writer id per runtime so concurrent tabs differ', () => {
+    const first = deviceId()
+    // A fresh runtime (another tab) keeps the persisted installation id
+    // but draws a new per-runtime nonce.
+    resetEditClockCache()
+    const second = deviceId()
+    expect(second).not.toBe(first)
+  })
+
+  it('ignores fractional, negative, and zero remote values', () => {
+    observe(2.5)
+    observe(-10)
+    observe(0)
+    const next = nextClock()
+    expect(next.v).toBe(1)
+    expect(Number.isInteger(next.v)).toBe(true)
   })
 
   it('ignores a remote value above the safe-integer ceiling', () => {
