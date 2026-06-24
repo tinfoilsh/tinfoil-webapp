@@ -7,6 +7,7 @@
  */
 
 import type { StoredChat } from '@/services/storage/indexed-db'
+import type { EditClock } from './edit-clock'
 
 /**
  * Determines if a chat is eligible for upload to the cloud.
@@ -121,4 +122,39 @@ export function remoteWinsLastWrite(
     ? new Date(remoteUpdatedAt).getTime()
     : Number.NaN
   return !Number.isNaN(remoteTime) && remoteTime > localTime
+}
+
+/**
+ * Unified conflict arbitration for every sync scope (chat rows,
+ * profile fields). When both sides carry a trusted edit clock the
+ * winner is the higher `(v, w)` pair — a total order that makes the
+ * merge a convergent CRDT LWW-register and removes wall-clock skew
+ * from the decision. When either clock is absent (legacy rows, or a
+ * write by a client that predates clocks) it falls back to the
+ * timestamp arbitration so behavior matches the pre-clock client.
+ *
+ * Callers MUST pass clocks only when both are trusted (the row's
+ * server etag equals the `clockVersion` stamped in the blob);
+ * otherwise pass `undefined` so the timestamp fallback governs.
+ *
+ * Returns true when the remote copy should overwrite local.
+ */
+export function remoteWins(args: {
+  localClock?: EditClock | null
+  remoteClock?: EditClock | null
+  localUpdatedAt?: string | null
+  remoteUpdatedAt?: string | null
+}): boolean {
+  const { localClock, remoteClock, localUpdatedAt, remoteUpdatedAt } = args
+  if (localClock && remoteClock) {
+    if (remoteClock.v !== localClock.v) {
+      return remoteClock.v > localClock.v
+    }
+    if (remoteClock.w !== localClock.w) {
+      return remoteClock.w > localClock.w
+    }
+    // Identical clock: the same logical write. No overwrite.
+    return false
+  }
+  return remoteWinsLastWrite(localUpdatedAt, remoteUpdatedAt)
 }

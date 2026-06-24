@@ -5,6 +5,7 @@ import {
   USER_ENCRYPTION_KEY,
 } from '@/constants/storage-keys'
 import { cloudSync } from '@/services/cloud/cloud-sync'
+import { resetEditClockCache } from '@/services/cloud/edit-clock'
 import { profileSync } from '@/services/cloud/profile-sync'
 import { resetSyncHealth } from '@/services/cloud/sync-health'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -50,6 +51,10 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   cloudSync.clearSyncStatus()
   deletedChatsTracker.clear()
   resetSyncHealth()
+
+  // Drop the in-memory edit-clock counter/device-id so the next user
+  // re-reads from cleared storage instead of inheriting this session's.
+  resetEditClockCache()
 
   // Clear project event handlers
   projectEvents.clear()

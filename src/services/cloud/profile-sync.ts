@@ -11,8 +11,9 @@ import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
 import { WIRE_CODES } from '../sync-enclave/wire-contract'
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
+import { observe } from './edit-clock'
+import { mergeProfiles } from './profile-merge'
 import { ProfileDataSchema } from './schemas'
-import { remoteWinsLastWrite } from './sync-predicates'
 
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
@@ -82,6 +83,14 @@ export interface ProfileData {
   // Metadata
   version?: number
   updatedAt?: string
+
+  // Per-field edit clocks and the row version they were last
+  // maintained at. fieldClocks is trusted for the field-level merge
+  // only when clockVersion equals the profile row's server etag
+  // (version); otherwise a clock-unaware write intervened and merge
+  // falls back to updatedAt arbitration.
+  fieldClocks?: Record<string, { v: number; w: string }>
+  clockVersion?: number
 }
 
 export interface ProfilePromptPreset {
@@ -159,6 +168,14 @@ export class ProfileSyncService {
         decoded.version = etagVersion
       }
 
+      // Advance the local logical clock past every remote field clock
+      // so a later local edit is guaranteed to outrank what we observed.
+      if (decoded.fieldClocks) {
+        for (const clock of Object.values(decoded.fieldClocks)) {
+          observe(typeof clock?.v === 'number' ? clock.v : null)
+        }
+      }
+
       this.cachedProfile = decoded
       this.failedDecryptionData = null
 
@@ -221,6 +238,10 @@ export class ProfileSyncService {
         },
       })
 
+      // The working copy that gets pushed. On a conflict it is replaced
+      // by the field-level merge of local and remote before re-push.
+      let working: ProfileData = profile
+
       // Push the local profile under a given base version. The
       // controlplane treats a missing/zero version as create-only and
       // any positive version as a CAS update gated on the row's etag.
@@ -228,11 +249,15 @@ export class ProfileSyncService {
         baseVersion: number,
       ): Promise<{ success: boolean; version?: number }> => {
         const profileWithMetadata: ProfileData = {
-          ...profile,
+          ...working,
           // Preserve the caller's edit time so other devices can
           // arbitrate last-write-wins; only stamp now when absent.
-          updatedAt: profile.updatedAt ?? new Date().toISOString(),
+          updatedAt: working.updatedAt ?? new Date().toISOString(),
           version: baseVersion + 1,
+          // The field clocks are current as of the version this push
+          // creates, so a remote reader trusts them (etag ===
+          // clockVersion) instead of falling back to updatedAt.
+          clockVersion: baseVersion + 1,
         }
 
         // Carry forward fields we do not model under our own known
@@ -280,37 +305,43 @@ export class ProfileSyncService {
           throw pushError
         }
         // Optimistic-concurrency conflict: the server holds a version
-        // our push was not based on. Re-read it and arbitrate
-        // last-write-wins by content modification time.
-        logInfo('Profile push conflicted; arbitrating last-write-wins', {
+        // our push was not based on. Re-read it and merge field by
+        // field so neither device's edits are lost, then re-push the
+        // merged result onto the server's current version.
+        logInfo('Profile push conflicted; merging fields', {
           component: 'ProfileSync',
           action: 'saveProfile',
         })
         const remote = await this.fetchProfile()
 
-        if (
-          remote &&
-          remoteWinsLastWrite(profile.updatedAt, remote.updatedAt)
-        ) {
-          // The remote is the strictly newer write. Adopt it instead of
-          // clobbering, and hand it back so the caller can apply it
-          // locally; both devices then converge on the same settings.
-          logInfo('Profile conflict resolved by adopting newer remote', {
-            component: 'ProfileSync',
-            action: 'saveProfile',
-          })
-          this.cachedProfile = remote
-          return {
-            success: true,
-            version: remote.version,
-            remoteProfile: remote,
-          }
+        if (!remote) {
+          // The remote vanished between the conflict and our re-read;
+          // re-push local as a fresh create.
+          return await pushAtVersion(0)
         }
 
-        // Our local edit is the last write. Rebase onto the server's
-        // current version and re-push so local wins instead of looping
-        // on STALE_BLOB forever.
-        return await pushAtVersion(remote?.version ?? 0)
+        const { merged, adoptedRemote } = mergeProfiles({
+          local: profile,
+          remote,
+        })
+        working = merged
+
+        logInfo('Profile conflict resolved by field-level merge', {
+          component: 'ProfileSync',
+          action: 'saveProfile',
+          metadata: { adoptedRemote },
+        })
+
+        const pushed = await pushAtVersion(remote.version ?? 0)
+        // Hand the merged profile back so the caller applies any fields
+        // adopted from the remote and both devices converge.
+        return adoptedRemote
+          ? {
+              success: pushed.success,
+              version: pushed.version,
+              remoteProfile: this.cachedProfile ?? merged,
+            }
+          : pushed
       }
     } catch (error) {
       // Silently fail if no auth token

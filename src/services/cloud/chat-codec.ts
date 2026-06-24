@@ -10,6 +10,7 @@
 import { ensureValidISODate } from '@/utils/chat-timestamps'
 import { logInfo } from '@/utils/error-handling'
 import type { StoredChat } from '../storage/indexed-db'
+import { observe } from './edit-clock'
 import { RemoteChatPlaintextSchema } from './schemas'
 
 export interface RemoteChatData {
@@ -93,6 +94,10 @@ export async function processRemoteChat(
     throw new Error(`v2_plaintext_invalid: ${validation.error.message}`)
   }
   const decrypted = validation.data
+
+  // Advance the local logical clock past any remote edit clock so a
+  // later local edit is guaranteed to outrank what we just observed.
+  observe(typeof decrypted.clock === 'number' ? decrypted.clock : null)
 
   const chat: StoredChat = {
     ...decrypted,

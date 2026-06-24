@@ -115,6 +115,13 @@ export const SYNC_PROFILE_DIRTY = 'tinfoil-sync-profile-dirty'
 // Content modification time of the pending local profile edit, used to
 // arbitrate last-write-wins against a concurrently-updated remote.
 export const SYNC_PROFILE_CHANGED_AT = 'tinfoil-sync-profile-changed-at'
+// Stable per-device id used as the deterministic tiebreak in the edit
+// clock that arbitrates sync conflicts. Generated once per browser
+// profile and never changes.
+export const SYNC_DEVICE_ID = 'tinfoil-sync-device-id'
+// Persisted Lamport counter backing the edit clock. Monotonic per
+// device; advanced past any remote clock value the client observes.
+export const SYNC_EDIT_CLOCK = 'tinfoil-sync-edit-clock'
 
 // --- localStorage: Migration flags -----------------------------------------
 // Set the first time a build evicts locally-cached cloud chats that the

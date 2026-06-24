@@ -254,9 +254,14 @@ export class CloudStorageService {
       chat.id,
       idempotencyKey,
     )
+    // Stamp the clock version this push will create so a remote reader
+    // can tell the clock is current (etag === clockVersion) versus a
+    // later clock-unaware write that would force the updatedAt fallback.
+    const baseVersion = options.restoreDeleted ? 0 : (chat.syncVersion ?? 0)
     const strippedChat = {
       ...chat,
       messages: stripBase64FromMessages(messages),
+      clockVersion: baseVersion + 1,
     }
     const plaintext = new TextEncoder().encode(JSON.stringify(strippedChat))
 

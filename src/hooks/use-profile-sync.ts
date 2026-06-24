@@ -6,6 +6,11 @@ import {
 } from '@/constants/storage-keys'
 import { getCurrentCloudKeyAuthorizationMode } from '@/services/cloud/cloud-key-authorization'
 import type { ProfileSyncStatus } from '@/services/cloud/cloud-storage'
+import { nextClock, type EditClock } from '@/services/cloud/edit-clock'
+import {
+  changedProfileFields,
+  isProfilePopulated,
+} from '@/services/cloud/profile-merge'
 import {
   applySettingsToLocal,
   hasProfileChanged,
@@ -29,6 +34,9 @@ export function useProfileSync() {
   const hasPendingChanges = useRef(false)
   const isApplyingRemoteProfile = useRef(false)
   const lastSyncedProfile = useRef<ProfileData | null>(null)
+  // Field clocks last seen/pushed, carried forward so unchanged fields
+  // keep their clock across cycles when the fetched cache is empty.
+  const lastFieldClocks = useRef<Record<string, EditClock>>({})
   const profileSyncCache = useRef(
     new SyncStatusCache<ProfileSyncStatus>(PROFILE_SYNC_STATUS_KEY),
   )
@@ -137,6 +145,7 @@ export function useProfileSync() {
           // and wedge every future pull behind a never-clearing dirty
           // flag while looping STALE_BLOB pushes.
           lastSyncedProfile.current = loadLocalSettings()
+          lastFieldClocks.current = cloudProfile.fieldClocks ?? {}
 
           logInfo('Profile synced from cloud', {
             component: 'ProfileSync',
@@ -182,16 +191,43 @@ export function useProfileSync() {
             cached.lastUpdated !== remoteStatus.lastUpdated
 
           if (needsReset && !hasLocalProfileChanges()) {
-            isApplyingRemoteProfile.current = true
-            try {
-              const defaults = resetSettingsToLocalDefaults()
-              clearLocalProfileChanged()
+            const localSettings = loadLocalSettings()
+            if (isProfilePopulated(localSettings)) {
+              // A profile tombstone must never silently wipe a populated
+              // local profile. Resurrect it by re-pushing local as a
+              // fresh create instead of resetting to defaults.
+              logInfo('Profile tombstone ignored; resurrecting local profile', {
+                component: 'ProfileSync',
+                action: 'smartSyncFromCloud',
+              })
               lastSyncedVersion.current = 0
-              lastSyncedProfile.current = defaults
+              // Invalidate the change-detection baseline so syncToCloud
+              // sees the populated local profile as a change and actually
+              // re-pushes it. Without this, its hasProfileChanged guard
+              // compares local against the still-populated baseline,
+              // finds no diff, clears the dirty flag, and no-ops, leaving
+              // the remote tombstoned and local data unrecovered.
+              lastSyncedProfile.current = null
+              lastFieldClocks.current = {}
               profileSync.clearCache()
               profileSyncCache.current.save(remoteStatus)
-            } finally {
-              isApplyingRemoteProfile.current = false
+              // Flag the local edit; the sync interval then pushes it as
+              // a create on the next tick.
+              markLocalProfileChanged()
+            } else {
+              // No user content to lose; accept the reset to defaults.
+              isApplyingRemoteProfile.current = true
+              try {
+                const defaults = resetSettingsToLocalDefaults()
+                clearLocalProfileChanged()
+                lastSyncedVersion.current = 0
+                lastSyncedProfile.current = defaults
+                lastFieldClocks.current = {}
+                profileSync.clearCache()
+                profileSyncCache.current.save(remoteStatus)
+              } finally {
+                isApplyingRemoteProfile.current = false
+              }
             }
           }
         }
@@ -256,6 +292,7 @@ export function useProfileSync() {
           // and wedge every future pull behind a never-clearing dirty
           // flag while looping STALE_BLOB pushes.
           lastSyncedProfile.current = loadLocalSettings()
+          lastFieldClocks.current = cloudProfile.fieldClocks ?? {}
         }
 
         // Update cached sync status only after successful processing
@@ -267,7 +304,12 @@ export function useProfileSync() {
         action: 'smartSyncFromCloud',
       })
     }
-  }, [clearLocalProfileChanged, hasLocalProfileChanges, isSignedIn])
+  }, [
+    clearLocalProfileChanged,
+    hasLocalProfileChanges,
+    markLocalProfileChanged,
+    isSignedIn,
+  ])
 
   // Sync profile from local to cloud (debounced)
   const syncToCloud = useCallback(async () => {
@@ -308,13 +350,33 @@ export function useProfileSync() {
         // Mark that we have pending changes only when we're actually going to sync
         hasPendingChanges.current = true
 
+        // Stamp a fresh edit clock on every field that changed since the
+        // last sync, carrying forward the existing clocks for the rest.
+        // One tick covers this push because it is a single local write
+        // event; the deviceId tiebreak keeps it ordered against peers.
+        const baseClocks =
+          profileSync.getCachedProfile()?.fieldClocks ?? lastFieldClocks.current
+        const changedFields = changedProfileFields(
+          localSettings,
+          lastSyncedProfile.current,
+        )
+        const fieldClocks: Record<string, EditClock> = { ...baseClocks }
+        if (changedFields.length > 0) {
+          const tick = nextClock()
+          for (const field of changedFields) {
+            fieldClocks[field] = tick
+          }
+        }
+        lastFieldClocks.current = fieldClocks
+
         // Include the last synced version so the service can increment
         // it, plus the edit time so conflict resolution can arbitrate
-        // last-write-wins against the remote.
+        // last-write-wins against the remote when a clock is absent.
         const profileWithVersion = {
           ...localSettings,
           version: lastSyncedVersion.current,
           updatedAt: getLocalProfileChangedAt(),
+          fieldClocks,
         }
 
         const result = await profileSync.saveProfile(profileWithVersion)
@@ -339,6 +401,7 @@ export function useProfileSync() {
             // remote, so fields we derive but the peer omits don't read
             // back as a phantom change and re-trigger the push loop.
             lastSyncedProfile.current = loadLocalSettings()
+            lastFieldClocks.current = result.remoteProfile.fieldClocks ?? {}
           } else {
             lastSyncedProfile.current = localSettings
           }
