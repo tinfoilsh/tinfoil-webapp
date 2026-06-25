@@ -186,6 +186,10 @@ export function ChatInput({
     return () => {
       if (resizeRafRef.current !== null) {
         cancelAnimationFrame(resizeRafRef.current)
+        // Clear the id so a later remount (e.g. React Strict Mode's
+        // simulated unmount/remount) can schedule again instead of seeing a
+        // stale, already-cancelled frame and short-circuiting forever.
+        resizeRafRef.current = null
       }
     }
   }, [])

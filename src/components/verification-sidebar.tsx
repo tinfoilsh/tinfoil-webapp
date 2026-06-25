@@ -43,6 +43,15 @@ export function VerifierSidebar({
   const retryCountRef = useRef(0)
   const isRetryingRef = useRef(false)
 
+  // Keep the latest callbacks in refs so `fetchVerificationDocument` can stay
+  // referentially stable. The parent passes these as inline functions, so
+  // depending on them directly would recreate the callback every render and
+  // re-fire the effects that trigger verification — an unbounded fetch loop.
+  const onVerificationUpdateRef = useRef(onVerificationUpdate)
+  const onVerificationCompleteRef = useRef(onVerificationComplete)
+  onVerificationUpdateRef.current = onVerificationUpdate
+  onVerificationCompleteRef.current = onVerificationComplete
+
   const fetchVerificationDocument = useCallback(async () => {
     if (isRetryingRef.current) return
     isRetryingRef.current = true
@@ -62,11 +71,11 @@ export function VerifierSidebar({
         const doc = await getVerificationDocument()
         if (doc) {
           setVerificationDocument(doc)
-          if (onVerificationUpdate) {
-            onVerificationUpdate(doc)
+          if (onVerificationUpdateRef.current) {
+            onVerificationUpdateRef.current(doc)
           }
           if (doc.securityVerified !== undefined) {
-            onVerificationComplete(doc.securityVerified)
+            onVerificationCompleteRef.current(doc.securityVerified)
             return true
           }
         }
@@ -107,7 +116,7 @@ export function VerifierSidebar({
     }
 
     isRetryingRef.current = false
-  }, [onVerificationUpdate, onVerificationComplete])
+  }, [])
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
