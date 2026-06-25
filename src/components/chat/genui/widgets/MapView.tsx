@@ -14,6 +14,14 @@ const APPLE_MAPS_CONSENT_KEY = 'tinfoil:apple-maps-consent'
 const APPLE_MAPS_PRIVACY_URL =
   'https://www.apple.com/legal/privacy/data/en/apple-maps/'
 
+function colorSchemeFor(mk: MapKit, isDarkMode?: boolean) {
+  return isDarkMode === true
+    ? mk.Map.ColorSchemes.Dark
+    : isDarkMode === false
+      ? mk.Map.ColorSchemes.Light
+      : mk.Map.ColorSchemes.Adaptive
+}
+
 // Cache the loader promise across mounts so multiple maps on the same page
 // share a single MapKit JS download and initialization.
 let mapKitLoader: Promise<MapKit> | null = null
@@ -220,12 +228,7 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
           showsCompass: 'adaptive',
           showsZoomControl: true,
           showsMapTypeControl: false,
-          colorScheme:
-            isDarkMode === true
-              ? mk.Map.ColorSchemes.Dark
-              : isDarkMode === false
-                ? mk.Map.ColorSchemes.Light
-                : mk.Map.ColorSchemes.Adaptive,
+          colorScheme: colorSchemeFor(mk, isDarkMode),
         })
 
         if (mapType) {
@@ -334,12 +337,7 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
     const map = mapRef.current
     const mk = mapKitRef.current
     if (!map || !mk) return
-    map.colorScheme =
-      isDarkMode === true
-        ? mk.Map.ColorSchemes.Dark
-        : isDarkMode === false
-          ? mk.Map.ColorSchemes.Light
-          : mk.Map.ColorSchemes.Adaptive
+    map.colorScheme = colorSchemeFor(mk, isDarkMode)
   }, [isDarkMode])
 
   return (
@@ -439,10 +437,10 @@ function MapConsentGate({ onApprove }: { onApprove: () => void }) {
 }
 
 function modeLabel(mode: Props['mode'], count: number): string | null {
-  if (mode === 'directions' || (mode === undefined && count > 1)) {
-    return 'Directions'
-  }
   if (mode === 'search') return 'Search results'
+  // Mirror `isDirections`: any time multiple stops are shown the widget
+  // behaves as directions, so the badge must say so regardless of `mode`.
+  if (mode === 'directions' || count > 1) return 'Directions'
   return null
 }
 
