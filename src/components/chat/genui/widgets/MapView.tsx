@@ -215,6 +215,12 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
   // listing it as a dep (which would re-fire on every parent render).
   const locationsRef = useRef(locations)
   locationsRef.current = locations
+  // The map-build effect runs async (MapKit loads over the network) and does
+  // not depend on `isDarkMode`. Read the latest theme from a ref at creation
+  // time so a toggle during the load isn't lost: the separate `isDarkMode`
+  // effect is a no-op while `mapRef` is still null.
+  const isDarkModeRef = useRef(isDarkMode)
+  isDarkModeRef.current = isDarkMode
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -228,7 +234,7 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
           showsCompass: 'adaptive',
           showsZoomControl: true,
           showsMapTypeControl: false,
-          colorScheme: colorSchemeFor(mk, isDarkMode),
+          colorScheme: colorSchemeFor(mk, isDarkModeRef.current),
         })
 
         if (mapType) {
@@ -326,9 +332,9 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
     }
     // Only rebuild the map when the actual content changes — `locations`
     // is referenced via a ref above so a new array reference per render
-    // doesn't tear down the live MapKit instance. `isDarkMode` is handled
-    // by a separate effect that mutates the existing instance.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // doesn't tear down the live MapKit instance. `isDarkMode` is read from a
+    // ref at creation time and otherwise handled by a separate effect that
+    // mutates the existing instance.
   }, [locationsSignature, mapType])
 
   // Update the existing map's color scheme without tearing it down when
