@@ -38,6 +38,7 @@ export function VerifierSidebar({
 }: VerifierSidebarProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [isReady, setIsReady] = useState(false)
+  const [hasOpenedPanel, setHasOpenedPanel] = useState(false)
   const [verificationDocument, setVerificationDocument] = useState<any>(null)
   const retryCountRef = useRef(0)
   const isRetryingRef = useRef(false)
@@ -143,11 +144,22 @@ export function VerifierSidebar({
     return () => timers.forEach(clearTimeout)
   }, [isReady, verificationDocument])
 
+  // Run attestation verification as soon as the client is ready so the
+  // header badge reflects status without mounting the heavy verification
+  // iframe. The fetch is a direct SDK call, independent of the iframe.
   useEffect(() => {
-    if (isOpen && isClient) {
+    if (isClient) {
       fetchVerificationDocument()
     }
-  }, [isOpen, isClient, fetchVerificationDocument])
+  }, [isClient, fetchVerificationDocument])
+
+  // Defer mounting the verification-center iframe (and its bundles) until the
+  // panel is first opened; keep it mounted afterwards so re-opening is instant.
+  useEffect(() => {
+    if (isOpen) {
+      setHasOpenedPanel(true)
+    }
+  }, [isOpen])
 
   useEffect(() => {
     if (isReady && iframeRef.current) {
@@ -172,7 +184,7 @@ export function VerifierSidebar({
         } fixed right-0 top-0 z-40 flex h-full w-[85vw] overflow-hidden border-l border-border-subtle bg-surface-sidebar font-aeonik transition-all duration-200 ease-in-out`}
         style={{ maxWidth: `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX}px` }}
       >
-        {isClient && (
+        {isClient && hasOpenedPanel && (
           <iframe
             ref={iframeRef}
             src={iframeUrl}
