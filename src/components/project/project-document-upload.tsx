@@ -113,7 +113,7 @@ export function ProjectDocumentUpload({
       {error && <p className="text-center text-[10px] text-red-500">{error}</p>}
 
       <p className="text-center font-aeonik-fono text-[10px] text-content-muted">
-        PDF, Office, text files up to 10MB
+        PDF, Office, text files up to 32MB
       </p>
     </div>
   )

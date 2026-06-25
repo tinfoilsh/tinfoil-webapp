@@ -38,9 +38,19 @@ export function VerifierSidebar({
 }: VerifierSidebarProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [isReady, setIsReady] = useState(false)
+  const [hasOpenedPanel, setHasOpenedPanel] = useState(false)
   const [verificationDocument, setVerificationDocument] = useState<any>(null)
   const retryCountRef = useRef(0)
   const isRetryingRef = useRef(false)
+
+  // Keep the latest callbacks in refs so `fetchVerificationDocument` can stay
+  // referentially stable. The parent passes these as inline functions, so
+  // depending on them directly would recreate the callback every render and
+  // re-fire the effects that trigger verification — an unbounded fetch loop.
+  const onVerificationUpdateRef = useRef(onVerificationUpdate)
+  const onVerificationCompleteRef = useRef(onVerificationComplete)
+  onVerificationUpdateRef.current = onVerificationUpdate
+  onVerificationCompleteRef.current = onVerificationComplete
 
   const fetchVerificationDocument = useCallback(async () => {
     if (isRetryingRef.current) return
@@ -61,11 +71,11 @@ export function VerifierSidebar({
         const doc = await getVerificationDocument()
         if (doc) {
           setVerificationDocument(doc)
-          if (onVerificationUpdate) {
-            onVerificationUpdate(doc)
+          if (onVerificationUpdateRef.current) {
+            onVerificationUpdateRef.current(doc)
           }
           if (doc.securityVerified !== undefined) {
-            onVerificationComplete(doc.securityVerified)
+            onVerificationCompleteRef.current(doc.securityVerified)
             return true
           }
         }
@@ -106,7 +116,7 @@ export function VerifierSidebar({
     }
 
     isRetryingRef.current = false
-  }, [onVerificationUpdate, onVerificationComplete])
+  }, [])
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -143,11 +153,23 @@ export function VerifierSidebar({
     return () => timers.forEach(clearTimeout)
   }, [isReady, verificationDocument])
 
+  // Fetch the verification document only when the panel is open so it can be
+  // posted into the iframe. The header badge status is owned by the parent
+  // (ChatInterface), which fetches the same document on mount, so there is no
+  // need to verify here while the panel is closed.
   useEffect(() => {
     if (isOpen && isClient) {
       fetchVerificationDocument()
     }
   }, [isOpen, isClient, fetchVerificationDocument])
+
+  // Defer mounting the verification-center iframe (and its bundles) until the
+  // panel is first opened; keep it mounted afterwards so re-opening is instant.
+  useEffect(() => {
+    if (isOpen) {
+      setHasOpenedPanel(true)
+    }
+  }, [isOpen])
 
   useEffect(() => {
     if (isReady && iframeRef.current) {
@@ -172,7 +194,7 @@ export function VerifierSidebar({
         } fixed right-0 top-0 z-40 flex h-full w-[85vw] overflow-hidden border-l border-border-subtle bg-surface-sidebar font-aeonik transition-all duration-200 ease-in-out`}
         style={{ maxWidth: `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX}px` }}
       >
-        {isClient && (
+        {isClient && hasOpenedPanel && (
           <iframe
             ref={iframeRef}
             src={iframeUrl}

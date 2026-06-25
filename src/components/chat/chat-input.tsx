@@ -163,6 +163,37 @@ export function ChatInput({
     [inputMinHeight],
   )
 
+  // Coalesce resize requests to at most one layout read/write per frame.
+  // Typing fires several resize triggers per keystroke (input event, value
+  // change, viewport changes); collapsing them into a single rAF avoids the
+  // repeated forced reflows that dominated the typing CPU profile.
+  const resizeRafRef = useRef<number | null>(null)
+  const pendingResizeElRef = useRef<HTMLTextAreaElement | null>(null)
+  const scheduleResize = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      if (!el) return
+      pendingResizeElRef.current = el
+      if (resizeRafRef.current !== null) return
+      resizeRafRef.current = requestAnimationFrame(() => {
+        resizeRafRef.current = null
+        resizeTextarea(pendingResizeElRef.current)
+      })
+    },
+    [resizeTextarea],
+  )
+
+  useEffect(() => {
+    return () => {
+      if (resizeRafRef.current !== null) {
+        cancelAnimationFrame(resizeRafRef.current)
+        // Clear the id so a later remount (e.g. React Strict Mode's
+        // simulated unmount/remount) can schedule again instead of seeing a
+        // stale, already-cancelled frame and short-circuiting forever.
+        resizeRafRef.current = null
+      }
+    }
+  }, [])
+
   // If the input transitions from non-empty -> empty (send/clear), remount the
   // textarea to guarantee any stuck inline height is dropped on mobile Safari.
   useEffect(() => {
@@ -268,14 +299,15 @@ export function ChatInput({
   // Auto-resize textarea as content changes (typing, transcription, paste, etc.)
   // Layout effect avoids iOS Safari cases where `scrollHeight` lags a paint.
   useIsomorphicLayoutEffect(() => {
+    // Synchronous pass before paint avoids a visible height jump.
     resizeTextarea(inputRef.current)
 
     // iOS Safari can report the previous scrollHeight on the same tick; re-check
-    // on the next frame to ensure growth kicks in.
-    const raf = requestAnimationFrame(() => resizeTextarea(inputRef.current))
-    return () => cancelAnimationFrame(raf)
+    // on the next frame (coalesced with any other pending resize) to ensure
+    // growth kicks in.
+    scheduleResize(inputRef.current)
     // Include `textareaResetNonce` so a remount recalculates height immediately.
-  }, [input, inputRef, resizeTextarea, textareaResetNonce])
+  }, [input, inputRef, resizeTextarea, scheduleResize, textareaResetNonce])
 
   // Recompute the height cap when the visual viewport changes (e.g. the
   // on-screen keyboard opens or closes) so long text never pushes the send
@@ -283,10 +315,10 @@ export function ChatInput({
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : null
     if (!vv) return
-    const onViewportResize = () => resizeTextarea(inputRef.current)
+    const onViewportResize = () => scheduleResize(inputRef.current)
     vv.addEventListener('resize', onViewportResize)
     return () => vv.removeEventListener('resize', onViewportResize)
-  }, [inputRef, resizeTextarea])
+  }, [inputRef, scheduleResize])
 
   // Focus textarea on initial mount only (not on remounts after sending)
   useEffect(() => {
@@ -767,12 +799,14 @@ export function ChatInput({
             value={input}
             onFocus={handleInputFocus}
             onChange={(e) => {
+              // Resize is driven by the layout effect on the resulting value
+              // change; avoid an extra synchronous reflow here.
               setInput(e.target.value)
-              resizeTextarea(e.currentTarget)
             }}
             onInput={(e) => {
-              // Some mobile Safari builds update `scrollHeight` more reliably on `input`.
-              resizeTextarea(e.currentTarget as HTMLTextAreaElement)
+              // Some mobile Safari builds update `scrollHeight` more reliably on
+              // `input`; schedule a coalesced resize rather than reflowing now.
+              scheduleResize(e.currentTarget as HTMLTextAreaElement)
             }}
             onPaste={handlePaste}
             onKeyDown={(e) => {

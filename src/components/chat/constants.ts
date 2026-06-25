@@ -16,8 +16,8 @@ export const CONSTANTS = {
   SINGLE_SIDEBAR_BREAKPOINT: 1024, // Below this width, only one sidebar can be open at a time
   MAX_MESSAGES: 100,
   MAX_MESSAGE_LENGTH: 4000,
-  MAX_DOCUMENT_SIZE_MB: 10, // Display value for error messages
-  MAX_DOCUMENT_SIZE_BYTES: 11 * 1024 * 1024, // Actual limit: 11MB to tolerate ~10.5MB files
+  MAX_DOCUMENT_SIZE_MB: 32, // Display value for error messages
+  MAX_DOCUMENT_SIZE_BYTES: 33 * 1024 * 1024, // Actual limit: 33MB to tolerate ~32.5MB files
   // Generous safety cap for plain-text files, which are validated against the
   // model's context window by token estimate rather than by byte size
   MAX_TEXT_DOCUMENT_SIZE_MB: 50,
