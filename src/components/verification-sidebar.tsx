@@ -153,14 +153,15 @@ export function VerifierSidebar({
     return () => timers.forEach(clearTimeout)
   }, [isReady, verificationDocument])
 
-  // Run attestation verification as soon as the client is ready so the
-  // header badge reflects status without mounting the heavy verification
-  // iframe. The fetch is a direct SDK call, independent of the iframe.
+  // Fetch the verification document only when the panel is open so it can be
+  // posted into the iframe. The header badge status is owned by the parent
+  // (ChatInterface), which fetches the same document on mount, so there is no
+  // need to verify here while the panel is closed.
   useEffect(() => {
-    if (isClient) {
+    if (isOpen && isClient) {
       fetchVerificationDocument()
     }
-  }, [isClient, fetchVerificationDocument])
+  }, [isOpen, isClient, fetchVerificationDocument])
 
   // Defer mounting the verification-center iframe (and its bundles) until the
   // panel is first opened; keep it mounted afterwards so re-opening is instant.
