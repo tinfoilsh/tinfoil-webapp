@@ -87,6 +87,27 @@ function ChartFrame({
   )
 }
 
+// Grid, axes, and tooltip are identical between bar and line charts apart
+// from the tooltip cursor style. Returned as an array so Recharts flattens
+// them into the chart's children alongside the series element.
+function cartesianAxes(xKey: string, cursor: Record<string, unknown>) {
+  return [
+    <CartesianGrid key="grid" strokeDasharray="3 3" stroke="currentColor" />,
+    <XAxis
+      key="x"
+      dataKey={xKey}
+      tick={{ fontSize: 12 }}
+      stroke="currentColor"
+    />,
+    <YAxis key="y" tick={{ fontSize: 12 }} stroke="currentColor" />,
+    <Tooltip
+      key="tooltip"
+      cursor={cursor}
+      contentStyle={tooltipContentStyle}
+    />,
+  ]
+}
+
 function renderBar(
   rows: ChartRow[],
   xKey: string,
@@ -95,13 +116,7 @@ function renderBar(
 ) {
   return (
     <RechartsBarChart data={rows}>
-      <CartesianGrid strokeDasharray="3 3" stroke="currentColor" />
-      <XAxis dataKey={xKey} tick={{ fontSize: 12 }} stroke="currentColor" />
-      <YAxis tick={{ fontSize: 12 }} stroke="currentColor" />
-      <Tooltip
-        cursor={{ fill: 'currentColor', fillOpacity: 0.06 }}
-        contentStyle={tooltipContentStyle}
-      />
+      {cartesianAxes(xKey, { fill: 'currentColor', fillOpacity: 0.06 })}
       <Bar dataKey={yKey} fill={color} radius={[4, 4, 0, 0]} />
     </RechartsBarChart>
   )
@@ -115,13 +130,7 @@ function renderLine(
 ) {
   return (
     <RechartsLineChart data={rows}>
-      <CartesianGrid strokeDasharray="3 3" stroke="currentColor" />
-      <XAxis dataKey={xKey} tick={{ fontSize: 12 }} stroke="currentColor" />
-      <YAxis tick={{ fontSize: 12 }} stroke="currentColor" />
-      <Tooltip
-        cursor={{ stroke: 'currentColor', strokeOpacity: 0.2 }}
-        contentStyle={tooltipContentStyle}
-      />
+      {cartesianAxes(xKey, { stroke: 'currentColor', strokeOpacity: 0.2 })}
       <Line
         type="monotone"
         dataKey={yKey}
