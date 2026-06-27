@@ -529,16 +529,17 @@ export async function retrieveEncryptedKeys(
   try {
     const lookup = await tryRetrieveFromEnclave(credentialId, kek)
     if (lookup.bundle) return lookup.bundle
-    if (!lookup.enclaveKeyExists) {
-      // No registered key yet (or an orphan key with no bundles) — safe
-      // to revive any legacy bundle for this credential.
+    if (!lookup.currentKeyId) {
+      // No registered key at all — safe to revive any legacy bundle for
+      // this credential, since there is no current key_id to mismatch.
       return await tryRetrieveFromLegacy(credentialId, kek)
     }
-    // A key exists but this credential has no enclave bundle. Revive the
-    // legacy bundle only when it wraps the SAME current CEK — i.e. a v1
-    // user with the same passkey on another platform that hasn't been
-    // enrolled yet. A legacy bundle deriving a different key_id is a
-    // rotated-away CEK and must never be adopted as primary.
+    // A key is registered (even an orphan key with no bundles of its
+    // own). Revive the legacy bundle only when it wraps the SAME current
+    // CEK — i.e. a v1 user with the same passkey on another platform that
+    // hasn't been enrolled yet. A legacy bundle deriving a different
+    // key_id is a rotated-away CEK (e.g. left behind by a start_fresh)
+    // and must never be adopted as primary.
     return await tryRetrieveFromLegacyIfCurrent(
       credentialId,
       kek,
@@ -555,7 +556,6 @@ export async function retrieveEncryptedKeys(
 
 interface EnclaveBundleLookup {
   bundle: KeyBundle | null
-  enclaveKeyExists: boolean
   currentKeyId: string | null
 }
 
@@ -566,19 +566,17 @@ async function tryRetrieveFromEnclave(
   try {
     const resp = await enclaveKeyCurrent()
     if (!resp.key_id) {
-      return { bundle: null, enclaveKeyExists: false, currentKeyId: null }
+      return { bundle: null, currentKeyId: null }
     }
     const bundle = resp.bundles[credentialId]
     if (!bundle) {
-      // Treat a key with no bundles at all as "no enclave key" so the
-      // legacy passkey fallback runs (orphan key from the migrate-all
-      // bootstrap). When other bundles exist but none for this
-      // credential, the caller verifies the legacy bundle still wraps
-      // the current key before reviving it.
-      const hasAnyBundle = Object.keys(resp.bundles).length > 0
+      // This credential has no enclave bundle under the current key
+      // (including the orphan-key case where the key has no bundles at
+      // all). The caller verifies any legacy bundle still wraps the
+      // current key_id before reviving it, so a rotated-away CEK is
+      // never adopted.
       return {
         bundle: null,
-        enclaveKeyExists: hasAnyBundle,
         currentKeyId: resp.key_id,
       }
     }
@@ -595,7 +593,6 @@ async function tryRetrieveFromEnclave(
           primary: encryptionService.encodeKeyFromBytes(cekBytes),
           alternatives: [],
         },
-        enclaveKeyExists: true,
         currentKeyId: resp.key_id,
       }
     } catch {
@@ -608,13 +605,12 @@ async function tryRetrieveFromEnclave(
       })
       return {
         bundle: decrypted,
-        enclaveKeyExists: true,
         currentKeyId: resp.key_id,
       }
     }
   } catch (err) {
     if (err instanceof SyncEnclaveError && err.status === 404) {
-      return { bundle: null, enclaveKeyExists: false, currentKeyId: null }
+      return { bundle: null, currentKeyId: null }
     }
     throw err
   }
@@ -656,6 +652,7 @@ async function tryRetrieveFromLegacyIfCurrent(
     logInfo('skipping legacy passkey bundle for a rotated-away key', {
       component: 'PasskeyKeyStorage',
       action: 'retrieveEncryptedKeys',
+      metadata: { credentialId, legacyKeyId, currentKeyId },
     })
     return null
   }
