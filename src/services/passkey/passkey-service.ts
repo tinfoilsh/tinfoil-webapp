@@ -298,6 +298,11 @@ export async function authenticatePrfPasskey(
     )) as PublicKeyCredential | null
 
     if (!assertion) {
+      logInfo('passkey assertion returned no credential', {
+        component: 'PasskeyService',
+        action: 'authenticatePrfPasskey',
+        metadata: { allowedCredentials: credentialIds.length },
+      })
       return null
     }
 
@@ -323,10 +328,18 @@ export async function authenticatePrfPasskey(
     if (error instanceof PasskeyTimeoutError) throw error
 
     if (error instanceof DOMException && error.name === 'NotAllowedError') {
-      logInfo('User cancelled passkey authentication', {
-        component: 'PasskeyService',
-        action: 'authenticatePrfPasskey',
-      })
+      // NotAllowedError covers both a user cancel and the case where the
+      // provider has no usable credential for any of the allowed ids
+      // (e.g. the passkey was created in a different browser/profile and
+      // never persisted on this device).
+      logInfo(
+        'passkey authentication not allowed (cancelled or no usable credential)',
+        {
+          component: 'PasskeyService',
+          action: 'authenticatePrfPasskey',
+          metadata: { allowedCredentials: credentialIds.length },
+        },
+      )
       if (throwOnCancel) throw error
       return null
     }

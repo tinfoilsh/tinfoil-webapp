@@ -243,7 +243,7 @@ describe('retrieveEncryptedKeys', () => {
     expect(bundle).toBeNull()
   })
 
-  it('falls back to the legacy passkey when the enclave key has no bundles (orphan key)', async () => {
+  it('revives the legacy passkey for an orphan key (no bundles) when it wraps the current CEK', async () => {
     const prf = crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
     const kek = await deriveKeyEncryptionKey(prf)
     const original = {
@@ -251,8 +251,13 @@ describe('retrieveEncryptedKeys', () => {
       alternatives: [] as string[],
     }
     const encrypted = await encryptKeyBundle(kek, original)
+    // The orphan key_id is derived from the SAME CEK the device's legacy
+    // passkey wraps, so the bundle must be revived even though the key
+    // has no enclave bundles of its own.
+    mockAlternativeKeyBytes = CEK_BYTES
+    const keyId = await deriveKeyIdHex(CEK_BYTES)
     mockKeyCurrent.mockResolvedValue({
-      key_id: 'feedface'.repeat(8).slice(0, 64),
+      key_id: keyId,
       etag: '1',
       bundles: {},
     })
@@ -271,5 +276,36 @@ describe('retrieveEncryptedKeys', () => {
     expect(bundle).not.toBeNull()
     expect(bundle?.primary).toBe(original.primary)
     expect(mockFetchLegacy).toHaveBeenCalledOnce()
+  })
+
+  it('drops the legacy passkey for an orphan key when it wraps a rotated-away key', async () => {
+    const prf = crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
+    const kek = await deriveKeyEncryptionKey(prf)
+    const original = {
+      primary: 'key_orphan_rotated_away',
+      alternatives: [] as string[],
+    }
+    const encrypted = await encryptKeyBundle(kek, original)
+    // Orphan key_id does not match the CEK the legacy passkey wraps, so
+    // the rotated-away bundle must not be adopted as primary.
+    mockAlternativeKeyBytes = CEK_BYTES
+    mockKeyCurrent.mockResolvedValue({
+      key_id: 'ff'.repeat(32),
+      etag: '1',
+      bundles: {},
+    })
+    mockFetchLegacy.mockResolvedValue([
+      {
+        id: CRED_ID,
+        iv: encrypted.iv,
+        encrypted_keys: encrypted.data,
+        created_at: '2024-01-01T00:00:00.000Z',
+        version: 1,
+        sync_version: 1,
+      },
+    ])
+
+    const bundle = await retrieveEncryptedKeys(CRED_ID, kek)
+    expect(bundle).toBeNull()
   })
 })
