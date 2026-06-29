@@ -32,6 +32,7 @@ interface UseChatStorageReturn {
   createNewChat: (isLocalOnly?: boolean, fromUserAction?: boolean) => void
   deleteChat: (chatId: string) => void
   updateChatTitle: (chatId: string, newTitle: string) => void
+  updateChatModel: (model: string) => void
   switchChat: (chat: Chat) => Promise<void>
   handleChatSelect: (chatId: string) => void
   setIsInitialLoad: (loading: boolean) => void
@@ -303,6 +304,36 @@ export function useChatStorage({
     [storeHistory, currentChat?.id, persistenceManager],
   )
 
+  // Set the model for the currently active chat. Blank chats are matched by
+  // reference (they share an empty id) and kept as a single object so the
+  // send path's reference-based blank-chat replacement still works; real
+  // chats are persisted so the choice survives reloads and syncs to cloud.
+  const updateChatModel = useCallback(
+    (model: string) => {
+      const target = currentChat
+      const updated = { ...target, model }
+
+      setCurrentChat(updated)
+      setChats((prevChats) =>
+        prevChats.map((c) =>
+          (target.isBlankChat ? c === target : c.id === target.id)
+            ? updated
+            : c,
+        ),
+      )
+
+      if (!target.isBlankChat && !target.isTemporary && storeHistory) {
+        persistenceManager.save(updated).catch((error) => {
+          logError('Failed to save chat model update', error, {
+            component: 'useChatStorage',
+            metadata: { chatId: target.id },
+          })
+        })
+      }
+    },
+    [currentChat, storeHistory, persistenceManager],
+  )
+
   // Track when we're in the middle of switching chats to prevent reloadChats from interfering
   const isSwitchingChatRef = useRef(false)
   const switchChatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -435,6 +466,7 @@ export function useChatStorage({
           locallyModified: downloadedChat.locallyModified,
           decryptionFailed: downloadedChat.decryptionFailed,
           projectId: downloadedChat.projectId,
+          model: downloadedChat.model,
         }
 
         // Add to chats list and select it
@@ -554,6 +586,7 @@ export function useChatStorage({
     createNewChat,
     deleteChat,
     updateChatTitle,
+    updateChatModel,
     switchChat,
     handleChatSelect,
     setIsInitialLoad,

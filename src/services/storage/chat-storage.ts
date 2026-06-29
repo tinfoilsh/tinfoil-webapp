@@ -132,7 +132,6 @@ export class ChatStorageService {
       locallyModified,
       syncVersion,
       decryptionFailed,
-      model,
       version,
       pendingSave,
       ...baseChat
@@ -283,7 +282,6 @@ export class ChatStorageService {
         locallyModified,
         syncVersion,
         decryptionFailed,
-        model,
         version,
         pendingSave,
         ...baseChat
@@ -309,7 +307,6 @@ export class ChatStorageService {
       ({
         lastAccessedAt,
         syncVersion,
-        model,
         version,
         pendingSave,
         ...chatWithSyncData

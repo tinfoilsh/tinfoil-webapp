@@ -1,10 +1,11 @@
-import type { BaseModel } from '@/config/models'
+import { isModelNameAvailable, type BaseModel } from '@/config/models'
 import { useExecSnapshot } from '@/services/exec-snapshot/use-exec-snapshot'
-import { useEffect, useRef } from 'react'
+import { logWarning } from '@/utils/error-handling'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { AIModel, Chat, LabelType, LoadingState, Message } from '../types'
 import { useChatMessaging } from './use-chat-messaging'
 import { useChatStorage } from './use-chat-storage'
-import { useModelManagement } from './use-model-management'
+import { resolveChatModel, useModelManagement } from './use-model-management'
 import type { ReasoningEffort } from './use-reasoning-effort'
 import { useUIState, type ThemeMode } from './use-ui-state'
 
@@ -142,6 +143,7 @@ export function useChatState({
     createNewChat,
     deleteChat,
     updateChatTitle,
+    updateChatModel,
     handleChatSelect,
     setIsInitialLoad,
     isInitialLoad,
@@ -156,9 +158,11 @@ export function useChatState({
     isLocalChatUrl,
   })
 
-  // Model Management
+  // Model Management - the hook owns model validation and the label/
+  // verification UI state. The active model itself is per-chat: it is
+  // resolved from the current chat (falling back to the first available
+  // model) so concurrent chats never override each other.
   const {
-    selectedModel,
     hasValidatedModel,
     expandedLabel,
     setExpandedLabel,
@@ -166,12 +170,32 @@ export function useChatState({
     setVerificationSuccess,
     verificationComplete,
     verificationSuccess,
-    handleModelSelect,
     handleLabelClick,
   } = useModelManagement({
     models,
     isClient,
   })
+
+  const selectedModel = useMemo(
+    () => resolveChatModel(currentChat, models),
+    [currentChat, models],
+  )
+
+  const handleModelSelect = useCallback(
+    (modelName: AIModel) => {
+      if (!isModelNameAvailable(modelName, models)) {
+        logWarning(`Model ${modelName} is not available`, {
+          component: 'useChatState',
+          action: 'handleModelSelect',
+          metadata: { modelName },
+        })
+        return
+      }
+      updateChatModel(modelName)
+      setExpandedLabel(null)
+    },
+    [models, updateChatModel, setExpandedLabel],
+  )
 
   const { codeExecutionEncryptionKey } = useExecSnapshot({
     enabled: canUseCodeExecution,
