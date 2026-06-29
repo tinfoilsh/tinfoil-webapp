@@ -422,6 +422,7 @@ export function useChatMessaging({
           createdAt: new Date(),
           isLocalOnly: currentChat.isLocalOnly || !isCloudSyncEnabled(),
           pendingSave: true,
+          model: selectedModel,
           projectId:
             isProjectMode && activeProject ? activeProject.id : undefined,
         }
