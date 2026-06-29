@@ -1,4 +1,8 @@
-import { useModelManagement } from '@/components/chat/hooks/use-model-management'
+import {
+  resolveChatModel,
+  useModelManagement,
+} from '@/components/chat/hooks/use-model-management'
+import type { Chat } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import { SETTINGS_SELECTED_MODEL } from '@/constants/storage-keys'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -30,6 +34,38 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
   logError: vi.fn(),
 }))
+
+describe('resolveChatModel', () => {
+  const makeChat = (model?: string): Chat => ({
+    id: 'chat-1',
+    title: 'Chat',
+    messages: [],
+    createdAt: new Date(),
+    model,
+  })
+
+  it("returns the chat's own model when it is available", () => {
+    expect(resolveChatModel(makeChat('model-b'), mockModels)).toBe('model-b')
+  })
+
+  it('falls back to the first model when the chat has no model', () => {
+    expect(resolveChatModel(makeChat(undefined), mockModels)).toBe('model-a')
+  })
+
+  it('falls back to the first model when the chat model is unavailable', () => {
+    expect(resolveChatModel(makeChat('removed-model'), mockModels)).toBe(
+      'model-a',
+    )
+  })
+
+  it('falls back to the first model when there is no chat', () => {
+    expect(resolveChatModel(undefined, mockModels)).toBe('model-a')
+  })
+
+  it('returns an empty string when no models are available', () => {
+    expect(resolveChatModel(makeChat('model-a'), [])).toBe('')
+  })
+})
 
 describe('useModelManagement', () => {
   beforeEach(() => {

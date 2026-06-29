@@ -2,7 +2,26 @@ import { isModelNameAvailable, type BaseModel } from '@/config/models'
 import { SETTINGS_SELECTED_MODEL } from '@/constants/storage-keys'
 import { logWarning } from '@/utils/error-handling'
 import { useCallback, useEffect, useState } from 'react'
-import type { AIModel, LabelType } from '../types'
+import type { AIModel, Chat, LabelType } from '../types'
+
+/**
+ * Resolves the model a chat should use: the chat's own model when it is
+ * still available, otherwise the first available model. No global default
+ * is consulted so concurrent chats never override each other's model.
+ *
+ * Runs during render before the model config has loaded, so `models` may
+ * be empty; the empty-string fallback keeps the selector in a neutral
+ * placeholder state until the config arrives.
+ */
+export function resolveChatModel(
+  chat: Chat | undefined,
+  models: BaseModel[],
+): AIModel {
+  if (chat?.model && isModelNameAvailable(chat.model, models)) {
+    return chat.model
+  }
+  return models[0]?.modelName ?? ''
+}
 
 interface UseModelManagementProps {
   models: BaseModel[]

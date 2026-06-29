@@ -185,6 +185,10 @@ export type Chat = {
   // Prompt library preset association - when set, this preset's system
   // prompt overrides the default for this chat.
   presetId?: string
+  // Model this chat is associated with. Drives the selector when the chat
+  // is active and the model used for new messages. Falls back to the first
+  // available model when unset or no longer available.
+  model?: string
   // For code execution.
   codeExecutionAccessToken?: string
 }

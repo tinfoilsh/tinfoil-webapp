@@ -422,6 +422,7 @@ export function useChatMessaging({
           createdAt: new Date(),
           isLocalOnly: currentChat.isLocalOnly || !isCloudSyncEnabled(),
           pendingSave: true,
+          model: selectedModel,
           projectId:
             isProjectMode && activeProject ? activeProject.id : undefined,
         }
@@ -497,6 +498,7 @@ export function useChatMessaging({
           isBlankChat: false,
           createdAt: new Date(),
           pendingSave: true,
+          model: selectedModel,
         }
 
         moveStatus(streamChatIdRef.current, updatedChat.id)
@@ -540,6 +542,7 @@ export function useChatMessaging({
         updatedChat = {
           ...updatedChat,
           messages: updatedMessages,
+          model: selectedModel,
           // Backfill for chats created before this field existed.
           codeExecutionAccessToken:
             updatedChat.codeExecutionAccessToken ??
@@ -742,6 +745,7 @@ export function useChatMessaging({
             title: resolvedTitle,
             titleState: resolvedTitleState,
             messages: finalMessages,
+            model: selectedModel,
             // Keep the pending flag set through the real upload. The
             // sidebar badge is suppressed while streaming, so it now
             // surfaces only here - once the stream stops and the chat
