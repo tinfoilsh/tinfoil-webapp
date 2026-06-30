@@ -131,12 +131,12 @@ export function useSidebarChat({
       setQuote(quoteText)
 
       // The sidebar ask only sends quoted text plus a serialized transcript,
-      // so multimodal is never required here; tool calling is needed when web
+      // so multimodal is never needed here; tool calling is preferred when web
       // search is on.
       const { model, autoCandidates } = resolveModelSelection(
         selectedModel,
         models,
-        { requireToolCalling: Boolean(webSearchEnabled) },
+        { preferToolCalling: Boolean(webSearchEnabled) },
       )
       if (!model) {
         logError('Cannot start sidebar ask: model not found', undefined, {

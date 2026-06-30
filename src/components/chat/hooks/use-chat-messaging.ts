@@ -608,20 +608,20 @@ export function useChatMessaging({
       // }
 
       try {
-        // Auto selections need a multimodal candidate when the turn carries
+        // Auto selections prefer a multimodal candidate when the turn carries
         // images, and a tool-calling candidate when web search, code execution,
-        // or the default-enabled GenUI tools are active, so the router never
-        // falls back to a model that can't service the request.
-        const requireMultimodal = updatedMessages.some(
+        // or the default-enabled GenUI tools are active, so the router favors a
+        // model that can service the request when one is available.
+        const preferMultimodal = updatedMessages.some(
           (m) => getMessageImages(m).length > 0,
         )
-        const requireToolCalling = Boolean(
+        const preferToolCalling = Boolean(
           webSearchEnabled || codeExecutionEnabled || (genUIEnabled ?? true),
         )
         const { model, autoCandidates } = resolveModelSelection(
           selectedModel,
           models,
-          { requireMultimodal, requireToolCalling },
+          { preferMultimodal, preferToolCalling },
         )
         if (!model) {
           throw new Error(`Model ${selectedModel} not found`)
