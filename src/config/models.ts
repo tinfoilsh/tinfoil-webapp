@@ -213,9 +213,11 @@ export type ResolvedModelSelection = {
 /**
  * Resolves the selected picker id (real model or Auto sentinel) into the model
  * used to build the request plus, for Auto, the ordered candidate list. For
- * Auto the tier pool is filtered by required capabilities (multimodal / tool
- * calling); if filtering empties the pool it falls back to the unfiltered tier
- * list so a request is always routable.
+ * Auto each required capability (multimodal / tool calling) narrows the tier
+ * pool only when at least one member satisfies it, so a satisfied requirement
+ * is never silently dropped. Incapable models are kept only when no tier member
+ * supports a requirement at all, which keeps the request routable (degraded)
+ * rather than mis-routing past a capable candidate.
  */
 export const resolveModelSelection = (
   selectedModel: string,
@@ -227,17 +229,15 @@ export const resolveModelSelection = (
   }
 
   const tier: AutoTier = selectedModel === AUTO_SMART_ID ? 'smart' : 'fast'
-  const pool = tierModels(models, tier)
+  let candidates = tierModels(models, tier)
 
-  let candidates = pool
   if (opts?.requireMultimodal) {
-    candidates = candidates.filter((m) => m.multimodal === true)
+    const capable = candidates.filter((m) => m.multimodal === true)
+    if (capable.length > 0) candidates = capable
   }
   if (opts?.requireToolCalling) {
-    candidates = candidates.filter((m) => m.toolCalling === true)
-  }
-  if (candidates.length === 0) {
-    candidates = pool
+    const capable = candidates.filter((m) => m.toolCalling === true)
+    if (capable.length > 0) candidates = capable
   }
 
   return { model: candidates[0], autoCandidates: candidates }

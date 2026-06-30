@@ -333,12 +333,23 @@ export async function sendChatStream(
     )
   }
 
+  // For Auto, the router may pick any candidate, so the single built message
+  // set must be valid for all of them. If any candidate doesn't support the
+  // system role (e.g. DeepSeek), inject the system prompt as a leading user
+  // message, a form every model understands.
+  const forcePrependSystemPrompt = Boolean(
+    autoCandidates?.some(
+      (c) => !ChatQueryBuilder.shouldUseSystemRole(c.modelName),
+    ),
+  )
+
   const messages = ChatQueryBuilder.buildMessages({
     model,
     systemPrompt,
     rules,
     messages: updatedMessages,
     includeGenUIHint: genUIEnabled,
+    forcePrependSystemPrompt,
   })
 
   let lastError: unknown = null
