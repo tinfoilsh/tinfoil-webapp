@@ -140,7 +140,12 @@ const isChatModel = (m: BaseModel): boolean =>
 
 /** Real chat models belonging to the given Auto tier, in priority order. */
 const tierModels = (models: BaseModel[], tier: AutoTier): BaseModel[] =>
-  models.filter((m) => isChatModel(m) && m.attributes?.includes(tier) === true)
+  models.filter(
+    (m) =>
+      isChatModel(m) &&
+      Array.isArray(m.attributes) &&
+      m.attributes.includes(tier),
+  )
 
 /**
  * Builds the synthetic Auto picker entries, one per tier that has at least one
