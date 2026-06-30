@@ -11,7 +11,7 @@
  * web search, and citation processing identical to the main chat view
  * without duplicating any of that logic.
  */
-import { type BaseModel } from '@/config/models'
+import { resolveModelSelection, type BaseModel } from '@/config/models'
 import { sendChatStream } from '@/services/inference/inference-client'
 import { logError } from '@/utils/error-handling'
 import { useCallback, useRef, useState } from 'react'
@@ -130,7 +130,14 @@ export function useSidebarChat({
       setMessages([])
       setQuote(quoteText)
 
-      const model = models.find((m) => m.modelName === selectedModel)
+      // The sidebar ask only sends quoted text plus a serialized transcript,
+      // so multimodal is never required here; tool calling is needed when web
+      // search is on.
+      const { model, autoCandidates } = resolveModelSelection(
+        selectedModel,
+        models,
+        { requireToolCalling: Boolean(webSearchEnabled) },
+      )
       if (!model) {
         logError('Cannot start sidebar ask: model not found', undefined, {
           component: 'useSidebarChat',
@@ -201,6 +208,7 @@ export function useSidebarChat({
         try {
           const response = await sendChatStream({
             model,
+            autoCandidates,
             systemPrompt,
             rules,
             onRetry: (attempt, max, error) => {

@@ -1,5 +1,9 @@
-import { type BaseModel } from '@/config/models'
-import { CheckIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
+import { getAutoModels, type BaseModel } from '@/config/models'
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  SparklesIcon,
+} from '@heroicons/react/24/outline'
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { AIModel } from './types'
 
@@ -151,6 +155,8 @@ export function ModelSelector({
     }
   }, [preferredPosition])
 
+  const autoModels = getAutoModels(models)
+
   const displayModels = models.filter(
     (model) =>
       (model.type === 'chat' || model.type === 'code') && model.chat === true,
@@ -199,16 +205,26 @@ export function ModelSelector({
         }}
       >
         <div className="relative flex h-5 w-5 flex-none items-center justify-center">
-          {!loadedImages[model.modelName] && !failedImages[model.modelName] && (
-            <div className="absolute h-5 w-5 rounded-full bg-gray-300 dark:bg-gray-600" />
+          {model.isAuto ? (
+            <SparklesIcon
+              className="h-5 w-5 text-brand-accent-dark dark:text-brand-accent-light"
+              aria-hidden="true"
+            />
+          ) : (
+            <>
+              {!loadedImages[model.modelName] &&
+                !failedImages[model.modelName] && (
+                  <div className="absolute h-5 w-5 rounded-full bg-gray-300 dark:bg-gray-600" />
+                )}
+              <img
+                src={getModelIcon(model)}
+                alt=""
+                className={`h-5 w-5 transition-opacity duration-200 ${!loadedImages[model.modelName] && !failedImages[model.modelName] ? 'opacity-0' : ''}`}
+                onLoad={() => handleImageLoad(model.modelName)}
+                onError={() => handleImageError(model.modelName)}
+              />
+            </>
           )}
-          <img
-            src={getModelIcon(model)}
-            alt=""
-            className={`h-5 w-5 transition-opacity duration-200 ${!loadedImages[model.modelName] && !failedImages[model.modelName] ? 'opacity-0' : ''}`}
-            onLoad={() => handleImageLoad(model.modelName)}
-            onError={() => handleImageError(model.modelName)}
-          />
         </div>
         <div className="flex flex-1 flex-col">
           <span className="font-medium">{model.name}</span>
@@ -251,6 +267,12 @@ export function ModelSelector({
       onTouchEnd={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
     >
+      {autoModels.map((model) => renderModelItem(model))}
+
+      {autoModels.length > 0 && (
+        <div className="mx-3 my-1 border-t border-border-subtle" />
+      )}
+
       {topModels.map((model) => renderModelItem(model))}
 
       {otherModels.length > 0 && (

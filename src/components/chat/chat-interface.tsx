@@ -1,6 +1,8 @@
 import {
+  findSelectableModel,
   getAIModels,
   getSystemPromptAndRules,
+  resolveModelSelection,
   type BaseModel,
 } from '@/config/models'
 import {
@@ -1273,9 +1275,9 @@ export function ChatInterface({
   }, [setIsSidebarOpen, currentChat?.messages?.length, createNewChat])
 
   // Get the selected model details
-  const selectedModelDetails = models.find(
-    (model) => model.modelName === selectedModel,
-  ) as BaseModel | undefined
+  const selectedModelDetails = findSelectableModel(selectedModel, models) as
+    | BaseModel
+    | undefined
 
   // Initialize document uploader hook
   const { handleDocumentUpload, describeImageWithMultimodal } =
@@ -3449,7 +3451,7 @@ export function ChatInterface({
                                 data-model-selector
                                 aria-haspopup="menu"
                                 aria-expanded={expandedLabel === 'model'}
-                                aria-label={`Current model ${models.find((m) => m.modelName === selectedModel)?.name ?? ''}`}
+                                aria-label={`Current model ${findSelectableModel(selectedModel, models)?.name ?? ''}`}
                                 onClick={(e) => {
                                   e.preventDefault()
                                   e.stopPropagation()
@@ -3458,8 +3460,9 @@ export function ChatInterface({
                                 className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
                               >
                                 {(() => {
-                                  const model = models.find(
-                                    (m) => m.modelName === selectedModel,
+                                  const model = findSelectableModel(
+                                    selectedModel,
+                                    models,
                                   )
                                   if (!model) return null
                                   return (
@@ -3498,9 +3501,10 @@ export function ChatInterface({
                           ) : undefined
                         }
                         reasoningSelectorButton={(() => {
-                          const m = models.find(
-                            (mm) => mm.modelName === selectedModel,
-                          )
+                          const m = resolveModelSelection(
+                            selectedModel,
+                            models,
+                          ).model
                           const supportsEffort = supportsReasoningEffort(m)
                           const supportsToggle = supportsThinkingToggle(m)
                           if (

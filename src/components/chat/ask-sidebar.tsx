@@ -1,5 +1,5 @@
 import { cn } from '@/components/ui/utils'
-import { type BaseModel } from '@/config/models'
+import { findSelectableModel, type BaseModel } from '@/config/models'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { memo, useRef } from 'react'
 import { PiChatCircleText } from 'react-icons/pi'
@@ -63,8 +63,7 @@ export function AskSidebar({
 }: AskSidebarProps) {
   const { messages, isWaitingForResponse, isStreaming } = state
   const hasMessages = messages.length > 0
-  const currentModel =
-    models.find((m) => m.modelName === selectedModel) || models[0]
+  const currentModel = findSelectableModel(selectedModel, models) || models[0]
   const sidebarScrollRef = useRef<HTMLDivElement>(null)
 
   const lastMessage = messages[messages.length - 1]
