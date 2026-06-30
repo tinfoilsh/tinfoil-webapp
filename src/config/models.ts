@@ -106,10 +106,8 @@ export type BaseModel = {
   paid?: boolean
   multimodal?: boolean
   toolCalling?: boolean
-  /** Eligible for the "Auto · Smart" routing pool. */
-  smart?: boolean
-  /** Eligible for the "Auto · Fast" routing pool. */
-  fast?: boolean
+  /** Open set of model tags, including Auto routing tiers ("smart", "fast"). */
+  attributes?: string[]
   /** True for the synthetic Auto picker entries; never a real backend model. */
   isAuto?: boolean
   /** Routing tier an Auto entry resolves; only set when isAuto is true. */
@@ -142,7 +140,7 @@ const isChatModel = (m: BaseModel): boolean =>
 
 /** Real chat models belonging to the given Auto tier, in priority order. */
 const tierModels = (models: BaseModel[], tier: AutoTier): BaseModel[] =>
-  models.filter((m) => isChatModel(m) && m[tier] === true)
+  models.filter((m) => isChatModel(m) && m.attributes?.includes(tier) === true)
 
 /**
  * Builds the synthetic Auto picker entries, one per tier that has at least one
