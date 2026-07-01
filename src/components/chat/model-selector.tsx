@@ -1,10 +1,7 @@
 import { getAutoModels, type BaseModel } from '@/config/models'
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  SparklesIcon,
-} from '@heroicons/react/24/outline'
+import { CheckIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { useLayoutEffect, useRef, useState } from 'react'
+import { PiShuffleAngularBold } from 'react-icons/pi'
 import type { AIModel } from './types'
 
 type ModelSelectorProps = {
@@ -206,7 +203,7 @@ export function ModelSelector({
       >
         <div className="relative flex h-5 w-5 flex-none items-center justify-center">
           {model.isAuto ? (
-            <SparklesIcon
+            <PiShuffleAngularBold
               className="h-5 w-5 text-brand-accent-dark dark:text-brand-accent-light"
               aria-hidden="true"
             />
