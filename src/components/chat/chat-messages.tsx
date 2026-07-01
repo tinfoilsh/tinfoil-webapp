@@ -1,4 +1,4 @@
-import { type BaseModel } from '@/config/models'
+import { findSelectableModel, type BaseModel } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
 import {
   findContextStartIndex,
@@ -290,7 +290,7 @@ export function ChatMessages({
       // but TypeScript needs this check
       return models?.[0] || null
     }
-    return models.find((m) => m.modelName === selectedModel) || models[0]
+    return findSelectableModel(selectedModel, models) || models[0]
   }, [models, selectedModel])
 
   // Separate messages into archived and live sections - memoize this calculation

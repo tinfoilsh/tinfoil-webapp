@@ -9,6 +9,7 @@ import {
 } from '@/components/chat/hooks/use-reasoning-effort'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import { AUTO_MODEL_OPTIONS_FIELD, AUTO_REQUEST_MODEL } from '@/config/models'
 import { shouldRetryTestFail } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
 import { ChatQueryBuilder } from './chat-query-builder'
@@ -40,6 +41,71 @@ function substituteEffort(value: unknown, effort: string): unknown {
     return out
   }
   return value
+}
+
+/**
+ * Builds the model-specific request-body delta for a single model: the
+ * reasoning enable/disable block (with the user's effort spliced in) plus the
+ * model's own `requestParams`. Shared, model-independent options (web search,
+ * code execution, PII check, GenUI tools) are added to the base body by the
+ * caller and are intentionally excluded here so this delta can also be sent
+ * per-candidate in the Auto `auto_model_options` blob.
+ */
+function buildModelBodyParams(
+  model: BaseModel,
+  opts: { thinkingEnabled?: boolean; reasoningEffort?: ReasoningEffort },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+
+  if (isReasoningModel(model)) {
+    const endpointParams =
+      model.reasoningConfig?.params?.[CHAT_COMPLETIONS_ENDPOINT]
+    if (endpointParams) {
+      const rawBlock = supportsThinkingToggle(model)
+        ? opts.thinkingEnabled
+          ? endpointParams.enable
+          : endpointParams.disable
+        : endpointParams.enable
+      if (rawBlock) {
+        const uiEffort =
+          supportsReasoningEffort(model) && opts.reasoningEffort
+            ? opts.reasoningEffort
+            : 'medium'
+        const effort = model.reasoningConfig?.effortMap?.[uiEffort] ?? uiEffort
+        const block = substituteEffort(rawBlock, effort) as Record<
+          string,
+          unknown
+        >
+        for (const [key, value] of Object.entries(block)) {
+          out[key] = value
+        }
+      }
+    }
+  }
+
+  // Apply model-specific params, but never let them overwrite our explicit
+  // or security-sensitive fields.
+  if (model.requestParams) {
+    const reserved = new Set([
+      'model',
+      'messages',
+      'stream',
+      'signal',
+      'reasoning_effort',
+      'web_search_options',
+      'code_execution_options',
+      'pii_check_options',
+      'tools',
+      'tool_choice',
+    ])
+    for (const [key, value] of Object.entries(model.requestParams)) {
+      if (!reserved.has(key)) {
+        out[key] = value
+      }
+    }
+  }
+
+  return out
 }
 
 function isOnline(): boolean {
@@ -104,6 +170,13 @@ function isRetryableError(error: unknown): boolean {
 
 export interface SendChatStreamParams {
   model: BaseModel
+  /**
+   * Ordered Auto candidates. When provided (an Auto option is selected), the
+   * request `model` is set to the router's "auto" sentinel and each
+   * candidate's params travel in the `auto_model_options` blob. `model` is the
+   * representative (first) candidate, used to build the shared message body.
+   */
+  autoCandidates?: BaseModel[]
   systemPrompt: string
   rules?: string
   onRetry?: (attempt: number, maxRetries: number, error?: string) => void
@@ -134,6 +207,7 @@ export async function sendChatStream(
 ): Promise<Response> {
   const {
     model,
+    autoCandidates,
     systemPrompt,
     rules,
     onRetry,
@@ -259,12 +333,23 @@ export async function sendChatStream(
     )
   }
 
+  // For Auto, the router may pick any candidate, so the single built message
+  // set must be valid for all of them. If any candidate doesn't support the
+  // system role (e.g. DeepSeek), inject the system prompt as a leading user
+  // message, a form every model understands.
+  const forcePrependSystemPrompt = Boolean(
+    autoCandidates?.some(
+      (c) => !ChatQueryBuilder.shouldUseSystemRole(c.modelName),
+    ),
+  )
+
   const messages = ChatQueryBuilder.buildMessages({
     model,
     systemPrompt,
     rules,
     messages: updatedMessages,
     includeGenUIHint: genUIEnabled,
+    forcePrependSystemPrompt,
   })
 
   let lastError: unknown = null
@@ -298,42 +383,6 @@ export async function sendChatStream(
         messages,
         stream: true,
       }
-      if (isReasoningModel(model)) {
-        const endpointParams =
-          model.reasoningConfig?.params?.[CHAT_COMPLETIONS_ENDPOINT]
-        if (endpointParams) {
-          // Pick enable vs disable based on the toggle. Models that don't
-          // support a toggle always take the enable block.
-          const rawBlock = supportsThinkingToggle(model)
-            ? thinkingEnabled
-              ? endpointParams.enable
-              : endpointParams.disable
-            : endpointParams.enable
-          if (rawBlock) {
-            // The config may embed "$EFFORT" anywhere inside the block; we
-            // splice in the user-selected effort here. Each model declares
-            // exactly which request key its backend expects the effort under
-            // (top-level reasoning_effort, chat_template_kwargs, etc.).
-            // When the model's chat template only accepts a non-standard set
-            // of effort values (e.g. DeepSeek V4 accepts only "high"/"max"),
-            // an effortMap on the reasoningConfig translates the UI value
-            // before substitution.
-            const uiEffort =
-              supportsReasoningEffort(model) && reasoningEffort
-                ? reasoningEffort
-                : 'medium'
-            const effort =
-              model.reasoningConfig?.effortMap?.[uiEffort] ?? uiEffort
-            const block = substituteEffort(rawBlock, effort) as Record<
-              string,
-              unknown
-            >
-            for (const [key, value] of Object.entries(block)) {
-              requestBody[key] = value
-            }
-          }
-        }
-      }
       if (webSearchEnabled) {
         requestBody.web_search_options = {}
       }
@@ -361,26 +410,22 @@ export async function sendChatStream(
         requestBody.tools = genUITools
         requestBody.tool_choice = 'auto'
       }
-      // Apply model-specific params first, then let our explicit fields win.
-      // This prevents requestParams from accidentally overwriting security-
-      // sensitive fields like web_search_options or pii_check_options.
-      if (model.requestParams) {
-        const reserved = new Set([
-          'model',
-          'messages',
-          'stream',
-          'signal',
-          'reasoning_effort',
-          'web_search_options',
-          'code_execution_options',
-          'pii_check_options',
-          'tools',
-          'tool_choice',
-        ])
-        for (const [key, value] of Object.entries(model.requestParams)) {
-          if (!reserved.has(key)) {
-            requestBody[key] = value
-          }
+
+      const modelParamOpts = { thinkingEnabled, reasoningEffort }
+      if (autoCandidates && autoCandidates.length > 0) {
+        // Auto: defer the model choice to the router. Each candidate carries
+        // its own model-specific param block so whichever one the router picks
+        // gets exactly the right reasoning/requestParams applied.
+        requestBody.model = AUTO_REQUEST_MODEL
+        requestBody[AUTO_MODEL_OPTIONS_FIELD] = autoCandidates.map((c) => ({
+          model: c.modelName,
+          params: buildModelBodyParams(c, modelParamOpts),
+        }))
+      } else {
+        // Single model: merge its params straight into the body.
+        const params = buildModelBodyParams(model, modelParamOpts)
+        for (const [key, value] of Object.entries(params)) {
+          requestBody[key] = value
         }
       }
 

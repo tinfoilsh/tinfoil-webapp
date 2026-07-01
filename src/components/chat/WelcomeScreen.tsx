@@ -1,5 +1,9 @@
 import { Favicon } from '@/components/ui/favicon'
-import { type BaseModel } from '@/config/models'
+import {
+  findSelectableModel,
+  resolveModelSelection,
+  type BaseModel,
+} from '@/config/models'
 import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
 import { useUser } from '@clerk/nextjs'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -498,7 +502,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                           data-model-selector
                           aria-haspopup="menu"
                           aria-expanded={expandedLabel === 'model'}
-                          aria-label={`Current model ${models.find((m) => m.modelName === selectedModel)?.name ?? ''}`}
+                          aria-label={`Current model ${findSelectableModel(selectedModel, models)?.name ?? ''}`}
                           onClick={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
@@ -509,8 +513,9 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                           className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
                         >
                           {(() => {
-                            const model = models.find(
-                              (m) => m.modelName === selectedModel,
+                            const model = findSelectableModel(
+                              selectedModel,
+                              models,
                             )
                             if (!model) return null
                             return (
@@ -558,9 +563,10 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                       !setThinkingEnabled
                     )
                       return undefined
-                    const m = models?.find(
-                      (mm) => mm.modelName === selectedModel,
-                    )
+                    const m =
+                      models && selectedModel
+                        ? resolveModelSelection(selectedModel, models).model
+                        : undefined
                     const supportsEffort = supportsReasoningEffort(m)
                     const supportsToggle = supportsThinkingToggle(m)
                     if (
