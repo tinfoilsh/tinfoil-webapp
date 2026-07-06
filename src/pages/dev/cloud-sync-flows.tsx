@@ -249,6 +249,12 @@ export default function CloudSyncFlowsDevPage() {
 
   const openScenario = useCallback(
     (next: Scenario) => {
+      // A pending probe timer from a previous run would otherwise fire
+      // mid-scenario and yank the new run into the recovery step.
+      if (deferredProbeTimerRef.current) {
+        clearTimeout(deferredProbeTimerRef.current)
+        deferredProbeTimerRef.current = null
+      }
       storageSnapshotRef.current ??= snapshotProtectedStorage()
       setPasskeyRecoveryNeeded(
         Boolean(next.passkeyRecoveryNeeded) && !next.deferredRecoveryProbe,
