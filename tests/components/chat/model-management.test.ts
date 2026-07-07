@@ -249,7 +249,7 @@ describe('useModelManagement', () => {
   })
 
   describe('localStorage persistence', () => {
-    it('should save validated model to localStorage', async () => {
+    it('should not persist the fallback default when nothing was saved', async () => {
       const { result } = renderHook(() =>
         useModelManagement({
           models: mockModels,
@@ -261,7 +261,71 @@ describe('useModelManagement', () => {
         expect(result.current.hasValidatedModel).toBe(true)
       })
 
-      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBe('model-a')
+      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBeNull()
+    })
+
+    it('should clear localStorage when the saved model is unavailable', async () => {
+      localStorage.setItem(SETTINGS_SELECTED_MODEL, 'removed-model')
+
+      const { result } = renderHook(() =>
+        useModelManagement({
+          models: mockModels,
+          isClient: true,
+        }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.hasValidatedModel).toBe(true)
+      })
+
+      expect(result.current.selectedModel).toBe('model-a')
+      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBeNull()
+    })
+  })
+
+  describe('auto-fast default', () => {
+    const fastModel: BaseModel = {
+      ...mockModelB,
+      modelName: 'model-fast',
+      attributes: ['fast'],
+    }
+    const modelsWithFastTier = [mockModelA, fastModel]
+
+    it('defaults to auto-fast when the fast tier has members', async () => {
+      const { result } = renderHook(() =>
+        useModelManagement({
+          models: modelsWithFastTier,
+          isClient: true,
+        }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.hasValidatedModel).toBe(true)
+      })
+
+      expect(result.current.selectedModel).toBe('auto-fast')
+    })
+
+    it('keeps a saved auto selection when its tier is still available', async () => {
+      localStorage.setItem(SETTINGS_SELECTED_MODEL, 'auto-fast')
+
+      const { result } = renderHook(() =>
+        useModelManagement({
+          models: modelsWithFastTier,
+          isClient: true,
+        }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.hasValidatedModel).toBe(true)
+      })
+
+      expect(result.current.selectedModel).toBe('auto-fast')
+      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBe('auto-fast')
+    })
+
+    it('resolveChatModel falls back to auto-fast when available', () => {
+      expect(resolveChatModel(undefined, modelsWithFastTier)).toBe('auto-fast')
     })
   })
 })

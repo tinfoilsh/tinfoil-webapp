@@ -178,6 +178,16 @@ export const getAutoModels = (models: BaseModel[]): BaseModel[] => {
   return entries
 }
 
+/**
+ * Default picker selection: Auto · Fast when its tier has members, otherwise
+ * the first available model (e.g. local dev where models carry no tier
+ * attributes). Empty string when no models have loaded yet.
+ */
+export const getDefaultModelId = (models: BaseModel[]): string => {
+  if (tierModels(models, 'fast').length > 0) return AUTO_FAST_ID
+  return models[0]?.modelName ?? ''
+}
+
 export const isModelNameAvailable = (
   modelName: string,
   models: BaseModel[],

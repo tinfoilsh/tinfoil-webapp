@@ -1,4 +1,8 @@
-import { isModelNameAvailable, type BaseModel } from '@/config/models'
+import {
+  getDefaultModelId,
+  isModelNameAvailable,
+  type BaseModel,
+} from '@/config/models'
 import { SETTINGS_SELECTED_MODEL } from '@/constants/storage-keys'
 import { logWarning } from '@/utils/error-handling'
 import { useCallback, useEffect, useState } from 'react'
@@ -6,7 +10,7 @@ import type { AIModel, Chat, LabelType } from '../types'
 
 /**
  * Resolves the model a chat should use: the chat's own model when it is
- * still available, otherwise the first available model. No global default
+ * still available, otherwise the default model. No per-user saved model
  * is consulted so concurrent chats never override each other's model.
  *
  * Runs during render before the model config has loaded, so `models` may
@@ -20,7 +24,7 @@ export function resolveChatModel(
   if (chat?.model && isModelNameAvailable(chat.model, models)) {
     return chat.model
   }
-  return models[0]?.modelName ?? ''
+  return getDefaultModelId(models)
 }
 
 interface UseModelManagementProps {
@@ -90,10 +94,10 @@ export function useModelManagement({
         return
       }
 
-      // Otherwise fall back to the first available model
-      const targetModel = models[0].modelName as AIModel
+      // Otherwise clear the stale saved model and revert to the default
+      const targetModel = getDefaultModelId(models) as AIModel
       setSelectedModel(targetModel)
-      localStorage.setItem(SETTINGS_SELECTED_MODEL, targetModel)
+      localStorage.removeItem(SETTINGS_SELECTED_MODEL)
 
       if (selectedModel) {
         logWarning(
