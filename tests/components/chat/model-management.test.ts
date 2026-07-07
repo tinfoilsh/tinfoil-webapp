@@ -77,6 +77,18 @@ describe('resolveChatModel', () => {
   it('falls back to auto-fast when available', () => {
     expect(resolveChatModel(undefined, modelsWithFastTier)).toBe('auto-fast')
   })
+
+  it('skips non-chat models when falling back to the default', () => {
+    const embeddingModel: BaseModel = {
+      ...mockModelA,
+      modelName: 'model-embedding',
+      type: 'embedding',
+      chat: undefined,
+    }
+    expect(resolveChatModel(undefined, [embeddingModel, mockModelB])).toBe(
+      'model-b',
+    )
+  })
 })
 
 describe('useModelManagement', () => {

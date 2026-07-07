@@ -180,12 +180,14 @@ export const getAutoModels = (models: BaseModel[]): BaseModel[] => {
 
 /**
  * Default picker selection: Auto · Fast when its tier has members, otherwise
- * the first available model (e.g. local dev where models carry no tier
- * attributes). Empty string when no models have loaded yet.
+ * the first chat-capable model (e.g. local dev where models carry no tier
+ * attributes). The model list also contains non-chat types (embedding, audio,
+ * title, ...) which must never become the chat default. Empty string when no
+ * chat models are available.
  */
 export const getDefaultModelId = (models: BaseModel[]): string => {
   if (tierModels(models, 'fast').length > 0) return AUTO_FAST_ID
-  return models[0]?.modelName ?? ''
+  return models.find(isChatModel)?.modelName ?? ''
 }
 
 export const isModelNameAvailable = (
