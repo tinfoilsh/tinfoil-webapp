@@ -30,6 +30,14 @@ const mockModelB: BaseModel = {
 
 const mockModels: BaseModel[] = [mockModelA, mockModelB]
 
+const mockFastModel: BaseModel = {
+  ...mockModelB,
+  modelName: 'model-fast',
+  attributes: ['fast'],
+}
+
+const modelsWithFastTier: BaseModel[] = [mockModelA, mockFastModel]
+
 vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
   logError: vi.fn(),
@@ -64,6 +72,10 @@ describe('resolveChatModel', () => {
 
   it('returns an empty string when no models are available', () => {
     expect(resolveChatModel(makeChat('model-a'), [])).toBe('')
+  })
+
+  it('falls back to auto-fast when available', () => {
+    expect(resolveChatModel(undefined, modelsWithFastTier)).toBe('auto-fast')
   })
 })
 
@@ -284,13 +296,6 @@ describe('useModelManagement', () => {
   })
 
   describe('auto-fast default', () => {
-    const fastModel: BaseModel = {
-      ...mockModelB,
-      modelName: 'model-fast',
-      attributes: ['fast'],
-    }
-    const modelsWithFastTier = [mockModelA, fastModel]
-
     it('defaults to auto-fast when the fast tier has members', async () => {
       const { result } = renderHook(() =>
         useModelManagement({
@@ -322,10 +327,6 @@ describe('useModelManagement', () => {
 
       expect(result.current.selectedModel).toBe('auto-fast')
       expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBe('auto-fast')
-    })
-
-    it('resolveChatModel falls back to auto-fast when available', () => {
-      expect(resolveChatModel(undefined, modelsWithFastTier)).toBe('auto-fast')
     })
   })
 })
