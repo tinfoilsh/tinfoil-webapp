@@ -36,6 +36,13 @@ export interface ChatQueryBuilderParams {
    * so non-chat callers (title gen, memory) stay unaffected.
    */
   includeGenUIHint?: boolean
+  /**
+   * Force injecting the system prompt as a leading user message instead of a
+   * system-role message. Used for Auto selection so a single built message set
+   * is valid for every candidate the router may pick, including models that
+   * don't support the system role (e.g. DeepSeek).
+   */
+  forcePrependSystemPrompt?: boolean
 }
 
 export class ChatQueryBuilder {
@@ -51,6 +58,7 @@ export class ChatQueryBuilder {
       rules,
       messages: conversationMessages,
       includeGenUIHint,
+      forcePrependSystemPrompt,
     } = params
     const modelId = model.modelName
 
@@ -67,7 +75,8 @@ export class ChatQueryBuilder {
     const result: ChatCompletionMessageParam[] = []
 
     // Determine if we should use system role or prepend to user message
-    const useSystemRole = this.shouldUseSystemRole(modelId)
+    const useSystemRole =
+      !forcePrependSystemPrompt && this.shouldUseSystemRole(modelId)
 
     // Add system message/instructions based on model requirements
     if (useSystemRole) {
@@ -168,7 +177,7 @@ export class ChatQueryBuilder {
    * Determine if the model should use system role or prepend to user message.
    * Most models support system role; DeepSeek is the known exception.
    */
-  private static shouldUseSystemRole(modelId: string): boolean {
+  static shouldUseSystemRole(modelId: string): boolean {
     return !modelId.startsWith('deepseek')
   }
 

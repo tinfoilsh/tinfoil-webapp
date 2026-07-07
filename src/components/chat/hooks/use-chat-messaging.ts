@@ -19,7 +19,7 @@
  *   this hook are derived for the currently-viewed chat
  */
 import { useProject } from '@/components/project'
-import { type BaseModel } from '@/config/models'
+import { resolveModelSelection, type BaseModel } from '@/config/models'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { getCodeExecutionContainerAuthTokenForChat } from '@/services/exec-snapshot/use-exec-snapshot'
@@ -36,7 +36,7 @@ import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { getMessageAttachments } from '../attachment-helpers'
+import { getMessageAttachments, getMessageImages } from '../attachment-helpers'
 import { CONSTANTS } from '../constants'
 import type { Chat, LoadingState, Message } from '../types'
 import { createBlankChat, sortChats } from './chat-operations'
@@ -608,7 +608,21 @@ export function useChatMessaging({
       // }
 
       try {
-        const model = models.find((m) => m.modelName === selectedModel)
+        // Auto selections prefer a multimodal candidate when the turn carries
+        // images, and a tool-calling candidate when web search, code execution,
+        // or the default-enabled GenUI tools are active, so the router favors a
+        // model that can service the request when one is available.
+        const preferMultimodal = updatedMessages.some(
+          (m) => getMessageImages(m).length > 0,
+        )
+        const preferToolCalling = Boolean(
+          webSearchEnabled || codeExecutionEnabled || (genUIEnabled ?? true),
+        )
+        const { model, autoCandidates } = resolveModelSelection(
+          selectedModel,
+          models,
+          { preferMultimodal, preferToolCalling },
+        )
         if (!model) {
           throw new Error(`Model ${selectedModel} not found`)
         }
@@ -641,6 +655,7 @@ export function useChatMessaging({
 
         const response = await sendChatStream({
           model,
+          autoCandidates,
           systemPrompt: baseSystemPrompt,
           rules,
           onRetry: (attempt, maxRetries, error) => {

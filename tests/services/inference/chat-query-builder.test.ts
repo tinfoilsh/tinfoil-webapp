@@ -43,4 +43,33 @@ describe('ChatQueryBuilder', () => {
 
     expect(messages).toEqual([{ role: 'user', content: 'hello' }])
   })
+
+  it('uses the system role for system-role models by default', () => {
+    const messages = ChatQueryBuilder.buildMessages({
+      model,
+      systemPrompt: 'be helpful',
+      rules: '',
+      messages: [userMessage],
+      includeGenUIHint: false,
+    })
+
+    expect(messages[0]).toEqual({ role: 'system', content: 'be helpful' })
+  })
+
+  it('prepends the system prompt as a user message when forced', () => {
+    const messages = ChatQueryBuilder.buildMessages({
+      model,
+      systemPrompt: 'be helpful',
+      rules: '',
+      messages: [userMessage],
+      includeGenUIHint: false,
+      forcePrependSystemPrompt: true,
+    })
+
+    expect(messages.some((m) => m.role === 'system')).toBe(false)
+    expect(messages[0]).toEqual({
+      role: 'user',
+      content: '<system>\nbe helpful\n</system>',
+    })
+  })
 })

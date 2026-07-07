@@ -30,6 +30,14 @@ const mockModelB: BaseModel = {
 
 const mockModels: BaseModel[] = [mockModelA, mockModelB]
 
+const mockFastModel: BaseModel = {
+  ...mockModelB,
+  modelName: 'model-fast',
+  attributes: ['fast'],
+}
+
+const modelsWithFastTier: BaseModel[] = [mockModelA, mockFastModel]
+
 vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
   logError: vi.fn(),
@@ -64,6 +72,22 @@ describe('resolveChatModel', () => {
 
   it('returns an empty string when no models are available', () => {
     expect(resolveChatModel(makeChat('model-a'), [])).toBe('')
+  })
+
+  it('falls back to auto-fast when available', () => {
+    expect(resolveChatModel(undefined, modelsWithFastTier)).toBe('auto-fast')
+  })
+
+  it('skips non-chat models when falling back to the default', () => {
+    const embeddingModel: BaseModel = {
+      ...mockModelA,
+      modelName: 'model-embedding',
+      type: 'embedding',
+      chat: undefined,
+    }
+    expect(resolveChatModel(undefined, [embeddingModel, mockModelB])).toBe(
+      'model-b',
+    )
   })
 })
 
@@ -249,7 +273,7 @@ describe('useModelManagement', () => {
   })
 
   describe('localStorage persistence', () => {
-    it('should save validated model to localStorage', async () => {
+    it('should not persist the fallback default when nothing was saved', async () => {
       const { result } = renderHook(() =>
         useModelManagement({
           models: mockModels,
@@ -261,7 +285,60 @@ describe('useModelManagement', () => {
         expect(result.current.hasValidatedModel).toBe(true)
       })
 
-      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBe('model-a')
+      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBeNull()
+    })
+
+    it('should clear localStorage when the saved model is unavailable', async () => {
+      localStorage.setItem(SETTINGS_SELECTED_MODEL, 'removed-model')
+
+      const { result } = renderHook(() =>
+        useModelManagement({
+          models: mockModels,
+          isClient: true,
+        }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.hasValidatedModel).toBe(true)
+      })
+
+      expect(result.current.selectedModel).toBe('model-a')
+      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBeNull()
+    })
+  })
+
+  describe('auto-fast default', () => {
+    it('defaults to auto-fast when the fast tier has members', async () => {
+      const { result } = renderHook(() =>
+        useModelManagement({
+          models: modelsWithFastTier,
+          isClient: true,
+        }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.hasValidatedModel).toBe(true)
+      })
+
+      expect(result.current.selectedModel).toBe('auto-fast')
+    })
+
+    it('keeps a saved auto selection when its tier is still available', async () => {
+      localStorage.setItem(SETTINGS_SELECTED_MODEL, 'auto-fast')
+
+      const { result } = renderHook(() =>
+        useModelManagement({
+          models: modelsWithFastTier,
+          isClient: true,
+        }),
+      )
+
+      await waitFor(() => {
+        expect(result.current.hasValidatedModel).toBe(true)
+      })
+
+      expect(result.current.selectedModel).toBe('auto-fast')
+      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBe('auto-fast')
     })
   })
 })
