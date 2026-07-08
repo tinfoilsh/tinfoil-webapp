@@ -197,6 +197,61 @@ describe('sync-api (enclave JSON-RPC)', () => {
     expect(lastRequest()[0]).toBe('/v1/blobs/migrate')
   })
 
+  it('searchQuery posts /v1/search/query and normalizes null results', async () => {
+    const api = await import('@/services/sync-enclave/sync-api')
+    mockFetch.mockResolvedValueOnce(
+      ok({ results: null, total_indexed: 3, needs_reindex: true }),
+    )
+    const resp = await api.searchQuery({
+      keyB64: 'key-b64',
+      query: 'duck pond',
+      limit: 5,
+    })
+    expect(resp.results).toEqual([])
+    expect(resp.total_indexed).toBe(3)
+    expect(resp.needs_reindex).toBe(true)
+    expect(lastRequest()[0]).toBe('/v1/search/query')
+    const body = lastBody<{ key: string; query: string; limit: number }>()
+    expect(body.key).toBe('key-b64')
+    expect(body.query).toBe('duck pond')
+    expect(body.limit).toBe(5)
+  })
+
+  it('searchReindex kicks the job and searchReindexStatus polls it', async () => {
+    const api = await import('@/services/sync-enclave/sync-api')
+    mockFetch.mockResolvedValueOnce(
+      ok({
+        job_id: 'job-1',
+        status: 'running',
+        indexed: 0,
+        failed: 0,
+        total_indexed: 0,
+        partial: false,
+      }),
+    )
+    const kicked = await api.searchReindex([{ key: 'key-b64' }])
+    expect(kicked.status).toBe('running')
+    expect(lastRequest()[0]).toBe('/v1/search/reindex')
+    expect(lastBody<{ keys: Array<{ key: string }> }>().keys).toEqual([
+      { key: 'key-b64' },
+    ])
+
+    mockFetch.mockResolvedValueOnce(
+      ok({
+        job_id: 'job-1',
+        status: 'completed',
+        indexed: 7,
+        failed: 0,
+        total_indexed: 7,
+        partial: false,
+      }),
+    )
+    const status = await api.searchReindexStatus()
+    expect(status.status).toBe('completed')
+    expect(status.indexed).toBe(7)
+    expect(lastRequest()[0]).toBe('/v1/search/reindex-status')
+  })
+
   it('health hits GET /v1/health', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
     mockFetch.mockResolvedValueOnce(ok({ status: 'ok' }))
