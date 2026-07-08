@@ -29,6 +29,15 @@ import { processRemoteChat } from './chat-codec'
 
 export const SEARCH_REINDEX_POLL_INTERVAL_MS = 2_000
 export const SEARCH_REINDEX_POLL_BUDGET_MS = 10 * 60 * 1_000
+export const SEARCH_REINDEX_FAILURE_COOLDOWN_MS = 60_000
+
+/**
+ * How a reindex request settled. `skipped` means no kick was sent
+ * (no keys loaded, or a recent failure put kicks on cooldown);
+ * `timeout` means the poll budget ran out while the job was still
+ * running server-side.
+ */
+export type ReindexSettleResult = 'completed' | 'failed' | 'timeout' | 'skipped'
 
 export interface ChatSearchOutcome {
   results: SearchQueryResult[]
@@ -91,25 +100,43 @@ export async function searchSyncedChats(
   }
 }
 
-let reindexInFlight: Promise<void> | null = null
+let reindexInFlight: Promise<ReindexSettleResult> | null = null
+let lastReindexFailureAt = 0
 
 /**
- * Kick (or join) the enclave-side index rebuild and resolve when it
- * reaches a terminal state. Concurrent callers share one poll loop;
- * the enclave itself dedupes kickoffs for the same key set, so an
- * extra kick after a settle is harmless. Never rejects: failures are
- * logged and surface to users as a persistent `indexing` flag on the
- * next query instead of an unhandled rejection from a fire-and-forget
- * call site.
+ * Kick (or join) the enclave-side index rebuild and resolve with how
+ * it settled. Concurrent callers share one poll loop; the enclave
+ * itself dedupes kickoffs for the same key set, so an extra kick
+ * after a settle is harmless. A failed run puts further kicks on a
+ * cooldown: the enclave allows an immediate re-kick after a failure,
+ * and every attempt re-pulls and re-embeds chats, so retrying on each
+ * query would loop a persistent failure at full rebuild cost. Never
+ * rejects: failures are logged and resolve as `failed` so
+ * fire-and-forget call sites cannot leak unhandled rejections.
  */
-export function ensureSearchIndex(): Promise<void> {
+export function ensureSearchIndex(): Promise<ReindexSettleResult> {
   if (!reindexInFlight) {
+    if (
+      Date.now() - lastReindexFailureAt <
+      SEARCH_REINDEX_FAILURE_COOLDOWN_MS
+    ) {
+      return Promise.resolve('skipped')
+    }
     reindexInFlight = runReindex()
-      .catch((err) => {
+      .catch((err): ReindexSettleResult => {
         logError('search reindex failed', err, {
           component: 'chat-search',
           action: 'ensureSearchIndex',
         })
+        return 'failed'
+      })
+      .then((result) => {
+        if (result === 'failed') {
+          lastReindexFailureAt = Date.now()
+        } else if (result === 'completed') {
+          lastReindexFailureAt = 0
+        }
+        return result
       })
       .finally(() => {
         reindexInFlight = null
@@ -122,16 +149,20 @@ function isTerminalStatus(status: SearchReindexStatus): boolean {
   return status !== 'running'
 }
 
-async function runReindex(): Promise<void> {
+function settleResult(status: SearchReindexStatus): ReindexSettleResult {
+  return status === 'completed' ? 'completed' : 'failed'
+}
+
+async function runReindex(): Promise<ReindexSettleResult> {
   const keys = pullKey()
-  if (keys.length === 0) return
+  if (keys.length === 0) return 'skipped'
   const kicked = await searchReindex(keys)
   logInfo('search reindex kicked', {
     component: 'chat-search',
     action: 'runReindex',
     metadata: { jobId: kicked.job_id, status: kicked.status },
   })
-  if (isTerminalStatus(kicked.status)) return
+  if (isTerminalStatus(kicked.status)) return settleResult(kicked.status)
   const deadline = Date.now() + SEARCH_REINDEX_POLL_BUDGET_MS
   while (Date.now() < deadline) {
     await sleep(SEARCH_REINDEX_POLL_INTERVAL_MS)
@@ -148,9 +179,10 @@ async function runReindex(): Promise<void> {
           partial: status.partial,
         },
       })
-      return
+      return settleResult(status.status)
     }
   }
+  return 'timeout'
 }
 
 function sleep(ms: number): Promise<void> {

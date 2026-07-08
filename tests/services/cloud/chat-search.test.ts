@@ -157,7 +157,7 @@ describe('chat-search', () => {
     const settled = search.ensureSearchIndex()
     await vi.advanceTimersByTimeAsync(2_000)
     await vi.advanceTimersByTimeAsync(2_000)
-    await settled
+    await expect(settled).resolves.toBe('completed')
 
     expect(mockSearchReindex).toHaveBeenCalledTimes(1)
     expect(mockSearchReindex).toHaveBeenCalledWith([{ key: 'primary-b64' }])
@@ -167,8 +167,34 @@ describe('chat-search', () => {
   it('does not poll when the kickoff already reports a terminal status', async () => {
     mockSearchReindex.mockResolvedValue(completedStatus())
     const search = await importChatSearch()
-    await search.ensureSearchIndex()
+    await expect(search.ensureSearchIndex()).resolves.toBe('completed')
     expect(mockSearchReindexStatus).not.toHaveBeenCalled()
+  })
+
+  it('puts kicks on cooldown after a failed run instead of looping rebuilds', async () => {
+    vi.useFakeTimers()
+    mockSearchReindex.mockResolvedValue({
+      ...runningStatus(),
+      status: 'failed',
+      error: 'embedding service failed',
+    })
+    const search = await importChatSearch()
+    await expect(search.ensureSearchIndex()).resolves.toBe('failed')
+    expect(mockSearchReindex).toHaveBeenCalledTimes(1)
+
+    await expect(search.ensureSearchIndex()).resolves.toBe('skipped')
+    expect(mockSearchReindex).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(search.SEARCH_REINDEX_FAILURE_COOLDOWN_MS)
+    mockSearchReindex.mockResolvedValue(completedStatus())
+    await expect(search.ensureSearchIndex()).resolves.toBe('completed')
+    expect(mockSearchReindex).toHaveBeenCalledTimes(2)
+  })
+
+  it('resolves as failed when the rebuild kick throws', async () => {
+    mockSearchReindex.mockRejectedValue(new Error('network down'))
+    const search = await importChatSearch()
+    await expect(search.ensureSearchIndex()).resolves.toBe('failed')
   })
 
   it('resolves result titles locally first, pulls the rest, and preserves ranking', async () => {

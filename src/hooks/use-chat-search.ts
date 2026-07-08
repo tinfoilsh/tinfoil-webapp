@@ -64,8 +64,17 @@ export function useChatSearch(term: string, enabled: boolean): ChatSearchState {
         setResults(chats)
         setIsSearching(false)
         if (outcome.indexing) {
-          void ensureSearchIndex().then(() => {
-            if (!cancelled) setRefreshNonce((n) => n + 1)
+          // Re-query only after a successful rebuild. Refreshing on a
+          // failed or skipped settle would report needs_reindex again
+          // and kick another full rebuild, looping a persistent
+          // failure at full embedding cost.
+          void ensureSearchIndex().then((settled) => {
+            if (cancelled) return
+            if (settled === 'completed') {
+              setRefreshNonce((n) => n + 1)
+            } else {
+              setIsIndexing(false)
+            }
           })
         }
       } catch (err) {
