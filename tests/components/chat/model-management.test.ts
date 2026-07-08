@@ -56,6 +56,24 @@ describe('resolveChatModel', () => {
     expect(resolveChatModel(makeChat('model-b'), mockModels)).toBe('model-b')
   })
 
+  it('falls back to the saved device model when the chat has no model', () => {
+    expect(resolveChatModel(makeChat(undefined), mockModels, 'model-b')).toBe(
+      'model-b',
+    )
+  })
+
+  it("prefers the chat's own model over the saved device model", () => {
+    expect(resolveChatModel(makeChat('model-b'), mockModels, 'model-a')).toBe(
+      'model-b',
+    )
+  })
+
+  it('ignores a saved device model that is no longer available', () => {
+    expect(
+      resolveChatModel(makeChat(undefined), mockModels, 'removed-model'),
+    ).toBe('model-a')
+  })
+
   it('falls back to the first model when the chat has no model', () => {
     expect(resolveChatModel(makeChat(undefined), mockModels)).toBe('model-a')
   })

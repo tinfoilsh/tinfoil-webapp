@@ -10,8 +10,14 @@ import type { AIModel, Chat, LabelType } from '../types'
 
 /**
  * Resolves the model a chat should use: the chat's own model when it is
- * still available, otherwise the default model. No per-user saved model
- * is consulted so concurrent chats never override each other's model.
+ * still available, then the device-local last selected model, otherwise
+ * the default model. The saved model is only consulted when the chat has
+ * no valid model of its own, so chats that already carry a model never
+ * override each other.
+ *
+ * `savedModel` is the reactive saved-model state owned by
+ * `useModelManagement` (backed by localStorage). It is passed in rather
+ * than read from storage here so the function stays pure during render.
  *
  * Runs during render before the model config has loaded, so `models` may
  * be empty; the empty-string fallback keeps the selector in a neutral
@@ -20,9 +26,13 @@ import type { AIModel, Chat, LabelType } from '../types'
 export function resolveChatModel(
   chat: Chat | undefined,
   models: BaseModel[],
+  savedModel?: AIModel,
 ): AIModel {
   if (chat?.model && isModelNameAvailable(chat.model, models)) {
     return chat.model
+  }
+  if (savedModel && isModelNameAvailable(savedModel, models)) {
+    return savedModel
   }
   return getDefaultModelId(models)
 }
