@@ -58,6 +58,7 @@ interface UseChatStateReturn {
   createNewChat: (isLocalOnly?: boolean, fromUserAction?: boolean) => void
   deleteChat: (chatId: string) => void
   handleChatSelect: (chatId: string) => void
+  loadChatById: (chatId: string, isLocalUrl: boolean) => Promise<void>
   toggleTheme: () => void
   setThemeMode: (mode: ThemeMode) => void
   openAndExpandVerifier: () => void
@@ -148,6 +149,7 @@ export function useChatState({
     updateChatTitle,
     updateChatModel,
     handleChatSelect,
+    loadChatById,
     setIsInitialLoad,
     isInitialLoad,
     reloadChats,
@@ -370,6 +372,7 @@ export function useChatState({
     createNewChat,
     deleteChat,
     handleChatSelect,
+    loadChatById,
     toggleTheme,
     setThemeMode,
     openAndExpandVerifier,

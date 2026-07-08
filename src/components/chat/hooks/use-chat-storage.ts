@@ -35,6 +35,7 @@ interface UseChatStorageReturn {
   updateChatModel: (model: string) => void
   switchChat: (chat: Chat) => Promise<void>
   handleChatSelect: (chatId: string) => void
+  loadChatById: (chatId: string, isLocalUrl: boolean) => Promise<void>
   setIsInitialLoad: (loading: boolean) => void
   isInitialLoad: boolean
   reloadChats: () => Promise<void>
@@ -606,6 +607,7 @@ export function useChatStorage({
     updateChatModel,
     switchChat,
     handleChatSelect,
+    loadChatById,
     setIsInitialLoad,
     isInitialLoad,
     reloadChats,

@@ -752,6 +752,7 @@ export function ChatInterface({
     initialChatLoadFailed,
     cloudChatNotFound,
     retryInitialChatLoad,
+    loadChatById,
   } = useChatState({
     systemPrompt: finalSystemPrompt,
     rules: processedRules,
@@ -3102,6 +3103,7 @@ export function ChatInterface({
                 isDarkMode={isDarkMode}
                 createNewChat={createNewChat}
                 handleChatSelect={handleChatSelect}
+                onOpenChatById={(chatId) => loadChatById(chatId, false)}
                 updateChatTitle={updateChatTitle}
                 deleteChat={deleteChat}
                 isClient={isClient}
