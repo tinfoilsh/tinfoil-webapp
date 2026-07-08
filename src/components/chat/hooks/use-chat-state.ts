@@ -5,11 +5,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { AIModel, Chat, LabelType, LoadingState, Message } from '../types'
 import { useChatMessaging } from './use-chat-messaging'
 import { useChatStorage } from './use-chat-storage'
-import {
-  resolveChatModel,
-  saveSelectedModel,
-  useModelManagement,
-} from './use-model-management'
+import { resolveChatModel, useModelManagement } from './use-model-management'
 import type { ReasoningEffort } from './use-reasoning-effort'
 import { useUIState, type ThemeMode } from './use-ui-state'
 
@@ -162,11 +158,13 @@ export function useChatState({
     isLocalChatUrl,
   })
 
-  // Model Management - the hook owns model validation and the label/
-  // verification UI state. The active model itself is per-chat: it is
-  // resolved from the current chat (falling back to the first available
-  // model) so concurrent chats never override each other.
+  // Model Management - the hook owns model validation, the device-local
+  // saved model, and the label/verification UI state. The active model
+  // itself is per-chat: it is resolved from the current chat (falling
+  // back to the saved model, then the first available model) so
+  // concurrent chats never override each other.
   const {
+    selectedModel: savedModel,
     hasValidatedModel,
     expandedLabel,
     setExpandedLabel,
@@ -174,6 +172,7 @@ export function useChatState({
     setVerificationSuccess,
     verificationComplete,
     verificationSuccess,
+    handleModelSelect: persistModelSelection,
     handleLabelClick,
   } = useModelManagement({
     models,
@@ -181,8 +180,8 @@ export function useChatState({
   })
 
   const selectedModel = useMemo(
-    () => resolveChatModel(currentChat, models),
-    [currentChat, models],
+    () => resolveChatModel(currentChat, models, savedModel),
+    [currentChat, models, savedModel],
   )
 
   const handleModelSelect = useCallback(
@@ -196,10 +195,10 @@ export function useChatState({
         return
       }
       updateChatModel(modelName)
-      saveSelectedModel(modelName)
+      persistModelSelection(modelName)
       setExpandedLabel(null)
     },
-    [models, updateChatModel, setExpandedLabel],
+    [models, updateChatModel, persistModelSelection, setExpandedLabel],
   )
 
   const { codeExecutionEncryptionKey } = useExecSnapshot({

@@ -8,23 +8,16 @@ import { logWarning } from '@/utils/error-handling'
 import { useCallback, useEffect, useState } from 'react'
 import type { AIModel, Chat, LabelType } from '../types'
 
-/** Reads the device-local last selected model, if any. */
-export function getSavedSelectedModel(): AIModel | null {
-  if (typeof window === 'undefined') return null
-  return localStorage.getItem(SETTINGS_SELECTED_MODEL)
-}
-
-/** Persists the device-local last selected model. */
-export function saveSelectedModel(modelName: AIModel): void {
-  localStorage.setItem(SETTINGS_SELECTED_MODEL, modelName)
-}
-
 /**
  * Resolves the model a chat should use: the chat's own model when it is
  * still available, then the device-local last selected model, otherwise
  * the default model. The saved model is only consulted when the chat has
  * no valid model of its own, so chats that already carry a model never
  * override each other.
+ *
+ * `savedModel` is the reactive saved-model state owned by
+ * `useModelManagement` (backed by localStorage). It is passed in rather
+ * than read from storage here so the function stays pure during render.
  *
  * Runs during render before the model config has loaded, so `models` may
  * be empty; the empty-string fallback keeps the selector in a neutral
@@ -33,13 +26,13 @@ export function saveSelectedModel(modelName: AIModel): void {
 export function resolveChatModel(
   chat: Chat | undefined,
   models: BaseModel[],
+  savedModel?: AIModel,
 ): AIModel {
   if (chat?.model && isModelNameAvailable(chat.model, models)) {
     return chat.model
   }
-  const saved = getSavedSelectedModel()
-  if (saved && isModelNameAvailable(saved, models)) {
-    return saved
+  if (savedModel && isModelNameAvailable(savedModel, models)) {
+    return savedModel
   }
   return getDefaultModelId(models)
 }
