@@ -516,7 +516,6 @@ export function useProfileSync() {
       'languageChanged',
       'customSystemPromptChanged',
       'promptLibraryChanged',
-      'selectedModelChanged',
       'reasoningSettingsChanged',
       'webSearchEnabledChanged',
       'codeExecutionEnabledChanged',

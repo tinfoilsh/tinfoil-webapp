@@ -4,7 +4,6 @@ import {
   SETTINGS_GENUI_ENABLED,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_REASONING_EFFORT,
-  SETTINGS_SELECTED_MODEL,
   SETTINGS_THEME,
   SETTINGS_THEME_MODE,
   SETTINGS_THINKING_ENABLED,
@@ -86,7 +85,6 @@ export function hasProfileChanged(
       JSON.stringify(profile2.customPromptPresets) ||
     JSON.stringify(profile1.favoritePromptPresetIds) !==
       JSON.stringify(profile2.favoritePromptPresetIds) ||
-    profile1.selectedModel !== profile2.selectedModel ||
     profile1.reasoningEffort !== profile2.reasoningEffort ||
     profile1.thinkingEnabled !== profile2.thinkingEnabled ||
     profile1.webSearchEnabled !== profile2.webSearchEnabled ||
@@ -178,11 +176,6 @@ export function loadLocalSettings(): ProfileData {
     settings.favoritePromptPresetIds = safeParseFavoritePresetIds(
       favoritePromptPresetIds,
     )
-  }
-
-  const selectedModel = localStorage.getItem(SETTINGS_SELECTED_MODEL)
-  if (selectedModel !== null) {
-    settings.selectedModel = selectedModel
   }
 
   const reasoningEffort = localStorage.getItem(SETTINGS_REASONING_EFFORT)
@@ -389,15 +382,6 @@ export function applySettingsToLocal(settings: ProfileData): void {
       JSON.stringify(settings.favoritePromptPresetIds),
     )
     window.dispatchEvent(new CustomEvent('promptLibraryChanged'))
-  }
-
-  if (settings.selectedModel !== undefined) {
-    localStorage.setItem(SETTINGS_SELECTED_MODEL, settings.selectedModel)
-    window.dispatchEvent(
-      new CustomEvent('selectedModelChanged', {
-        detail: settings.selectedModel,
-      }),
-    )
   }
 
   const shouldApplyReasoning =

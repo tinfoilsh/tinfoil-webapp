@@ -78,7 +78,6 @@ export const ProfileDataSchema = z
       )
       .optional(),
     favoritePromptPresetIds: z.array(z.string()).optional(),
-    selectedModel: z.string().optional(),
     reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
     thinkingEnabled: z.boolean().optional(),
     webSearchEnabled: z.boolean().optional(),

@@ -106,10 +106,11 @@ describe('profile-settings-serializer', () => {
     localStorage.setItem(SETTINGS_CHAT_FONT, 'mono')
     localStorage.setItem(USER_PREFS_PROJECT_UPLOAD, 'project')
 
-    expect(loadLocalSettings()).toMatchObject({
+    const loaded = loadLocalSettings()
+    expect('selectedModel' in loaded).toBe(false)
+    expect(loaded).toMatchObject({
       customPromptPresets: presets,
       favoritePromptPresetIds: ['builtin:tutor', 'user:abc'],
-      selectedModel: 'gpt-oss-120b',
       reasoningEffort: 'high',
       thinkingEnabled: false,
       webSearchEnabled: false,
@@ -162,7 +163,6 @@ describe('profile-settings-serializer', () => {
     applySettingsToLocal({
       customPromptPresets: presets,
       favoritePromptPresetIds: ['builtin:translator', 'user:def'],
-      selectedModel: 'gpt-oss-120b',
       reasoningEffort: 'low',
       thinkingEnabled: true,
       webSearchEnabled: true,
@@ -178,7 +178,7 @@ describe('profile-settings-serializer', () => {
     expect(localStorage.getItem(USER_PREFS_FAVORITE_PROMPT_PRESETS)).toBe(
       JSON.stringify(['builtin:translator', 'user:def']),
     )
-    expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBe('gpt-oss-120b')
+    expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBeNull()
     expect(localStorage.getItem(SETTINGS_REASONING_EFFORT)).toBe('low')
     expect(localStorage.getItem(SETTINGS_THINKING_ENABLED)).toBe('true')
     expect(localStorage.getItem(SETTINGS_WEB_SEARCH_ENABLED)).toBe('true')

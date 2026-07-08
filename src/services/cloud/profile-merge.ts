@@ -20,7 +20,6 @@ export const PROFILE_MERGE_FIELDS = [
   'customSystemPrompt',
   'customPromptPresets',
   'favoritePromptPresetIds',
-  'selectedModel',
   'reasoningEffort',
   'thinkingEnabled',
   'webSearchEnabled',
