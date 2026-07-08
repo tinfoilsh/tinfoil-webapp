@@ -70,7 +70,6 @@ export interface ProfileData {
   favoritePromptPresetIds?: string[]
 
   // Shared chat defaults
-  selectedModel?: string
   reasoningEffort?: 'low' | 'medium' | 'high'
   thinkingEnabled?: boolean
   webSearchEnabled?: boolean

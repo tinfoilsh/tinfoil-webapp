@@ -139,7 +139,6 @@ describe('mergeProfiles', () => {
     // so the field clocks are ignored and the newer blob wins wholesale.
     const local: ProfileData = {
       nickname: 'local',
-      selectedModel: 'gpt-oss-120b',
       version: 4,
       clockVersion: 2,
       fieldClocks: { nickname: { v: 99, w: 'A' } },
@@ -147,7 +146,6 @@ describe('mergeProfiles', () => {
     }
     const remote: ProfileData = {
       nickname: 'remote',
-      selectedModel: 'gpt-oss-120b',
       version: 5,
       clockVersion: 2,
       fieldClocks: { nickname: { v: 1, w: 'B' } },
