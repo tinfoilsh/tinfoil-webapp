@@ -44,6 +44,10 @@ vi.mock('@/utils/error-handling', () => ({
 }))
 
 describe('resolveChatModel', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
   const makeChat = (model?: string): Chat => ({
     id: 'chat-1',
     title: 'Chat',
@@ -54,6 +58,21 @@ describe('resolveChatModel', () => {
 
   it("returns the chat's own model when it is available", () => {
     expect(resolveChatModel(makeChat('model-b'), mockModels)).toBe('model-b')
+  })
+
+  it('falls back to the saved device model when the chat has no model', () => {
+    localStorage.setItem(SETTINGS_SELECTED_MODEL, 'model-b')
+    expect(resolveChatModel(makeChat(undefined), mockModels)).toBe('model-b')
+  })
+
+  it("prefers the chat's own model over the saved device model", () => {
+    localStorage.setItem(SETTINGS_SELECTED_MODEL, 'model-a')
+    expect(resolveChatModel(makeChat('model-b'), mockModels)).toBe('model-b')
+  })
+
+  it('ignores a saved device model that is no longer available', () => {
+    localStorage.setItem(SETTINGS_SELECTED_MODEL, 'removed-model')
+    expect(resolveChatModel(makeChat(undefined), mockModels)).toBe('model-a')
   })
 
   it('falls back to the first model when the chat has no model', () => {

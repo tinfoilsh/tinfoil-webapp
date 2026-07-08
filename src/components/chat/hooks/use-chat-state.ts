@@ -5,7 +5,11 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { AIModel, Chat, LabelType, LoadingState, Message } from '../types'
 import { useChatMessaging } from './use-chat-messaging'
 import { useChatStorage } from './use-chat-storage'
-import { resolveChatModel, useModelManagement } from './use-model-management'
+import {
+  resolveChatModel,
+  saveSelectedModel,
+  useModelManagement,
+} from './use-model-management'
 import type { ReasoningEffort } from './use-reasoning-effort'
 import { useUIState, type ThemeMode } from './use-ui-state'
 
@@ -192,6 +196,7 @@ export function useChatState({
         return
       }
       updateChatModel(modelName)
+      saveSelectedModel(modelName)
       setExpandedLabel(null)
     },
     [models, updateChatModel, setExpandedLabel],
