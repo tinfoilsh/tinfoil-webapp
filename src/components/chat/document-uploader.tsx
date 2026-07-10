@@ -1,4 +1,4 @@
-import { getAIModels } from '@/config/models'
+import { getAIModels, type AutoTier, type BaseModel } from '@/config/models'
 import {
   getSecureFetch,
   getSessionToken,
@@ -93,9 +93,14 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
     mimeType: string,
   ): Promise<string> => {
     const models = await getAIModels()
-    const multimodalModel = models.find(
-      (m) => m.multimodal && m.chat && m.type === 'chat',
-    )
+    const fastTier: AutoTier = 'fast'
+    const isMultimodalChat = (m: BaseModel) =>
+      Boolean(m.multimodal && m.chat && m.type === 'chat')
+    // Prefer a fast multimodal model over larger reasoning-heavy ones
+    const multimodalModel =
+      models.find(
+        (m) => isMultimodalChat(m) && m.attributes?.includes(fastTier),
+      ) ?? models.find(isMultimodalChat)
     if (!multimodalModel) {
       throw new Error('No multimodal model available')
     }
