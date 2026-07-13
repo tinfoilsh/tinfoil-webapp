@@ -108,6 +108,8 @@ export const USER_PREFS_CUSTOM_PROMPT_PRESETS =
 export const USER_PREFS_FAVORITE_PROMPT_PRESETS =
   'tinfoil-user-prefs-favorite-prompt-presets'
 export const USER_PREFS_PROJECT_UPLOAD = 'tinfoil-user-prefs-project-upload'
+export const USER_PREFS_NATIVE_APP_DISMISSED =
+  'tinfoil-user-prefs-native-app-dismissed'
 
 // --- localStorage: Sync/data state -----------------------------------------
 export const SYNC_CHATS = 'tinfoil-sync-chats'

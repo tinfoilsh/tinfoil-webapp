@@ -6,6 +6,7 @@ import {
   UI_SIDEBAR_CHAT_HISTORY_EXPANDED,
   UI_SIDEBAR_EXPAND_SECTION,
   UI_SIDEBAR_PROJECTS_EXPANDED,
+  USER_PREFS_NATIVE_APP_DISMISSED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
@@ -226,6 +227,7 @@ export function ChatSidebar({
   const chatListRef = useRef<HTMLDivElement>(null)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const [isIOS, setIsIOS] = useState(false)
+  const [nativeAppDismissed, setNativeAppDismissed] = useState(false)
   const {
     startUpgrade: handleUpgradeToPro,
     upgradeLoading,
@@ -444,6 +446,13 @@ export function ChatSidebar({
   useEffect(() => {
     if (isClient) {
       setIsIOS(isIOSDevice())
+      try {
+        setNativeAppDismissed(
+          localStorage.getItem(USER_PREFS_NATIVE_APP_DISMISSED) === 'true',
+        )
+      } catch {
+        setNativeAppDismissed(false)
+      }
     }
   }, [isClient])
 
@@ -2030,8 +2039,24 @@ export function ChatSidebar({
           </AnimatePresence>
 
           {/* App Store button for iOS users */}
-          {isClient && isIOS && (
+          {isClient && isIOS && !nativeAppDismissed && (
             <div className="relative z-10 flex-none border-t border-border-subtle p-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setNativeAppDismissed(true)
+                  try {
+                    localStorage.setItem(
+                      USER_PREFS_NATIVE_APP_DISMISSED,
+                      'true',
+                    )
+                  } catch {}
+                }}
+                aria-label="Dismiss"
+                className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-content-muted transition-colors hover:text-content-primary"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
               <div className="text-center">
                 <p
                   className={`mb-2 text-sm font-medium ${'text-content-secondary'}`}
