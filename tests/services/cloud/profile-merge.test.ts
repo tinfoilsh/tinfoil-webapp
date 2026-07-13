@@ -12,6 +12,7 @@ import {
   changedProfileFields,
   isProfilePopulated,
   mergeProfiles,
+  mergeProfilesThreeWay,
 } from '@/services/cloud/profile-merge'
 import type { ProfileData } from '@/services/cloud/profile-sync'
 import { describe, expect, it } from 'vitest'
@@ -199,5 +200,57 @@ describe('changedProfileFields', () => {
     }
     const fields = changedProfileFields(local, baseline)
     expect(fields.sort()).toEqual(['nickname', 'traits'])
+  })
+})
+
+describe('mergeProfilesThreeWay', () => {
+  it('adopts populated remote fields when local stayed empty', () => {
+    const result = mergeProfilesThreeWay({
+      baseline: { nickname: '', customSystemPrompt: '' },
+      local: { nickname: '', customSystemPrompt: '' },
+      remote: {
+        nickname: 'Ada',
+        customSystemPrompt: 'Be concise',
+        version: 2,
+      },
+    })
+
+    expect(result.merged.nickname).toBe('Ada')
+    expect(result.merged.customSystemPrompt).toBe('Be concise')
+    expect(result.conflicts).toEqual([])
+  })
+
+  it('combines independent edits from both devices', () => {
+    const result = mergeProfilesThreeWay({
+      baseline: { nickname: 'Ada', profession: 'Engineer' },
+      local: { nickname: 'Grace', profession: 'Engineer' },
+      remote: { nickname: 'Ada', profession: 'Researcher', version: 2 },
+    })
+
+    expect(result.merged.nickname).toBe('Grace')
+    expect(result.merged.profession).toBe('Researcher')
+    expect(result.conflicts).toEqual([])
+  })
+
+  it('preserves an intentional local reset', () => {
+    const result = mergeProfilesThreeWay({
+      baseline: { customSystemPrompt: 'Use headings' },
+      local: { customSystemPrompt: '' },
+      remote: { customSystemPrompt: 'Use headings', version: 2 },
+    })
+
+    expect(result.merged.customSystemPrompt).toBe('')
+    expect(result.conflicts).toEqual([])
+  })
+
+  it('retains local data and reports an ambiguous conflict', () => {
+    const result = mergeProfilesThreeWay({
+      baseline: { nickname: 'Ada' },
+      local: { nickname: 'Grace' },
+      remote: { nickname: 'Lin', version: 2 },
+    })
+
+    expect(result.merged.nickname).toBe('Grace')
+    expect(result.conflicts).toEqual(['nickname'])
   })
 })

@@ -26,6 +26,7 @@ export const SYNC_HEADERS = {
   MessageCount: 'X-Message-Count',
   ProjectID: 'X-Project-Id',
   ProjectIDSet: 'X-Project-Id-Set',
+  ProfileSyncProtocol: 'X-Profile-Sync-Protocol',
 } as const
 
 /** Opt-in headers that bypass the legacy tombstone guard on re-upload. */
@@ -51,6 +52,8 @@ export const WIRE_CODES = {
   StaleKey: 'STALE_KEY',
   IdempotencyConflict: 'IDEMPOTENCY_CONFLICT',
   ExistingDataUnderOtherKey: 'EXISTING_DATA_UNDER_OTHER_KEY',
+  SyncConflict: 'SYNC_CONFLICT',
+  ProfileSyncUpgradeRequired: 'PROFILE_SYNC_UPGRADE_REQUIRED',
 } as const
 
 export type SyncHeaderName = (typeof SYNC_HEADERS)[keyof typeof SYNC_HEADERS]

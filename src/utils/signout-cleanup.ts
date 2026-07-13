@@ -7,6 +7,7 @@ import {
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { resetEditClockCache } from '@/services/cloud/edit-clock'
 import { profileSync } from '@/services/cloud/profile-sync'
+import { invalidateProfileSyncGeneration } from '@/services/cloud/profile-sync-coordinator'
 import { resetSyncHealth } from '@/services/cloud/sync-health'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
@@ -27,6 +28,8 @@ interface ClearUserDataOptions {
 
 async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   const { context, preserveUserId, preserveEncryptionKey } = options
+
+  invalidateProfileSyncGeneration(true)
 
   // Clear encryption key immediately (in-memory + localStorage) before any
   // async work, so concurrent code cannot re-persist a stale key.

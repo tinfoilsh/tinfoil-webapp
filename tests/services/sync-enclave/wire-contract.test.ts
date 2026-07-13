@@ -25,6 +25,7 @@ describe('wire-contract', () => {
       MessageCount: 'X-Message-Count',
       ProjectID: 'X-Project-Id',
       ProjectIDSet: 'X-Project-Id-Set',
+      ProfileSyncProtocol: 'X-Profile-Sync-Protocol',
     })
   })
 
@@ -51,6 +52,8 @@ describe('wire-contract', () => {
       StaleKey: 'STALE_KEY',
       IdempotencyConflict: 'IDEMPOTENCY_CONFLICT',
       ExistingDataUnderOtherKey: 'EXISTING_DATA_UNDER_OTHER_KEY',
+      SyncConflict: 'SYNC_CONFLICT',
+      ProfileSyncUpgradeRequired: 'PROFILE_SYNC_UPGRADE_REQUIRED',
     })
   })
 })

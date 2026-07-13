@@ -112,6 +112,10 @@ export const SYNC_PROJECT_CHAT_STATUS_PREFIX =
   'tinfoil-sync-project-chat-status-'
 export const SYNC_PROFILE_STATUS = 'tinfoil-sync-profile-status'
 export const SYNC_PROFILE_DIRTY = 'tinfoil-sync-profile-dirty'
+export const SYNC_PROFILE_BASELINE = 'tinfoil-sync-profile-baseline'
+export const SYNC_PROFILE_LOCAL_METADATA = 'tinfoil-sync-profile-local-metadata'
+export const SYNC_PROFILE_UNKNOWN_FIELDS = 'tinfoil-sync-profile-unknown-fields'
+export const SYNC_PROFILE_GENERATION = 'tinfoil-sync-profile-generation'
 // Content modification time of the pending local profile edit, used to
 // arbitrate last-write-wins against a concurrently-updated remote.
 export const SYNC_PROFILE_CHANGED_AT = 'tinfoil-sync-profile-changed-at'
