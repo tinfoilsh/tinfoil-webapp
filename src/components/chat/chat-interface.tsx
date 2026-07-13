@@ -2823,7 +2823,7 @@ export function ChatInterface({
                   className={cn(
                     'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
                     isTemporaryMode
-                      ? 'border-orange-500/40 bg-orange-500/15 text-orange-500 hover:bg-orange-500/25'
+                      ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
                       : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                   )}
                 >

@@ -932,10 +932,7 @@ export function ChatSidebar({
           {!isPremium && (
             <div
               className={cn(
-                'relative z-10 m-2 flex-none rounded-lg border p-4 transition-all duration-300',
-                isDarkMode
-                  ? 'border-emerald-500/30 bg-emerald-950/20'
-                  : 'border-emerald-500/30 bg-emerald-50/50',
+                'relative z-10 m-2 flex-none rounded-lg border border-border-subtle bg-surface-chat p-4 transition-all duration-300',
               )}
             >
               <div className="flex-1">
@@ -969,8 +966,8 @@ export function ChatSidebar({
                         disabled={upgradeLoading}
                         className={`inline-flex items-center gap-1 text-sm font-medium transition-colors ${
                           isDarkMode
-                            ? 'text-emerald-400 hover:text-emerald-300'
-                            : 'text-emerald-600 hover:text-emerald-500'
+                            ? 'text-brand-accent-light hover:text-brand-accent-light/80'
+                            : 'text-brand-accent-dark hover:text-brand-accent-dark/80'
                         } ${upgradeLoading ? 'cursor-not-allowed opacity-70' : ''}`}
                       >
                         {upgradeLoading
