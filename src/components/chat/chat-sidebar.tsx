@@ -21,7 +21,7 @@ import {
   setLocalOnlyModeEnabled as setLocalOnlyModeSetting,
 } from '@/utils/cloud-sync-settings'
 import { logInfo } from '@/utils/error-handling'
-import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
+import { useAuth, useUser } from '@clerk/nextjs'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -87,8 +87,6 @@ type ChatSidebarProps = {
   isPremium?: boolean
   onEncryptionKeyClick?: () => void
   onCloudSyncSetupClick?: () => void
-  onSetupPasskey?: () => Promise<boolean>
-  passkeySetupAvailable?: boolean
   onAddPasskeyToThisDevice?: () => Promise<boolean>
   passkeyAddDeviceAvailable?: boolean
   backupWarningVisible?: boolean
@@ -164,8 +162,6 @@ export function ChatSidebar({
   isPremium = true,
   onEncryptionKeyClick,
   onCloudSyncSetupClick,
-  onSetupPasskey,
-  passkeySetupAvailable,
   onAddPasskeyToThisDevice,
   passkeyAddDeviceAvailable,
   backupWarningVisible = false,
@@ -631,12 +627,6 @@ export function ChatSidebar({
     if (enabled) {
       // Check if encryption key exists
       if (!encryptionService.getKey()) {
-        // Prefer passkey setup when available
-        if (passkeySetupAvailable && onSetupPasskey) {
-          const success = await onSetupPasskey()
-          if (success) return
-        }
-
         // Turn on the toggle visually (but don't persist yet)
         setCloudSyncEnabled(true)
 
@@ -1010,18 +1000,20 @@ export function ChatSidebar({
                     </>
                   ) : (
                     <div className="space-y-2">
-                      <SignInButton mode="modal">
-                        <span className="relative block w-full cursor-pointer rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90">
-                          Subscribe to Premium
-                        </span>
-                      </SignInButton>
+                      <Link
+                        href="/signin"
+                        className="relative block w-full cursor-pointer rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90"
+                      >
+                        Subscribe to Premium
+                      </Link>
                       <p className="text-center text-xs text-content-secondary">
                         Already subscribed?{' '}
-                        <SignInButton mode="modal">
-                          <span className="cursor-pointer underline hover:text-content-primary">
-                            Log in
-                          </span>
-                        </SignInButton>
+                        <Link
+                          href="/signin"
+                          className="cursor-pointer underline hover:text-content-primary"
+                        >
+                          Log in
+                        </Link>
                       </p>
                     </div>
                   )}
@@ -1230,11 +1222,7 @@ export function ChatSidebar({
                             cloud sync to be enabled on this device.
                           </p>
                           <button
-                            onClick={async () => {
-                              if (passkeySetupAvailable && onSetupPasskey) {
-                                const success = await onSetupPasskey()
-                                if (success) return
-                              }
+                            onClick={() => {
                               if (onCloudSyncSetupClick) {
                                 onCloudSyncSetupClick()
                               }
@@ -1824,11 +1812,7 @@ export function ChatSidebar({
                         your data across multiple devices.
                       </p>
                       <button
-                        onClick={async () => {
-                          if (passkeySetupAvailable && onSetupPasskey) {
-                            const success = await onSetupPasskey()
-                            if (success) return
-                          }
+                        onClick={() => {
                           if (onCloudSyncSetupClick) {
                             onCloudSyncSetupClick()
                           }

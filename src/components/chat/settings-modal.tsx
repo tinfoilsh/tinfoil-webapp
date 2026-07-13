@@ -52,7 +52,11 @@ import {
 } from '@/utils/cloud-sync-settings'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
-import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
+import {
+  hideSignoutProgress,
+  showSignoutProgress,
+} from '@/utils/signout-progress'
+import { useAuth, useUser } from '@clerk/nextjs'
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
@@ -76,6 +80,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
+import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AiOutlineCloudSync, AiOutlineExport } from 'react-icons/ai'
 import { BsQrCode } from 'react-icons/bs'
@@ -1240,6 +1245,7 @@ export function SettingsModal({
 
   const handleSignOut = useCallback(async () => {
     setIsSigningOut(true)
+    showSignoutProgress()
     try {
       await signOut()
     } catch (error) {
@@ -1247,11 +1253,8 @@ export function SettingsModal({
         component: 'SettingsModal',
         action: 'handleSignOut',
       })
+      hideSignoutProgress()
     } finally {
-      // Always reset the flag so the button is re-enabled — on success
-      // the component typically unmounts before this matters, and on
-      // failure the user can retry instead of being stuck on a
-      // permanently-disabled control.
       setIsSigningOut(false)
     }
   }, [signOut])
@@ -4451,12 +4454,13 @@ ${encryptionKey.replace('key_', '')}
                           Sign in to sync your settings and access premium
                           features
                         </p>
-                        <SignInButton mode="modal">
-                          <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90">
-                            <PiSignIn className="h-4 w-4" />
-                            Sign in or sign up
-                          </button>
-                        </SignInButton>
+                        <Link
+                          href="/signin"
+                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90"
+                        >
+                          <PiSignIn className="h-4 w-4" />
+                          Sign in or sign up
+                        </Link>
                       </div>
                     </div>
                   )}
