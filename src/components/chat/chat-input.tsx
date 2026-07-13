@@ -68,6 +68,7 @@ type ChatInputProps = {
   onOpenPromptLibrary?: () => void
   onClearPromptPreset?: () => void
   contextUsage?: ContextUsage
+  mobileHeader?: React.ReactNode
 }
 
 // Maximum number of characters displayed in the collapsed quote preview.
@@ -105,6 +106,7 @@ export function ChatInput({
   onOpenPromptLibrary,
   onClearPromptPreset,
   contextUsage,
+  mobileHeader,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsScrollRef = useRef<HTMLDivElement>(null)
@@ -609,7 +611,7 @@ export function ChatInput({
               <div className="pointer-events-none absolute right-8 top-px z-10 hidden -translate-y-full md:block">
                 <div
                   className={cn(
-                    'pointer-events-auto inline-flex items-center gap-1.5 rounded-t-3xl border border-b-0 px-2.5 py-1',
+                    'pointer-events-auto inline-flex items-center gap-1.5 rounded-t-site-tab border border-b-0 px-2.5 py-1',
                     projectColor
                       ? 'text-gray-900'
                       : 'border-border-subtle bg-surface-chat text-content-secondary',
@@ -657,6 +659,7 @@ export function ChatInput({
               </div>
             )
           })()}
+        {mobileHeader}
         {(isProjectMode && activeProject) || loadingProject ? (
           <ProjectModeBanner
             projectName={activeProject?.name || loadingProject?.name || ''}

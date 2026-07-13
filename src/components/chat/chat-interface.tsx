@@ -3425,15 +3425,6 @@ export function ChatInterface({
                       onSubmit={handleSubmit}
                       className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8"
                     >
-                      {!currentChat?.messages?.length && (
-                        <div className="mb-3 md:hidden">
-                          <PromptPresetSuggestions
-                            activePreset={activePreset}
-                            onSetActive={handleSetActivePreset}
-                            onOpenLibrary={handleOpenPromptLibrary}
-                          />
-                        </div>
-                      )}
                       {shouldShowRateLimitBanner(rateLimit) && (
                         <RateLimitBanner
                           rateLimit={rateLimit}
@@ -3475,6 +3466,17 @@ export function ChatInterface({
                         activePromptPreset={activePreset}
                         onOpenPromptLibrary={handleOpenPromptLibrary}
                         onClearPromptPreset={() => handleSetActivePreset(null)}
+                        mobileHeader={
+                          !currentChat?.messages?.length ? (
+                            <div className="mb-3 md:hidden">
+                              <PromptPresetSuggestions
+                                activePreset={activePreset}
+                                onSetActive={handleSetActivePreset}
+                                onOpenLibrary={handleOpenPromptLibrary}
+                              />
+                            </div>
+                          ) : undefined
+                        }
                         hasMessages={
                           currentChat?.messages &&
                           currentChat.messages.length > 0
