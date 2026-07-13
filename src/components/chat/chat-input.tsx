@@ -634,7 +634,7 @@ export function ChatInput({
           })()}
         <div
           className={cn(
-            'rounded-3xl border bg-surface-chat px-3 py-3 shadow-md transition-colors md:rounded-4xl md:px-6 md:py-4',
+            'rounded-3xl border bg-white px-3 py-3 shadow-md transition-colors dark:bg-surface-chat md:rounded-4xl md:px-6 md:py-4',
             isTemporaryMode
               ? 'border-dashed border-content-muted'
               : 'border-border-subtle',

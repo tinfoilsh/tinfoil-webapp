@@ -1176,9 +1176,7 @@ export function ChatSidebar({
                       ? isDarkMode
                         ? 'text-emerald-400'
                         : 'text-emerald-600'
-                      : isDarkMode
-                        ? 'text-content-secondary hover:bg-surface-chat'
-                        : 'text-content-secondary hover:bg-white',
+                      : 'text-content-secondary',
                 )}
               >
                 <span className="flex items-center gap-2">
@@ -1582,9 +1580,7 @@ export function ChatSidebar({
                   ? isDarkMode
                     ? 'border border-white/30 bg-white/10'
                     : 'border border-gray-400 bg-gray-200/30'
-                  : isDarkMode
-                    ? 'text-content-secondary hover:bg-surface-chat'
-                    : 'text-content-secondary hover:bg-white',
+                  : 'text-content-secondary',
               )}
             >
               <span className="flex items-center gap-2">

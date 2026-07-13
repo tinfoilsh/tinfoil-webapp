@@ -488,10 +488,6 @@ export function SettingsModal({
     }
   }, [isOpen, activeTab])
 
-  // Placeholder animation state
-  const [placeholderIndex, setPlaceholderIndex] = useState(0)
-  const [placeholderVisible, setPlaceholderVisible] = useState(true)
-
   // Upgrade state
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
@@ -554,36 +550,6 @@ export function SettingsModal({
     'skeptical',
     'optimistic',
   ]
-
-  // Cycling profession placeholders
-  const professionPlaceholders = [
-    'Software engineer',
-    'Designer',
-    'Product manager',
-    'Teacher',
-    'Student',
-    'Writer',
-    'Entrepreneur',
-    'Researcher',
-    'Marketing specialist',
-    'Data scientist',
-  ]
-
-  // Cycle through profession placeholders with fade animation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPlaceholderVisible(false)
-      setTimeout(() => {
-        setPlaceholderIndex(
-          (prev) => (prev + 1) % professionPlaceholders.length,
-        )
-        setPlaceholderVisible(true)
-      }, 150)
-    }, 2000)
-    return () => clearInterval(interval)
-  }, [professionPlaceholders.length])
-
-  const getCurrentPlaceholder = () => professionPlaceholders[placeholderIndex]
 
   // Available languages for dropdown
   const availableLanguages = [
@@ -2869,33 +2835,20 @@ ${encryptionKey.replace('key_', '')}
                               What do you do?
                             </div>
                           </div>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={profession}
-                              onChange={(e) =>
-                                handleProfessionChange(e.target.value)
-                              }
-                              className={cn(
-                                'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
-                                isDarkMode
-                                  ? 'border-border-strong bg-surface-chat text-content-secondary'
-                                  : 'border-border-subtle bg-surface-sidebar text-content-primary',
-                              )}
-                            />
-                            {!profession && (
-                              <span
-                                className={cn(
-                                  'pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-content-muted transition-opacity duration-150',
-                                  placeholderVisible
-                                    ? 'opacity-100'
-                                    : 'opacity-0',
-                                )}
-                              >
-                                {getCurrentPlaceholder()}
-                              </span>
+                          <input
+                            type="text"
+                            value={profession}
+                            onChange={(e) =>
+                              handleProfessionChange(e.target.value)
+                            }
+                            placeholder="Your occupation"
+                            className={cn(
+                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              isDarkMode
+                                ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
                             )}
-                          </div>
+                          />
                         </div>
                       </div>
 
