@@ -322,6 +322,99 @@ describe('CloudSyncService', () => {
         }),
       )
     })
+
+    it('does not enqueue an upload after the account changes', async () => {
+      let releaseChat: (() => void) | undefined
+      mockGetChat.mockImplementation(async () => {
+        await new Promise<void>((resolve) => {
+          releaseChat = resolve
+        })
+        return {
+          id: 'old-account-chat',
+          title: 'Old account',
+          messages: [{ role: 'user', content: 'hi' }],
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          lastAccessedAt: Date.now(),
+          isBlankChat: false,
+          isLocalOnly: false,
+          syncVersion: 1,
+        }
+      })
+
+      const service = new CloudSyncService()
+      const backup = service.backupChat('old-account-chat')
+      await vi.waitFor(() => expect(mockGetChat).toHaveBeenCalled())
+
+      service.resetForAccountChange()
+      releaseChat?.()
+      await backup
+
+      expect(mockUploadChat).not.toHaveBeenCalled()
+    })
+
+    it('does not upload immediately after the account changes', async () => {
+      let releaseChat: (() => void) | undefined
+      mockGetChat.mockImplementation(async () => {
+        await new Promise<void>((resolve) => {
+          releaseChat = resolve
+        })
+        return {
+          id: 'old-account-chat',
+          title: 'Old account',
+          messages: [{ role: 'user', content: 'hi' }],
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          lastAccessedAt: Date.now(),
+          isBlankChat: false,
+          isLocalOnly: false,
+          syncVersion: 1,
+        }
+      })
+
+      const service = new CloudSyncService()
+      const backup = service.backupChatNow('old-account-chat')
+      await vi.waitFor(() => expect(mockGetChat).toHaveBeenCalled())
+
+      service.resetForAccountChange()
+      releaseChat?.()
+      await backup
+
+      expect(mockUploadChat).not.toHaveBeenCalled()
+    })
+
+    it('does not upload when the account changes during worker loading', async () => {
+      const chat = {
+        id: 'old-account-chat',
+        title: 'Old account',
+        messages: [{ role: 'user', content: 'hi' }],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        lastAccessedAt: Date.now(),
+        isBlankChat: false,
+        isLocalOnly: false,
+        syncVersion: 1,
+      }
+      let releaseWorkerLoad: (() => void) | undefined
+      mockGetChat
+        .mockResolvedValueOnce(chat)
+        .mockImplementationOnce(async () => {
+          await new Promise<void>((resolve) => {
+            releaseWorkerLoad = resolve
+          })
+          return chat
+        })
+
+      const service = new CloudSyncService()
+      await service.backupChat('old-account-chat')
+      await vi.waitFor(() => expect(mockGetChat).toHaveBeenCalledTimes(2))
+
+      service.resetForAccountChange()
+      releaseWorkerLoad?.()
+      await Promise.resolve()
+
+      expect(mockUploadChat).not.toHaveBeenCalled()
+    })
   })
 
   describe('backupUnsyncedChats', () => {
@@ -1103,6 +1196,59 @@ describe('CloudSyncService', () => {
 
       // Should only register one callback
       expect(mockOnStreamEnd).toHaveBeenCalledTimes(1)
+    })
+
+    it('ignores a streaming callback from a previous account', async () => {
+      mockIsStreaming.mockReturnValue(true)
+      let callback: (() => void) | undefined
+      mockOnStreamEnd.mockImplementation((_id: string, onEnd: () => void) => {
+        callback = onEnd
+      })
+
+      const service = new CloudSyncService()
+      await service.backupChat('old-account-chat')
+      service.resetForAccountChange()
+
+      mockIsStreaming.mockReturnValue(false)
+      callback?.()
+      await Promise.resolve()
+
+      expect(mockUploadChat).not.toHaveBeenCalled()
+    })
+
+    it('does not finalize an upload after the account changes', async () => {
+      const chat = {
+        id: 'old-account-chat',
+        title: 'Old account',
+        messages: [{ role: 'user', content: 'hi' }],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        lastAccessedAt: Date.now(),
+        isBlankChat: false,
+        isLocalOnly: false,
+        decryptionFailed: false,
+        locallyModified: true,
+      }
+      mockGetChat.mockResolvedValue(chat)
+      let finishUpload:
+        | ((value: { syncVersion: number; rewrites: [] }) => void)
+        | undefined
+      mockUploadChat.mockReturnValue(
+        new Promise((resolve) => {
+          finishUpload = resolve
+        }),
+      )
+
+      const service = new CloudSyncService()
+      await service.backupChat('old-account-chat')
+      await vi.waitFor(() => expect(mockUploadChat).toHaveBeenCalledTimes(1))
+
+      service.resetForAccountChange()
+      finishUpload?.({ syncVersion: 2, rewrites: [] })
+      await Promise.resolve()
+
+      expect(mockFinalizeUpload).not.toHaveBeenCalled()
+      expect(mockReportChatSynced).not.toHaveBeenCalled()
     })
   })
 

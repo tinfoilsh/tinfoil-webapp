@@ -30,6 +30,7 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   const { context, preserveUserId, preserveEncryptionKey } = options
 
   invalidateProfileSyncGeneration(true)
+  cloudSync.resetForAccountChange()
 
   // Clear encryption key immediately (in-memory + localStorage) before any
   // async work, so concurrent code cannot re-persist a stale key.
@@ -92,7 +93,7 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
 
   // Clear IndexedDB
   try {
-    await indexedDBStorage.clearAll()
+    await indexedDBStorage.deleteAllChats()
   } catch (error) {
     logError('Failed to clear IndexedDB', error, {
       component: context,

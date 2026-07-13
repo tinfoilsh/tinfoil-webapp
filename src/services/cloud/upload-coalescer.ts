@@ -150,7 +150,12 @@ export class UploadCoalescer {
         const idempotencyKey = newIdempotencyKey()
 
         try {
-          await this.uploadWithRetry(chatId, state, idempotencyKey)
+          await this.uploadWithRetry(
+            chatId,
+            state,
+            idempotencyKey,
+            workerGeneration,
+          )
           // Success - reset failure count
           state.failureCount = 0
           state.lastError = null
@@ -224,10 +229,12 @@ export class UploadCoalescer {
     chatId: string,
     state: ChatUploadState,
     idempotencyKey: string,
+    workerGeneration: number,
   ): Promise<void> {
     let lastError: Error | null = null
 
     for (let attempt = 0; attempt <= this.config.maxRetries; attempt++) {
+      if (workerGeneration !== this.generation) return
       try {
         await this.uploadFn(chatId, idempotencyKey)
         return // Success
@@ -262,6 +269,7 @@ export class UploadCoalescer {
         })
 
         await this.scheduler.sleep(delay)
+        if (workerGeneration !== this.generation) return
 
         // Check if new changes came in during wait
         if (state.dirty) {
@@ -320,6 +328,14 @@ export class UploadCoalescer {
    */
   clear(): void {
     this.generation++
+    const cancellationError = new Error('Upload canceled after account change')
+    for (const state of this.states.values()) {
+      state.dirty = false
+      const waiters = state.resultWaiters.splice(0)
+      for (const waiter of waiters) {
+        waiter.reject(cancellationError)
+      }
+    }
     this.states.clear()
   }
 

@@ -456,6 +456,33 @@ export class IndexedDBStorage {
     })
   }
 
+  async deleteChatIfUnchanged(
+    id: string,
+    expectedUpdatedAt: string,
+  ): Promise<boolean> {
+    return this.enqueueSave('deleteChatIfUnchanged', async () => {
+      const db = await this.ensureDB()
+      return new Promise<boolean>((resolve, reject) => {
+        const transaction = db.transaction([CHATS_STORE], 'readwrite')
+        const store = transaction.objectStore(CHATS_STORE)
+        let deleted = false
+        const getRequest = store.get(id)
+
+        getRequest.onsuccess = () => {
+          const chat = getRequest.result as StoredChat | undefined
+          if (!chat || chat.updatedAt !== expectedUpdatedAt) return
+          store.delete(id)
+          deleted = true
+        }
+        transaction.oncomplete = () => resolve(deleted)
+        transaction.onerror = () =>
+          reject(new Error('Failed to conditionally delete chat'))
+        getRequest.onerror = () =>
+          reject(new Error('Failed to read chat for conditional deletion'))
+      })
+    })
+  }
+
   async deleteAllNonLocalChats(): Promise<number> {
     const db = await this.ensureDB()
 
@@ -967,15 +994,22 @@ export class IndexedDBStorage {
   async applyRemoteChatProject(
     chatId: string,
     projectId: string | null,
-  ): Promise<void> {
+    expectedLocalUpdatedAt: string | null,
+  ): Promise<boolean> {
     return this.enqueueSave('applyRemoteChatProject', async () => {
       const chat = await this.getChatInternal(chatId)
-      if (chat) {
-        chat.projectId = projectId ?? undefined
-        await this.saveChatInternal(chat, {
-          markContentChangesAsLocal: false,
-        })
+      if (
+        !chat ||
+        chat.updatedAt !== expectedLocalUpdatedAt ||
+        chat.locallyModified
+      ) {
+        return false
       }
+      chat.projectId = projectId ?? undefined
+      await this.saveChatInternal(chat, {
+        markContentChangesAsLocal: false,
+      })
+      return true
     })
   }
 

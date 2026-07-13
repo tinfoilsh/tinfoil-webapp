@@ -76,6 +76,7 @@ export class CloudSyncService {
   private syncLockResolve: (() => void) | null = null
   private uploadCoalescer: UploadCoalescer
   private streamingCallbacks: Set<string> = new Set()
+  private accountGeneration = 0
   /**
    * Set once per session after the first successful syncAllChats so
    * the enclave-driven legacy-blob migration (§8.7.2 trigger 1) runs
@@ -129,6 +130,17 @@ export class CloudSyncService {
       this.projectSyncCaches.set(projectId, cache)
     }
     return cache
+  }
+
+  private isCurrentGeneration(generation: number): boolean {
+    return generation === this.accountGeneration
+  }
+
+  resetForAccountChange(): void {
+    this.accountGeneration++
+    this.uploadCoalescer.clear()
+    this.streamingCallbacks.clear()
+    this.clearSyncStatus()
   }
 
   /**
@@ -314,11 +326,15 @@ export class CloudSyncService {
    * Detect and apply cross-scope changes (chats moving between projects or becoming unassigned).
    * Uses the unscoped all-updated-since endpoint to find chats whose projectId changed.
    */
-  private async syncCrossScope(result: SyncResult): Promise<void> {
+  private async syncCrossScope(
+    result: SyncResult,
+    generation: number,
+  ): Promise<void> {
     try {
       const cachedAllStatus = this.allChatsSyncCache.load()
 
       const remoteAllStatus = await cloudStorage.getAllChatsSyncStatus()
+      if (!this.isCurrentGeneration(generation)) return
 
       // If nothing changed globally, skip
       if (
@@ -345,6 +361,7 @@ export class CloudSyncService {
           since: cachedAllStatus.lastUpdated,
           continuationToken,
         })
+        if (!this.isCurrentGeneration(generation)) return
 
         const remoteChats = allUpdated.conversations || []
         if (remoteChats.length === 0) break
@@ -352,23 +369,29 @@ export class CloudSyncService {
         totalProcessed += remoteChats.length
 
         for (const remoteChat of remoteChats) {
+          if (!this.isCurrentGeneration(generation)) return
           const localChat = await indexedDBStorage.getChat(remoteChat.id)
+          if (!this.isCurrentGeneration(generation)) return
 
           const remoteProjectId = remoteChat.projectId ?? undefined
           const localProjectId = localChat?.projectId ?? undefined
 
           if (localChat && remoteProjectId !== localProjectId) {
             // Project assignment changed — update local state
-            await indexedDBStorage.applyRemoteChatProject(
+            const applied = await indexedDBStorage.applyRemoteChatProject(
               remoteChat.id,
               remoteChat.projectId ?? null,
+              localChat.updatedAt,
             )
-            changedIds.push(remoteChat.id)
+            if (applied && this.isCurrentGeneration(generation)) {
+              changedIds.push(remoteChat.id)
+            }
           } else if (!localChat && remoteChat.content) {
             // New chat we don't have locally — ingest it
             const ingestResult = await ingestRemoteChats([remoteChat], {
               fetchMissingContent: true,
               projectId: remoteChat.projectId ?? undefined,
+              isCurrent: () => this.isCurrentGeneration(generation),
             })
             result.downloaded += ingestResult.downloaded
             result.errors.push(...ingestResult.errors)
@@ -389,10 +412,13 @@ export class CloudSyncService {
       }
 
       if (changedIds.length > 0) {
+        if (!this.isCurrentGeneration(generation)) return
         chatEvents.emit({ reason: 'sync', ids: changedIds })
       }
 
-      this.allChatsSyncCache.save(remoteAllStatus)
+      if (this.isCurrentGeneration(generation)) {
+        this.allChatsSyncCache.save(remoteAllStatus)
+      }
     } catch (error) {
       logError('Failed to sync cross-scope changes', error, {
         component: 'CloudSync',
@@ -407,6 +433,7 @@ export class CloudSyncService {
   }
 
   private async doSyncChangedChats(): Promise<SyncResult> {
+    const generation = this.accountGeneration
     const startedAt = Date.now()
     const result: SyncResult = {
       uploaded: 0,
@@ -423,8 +450,13 @@ export class CloudSyncService {
       // backupUnsyncedChats can re-upload a chat with pending edits and
       // resurrect it server-side.
       if (cachedStatus?.lastUpdated) {
-        await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncChangedChats')
+        await syncRemoteDeletions(
+          cachedStatus.lastUpdated,
+          'syncChangedChats',
+          () => this.isCurrentGeneration(generation),
+        )
       }
+      if (!this.isCurrentGeneration(generation)) return result
 
       // Backup any unsynced local changes
       const backupResult = await this.backupUnsyncedChats()
@@ -433,7 +465,7 @@ export class CloudSyncService {
 
       if (!cachedStatus?.lastUpdated) {
         // No cached status, fall back to full sync (first page only)
-        return await this.doSyncAllChats()
+        return await this.doSyncAllChats(undefined, generation)
       }
 
       // Fetch chats updated since our last sync, paginating through all results
@@ -458,7 +490,7 @@ export class CloudSyncService {
               action: 'syncChangedChats',
             },
           )
-          return await this.doSyncAllChats()
+          return await this.doSyncAllChats(undefined, generation)
         }
 
         const remoteConversations = updatedChats.conversations || []
@@ -487,6 +519,7 @@ export class CloudSyncService {
 
         const ingestResult = await ingestRemoteChats(remoteConversations, {
           fetchMissingContent: true,
+          isCurrent: () => this.isCurrentGeneration(generation),
         })
         result.downloaded += ingestResult.downloaded
         result.errors.push(...ingestResult.errors)
@@ -499,6 +532,7 @@ export class CloudSyncService {
       // Update cached sync status
       try {
         const newStatus = await cloudStorage.getChatSyncStatus()
+        if (!this.isCurrentGeneration(generation)) return result
         const localCount = await this.safeReadLocalChatCount()
         if (localCount !== null) {
           newStatus.localCount = localCount
@@ -512,7 +546,7 @@ export class CloudSyncService {
       }
 
       // Detect cross-scope moves (chats moving between projects)
-      await this.syncCrossScope(result)
+      await this.syncCrossScope(result, generation)
       // Only a clean pass may clear a paused gate: a pass that
       // accumulated errors (e.g. attestation trouble) "completing"
       // must not hide the very problem it hit.
@@ -578,19 +612,23 @@ export class CloudSyncService {
 
   // Backup a single chat to the cloud with coalescing and retry
   async backupChat(chatId: string): Promise<void> {
+    const generation = this.accountGeneration
     // Don't attempt backup if not authenticated
     if (!(await cloudStorage.isAuthenticated())) {
       return
     }
+    if (!this.isCurrentGeneration(generation)) return
 
     if (!(await canWriteToCloud())) {
       return
     }
+    if (!this.isCurrentGeneration(generation)) return
 
     // §9.6 R6 — local-only chats MUST NEVER enter the enclave write
     // path. Refuse the enqueue here so the user's opt-out is honored
     // even if a caller passes a local-only chat id by mistake.
     const chat = await indexedDBStorage.getChat(chatId)
+    if (!this.isCurrentGeneration(generation)) return
     if (chat?.isLocalOnly) {
       logInfo('Skipping enqueue for local-only chat', {
         component: 'CloudSync',
@@ -604,6 +642,7 @@ export class CloudSyncService {
     // - Coalescing rapid edits into a single upload
     // - Exponential backoff retry on failure
     // - Proper concurrency control per chat
+    if (!this.isCurrentGeneration(generation)) return
     this.uploadCoalescer.enqueue(chatId)
   }
 
@@ -627,19 +666,23 @@ export class CloudSyncService {
     chatId: string,
     options: UploadChatOptions = {},
   ): Promise<void> {
+    const generation = this.accountGeneration
     if (!(await cloudStorage.isAuthenticated())) {
       throw new Error('Authentication required for cloud sync')
     }
+    if (!this.isCurrentGeneration(generation)) return
 
     if (!(await canWriteToCloud())) {
       throw new Error('Cloud sync key is not authorized')
     }
+    if (!this.isCurrentGeneration(generation)) return
 
     if (streamingTracker.isStreaming(chatId)) {
       throw new Error('Cannot sync chat while it is streaming')
     }
 
     const chat = await indexedDBStorage.getChat(chatId)
+    if (!this.isCurrentGeneration(generation)) return
     if (!chat) {
       throw new Error('Chat not found')
     }
@@ -654,10 +697,12 @@ export class CloudSyncService {
 
     const preUploadUpdatedAt = chat.updatedAt
     const preUploadVersion = chat.syncVersion ?? 0
+    if (!this.isCurrentGeneration(generation)) return
     const { syncVersion, rewrites } = await cloudStorage.uploadChat(chat, {
       ...options,
       idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
     })
+    if (!this.isCurrentGeneration(generation)) return
 
     await indexedDBStorage.finalizeUpload({
       chatId,
@@ -671,11 +716,13 @@ export class CloudSyncService {
     chatId: string,
     idempotencyKey: string,
   ): Promise<void> {
+    const generation = this.accountGeneration
     const startedAt = Date.now()
     try {
       if (!(await canWriteToCloud())) {
         return
       }
+      if (!this.isCurrentGeneration(generation)) return
 
       // Check if chat is currently streaming
       if (streamingTracker.isStreaming(chatId)) {
@@ -700,6 +747,7 @@ export class CloudSyncService {
 
         // Register to sync once streaming ends
         streamingTracker.onStreamEnd(chatId, () => {
+          if (!this.isCurrentGeneration(generation)) return
           // Remove from tracking set
           this.streamingCallbacks.delete(chatId)
 
@@ -717,6 +765,7 @@ export class CloudSyncService {
       }
 
       const chat = await indexedDBStorage.getChat(chatId)
+      if (!this.isCurrentGeneration(generation)) return
       if (!chat) {
         return // Chat might have been deleted
       }
@@ -749,9 +798,11 @@ export class CloudSyncService {
 
       const preUploadUpdatedAt = chat.updatedAt
       const preUploadVersion = chat.syncVersion ?? 0
+      if (!this.isCurrentGeneration(generation)) return
       const { syncVersion, rewrites } = await cloudStorage.uploadChat(chat, {
         idempotencyKey,
       })
+      if (!this.isCurrentGeneration(generation)) return
 
       await indexedDBStorage.finalizeUpload({
         chatId,
@@ -761,6 +812,7 @@ export class CloudSyncService {
       })
       reportChatSynced(chatId)
     } catch (error) {
+      if (!this.isCurrentGeneration(generation)) return
       // Silently fail if no auth token set
       if (
         error instanceof Error &&
@@ -788,7 +840,7 @@ export class CloudSyncService {
         },
       })
       if (decision.action.type === 'surface-conflict') {
-        await this.resolveConflictByPullingRemote(chatId)
+        await this.resolveConflictByPullingRemote(chatId, generation)
         return
       }
       if (decision.action.type === 'refresh-current-key-and-retry') {
@@ -847,7 +899,10 @@ export class CloudSyncService {
    * If the pull itself fails, the chat stays `locallyModified` and the
    * next sync cycle retries.
    */
-  private async resolveConflictByPullingRemote(chatId: string): Promise<void> {
+  private async resolveConflictByPullingRemote(
+    chatId: string,
+    generation = this.accountGeneration,
+  ): Promise<void> {
     try {
       const [localChat, remoteChat] = await Promise.all([
         indexedDBStorage.getChat(chatId),
@@ -860,6 +915,7 @@ export class CloudSyncService {
       if (!remoteChat) {
         return
       }
+      if (!this.isCurrentGeneration(generation)) return
 
       // A chat's edit clock is trusted only when it was maintained at
       // the row's current synced version; otherwise a clock-unaware
@@ -887,6 +943,7 @@ export class CloudSyncService {
       })
 
       if (!remoteIsWinner) {
+        if (!this.isCurrentGeneration(generation)) return
         await indexedDBStorage.rebaseSyncVersion(
           chatId,
           remoteChat.syncVersion ?? 0,
@@ -916,6 +973,7 @@ export class CloudSyncService {
         expectedLocalUpdatedAt: localChat ? localChat.updatedAt : null,
         allowLocallyModified: true,
       })
+      if (!this.isCurrentGeneration(generation)) return
       if (applied.applied) {
         chatEvents.emit({ reason: 'sync', ids: [chatId] })
         // The conflict is resolved; clear any prior failure badge so a
@@ -938,6 +996,7 @@ export class CloudSyncService {
 
   // Backup all unsynced chats
   async backupUnsyncedChats(): Promise<SyncResult> {
+    const generation = this.accountGeneration
     const result: SyncResult = {
       uploaded: 0,
       downloaded: 0,
@@ -947,9 +1006,11 @@ export class CloudSyncService {
     if (!(await canWriteToCloud())) {
       return result
     }
+    if (!this.isCurrentGeneration(generation)) return result
 
     try {
       const unsyncedChats = await indexedDBStorage.getUnsyncedChats()
+      if (!this.isCurrentGeneration(generation)) return result
 
       // Debug logging
       logInfo(`Found unsynced chats: ${unsyncedChats.length}`, {
@@ -973,10 +1034,13 @@ export class CloudSyncService {
       // Route each chat through the coalescer so periodic syncs share the
       // same per-chat serialization as save-triggered uploads.
       const uploadPromises = chatsToSync.map(async (chat) => {
+        if (!this.isCurrentGeneration(generation)) return
         try {
           await this.uploadCoalescer.enqueueAndWait(chat.id)
+          if (!this.isCurrentGeneration(generation)) return
           result.uploaded++
         } catch (error) {
+          if (!this.isCurrentGeneration(generation)) return
           reportChatSyncFailed(chat.id, "This chat couldn't be synced")
           result.errors.push(
             `Failed to backup chat ${chat.id}: ${error instanceof Error ? error.message : String(error)}`,
@@ -1059,9 +1123,13 @@ export class CloudSyncService {
     throw lastError instanceof Error ? lastError : new Error(String(lastError))
   }
 
-  private async doSyncAllChats(options?: {
-    deep?: boolean
-  }): Promise<SyncResult> {
+  private async doSyncAllChats(
+    options?: {
+      deep?: boolean
+    },
+    expectedGeneration = this.accountGeneration,
+  ): Promise<SyncResult> {
+    const generation = expectedGeneration
     const deep = options?.deep ?? false
     const startedAt = Date.now()
     const result: SyncResult = {
@@ -1077,8 +1145,13 @@ export class CloudSyncService {
       // deleted on another device is dropped locally first, instead of
       // getting re-uploaded by backupUnsyncedChats.
       if (cachedStatus?.lastUpdated) {
-        await syncRemoteDeletions(cachedStatus.lastUpdated, 'syncAllChats')
+        await syncRemoteDeletions(
+          cachedStatus.lastUpdated,
+          'syncAllChats',
+          () => this.isCurrentGeneration(generation),
+        )
       }
+      if (!this.isCurrentGeneration(generation)) return result
 
       // Backup any unsynced local changes
       const backupResult = await this.backupUnsyncedChats()
@@ -1090,6 +1163,7 @@ export class CloudSyncService {
         includeContent: true,
         limit: PAGINATION.CHATS_PER_PAGE,
       })
+      if (!this.isCurrentGeneration(generation)) return result
 
       const remoteConversations = [...(remoteList.conversations || [])]
 
@@ -1112,6 +1186,7 @@ export class CloudSyncService {
         localChatMap,
         checkShouldIngest: true,
         fetchMissingContent: true,
+        isCurrent: () => this.isCurrentGeneration(generation),
       })
       result.downloaded += ingestResult.downloaded
       result.errors.push(...ingestResult.errors)
@@ -1136,6 +1211,7 @@ export class CloudSyncService {
               localChatMap,
               checkShouldIngest: true,
               fetchMissingContent: true,
+              isCurrent: () => this.isCurrentGeneration(generation),
             },
           )
           result.downloaded += nextIngest.downloaded
@@ -1147,6 +1223,7 @@ export class CloudSyncService {
       // Update cached sync status after successful sync
       try {
         const newStatus = await cloudStorage.getChatSyncStatus()
+        if (!this.isCurrentGeneration(generation)) return result
         const localCount = await this.safeReadLocalChatCount()
         if (localCount !== null) {
           newStatus.localCount = localCount
@@ -1161,8 +1238,10 @@ export class CloudSyncService {
       }
 
       // Detect cross-scope moves (chats moving between projects)
-      await this.syncCrossScope(result)
-      void this.kickLegacyBlobMigration()
+      await this.syncCrossScope(result, generation)
+      if (this.isCurrentGeneration(generation)) {
+        void this.kickLegacyBlobMigration()
+      }
       // Only a clean pass may clear a paused gate: a pass that
       // accumulated errors (e.g. attestation trouble) "completing"
       // must not hide the very problem it hit.
@@ -1365,6 +1444,7 @@ export class CloudSyncService {
    * @param projectId - Optional project ID. If provided, syncs project chats.
    */
   async smartSync(projectId?: string): Promise<SyncResult> {
+    const generation = this.accountGeneration
     // Kick the legacy-blob migration before any sync work runs.
     // Previously this only fired at the end of a successful
     // doSyncAllChats, which deadlocked first-time v2 users: their
@@ -1381,6 +1461,9 @@ export class CloudSyncService {
     }
 
     const status = await this.checkSyncStatus(projectId)
+    if (!this.isCurrentGeneration(generation)) {
+      return { uploaded: 0, downloaded: 0, errors: [] }
+    }
 
     if (!status.needsSync) {
       // A deletion from another device can be absorbed into the status
@@ -1393,8 +1476,13 @@ export class CloudSyncService {
       if (!projectId) {
         const cachedStatus = this.chatSyncCache.load()
         if (cachedStatus?.lastUpdated) {
-          await syncRemoteDeletions(cachedStatus.lastUpdated, 'smartSync')
+          await syncRemoteDeletions(cachedStatus.lastUpdated, 'smartSync', () =>
+            this.isCurrentGeneration(generation),
+          )
         }
+      }
+      if (!this.isCurrentGeneration(generation)) {
+        return { uploaded: 0, downloaded: 0, errors: [] }
       }
 
       logInfo('Smart sync: no changes detected, skipping sync', {
@@ -1518,6 +1606,7 @@ export class CloudSyncService {
     continuationToken?: string
     loadLocal?: boolean
   }): Promise<PaginatedChatsResult> {
+    const generation = this.accountGeneration
     const { limit, continuationToken, loadLocal = true } = options
 
     // If no authentication, just return local chats
@@ -1573,6 +1662,9 @@ export class CloudSyncService {
 
       // Wait for all decryptions to complete
       const results = await Promise.all(processPromises)
+      if (!this.isCurrentGeneration(generation)) {
+        return { chats: [], hasMore: false }
+      }
 
       // Filter out nulls and add to downloadedChats
       for (const chat of results) {
@@ -1664,6 +1756,7 @@ export class CloudSyncService {
     limit: number
     continuationToken?: string
   }): Promise<{ hasMore: boolean; nextToken?: string; saved: number }> {
+    const generation = this.accountGeneration
     const { limit, continuationToken } = options
 
     // Only operate when authenticated
@@ -1678,6 +1771,9 @@ export class CloudSyncService {
         continuationToken,
         includeContent: true,
       })
+      if (!this.isCurrentGeneration(generation)) {
+        return { hasMore: false, saved: 0 }
+      }
 
       const conversations = remoteList.conversations || []
 
@@ -1686,6 +1782,7 @@ export class CloudSyncService {
         setLoadedAt: true,
         skipDeleted: false,
         eventReason: 'pagination',
+        isCurrent: () => this.isCurrentGeneration(generation),
       })
 
       return {
@@ -1706,7 +1803,11 @@ export class CloudSyncService {
     return this.withSyncLock(() => this.doSyncProjectChats(projectId))
   }
 
-  private async doSyncProjectChats(projectId: string): Promise<SyncResult> {
+  private async doSyncProjectChats(
+    projectId: string,
+    expectedGeneration = this.accountGeneration,
+  ): Promise<SyncResult> {
+    const generation = expectedGeneration
     const result: SyncResult = {
       uploaded: 0,
       downloaded: 0,
@@ -1731,6 +1832,7 @@ export class CloudSyncService {
           projectId,
           { continuationToken },
         )
+        if (!this.isCurrentGeneration(generation)) return result
 
         const remoteChats = projectChatsResponse.chats || []
 
@@ -1761,6 +1863,7 @@ export class CloudSyncService {
           projectId,
           checkShouldIngest: true,
           fetchMissingContent: true,
+          isCurrent: () => this.isCurrentGeneration(generation),
         })
         result.downloaded += ingestResult.downloaded
         result.errors.push(...ingestResult.errors)
@@ -1785,7 +1888,9 @@ export class CloudSyncService {
       try {
         const newStatus =
           await projectStorage.getProjectChatsSyncStatus(projectId)
-        this.getProjectSyncCache(projectId).save(newStatus)
+        if (this.isCurrentGeneration(generation)) {
+          this.getProjectSyncCache(projectId).save(newStatus)
+        }
       } catch (statusError) {
         logError(
           'Failed to update project sync status after full sync',
@@ -1819,6 +1924,7 @@ export class CloudSyncService {
   private async doSyncProjectChatsChanged(
     projectId: string,
   ): Promise<SyncResult> {
+    const generation = this.accountGeneration
     const result: SyncResult = {
       uploaded: 0,
       downloaded: 0,
@@ -1828,20 +1934,25 @@ export class CloudSyncService {
     if (!(await cloudStorage.isAuthenticated())) {
       return result
     }
+    if (!this.isCurrentGeneration(generation)) return result
 
     try {
       // First, backup any unsynced local project chats
       const unsyncedChats = await indexedDBStorage.getUnsyncedChats()
+      if (!this.isCurrentGeneration(generation)) return result
       const projectChatsToSync = unsyncedChats.filter(
         (chat) =>
           chat.projectId === projectId && isUploadableChat(chat, isStreaming),
       )
 
       for (const chat of projectChatsToSync) {
+        if (!this.isCurrentGeneration(generation)) return result
         try {
           await this.uploadCoalescer.enqueueAndWait(chat.id)
+          if (!this.isCurrentGeneration(generation)) return result
           result.uploaded++
         } catch (error) {
+          if (!this.isCurrentGeneration(generation)) return result
           result.errors.push(
             `Failed to backup project chat ${chat.id}: ${error instanceof Error ? error.message : String(error)}`,
           )
@@ -1853,7 +1964,7 @@ export class CloudSyncService {
 
       if (!cachedStatus?.lastUpdated) {
         // No cached status, fall back to full sync
-        return await this.doSyncProjectChats(projectId)
+        return await this.doSyncProjectChats(projectId, generation)
       }
 
       // Fetch and process chats updated since our last sync, with pagination
@@ -1868,6 +1979,7 @@ export class CloudSyncService {
             projectId,
             { since: cachedStatus.lastUpdated, cursorId },
           )
+          if (!this.isCurrentGeneration(generation)) return result
         } catch (error) {
           logError(
             'Failed to get updated project chats, falling back to full sync',
@@ -1878,7 +1990,7 @@ export class CloudSyncService {
               metadata: { projectId },
             },
           )
-          return await this.doSyncProjectChats(projectId)
+          return await this.doSyncProjectChats(projectId, generation)
         }
 
         const remoteChats = updatedChats.chats || []
@@ -1893,7 +2005,9 @@ export class CloudSyncService {
           try {
             const newStatus =
               await projectStorage.getProjectChatsSyncStatus(projectId)
-            this.getProjectSyncCache(projectId).save(newStatus)
+            if (this.isCurrentGeneration(generation)) {
+              this.getProjectSyncCache(projectId).save(newStatus)
+            }
           } catch (statusError) {
             logError('Failed to update project sync status', statusError, {
               component: 'CloudSync',
@@ -1921,6 +2035,7 @@ export class CloudSyncService {
         const ingestResult = await ingestRemoteChats(remoteChats, {
           projectId,
           fetchMissingContent: true,
+          isCurrent: () => this.isCurrentGeneration(generation),
         })
         result.downloaded += ingestResult.downloaded
         result.errors.push(...ingestResult.errors)
@@ -1935,7 +2050,9 @@ export class CloudSyncService {
       try {
         const newStatus =
           await projectStorage.getProjectChatsSyncStatus(projectId)
-        this.getProjectSyncCache(projectId).save(newStatus)
+        if (this.isCurrentGeneration(generation)) {
+          this.getProjectSyncCache(projectId).save(newStatus)
+        }
       } catch (statusError) {
         logError('Failed to update project sync status', statusError, {
           component: 'CloudSync',
