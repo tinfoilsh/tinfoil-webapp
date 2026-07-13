@@ -59,7 +59,7 @@ export function AddToProjectContextModal({
       {/* Modal */}
       <div
         className={cn(
-          'relative z-10 w-full max-w-md transform rounded-lg border border-border-subtle bg-surface-card text-content-primary shadow-xl transition-all duration-300',
+          'relative z-10 w-full max-w-md transform rounded-site-lg border border-border-subtle bg-surface-card text-content-primary shadow-xl transition-all duration-300',
           isOpen ? 'scale-100' : 'scale-95',
           'p-4 sm:p-6',
         )}

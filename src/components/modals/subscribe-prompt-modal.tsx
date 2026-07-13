@@ -43,7 +43,7 @@ export function SubscribePromptModal({
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel className="relative w-full max-w-md transform overflow-hidden rounded-2xl border border-border-subtle bg-surface-card p-6 text-left align-middle shadow-xl transition-all">
+              <Dialog.Panel className="relative w-full max-w-md transform overflow-hidden rounded-site-lg border border-border-subtle bg-surface-card p-6 text-left align-middle shadow-xl transition-all">
                 <button
                   type="button"
                   onClick={onClose}

@@ -1,3 +1,5 @@
+const { radius } = require('./src/lib/radius')
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: ['class'],
@@ -37,10 +39,16 @@ module.exports = {
         mono: ['ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
       },
       borderRadius: {
-        '4xl': '2rem',
+        '4xl': '1rem',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        'site-sm': radius.sm,
+        'site-md': radius.md,
+        'site-lg': radius.lg,
+        'site-base': radius.base,
+        'site-control': radius.control,
+        'site-tab': radius.tab,
       },
       colors: {
         background: 'hsl(var(--background) / <alpha-value>)',

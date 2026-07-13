@@ -1070,7 +1070,7 @@ ${generatedKey.replace('key_', '')}
               leaveTo="opacity-0 scale-95"
             >
               <Dialog.Panel
-                className={`relative h-[calc(100dvh-2rem)] max-h-[40rem] w-full max-w-xl transform overflow-hidden rounded-2xl border p-4 pt-8 text-left align-middle shadow-xl transition-all sm:p-10 sm:pt-16 ${
+                className={`relative h-[calc(100dvh-2rem)] max-h-[40rem] w-full max-w-xl transform overflow-hidden rounded-site-lg border p-4 pt-8 text-left align-middle shadow-xl transition-all sm:p-10 sm:pt-16 ${
                   isDarkMode
                     ? 'border-border-subtle bg-surface-card'
                     : 'border-black/10 bg-[#F9F8F6]'

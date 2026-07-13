@@ -1307,7 +1307,7 @@ export function ChatInput({
                         }
                       }
                     }}
-                    className="group ml-2 flex h-10 w-10 items-center justify-center rounded-full bg-button-send-background text-button-send-foreground transition-colors hover:bg-button-send-background/80 disabled:opacity-50 md:h-8 md:w-8"
+                    className="group ml-2 flex h-10 w-10 items-center justify-center rounded-site-control bg-button-send-background text-button-send-foreground transition-colors hover:bg-button-send-background/80 disabled:opacity-50 md:h-8 md:w-8"
                     style={{ WebkitTapHighlightColor: 'transparent' }}
                     disabled={
                       showStopAction

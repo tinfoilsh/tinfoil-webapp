@@ -2154,7 +2154,7 @@ ${encryptionKey.replace('key_', '')}
           stiffness: 300,
         }}
         className={cn(
-          'relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col overflow-hidden rounded-xl border font-aeonik shadow-xl md:flex-row',
+          'relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col overflow-hidden rounded-site-lg border font-aeonik shadow-xl md:flex-row',
           'border-border-subtle bg-surface-sidebar text-content-primary',
         )}
       >
@@ -2902,7 +2902,7 @@ ${encryptionKey.replace('key_', '')}
                       {/* Traits */}
                       <div
                         className={cn(
-                          'rounded-lg border border-border-subtle p-4',
+                          'rounded-site-lg border border-border-subtle p-4',
                           isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
                       >
@@ -2921,7 +2921,7 @@ ${encryptionKey.replace('key_', '')}
                                 key={trait}
                                 onClick={() => handleTraitToggle(trait)}
                                 className={cn(
-                                  'rounded-full px-3 py-1.5 text-sm transition-colors',
+                                  'rounded-site-control px-3 py-1.5 text-sm transition-colors',
                                   selectedTraits.includes(trait)
                                     ? 'bg-brand-accent-light text-brand-accent-dark'
                                     : isDarkMode
@@ -4474,7 +4474,7 @@ ${encryptionKey.replace('key_', '')}
       {/* Sign-out confirmation when local-only mode is enabled */}
       {showSignOutConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="mx-4 w-full max-w-sm rounded-2xl border border-border-subtle bg-surface-card p-6 shadow-xl">
+          <div className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
             <h3 className="font-aeonik text-lg font-medium text-content-primary">
               Sign Out
             </h3>

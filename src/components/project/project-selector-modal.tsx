@@ -111,7 +111,7 @@ export function ProjectSelectorModal({
           >
             <div
               className={cn(
-                'overflow-hidden rounded-xl border shadow-xl',
+                'overflow-hidden rounded-site-lg border shadow-xl',
                 isDarkMode
                   ? 'border-border-strong bg-surface-sidebar'
                   : 'border-border-subtle bg-white',
