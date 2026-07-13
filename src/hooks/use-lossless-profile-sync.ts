@@ -343,6 +343,7 @@ export function useProfileSync() {
       'webSearchEnabledChanged',
       'codeExecutionEnabledChanged',
       'piiCheckEnabledChanged',
+      'genUIEnabledChanged',
       'chatFontChanged',
       'projectUploadPreferenceChanged',
     ]

@@ -23,8 +23,11 @@ function shouldEvict(chat: StoredChat): boolean {
   return false
 }
 
-export async function runLegacyChatEvictionIfNeeded(): Promise<void> {
+export async function runLegacyChatEvictionIfNeeded(
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
   if (typeof window === 'undefined') return
+  if (!isCurrent()) return
   let flag: string | null
   try {
     flag = localStorage.getItem(MIGRATION_LEGACY_CLOUD_CHATS_EVICTED)
@@ -45,13 +48,16 @@ export async function runLegacyChatEvictionIfNeeded(): Promise<void> {
     })
     return
   }
+  if (!isCurrent()) return
 
   const toEvict = chats.filter(shouldEvict)
   let evicted = 0
   let failed = 0
   for (const chat of toEvict) {
+    if (!isCurrent()) return
     try {
       await indexedDBStorage.deleteChat(chat.id)
+      if (!isCurrent()) return
       evicted++
     } catch (error) {
       failed++
@@ -67,7 +73,7 @@ export async function runLegacyChatEvictionIfNeeded(): Promise<void> {
   // A partial sweep leaves legacy rows behind; flipping the flag would
   // turn those transient failures into permanent ghosts because the
   // next mount would skip the retry.
-  if (failed === 0) {
+  if (failed === 0 && isCurrent()) {
     try {
       localStorage.setItem(MIGRATION_LEGACY_CLOUD_CHATS_EVICTED, '1')
     } catch {
@@ -75,7 +81,7 @@ export async function runLegacyChatEvictionIfNeeded(): Promise<void> {
     }
   }
 
-  if (evicted > 0) {
+  if (evicted > 0 && isCurrent()) {
     logInfo('Evicted legacy chat placeholders', {
       component: 'LegacyChatEviction',
       action: 'runIfNeeded',

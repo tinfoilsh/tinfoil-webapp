@@ -232,6 +232,27 @@ describe('mergeProfilesThreeWay', () => {
     expect(result.conflicts).toEqual([])
   })
 
+  it('keeps the higher clock when concurrent edits converge', () => {
+    const result = mergeProfilesThreeWay({
+      baseline: trusted({
+        nickname: 'Ada',
+        fieldClocks: { nickname: { v: 1, w: 'A' } },
+      }),
+      local: trusted({
+        nickname: 'Grace',
+        fieldClocks: { nickname: { v: 4, w: 'A' } },
+      }),
+      remote: trusted({
+        nickname: 'Grace',
+        fieldClocks: { nickname: { v: 7, w: 'B' } },
+      }),
+    })
+
+    expect(result.merged.nickname).toBe('Grace')
+    expect(result.merged.fieldClocks?.nickname).toEqual({ v: 7, w: 'B' })
+    expect(result.conflicts).toEqual([])
+  })
+
   it('preserves an intentional local reset', () => {
     const result = mergeProfilesThreeWay({
       baseline: { customSystemPrompt: 'Use headings' },

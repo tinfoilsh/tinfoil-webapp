@@ -1,7 +1,7 @@
 import { SYNC_PROFILE_GENERATION } from '@/constants/storage-keys'
 
 let generation = 0
-let queue: Promise<void> = Promise.resolve()
+const queues = new Map<string, Promise<void>>()
 let isListeningForInvalidation = false
 
 function listenForCrossTabInvalidation(): void {
@@ -19,7 +19,11 @@ function listenForCrossTabInvalidation(): void {
 export function invalidateProfileSyncGeneration(broadcast = false): void {
   generation += 1
   if (broadcast && typeof window !== 'undefined') {
-    localStorage.setItem(SYNC_PROFILE_GENERATION, crypto.randomUUID())
+    try {
+      localStorage.setItem(SYNC_PROFILE_GENERATION, crypto.randomUUID())
+    } catch {
+      // Cross-tab invalidation is best-effort; local invalidation already ran.
+    }
   }
 }
 
@@ -41,7 +45,14 @@ export function runSerializedProfileSync(
     }
   }
 
+  const queue = queues.get(userId) ?? Promise.resolve()
   const result = queue.then(run, run)
-  queue = result.catch(() => undefined)
+  const settled = result.catch(() => undefined)
+  queues.set(userId, settled)
+  void settled.then(() => {
+    if (queues.get(userId) === settled) {
+      queues.delete(userId)
+    }
+  })
   return result
 }

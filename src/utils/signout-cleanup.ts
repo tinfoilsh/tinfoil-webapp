@@ -51,8 +51,6 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   // Clear profile sync cache
   profileSync.clearCache()
 
-  // Clear sync caches so stale state doesn't leak into the next session
-  cloudSync.clearSyncStatus()
   deletedChatsTracker.clear()
   resetSyncHealth()
 

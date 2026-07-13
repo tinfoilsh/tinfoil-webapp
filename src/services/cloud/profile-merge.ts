@@ -61,11 +61,7 @@ export function changedProfileFields(
   for (const field of PROFILE_MERGE_FIELDS) {
     const a = (local as Record<string, unknown>)[field]
     const b = (baseline as Record<string, unknown>)[field]
-    const differ =
-      typeof a === 'object' || typeof b === 'object'
-        ? JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)
-        : a !== b
-    if (differ) changed.push(field)
+    if (!valuesEqual(a, b)) changed.push(field)
   }
   return changed
 }
@@ -111,6 +107,15 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   return a === b
 }
 
+function laterClock(
+  localClock: EditClock | undefined,
+  remoteClock: EditClock | undefined,
+): EditClock | undefined {
+  if (!localClock) return remoteClock
+  if (!remoteClock) return localClock
+  return remoteWins({ localClock, remoteClock }) ? remoteClock : localClock
+}
+
 export interface ThreeWayProfileMergeResult {
   merged: ProfileData
   conflicts: string[]
@@ -145,10 +150,10 @@ export function mergeProfilesThreeWay(args: {
       }
       if (rc) mergedClocks[field] = rc
       adoptedRemote ||= !valuesEqual(localValue, remoteValue)
-    } else if (
-      valuesEqual(remoteValue, baselineValue) ||
-      valuesEqual(localValue, remoteValue)
-    ) {
+    } else if (valuesEqual(localValue, remoteValue)) {
+      const clock = laterClock(lc, rc)
+      if (clock) mergedClocks[field] = clock
+    } else if (valuesEqual(remoteValue, baselineValue)) {
       if (lc) mergedClocks[field] = lc
     } else if (lc && rc) {
       if (

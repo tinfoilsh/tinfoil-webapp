@@ -2,7 +2,7 @@ import {
   invalidateProfileSyncGeneration,
   runSerializedProfileSync,
 } from '@/services/cloud/profile-sync-coordinator'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 describe('profile sync coordinator', () => {
   it('serializes complete profile sync operations', async () => {
@@ -37,5 +37,37 @@ describe('profile sync coordinator', () => {
 
     await queued
     expect(ran).toBe(false)
+  })
+
+  it('does not block a new account behind the previous account', async () => {
+    let releaseOldAccount: (() => void) | undefined
+    const oldAccountBlocked = new Promise<void>((resolve) => {
+      releaseOldAccount = resolve
+    })
+    const oldAccount = runSerializedProfileSync('user-1', async () => {
+      await oldAccountBlocked
+    })
+    await Promise.resolve()
+
+    invalidateProfileSyncGeneration()
+    let newAccountRan = false
+    await runSerializedProfileSync('user-2', async () => {
+      newAccountRan = true
+    })
+
+    expect(newAccountRan).toBe(true)
+    releaseOldAccount?.()
+    await oldAccount
+  })
+
+  it('keeps local invalidation when broadcast storage is unavailable', () => {
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('storage unavailable')
+      })
+
+    expect(() => invalidateProfileSyncGeneration(true)).not.toThrow()
+    setItem.mockRestore()
   })
 })

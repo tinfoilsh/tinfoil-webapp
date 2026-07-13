@@ -29,7 +29,8 @@ import {
 import type { EditClock } from './edit-clock'
 import { adoptLocalKeyForMigration } from './ensure-current-key'
 import {
-  runLegacyBlobMigrationAndFinalize,
+  finalizeAlternativesIfMigrated,
+  runLegacyBlobMigration,
   type MigrationReport,
 } from './legacy-blob-migration'
 import { runLegacyChatEvictionIfNeeded } from './legacy-chat-eviction'
@@ -534,6 +535,7 @@ export class CloudSyncService {
         const newStatus = await cloudStorage.getChatSyncStatus()
         if (!this.isCurrentGeneration(generation)) return result
         const localCount = await this.safeReadLocalChatCount()
+        if (!this.isCurrentGeneration(generation)) return result
         if (localCount !== null) {
           newStatus.localCount = localCount
         }
@@ -550,7 +552,7 @@ export class CloudSyncService {
       // Only a clean pass may clear a paused gate: a pass that
       // accumulated errors (e.g. attestation trouble) "completing"
       // must not hide the very problem it hit.
-      if (result.errors.length === 0) {
+      if (this.isCurrentGeneration(generation) && result.errors.length === 0) {
         reportSyncSuccess()
       }
     } catch (error) {
@@ -972,6 +974,7 @@ export class CloudSyncService {
         syncVersion: remoteChat.syncVersion ?? 0,
         expectedLocalUpdatedAt: localChat ? localChat.updatedAt : null,
         allowLocallyModified: true,
+        isCurrent: () => this.isCurrentGeneration(generation),
       })
       if (!this.isCurrentGeneration(generation)) return
       if (applied.applied) {
@@ -1225,6 +1228,7 @@ export class CloudSyncService {
         const newStatus = await cloudStorage.getChatSyncStatus()
         if (!this.isCurrentGeneration(generation)) return result
         const localCount = await this.safeReadLocalChatCount()
+        if (!this.isCurrentGeneration(generation)) return result
         if (localCount !== null) {
           newStatus.localCount = localCount
         }
@@ -1245,7 +1249,7 @@ export class CloudSyncService {
       // Only a clean pass may clear a paused gate: a pass that
       // accumulated errors (e.g. attestation trouble) "completing"
       // must not hide the very problem it hit.
-      if (result.errors.length === 0) {
+      if (this.isCurrentGeneration(generation) && result.errors.length === 0) {
         reportSyncSuccess()
       }
     } catch (error) {
@@ -1263,6 +1267,7 @@ export class CloudSyncService {
    * trigger is a no-op on the enclave side anyway.
    */
   private async kickLegacyBlobMigration(): Promise<void> {
+    const generation = this.accountGeneration
     if (this.legacyMigrationKicked) {
       return
     }
@@ -1288,6 +1293,7 @@ export class CloudSyncService {
     // cooldown remains as a backstop.
     const activeUserId = this.readActiveUserId()
     const keysetFp = await migrationKeySetFingerprint()
+    if (!this.isCurrentGeneration(generation)) return
     if (
       keysetFp &&
       activeUserId &&
@@ -1308,13 +1314,16 @@ export class CloudSyncService {
     try {
       current = await keyCurrent()
     } catch (err) {
+      if (!this.isCurrentGeneration(generation)) return
       logError('Legacy migration gate: current key lookup failed', err, {
         component: 'CloudSync',
         action: 'kickLegacyBlobMigration',
       })
       return
     }
+    if (!this.isCurrentGeneration(generation)) return
     const localKeyId = await primaryKeyIdHexOrNull()
+    if (!this.isCurrentGeneration(generation)) return
     let currentKeyId = current.key_id
     // A v1→v2 user can hold legacy data and a local CEK without ever
     // registering it as the current key — e.g. they have no passkey, or
@@ -1333,6 +1342,7 @@ export class CloudSyncService {
       if (await adoptLocalKeyForMigration()) {
         currentKeyId = localKeyId
       }
+      if (!this.isCurrentGeneration(generation)) return
     }
     if (!currentKeyId || !localKeyId || currentKeyId !== localKeyId) {
       return
@@ -1342,8 +1352,10 @@ export class CloudSyncService {
     }
     this.legacyMigrationKicked = true
     const kickStartedAt = Date.now()
-    void runLegacyBlobMigrationAndFinalize()
+    void runLegacyBlobMigration()
       .then(async (report) => {
+        if (!this.isCurrentGeneration(generation)) return
+        finalizeAlternativesIfMigrated(report)
         logInfo('Legacy blob migration completed', {
           component: 'CloudSync',
           action: 'kickLegacyBlobMigration',
@@ -1355,7 +1367,10 @@ export class CloudSyncService {
           },
         })
         this.recordMigrationKeysetOutcome(activeUserId, keysetFp, report)
-        await runLegacyChatEvictionIfNeeded()
+        await runLegacyChatEvictionIfNeeded(() =>
+          this.isCurrentGeneration(generation),
+        )
+        if (!this.isCurrentGeneration(generation)) return
         // Eviction deletes local rows but the server still has them,
         // so the cached `(count, lastUpdated)` snapshot now lies. Drop
         // it so the next `smartSync` falls back to a full pull and
@@ -1368,6 +1383,7 @@ export class CloudSyncService {
         passkeyEvents.emit({ type: 'bundle-state-maybe-changed' })
       })
       .catch((err) => {
+        if (!this.isCurrentGeneration(generation)) return
         // Release the once-per-session latch so a transient kickoff
         // failure (network blip, enclave restart) does not block the
         // migration for the rest of the session — the next sync

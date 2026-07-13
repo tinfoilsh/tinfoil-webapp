@@ -159,7 +159,9 @@ export async function ingestRemoteChats(
           syncVersion: chat.syncVersion ?? 0,
           expectedLocalUpdatedAt,
           setLoadedAt,
+          isCurrent,
         })
+        if (!isCurrent()) break
         if (applyResult.applied) {
           result.savedIds.push(chat.id)
           result.downloaded++
@@ -206,7 +208,6 @@ export async function syncRemoteDeletions(
             // Still record the tombstone: a concurrent ingest pass may
             // have listed this chat before it was deleted remotely and
             // would otherwise save it back after this pass moves on.
-            if (!isCurrent()) break
             deletedChatsTracker.markAsDeleted(id)
           }
           continue
@@ -215,6 +216,7 @@ export async function syncRemoteDeletions(
         const deleted = await indexedDBStorage.deleteChatIfUnchanged(
           id,
           localChat.updatedAt,
+          isCurrent,
         )
         if (!isCurrent()) break
         if (!deleted) continue
@@ -234,7 +236,7 @@ export async function syncRemoteDeletions(
         )
       }
     }
-    if (successfulIds.length > 0) {
+    if (successfulIds.length > 0 && isCurrent()) {
       chatEvents.emit({ reason: 'sync', ids: successfulIds })
     }
   } catch (error) {
