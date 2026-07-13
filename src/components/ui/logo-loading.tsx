@@ -82,10 +82,6 @@ export function LogoLoading({
         minHeight: '-webkit-fill-available',
       }}
     >
-      {/* Skeleton collapsed sidebar rail */}
-      <div className="hidden h-full w-12 shrink-0 border-r border-border-subtle bg-surface-chat-background md:block" />
-
-      {/* Main area */}
       <div className="flex flex-1 items-center justify-center">
         <LogoAnimation
           size={size}

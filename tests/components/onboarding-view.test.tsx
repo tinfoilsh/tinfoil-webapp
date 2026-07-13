@@ -58,7 +58,7 @@ describe('OnboardingView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(
-      await screen.findByRole('heading', { name: 'Private by Design' }),
+      await screen.findByRole('heading', { name: 'Private, by Design.' }),
     ).toBeInTheDocument()
 
     const privacySwitch = screen.getByRole('button', {
@@ -80,7 +80,7 @@ describe('OnboardingView', () => {
     render(<OnboardingView onComplete={vi.fn()} persistCompletion={false} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Private by Design' })
+    await screen.findByRole('heading', { name: 'Private, by Design.' })
 
     const privacySwitch = screen.getByRole('button', {
       name: 'Toggle privacy',
@@ -98,7 +98,7 @@ describe('OnboardingView', () => {
     render(<OnboardingView onComplete={onComplete} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Private by Design' })
+    await screen.findByRole('heading', { name: 'Private, by Design.' })
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
