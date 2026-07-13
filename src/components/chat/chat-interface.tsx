@@ -3293,7 +3293,6 @@ export function ChatInterface({
                         ? handleCodeExecutionToggle
                         : undefined
                     }
-                    onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
                     isTemporaryMode={isTemporaryMode}
                     activePromptPreset={activePreset}
                     onOpenPromptLibrary={handleOpenPromptLibrary}

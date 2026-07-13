@@ -6,20 +6,20 @@ import {
 } from '@/components/modals/cloud-sync-setup-mode'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { PaperGrainTexture } from '@/components/ui/paper-grain-texture'
+import { cn } from '@/components/ui/utils'
 import { SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL } from '@/constants/storage-keys'
 import { useToast } from '@/hooks/use-toast'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { PrfNotSupportedError } from '@/services/passkey'
 import { setCloudSyncEnabled as persistCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
-import { Dialog, Transition } from '@headlessui/react'
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
   CheckIcon,
   DocumentDuplicateIcon,
-  XMarkIcon,
 } from '@heroicons/react/24/outline'
 import {
   TfCloud,
@@ -31,7 +31,7 @@ import {
   TfTinSad,
 } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { PiSpinner } from 'react-icons/pi'
 
@@ -1044,77 +1044,43 @@ ${generatedKey.replace('key_', '')}
   }
 
   return (
-    <Transition appear show={isOpen} as={Fragment}>
-      <Dialog as="div" className="relative z-50" onClose={() => {}}>
-        <Transition.Child
-          as={Fragment}
-          enter="ease-out duration-300"
-          enterFrom="opacity-0"
-          enterTo="opacity-100"
-          leave="ease-in duration-200"
-          leaveFrom="opacity-100"
-          leaveTo="opacity-0"
-        >
-          <div className="fixed inset-0 bg-black/30 backdrop-blur-md" />
-        </Transition.Child>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      dismissible={false}
+      overlayClassName="bg-black/30 backdrop-blur-md"
+      className={cn(
+        'h-[calc(100dvh-2rem)] max-h-[40rem] max-w-xl p-4 pt-8 sm:p-10 sm:pt-16',
+        isDarkMode
+          ? 'border-border-subtle bg-surface-card'
+          : 'border-black/10 bg-[#F9F8F6]',
+      )}
+    >
+      {!isDarkMode && <PaperGrainTexture />}
 
-        <div className="fixed inset-0 overflow-y-auto">
-          <div className="flex min-h-full items-center justify-center p-4 text-center">
-            <Transition.Child
-              as={Fragment}
-              enter="ease-out duration-300"
-              enterFrom="opacity-0 scale-95"
-              enterTo="opacity-100 scale-100"
-              leave="ease-in duration-200"
-              leaveFrom="opacity-100 scale-100"
-              leaveTo="opacity-0 scale-95"
-            >
-              <Dialog.Panel
-                className={`relative h-[calc(100dvh-2rem)] max-h-[40rem] w-full max-w-xl transform overflow-hidden rounded-site-lg border p-4 pt-8 text-left align-middle shadow-xl transition-all sm:p-10 sm:pt-16 ${
-                  isDarkMode
-                    ? 'border-border-subtle bg-surface-card'
-                    : 'border-black/10 bg-[#F9F8F6]'
-                }`}
-              >
-                {!isDarkMode && <PaperGrainTexture />}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={onClose}
-                  aria-label="Close"
-                  className="absolute right-4 top-4 z-30 h-7 w-7 text-content-secondary hover:bg-surface-chat hover:text-content-secondary"
-                >
-                  <XMarkIcon className="h-5 w-5" />
-                </Button>
-
-                <div className="relative z-10 h-full">
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.div
-                      key={currentStep}
-                      className="h-full overflow-y-auto"
-                      initial={{
-                        opacity: 0,
-                        x: STEP_TRANSITION_OFFSET_PX,
-                      }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{
-                        opacity: 0,
-                        x: -STEP_TRANSITION_OFFSET_PX,
-                      }}
-                      transition={{
-                        duration: STEP_TRANSITION_DURATION_S,
-                        ease: 'easeOut',
-                      }}
-                    >
-                      {renderCurrentStep()}
-                    </motion.div>
-                  </AnimatePresence>
-                </div>
-              </Dialog.Panel>
-            </Transition.Child>
-          </div>
-        </div>
-      </Dialog>
-    </Transition>
+      <div className="relative z-10 h-full">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={currentStep}
+            className="h-full overflow-y-auto"
+            initial={{
+              opacity: 0,
+              x: STEP_TRANSITION_OFFSET_PX,
+            }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{
+              opacity: 0,
+              x: -STEP_TRANSITION_OFFSET_PX,
+            }}
+            transition={{
+              duration: STEP_TRANSITION_DURATION_S,
+              ease: 'easeOut',
+            }}
+          >
+            {renderCurrentStep()}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </Modal>
   )
 }

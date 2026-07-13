@@ -2058,7 +2058,7 @@ export function ChatSidebar({
 
           {/* Terms and privacy policy */}
           <div className="relative z-10 mt-auto flex h-[56px] flex-none items-center justify-center border-t border-border-subtle bg-surface-sidebar p-3">
-            <p className="text-center text-xs leading-relaxed text-content-secondary">
+            <p className="text-balance text-center text-xs leading-relaxed text-content-secondary">
               By using this service, you agree to Tinfoil&apos;s{' '}
               <Link
                 href="https://tinfoil.sh/terms"

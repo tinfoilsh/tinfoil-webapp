@@ -1,4 +1,5 @@
 import { Favicon } from '@/components/ui/favicon'
+import { Modal, ModalTitle } from '@/components/ui/modal'
 import {
   findSelectableModel,
   resolveModelSelection,
@@ -6,7 +7,7 @@ import {
 } from '@/config/models'
 import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
 import { useUser } from '@clerk/nextjs'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import React, { memo, useEffect, useRef, useState } from 'react'
 import { BiSolidLock } from 'react-icons/bi'
 import { ChatInput } from './chat-input'
@@ -216,7 +217,6 @@ interface WelcomeScreenProps {
   setThinkingEnabled?: (enabled: boolean) => void
   codeExecutionEnabled?: boolean
   onCodeExecutionToggle?: () => void
-  onOpenVerifier?: () => void
   isTemporaryMode?: boolean
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
@@ -252,7 +252,6 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   setThinkingEnabled,
   codeExecutionEnabled,
   onCodeExecutionToggle,
-  onOpenVerifier,
   isTemporaryMode,
   activePromptPreset,
   onOpenPromptLibrary,
@@ -260,8 +259,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
 }: WelcomeScreenProps) {
   const { user } = useUser()
   const [nickname, setNickname] = useState<string>('')
-  const [privacyExpanded, setPrivacyExpanded] = useState(false)
-  const [lockPop, setLockPop] = useState(false)
+  const [isPrivacyOpen, setIsPrivacyOpen] = useState(false)
   const fallbackInputRef = useRef<HTMLTextAreaElement>(null)
 
   // Load nickname from localStorage and listen for changes
@@ -333,7 +331,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
       <div className="flex w-full justify-center">
         <div className="w-full max-w-2xl">
           <motion.h1
-            className={`flex items-center gap-3 text-2xl font-medium tracking-tight text-content-primary md:justify-start md:text-3xl ${privacyExpanded ? 'justify-start' : 'justify-center'}`}
+            className="flex items-center justify-center gap-3 text-2xl font-medium tracking-tight text-content-primary md:justify-start md:text-3xl"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{
@@ -358,102 +356,55 @@ export const WelcomeScreen = memo(function WelcomeScreen({
           >
             <button
               type="button"
-              aria-expanded={privacyExpanded}
-              onClick={() => {
-                setPrivacyExpanded((prev) => {
-                  if (!prev) setLockPop(true)
-                  else setLockPop(false)
-                  return !prev
-                })
-              }}
-              className={`group flex w-full items-center gap-1.5 py-1.5 text-sm text-content-secondary transition-colors hover:text-content-primary sm:gap-2 sm:text-base md:justify-start ${privacyExpanded ? 'justify-start' : 'justify-center'}`}
+              onClick={() => setIsPrivacyOpen(true)}
+              className="group flex w-full items-center justify-center gap-1.5 py-1.5 text-sm text-content-secondary transition-colors hover:text-content-primary sm:gap-2 sm:text-base md:justify-start"
             >
-              <motion.span
-                className="inline-flex shrink-0"
-                animate={lockPop ? { scale: [1, 1.5, 0.9, 1] } : { scale: 1 }}
-                transition={
-                  lockPop
-                    ? {
-                        duration: 0.7,
-                        times: [0, 0.3, 0.6, 1],
-                        ease: 'easeInOut',
-                      }
-                    : { duration: 0 }
-                }
-              >
-                <BiSolidLock
-                  className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
-                  aria-hidden="true"
-                />
-              </motion.span>
+              <BiSolidLock
+                className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
+                aria-hidden="true"
+              />
               <span className="shrink-0 whitespace-nowrap">
                 Your chats are private by design
               </span>
-              <svg
-                className={`h-3.5 w-3.5 shrink-0 opacity-50 transition-transform duration-300 ${privacyExpanded ? 'rotate-180' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
             </button>
 
-            <AnimatePresence initial={false}>
-              {privacyExpanded && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{
-                    height: {
-                      duration: 0.3,
-                      ease: [0.25, 0.1, 0.25, 1],
+            <Modal
+              isOpen={isPrivacyOpen}
+              onClose={() => setIsPrivacyOpen(false)}
+              className="max-w-2xl"
+            >
+              <ModalTitle className="pr-8 font-semibold leading-none tracking-tight">
+                Your Chats Are Private by Design
+              </ModalTitle>
+
+              <div className="mt-4 text-base leading-relaxed text-content-secondary">
+                <FadeInLines
+                  segments={[
+                    {
+                      type: 'text',
+                      content:
+                        'Your messages are encrypted directly to the AI models running inside secure hardware enclaves.',
                     },
-                    opacity: {
-                      duration: 0.25,
-                      delay: 0.1,
-                      ease: 'easeOut',
+                    {
+                      type: 'citation',
+                      content: 'Technology',
+                      href: 'https://tinfoil.sh/technology',
                     },
-                  }}
-                  className="overflow-hidden"
-                >
-                  <p className="mt-2 text-left text-base leading-relaxed text-content-secondary">
-                    <FadeInLines
-                      segments={[
-                        {
-                          type: 'text',
-                          content:
-                            'Your messages are encrypted directly to the AI models running inside secure hardware enclaves.',
-                        },
-                        {
-                          type: 'citation',
-                          content: 'Technology',
-                          href: 'https://tinfoil.sh/technology',
-                        },
-                        {
-                          type: 'text',
-                          content:
-                            ' These are hardware-isolated environments powered by confidential computing GPUs with verifiable confidentiality and integrity guarantees. Not even Tinfoil can access your data. This applies to all chats, images, documents, and voice input. Our open-source stack lets you verify this yourself by inspecting the hardware attestation.',
-                        },
-                        {
-                          type: 'citation',
-                          content: 'Source',
-                          href: 'https://github.com/tinfoilsh',
-                        },
-                      ]}
-                    />
-                  </p>
-                  <DataFlowDiagram onOpenVerifier={onOpenVerifier} />
-                </motion.div>
-              )}
-            </AnimatePresence>
+                    {
+                      type: 'text',
+                      content:
+                        ' These are hardware-isolated environments powered by confidential computing GPUs with verifiable confidentiality and integrity guarantees. Not even Tinfoil can access your data. This applies to all chats, images, documents, and voice input. Our open-source stack lets you verify this yourself by inspecting the hardware attestation.',
+                    },
+                    {
+                      type: 'citation',
+                      content: 'Source',
+                      href: 'https://github.com/tinfoilsh',
+                    },
+                  ]}
+                />
+              </div>
+              <DataFlowDiagram />
+            </Modal>
           </motion.div>
 
           <div className="mt-8">
