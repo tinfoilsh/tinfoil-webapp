@@ -46,7 +46,6 @@ import {
 import { StreamErrorBanner } from '@/components/chat/stream-error-banner'
 import { classifyCloudKeySetupError } from '@/components/modals/cloud-sync-setup-mode'
 import {
-  ProjectModeBanner,
   ProjectSidebar,
   useProject,
   useProjectSystemPrompt,
@@ -871,6 +870,7 @@ export function ChatInterface({
     if (initialChatDecryptionFailed) return
     if (initialChatLoadFailed) return
     if (cloudChatNotFound) return
+    if (localChatNotFound) return
 
     // Track when we've successfully loaded the initial chat from URL
     if (initialChatId && currentChat.id === initialChatId) {
@@ -947,6 +947,7 @@ export function ChatInterface({
     initialChatDecryptionFailed,
     initialChatLoadFailed,
     cloudChatNotFound,
+    localChatNotFound,
     isSignedIn,
     isLocalChatUrl,
     initialChatId,
@@ -3281,15 +3282,6 @@ export function ChatInterface({
                 : '',
             )}
           >
-            {/* Project Mode Banner */}
-            {(isProjectMode && activeProject) || loadingProject ? (
-              <ProjectModeBanner
-                projectName={activeProject?.name || loadingProject?.name || ''}
-                isDarkMode={isDarkMode}
-                color={activeProject?.color}
-              />
-            ) : null}
-
             {/* Rate Limit Banner (desktop) — on mobile this renders as a
                 floating pill above the chat input instead. */}
             {shouldShowRateLimitBanner(rateLimit) && (

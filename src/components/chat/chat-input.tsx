@@ -1,5 +1,5 @@
 import { FiArrowUp } from '@/components/icons/lazy-icons'
-import { useProject } from '@/components/project'
+import { ProjectModeBanner, useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
@@ -110,12 +110,37 @@ export function ChatInput({
   const documentsScrollRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
   const chatFont = useChatFont()
-  const { isProjectMode, activeProject } = useProject()
+  const { isProjectMode, activeProject, loadingProject } = useProject()
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
   const shouldRemountOnClearRef = useRef(false)
   const hasInitiallyFocusedRef = useRef(false)
   const refocusAfterResetRef = useRef(false)
+
+  // Several ChatInput instances can be mounted at once (e.g. the centered
+  // welcome-screen input and the bottom input) while sharing one external
+  // `inputRef`, so the shared ref may point at another instance's textarea.
+  // Keep a private ref to this instance's own element and use it for all
+  // local reads and writes (resize, focus, blur).
+  const ownTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const attachTextareaRef = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      if (el) {
+        ownTextareaRef.current = el
+        ;(
+          inputRef as React.MutableRefObject<HTMLTextAreaElement | null>
+        ).current = el
+      } else {
+        if (inputRef.current === ownTextareaRef.current) {
+          ;(
+            inputRef as React.MutableRefObject<HTMLTextAreaElement | null>
+          ).current = null
+        }
+        ownTextareaRef.current = null
+      }
+    },
+    [inputRef],
+  )
 
   const useIsomorphicLayoutEffect =
     typeof window !== 'undefined' ? useLayoutEffect : useEffect
@@ -201,22 +226,22 @@ export function ChatInput({
     if (prev !== '' && input === '' && shouldRemountOnClearRef.current) {
       refocusAfterResetRef.current =
         typeof document !== 'undefined' &&
-        inputRef.current !== null &&
-        document.activeElement === inputRef.current
+        ownTextareaRef.current !== null &&
+        document.activeElement === ownTextareaRef.current
       setTextareaResetNonce((n) => n + 1)
     }
     prevInputValueRef.current = input
     if (input === '') {
       shouldRemountOnClearRef.current = false
     }
-  }, [input, inputRef])
+  }, [input])
 
   useEffect(() => {
-    if (refocusAfterResetRef.current && inputRef.current) {
-      inputRef.current.focus()
+    if (refocusAfterResetRef.current && ownTextareaRef.current) {
+      ownTextareaRef.current.focus()
       refocusAfterResetRef.current = false
     }
-  }, [textareaResetNonce, inputRef])
+  }, [textareaResetNonce])
 
   // --- Speech-to-text state ---
   const [isRecording, setIsRecording] = useState(false)
@@ -300,14 +325,14 @@ export function ChatInput({
   // Layout effect avoids iOS Safari cases where `scrollHeight` lags a paint.
   useIsomorphicLayoutEffect(() => {
     // Synchronous pass before paint avoids a visible height jump.
-    resizeTextarea(inputRef.current)
+    resizeTextarea(ownTextareaRef.current)
 
     // iOS Safari can report the previous scrollHeight on the same tick; re-check
     // on the next frame (coalesced with any other pending resize) to ensure
     // growth kicks in.
-    scheduleResize(inputRef.current)
+    scheduleResize(ownTextareaRef.current)
     // Include `textareaResetNonce` so a remount recalculates height immediately.
-  }, [input, inputRef, resizeTextarea, scheduleResize, textareaResetNonce])
+  }, [input, resizeTextarea, scheduleResize, textareaResetNonce])
 
   // Recompute the height cap when the visual viewport changes (e.g. the
   // on-screen keyboard opens or closes) so long text never pushes the send
@@ -315,18 +340,18 @@ export function ChatInput({
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : null
     if (!vv) return
-    const onViewportResize = () => scheduleResize(inputRef.current)
+    const onViewportResize = () => scheduleResize(ownTextareaRef.current)
     vv.addEventListener('resize', onViewportResize)
     return () => vv.removeEventListener('resize', onViewportResize)
-  }, [inputRef, scheduleResize])
+  }, [scheduleResize])
 
   // Focus textarea on initial mount only (not on remounts after sending)
   useEffect(() => {
-    if (!hasInitiallyFocusedRef.current && inputRef.current) {
-      inputRef.current.focus()
+    if (!hasInitiallyFocusedRef.current && ownTextareaRef.current) {
+      ownTextareaRef.current.focus()
       hasInitiallyFocusedRef.current = true
     }
-  }, [inputRef])
+  }, [])
 
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -399,9 +424,9 @@ export function ChatInput({
           // then explicitly resize after React commits the new value to the DOM.
           // The layout effect should handle this, but mobile Safari can report
           // stale scrollHeight for programmatic value changes.
-          inputRef.current?.focus()
+          ownTextareaRef.current?.focus()
           requestAnimationFrame(() => {
-            resizeTextarea(inputRef.current)
+            resizeTextarea(ownTextareaRef.current)
           })
         } else {
           throw new Error('No transcription text received')
@@ -418,7 +443,7 @@ export function ChatInput({
         setIsTranscribing(false)
       }
     },
-    [setInput, toast, input, audioModel, inputRef, resizeTextarea],
+    [setInput, toast, input, audioModel, resizeTextarea],
   )
 
   const isWebMAudioSupported = () => {
@@ -584,7 +609,7 @@ export function ChatInput({
               <div className="pointer-events-none absolute right-8 top-px z-10 hidden -translate-y-full md:block">
                 <div
                   className={cn(
-                    'pointer-events-auto inline-flex items-center gap-1.5 rounded-t-lg border border-b-0 px-2.5 py-1',
+                    'pointer-events-auto inline-flex items-center gap-1.5 rounded-t-3xl border border-b-0 px-2.5 py-1',
                     projectColor
                       ? 'text-gray-900'
                       : 'border-border-subtle bg-surface-chat text-content-secondary',
@@ -605,7 +630,7 @@ export function ChatInput({
             const ActivePresetIcon = activePromptPreset.Icon
             return (
               <div className="pointer-events-none absolute left-8 top-px z-10 -translate-y-full">
-                <div className="pointer-events-auto inline-flex items-center gap-1 rounded-t-lg border border-b-0 border-border-subtle bg-surface-chat px-2.5 py-1 text-content-secondary">
+                <div className="pointer-events-auto inline-flex items-center gap-1 rounded-t-3xl border border-b-0 border-border-subtle bg-surface-chat px-2.5 py-1 text-content-secondary">
                   <button
                     type="button"
                     onClick={onOpenPromptLibrary}
@@ -632,6 +657,13 @@ export function ChatInput({
               </div>
             )
           })()}
+        {(isProjectMode && activeProject) || loadingProject ? (
+          <ProjectModeBanner
+            projectName={activeProject?.name || loadingProject?.name || ''}
+            isDarkMode={isDarkMode}
+            color={activeProject?.color}
+          />
+        ) : null}
         <div
           className={cn(
             'rounded-3xl border bg-white px-3 py-3 shadow-md transition-colors dark:bg-surface-chat md:rounded-4xl md:px-6 md:py-4',
@@ -794,7 +826,7 @@ export function ChatInput({
           <textarea
             id="chat-input"
             aria-label="Message"
-            ref={inputRef as React.Ref<HTMLTextAreaElement>}
+            ref={attachTextareaRef}
             key={textareaResetNonce}
             value={input}
             onFocus={handleInputFocus}
@@ -1303,7 +1335,7 @@ export function ChatInput({
                           typeof navigator !== 'undefined' &&
                           /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
                         if (!isMobile) {
-                          inputRef.current?.blur()
+                          ownTextareaRef.current?.blur()
                         }
                       }
                     }}
