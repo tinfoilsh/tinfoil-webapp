@@ -57,7 +57,6 @@ export async function runLegacyChatEvictionIfNeeded(
     if (!isCurrent()) return
     try {
       await indexedDBStorage.deleteChat(chat.id)
-      if (!isCurrent()) return
       evicted++
     } catch (error) {
       failed++
