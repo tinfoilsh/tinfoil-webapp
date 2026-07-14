@@ -17,6 +17,7 @@ import { logError, logInfo } from '@/utils/error-handling'
 import { chatStorage } from '../storage/chat-storage'
 import {
   pull,
+  pullItemPlaintext,
   searchQuery,
   searchReindex,
   searchReindexStatus,
@@ -156,7 +157,7 @@ function settleResult(status: SearchReindexStatus): ReindexSettleResult {
 async function runReindex(): Promise<ReindexSettleResult> {
   const keys = pullKey()
   if (keys.length === 0) return 'skipped'
-  const kicked = await searchReindex(keys)
+  const kicked = await searchReindex({ keys })
   logInfo('search reindex kicked', {
     component: 'chat-search',
     action: 'runReindex',
@@ -226,11 +227,12 @@ export async function resolveSearchResultChats(
     try {
       const resp = await pull({ scope: 'chat', ids: missing, keys: pullKey() })
       for (const item of resp.items) {
-        if (!item.ok || item.plaintext == null) continue
+        const plaintextBytes = pullItemPlaintext(item)
+        if (plaintextBytes == null) continue
         try {
           const { chat } = await processRemoteChat({
             id: item.id,
-            plaintext: item.plaintext,
+            plaintext: new TextDecoder().decode(plaintextBytes),
           })
           byId.set(item.id, {
             id: chat.id,

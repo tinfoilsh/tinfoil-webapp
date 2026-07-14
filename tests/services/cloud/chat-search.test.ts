@@ -155,12 +155,13 @@ describe('chat-search', () => {
     expect(second.indexing).toBe(true)
 
     const settled = search.ensureSearchIndex()
-    await vi.advanceTimersByTimeAsync(2_000)
-    await vi.advanceTimersByTimeAsync(2_000)
+    await vi.advanceTimersByTimeAsync(search.SEARCH_REINDEX_POLL_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(search.SEARCH_REINDEX_POLL_INTERVAL_MS)
     await expect(settled).resolves.toBe('completed')
 
+    const { pullKey } = await import('@/services/cloud/cek-encoding')
     expect(mockSearchReindex).toHaveBeenCalledTimes(1)
-    expect(mockSearchReindex).toHaveBeenCalledWith([{ key: 'primary-b64' }])
+    expect(mockSearchReindex).toHaveBeenCalledWith({ keys: pullKey() })
     expect(mockSearchReindexStatus).toHaveBeenCalledTimes(2)
   })
 
@@ -213,11 +214,14 @@ describe('chat-search', () => {
         {
           id: 'b',
           ok: true,
-          plaintext: JSON.stringify({
-            title: 'Remote tax chat',
-            messages: [{ role: 'user', content: 'tax return time' }],
-            createdAt: '2026-06-01T00:00:00Z',
-          }),
+          // The enclave returns base64-encoded plaintext bytes.
+          plaintext: Buffer.from(
+            JSON.stringify({
+              title: 'Remote tax chat',
+              messages: [{ role: 'user', content: 'tax return time' }],
+              createdAt: '2026-06-01T00:00:00Z',
+            }),
+          ).toString('base64'),
         },
         { id: 'c', ok: false, code: 'NOT_FOUND' },
       ],

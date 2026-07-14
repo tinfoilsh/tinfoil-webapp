@@ -328,6 +328,11 @@ export interface SearchQueryResponse {
   needs_reindex?: boolean
 }
 
+export interface SearchReindexRequest {
+  /** Primary key first, then any legacy keys still sealing old rows. */
+  keys: PullKey[]
+}
+
 export type SearchReindexStatus = 'idle' | 'running' | 'completed' | 'failed'
 
 /**
@@ -702,11 +707,11 @@ export async function searchQuery(
  * status is terminal.
  */
 export async function searchReindex(
-  keys: PullKey[],
+  req: SearchReindexRequest,
 ): Promise<SearchReindexStatusResponse> {
   const client = await getSyncEnclaveClient()
   return client.post<SearchReindexStatusResponse>('/v1/search/reindex', {
-    keys,
+    keys: req.keys,
   })
 }
 

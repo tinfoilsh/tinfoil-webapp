@@ -229,7 +229,7 @@ describe('sync-api (enclave JSON-RPC)', () => {
         partial: false,
       }),
     )
-    const kicked = await api.searchReindex([{ key: 'key-b64' }])
+    const kicked = await api.searchReindex({ keys: [{ key: 'key-b64' }] })
     expect(kicked.status).toBe('running')
     expect(lastRequest()[0]).toBe('/v1/search/reindex')
     expect(lastBody<{ keys: Array<{ key: string }> }>().keys).toEqual([
