@@ -16,7 +16,7 @@ export function StreamingTracerDot({
 
   return (
     <span
-      className={`inline-block size-2.5 shrink-0 animate-pulse rounded-full bg-current align-middle leading-none [contain:paint] [will-change:opacity] motion-reduce:animate-none ${toneClass} ${className}`}
+      className={`inline-block size-2.5 shrink-0 animate-pulse rounded-[3px] bg-current align-middle leading-none [contain:paint] [will-change:opacity] motion-reduce:animate-none ${toneClass} ${className}`}
       role="status"
       aria-label={label}
     />
