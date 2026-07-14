@@ -252,7 +252,7 @@ export function ProjectSelectorModal({
                           isDarkMode
                             ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                             : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-                          'focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                          'focus:outline-none',
                         )}
                       />
                     </div>
@@ -273,7 +273,7 @@ export function ProjectSelectorModal({
                           isDarkMode
                             ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                             : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-                          'focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                          'focus:outline-none',
                         )}
                       />
                     </div>

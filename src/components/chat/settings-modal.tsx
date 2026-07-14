@@ -2389,7 +2389,7 @@ ${encryptionKey.replace('key_', '')}
                           value={language}
                           onChange={(e) => handleLanguageChange(e.target.value)}
                           className={cn(
-                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none',
                             isDarkMode
                               ? 'border-border-strong bg-surface-chat text-content-secondary'
                               : 'border-border-subtle bg-surface-sidebar text-content-primary',
@@ -2810,7 +2810,7 @@ ${encryptionKey.replace('key_', '')}
                             }
                             placeholder="Nickname"
                             className={cn(
-                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none',
                               isDarkMode
                                 ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                 : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -2843,7 +2843,7 @@ ${encryptionKey.replace('key_', '')}
                             }
                             placeholder="Your occupation"
                             className={cn(
-                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none',
                               isDarkMode
                                 ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                 : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -2914,7 +2914,7 @@ ${encryptionKey.replace('key_', '')}
                             placeholder="Interests and other preferences you'd like Tin to know about you."
                             rows={3}
                             className={cn(
-                              'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none',
                               isDarkMode
                                 ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                 : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -3004,7 +3004,7 @@ ${encryptionKey.replace('key_', '')}
                                   placeholder="Enter your custom system prompt..."
                                   rows={6}
                                   className={cn(
-                                    'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                                    'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none',
                                     isDarkMode
                                       ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                       : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',

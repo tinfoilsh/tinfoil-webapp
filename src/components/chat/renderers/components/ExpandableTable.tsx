@@ -46,7 +46,7 @@ export function ExpandableTable({ children }: ExpandableTableProps) {
   const toggle = () => setIsExpanded((prev) => !prev)
 
   const chevronBase =
-    'pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border border-border-subtle bg-white text-content-secondary shadow hover:text-content-primary focus:outline-none focus:ring-2 focus:ring-brand-accent-dark dark:bg-zinc-800 dark:focus:ring-brand-accent-light'
+    'pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border border-border-subtle bg-white text-content-secondary shadow hover:text-content-primary focus:outline-none dark:bg-zinc-800'
 
   const collapsed = canExpand && !isExpanded
   const expanded = canExpand && isExpanded

@@ -91,7 +91,7 @@ export function AddToProjectContextModal({
               type="checkbox"
               checked={rememberChoice}
               onChange={(e) => setRememberChoice(e.target.checked)}
-              className="h-4 w-4 rounded border-border-subtle bg-surface-chat text-emerald-500 focus:ring-emerald-500 focus:ring-offset-0"
+              className="h-4 w-4 rounded border-border-subtle bg-surface-chat text-emerald-500 focus:ring-0"
             />
             <span className="text-xs text-content-secondary sm:text-sm">
               Remember my decision for future uploads
