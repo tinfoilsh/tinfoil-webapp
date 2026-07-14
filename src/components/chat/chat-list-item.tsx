@@ -372,7 +372,7 @@ export function ChatListItem({
                   (!chat.isBlankChat &&
                     chat.pendingSave &&
                     !isStreaming)))) && (
-              <div className="mt-1 flex min-h-[16px] w-full flex-wrap items-center gap-2">
+              <div className="mt-1 flex min-h-[16px] w-full flex-wrap items-center gap-2 @container">
                 {chat.decryptionFailed ? (
                   <div className="text-xs text-red-500">
                     {chat.dataCorrupted
@@ -394,7 +394,9 @@ export function ChatListItem({
                     {chat.isLocalOnly ? (
                       <span className="flex items-center gap-0.5 whitespace-nowrap text-xs leading-none text-content-muted">
                         {messageCount > 0 && (
-                          <span className="mr-1.5 text-content-muted">·</span>
+                          <span className="mr-1.5 hidden text-content-muted @xs:inline">
+                            ·
+                          </span>
                         )}
                         <CiFloppyDisk className="h-3 w-3" aria-hidden="true" />
                         Only saved locally
