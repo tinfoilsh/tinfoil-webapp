@@ -280,7 +280,7 @@ function OnboardingPrivacyPage({
               onClick={() => onChange(!privacyEnabled)}
               aria-label="Toggle privacy"
               aria-pressed={privacyEnabled}
-              className={`group flex h-14 w-28 items-center rounded-full p-1 shadow-inner outline-none ${
+              className={`group flex h-14 w-28 items-center rounded-full p-1 shadow-inner outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 ${
                 privacyEnabled
                   ? 'justify-end bg-brand-accent-dark dark:bg-brand-accent-light'
                   : 'justify-start bg-destructive/90'

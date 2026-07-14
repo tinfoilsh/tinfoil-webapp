@@ -315,7 +315,7 @@ export function ChatListItem({
           type="button"
           onClick={onSelect}
           aria-current={isSelected ? 'true' : undefined}
-          className="min-w-0 flex-1 cursor-pointer rounded-md pr-2 text-left focus:outline-none"
+          className="min-w-0 flex-1 cursor-pointer rounded-md pr-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
         >
           <>
             <div className="flex items-center gap-1.5">
