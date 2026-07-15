@@ -8,6 +8,7 @@ import {
 import {
   SETTINGS_CODE_EXECUTION_ENABLED,
   SETTINGS_GENUI_ENABLED,
+  SETTINGS_HAS_SEEN_ONBOARDING,
   SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_WEB_SEARCH_ENABLED,
@@ -25,12 +26,13 @@ import {
   type RateLimitInfo,
 } from '@/services/inference/tinfoil-client'
 import { generateTitle } from '@/services/inference/title'
-import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
+import { useAuth, useUser } from '@clerk/nextjs'
 import {
   ArrowDownIcon,
   ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
+import Link from 'next/link'
 import { BiSolidLock, BiSolidLockOpen } from 'react-icons/bi'
 import { GoSidebarCollapse } from 'react-icons/go'
 import { IoShareOutline } from 'react-icons/io5'
@@ -131,20 +133,13 @@ import type { Attachment, Chat, DocumentPage } from './types'
 // hoisted so they can be pre-warmed (see preloadCloudSyncModals) before
 // the user clicks, keeping the chunk fetch off the click critical path.
 const loadCloudSyncSetupModal = () => import('../modals/cloud-sync-setup-modal')
-const loadPasskeySetupPromptModal = () =>
-  import('../modals/passkey-setup-prompt-modal')
 
 function preloadCloudSyncModals(): void {
   void loadCloudSyncSetupModal()
-  void loadPasskeySetupPromptModal()
 }
 
 const CloudSyncSetupModal = dynamic(
   () => loadCloudSyncSetupModal().then((m) => m.CloudSyncSetupModal),
-  { ssr: false },
-)
-const PasskeySetupPromptModal = dynamic(
-  () => loadPasskeySetupPromptModal().then((m) => m.PasskeySetupPromptModal),
   { ssr: false },
 )
 const AddToProjectContextModal = dynamic(
@@ -172,8 +167,8 @@ const PromptLibraryModalLazy = dynamic(
   { ssr: false },
 )
 
-const OnboardingModal = dynamic(
-  () => import('../onboarding/onboarding-modal').then((m) => m.OnboardingModal),
+const OnboardingView = dynamic(
+  () => import('../onboarding/onboarding-view').then((m) => m.OnboardingView),
   { ssr: false },
 )
 
@@ -257,24 +252,16 @@ export function ChatInterface({
 
   // Onboarding state (must be defined before usePasskeyBackup so we can gate it)
   const [showOnboarding, setShowOnboarding] = useState(false)
-  const isExistingUser =
-    !!user?.unsafeMetadata?.has_seen_passkey_intro ||
-    (typeof window !== 'undefined' &&
-      !!localStorage.getItem(SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO))
-  const onboardingNeeded =
-    isSignedIn &&
-    !!user &&
-    !user.unsafeMetadata?.has_completed_onboarding &&
-    !isExistingUser
 
-  // Backfill: ensure existing users also get the onboarding flag set
+  // Signed-in users never see the first-open onboarding: anyone missing the
+  // account flag is auto-tagged. This grandfathers accounts that predate the
+  // flow and carries the localStorage flag over when an anonymous visitor who
+  // already saw it signs in. The flag is also mirrored to localStorage so it
+  // survives signing out on this device.
   useEffect(() => {
-    if (
-      isSignedIn &&
-      user &&
-      isExistingUser &&
-      !user.unsafeMetadata?.has_completed_onboarding
-    ) {
+    if (!isSignedIn || !user) return
+    localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
+    if (!user.unsafeMetadata?.has_completed_onboarding) {
       user
         .update({
           unsafeMetadata: {
@@ -284,7 +271,7 @@ export function ChatInterface({
         })
         .catch(() => {})
     }
-  }, [isSignedIn, user, isExistingUser])
+  }, [isSignedIn, user])
 
   // iOS Safari keyboard fix: keep a CSS var in sync with the *visual* viewport height.
   // Without this, fixed full-screen layouts can leave an untouchable "dead zone"
@@ -399,13 +386,19 @@ export function ChatInterface({
     setLogoAnimDone(true)
   }, [])
 
-  // Show onboarding once models are loaded for new users
+  // Show the first-open onboarding to anonymous visitors who haven't seen
+  // it. Browsers with prior activity (web search intro flag) are treated as
+  // existing users and backfilled instead of being shown the flow.
   useEffect(() => {
     if (suppressIntroModals) return
-    if (onboardingNeeded && models.length > 0) {
-      setShowOnboarding(true)
+    if (!isAuthLoaded || isSignedIn) return
+    if (localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)) return
+    if (localStorage.getItem(SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO)) {
+      localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
+      return
     }
-  }, [onboardingNeeded, models.length, suppressIntroModals])
+    setShowOnboarding(true)
+  }, [isAuthLoaded, isSignedIn, suppressIntroModals])
 
   // State for right sidebar
   const [isVerifierSidebarOpen, setIsVerifierSidebarOpen] = useState(false)
@@ -421,6 +414,7 @@ export function ChatInterface({
 
   // State for cloud sync setup modal
   const [showCloudSyncSetupModal, setShowCloudSyncSetupModal] = useState(false)
+  const [isCloudSyncRoutePending, setIsCloudSyncRoutePending] = useState(false)
   // Tracks the in-flight first-time passkey setup call so the modal can
   // disable its buttons while the native dialog is showing.
   const [isFirstTimePasskeySetupBusy, setIsFirstTimePasskeySetupBusy] =
@@ -428,16 +422,18 @@ export function ChatInterface({
 
   useEffect(() => {
     if (suppressIntroModals) return
-    // Passkey-based recovery always auto-opens: a remote passkey credential
-    // means the user *has* chats backed up and can't see them on this device
-    // until they unlock, regardless of whether the local sync toggle is on.
-    // The manual-recovery and "chats not being backed up" cases are surfaced
-    // through the sidebar warning instead of an auto-popup, so the user can
-    // act on them at their own pace.
-    if (passkeyRecoveryNeeded) {
+    // Passkey-based recovery auto-opens because remote chats need unlocking.
+    // Fresh passkey setup also starts here so the cloud-sync intro is shown
+    // before the dedicated passkey prompt. Manual recovery remains available
+    // from the sidebar warning.
+    if (passkeyRecoveryNeeded || passkeyFirstTimePromptAvailable) {
       setShowCloudSyncSetupModal(true)
     }
-  }, [passkeyRecoveryNeeded, suppressIntroModals])
+  }, [
+    passkeyFirstTimePromptAvailable,
+    passkeyRecoveryNeeded,
+    suppressIntroModals,
+  ])
 
   // State for add-to-project-context modal
   const [showAddToProjectModal, setShowAddToProjectModal] = useState(false)
@@ -1512,10 +1508,9 @@ export function ChatInterface({
   // check if the backend already holds a passkey credential — if so, route
   // them back to passkey recovery even if they previously dismissed it, so
   // clicking "Enable Cloud Sync" is always a valid re-entry path. Next
-  // prefer the friendly "Back Up Your Chats" prompt for brand-new signed-in
-  // users so they don't get dropped into the raw key-generator UI. Fall
-  // back to the manual cloud-sync setup modal otherwise (existing key,
-  // remote data without a passkey, or PRF unsupported).
+  // show the cloud-sync intro for brand-new signed-in users, then let its
+  // Continue action route to passkey or manual setup. Remote data bypasses
+  // the intro and routes directly to recovery.
   const handleOpenCloudSyncSetup = useCallback(async () => {
     if (!encryptionService.getKey()) {
       // Open the modal immediately for instant feedback. It renders
@@ -1525,13 +1520,13 @@ export function ChatInterface({
       // resulting state changes (e.g. a manual-recovery warning getting
       // upgraded to a passkey-recovery flow).
       setShowCloudSyncSetupModal(true)
-      const recovered = await showPasskeyRecoveryPrompt()
-      if (recovered) return
-      const routed = await showFirstTimePasskeyPrompt()
-      if (routed) {
-        // A brand-new user with no remote data is better served by the
-        // dedicated first-time prompt; hand off to it.
-        setShowCloudSyncSetupModal(false)
+      setIsCloudSyncRoutePending(true)
+      try {
+        const recovered = await showPasskeyRecoveryPrompt()
+        if (recovered) return
+        await showFirstTimePasskeyPrompt()
+      } finally {
+        setIsCloudSyncRoutePending(false)
       }
       return
     }
@@ -2553,11 +2548,12 @@ export function ChatInterface({
           <p className="mb-6 text-content-secondary">
             You need to sign in to access this chat.
           </p>
-          <SignInButton mode="modal">
-            <button className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90">
-              Sign in
-            </button>
-          </SignInButton>
+          <Link
+            href="/signin"
+            className="inline-block rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+          >
+            Sign in
+          </Link>
         </div>
       </div>
     )
@@ -3004,8 +3000,6 @@ export function ChatInterface({
                 onCloudSyncSetupClick={
                   isSignedIn ? handleOpenCloudSyncSetup : undefined
                 }
-                onSetupPasskey={setupPasskey}
-                passkeySetupAvailable={passkeySetupAvailable}
                 onAddPasskeyToThisDevice={addPasskeyToThisDevice}
                 passkeyAddDeviceAvailable={passkeyAddDeviceAvailable}
                 backupWarningVisible={
@@ -3538,6 +3532,9 @@ export function ChatInterface({
           isOpen={showCloudSyncSetupModal}
           onClose={() => {
             setShowCloudSyncSetupModal(false)
+            if (passkeyFirstTimePromptAvailable) {
+              dismissFirstTimePasskeyPrompt()
+            }
             // If no key was set, turn off cloud sync
             if (!encryptionService.getKey()) {
               setCloudSyncEnabled(false)
@@ -3546,7 +3543,6 @@ export function ChatInterface({
           onSetupComplete={async (key: string, mode) => {
             try {
               await handleKeyChanged(key, { mode })
-              setShowCloudSyncSetupModal(false)
               if (mode === 'explicitStartFresh') {
                 void backupStartFreshKeyWithPasskey()
               }
@@ -3556,7 +3552,6 @@ export function ChatInterface({
             }
           }}
           isDarkMode={isDarkMode}
-          initialCloudSyncEnabled={true}
           prfSupported={
             passkeyActive ||
             passkeyRecoveryNeeded ||
@@ -3566,6 +3561,20 @@ export function ChatInterface({
           passkeyRecoveryNeeded={passkeyRecoveryNeeded}
           manualRecoveryNeeded={manualRecoveryNeeded}
           passkeyRecoveryFailure={passkeyRecoveryFailure}
+          isContinuePending={isCloudSyncRoutePending}
+          onSetupWithPasskey={
+            passkeyFirstTimePromptAvailable
+              ? async () => {
+                  setIsFirstTimePasskeySetupBusy(true)
+                  try {
+                    return await setupFirstTimePasskey()
+                  } finally {
+                    setIsFirstTimePasskeySetupBusy(false)
+                  }
+                }
+              : undefined
+          }
+          isPasskeySetupBusy={isFirstTimePasskeySetupBusy}
           onSkipRecovery={() => {
             skipPasskeyRecovery()
             setShowCloudSyncSetupModal(false)
@@ -3578,40 +3587,17 @@ export function ChatInterface({
             } catch {
               return false
             }
-            setShowCloudSyncSetupModal(false)
             return true
           }}
           onSetupNewKey={async () => {
             const key = await setupNewKeySplit()
-            if (!key) return false
+            if (!key) return null
             try {
               await handleKeyChanged(key, { mode: 'explicitStartFresh' })
             } catch {
-              return false
+              return null
             }
-            setShowCloudSyncSetupModal(false)
-            return true
-          }}
-        />
-      )}
-
-      {/* First-time passkey setup confirmation - shown to brand-new users so
-          we never invoke the native WebAuthn dialog without an explicit click. */}
-      {passkeyFirstTimePromptAvailable && !suppressIntroModals && (
-        <PasskeySetupPromptModal
-          isOpen={passkeyFirstTimePromptAvailable}
-          isBusy={isFirstTimePasskeySetupBusy}
-          onEnable={async () => {
-            setIsFirstTimePasskeySetupBusy(true)
-            try {
-              await setupFirstTimePasskey()
-            } finally {
-              setIsFirstTimePasskeySetupBusy(false)
-            }
-          }}
-          onDismiss={() => {
-            dismissFirstTimePasskeyPrompt()
-            setCloudSyncEnabled(false)
+            return key
           }}
         />
       )}
@@ -3633,15 +3619,11 @@ export function ChatInterface({
         isDarkMode={isDarkMode}
       />
 
-      <OnboardingModal
-        isOpen={showOnboarding}
-        onComplete={(selectedModel) => {
-          if (selectedModel) handleModelSelect(selectedModel)
-          setShowOnboarding(false)
-        }}
-        models={models}
-        isDarkMode={isDarkMode}
-      />
+      <AnimatePresence>
+        {showOnboarding && (
+          <OnboardingView onComplete={() => setShowOnboarding(false)} />
+        )}
+      </AnimatePresence>
 
       <SubscribePromptModal
         isOpen={isSubscribePromptOpen}

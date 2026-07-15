@@ -8,6 +8,12 @@ import {
   performSignoutCleanup,
   performUserSwitchCleanup,
 } from '@/utils/signout-cleanup'
+import {
+  completeSignoutStep,
+  hideSignoutProgress,
+  reportSignoutStep,
+  SIGNOUT_STEPS,
+} from '@/utils/signout-progress'
 import { useAuth, useUser } from '@clerk/nextjs'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -42,6 +48,7 @@ export function AuthCleanupHandler() {
   }, [])
 
   const runSignoutCleanup = useCallback(() => {
+    completeSignoutStep(SIGNOUT_STEPS.SIGN_OUT)
     const encryptionKey = getEncryptionKey()
 
     if (hasPasskeyBackup() || !encryptionKey) {
@@ -63,6 +70,7 @@ export function AuthCleanupHandler() {
           })
         })
         .finally(() => {
+          reportSignoutStep(SIGNOUT_STEPS.RELOAD)
           window.location.reload()
         })
       return
@@ -80,6 +88,7 @@ export function AuthCleanupHandler() {
         })
       })
       .finally(() => {
+        hideSignoutProgress()
         // Check theme from data-theme attribute (source of truth)
         const dataTheme = document.documentElement.getAttribute('data-theme')
         setIsDarkMode(dataTheme === 'dark')

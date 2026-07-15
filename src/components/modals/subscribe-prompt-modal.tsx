@@ -1,7 +1,7 @@
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
-import { SignInButton } from '@clerk/nextjs'
 import { Dialog, Transition } from '@headlessui/react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
+import Link from 'next/link'
 import { Fragment } from 'react'
 
 interface SubscribePromptModalProps {
@@ -97,25 +97,22 @@ export function SubscribePromptModal({
                     </>
                   ) : (
                     <>
-                      <SignInButton mode="modal">
-                        <button
-                          type="button"
-                          onClick={onClose}
-                          className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
-                        >
-                          Subscribe to Premium
-                        </button>
-                      </SignInButton>
+                      <Link
+                        href="/signin"
+                        onClick={onClose}
+                        className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                      >
+                        Subscribe to Premium
+                      </Link>
                       <p className="text-center text-xs text-content-secondary">
                         Already subscribed?{' '}
-                        <SignInButton mode="modal">
-                          <span
-                            onClick={onClose}
-                            className="cursor-pointer underline hover:text-content-primary"
-                          >
-                            Log in
-                          </span>
-                        </SignInButton>
+                        <Link
+                          href="/signin"
+                          onClick={onClose}
+                          className="cursor-pointer underline hover:text-content-primary"
+                        >
+                          Log in
+                        </Link>
                       </p>
                     </>
                   )}

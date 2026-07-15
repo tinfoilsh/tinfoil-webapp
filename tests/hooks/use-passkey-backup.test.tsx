@@ -1,3 +1,4 @@
+import { SETTINGS_MANUAL_RECOVERY_DISMISSED } from '@/constants/storage-keys'
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -188,6 +189,34 @@ describe('usePasskeyBackup', () => {
     expect(result.current.manualRecoveryNeeded).toBe(false)
     expect(result.current.passkeySetupFailed).toBe(true)
     expect(result.current.passkeyRetryAvailable).toBe(true)
+  })
+
+  it('keeps explicit manual recovery available after a reload', async () => {
+    localStorage.setItem(SETTINGS_MANUAL_RECOVERY_DISMISSED, 'true')
+    mocks.inspectRemoteEncryptedState.mockResolvedValue('exists')
+    const { result, unmount } = renderHook(() =>
+      usePasskeyBackup({ ...baseOptions, initialized: false }),
+    )
+
+    let prompted = true
+    await act(async () => {
+      prompted = await result.current.showFirstTimePasskeyPrompt()
+    })
+
+    expect(prompted).toBe(false)
+    expect(result.current.manualRecoveryNeeded).toBe(true)
+    expect(result.current.passkeyFirstTimePromptAvailable).toBe(false)
+    expect(result.current.passkeyRetryAvailable).toBe(false)
+    expect(localStorage.getItem(SETTINGS_MANUAL_RECOVERY_DISMISSED)).toBeNull()
+
+    unmount()
+    const { result: reloadedResult } = renderHook(() =>
+      usePasskeyBackup(baseOptions),
+    )
+
+    await waitFor(() =>
+      expect(reloadedResult.current.manualRecoveryNeeded).toBe(true),
+    )
   })
 
   describe('stale local key recovery routing', () => {

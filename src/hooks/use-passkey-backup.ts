@@ -1531,6 +1531,7 @@ export function usePasskeyBackup({
   // was made available; false if the caller should route through the
   // manual-key flow instead.
   const showFirstTimePasskeyPrompt = useCallback(async (): Promise<boolean> => {
+    manualRecoveryDismissedFlag.clear()
     const prfSupported = await isPrfSupported()
     if (!prfSupported) return false
     try {
@@ -1542,6 +1543,15 @@ export function usePasskeyBackup({
         return false
       }
       if (remoteState === 'exists') {
+        if (isMountedRef.current) {
+          setState((prev) => ({
+            ...prev,
+            manualRecoveryNeeded: true,
+            passkeyFirstTimePromptAvailable: false,
+            passkeySetupFailed: true,
+            passkeyRetryAvailable: false,
+          }))
+        }
         return false
       }
       if (remoteState === 'unknown') {
