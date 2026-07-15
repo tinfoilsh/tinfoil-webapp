@@ -1,45 +1,19 @@
 import * as React from 'react'
-import { DashedLines } from './dashed-lines'
-import { GridTexture } from './grid-texture'
 import { cn } from './utils'
 
 const Card = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & {
-    dashedLines?: boolean
-    texture?: boolean
-  }
->(
-  (
-    { className, dashedLines = false, texture = false, children, ...props },
-    ref,
-  ) => {
-    const card = (
-      <div
-        ref={ref}
-        className={cn(
-          'relative overflow-hidden rounded-lg bg-surface-card text-content-primary',
-          className,
-        )}
-        {...props}
-      >
-        {texture ? <GridTexture className="z-0" /> : null}
-        {children}
-      </div>
-    )
-
-    if (!dashedLines) {
-      return card
-    }
-
-    return (
-      <div className="relative overflow-hidden">
-        {card}
-        <DashedLines />
-      </div>
-    )
-  },
-)
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      'rounded-lg border border-border-subtle bg-surface-card text-content-primary shadow-sm',
+      className,
+    )}
+    {...props}
+  />
+))
 Card.displayName = 'Card'
 
 const CardHeader = React.forwardRef<

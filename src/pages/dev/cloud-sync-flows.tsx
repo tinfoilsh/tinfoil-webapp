@@ -6,6 +6,7 @@ import type {
   CloudKeySetupMode,
   CloudKeySetupResult,
 } from '@/components/modals/cloud-sync-setup-mode'
+import { PasskeySetupPromptModal } from '@/components/modals/passkey-setup-prompt-modal'
 import { IS_DEV } from '@/config'
 import {
   SETTINGS_CLOUD_SYNC_ENABLED,
@@ -49,6 +50,7 @@ interface Scenario {
   prfSupported?: boolean
   passkeyRecoveryNeeded?: boolean
   manualRecoveryNeeded?: boolean
+  forceManualFlow?: boolean
   /** Simulate the slow background enclave probe upgrading the flow. */
   deferredRecoveryProbe?: boolean
   recoveryOutcome?: RecoveryOutcome
@@ -57,17 +59,16 @@ interface Scenario {
 const SCENARIOS: Scenario[] = [
   {
     id: 'first-time-prompt',
-    title: 'First-time user (passkey setup)',
+    title: 'First-time user (passkey prompt)',
     description:
-      'Brand-new signed-in user: no local key, no remote passkey, no remote data, PRF supported. Shows the cloud sync intro first, then "Continue" opens the passkey setup prompt.',
+      'Brand-new signed-in user: no local key, no remote passkey, no remote data, PRF supported. Shows the "Back Up Your Chats" confirmation prompt (passkeyFirstTimePromptAvailable).',
     kind: 'first-time-prompt',
-    prfSupported: true,
   },
   {
     id: 'prf-generate-or-restore',
     title: 'PRF supported, fresh setup',
     description:
-      'PRF-capable device, no recovery needed. Modal opens on the intro and continues to generate-or-restore. Generating a key auto-completes without the manual "save this key" step.',
+      'PRF-capable device, no recovery needed. Modal skips the intro and opens on the generate-or-restore step (prfSupported=true). Generating a key auto-completes without the manual "save this key" step.',
     kind: 'setup-modal',
     prfSupported: true,
   },
@@ -119,18 +120,19 @@ const SCENARIOS: Scenario[] = [
     manualRecoveryNeeded: true,
   },
   {
-    id: 'manual',
-    title: 'Manual flow (PRF-less provider)',
+    id: 'force-manual',
+    title: 'Forced manual flow (PRF-less provider)',
     description:
-      'User sees the cloud sync intro before continuing to manual key setup.',
+      'User opted into manual backup from the sidebar warning after their passkey provider failed PRF (forceManualFlow=true). Skips intro and recovery entirely.',
     kind: 'setup-modal',
     prfSupported: false,
+    forceManualFlow: true,
   },
   {
     id: 'deferred-probe',
     title: 'Deferred probe upgrade',
     description:
-      'Modal opens instantly on the intro while the background enclave probe is still running; after a simulated delay the probe reports a remote passkey and the modal advances to the recovery step.',
+      'Modal opens instantly in the neutral generate-or-restore state while the background enclave probe is still running; after a simulated delay the probe reports a remote passkey and the modal advances to the recovery step.',
     kind: 'setup-modal',
     prfSupported: true,
     deferredRecoveryProbe: true,
@@ -312,7 +314,7 @@ export default function CloudSyncFlowsDevPage() {
     setRecoveryFailure(null)
     await simulateLatency()
     if (outcome === 'success') {
-      appendLog('passkey recovery simulated OK')
+      appendLog('passkey recovery simulated OK, modal will close')
       return true
     }
     setRecoveryFailure(outcome)
@@ -322,11 +324,10 @@ export default function CloudSyncFlowsDevPage() {
     return false
   }, [appendLog, scenario])
 
-  const handleSetupNewKey = useCallback(async (): Promise<string | null> => {
+  const handleSetupNewKey = useCallback(async (): Promise<boolean> => {
     appendLog(`onSetupNewKey() → simulating "${startFreshOutcome}"`)
     await simulateLatency()
-    if (startFreshOutcome !== 'success') return null
-    return 'simulated-new-encryption-key-for-display'
+    return startFreshOutcome === 'success'
   }, [appendLog, startFreshOutcome])
 
   const handleFirstTimeEnable = useCallback(async () => {
@@ -338,17 +339,16 @@ export default function CloudSyncFlowsDevPage() {
       await simulateLatency()
       if (firstTimeOutcome === 'success') {
         appendLog('first-time passkey setup simulated OK')
-        return true
+        closeScenario()
       } else {
         appendLog(
           'passkey creation simulated as cancelled (real flow would surface the backup warning)',
         )
-        return false
       }
     } finally {
       setIsFirstTimeBusy(false)
     }
-  }, [appendLog, firstTimeOutcome])
+  }, [appendLog, closeScenario, firstTimeOutcome])
 
   if (!harnessEnabled) {
     return (
@@ -474,30 +474,39 @@ export default function CloudSyncFlowsDevPage() {
           </div>
         </div>
 
-        {(scenario?.kind === 'setup-modal' ||
-          scenario?.kind === 'first-time-prompt') && (
+        {scenario?.kind === 'setup-modal' && (
           <CloudSyncSetupModal
             key={scenarioRunId}
             isOpen
             onClose={closeScenario}
             onSetupComplete={handleSetupComplete}
             isDarkMode={isDarkMode}
+            initialCloudSyncEnabled
             prfSupported={prfSupported}
             passkeyRecoveryNeeded={passkeyRecoveryNeeded}
             manualRecoveryNeeded={manualRecoveryNeeded}
             passkeyRecoveryFailure={recoveryFailure}
-            onSetupWithPasskey={
-              scenario.kind === 'first-time-prompt'
-                ? handleFirstTimeEnable
-                : undefined
-            }
-            isPasskeySetupBusy={isFirstTimeBusy}
+            forceManualFlow={scenario.forceManualFlow}
             onSkipRecovery={() => {
               appendLog('onSkipRecovery() (real flow persists a dismiss flag)')
               closeScenario()
             }}
             onRecoverWithPasskey={handleRecoverWithPasskey}
             onSetupNewKey={handleSetupNewKey}
+          />
+        )}
+
+        {scenario?.kind === 'first-time-prompt' && (
+          <PasskeySetupPromptModal
+            isOpen
+            isBusy={isFirstTimeBusy}
+            onEnable={handleFirstTimeEnable}
+            onDismiss={() => {
+              appendLog(
+                'first-time onDismiss() (real flow surfaces the backup warning)',
+              )
+              closeScenario()
+            }}
           />
         )}
       </div>

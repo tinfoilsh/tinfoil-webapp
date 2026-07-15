@@ -81,9 +81,6 @@ interface UseChatStateReturn {
   initialChatDecryptionFailed: boolean
   clearInitialChatDecryptionFailed: () => void
   localChatNotFound: boolean
-  initialChatLoadFailed: boolean
-  cloudChatNotFound: boolean
-  retryInitialChatLoad: () => void
 }
 
 export function useChatState({
@@ -154,9 +151,6 @@ export function useChatState({
     initialChatDecryptionFailed,
     clearInitialChatDecryptionFailed,
     localChatNotFound,
-    initialChatLoadFailed,
-    cloudChatNotFound,
-    retryInitialChatLoad,
   } = useChatStorage({
     storeHistory,
     scrollToBottom,
@@ -386,8 +380,5 @@ export function useChatState({
     initialChatDecryptionFailed,
     clearInitialChatDecryptionFailed,
     localChatNotFound,
-    initialChatLoadFailed,
-    cloudChatNotFound,
-    retryInitialChatLoad,
   }
 }

@@ -27,7 +27,7 @@ export function ProjectModeBanner({
     <div className="pointer-events-none relative z-10 flex w-full flex-none justify-center md:hidden">
       <div
         className={cn(
-          'pointer-events-auto flex items-center gap-2 rounded-t-site-tab border-x border-t px-4 py-1.5 transition-colors',
+          'pointer-events-auto flex items-center gap-2 rounded-b-xl border-x border-b px-4 py-1.5 transition-colors',
           projectColor
             ? 'text-gray-900'
             : isDarkMode

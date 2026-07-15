@@ -35,7 +35,7 @@
     "@radix-ui/react-toast": "^1.2.7",
     "@radix-ui/react-tooltip": "^1.2.0",
     "@tailwindcss/typography": "^0.5.16",
-    "@tinfoilsh/tinfoil-icons": "^2.0.4",
+    "@tinfoilsh/tinfoil-icons": "^1.1.1",
     "autoprefixer": "^10.4.21",
     "boring-avatars": "^2.0.4",
     "class-variance-authority": "^0.7.1",

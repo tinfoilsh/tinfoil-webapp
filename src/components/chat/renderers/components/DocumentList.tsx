@@ -346,7 +346,7 @@ export const DocumentList = memo(function DocumentList({
               role="dialog"
               aria-modal="true"
               aria-labelledby="document-modal-title"
-              className="relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col rounded-site-lg border border-border-subtle bg-surface-card shadow-xl"
+              className="relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col rounded-xl border border-border-subtle bg-surface-card shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">

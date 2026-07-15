@@ -1,15 +1,6 @@
 import { expect, test } from '@playwright/test'
-import { SETTINGS_HAS_SEEN_ONBOARDING } from '../../src/constants/storage-keys'
 
 test.describe('Smoke Tests', () => {
-  test.beforeEach(async ({ page }) => {
-    // A fresh browser context counts as a first open, which would cover
-    // the UI with the onboarding takeover. Mark it as already seen.
-    await page.addInitScript((key) => {
-      localStorage.setItem(key, 'true')
-    }, SETTINGS_HAS_SEEN_ONBOARDING)
-  })
-
   test('app loads in light mode by default', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
