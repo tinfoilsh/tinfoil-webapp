@@ -55,11 +55,15 @@ let currentState: SignoutProgressState = {
 
 const listeners = new Set<Listener>()
 
-function emit(): void {
-  const snapshot: SignoutProgressState = {
+function cloneState(): SignoutProgressState {
+  return {
     visible: currentState.visible,
     steps: currentState.steps.map((s) => ({ ...s })),
   }
+}
+
+function emit(): void {
+  const snapshot = cloneState()
   for (const listener of listeners) {
     listener(snapshot)
   }
@@ -71,10 +75,7 @@ export function subscribeToSignoutProgress(listener: Listener): () => void {
 }
 
 export function getSignoutProgressState(): SignoutProgressState {
-  return {
-    visible: currentState.visible,
-    steps: currentState.steps.map((s) => ({ ...s })),
-  }
+  return cloneState()
 }
 
 export function showSignoutProgress(): void {

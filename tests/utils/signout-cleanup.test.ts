@@ -1,4 +1,15 @@
+import { resetRendererRegistry } from '@/components/chat/renderers'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
+import { cloudSync } from '@/services/cloud/cloud-sync'
+import { resetEditClockCache } from '@/services/cloud/edit-clock'
+import { profileSync } from '@/services/cloud/profile-sync'
+import { resetSyncHealth } from '@/services/cloud/sync-health'
+import { encryptionService } from '@/services/encryption/encryption-service'
+import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
+import { projectEvents } from '@/services/project/project-events'
+import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { resetSyncEnclaveClient } from '@/services/sync-enclave'
 import { performSignoutCleanup } from '@/utils/signout-cleanup'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -53,7 +64,9 @@ vi.mock('@/utils/error-handling', () => ({
 
 describe('performSignoutCleanup', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     localStorage.clear()
+    sessionStorage.clear()
   })
 
   it('preserves the browser onboarding flag while clearing user data', async () => {
@@ -64,5 +77,36 @@ describe('performSignoutCleanup', () => {
 
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBe('true')
     expect(localStorage.getItem('user-specific-data')).toBeNull()
+  })
+
+  it('clears sessionStorage', async () => {
+    sessionStorage.setItem('session-data', 'value')
+
+    await performSignoutCleanup()
+
+    expect(sessionStorage.getItem('session-data')).toBeNull()
+  })
+
+  it('clears the encryption key and every user data cache', async () => {
+    await performSignoutCleanup()
+
+    expect(encryptionService.clearKey).toHaveBeenCalledWith({ persist: true })
+    expect(resetRendererRegistry).toHaveBeenCalled()
+    expect(resetTinfoilClient).toHaveBeenCalled()
+    expect(resetSyncEnclaveClient).toHaveBeenCalled()
+    expect(profileSync.clearCache).toHaveBeenCalled()
+    expect(cloudSync.clearSyncStatus).toHaveBeenCalled()
+    expect(deletedChatsTracker.clear).toHaveBeenCalled()
+    expect(resetSyncHealth).toHaveBeenCalled()
+    expect(resetEditClockCache).toHaveBeenCalled()
+    expect(projectEvents.clear).toHaveBeenCalled()
+    expect(indexedDBStorage.clearAll).toHaveBeenCalled()
+  })
+
+  it('keeps the encryption key when preserveEncryptionKey is set', async () => {
+    await performSignoutCleanup({ preserveEncryptionKey: true })
+
+    expect(encryptionService.clearKey).not.toHaveBeenCalled()
+    expect(indexedDBStorage.clearAll).toHaveBeenCalled()
   })
 })
