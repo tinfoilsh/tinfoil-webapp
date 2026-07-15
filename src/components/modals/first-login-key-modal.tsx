@@ -1,11 +1,11 @@
-import { Modal, ModalTitle } from '@/components/ui/modal'
+import { Dialog, Transition } from '@headlessui/react'
 import {
   ArrowUpTrayIcon,
   KeyIcon,
   SparklesIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
-import { useCallback, useRef, useState } from 'react'
+import { Fragment, useCallback, useRef, useState } from 'react'
 
 interface FirstLoginKeyModalProps {
   isOpen: boolean
@@ -124,190 +124,235 @@ export function FirstLoginKeyModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} showCloseButton={false}>
-      {!showImportView ? (
-        <>
-          <ModalTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <KeyIcon className="h-6 w-6 text-content-primary" />
-              <span>Welcome to Tinfoil Chat</span>
-            </div>
-          </ModalTitle>
+    <Transition appear show={isOpen} as={Fragment}>
+      <Dialog as="div" className="relative z-50" onClose={onClose}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/50" />
+        </Transition.Child>
 
-          <div className="mt-4">
-            <p className="text-sm text-content-secondary">
-              Your messages are end-to-end encrypted. Choose how you&apos;d like
-              to set up your encryption:
-            </p>
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 text-center">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl border border-border-subtle bg-surface-card p-6 text-left align-middle shadow-xl transition-all">
+                {!showImportView ? (
+                  <>
+                    <Dialog.Title
+                      as="h3"
+                      className="flex items-center justify-between text-lg font-medium leading-6 text-content-primary"
+                    >
+                      <div className="flex items-center gap-2">
+                        <KeyIcon className="h-6 w-6 text-content-primary" />
+                        <span>Welcome to Tinfoil Chat</span>
+                      </div>
+                    </Dialog.Title>
 
-            <div className="mt-6 space-y-3">
-              <button
-                onClick={() => setShowImportView(true)}
-                className="w-full rounded-lg border border-border-subtle bg-surface-chat p-4 text-left transition-colors hover:bg-surface-chat/80"
-              >
-                <div className="flex items-start gap-3">
-                  <ArrowUpTrayIcon className="mt-0.5 h-5 w-5 text-content-primary" />
-                  <div>
-                    <h4 className="font-medium text-content-primary">
-                      Import Existing Key
-                    </h4>
-                    <p className="mt-1 text-xs text-content-muted">
-                      Sync with your other devices by importing your saved key.
-                    </p>
-                  </div>
-                </div>
-              </button>
+                    <div className="mt-4">
+                      <p className="text-sm text-content-secondary">
+                        Your messages are end-to-end encrypted. Choose how
+                        you&apos;d like to set up your encryption:
+                      </p>
 
-              <button
-                onClick={handleNewKey}
-                className="w-full rounded-lg border border-brand-accent-dark/40 bg-brand-accent-dark p-4 text-left text-white shadow-md transition-colors hover:bg-brand-accent-dark/90"
-              >
-                <div className="flex items-start gap-3">
-                  <SparklesIcon className="mt-0.5 h-5 w-5 text-white" />
-                  <div>
-                    <h4 className="font-medium text-white">
-                      Create New Encryption Key
-                    </h4>
-                    <p className="mt-1 text-xs text-white/80">
-                      Start fresh with a new key.
-                    </p>
-                  </div>
-                </div>
-              </button>
-            </div>
+                      <div className="mt-6 space-y-3">
+                        <button
+                          onClick={() => setShowImportView(true)}
+                          className="w-full rounded-lg border border-border-subtle bg-surface-chat p-4 text-left transition-colors hover:bg-surface-chat/80"
+                        >
+                          <div className="flex items-start gap-3">
+                            <ArrowUpTrayIcon className="mt-0.5 h-5 w-5 text-content-primary" />
+                            <div>
+                              <h4 className="font-medium text-content-primary">
+                                Import Existing Key
+                              </h4>
+                              <p className="mt-1 text-xs text-content-muted">
+                                Sync with your other devices by importing your
+                                saved key.
+                              </p>
+                            </div>
+                          </div>
+                        </button>
 
-            <p className="mt-6 text-xs text-content-muted">
-              You can always access your encryption key later from Settings.
-            </p>
+                        <button
+                          onClick={handleNewKey}
+                          className="w-full rounded-lg border border-brand-accent-dark/40 bg-brand-accent-dark p-4 text-left text-white shadow-md transition-colors hover:bg-brand-accent-dark/90"
+                        >
+                          <div className="flex items-start gap-3">
+                            <SparklesIcon className="mt-0.5 h-5 w-5 text-white" />
+                            <div>
+                              <h4 className="font-medium text-white">
+                                Create New Encryption Key
+                              </h4>
+                              <p className="mt-1 text-xs text-white/80">
+                                Start fresh with a new key.
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+
+                      <p className="mt-6 text-xs text-content-muted">
+                        You can always access your encryption key later from
+                        Settings.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Dialog.Title
+                      as="h3"
+                      className="flex items-center justify-between text-lg font-medium leading-6 text-content-primary"
+                    >
+                      <div className="flex items-center gap-2">
+                        <ArrowUpTrayIcon className="h-6 w-6 text-content-primary" />
+                        <span>Import Encryption Key</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowImportView(false)
+                          setInputKey('')
+                          setError(null)
+                        }}
+                        aria-label="Back"
+                        className="rounded-lg p-1 text-content-secondary transition-colors hover:bg-surface-chat"
+                      >
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+                    </Dialog.Title>
+
+                    <div className="mt-4">
+                      <p className="text-sm text-content-secondary">
+                        Import your encryption key to sync with your existing
+                        chats.
+                      </p>
+
+                      {/* Drag and Drop Zone */}
+                      <div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`mt-4 rounded-lg border-2 border-dashed p-4 text-center transition-colors ${
+                          isDragging
+                            ? 'border-brand-accent-light bg-brand-accent-light/10'
+                            : 'border-border-subtle bg-surface-chat'
+                        }`}
+                      >
+                        <ArrowUpTrayIcon
+                          className={`mx-auto h-8 w-8 ${
+                            isDragging
+                              ? 'text-brand-accent-light'
+                              : 'text-content-muted'
+                          }`}
+                        />
+                        <p
+                          className={`mt-2 text-xs sm:text-sm ${
+                            isDragging
+                              ? 'text-brand-accent-light'
+                              : 'text-content-muted'
+                          }`}
+                        >
+                          {isDragging
+                            ? 'Drop your PEM file here'
+                            : 'Drag and drop a PEM file here'}
+                        </p>
+                        {!isDragging && (
+                          <>
+                            <input
+                              ref={fileInputRef}
+                              type="file"
+                              accept=".pem"
+                              onChange={handleFileSelect}
+                              className="hidden"
+                            />
+                            <button
+                              onClick={() => fileInputRef.current?.click()}
+                              className="mt-3 rounded-md border border-border-subtle bg-surface-input px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-input/80 sm:text-sm"
+                            >
+                              Choose File
+                            </button>
+                          </>
+                        )}
+                      </div>
+
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          if (!isImporting && inputKey.trim()) {
+                            handleImport()
+                          }
+                        }}
+                        className="mt-4"
+                        id="encryption-key-form"
+                      >
+                        <label className="block text-xs font-medium text-content-secondary">
+                          Or paste your key directly:
+                        </label>
+                        <input
+                          type="password"
+                          name="encryption-key"
+                          value={inputKey}
+                          onChange={(e) => {
+                            setInputKey(e.target.value)
+                            setError(null)
+                          }}
+                          placeholder="Enter encryption key (e.g., key_abc123...)"
+                          autoComplete="off"
+                          className="mt-1 w-full rounded-lg border border-border-subtle bg-surface-input px-3 py-2 text-sm text-content-primary placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-brand-accent-light"
+                        />
+
+                        {error && (
+                          <p className="mt-2 text-xs text-destructive">
+                            {error}
+                          </p>
+                        )}
+
+                        <div className="mt-6 flex gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowImportView(false)
+                              setInputKey('')
+                              setError(null)
+                            }}
+                            className="flex-1 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-secondary transition-colors hover:bg-surface-chat/80"
+                          >
+                            Back
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isImporting || !inputKey.trim()}
+                            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                              isImporting || !inputKey.trim()
+                                ? 'cursor-not-allowed bg-surface-chat text-content-muted'
+                                : 'bg-brand-accent-dark text-white hover:bg-brand-accent-dark/90'
+                            }`}
+                          >
+                            {isImporting ? 'Importing...' : 'Import Key'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </>
+                )}
+              </Dialog.Panel>
+            </Transition.Child>
           </div>
-        </>
-      ) : (
-        <>
-          <ModalTitle className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ArrowUpTrayIcon className="h-6 w-6 text-content-primary" />
-              <span>Import Encryption Key</span>
-            </div>
-            <button
-              onClick={() => {
-                setShowImportView(false)
-                setInputKey('')
-                setError(null)
-              }}
-              aria-label="Back"
-              className="rounded-lg p-1 text-content-secondary transition-colors hover:bg-surface-chat"
-            >
-              <XMarkIcon className="h-5 w-5" />
-            </button>
-          </ModalTitle>
-
-          <div className="mt-4">
-            <p className="text-sm text-content-secondary">
-              Import your encryption key to sync with your existing chats.
-            </p>
-
-            {/* Drag and Drop Zone */}
-            <div
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              className={`mt-4 rounded-lg border-2 border-dashed p-4 text-center transition-colors ${
-                isDragging
-                  ? 'border-brand-accent-light bg-brand-accent-light/10'
-                  : 'border-border-subtle bg-surface-chat'
-              }`}
-            >
-              <ArrowUpTrayIcon
-                className={`mx-auto h-8 w-8 ${
-                  isDragging ? 'text-brand-accent-light' : 'text-content-muted'
-                }`}
-              />
-              <p
-                className={`mt-2 text-xs sm:text-sm ${
-                  isDragging ? 'text-brand-accent-light' : 'text-content-muted'
-                }`}
-              >
-                {isDragging
-                  ? 'Drop your PEM file here'
-                  : 'Drag and drop a PEM file here'}
-              </p>
-              {!isDragging && (
-                <>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pem"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="mt-3 rounded-md border border-border-subtle bg-surface-input px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-input/80 sm:text-sm"
-                  >
-                    Choose File
-                  </button>
-                </>
-              )}
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (!isImporting && inputKey.trim()) {
-                  handleImport()
-                }
-              }}
-              className="mt-4"
-              id="encryption-key-form"
-            >
-              <label className="block text-xs font-medium text-content-secondary">
-                Or paste your key directly:
-              </label>
-              <input
-                type="password"
-                name="encryption-key"
-                value={inputKey}
-                onChange={(e) => {
-                  setInputKey(e.target.value)
-                  setError(null)
-                }}
-                placeholder="Enter encryption key (e.g., key_abc123...)"
-                autoComplete="off"
-                className="mt-1 w-full rounded-lg border border-border-subtle bg-surface-input px-3 py-2 text-sm text-content-primary placeholder:text-content-muted focus:border-border-strong focus:outline-none"
-              />
-
-              {error && (
-                <p className="mt-2 text-xs text-destructive">{error}</p>
-              )}
-
-              <div className="mt-6 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowImportView(false)
-                    setInputKey('')
-                    setError(null)
-                  }}
-                  className="flex-1 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-secondary transition-colors hover:bg-surface-chat/80"
-                >
-                  Back
-                </button>
-                <button
-                  type="submit"
-                  disabled={isImporting || !inputKey.trim()}
-                  className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                    isImporting || !inputKey.trim()
-                      ? 'cursor-not-allowed bg-surface-chat text-content-muted'
-                      : 'bg-brand-accent-dark text-white hover:bg-brand-accent-dark/90'
-                  }`}
-                >
-                  {isImporting ? 'Importing...' : 'Import Key'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </>
-      )}
-    </Modal>
+        </div>
+      </Dialog>
+    </Transition>
   )
 }

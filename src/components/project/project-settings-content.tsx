@@ -119,7 +119,7 @@ export function ProjectSettingsContent({
             isDarkMode
               ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
               : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-            'focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
+            'focus:outline-none focus:ring-2 focus:ring-emerald-500',
           )}
         />
       </div>
@@ -145,7 +145,7 @@ export function ProjectSettingsContent({
             isDarkMode
               ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
               : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-            'focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
+            'focus:outline-none focus:ring-2 focus:ring-emerald-500',
           )}
         />
       </div>
@@ -175,7 +175,7 @@ export function ProjectSettingsContent({
                 aria-label={projectColor.label}
                 aria-pressed={isSelected}
                 className={cn(
-                  'flex h-7 w-7 items-center justify-center rounded-full ring-offset-2 transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong',
+                  'flex h-7 w-7 items-center justify-center rounded-full ring-offset-2 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-500',
                   isDarkMode
                     ? 'ring-offset-surface-chat'
                     : 'ring-offset-surface-sidebar',
@@ -194,7 +194,7 @@ export function ProjectSettingsContent({
             aria-label="No color"
             aria-pressed={!color}
             className={cn(
-              'flex h-7 w-7 items-center justify-center rounded-full border border-border-strong text-content-muted ring-offset-2 transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong',
+              'flex h-7 w-7 items-center justify-center rounded-full border border-border-strong text-content-muted ring-offset-2 transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-emerald-500',
               isDarkMode
                 ? 'ring-offset-surface-chat'
                 : 'ring-offset-surface-sidebar',
@@ -230,7 +230,7 @@ export function ProjectSettingsContent({
             isDarkMode
               ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
               : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-            'focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
+            'focus:outline-none focus:ring-2 focus:ring-emerald-500',
           )}
         />
       </div>

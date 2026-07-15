@@ -279,7 +279,7 @@ export function PromptLibraryModal({
               onInteractOutside={(e) => {
                 if (editor) e.preventDefault()
               }}
-              className="relative z-10 flex h-[85dvh] w-[92vw] max-w-5xl flex-col rounded-site-lg border border-border-subtle bg-surface-sidebar shadow-xl focus:outline-none"
+              className="relative z-10 flex h-[85dvh] w-[92vw] max-w-5xl flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl focus:outline-none"
               style={{
                 maxWidth: `min(1024px, calc(92vw - ${leftOffset + rightOffset}px))`,
               }}

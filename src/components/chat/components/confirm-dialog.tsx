@@ -37,7 +37,7 @@ export function ConfirmDialog({
             e.stopPropagation()
             onCancel()
           }}
-          className="fixed left-1/2 top-1/2 z-[60] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-site-lg border border-border-subtle bg-surface-sidebar p-5 shadow-xl focus:outline-none"
+          className="fixed left-1/2 top-1/2 z-[60] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border-subtle bg-surface-sidebar p-5 shadow-xl focus:outline-none"
         >
           <AlertDialogPrimitive.Title className="text-base font-semibold text-content-primary">
             {title}

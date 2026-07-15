@@ -8,7 +8,6 @@ import {
 import {
   SETTINGS_CODE_EXECUTION_ENABLED,
   SETTINGS_GENUI_ENABLED,
-  SETTINGS_HAS_SEEN_ONBOARDING,
   SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_WEB_SEARCH_ENABLED,
@@ -26,13 +25,12 @@ import {
   type RateLimitInfo,
 } from '@/services/inference/tinfoil-client'
 import { generateTitle } from '@/services/inference/title'
-import { useAuth, useUser } from '@clerk/nextjs'
+import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
 import {
   ArrowDownIcon,
   ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
-import Link from 'next/link'
 import { BiSolidLock, BiSolidLockOpen } from 'react-icons/bi'
 import { GoSidebarCollapse } from 'react-icons/go'
 import { IoShareOutline } from 'react-icons/io5'
@@ -46,6 +44,7 @@ import {
 import { StreamErrorBanner } from '@/components/chat/stream-error-banner'
 import { classifyCloudKeySetupError } from '@/components/modals/cloud-sync-setup-mode'
 import {
+  ProjectModeBanner,
   ProjectSidebar,
   useProject,
   useProjectSystemPrompt,
@@ -132,13 +131,20 @@ import type { Attachment, Chat, DocumentPage } from './types'
 // hoisted so they can be pre-warmed (see preloadCloudSyncModals) before
 // the user clicks, keeping the chunk fetch off the click critical path.
 const loadCloudSyncSetupModal = () => import('../modals/cloud-sync-setup-modal')
+const loadPasskeySetupPromptModal = () =>
+  import('../modals/passkey-setup-prompt-modal')
 
 function preloadCloudSyncModals(): void {
   void loadCloudSyncSetupModal()
+  void loadPasskeySetupPromptModal()
 }
 
 const CloudSyncSetupModal = dynamic(
   () => loadCloudSyncSetupModal().then((m) => m.CloudSyncSetupModal),
+  { ssr: false },
+)
+const PasskeySetupPromptModal = dynamic(
+  () => loadPasskeySetupPromptModal().then((m) => m.PasskeySetupPromptModal),
   { ssr: false },
 )
 const AddToProjectContextModal = dynamic(
@@ -166,8 +172,8 @@ const PromptLibraryModalLazy = dynamic(
   { ssr: false },
 )
 
-const OnboardingView = dynamic(
-  () => import('../onboarding/onboarding-view').then((m) => m.OnboardingView),
+const OnboardingModal = dynamic(
+  () => import('../onboarding/onboarding-modal').then((m) => m.OnboardingModal),
   { ssr: false },
 )
 
@@ -251,16 +257,24 @@ export function ChatInterface({
 
   // Onboarding state (must be defined before usePasskeyBackup so we can gate it)
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const isExistingUser =
+    !!user?.unsafeMetadata?.has_seen_passkey_intro ||
+    (typeof window !== 'undefined' &&
+      !!localStorage.getItem(SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO))
+  const onboardingNeeded =
+    isSignedIn &&
+    !!user &&
+    !user.unsafeMetadata?.has_completed_onboarding &&
+    !isExistingUser
 
-  // Signed-in users never see the first-open onboarding: anyone missing the
-  // account flag is auto-tagged. This grandfathers accounts that predate the
-  // flow and carries the localStorage flag over when an anonymous visitor who
-  // already saw it signs in. The flag is also mirrored to localStorage so it
-  // survives signing out on this device.
+  // Backfill: ensure existing users also get the onboarding flag set
   useEffect(() => {
-    if (!isSignedIn || !user) return
-    localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
-    if (!user.unsafeMetadata?.has_completed_onboarding) {
+    if (
+      isSignedIn &&
+      user &&
+      isExistingUser &&
+      !user.unsafeMetadata?.has_completed_onboarding
+    ) {
       user
         .update({
           unsafeMetadata: {
@@ -270,7 +284,7 @@ export function ChatInterface({
         })
         .catch(() => {})
     }
-  }, [isSignedIn, user])
+  }, [isSignedIn, user, isExistingUser])
 
   // iOS Safari keyboard fix: keep a CSS var in sync with the *visual* viewport height.
   // Without this, fixed full-screen layouts can leave an untouchable "dead zone"
@@ -385,19 +399,13 @@ export function ChatInterface({
     setLogoAnimDone(true)
   }, [])
 
-  // Show the first-open onboarding to anonymous visitors who haven't seen
-  // it. Browsers with prior activity (web search intro flag) are treated as
-  // existing users and backfilled instead of being shown the flow.
+  // Show onboarding once models are loaded for new users
   useEffect(() => {
     if (suppressIntroModals) return
-    if (!isAuthLoaded || isSignedIn) return
-    if (localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)) return
-    if (localStorage.getItem(SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO)) {
-      localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
-      return
+    if (onboardingNeeded && models.length > 0) {
+      setShowOnboarding(true)
     }
-    setShowOnboarding(true)
-  }, [isAuthLoaded, isSignedIn, suppressIntroModals])
+  }, [onboardingNeeded, models.length, suppressIntroModals])
 
   // State for right sidebar
   const [isVerifierSidebarOpen, setIsVerifierSidebarOpen] = useState(false)
@@ -413,7 +421,6 @@ export function ChatInterface({
 
   // State for cloud sync setup modal
   const [showCloudSyncSetupModal, setShowCloudSyncSetupModal] = useState(false)
-  const [isCloudSyncRoutePending, setIsCloudSyncRoutePending] = useState(false)
   // Tracks the in-flight first-time passkey setup call so the modal can
   // disable its buttons while the native dialog is showing.
   const [isFirstTimePasskeySetupBusy, setIsFirstTimePasskeySetupBusy] =
@@ -421,18 +428,16 @@ export function ChatInterface({
 
   useEffect(() => {
     if (suppressIntroModals) return
-    // Passkey-based recovery auto-opens because remote chats need unlocking.
-    // Fresh passkey setup also starts here so the cloud-sync intro is shown
-    // before the dedicated passkey prompt. Manual recovery remains available
-    // from the sidebar warning.
-    if (passkeyRecoveryNeeded || passkeyFirstTimePromptAvailable) {
+    // Passkey-based recovery always auto-opens: a remote passkey credential
+    // means the user *has* chats backed up and can't see them on this device
+    // until they unlock, regardless of whether the local sync toggle is on.
+    // The manual-recovery and "chats not being backed up" cases are surfaced
+    // through the sidebar warning instead of an auto-popup, so the user can
+    // act on them at their own pace.
+    if (passkeyRecoveryNeeded) {
       setShowCloudSyncSetupModal(true)
     }
-  }, [
-    passkeyFirstTimePromptAvailable,
-    passkeyRecoveryNeeded,
-    suppressIntroModals,
-  ])
+  }, [passkeyRecoveryNeeded, suppressIntroModals])
 
   // State for add-to-project-context modal
   const [showAddToProjectModal, setShowAddToProjectModal] = useState(false)
@@ -742,9 +747,6 @@ export function ChatInterface({
     initialChatDecryptionFailed,
     clearInitialChatDecryptionFailed,
     localChatNotFound,
-    initialChatLoadFailed,
-    cloudChatNotFound,
-    retryInitialChatLoad,
   } = useChatState({
     systemPrompt: finalSystemPrompt,
     rules: processedRules,
@@ -866,11 +868,8 @@ export function ChatInterface({
   useEffect(() => {
     // Don't update URL during initial load
     if (isInitialLoad) return
-    // Don't clear URL when showing error screens
+    // Don't clear URL when showing decryption failed screen
     if (initialChatDecryptionFailed) return
-    if (initialChatLoadFailed) return
-    if (cloudChatNotFound) return
-    if (localChatNotFound) return
 
     // Track when we've successfully loaded the initial chat from URL
     if (initialChatId && currentChat.id === initialChatId) {
@@ -945,9 +944,6 @@ export function ChatInterface({
     activeProject?.id,
     isInitialLoad,
     initialChatDecryptionFailed,
-    initialChatLoadFailed,
-    cloudChatNotFound,
-    localChatNotFound,
     isSignedIn,
     isLocalChatUrl,
     initialChatId,
@@ -1516,9 +1512,10 @@ export function ChatInterface({
   // check if the backend already holds a passkey credential — if so, route
   // them back to passkey recovery even if they previously dismissed it, so
   // clicking "Enable Cloud Sync" is always a valid re-entry path. Next
-  // show the cloud-sync intro for brand-new signed-in users, then let its
-  // Continue action route to passkey or manual setup. Remote data bypasses
-  // the intro and routes directly to recovery.
+  // prefer the friendly "Back Up Your Chats" prompt for brand-new signed-in
+  // users so they don't get dropped into the raw key-generator UI. Fall
+  // back to the manual cloud-sync setup modal otherwise (existing key,
+  // remote data without a passkey, or PRF unsupported).
   const handleOpenCloudSyncSetup = useCallback(async () => {
     if (!encryptionService.getKey()) {
       // Open the modal immediately for instant feedback. It renders
@@ -1528,13 +1525,13 @@ export function ChatInterface({
       // resulting state changes (e.g. a manual-recovery warning getting
       // upgraded to a passkey-recovery flow).
       setShowCloudSyncSetupModal(true)
-      setIsCloudSyncRoutePending(true)
-      try {
-        const recovered = await showPasskeyRecoveryPrompt()
-        if (recovered) return
-        await showFirstTimePasskeyPrompt()
-      } finally {
-        setIsCloudSyncRoutePending(false)
+      const recovered = await showPasskeyRecoveryPrompt()
+      if (recovered) return
+      const routed = await showFirstTimePasskeyPrompt()
+      if (routed) {
+        // A brand-new user with no remote data is better served by the
+        // dedicated first-time prompt; hand off to it.
+        setShowCloudSyncSetupModal(false)
       }
       return
     }
@@ -2556,12 +2553,11 @@ export function ChatInterface({
           <p className="mb-6 text-content-secondary">
             You need to sign in to access this chat.
           </p>
-          <Link
-            href="/signin"
-            className="inline-block rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
-          >
-            Sign in
-          </Link>
+          <SignInButton mode="modal">
+            <button className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90">
+              Sign in
+            </button>
+          </SignInButton>
         </div>
       </div>
     )
@@ -2634,93 +2630,6 @@ export function ChatInterface({
           >
             Start new chat
           </button>
-        </div>
-      </div>
-    )
-  }
-
-  // Cloud chat referenced by the URL does not exist on the server.
-  if (cloudChatNotFound) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
-        <div className="max-w-md text-center">
-          <div className="mb-6 flex justify-center">
-            <div className="rounded-full bg-surface-chat p-4">
-              <ChatBubbleLeftRightIcon className="h-8 w-8 text-content-secondary" />
-            </div>
-          </div>
-          <h2 className="mb-3 text-xl font-semibold text-content-primary">
-            Chat not found
-          </h2>
-          <p className="mb-6 text-content-secondary">
-            This chat may have been deleted or is no longer available.
-          </p>
-          <button
-            onClick={() => {
-              clearUrl()
-              window.location.href = '/'
-            }}
-            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
-          >
-            Start new chat
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  // While the chat referenced by the URL is still being fetched, show a
-  // loading screen instead of flashing the welcome screen before the chat
-  // appears. The ref keeps later in-app chat switches from re-triggering it.
-  if (
-    initialChatId &&
-    !initialUrlChatLoadedRef.current &&
-    currentChat.id !== initialChatId &&
-    !initialChatLoadFailed
-  ) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-surface-chat-background px-4 font-aeonik">
-        <PiSpinner className="h-8 w-8 animate-spin text-content-secondary" />
-        <p className="text-content-secondary">Loading chat...</p>
-      </div>
-    )
-  }
-
-  // Cloud chat failed to load due to a transient error (network, key
-  // not ready, etc.). Offer a retry instead of silently landing on a
-  // blank new chat and losing the URL.
-  if (initialChatLoadFailed) {
-    return (
-      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
-        <div className="max-w-md text-center">
-          <div className="mb-6 flex justify-center">
-            <div className="rounded-full bg-surface-chat p-4">
-              <TfTinSad className="h-8 w-8 text-content-secondary" />
-            </div>
-          </div>
-          <h2 className="mb-3 text-xl font-semibold text-content-primary">
-            Couldn&apos;t load chat
-          </h2>
-          <p className="mb-6 text-content-secondary">
-            A network error occurred while loading this chat. Please try again.
-          </p>
-          <div className="flex justify-center gap-3">
-            <button
-              onClick={retryInitialChatLoad}
-              className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
-            >
-              Try again
-            </button>
-            <button
-              onClick={() => {
-                clearUrl()
-                window.location.href = '/'
-              }}
-              className="rounded-lg border border-border-subtle px-6 py-2.5 text-content-primary transition-colors hover:bg-surface-chat"
-            >
-              Start new chat
-            </button>
-          </div>
         </div>
       </div>
     )
@@ -2918,7 +2827,7 @@ export function ChatInterface({
                   className={cn(
                     'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
                     isTemporaryMode
-                      ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
+                      ? 'border-orange-500/40 bg-orange-500/15 text-orange-500 hover:bg-orange-500/25'
                       : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                   )}
                 >
@@ -3095,6 +3004,8 @@ export function ChatInterface({
                 onCloudSyncSetupClick={
                   isSignedIn ? handleOpenCloudSyncSetup : undefined
                 }
+                onSetupPasskey={setupPasskey}
+                passkeySetupAvailable={passkeySetupAvailable}
                 onAddPasskeyToThisDevice={addPasskeyToThisDevice}
                 passkeyAddDeviceAvailable={passkeyAddDeviceAvailable}
                 backupWarningVisible={
@@ -3282,6 +3193,15 @@ export function ChatInterface({
                 : '',
             )}
           >
+            {/* Project Mode Banner */}
+            {(isProjectMode && activeProject) || loadingProject ? (
+              <ProjectModeBanner
+                projectName={activeProject?.name || loadingProject?.name || ''}
+                isDarkMode={isDarkMode}
+                color={activeProject?.color}
+              />
+            ) : null}
+
             {/* Rate Limit Banner (desktop) — on mobile this renders as a
                 floating pill above the chat input instead. */}
             {shouldShowRateLimitBanner(rateLimit) && (
@@ -3379,6 +3299,7 @@ export function ChatInterface({
                         ? handleCodeExecutionToggle
                         : undefined
                     }
+                    onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
                     isTemporaryMode={isTemporaryMode}
                     activePromptPreset={activePreset}
                     onOpenPromptLibrary={handleOpenPromptLibrary}
@@ -3425,6 +3346,15 @@ export function ChatInterface({
                       onSubmit={handleSubmit}
                       className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8"
                     >
+                      {!currentChat?.messages?.length && (
+                        <div className="mb-3 md:hidden">
+                          <PromptPresetSuggestions
+                            activePreset={activePreset}
+                            onSetActive={handleSetActivePreset}
+                            onOpenLibrary={handleOpenPromptLibrary}
+                          />
+                        </div>
+                      )}
                       {shouldShowRateLimitBanner(rateLimit) && (
                         <RateLimitBanner
                           rateLimit={rateLimit}
@@ -3466,17 +3396,6 @@ export function ChatInterface({
                         activePromptPreset={activePreset}
                         onOpenPromptLibrary={handleOpenPromptLibrary}
                         onClearPromptPreset={() => handleSetActivePreset(null)}
-                        mobileHeader={
-                          !currentChat?.messages?.length ? (
-                            <div className="mb-3 md:hidden">
-                              <PromptPresetSuggestions
-                                activePreset={activePreset}
-                                onSetActive={handleSetActivePreset}
-                                onOpenLibrary={handleOpenPromptLibrary}
-                              />
-                            </div>
-                          ) : undefined
-                        }
                         hasMessages={
                           currentChat?.messages &&
                           currentChat.messages.length > 0
@@ -3619,9 +3538,6 @@ export function ChatInterface({
           isOpen={showCloudSyncSetupModal}
           onClose={() => {
             setShowCloudSyncSetupModal(false)
-            if (passkeyFirstTimePromptAvailable) {
-              dismissFirstTimePasskeyPrompt()
-            }
             // If no key was set, turn off cloud sync
             if (!encryptionService.getKey()) {
               setCloudSyncEnabled(false)
@@ -3630,6 +3546,7 @@ export function ChatInterface({
           onSetupComplete={async (key: string, mode) => {
             try {
               await handleKeyChanged(key, { mode })
+              setShowCloudSyncSetupModal(false)
               if (mode === 'explicitStartFresh') {
                 void backupStartFreshKeyWithPasskey()
               }
@@ -3639,6 +3556,7 @@ export function ChatInterface({
             }
           }}
           isDarkMode={isDarkMode}
+          initialCloudSyncEnabled={true}
           prfSupported={
             passkeyActive ||
             passkeyRecoveryNeeded ||
@@ -3648,20 +3566,6 @@ export function ChatInterface({
           passkeyRecoveryNeeded={passkeyRecoveryNeeded}
           manualRecoveryNeeded={manualRecoveryNeeded}
           passkeyRecoveryFailure={passkeyRecoveryFailure}
-          isContinuePending={isCloudSyncRoutePending}
-          onSetupWithPasskey={
-            passkeyFirstTimePromptAvailable
-              ? async () => {
-                  setIsFirstTimePasskeySetupBusy(true)
-                  try {
-                    return await setupFirstTimePasskey()
-                  } finally {
-                    setIsFirstTimePasskeySetupBusy(false)
-                  }
-                }
-              : undefined
-          }
-          isPasskeySetupBusy={isFirstTimePasskeySetupBusy}
           onSkipRecovery={() => {
             skipPasskeyRecovery()
             setShowCloudSyncSetupModal(false)
@@ -3674,17 +3578,40 @@ export function ChatInterface({
             } catch {
               return false
             }
+            setShowCloudSyncSetupModal(false)
             return true
           }}
           onSetupNewKey={async () => {
             const key = await setupNewKeySplit()
-            if (!key) return null
+            if (!key) return false
             try {
               await handleKeyChanged(key, { mode: 'explicitStartFresh' })
             } catch {
-              return null
+              return false
             }
-            return key
+            setShowCloudSyncSetupModal(false)
+            return true
+          }}
+        />
+      )}
+
+      {/* First-time passkey setup confirmation - shown to brand-new users so
+          we never invoke the native WebAuthn dialog without an explicit click. */}
+      {passkeyFirstTimePromptAvailable && !suppressIntroModals && (
+        <PasskeySetupPromptModal
+          isOpen={passkeyFirstTimePromptAvailable}
+          isBusy={isFirstTimePasskeySetupBusy}
+          onEnable={async () => {
+            setIsFirstTimePasskeySetupBusy(true)
+            try {
+              await setupFirstTimePasskey()
+            } finally {
+              setIsFirstTimePasskeySetupBusy(false)
+            }
+          }}
+          onDismiss={() => {
+            dismissFirstTimePasskeyPrompt()
+            setCloudSyncEnabled(false)
           }}
         />
       )}
@@ -3706,11 +3633,15 @@ export function ChatInterface({
         isDarkMode={isDarkMode}
       />
 
-      <AnimatePresence>
-        {showOnboarding && (
-          <OnboardingView onComplete={() => setShowOnboarding(false)} />
-        )}
-      </AnimatePresence>
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onComplete={(selectedModel) => {
+          if (selectedModel) handleModelSelect(selectedModel)
+          setShowOnboarding(false)
+        }}
+        models={models}
+        isDarkMode={isDarkMode}
+      />
 
       <SubscribePromptModal
         isOpen={isSubscribePromptOpen}

@@ -4,48 +4,32 @@ import {
   type CloudKeySetupMode,
   type CloudKeySetupResult,
 } from '@/components/modals/cloud-sync-setup-mode'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
-import { Modal } from '@/components/ui/modal'
-import { PaperGrainTexture } from '@/components/ui/paper-grain-texture'
-import { cn } from '@/components/ui/utils'
 import { SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL } from '@/constants/storage-keys'
 import { useToast } from '@/hooks/use-toast'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { PrfNotSupportedError } from '@/services/passkey'
+import { TINFOIL_COLORS } from '@/theme/colors'
 import { setCloudSyncEnabled as persistCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
+import { Dialog, Transition } from '@headlessui/react'
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
   CheckIcon,
+  ChevronDownIcon,
   DocumentDuplicateIcon,
+  ExclamationTriangleIcon,
+  KeyIcon,
+  LockClosedIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline'
-import {
-  TfCloud,
-  TfFingerprint,
-  TfKey,
-  TfLock,
-  TfRefresh,
-  TfShieldCheck,
-  TfTinSad,
-} from '@tinfoilsh/tinfoil-icons'
-import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState } from 'react'
-
-import { PiSpinner } from 'react-icons/pi'
-
-const STEP_TRANSITION_DURATION_S = 0.2
-const STEP_TRANSITION_OFFSET_PX = 16
-const BUTTON_COLUMN_CLASS_NAME =
-  'mx-auto grid w-full max-w-full grid-cols-1 gap-6 sm:grid-cols-2'
-const BUTTON_STACK_CLASS_NAME =
-  'mx-auto grid w-full max-w-full grid-cols-1 gap-2'
-const BUTTON_ROW_CLASS_NAME =
-  'mx-auto grid w-fit max-w-full grid-flow-col auto-cols-fr gap-2'
-
-const ILLUSTRATION_ICON_CLASS_NAME =
-  'mx-auto h-20 w-20 text-content-secondary opacity-70'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { AiOutlineCloudSync } from 'react-icons/ai'
+import { GoPasskeyFill } from 'react-icons/go'
+import { IoMdCheckmarkCircleOutline } from 'react-icons/io'
+import { IoQrCodeOutline } from 'react-icons/io5'
+import { MdOutlineSettingsBackupRestore } from 'react-icons/md'
+import QRCode from 'react-qr-code'
 
 interface CloudSyncSetupModalBaseProps {
   isOpen: boolean
@@ -55,30 +39,35 @@ interface CloudSyncSetupModalBaseProps {
     mode: CloudKeySetupMode,
   ) => Promise<CloudKeySetupResult>
   isDarkMode: boolean
+  initialCloudSyncEnabled?: boolean
   prfSupported?: boolean
   manualRecoveryNeeded?: boolean
   passkeyRecoveryFailure?: 'auth_failed' | 'stale_backup' | null
+  /**
+   * When true, the modal skips the passkey-based flow entirely and opens
+   * directly on the manual "generate or restore key" step. Used when the
+   * user's passkey provider doesn't support PRF and they opt into manual
+   * backup from the sidebar backup warning.
+   */
+  forceManualFlow?: boolean
   /**
    * Called when the user clicks "Skip for Now" on the passkey-recovery step.
    * Lets the caller persist a "don't auto-reopen" flag. When omitted, the
    * button falls back to plain {@link onClose}.
    */
   onSkipRecovery?: () => void
-  onSetupWithPasskey?: () => Promise<boolean>
-  isContinuePending?: boolean
-  isPasskeySetupBusy?: boolean
 }
 type CloudSyncSetupModalProps = CloudSyncSetupModalBaseProps &
   (
     | {
         passkeyRecoveryNeeded: true
         onRecoverWithPasskey: () => Promise<boolean>
-        onSetupNewKey?: () => Promise<string | null>
+        onSetupNewKey?: () => Promise<boolean>
       }
     | {
         passkeyRecoveryNeeded?: false
         onRecoverWithPasskey?: () => Promise<boolean>
-        onSetupNewKey?: () => Promise<string | null>
+        onSetupNewKey?: () => Promise<boolean>
       }
   )
 
@@ -87,33 +76,37 @@ type SetupStep =
   | 'generate-or-restore'
   | 'key-display'
   | 'restore-key'
-  | 'restore-success'
   | 'passkey-recovery'
   | 'confirm-start-fresh'
-  | 'setup-failed'
 
 export function CloudSyncSetupModal({
   isOpen,
   onClose,
   onSetupComplete,
   isDarkMode,
+  initialCloudSyncEnabled = false,
   passkeyRecoveryNeeded = false,
   prfSupported = false,
   manualRecoveryNeeded = false,
   passkeyRecoveryFailure = null,
+  forceManualFlow = false,
   onSkipRecovery,
-  onSetupWithPasskey,
-  isContinuePending = false,
-  isPasskeySetupBusy = false,
   onRecoverWithPasskey,
   onSetupNewKey,
 }: CloudSyncSetupModalProps) {
-  const initialStep: SetupStep = passkeyRecoveryNeeded
-    ? 'passkey-recovery'
-    : manualRecoveryNeeded
-      ? 'generate-or-restore'
-      : 'intro'
+  const initialStep: SetupStep = forceManualFlow
+    ? 'generate-or-restore'
+    : passkeyRecoveryNeeded
+      ? 'passkey-recovery'
+      : manualRecoveryNeeded
+        ? 'generate-or-restore'
+        : prfSupported
+          ? 'generate-or-restore'
+          : 'intro'
   const [currentStep, setCurrentStep] = useState<SetupStep>(initialStep)
+  const [cloudSyncEnabled, setCloudSyncEnabled] = useState(
+    initialCloudSyncEnabled,
+  )
   const [generatedKey, setGeneratedKey] = useState<string | null>(null)
   const [generatedKeyMode, setGeneratedKeyMode] =
     useState<CloudKeySetupMode>('recoverExisting')
@@ -123,9 +116,8 @@ export function CloudSyncSetupModal({
   const [recoveryFailed, setRecoveryFailed] = useState(false)
   const [isCopied, setIsCopied] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  const [isQRCodeExpanded, setIsQRCodeExpanded] = useState(false)
   const [isStartingFresh, setIsStartingFresh] = useState(false)
-  const [keyAlreadyActivated, setKeyAlreadyActivated] = useState(false)
-  const [setupError, setSetupError] = useState('')
   const [startFreshOrigin, setStartFreshOrigin] = useState<
     'passkey-recovery' | 'generate-or-restore'
   >('passkey-recovery')
@@ -141,39 +133,40 @@ export function CloudSyncSetupModal({
     }
   }, [])
 
+  // The modal can be opened before the caller's background passkey
+  // probe resolves (so the popup appears instantly instead of waiting
+  // on a slow enclave round-trip). When the probe later confirms a
+  // passkey recovery is possible, advance into the recovery step — but
+  // only from the neutral auto-routed entry steps, so we never yank the
+  // user out of a step they navigated to deliberately.
+  useEffect(() => {
+    if (!passkeyRecoveryNeeded) return
+    setCurrentStep((step) =>
+      step === 'generate-or-restore' || step === 'intro'
+        ? 'passkey-recovery'
+        : step,
+    )
+  }, [passkeyRecoveryNeeded])
+
+  const handleEnableToggle = (enabled: boolean) => {
+    setCloudSyncEnabled(enabled)
+    if (!enabled) {
+      persistCloudSyncEnabled(false)
+      onClose()
+    }
+  }
+
   const handleMaybeLater = () => {
     persistCloudSyncEnabled(false)
     localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
     onClose()
   }
 
-  const handleContinue = async () => {
-    if (onSetupWithPasskey) {
-      try {
-        const success = await onSetupWithPasskey()
-        if (success) {
-          setCurrentStep('restore-success')
-        } else {
-          setSetupError(
-            'Could not create passkey backup. You can try again later.',
-          )
-          setCurrentStep('setup-failed')
-        }
-      } catch (error) {
-        logError('Could not start passkey setup', error, {
-          component: 'CloudSyncSetupModal',
-          action: 'handleContinue',
-        })
-        setSetupError(
-          'Could not create passkey backup. You can try again later.',
-        )
-        setCurrentStep('setup-failed')
-      }
-      return
+  const handleContinue = () => {
+    if (!cloudSyncEnabled) {
+      setCloudSyncEnabled(true)
     }
-    setCurrentStep(
-      passkeyRecoveryNeeded ? 'passkey-recovery' : 'generate-or-restore',
-    )
+    setCurrentStep('generate-or-restore')
   }
 
   const handleGenerateKey = async () => {
@@ -206,8 +199,11 @@ export function CloudSyncSetupModal({
         component: 'CloudSyncSetupModal',
         action: 'handleGenerateKey',
       })
-      setSetupError('Failed to generate encryption key')
-      setCurrentStep('setup-failed')
+      toast({
+        title: 'Error',
+        description: 'Failed to generate encryption key',
+        variant: 'destructive',
+      })
     } finally {
       setIsProcessing(false)
     }
@@ -226,36 +222,50 @@ export function CloudSyncSetupModal({
       const result = await onSetupComplete(newKey, keySetupMode)
       if (result.ok) {
         persistCloudSyncEnabled(true)
-        setKeyAlreadyActivated(true)
-        setCurrentStep('key-display')
+        onClose()
         return
       }
       // Fall through to the manual key-display step so the user can
       // save the key and retry via Done, but tell them why the
       // automatic activation did not complete.
-      const { description } = describeCloudKeySetupFailure(result.reason)
-      setSetupError(description)
-      setCurrentStep('setup-failed')
-      return
+      const { title, description } = describeCloudKeySetupFailure(result.reason)
+      toast({
+        title,
+        description,
+        variant: 'destructive',
+      })
     }
 
     setCurrentStep('key-display')
   }
 
   const handleRestoreKey = async () => {
-    if (!inputKey.trim()) return
+    if (!inputKey.trim()) {
+      toast({
+        title: 'Invalid key',
+        description: 'Please enter a valid encryption key',
+        variant: 'destructive',
+      })
+      return
+    }
 
     setIsProcessing(true)
     try {
       const result = await onSetupComplete(inputKey, 'recoverExisting')
 
       if (!result.ok) {
-        const { description } = describeCloudKeySetupFailure(result.reason)
-        setSetupError(description)
-        setCurrentStep('setup-failed')
+        const { title, description } = describeCloudKeySetupFailure(
+          result.reason,
+        )
+        toast({
+          title,
+          description,
+          variant: 'destructive',
+        })
         return
       }
 
+      setCloudSyncEnabled(true)
       persistCloudSyncEnabled(true)
       localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
 
@@ -264,14 +274,22 @@ export function CloudSyncSetupModal({
         action: 'handleRestoreKey',
       })
 
-      setCurrentStep('restore-success')
+      toast({
+        title: 'Success',
+        description: 'Encryption key restored successfully',
+      })
+
+      onClose()
     } catch (error) {
       logError('Failed to restore encryption key', error, {
         component: 'CloudSyncSetupModal',
         action: 'handleRestoreKey',
       })
-      setSetupError('The encryption key you entered is invalid')
-      setCurrentStep('setup-failed')
+      toast({
+        title: 'Invalid key',
+        description: 'The encryption key you entered is invalid',
+        variant: 'destructive',
+      })
     } finally {
       setIsProcessing(false)
     }
@@ -405,20 +423,18 @@ ${generatedKey.replace('key_', '')}
   const handleComplete = () => {
     if (!generatedKey) return
 
-    if (keyAlreadyActivated) {
-      localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
-      persistCloudSyncEnabled(true)
-      onClose()
-      return
-    }
-
     setIsProcessing(true)
     void onSetupComplete(generatedKey, generatedKeyMode)
       .then((result) => {
         if (!result.ok) {
-          const { description } = describeCloudKeySetupFailure(result.reason)
-          setSetupError(description)
-          setCurrentStep('setup-failed')
+          const { title, description } = describeCloudKeySetupFailure(
+            result.reason,
+          )
+          toast({
+            title,
+            description,
+            variant: 'destructive',
+          })
           return
         }
 
@@ -427,12 +443,14 @@ ${generatedKey.replace('key_', '')}
         onClose()
       })
       .catch((error) => {
-        setSetupError(
-          error instanceof Error
-            ? error.message
-            : 'Failed to finish cloud sync setup',
-        )
-        setCurrentStep('setup-failed')
+        toast({
+          title: 'Setup failed',
+          description:
+            error instanceof Error
+              ? error.message
+              : 'Failed to finish cloud sync setup',
+          variant: 'destructive',
+        })
       })
       .finally(() => {
         setIsProcessing(false)
@@ -440,178 +458,157 @@ ${generatedKey.replace('key_', '')}
   }
 
   const renderIntroStep = () => (
-    <div className="flex h-full flex-col gap-6">
-      <TfCloud className={ILLUSTRATION_ICON_CLASS_NAME} />
-
-      <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
-          Encrypted Backups &amp; Sync
-        </h2>
-        <p className="text-balance text-center text-sm text-content-secondary">
-          Tinfoil offers seamless end-to-end encrypted backups and sync across
-          devices.
-        </p>
-      </div>
-
-      <div className="flex flex-1 items-center justify-center">
-        <div className="grid w-full max-w-xs grid-cols-1 gap-8">
-          <Card dashedLines texture className="relative z-10 space-y-1 p-4">
-            <TfLock className="mx-auto h-5 w-5 text-content-secondary" />
-            <p className="text-balance text-center text-sm font-medium text-content-primary">
-              End-to-End Encrypted
-            </p>
-            <p className="text-balance text-center text-xs text-content-muted">
-              All chats are encrypted with a key that lives on your device.
-            </p>
-          </Card>
-
-          <Card dashedLines texture className="relative z-10 space-y-1 p-4">
-            <TfKey className="mx-auto h-5 w-5 text-content-secondary" />
-            <p className="text-balance text-center text-sm font-medium text-content-primary">
-              You Control Your Key
-            </p>
-            <p className="text-balance text-center text-xs text-content-muted">
-              Only you have access to your encryption key.
-            </p>
-          </Card>
+    <div className="space-y-4">
+      <div className="flex items-center justify-center">
+        <div className="rounded-full bg-content-muted/20 p-3">
+          <AiOutlineCloudSync className="h-8 w-8 text-content-secondary" />
         </div>
       </div>
 
-      <div
-        className={`mx-auto mt-auto grid w-fit grid-cols-1 gap-2 sm:grid-cols-2`}
-      >
-        <Button
-          variant="landingOutline"
-          size="landing"
-          chevron
+      <h2 className="text-center text-xl font-bold">Cloud Sync</h2>
+
+      <div className="space-y-3">
+        <div className="flex items-start space-x-3">
+          <LockClosedIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-content-secondary" />
+          <div>
+            <p className="text-sm font-medium text-content-primary">
+              End-to-End Encrypted
+            </p>
+            <p className="text-xs text-content-muted">
+              All chats are encrypted before leaving your device
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-start space-x-3">
+          <KeyIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-content-secondary" />
+          <div>
+            <p className="text-sm font-medium text-content-primary">
+              You Control Your Key
+            </p>
+            <p className="text-xs text-content-muted">
+              Only you have access to your encryption key
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between rounded-lg border border-border-subtle bg-surface-chat p-3">
+        <div className="text-sm font-medium text-content-secondary">
+          Enable Cloud Sync
+        </div>
+        <label className="relative inline-flex cursor-pointer items-center">
+          <input
+            type="checkbox"
+            checked={cloudSyncEnabled}
+            onChange={(e) => handleEnableToggle(e.target.checked)}
+            className="peer sr-only"
+          />
+          <div className="peer h-6 w-11 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+        </label>
+      </div>
+
+      <div className="flex gap-2">
+        <button
           onClick={handleMaybeLater}
-          disabled={isContinuePending || isPasskeySetupBusy}
-          className="w-full min-w-[7rem]"
+          className="flex-1 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
         >
           Maybe later
-        </Button>
-        <Button
-          variant="solid"
-          size="landing"
-          chevron
+        </button>
+        <button
           onClick={handleContinue}
-          disabled={isContinuePending || isPasskeySetupBusy}
-          className="w-full min-w-[7rem]"
+          className="flex-1 rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
         >
-          {isPasskeySetupBusy ? 'Setting up...' : 'Continue'}
-        </Button>
+          Continue
+        </button>
       </div>
     </div>
   )
 
   const renderGenerateOrRestoreStep = () => (
-    <div className="flex h-full flex-col gap-5">
-      <TfKey className={ILLUSTRATION_ICON_CLASS_NAME} />
-
-      <div className="space-y-2">
-        <h2 className="text-balance text-center text-xl font-bold">
-          Encryption Key
-        </h2>
-        <p className="text-balance text-center text-sm leading-relaxed text-content-secondary">
-          {manualRecoveryNeeded
-            ? 'Restore your existing encryption key to unlock cloud data, or explicitly start fresh with a new key.'
-            : 'This device does not have a passkey. You can generate a new personal encryption key or restore an existing one from another device. Your chats will be encrypted and synced with this personal key.'}
-        </p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-center">
+        <div className="rounded-full bg-content-muted/20 p-3">
+          <KeyIcon className="h-8 w-8 text-content-secondary" />
+        </div>
       </div>
 
-      <div className={`mt-auto pt-4 ${BUTTON_COLUMN_CLASS_NAME}`}>
-        <div className="w-full space-y-3">
-          <p className="text-center text-sm font-medium text-content-primary">
-            Have an existing key?
-          </p>
-          <Button
-            variant="solid"
-            size="landing"
-            chevron
-            onClick={() => setCurrentStep('restore-key')}
-            disabled={isProcessing}
-            className="w-full"
-          >
-            Restore Encryption Key
-          </Button>
-        </div>
-        <div className="w-full space-y-3">
-          <p className="text-center text-sm font-medium text-content-primary">
-            {manualRecoveryNeeded ? 'Need a new key?' : 'First time set up?'}
-          </p>
-          <Button
-            variant="landingOutline"
-            size="landing"
-            chevron
-            onClick={handleGenerateKey}
-            disabled={isProcessing}
-            className="w-full"
-          >
-            {isProcessing && (
-              <PiSpinner
-                data-testid="generate-key-spinner"
-                aria-hidden
-                className="h-4 w-4 animate-spin"
-              />
-            )}
-            {isProcessing
-              ? 'Generating...'
-              : manualRecoveryNeeded
-                ? 'Start Fresh'
-                : 'Generate Encryption Key'}
-          </Button>
-        </div>
+      <h2 className="text-center text-xl font-bold">Encryption Key</h2>
+
+      <p className="text-sm text-content-secondary">
+        {manualRecoveryNeeded
+          ? 'Restore your existing encryption key to unlock cloud data, or explicitly start fresh with a new key.'
+          : 'Generate a new personal encryption key or restore an existing one. Your chats will be encrypted and synced with this personal key.'}
+      </p>
+
+      <button
+        onClick={() => setCurrentStep('restore-key')}
+        disabled={isProcessing}
+        className="w-full rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+      >
+        Restore Encryption Key
+      </button>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => setCurrentStep('intro')}
+          className="flex-1 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
+        >
+          Back
+        </button>
+        <button
+          onClick={handleGenerateKey}
+          disabled={isProcessing}
+          className="flex-1 rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-600"
+        >
+          {isProcessing
+            ? 'Generating...'
+            : manualRecoveryNeeded
+              ? 'Start Fresh'
+              : 'Generate Key'}
+        </button>
       </div>
     </div>
   )
 
   const renderKeyDisplayStep = () => (
-    <div className="flex h-full flex-col gap-8">
-      <TfShieldCheck className={ILLUSTRATION_ICON_CLASS_NAME} />
-
-      <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">Success!</h2>
-
-        <p className="text-balance text-center text-sm text-content-secondary">
-          {generatedKeyMode === 'explicitStartFresh'
-            ? 'Save this key securely. Using it will start a new encrypted cloud history on this device.'
-            : "Save this key securely. You'll need it to access your chats and projects on other devices."}
-        </p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-center">
+        <div className="rounded-full bg-content-muted/20 p-3">
+          <IoMdCheckmarkCircleOutline className="h-8 w-8 text-content-secondary" />
+        </div>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-4">
-        {generatedKey && (
-          <Card dashedLines texture className="w-full max-w-xs p-3">
-            <div className="max-h-24 overflow-y-auto">
-              <code className="break-all font-mono text-sm text-blue-400 drop-shadow-[0_0_6px_rgba(96,165,250,0.5)]">
-                {generatedKey}
-              </code>
-            </div>
-          </Card>
-        )}
+      <h2 className="text-center text-xl font-bold">Success!</h2>
 
-        {generatedKey && (
-          <div className="grid w-fit grid-cols-1 gap-2 sm:grid-cols-2">
-            <Button
-              variant="landingOutline"
-              size="landingSm"
-              chevron
+      <p className="text-center text-sm text-content-secondary">
+        {generatedKeyMode === 'explicitStartFresh'
+          ? 'Save this key securely. Using it will start a new encrypted cloud history on this device.'
+          : "Save this key securely. You'll need it to access your chats and projects on other devices."}
+      </p>
+
+      {generatedKey && (
+        <div className="rounded-lg border border-border-subtle bg-surface-chat p-3">
+          <div className="max-h-24 overflow-y-auto">
+            <code className="break-all font-mono text-sm text-blue-400 drop-shadow-[0_0_6px_rgba(96,165,250,0.5)]">
+              {generatedKey}
+            </code>
+          </div>
+          <div className="mt-2 flex gap-2">
+            <button
               onClick={downloadKeyAsPEM}
-              className="w-full min-w-[5rem]"
+              className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-card px-3 py-2 text-sm font-medium text-content-primary transition-all hover:bg-surface-chat/80"
               title="Download as PEM file"
             >
               <ArrowDownTrayIcon className="h-4 w-4" />
               Download
-            </Button>
-            <Button
-              variant="landingOutline"
-              size="landingSm"
-              chevron
+            </button>
+            <button
               onClick={handleCopyKey}
-              className={`w-full min-w-[5rem] ${
+              className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all ${
                 isCopied
-                  ? 'border-emerald-500 bg-emerald-500 text-white hover:border-emerald-600 hover:bg-emerald-600'
-                  : ''
+                  ? 'bg-emerald-500 text-white'
+                  : 'border border-border-subtle bg-surface-card text-content-primary hover:bg-surface-chat/80'
               }`}
               title="Copy to clipboard"
             >
@@ -626,36 +623,71 @@ ${generatedKey.replace('key_', '')}
                   Copy
                 </>
               )}
-            </Button>
+            </button>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      <Button
-        variant="solid"
-        size="landing"
-        chevron
+      {generatedKey && (
+        <div className="rounded-lg border border-border-subtle">
+          <button
+            onClick={() => setIsQRCodeExpanded(!isQRCodeExpanded)}
+            className="flex w-full items-center justify-between p-3 text-sm font-medium text-content-secondary transition-colors hover:bg-surface-chat/50"
+          >
+            <span className="flex items-center gap-2">
+              <IoQrCodeOutline className="h-4 w-4" />
+              Key QR Code
+            </span>
+            <ChevronDownIcon
+              className={`h-4 w-4 transition-transform ${
+                isQRCodeExpanded ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+          {isQRCodeExpanded && (
+            <div className="flex justify-center rounded-b-lg border-t border-border-subtle bg-surface-card p-3">
+              <QRCode
+                value={generatedKey}
+                size={160}
+                level="H"
+                bgColor={
+                  isDarkMode
+                    ? TINFOIL_COLORS.surface.cardDark
+                    : TINFOIL_COLORS.surface.cardLight
+                }
+                fgColor={
+                  isDarkMode
+                    ? TINFOIL_COLORS.utility.qrForegroundDark
+                    : TINFOIL_COLORS.utility.qrForegroundLight
+                }
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      <button
         onClick={handleComplete}
-        className="mx-auto mt-auto"
+        className="w-full rounded-lg bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
       >
-        Let&apos;s go!
-      </Button>
+        Done
+      </button>
     </div>
   )
 
   const renderRestoreKeyStep = () => (
-    <div className="flex h-full flex-col gap-8">
-      <TfRefresh className={ILLUSTRATION_ICON_CLASS_NAME} />
-
-      <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
-          Restore Encryption Key
-        </h2>
-
-        <p className="text-balance text-center text-sm text-content-secondary">
-          Enter or upload your personal encryption key.
-        </p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-center">
+        <div className="rounded-full bg-content-muted/20 p-3">
+          <MdOutlineSettingsBackupRestore className="h-8 w-8 text-content-secondary" />
+        </div>
       </div>
+
+      <h2 className="text-center text-xl font-bold">Restore Encryption Key</h2>
+
+      <p className="text-center text-sm text-content-secondary">
+        Enter or upload your personal encryption key.
+      </p>
 
       <form
         onSubmit={(e) => {
@@ -667,10 +699,10 @@ ${generatedKey.replace('key_', '')}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className="flex flex-1 flex-col items-center justify-center gap-2"
+        className="space-y-2"
         id="encryption-key-form"
       >
-        <div className="flex w-full max-w-xs gap-2">
+        <div className="flex gap-2">
           <input
             type="text"
             value={inputKey}
@@ -686,117 +718,48 @@ ${generatedKey.replace('key_', '')}
             onChange={handleFileSelect}
             className="hidden"
           />
-          <Button
-            variant="landingOutline"
-            size="icon"
+          <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="shrink-0"
+            className="rounded-lg border border-border-subtle bg-surface-chat p-2 text-content-primary transition-colors hover:bg-surface-chat/80"
             title="Upload PEM file"
           >
             <ArrowUpTrayIcon className="h-5 w-5" />
-          </Button>
+          </button>
         </div>
         {isDragging && (
           <p className="text-center text-sm text-blue-500">
             Drop your PEM file here
           </p>
         )}
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              setCurrentStep(
+                passkeyRecoveryNeeded
+                  ? 'passkey-recovery'
+                  : 'generate-or-restore',
+              )
+            }
+            className="flex-1 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
+          >
+            Back
+          </button>
+          <button
+            type="submit"
+            disabled={isProcessing || !inputKey.trim()}
+            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+              isProcessing || !inputKey.trim()
+                ? 'cursor-not-allowed bg-surface-chat text-content-muted'
+                : 'bg-blue-500 text-white hover:bg-blue-600'
+            }`}
+          >
+            {isProcessing ? 'Restoring...' : 'Restore Key'}
+          </button>
+        </div>
       </form>
-
-      <div className="mx-auto mt-auto grid w-fit grid-cols-1 gap-2 pt-4 sm:grid-cols-2">
-        <Button
-          variant="landingOutline"
-          size="landing"
-          chevron
-          back
-          type="button"
-          onClick={() =>
-            setCurrentStep(
-              passkeyRecoveryNeeded
-                ? 'passkey-recovery'
-                : 'generate-or-restore',
-            )
-          }
-          className="w-full min-w-[6rem]"
-        >
-          Back
-        </Button>
-        <Button
-          variant="solid"
-          size="landing"
-          chevron
-          type="submit"
-          disabled={isProcessing || !inputKey.trim()}
-          className="w-full min-w-[6rem]"
-          form="encryption-key-form"
-        >
-          {isProcessing ? 'Restoring...' : 'Restore Key'}
-        </Button>
-      </div>
-    </div>
-  )
-
-  const renderRestoreSuccessStep = () => (
-    <div className="flex h-full flex-col gap-8">
-      <TfShieldCheck className={ILLUSTRATION_ICON_CLASS_NAME} />
-
-      <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">Success!</h2>
-
-        <p className="text-balance text-center text-sm text-content-secondary">
-          Your encryption key was restored successfully. Your encrypted chats
-          are now synced to this device.
-        </p>
-      </div>
-
-      <Button
-        variant="solid"
-        size="landing"
-        chevron
-        onClick={onClose}
-        className="mx-auto mt-auto"
-      >
-        Let&apos;s go!
-      </Button>
-    </div>
-  )
-
-  const renderSetupFailedStep = () => (
-    <div className="flex h-full flex-col gap-8">
-      <TfTinSad className={ILLUSTRATION_ICON_CLASS_NAME} />
-
-      <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
-          Setup Failed
-        </h2>
-
-        <p className="text-balance text-center text-sm text-content-secondary">
-          {setupError}
-        </p>
-      </div>
-
-      <div className="mx-auto mt-auto grid w-fit grid-cols-1 gap-2 pt-4 sm:grid-cols-2">
-        <Button
-          variant="landingOutline"
-          size="landing"
-          chevron
-          back
-          onClick={() => setCurrentStep('generate-or-restore')}
-          className="w-full min-w-[6rem]"
-        >
-          Go Back
-        </Button>
-        <Button
-          variant="solid"
-          size="landing"
-          chevron
-          onClick={onClose}
-          className="w-full min-w-[6rem]"
-        >
-          Close
-        </Button>
-      </div>
     </div>
   )
 
@@ -807,7 +770,7 @@ ${generatedKey.replace('key_', '')}
     try {
       const success = await onRecoverWithPasskey()
       if (success) {
-        setCurrentStep('restore-success')
+        onClose()
       } else {
         setRecoveryFailed(true)
       }
@@ -826,31 +789,35 @@ ${generatedKey.replace('key_', '')}
     if (!onSetupNewKey) return
     setIsStartingFresh(true)
     try {
-      const key = await onSetupNewKey()
-      if (key) {
-        setGeneratedKey(key)
-        setGeneratedKeyMode('explicitStartFresh')
-        setKeyAlreadyActivated(true)
-        setCurrentStep('key-display')
+      const success = await onSetupNewKey()
+      if (success) {
+        onClose()
       } else {
-        setSetupError(
-          'Could not create a new encryption key. Please try again.',
-        )
-        setCurrentStep('setup-failed')
+        toast({
+          title: 'Setup failed',
+          description:
+            'Could not create a new encryption key. Please try again.',
+          variant: 'destructive',
+        })
       }
     } catch (error) {
       if (error instanceof PrfNotSupportedError) {
-        setSetupError(error.message)
-        setCurrentStep('setup-failed')
+        toast({
+          title: 'Passkey provider not supported',
+          description: error.message,
+          variant: 'destructive',
+        })
       } else {
         logError('Start fresh failed', error, {
           component: 'CloudSyncSetupModal',
           action: 'handleStartFresh',
         })
-        setSetupError(
-          'Could not create a new encryption key. Please try again.',
-        )
-        setCurrentStep('setup-failed')
+        toast({
+          title: 'Setup failed',
+          description:
+            'Could not create a new encryption key. Please try again.',
+          variant: 'destructive',
+        })
       }
     } finally {
       setIsStartingFresh(false)
@@ -858,93 +825,78 @@ ${generatedKey.replace('key_', '')}
   }
 
   const renderPasskeyRecoveryStep = () => (
-    <div className="flex h-full flex-col gap-8">
-      <TfLock className={ILLUSTRATION_ICON_CLASS_NAME} />
-
-      <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
-          Unlock Your Chats
-        </h2>
-
-        <p className="text-balance text-center text-sm text-content-secondary">
-          Your encrypted chats are stored in the cloud. Authenticate with your
-          passkey to recover your encryption key on this device.
-        </p>
-
-        {recoveryFailed && (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-            <p className="text-balance text-center text-xs text-amber-700 dark:text-amber-400">
-              {passkeyRecoveryFailure === 'stale_backup'
-                ? "This passkey is valid, but its backup key doesn't match your existing cloud data. Enter your backup key manually, or start fresh if you no longer need the old data."
-                : 'Passkey authentication failed. You can try again or enter your encryption key manually.'}
-            </p>
-          </div>
-        )}
+    <div className="space-y-4">
+      <div className="flex items-center justify-center">
+        <div className="rounded-full bg-content-muted/20 p-3">
+          <GoPasskeyFill className="h-8 w-8 text-content-secondary" />
+        </div>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-4">
-        <Button
-          variant="solid"
-          size="landing"
-          chevron
-          onClick={handlePasskeyRecovery}
-          disabled={isRecovering}
-          className="min-w-[11rem]"
+      <h2 className="text-center text-xl font-bold">Unlock Your Chats</h2>
+
+      <p className="text-sm text-content-secondary">
+        Your encrypted chats are stored in the cloud. Authenticate with your
+        passkey to recover your encryption key on this device.
+      </p>
+
+      {recoveryFailed && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+          <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
+          <p className="text-xs text-amber-700 dark:text-amber-400">
+            {passkeyRecoveryFailure === 'stale_backup'
+              ? "This passkey is valid, but its backup key doesn't match your existing cloud data. Enter your backup key manually, or start fresh if you no longer need the old data."
+              : 'Passkey authentication failed. You can try again or enter your encryption key manually.'}
+          </p>
+        </div>
+      )}
+
+      <button
+        onClick={handlePasskeyRecovery}
+        disabled={isRecovering}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <GoPasskeyFill className="h-4 w-4" />
+        {isRecovering ? 'Authenticating...' : 'Unlock with Passkey'}
+      </button>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-border-subtle" />
+        </div>
+        <div className="relative flex justify-center text-xs">
+          <span className="bg-surface-card px-2 text-content-muted">or</span>
+        </div>
+      </div>
+
+      <button
+        onClick={() => setCurrentStep('restore-key')}
+        disabled={isRecovering || isStartingFresh}
+        className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
+      >
+        <KeyIcon className="h-4 w-4" />
+        Enter Key Manually
+      </button>
+
+      {onSetupNewKey && (
+        <button
+          onClick={() => {
+            setStartFreshOrigin('passkey-recovery')
+            setCurrentStep('confirm-start-fresh')
+          }}
+          disabled={isRecovering || isStartingFresh}
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <TfFingerprint className="h-4 w-4" />
-          {isRecovering ? 'Authenticating...' : 'Unlock with Passkey'}
-        </Button>
+          Start Fresh
+        </button>
+      )}
 
-        <div className="relative my-2 w-full">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-border-subtle" />
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-surface-card px-2 text-content-muted">or</span>
-          </div>
-        </div>
-
-        <div className="grid w-fit grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            variant="landingOutline"
-            size="landing"
-            chevron
-            onClick={() => setCurrentStep('restore-key')}
-            disabled={isRecovering || isStartingFresh}
-            className="w-full"
-          >
-            <TfKey className="h-4 w-4" />
-            Enter Key Manually
-          </Button>
-
-          {onSetupNewKey && (
-            <Button
-              variant="landingOutline"
-              size="landing"
-              chevron
-              onClick={() => {
-                setStartFreshOrigin('passkey-recovery')
-                setCurrentStep('confirm-start-fresh')
-              }}
-              disabled={isRecovering || isStartingFresh}
-              className="w-full"
-            >
-              <TfRefresh className="h-4 w-4" />
-              Start Fresh
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <Button
-        variant="ghost"
-        size="landingSm"
+      <button
         onClick={onSkipRecovery ?? onClose}
         disabled={isRecovering || isStartingFresh}
-        className="self-center text-content-muted hover:bg-transparent hover:text-content-secondary"
+        className="w-full text-center text-sm text-content-muted transition-colors hover:text-content-secondary"
       >
         Skip for Now
-      </Button>
+      </button>
     </div>
   )
 
@@ -959,10 +911,12 @@ ${generatedKey.replace('key_', '')}
           component: 'CloudSyncSetupModal',
           action: 'handleConfirmStartFresh',
         })
-        setSetupError(
-          'Could not activate the new encryption key. Please try again.',
-        )
-        setCurrentStep('setup-failed')
+        toast({
+          title: 'Setup failed',
+          description:
+            'Could not activate the new encryption key. Please try again.',
+          variant: 'destructive',
+        })
       } finally {
         setIsStartingFresh(false)
       }
@@ -972,115 +926,97 @@ ${generatedKey.replace('key_', '')}
   }
 
   const renderConfirmStartFreshStep = () => (
-    <div className="flex h-full flex-col gap-8">
-      <TfTinSad className={ILLUSTRATION_ICON_CLASS_NAME} />
-
-      <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
-          You will lose your conversations
-        </h2>
-
-        <p className="text-balance text-center text-sm text-content-secondary">
-          Starting fresh will generate a new encryption key that is not
-          compatible with your existing one.
-        </p>
-      </div>
-
-      <div className="flex flex-1 items-center justify-center">
-        <div className="max-w-sm rounded-lg border border-red-500/30 bg-red-500/10 p-4">
-          <p className="text-balance text-center text-sm font-semibold text-red-700 dark:text-red-400">
-            Your existing encrypted cloud data will be deleted. All your
-            conversations and settings encrypted with the old key will be lost.
-          </p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-center">
+        <div className="rounded-full bg-amber-500/20 p-3">
+          <ExclamationTriangleIcon className="h-8 w-8 text-amber-500" />
         </div>
       </div>
 
-      <div className="mx-auto mt-auto grid w-fit grid-cols-1 gap-2 pt-4 sm:grid-cols-2">
-        <Button
-          variant="landingOutline"
-          size="landing"
-          chevron
-          back
-          onClick={() => setCurrentStep(startFreshOrigin)}
-          disabled={isStartingFresh}
-          className="w-full min-w-[7rem]"
-        >
-          Go Back
-        </Button>
+      <h2 className="text-center text-xl font-bold">Are you sure?</h2>
 
-        <Button
-          variant="solid"
-          size="landing"
-          chevron
-          onClick={handleConfirmStartFresh}
-          disabled={isStartingFresh}
-          className="w-full min-w-[7rem] border-red-600 bg-red-600 hover:border-red-700 hover:bg-red-700"
-        >
-          {isStartingFresh ? 'Creating...' : 'Yes, start fresh'}
-        </Button>
+      <div className="space-y-3 text-sm text-content-secondary">
+        <p>
+          Starting fresh will generate a{' '}
+          <strong className="text-content-primary">new encryption key</strong>{' '}
+          that is not compatible with your existing one.
+        </p>
+        <p className="font-semibold text-content-primary">
+          Your existing encrypted cloud data will be deleted, and chats
+          encrypted with the old key will not decrypt on this device.
+        </p>
       </div>
+
+      <button
+        onClick={handleConfirmStartFresh}
+        disabled={isStartingFresh}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {isStartingFresh ? 'Creating...' : 'Yes, start fresh'}
+      </button>
+
+      <button
+        onClick={() => setCurrentStep(startFreshOrigin)}
+        disabled={isStartingFresh}
+        className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
+      >
+        Go Back
+      </button>
     </div>
   )
 
-  const renderCurrentStep = () => {
-    switch (currentStep) {
-      case 'intro':
-        return renderIntroStep()
-      case 'generate-or-restore':
-        return renderGenerateOrRestoreStep()
-      case 'key-display':
-        return renderKeyDisplayStep()
-      case 'restore-key':
-        return renderRestoreKeyStep()
-      case 'restore-success':
-        return renderRestoreSuccessStep()
-      case 'setup-failed':
-        return renderSetupFailedStep()
-      case 'passkey-recovery':
-        return renderPasskeyRecoveryStep()
-      case 'confirm-start-fresh':
-        return renderConfirmStartFreshStep()
-    }
-  }
-
   return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      dismissible={false}
-      overlayClassName="bg-black/30 backdrop-blur-md"
-      className={cn(
-        'h-[calc(100dvh-2rem)] max-h-[40rem] max-w-xl p-4 pt-8 sm:p-10 sm:pt-16',
-        isDarkMode
-          ? 'border-border-subtle bg-surface-card'
-          : 'border-black/10 bg-[#F9F8F6]',
-      )}
-    >
-      {!isDarkMode && <PaperGrainTexture />}
+    <Transition appear show={isOpen} as={Fragment}>
+      <Dialog as="div" className="relative z-50" onClose={() => {}}>
+        <Transition.Child
+          as={Fragment}
+          enter="ease-out duration-300"
+          enterFrom="opacity-0"
+          enterTo="opacity-100"
+          leave="ease-in duration-200"
+          leaveFrom="opacity-100"
+          leaveTo="opacity-0"
+        >
+          <div className="fixed inset-0 bg-black/50" />
+        </Transition.Child>
 
-      <div className="relative z-10 h-full">
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={currentStep}
-            className="h-full overflow-y-auto"
-            initial={{
-              opacity: 0,
-              x: STEP_TRANSITION_OFFSET_PX,
-            }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{
-              opacity: 0,
-              x: -STEP_TRANSITION_OFFSET_PX,
-            }}
-            transition={{
-              duration: STEP_TRANSITION_DURATION_S,
-              ease: 'easeOut',
-            }}
-          >
-            {renderCurrentStep()}
-          </motion.div>
-        </AnimatePresence>
-      </div>
-    </Modal>
+        <div className="fixed inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center p-4 text-center">
+            <Transition.Child
+              as={Fragment}
+              enter="ease-out duration-300"
+              enterFrom="opacity-0 scale-95"
+              enterTo="opacity-100 scale-100"
+              leave="ease-in duration-200"
+              leaveFrom="opacity-100 scale-100"
+              leaveTo="opacity-0 scale-95"
+            >
+              <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-surface-card p-6 text-left align-middle shadow-xl transition-all">
+                {currentStep !== 'intro' &&
+                  currentStep !== 'passkey-recovery' &&
+                  currentStep !== 'confirm-start-fresh' && (
+                    <button
+                      onClick={onClose}
+                      className="absolute right-4 top-4 rounded-lg p-1 text-content-secondary transition-colors hover:bg-surface-chat"
+                    >
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
+                  )}
+
+                {currentStep === 'intro' && renderIntroStep()}
+                {currentStep === 'generate-or-restore' &&
+                  renderGenerateOrRestoreStep()}
+                {currentStep === 'key-display' && renderKeyDisplayStep()}
+                {currentStep === 'restore-key' && renderRestoreKeyStep()}
+                {currentStep === 'passkey-recovery' &&
+                  renderPasskeyRecoveryStep()}
+                {currentStep === 'confirm-start-fresh' &&
+                  renderConfirmStartFreshStep()}
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </div>
+      </Dialog>
+    </Transition>
   )
 }

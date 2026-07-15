@@ -987,7 +987,9 @@ export function ProjectSidebar({
                 'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
                 isLoading
                   ? 'cursor-default opacity-50'
-                  : 'text-content-secondary',
+                  : isDarkMode
+                    ? 'text-content-secondary hover:bg-surface-chat'
+                    : 'text-content-secondary hover:bg-white',
               )}
             >
               <span className="flex items-center gap-2">
@@ -1190,7 +1192,9 @@ export function ProjectSidebar({
                 'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
                 isLoading
                   ? 'cursor-default opacity-50'
-                  : 'text-content-secondary',
+                  : isDarkMode
+                    ? 'text-content-secondary hover:bg-surface-chat'
+                    : 'text-content-secondary hover:bg-white',
               )}
             >
               <span className="flex items-center gap-2">
