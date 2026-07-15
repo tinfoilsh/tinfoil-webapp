@@ -88,6 +88,8 @@ type ChatSidebarProps = {
   isPremium?: boolean
   onEncryptionKeyClick?: () => void
   onCloudSyncSetupClick?: () => void
+  onSetupPasskey?: () => Promise<boolean>
+  passkeySetupAvailable?: boolean
   onAddPasskeyToThisDevice?: () => Promise<boolean>
   passkeyAddDeviceAvailable?: boolean
   backupWarningVisible?: boolean
@@ -163,6 +165,8 @@ export function ChatSidebar({
   isPremium = true,
   onEncryptionKeyClick,
   onCloudSyncSetupClick,
+  onSetupPasskey,
+  passkeySetupAvailable,
   onAddPasskeyToThisDevice,
   passkeyAddDeviceAvailable,
   backupWarningVisible = false,
@@ -632,10 +636,28 @@ export function ChatSidebar({
     return chats.filter((chat) => (chat as any).isLocalOnly && !chat.projectId)
   }, [chats, activeTab, isSignedIn, cloudSyncEnabled, localOnlyModeEnabled])
 
+  // Prefer backing up the existing key with a passkey (PRF-capable devices
+  // must stay in the passkey-only flow); fall back to the manual cloud-sync
+  // setup modal only when passkey setup is unavailable or fails.
+  const trySetupPasskeyFirst = async (): Promise<boolean> => {
+    if (!passkeySetupAvailable || !onSetupPasskey) return false
+    try {
+      return await onSetupPasskey()
+    } catch (error) {
+      logError('Passkey setup from sidebar failed', error, {
+        component: 'ChatSidebar',
+        action: 'trySetupPasskeyFirst',
+      })
+      return false
+    }
+  }
+
   const handleCloudSyncToggle = async (enabled: boolean) => {
     if (enabled) {
       // Check if encryption key exists
       if (!encryptionService.getKey()) {
+        if (await trySetupPasskeyFirst()) return
+
         // Turn on the toggle visually (but don't persist yet)
         setCloudSyncEnabled(true)
 
@@ -1226,7 +1248,8 @@ export function ChatSidebar({
                             cloud sync to be enabled on this device.
                           </p>
                           <button
-                            onClick={() => {
+                            onClick={async () => {
+                              if (await trySetupPasskeyFirst()) return
                               if (onCloudSyncSetupClick) {
                                 onCloudSyncSetupClick()
                               }
@@ -1814,7 +1837,8 @@ export function ChatSidebar({
                         your data across multiple devices.
                       </p>
                       <button
-                        onClick={() => {
+                        onClick={async () => {
+                          if (await trySetupPasskeyFirst()) return
                           if (onCloudSyncSetupClick) {
                             onCloudSyncSetupClick()
                           }

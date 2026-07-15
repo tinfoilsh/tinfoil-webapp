@@ -6,7 +6,7 @@ import {
 } from '@/components/modals/cloud-sync-setup-mode'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Modal } from '@/components/ui/modal'
+import { Modal, ModalTitle } from '@/components/ui/modal'
 import { PaperGrainTexture } from '@/components/ui/paper-grain-texture'
 import { cn } from '@/components/ui/utils'
 import { SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL } from '@/constants/storage-keys'
@@ -39,10 +39,6 @@ const STEP_TRANSITION_DURATION_S = 0.2
 const STEP_TRANSITION_OFFSET_PX = 16
 const BUTTON_COLUMN_CLASS_NAME =
   'mx-auto grid w-full max-w-full grid-cols-1 gap-6 sm:grid-cols-2'
-const BUTTON_STACK_CLASS_NAME =
-  'mx-auto grid w-full max-w-full grid-cols-1 gap-2'
-const BUTTON_ROW_CLASS_NAME =
-  'mx-auto grid w-fit max-w-full grid-flow-col auto-cols-fr gap-2'
 
 const ILLUSTRATION_ICON_CLASS_NAME =
   'mx-auto h-20 w-20 text-content-secondary opacity-70'
@@ -126,6 +122,9 @@ export function CloudSyncSetupModal({
   const [isStartingFresh, setIsStartingFresh] = useState(false)
   const [keyAlreadyActivated, setKeyAlreadyActivated] = useState(false)
   const [setupError, setSetupError] = useState('')
+  const [setupFailedOrigin, setSetupFailedOrigin] = useState<
+    'passkey' | 'manual'
+  >('manual')
   const [startFreshOrigin, setStartFreshOrigin] = useState<
     'passkey-recovery' | 'generate-or-restore'
   >('passkey-recovery')
@@ -140,6 +139,23 @@ export function CloudSyncSetupModal({
       }
     }
   }, [])
+
+  // The background probe can discover a remote passkey after the modal
+  // mounts; advance neutral entry steps to recovery without overriding
+  // deliberate navigation into other steps.
+  useEffect(() => {
+    if (!passkeyRecoveryNeeded) return
+    setCurrentStep((step) =>
+      step === 'intro' || step === 'generate-or-restore'
+        ? 'passkey-recovery'
+        : step,
+    )
+  }, [passkeyRecoveryNeeded])
+
+  const enterSetupFailed = (origin: 'passkey' | 'manual' = 'manual') => {
+    setSetupFailedOrigin(origin)
+    setCurrentStep('setup-failed')
+  }
 
   const handleMaybeLater = () => {
     persistCloudSyncEnabled(false)
@@ -157,7 +173,7 @@ export function CloudSyncSetupModal({
           setSetupError(
             'Could not create passkey backup. You can try again later.',
           )
-          setCurrentStep('setup-failed')
+          enterSetupFailed('passkey')
         }
       } catch (error) {
         logError('Could not start passkey setup', error, {
@@ -167,7 +183,7 @@ export function CloudSyncSetupModal({
         setSetupError(
           'Could not create passkey backup. You can try again later.',
         )
-        setCurrentStep('setup-failed')
+        enterSetupFailed('passkey')
       }
       return
     }
@@ -207,7 +223,7 @@ export function CloudSyncSetupModal({
         action: 'handleGenerateKey',
       })
       setSetupError('Failed to generate encryption key')
-      setCurrentStep('setup-failed')
+      enterSetupFailed()
     } finally {
       setIsProcessing(false)
     }
@@ -235,7 +251,7 @@ export function CloudSyncSetupModal({
       // automatic activation did not complete.
       const { description } = describeCloudKeySetupFailure(result.reason)
       setSetupError(description)
-      setCurrentStep('setup-failed')
+      enterSetupFailed()
       return
     }
 
@@ -252,7 +268,7 @@ export function CloudSyncSetupModal({
       if (!result.ok) {
         const { description } = describeCloudKeySetupFailure(result.reason)
         setSetupError(description)
-        setCurrentStep('setup-failed')
+        enterSetupFailed()
         return
       }
 
@@ -271,7 +287,7 @@ export function CloudSyncSetupModal({
         action: 'handleRestoreKey',
       })
       setSetupError('The encryption key you entered is invalid')
-      setCurrentStep('setup-failed')
+      enterSetupFailed()
     } finally {
       setIsProcessing(false)
     }
@@ -418,7 +434,7 @@ ${generatedKey.replace('key_', '')}
         if (!result.ok) {
           const { description } = describeCloudKeySetupFailure(result.reason)
           setSetupError(description)
-          setCurrentStep('setup-failed')
+          enterSetupFailed()
           return
         }
 
@@ -432,7 +448,7 @@ ${generatedKey.replace('key_', '')}
             ? error.message
             : 'Failed to finish cloud sync setup',
         )
-        setCurrentStep('setup-failed')
+        enterSetupFailed()
       })
       .finally(() => {
         setIsProcessing(false)
@@ -444,9 +460,12 @@ ${generatedKey.replace('key_', '')}
       <TfCloud className={ILLUSTRATION_ICON_CLASS_NAME} />
 
       <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
+        <ModalTitle
+          as="h2"
+          className="text-balance text-center text-xl font-bold leading-7"
+        >
           Encrypted Backups &amp; Sync
-        </h2>
+        </ModalTitle>
         <p className="text-balance text-center text-sm text-content-secondary">
           Tinfoil offers seamless end-to-end encrypted backups and sync across
           devices.
@@ -509,9 +528,12 @@ ${generatedKey.replace('key_', '')}
       <TfKey className={ILLUSTRATION_ICON_CLASS_NAME} />
 
       <div className="space-y-2">
-        <h2 className="text-balance text-center text-xl font-bold">
+        <ModalTitle
+          as="h2"
+          className="text-balance text-center text-xl font-bold leading-7"
+        >
           Encryption Key
-        </h2>
+        </ModalTitle>
         <p className="text-balance text-center text-sm leading-relaxed text-content-secondary">
           {manualRecoveryNeeded
             ? 'Restore your existing encryption key to unlock cloud data, or explicitly start fresh with a new key.'
@@ -570,7 +592,12 @@ ${generatedKey.replace('key_', '')}
       <TfShieldCheck className={ILLUSTRATION_ICON_CLASS_NAME} />
 
       <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">Success!</h2>
+        <ModalTitle
+          as="h2"
+          className="text-balance text-center text-xl font-bold leading-7"
+        >
+          Success!
+        </ModalTitle>
 
         <p className="text-balance text-center text-sm text-content-secondary">
           {generatedKeyMode === 'explicitStartFresh'
@@ -648,9 +675,12 @@ ${generatedKey.replace('key_', '')}
       <TfRefresh className={ILLUSTRATION_ICON_CLASS_NAME} />
 
       <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
+        <ModalTitle
+          as="h2"
+          className="text-balance text-center text-xl font-bold leading-7"
+        >
           Restore Encryption Key
-        </h2>
+        </ModalTitle>
 
         <p className="text-balance text-center text-sm text-content-secondary">
           Enter or upload your personal encryption key.
@@ -742,7 +772,12 @@ ${generatedKey.replace('key_', '')}
       <TfShieldCheck className={ILLUSTRATION_ICON_CLASS_NAME} />
 
       <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">Success!</h2>
+        <ModalTitle
+          as="h2"
+          className="text-balance text-center text-xl font-bold leading-7"
+        >
+          Success!
+        </ModalTitle>
 
         <p className="text-balance text-center text-sm text-content-secondary">
           Your encryption key was restored successfully. Your encrypted chats
@@ -767,9 +802,12 @@ ${generatedKey.replace('key_', '')}
       <TfTinSad className={ILLUSTRATION_ICON_CLASS_NAME} />
 
       <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
+        <ModalTitle
+          as="h2"
+          className="text-balance text-center text-xl font-bold leading-7"
+        >
           Setup Failed
-        </h2>
+        </ModalTitle>
 
         <p className="text-balance text-center text-sm text-content-secondary">
           {setupError}
@@ -782,7 +820,13 @@ ${generatedKey.replace('key_', '')}
           size="landing"
           chevron
           back
-          onClick={() => setCurrentStep('generate-or-restore')}
+          onClick={() =>
+            // A failed passkey setup on a PRF-capable device must return to
+            // the passkey flow, never expose the manual key setup.
+            setCurrentStep(
+              setupFailedOrigin === 'passkey' ? 'intro' : 'generate-or-restore',
+            )
+          }
           className="w-full min-w-[6rem]"
         >
           Go Back
@@ -836,12 +880,12 @@ ${generatedKey.replace('key_', '')}
         setSetupError(
           'Could not create a new encryption key. Please try again.',
         )
-        setCurrentStep('setup-failed')
+        enterSetupFailed()
       }
     } catch (error) {
       if (error instanceof PrfNotSupportedError) {
         setSetupError(error.message)
-        setCurrentStep('setup-failed')
+        enterSetupFailed()
       } else {
         logError('Start fresh failed', error, {
           component: 'CloudSyncSetupModal',
@@ -850,7 +894,7 @@ ${generatedKey.replace('key_', '')}
         setSetupError(
           'Could not create a new encryption key. Please try again.',
         )
-        setCurrentStep('setup-failed')
+        enterSetupFailed()
       }
     } finally {
       setIsStartingFresh(false)
@@ -862,9 +906,12 @@ ${generatedKey.replace('key_', '')}
       <TfLock className={ILLUSTRATION_ICON_CLASS_NAME} />
 
       <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
+        <ModalTitle
+          as="h2"
+          className="text-balance text-center text-xl font-bold leading-7"
+        >
           Unlock Your Chats
-        </h2>
+        </ModalTitle>
 
         <p className="text-balance text-center text-sm text-content-secondary">
           Your encrypted chats are stored in the cloud. Authenticate with your
@@ -962,7 +1009,7 @@ ${generatedKey.replace('key_', '')}
         setSetupError(
           'Could not activate the new encryption key. Please try again.',
         )
-        setCurrentStep('setup-failed')
+        enterSetupFailed()
       } finally {
         setIsStartingFresh(false)
       }
@@ -976,9 +1023,12 @@ ${generatedKey.replace('key_', '')}
       <TfTinSad className={ILLUSTRATION_ICON_CLASS_NAME} />
 
       <div className="space-y-3">
-        <h2 className="text-balance text-center text-xl font-bold">
+        <ModalTitle
+          as="h2"
+          className="text-balance text-center text-xl font-bold leading-7"
+        >
           You will lose your conversations
-        </h2>
+        </ModalTitle>
 
         <p className="text-balance text-center text-sm text-content-secondary">
           Starting fresh will generate a new encryption key that is not

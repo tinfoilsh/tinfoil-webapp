@@ -268,7 +268,12 @@ export function ChatInterface({
             has_completed_onboarding: true,
           },
         })
-        .catch(() => {})
+        .catch((error) => {
+          logError('Failed to backfill onboarding completion flag', error, {
+            component: 'ChatInterface',
+            action: 'backfillOnboardingFlag',
+          })
+        })
     }
   }, [isSignedIn, user])
 
@@ -3095,6 +3100,8 @@ export function ChatInterface({
                 onCloudSyncSetupClick={
                   isSignedIn ? handleOpenCloudSyncSetup : undefined
                 }
+                passkeySetupAvailable={passkeySetupAvailable}
+                onSetupPasskey={setupPasskey}
                 onAddPasskeyToThisDevice={addPasskeyToThisDevice}
                 passkeyAddDeviceAvailable={passkeyAddDeviceAvailable}
                 backupWarningVisible={
@@ -3643,7 +3650,8 @@ export function ChatInterface({
             passkeyActive ||
             passkeyRecoveryNeeded ||
             passkeySetupAvailable ||
-            passkeyAddDeviceAvailable
+            passkeyAddDeviceAvailable ||
+            passkeyFirstTimePromptAvailable
           }
           passkeyRecoveryNeeded={passkeyRecoveryNeeded}
           manualRecoveryNeeded={manualRecoveryNeeded}

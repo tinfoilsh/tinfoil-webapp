@@ -90,10 +90,14 @@ interface ModalTextProps {
   className?: string
 }
 
-export function ModalTitle({ children, className }: ModalTextProps) {
+export function ModalTitle({
+  children,
+  className,
+  as = 'h3',
+}: ModalTextProps & { as?: 'h2' | 'h3' }) {
   return (
     <Dialog.Title
-      as="h3"
+      as={as}
       className={cn(
         'font-aeonik text-lg font-medium leading-6 text-content-primary',
         className,
