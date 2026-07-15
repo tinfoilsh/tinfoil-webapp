@@ -1,6 +1,7 @@
 import { Modal, ModalDescription, ModalTitle } from '@/components/ui/modal'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
 import Link from 'next/link'
+import { useRouter } from 'next/router'
 
 interface SubscribePromptModalProps {
   isOpen: boolean
@@ -14,6 +15,10 @@ export function SubscribePromptModal({
   isSignedIn,
 }: SubscribePromptModalProps) {
   const { startUpgrade, upgradeLoading, upgradeError } = useUpgradeToPro()
+  const router = useRouter()
+  // Send users back to where they hit the limit after they authenticate,
+  // instead of dropping them on the home screen.
+  const signInHref = `/signin?redirect_url=${encodeURIComponent(router.asPath)}`
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
@@ -57,7 +62,7 @@ export function SubscribePromptModal({
         ) : (
           <>
             <Link
-              href="/signin"
+              href={signInHref}
               onClick={onClose}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
             >
@@ -66,7 +71,7 @@ export function SubscribePromptModal({
             <p className="text-center text-xs text-content-secondary">
               Already subscribed?{' '}
               <Link
-                href="/signin"
+                href={signInHref}
                 onClick={onClose}
                 className="cursor-pointer underline hover:text-content-primary"
               >
