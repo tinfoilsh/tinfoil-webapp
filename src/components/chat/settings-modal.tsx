@@ -20,6 +20,7 @@ import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import { buildChatExport } from '@/services/chat-export/export-archive'
+import { parseLocalTinfoilExport } from '@/services/chat-import/local-tinfoil-import'
 import { runOffDeviceImport } from '@/services/chat-import/off-device-import'
 import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
@@ -52,7 +53,11 @@ import {
 } from '@/utils/cloud-sync-settings'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
-import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
+import {
+  hideSignoutProgress,
+  showSignoutProgress,
+} from '@/utils/signout-progress'
+import { useAuth, useUser } from '@clerk/nextjs'
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
@@ -76,6 +81,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
+import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AiOutlineCloudSync, AiOutlineExport } from 'react-icons/ai'
 import { BsQrCode } from 'react-icons/bs'
@@ -483,10 +489,6 @@ export function SettingsModal({
     }
   }, [isOpen, activeTab])
 
-  // Placeholder animation state
-  const [placeholderIndex, setPlaceholderIndex] = useState(0)
-  const [placeholderVisible, setPlaceholderVisible] = useState(true)
-
   // Upgrade state
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
@@ -549,36 +551,6 @@ export function SettingsModal({
     'skeptical',
     'optimistic',
   ]
-
-  // Cycling profession placeholders
-  const professionPlaceholders = [
-    'Software engineer',
-    'Designer',
-    'Product manager',
-    'Teacher',
-    'Student',
-    'Writer',
-    'Entrepreneur',
-    'Researcher',
-    'Marketing specialist',
-    'Data scientist',
-  ]
-
-  // Cycle through profession placeholders with fade animation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPlaceholderVisible(false)
-      setTimeout(() => {
-        setPlaceholderIndex(
-          (prev) => (prev + 1) % professionPlaceholders.length,
-        )
-        setPlaceholderVisible(true)
-      }, 150)
-    }, 2000)
-    return () => clearInterval(interval)
-  }, [professionPlaceholders.length])
-
-  const getCurrentPlaceholder = () => professionPlaceholders[placeholderIndex]
 
   // Available languages for dropdown
   const availableLanguages = [
@@ -1240,6 +1212,7 @@ export function SettingsModal({
 
   const handleSignOut = useCallback(async () => {
     setIsSigningOut(true)
+    showSignoutProgress()
     try {
       await signOut()
     } catch (error) {
@@ -1247,11 +1220,8 @@ export function SettingsModal({
         component: 'SettingsModal',
         action: 'handleSignOut',
       })
+      hideSignoutProgress()
     } finally {
-      // Always reset the flag so the button is re-enabled — on success
-      // the component typically unmounts before this matters, and on
-      // failure the user can retry instead of being stuck on a
-      // permanently-disabled control.
       setIsSigningOut(false)
     }
   }, [signOut])
@@ -1444,21 +1414,62 @@ export function SettingsModal({
     }
 
     setImportSource('tinfoil')
-    setImportResult({
-      success: false,
-      chatsImported: 0,
-      projectsImported: 0,
-      errors: [
-        'Tinfoil exports with attachments can be re-imported when cloud sync is enabled.',
-      ],
-    })
-    toast({
-      title: 'Cloud sync required',
-      description:
-        'Turn on cloud sync to re-import Tinfoil exports securely through the enclave.',
-      variant: 'destructive',
-    })
-    e.target.value = ''
+    setIsImporting(true)
+    setImportResult(null)
+
+    try {
+      const chats = await parseLocalTinfoilExport(file, { generateChatId })
+      setImportProgress({ current: 0, total: chats.length, type: 'chats' })
+
+      let imported = 0
+      const errors: string[] = []
+
+      for (let i = 0; i < chats.length; i++) {
+        try {
+          await chatStorage.saveChat(chats[i], true)
+          imported++
+        } catch {
+          errors.push(`Failed to save "${chats[i].title}" locally`)
+        }
+        setImportProgress({
+          current: i + 1,
+          total: chats.length,
+          type: 'chats',
+        })
+      }
+
+      setImportResult({
+        success: errors.length === 0,
+        chatsImported: imported,
+        projectsImported: 0,
+        errors,
+      })
+
+      if (onChatsUpdated) {
+        onChatsUpdated()
+      }
+
+      toast({
+        title: 'Import complete',
+        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Tinfoil`,
+      })
+    } catch (err) {
+      setImportResult({
+        success: false,
+        chatsImported: 0,
+        projectsImported: 0,
+        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
+      })
+      toast({
+        title: 'Import failed',
+        description: 'Could not parse the Tinfoil export file',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsImporting(false)
+      setImportProgress(null)
+      e.target.value = ''
+    }
   }
 
   const handleImportClaudeConversations = async (
@@ -2151,7 +2162,7 @@ ${encryptionKey.replace('key_', '')}
           stiffness: 300,
         }}
         className={cn(
-          'relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col overflow-hidden rounded-xl border font-aeonik shadow-xl md:flex-row',
+          'relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col overflow-hidden rounded-site-lg border font-aeonik shadow-xl md:flex-row',
           'border-border-subtle bg-surface-sidebar text-content-primary',
         )}
       >
@@ -2420,7 +2431,7 @@ ${encryptionKey.replace('key_', '')}
                           value={language}
                           onChange={(e) => handleLanguageChange(e.target.value)}
                           className={cn(
-                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
                             isDarkMode
                               ? 'border-border-strong bg-surface-chat text-content-secondary'
                               : 'border-border-subtle bg-surface-sidebar text-content-primary',
@@ -2841,7 +2852,7 @@ ${encryptionKey.replace('key_', '')}
                             }
                             placeholder="Nickname"
                             className={cn(
-                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
                               isDarkMode
                                 ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                 : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -2866,40 +2877,27 @@ ${encryptionKey.replace('key_', '')}
                               What do you do?
                             </div>
                           </div>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={profession}
-                              onChange={(e) =>
-                                handleProfessionChange(e.target.value)
-                              }
-                              className={cn(
-                                'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
-                                isDarkMode
-                                  ? 'border-border-strong bg-surface-chat text-content-secondary'
-                                  : 'border-border-subtle bg-surface-sidebar text-content-primary',
-                              )}
-                            />
-                            {!profession && (
-                              <span
-                                className={cn(
-                                  'pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-content-muted transition-opacity duration-150',
-                                  placeholderVisible
-                                    ? 'opacity-100'
-                                    : 'opacity-0',
-                                )}
-                              >
-                                {getCurrentPlaceholder()}
-                              </span>
+                          <input
+                            type="text"
+                            value={profession}
+                            onChange={(e) =>
+                              handleProfessionChange(e.target.value)
+                            }
+                            placeholder="Your occupation"
+                            className={cn(
+                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
+                              isDarkMode
+                                ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
                             )}
-                          </div>
+                          />
                         </div>
                       </div>
 
                       {/* Traits */}
                       <div
                         className={cn(
-                          'rounded-lg border border-border-subtle p-4',
+                          'rounded-site-lg border border-border-subtle p-4',
                           isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
                       >
@@ -2918,7 +2916,7 @@ ${encryptionKey.replace('key_', '')}
                                 key={trait}
                                 onClick={() => handleTraitToggle(trait)}
                                 className={cn(
-                                  'rounded-full px-3 py-1.5 text-sm transition-colors',
+                                  'rounded-site-control px-3 py-1.5 text-sm transition-colors',
                                   selectedTraits.includes(trait)
                                     ? 'bg-brand-accent-light text-brand-accent-dark'
                                     : isDarkMode
@@ -2958,7 +2956,7 @@ ${encryptionKey.replace('key_', '')}
                             placeholder="Interests and other preferences you'd like Tin to know about you."
                             rows={3}
                             className={cn(
-                              'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
                               isDarkMode
                                 ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                 : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -3048,7 +3046,7 @@ ${encryptionKey.replace('key_', '')}
                                   placeholder="Enter your custom system prompt..."
                                   rows={6}
                                   className={cn(
-                                    'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                                    'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
                                     isDarkMode
                                       ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                       : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -4133,9 +4131,8 @@ ${encryptionKey.replace('key_', '')}
                       )}
                     >
                       <div className="font-aeonik-fono text-xs text-content-muted">
-                        Re-import a Tinfoil conversations export through the
-                        sync enclave. We&apos;ll email you when the import is
-                        done.
+                        Re-import a Tinfoil conversations export. When cloud
+                        sync is off, chats and attachments stay in this browser.
                       </div>
                       <input
                         ref={tinfoilFileInputRef}
@@ -4451,12 +4448,13 @@ ${encryptionKey.replace('key_', '')}
                           Sign in to sync your settings and access premium
                           features
                         </p>
-                        <SignInButton mode="modal">
-                          <button className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90">
-                            <PiSignIn className="h-4 w-4" />
-                            Sign in or sign up
-                          </button>
-                        </SignInButton>
+                        <Link
+                          href="/signin"
+                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90"
+                        >
+                          <PiSignIn className="h-4 w-4" />
+                          Sign in or sign up
+                        </Link>
                       </div>
                     </div>
                   )}
@@ -4470,7 +4468,7 @@ ${encryptionKey.replace('key_', '')}
       {/* Sign-out confirmation when local-only mode is enabled */}
       {showSignOutConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="mx-4 w-full max-w-sm rounded-2xl border border-border-subtle bg-surface-card p-6 shadow-xl">
+          <div className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
             <h3 className="font-aeonik text-lg font-medium text-content-primary">
               Sign Out
             </h3>

@@ -35,11 +35,7 @@ function Arrow({ d }: { d: string }) {
  * All coordinates target a fixed 520x340 canvas. The diagram scales
  * down proportionally on smaller screens via ResizeObserver.
  */
-export const DataFlowDiagram = memo(function DataFlowDiagram({
-  onOpenVerifier,
-}: {
-  onOpenVerifier?: () => void
-}) {
+export const DataFlowDiagram = memo(function DataFlowDiagram() {
   const containerRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState<number | null>(null)
 
@@ -103,7 +99,7 @@ export const DataFlowDiagram = memo(function DataFlowDiagram({
         <svg
           viewBox={`0 0 ${DESIGN_W} ${DESIGN_H}`}
           fill="none"
-          className="absolute inset-0 h-full w-full"
+          className="absolute inset-0 z-10 h-full w-full"
         >
           <defs>
             <marker
@@ -153,7 +149,7 @@ export const DataFlowDiagram = memo(function DataFlowDiagram({
 
         {/* Tinfoil Server container */}
         <div
-          className="absolute rounded border border-border-subtle bg-surface-card/50 px-5 pb-5 pt-3 dark:bg-surface-card/30"
+          className="absolute rounded border border-gray-300 bg-gray-100 px-5 pb-5 pt-3 dark:border-gray-700 dark:bg-gray-800"
           style={{
             left: 236,
             top: 72,
@@ -211,18 +207,6 @@ export const DataFlowDiagram = memo(function DataFlowDiagram({
             <li className="whitespace-nowrap">Encrypts requests</li>
           </ul>
         </div>
-
-        {/* Open verification center button */}
-        {onOpenVerifier && (
-          <button
-            type="button"
-            onClick={onOpenVerifier}
-            className="absolute rounded border border-brand-accent-light/40 bg-brand-accent-light/10 px-4 py-1.5 text-sm font-medium text-brand-accent-dark transition-colors hover:bg-brand-accent-light/20 dark:border-brand-accent-light/30 dark:text-brand-accent-light"
-            style={{ left: 0, top: 340, width: 195 }}
-          >
-            Open verification center
-          </button>
-        )}
       </div>
     </div>
   )

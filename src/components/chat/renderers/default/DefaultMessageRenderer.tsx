@@ -430,7 +430,7 @@ const DefaultMessageComponent = ({
                   className={cn(
                     isUser ? 'max-w-[95%]' : 'w-full',
                     isUser &&
-                      'rounded-2xl bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
+                      'rounded-site-lg bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
                     isLimitError &&
                       'rounded-lg border-2 border-brand-accent-dark/30 bg-brand-accent-dark/5 px-4 py-3',
                   )}
