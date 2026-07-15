@@ -39,6 +39,19 @@ import type { PromptPreset } from './prompts/types'
 import type { ProcessedDocument } from './renderers/types'
 import type { LoadingState } from './types'
 
+// Tracks every mounted textarea per shared external ref so an unmounting
+// instance can hand the shared ref over to a surviving instance.
+const sharedTextareaRegistries = new WeakMap<object, Set<HTMLTextAreaElement>>()
+
+function getSharedTextareaRegistry(ref: object): Set<HTMLTextAreaElement> {
+  let registry = sharedTextareaRegistries.get(ref)
+  if (!registry) {
+    registry = new Set()
+    sharedTextareaRegistries.set(ref, registry)
+  }
+  return registry
+}
+
 type ChatInputProps = {
   input: string
   setInput: (value: string) => void
@@ -127,16 +140,25 @@ export function ChatInput({
   const ownTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const attachTextareaRef = useCallback(
     (el: HTMLTextAreaElement | null) => {
+      const registered = getSharedTextareaRegistry(inputRef)
       if (el) {
         ownTextareaRef.current = el
+        registered.add(el)
         ;(
           inputRef as React.MutableRefObject<HTMLTextAreaElement | null>
         ).current = el
       } else {
+        if (ownTextareaRef.current) {
+          registered.delete(ownTextareaRef.current)
+        }
         if (inputRef.current === ownTextareaRef.current) {
+          // Hand the shared ref back to another still-mounted instance (e.g.
+          // the welcome-screen input after the bottom input unmounts) so
+          // focus actions keep working.
+          const remaining = [...registered].pop() ?? null
           ;(
             inputRef as React.MutableRefObject<HTMLTextAreaElement | null>
-          ).current = null
+          ).current = remaining
         }
         ownTextareaRef.current = null
       }
