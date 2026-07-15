@@ -41,6 +41,9 @@ interface UseChatStorageReturn {
   initialChatDecryptionFailed: boolean
   clearInitialChatDecryptionFailed: () => void
   localChatNotFound: boolean
+  initialChatLoadFailed: boolean
+  cloudChatNotFound: boolean
+  retryInitialChatLoad: () => void
 }
 
 export function useChatStorage({
@@ -54,6 +57,8 @@ export function useChatStorage({
   const [initialChatDecryptionFailed, setInitialChatDecryptionFailed] =
     useState(false)
   const [localChatNotFound, setLocalChatNotFound] = useState(false)
+  const [initialChatLoadFailed, setInitialChatLoadFailed] = useState(false)
+  const [cloudChatNotFound, setCloudChatNotFound] = useState(false)
 
   // Initialize with blank chats for both modes
   const [chats, setChats] = useState<Chat[]>(() => {
@@ -396,6 +401,8 @@ export function useChatStorage({
     async (chatId: string, isLocalUrl: boolean) => {
       // Reset not found state when attempting to load a new chat
       setLocalChatNotFound(false)
+      setCloudChatNotFound(false)
+      setInitialChatLoadFailed(false)
 
       // First check if chat already exists in local state
       const existingChat = chats.find((c) => c.id === chatId)
@@ -453,6 +460,7 @@ export function useChatStorage({
             component: 'useChatStorage',
             metadata: { chatId },
           })
+          setCloudChatNotFound(true)
           return
         }
 
@@ -494,6 +502,7 @@ export function useChatStorage({
           component: 'useChatStorage',
           metadata: { chatId },
         })
+        setInitialChatLoadFailed(true)
       }
     },
     [chats, isSignedIn, switchChat],
@@ -578,6 +587,14 @@ export function useChatStorage({
     setInitialChatDecryptionFailed(false)
   }, [])
 
+  const retryInitialChatLoad = useCallback(() => {
+    setInitialChatLoadFailed(false)
+    initialChatLoadedRef.current = false
+    if (initialChatId) {
+      loadChatById(initialChatId, isLocalChatUrl)
+    }
+  }, [initialChatId, isLocalChatUrl, loadChatById])
+
   return {
     chats,
     currentChat,
@@ -595,5 +612,8 @@ export function useChatStorage({
     initialChatDecryptionFailed,
     clearInitialChatDecryptionFailed,
     localChatNotFound,
+    initialChatLoadFailed,
+    cloudChatNotFound,
+    retryInitialChatLoad,
   }
 }

@@ -1,3 +1,4 @@
+import { GridTexture } from '@/components/ui/grid-texture'
 import { findSelectableModel, type BaseModel } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
 import {
@@ -56,7 +57,6 @@ type ChatMessagesProps = {
   setThinkingEnabled?: (enabled: boolean) => void
   codeExecutionEnabled?: boolean
   onCodeExecutionToggle?: () => void
-  onOpenVerifier?: () => void
   isTemporaryMode?: boolean
   activePromptPreset?: PromptPreset | null
   onOpenPromptLibrary?: () => void
@@ -230,7 +230,6 @@ export function ChatMessages({
   setThinkingEnabled,
   codeExecutionEnabled,
   onCodeExecutionToggle,
-  onOpenVerifier,
   isTemporaryMode,
   activePromptPreset,
   onOpenPromptLibrary,
@@ -313,8 +312,9 @@ export function ChatMessages({
 
   if (messages.length === 0 && !isWaitingForResponse) {
     return (
-      <div className="flex min-h-full w-full items-center justify-center overflow-y-auto">
-        <div className="w-full max-w-4xl px-8 pb-8 pt-16">
+      <div className="relative flex min-h-full w-full items-center justify-center overflow-y-auto">
+        <GridTexture />
+        <div className="relative z-10 w-full max-w-4xl px-8 pb-8 pt-16">
           <WelcomeScreen
             isDarkMode={isDarkMode}
             isPremium={isPremium}
@@ -341,7 +341,6 @@ export function ChatMessages({
             setThinkingEnabled={setThinkingEnabled}
             codeExecutionEnabled={codeExecutionEnabled}
             onCodeExecutionToggle={onCodeExecutionToggle}
-            onOpenVerifier={onOpenVerifier}
             isTemporaryMode={isTemporaryMode}
             activePromptPreset={activePromptPreset}
             onOpenPromptLibrary={onOpenPromptLibrary}

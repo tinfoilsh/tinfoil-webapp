@@ -44,6 +44,11 @@ export const SETTINGS_THEME = 'tinfoil-settings-theme'
 export const SETTINGS_CHAT_FONT = 'tinfoil-settings-chat-font'
 export const SETTINGS_CACHED_SUBSCRIPTION_STATUS =
   'tinfoil-settings-cached-subscription-status'
+// Set once the first-open onboarding (founders letter + privacy switch) has
+// been shown on this browser. For signed-in users the same fact is mirrored
+// to Clerk unsafeMetadata so it follows the account across devices.
+export const SETTINGS_HAS_SEEN_ONBOARDING =
+  'tinfoil-settings-has-seen-onboarding'
 export const SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO =
   'tinfoil-settings-has-seen-web-search-intro'
 export const SETTINGS_LOCAL_ONLY_MODE_ENABLED =
@@ -103,6 +108,8 @@ export const USER_PREFS_CUSTOM_PROMPT_PRESETS =
 export const USER_PREFS_FAVORITE_PROMPT_PRESETS =
   'tinfoil-user-prefs-favorite-prompt-presets'
 export const USER_PREFS_PROJECT_UPLOAD = 'tinfoil-user-prefs-project-upload'
+export const USER_PREFS_NATIVE_APP_DISMISSED =
+  'tinfoil-user-prefs-native-app-dismissed'
 
 // --- localStorage: Sync/data state -----------------------------------------
 export const SYNC_CHATS = 'tinfoil-sync-chats'

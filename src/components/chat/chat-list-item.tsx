@@ -315,7 +315,7 @@ export function ChatListItem({
           type="button"
           onClick={onSelect}
           aria-current={isSelected ? 'true' : undefined}
-          className="min-w-0 flex-1 cursor-pointer rounded-md pr-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent-dark dark:focus-visible:ring-brand-accent-light"
+          className="min-w-0 flex-1 cursor-pointer rounded-md pr-2 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
         >
           <>
             <div className="flex items-center gap-1.5">
@@ -372,7 +372,7 @@ export function ChatListItem({
                   (!chat.isBlankChat &&
                     chat.pendingSave &&
                     !isStreaming)))) && (
-              <div className="mt-1 flex min-h-[16px] w-full items-center gap-2">
+              <div className="mt-1 flex min-h-[16px] w-full flex-wrap items-center gap-2 @container">
                 {chat.decryptionFailed ? (
                   <div className="text-xs text-red-500">
                     {chat.dataCorrupted
@@ -392,18 +392,15 @@ export function ChatListItem({
                 {showSyncStatus && (
                   <>
                     {chat.isLocalOnly ? (
-                      <>
+                      <span className="flex items-center gap-0.5 whitespace-nowrap text-xs leading-none text-content-muted">
                         {messageCount > 0 && (
-                          <span className="text-xs text-content-muted">·</span>
+                          <span className="mr-1.5 hidden text-content-muted @xs:inline">
+                            ·
+                          </span>
                         )}
-                        <span className="flex items-center gap-0.5 text-xs leading-none text-content-muted">
-                          <CiFloppyDisk
-                            className="h-3 w-3"
-                            aria-hidden="true"
-                          />
-                          Only saved locally
-                        </span>
-                      </>
+                        <CiFloppyDisk className="h-3 w-3" aria-hidden="true" />
+                        Only saved locally
+                      </span>
                     ) : !chat.isBlankChat && syncFailed ? (
                       <span
                         className="flex items-center text-orange-500"

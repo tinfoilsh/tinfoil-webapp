@@ -1,4 +1,5 @@
 import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
+import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
 import { Toaster } from '@/components/ui/toaster'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
@@ -163,6 +164,7 @@ export default function App({ Component, pageProps }: AppProps) {
         <ClerkProvider
           telemetry={false}
           afterSignOutUrl="/"
+          signInUrl="/signin"
           appearance={{
             elements: {
               modalBackdrop: 'bg-black/50',
@@ -170,6 +172,7 @@ export default function App({ Component, pageProps }: AppProps) {
           }}
         >
           <AuthCleanupHandler />
+          <SignoutProgressOverlay />
           <Component {...pageProps} />
           <Toaster />
         </ClerkProvider>

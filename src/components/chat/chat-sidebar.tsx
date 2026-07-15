@@ -6,6 +6,7 @@ import {
   UI_SIDEBAR_CHAT_HISTORY_EXPANDED,
   UI_SIDEBAR_EXPAND_SECTION,
   UI_SIDEBAR_PROJECTS_EXPANDED,
+  USER_PREFS_NATIVE_APP_DISMISSED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
@@ -21,7 +22,7 @@ import {
   setLocalOnlyModeEnabled as setLocalOnlyModeSetting,
 } from '@/utils/cloud-sync-settings'
 import { logInfo } from '@/utils/error-handling'
-import { SignInButton, useAuth, useUser } from '@clerk/nextjs'
+import { useAuth, useUser } from '@clerk/nextjs'
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -87,8 +88,6 @@ type ChatSidebarProps = {
   isPremium?: boolean
   onEncryptionKeyClick?: () => void
   onCloudSyncSetupClick?: () => void
-  onSetupPasskey?: () => Promise<boolean>
-  passkeySetupAvailable?: boolean
   onAddPasskeyToThisDevice?: () => Promise<boolean>
   passkeyAddDeviceAvailable?: boolean
   backupWarningVisible?: boolean
@@ -164,8 +163,6 @@ export function ChatSidebar({
   isPremium = true,
   onEncryptionKeyClick,
   onCloudSyncSetupClick,
-  onSetupPasskey,
-  passkeySetupAvailable,
   onAddPasskeyToThisDevice,
   passkeyAddDeviceAvailable,
   backupWarningVisible = false,
@@ -230,6 +227,7 @@ export function ChatSidebar({
   const chatListRef = useRef<HTMLDivElement>(null)
   const loadMoreSentinelRef = useRef<HTMLDivElement>(null)
   const [isIOS, setIsIOS] = useState(false)
+  const [nativeAppDismissed, setNativeAppDismissed] = useState(false)
   const {
     startUpgrade: handleUpgradeToPro,
     upgradeLoading,
@@ -448,6 +446,13 @@ export function ChatSidebar({
   useEffect(() => {
     if (isClient) {
       setIsIOS(isIOSDevice())
+      try {
+        setNativeAppDismissed(
+          localStorage.getItem(USER_PREFS_NATIVE_APP_DISMISSED) === 'true',
+        )
+      } catch {
+        setNativeAppDismissed(false)
+      }
     }
   }, [isClient])
 
@@ -631,12 +636,6 @@ export function ChatSidebar({
     if (enabled) {
       // Check if encryption key exists
       if (!encryptionService.getKey()) {
-        // Prefer passkey setup when available
-        if (passkeySetupAvailable && onSetupPasskey) {
-          const success = await onSetupPasskey()
-          if (success) return
-        }
-
         // Turn on the toggle visually (but don't persist yet)
         setCloudSyncEnabled(true)
 
@@ -942,10 +941,7 @@ export function ChatSidebar({
           {!isPremium && (
             <div
               className={cn(
-                'relative z-10 m-2 flex-none rounded-lg border p-4 transition-all duration-300',
-                isDarkMode
-                  ? 'border-emerald-500/30 bg-emerald-950/20'
-                  : 'border-emerald-500/30 bg-emerald-50/50',
+                'relative z-10 m-2 flex-none rounded-lg border border-border-subtle bg-surface-chat p-4 transition-all duration-300',
               )}
             >
               <div className="flex-1">
@@ -979,8 +975,8 @@ export function ChatSidebar({
                         disabled={upgradeLoading}
                         className={`inline-flex items-center gap-1 text-sm font-medium transition-colors ${
                           isDarkMode
-                            ? 'text-emerald-400 hover:text-emerald-300'
-                            : 'text-emerald-600 hover:text-emerald-500'
+                            ? 'text-brand-accent-light hover:text-brand-accent-light/80'
+                            : 'text-brand-accent-dark hover:text-brand-accent-dark/80'
                         } ${upgradeLoading ? 'cursor-not-allowed opacity-70' : ''}`}
                       >
                         {upgradeLoading
@@ -1010,18 +1006,20 @@ export function ChatSidebar({
                     </>
                   ) : (
                     <div className="space-y-2">
-                      <SignInButton mode="modal">
-                        <span className="relative block w-full cursor-pointer rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90">
-                          Subscribe to Premium
-                        </span>
-                      </SignInButton>
+                      <Link
+                        href="/signin"
+                        className="relative block w-full cursor-pointer rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90"
+                      >
+                        Subscribe to Premium
+                      </Link>
                       <p className="text-center text-xs text-content-secondary">
                         Already subscribed?{' '}
-                        <SignInButton mode="modal">
-                          <span className="cursor-pointer underline hover:text-content-primary">
-                            Log in
-                          </span>
-                        </SignInButton>
+                        <Link
+                          href="/signin"
+                          className="cursor-pointer underline hover:text-content-primary"
+                        >
+                          Log in
+                        </Link>
                       </p>
                     </div>
                   )}
@@ -1184,9 +1182,7 @@ export function ChatSidebar({
                       ? isDarkMode
                         ? 'text-emerald-400'
                         : 'text-emerald-600'
-                      : isDarkMode
-                        ? 'text-content-secondary hover:bg-surface-chat'
-                        : 'text-content-secondary hover:bg-white',
+                      : 'text-content-secondary',
                 )}
               >
                 <span className="flex items-center gap-2">
@@ -1230,11 +1226,7 @@ export function ChatSidebar({
                             cloud sync to be enabled on this device.
                           </p>
                           <button
-                            onClick={async () => {
-                              if (passkeySetupAvailable && onSetupPasskey) {
-                                const success = await onSetupPasskey()
-                                if (success) return
-                              }
+                            onClick={() => {
                               if (onCloudSyncSetupClick) {
                                 onCloudSyncSetupClick()
                               }
@@ -1594,9 +1586,7 @@ export function ChatSidebar({
                   ? isDarkMode
                     ? 'border border-white/30 bg-white/10'
                     : 'border border-gray-400 bg-gray-200/30'
-                  : isDarkMode
-                    ? 'text-content-secondary hover:bg-surface-chat'
-                    : 'text-content-secondary hover:bg-white',
+                  : 'text-content-secondary',
               )}
             >
               <span className="flex items-center gap-2">
@@ -1824,11 +1814,7 @@ export function ChatSidebar({
                         your data across multiple devices.
                       </p>
                       <button
-                        onClick={async () => {
-                          if (passkeySetupAvailable && onSetupPasskey) {
-                            const success = await onSetupPasskey()
-                            if (success) return
-                          }
+                        onClick={() => {
                           if (onCloudSyncSetupClick) {
                             onCloudSyncSetupClick()
                           }
@@ -2053,8 +2039,24 @@ export function ChatSidebar({
           </AnimatePresence>
 
           {/* App Store button for iOS users */}
-          {isClient && isIOS && (
+          {isClient && isIOS && !nativeAppDismissed && (
             <div className="relative z-10 flex-none border-t border-border-subtle p-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setNativeAppDismissed(true)
+                  try {
+                    localStorage.setItem(
+                      USER_PREFS_NATIVE_APP_DISMISSED,
+                      'true',
+                    )
+                  } catch {}
+                }}
+                aria-label="Dismiss"
+                className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-content-muted transition-colors hover:text-content-primary"
+              >
+                <XMarkIcon className="h-4 w-4" />
+              </button>
               <div className="text-center">
                 <p
                   className={`mb-2 text-sm font-medium ${'text-content-secondary'}`}
@@ -2081,7 +2083,7 @@ export function ChatSidebar({
 
           {/* Terms and privacy policy */}
           <div className="relative z-10 mt-auto flex h-[56px] flex-none items-center justify-center border-t border-border-subtle bg-surface-sidebar p-3">
-            <p className="text-center text-xs leading-relaxed text-content-secondary">
+            <p className="text-balance text-center text-xs leading-relaxed text-content-secondary">
               By using this service, you agree to Tinfoil&apos;s{' '}
               <Link
                 href="https://tinfoil.sh/terms"

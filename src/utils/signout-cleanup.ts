@@ -2,6 +2,7 @@ import { resetRendererRegistry } from '@/components/chat/renderers'
 import {
   AUTH_ACTIVE_USER_ID,
   SECRET_PASSKEY_BACKED_UP,
+  SETTINGS_HAS_SEEN_ONBOARDING,
   USER_ENCRYPTION_KEY,
 } from '@/constants/storage-keys'
 import { cloudSync } from '@/services/cloud/cloud-sync'
@@ -15,6 +16,11 @@ import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { resetSyncEnclaveClient } from '@/services/sync-enclave'
 import { logError, logInfo } from '@/utils/error-handling'
+import {
+  completeSignoutStep,
+  reportSignoutStep,
+  SIGNOUT_STEPS,
+} from '@/utils/signout-progress'
 
 interface ClearUserDataOptions {
   /** If set, preserve this user ID in localStorage after clearing */
@@ -30,11 +36,14 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
 
   // Clear encryption key immediately (in-memory + localStorage) before any
   // async work, so concurrent code cannot re-persist a stale key.
+  reportSignoutStep(SIGNOUT_STEPS.CLEAR_KEY)
   if (!preserveEncryptionKey) {
     encryptionService.clearKey({ persist: true })
   }
+  completeSignoutStep(SIGNOUT_STEPS.CLEAR_KEY)
 
   // Reset renderer registry to clear any cached renderers
+  reportSignoutStep(SIGNOUT_STEPS.RESET_CACHES)
   resetRendererRegistry()
 
   // Reset tinfoil client to clear cached API key
@@ -63,13 +72,19 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
     component: context,
     action: 'clearAllUserData',
   })
+  completeSignoutStep(SIGNOUT_STEPS.RESET_CACHES)
 
   // Clear localStorage, preserving only non-user-specific keys
+  reportSignoutStep(SIGNOUT_STEPS.CLEAR_STORAGE)
   try {
     const encryptionKey = preserveEncryptionKey
       ? localStorage.getItem(USER_ENCRYPTION_KEY)
       : null
+    const hasSeenOnboarding = localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)
     localStorage.clear()
+    if (hasSeenOnboarding !== null) {
+      localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, hasSeenOnboarding)
+    }
     if (preserveUserId) {
       localStorage.setItem(AUTH_ACTIVE_USER_ID, preserveUserId)
     }
@@ -86,8 +101,10 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   } catch {
     // best-effort
   }
+  completeSignoutStep(SIGNOUT_STEPS.CLEAR_STORAGE)
 
   // Clear IndexedDB
+  reportSignoutStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
   try {
     await indexedDBStorage.clearAll()
   } catch (error) {
@@ -106,6 +123,7 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
       // best-effort
     }
   }
+  completeSignoutStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
 }
 
 export async function performSignoutCleanup(opts?: {
