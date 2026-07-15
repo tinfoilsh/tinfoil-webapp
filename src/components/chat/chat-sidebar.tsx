@@ -652,6 +652,13 @@ export function ChatSidebar({
     }
   }
 
+  const openCloudSyncSetup = async () => {
+    if (await trySetupPasskeyFirst()) return
+    if (onCloudSyncSetupClick) {
+      onCloudSyncSetupClick()
+    }
+  }
+
   const handleCloudSyncToggle = async (enabled: boolean) => {
     if (enabled) {
       // Check if encryption key exists
@@ -1248,12 +1255,7 @@ export function ChatSidebar({
                             cloud sync to be enabled on this device.
                           </p>
                           <button
-                            onClick={async () => {
-                              if (await trySetupPasskeyFirst()) return
-                              if (onCloudSyncSetupClick) {
-                                onCloudSyncSetupClick()
-                              }
-                            }}
+                            onClick={openCloudSyncSetup}
                             className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                           >
                             <CloudIcon className="h-3.5 w-3.5" />
@@ -1837,12 +1839,7 @@ export function ChatSidebar({
                         your data across multiple devices.
                       </p>
                       <button
-                        onClick={async () => {
-                          if (await trySetupPasskeyFirst()) return
-                          if (onCloudSyncSetupClick) {
-                            onCloudSyncSetupClick()
-                          }
-                        }}
+                        onClick={openCloudSyncSetup}
                         className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                       >
                         <CloudIcon className="h-3.5 w-3.5" />
