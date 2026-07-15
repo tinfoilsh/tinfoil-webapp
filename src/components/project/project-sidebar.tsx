@@ -987,7 +987,7 @@ export function ProjectSidebar({
                 'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
                 isLoading
                   ? 'cursor-default opacity-50'
-                  : 'text-content-secondary',
+                  : 'text-content-secondary hover:text-content-primary',
               )}
             >
               <span className="flex items-center gap-2">
@@ -1190,7 +1190,7 @@ export function ProjectSidebar({
                 'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
                 isLoading
                   ? 'cursor-default opacity-50'
-                  : 'text-content-secondary',
+                  : 'text-content-secondary hover:text-content-primary',
               )}
             >
               <span className="flex items-center gap-2">
