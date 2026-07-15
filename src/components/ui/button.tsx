@@ -1,4 +1,4 @@
-import { Slot } from '@radix-ui/react-slot'
+import { Slot, Slottable } from '@radix-ui/react-slot'
 import { cva, type VariantProps } from 'class-variance-authority'
 import * as React from 'react'
 
@@ -96,11 +96,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       >
         {chevron ? (
-          <span className="inline-flex items-center gap-2">
+          <>
             {back ? <HoverChevron back /> : <ChevronSpacer />}
-            {children}
+            <Slottable>{children}</Slottable>
             {back ? <ChevronSpacer /> : <HoverChevron />}
-          </span>
+          </>
         ) : (
           children
         )}
