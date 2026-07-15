@@ -10,6 +10,9 @@ import { createPortal } from 'react-dom'
 
 export function SignoutProgressOverlay() {
   const [state, setState] = useState(getSignoutProgressState)
+  // Tracks visibility through the exit animation so the background stays
+  // inert until the overlay has fully faded out.
+  const [overlayPresent, setOverlayPresent] = useState(state.visible)
   const overlayRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -20,11 +23,15 @@ export function SignoutProgressOverlay() {
     return unsubscribe
   }, [])
 
+  useEffect(() => {
+    if (state.visible) setOverlayPresent(true)
+  }, [state.visible])
+
   // The overlay only blocks pointer interaction visually; also make the
   // rest of the app inert so keyboard users cannot activate background
   // controls while destructive cleanup runs.
   useEffect(() => {
-    if (!state.visible) return
+    if (!overlayPresent) return
     const overlay = overlayRef.current
     const inerted: Element[] = []
     for (const el of Array.from(document.body.children)) {
@@ -36,12 +43,12 @@ export function SignoutProgressOverlay() {
     return () => {
       for (const el of inerted) el.removeAttribute('inert')
     }
-  }, [state.visible])
+  }, [overlayPresent])
 
   if (typeof document === 'undefined') return null
 
   return createPortal(
-    <AnimatePresence>
+    <AnimatePresence onExitComplete={() => setOverlayPresent(false)}>
       {state.visible && (
         <motion.div
           ref={overlayRef}
