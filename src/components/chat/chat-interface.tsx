@@ -17,6 +17,7 @@ import {
 import { useChatRouter } from '@/hooks/use-chat-router'
 import { useProjects } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
+import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
 import {
   getRateLimitInfo,
@@ -412,6 +413,7 @@ export function ChatInterface({
   const [settingsInitialTab, setSettingsInitialTab] = useState<
     SettingsTab | undefined
   >(undefined)
+  const syncNeedsAttention = useSyncHealthAttention()
 
   // State for share modal
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
@@ -1506,7 +1508,7 @@ export function ChatInterface({
       setIsSettingsModalOpen(false)
     } else {
       // Open settings and close verifier if open
-      setSettingsInitialTab(undefined)
+      setSettingsInitialTab(syncNeedsAttention ? 'cloud-sync' : undefined)
       setIsSettingsModalOpen(true)
       handleSetVerifierSidebarOpen(false)
       setIsAskSidebarOpen(false)
