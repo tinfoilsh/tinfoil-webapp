@@ -49,6 +49,17 @@ describe('parseLocalTinfoilExport', () => {
     })
   })
 
+  it('drops project associations that local import cannot restore', async () => {
+    const data = conversation()
+    ;(data[0] as Record<string, unknown>).projectId = 'project-123'
+    const file = new File([JSON.stringify(data)], 'conversations.json')
+
+    const chats = await parseLocalTinfoilExport(file, options)
+
+    expect(chats).toHaveLength(1)
+    expect(chats[0].projectId).toBeUndefined()
+  })
+
   it('restores attachment bytes from a Tinfoil ZIP export', async () => {
     const imageBytes = new Uint8Array([1, 2, 3, 4])
     const archive = zipSync({

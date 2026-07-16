@@ -159,13 +159,15 @@ export async function parseLocalTinfoilExport(
 
     if (messages.length > 0) {
       const createdAt = new Date(conversation.created_at)
+      // Local import does not restore projects, and the sidebar hides
+      // chats whose projectId has no matching project, so drop the
+      // exported project association.
       chats.push({
         id: options.generateChatId(createdAt),
         title: conversation.name || 'Imported Chat',
         messages,
         createdAt,
         updatedAt: conversation.updated_at,
-        projectId: conversation.projectId,
         isLocalOnly: true,
       })
     }
