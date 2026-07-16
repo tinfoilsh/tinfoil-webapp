@@ -129,17 +129,17 @@ export async function parseLocalTinfoilExport(
     const messages: Message[] = []
 
     for (const exportedMessage of conversation.chat_messages ?? []) {
-      const content = exportedMessage.text?.trim()
-      if (!content) continue
+      const content = exportedMessage.text?.trim() ?? ''
+      const attachments = (exportedMessage.attachments ?? []).map(
+        (attachment) => importAttachment(attachment, entries),
+      )
+      if (!content && attachments.length === 0) continue
 
       const message: Message = {
         role: exportedMessage.sender === 'human' ? 'user' : 'assistant',
         content,
         timestamp: new Date(exportedMessage.created_at),
       }
-      const attachments = (exportedMessage.attachments ?? []).map(
-        (attachment) => importAttachment(attachment, entries),
-      )
       if (attachments.length > 0) {
         message.attachments = attachments
       }

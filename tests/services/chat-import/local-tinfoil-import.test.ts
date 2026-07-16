@@ -60,6 +60,28 @@ describe('parseLocalTinfoilExport', () => {
     expect(chats[0].projectId).toBeUndefined()
   })
 
+  it('keeps attachment-only messages with empty text', async () => {
+    const data = conversation([
+      {
+        id: 'doc-1',
+        type: 'document',
+        fileName: 'notes.md',
+        textContent: 'Attached notes',
+      },
+    ])
+    data[0].chat_messages[0].text = ''
+    const file = new File([JSON.stringify(data)], 'conversations.json')
+
+    const chats = await parseLocalTinfoilExport(file, options)
+
+    expect(chats).toHaveLength(1)
+    expect(chats[0].messages).toHaveLength(1)
+    expect(chats[0].messages[0].content).toBe('')
+    expect(chats[0].messages[0].attachments).toMatchObject([
+      { id: 'doc-1', type: 'document', fileName: 'notes.md' },
+    ])
+  })
+
   it('restores attachment bytes from a Tinfoil ZIP export', async () => {
     const imageBytes = new Uint8Array([1, 2, 3, 4])
     const archive = zipSync({
