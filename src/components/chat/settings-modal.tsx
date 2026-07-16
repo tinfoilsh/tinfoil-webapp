@@ -17,6 +17,7 @@ import {
   USER_PREFS_TRAITS,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
+import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import { buildChatExport } from '@/services/chat-export/export-archive'
@@ -457,6 +458,7 @@ export function SettingsModal({
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     initialTab ?? 'account',
   )
+  const syncNeedsAttention = useSyncHealthAttention()
 
   // Update active tab when initialTab prop changes (e.g., opening to a specific tab)
   useEffect(() => {
@@ -2137,6 +2139,11 @@ ${encryptionKey.replace('key_', '')}
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
+                aria-label={
+                  item.id === 'cloud-sync' && syncNeedsAttention
+                    ? `${item.label} (needs attention)`
+                    : undefined
+                }
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
                   activeTab === item.id
@@ -2150,6 +2157,13 @@ ${encryptionKey.replace('key_', '')}
                   <item.icon className="h-4 w-4" />
                 )}
                 {item.label}
+                {item.id === 'cloud-sync' && syncNeedsAttention && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             ))}
           </nav>
@@ -2173,6 +2187,11 @@ ${encryptionKey.replace('key_', '')}
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
+                aria-label={
+                  item.id === 'cloud-sync' && syncNeedsAttention
+                    ? `${item.label} (needs attention)`
+                    : undefined
+                }
                 className={cn(
                   'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                   activeTab === item.id
@@ -2186,6 +2205,13 @@ ${encryptionKey.replace('key_', '')}
                   <item.icon className="h-5 w-5" />
                 )}
                 {item.label}
+                {item.id === 'cloud-sync' && syncNeedsAttention && (
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             ))}
           </nav>
@@ -3189,6 +3215,7 @@ ${encryptionKey.replace('key_', '')}
                     {cloudSyncEnabled && (
                       <CloudSyncHealthCard
                         isDarkMode={isDarkMode}
+                        chats={chats}
                         onRecoverClick={
                           onCloudSyncSetupClick
                             ? () => {
