@@ -1223,8 +1223,12 @@ export function ChatInterface({
   }, [windowWidth, setIsSidebarOpen, isArtifactSidebarOpen])
 
   // Auto-focus input when component mounts and is ready (no autoscroll)
+  // Keyed on the chat id, not the chat object: the object's identity changes
+  // on every stream flush and sync update, which would re-run this effect and
+  // repeatedly steal focus from whatever the user is typing in.
+  const currentChatId = currentChat?.id
   useEffect(() => {
-    if (isClient && !isLoadingConfig && currentChat) {
+    if (isClient && !isLoadingConfig && currentChatId) {
       // Skip auto-focus when sidebar is open on mobile — focusing the input
       // triggers handleInputFocus which closes the sidebar
       if (isSidebarOpen && windowWidth < CONSTANTS.MOBILE_BREAKPOINT) {
@@ -1232,6 +1236,19 @@ export function ChatInterface({
       }
       // Small delay to ensure DOM is ready and input is rendered
       const timer = setTimeout(() => {
+        // Re-runs triggered by viewport or sidebar changes (e.g. the mobile
+        // keyboard resizing the window) must never yank the caret out of
+        // another editable element the user is already typing in.
+        const active = document.activeElement
+        if (
+          active instanceof HTMLElement &&
+          active !== inputRef.current &&
+          (active.tagName === 'INPUT' ||
+            active.tagName === 'TEXTAREA' ||
+            active.isContentEditable)
+        ) {
+          return
+        }
         inputRef.current?.focus()
       }, 200)
       return () => clearTimeout(timer)
@@ -1239,7 +1256,7 @@ export function ChatInterface({
   }, [
     isClient,
     isLoadingConfig,
-    currentChat,
+    currentChatId,
     inputRef,
     isSidebarOpen,
     windowWidth,
@@ -1275,8 +1292,7 @@ export function ChatInterface({
 
   // Get the selected model details
   const selectedModelDetails = findSelectableModel(selectedModel, models) as
-    | BaseModel
-    | undefined
+    BaseModel | undefined
 
   // Initialize document uploader hook
   const { handleDocumentUpload, describeImageWithMultimodal } =
@@ -3420,9 +3436,9 @@ export function ChatInterface({
                   {selectPendingInputToolCallFromChat(currentChat) ? (
                     <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 md:px-8">
                       <GenUIInputAreaRenderer
-                        pending={
-                          selectPendingInputToolCallFromChat(currentChat)!
-                        }
+                        pending={selectPendingInputToolCallFromChat(
+                          currentChat,
+                        )!}
                         isDarkMode={isDarkMode}
                         onResolve={resolveInputToolCall}
                       />
