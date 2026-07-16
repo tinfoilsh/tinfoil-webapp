@@ -3205,6 +3205,7 @@ ${encryptionKey.replace('key_', '')}
                     {cloudSyncEnabled && (
                       <CloudSyncHealthCard
                         isDarkMode={isDarkMode}
+                        chats={chats}
                         onRecoverClick={
                           onCloudSyncSetupClick
                             ? () => {

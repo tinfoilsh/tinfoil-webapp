@@ -87,9 +87,12 @@ function describeStatus(health: SyncHealthSnapshot): {
   }
 }
 
+const MAX_FAILED_CHAT_DETAILS = 5
+
 interface CloudSyncHealthCardProps {
   isDarkMode: boolean
   onRecoverClick?: () => void
+  chats?: ReadonlyArray<{ id: string; title: string }>
 }
 
 /**
@@ -101,10 +104,14 @@ interface CloudSyncHealthCardProps {
 export function CloudSyncHealthCard({
   isDarkMode,
   onRecoverClick,
+  chats = [],
 }: CloudSyncHealthCardProps) {
   const health = useSyncHealth()
   const status = describeStatus(health)
-  const failedCount = Object.keys(health.failedChats).length
+  const failedEntries = Object.entries(health.failedChats)
+  const failedCount = failedEntries.length
+  const chatTitle = (chatId: string) =>
+    chats.find((chat) => chat.id === chatId)?.title ?? 'Untitled chat'
 
   return (
     <div
@@ -149,6 +156,20 @@ export function CloudSyncHealthCard({
                   ? "1 chat couldn't be synced."
                   : `${failedCount} chats couldn't be synced.`}{' '}
                 Affected chats are marked in the sidebar.
+                <ul className="mt-1 space-y-0.5">
+                  {failedEntries
+                    .slice(0, MAX_FAILED_CHAT_DETAILS)
+                    .map(([chatId, message]) => (
+                      <li key={chatId} className="truncate">
+                        <span className="font-medium">{chatTitle(chatId)}</span>
+                        {': '}
+                        {message}
+                      </li>
+                    ))}
+                  {failedCount > MAX_FAILED_CHAT_DETAILS && (
+                    <li>and {failedCount - MAX_FAILED_CHAT_DETAILS} more…</li>
+                  )}
+                </ul>
               </div>
             )}
           </div>
