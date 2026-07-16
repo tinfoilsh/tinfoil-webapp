@@ -12,6 +12,7 @@ import type { BaseModel } from '@/config/models'
 import { AUTO_MODEL_OPTIONS_FIELD, AUTO_REQUEST_MODEL } from '@/config/models'
 import { shouldRetryTestFail } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
+import { APIConnectionError, APIUserAbortError } from 'openai'
 import { ChatQueryBuilder } from './chat-query-builder'
 import { getTinfoilClient } from './tinfoil-client'
 
@@ -116,51 +117,38 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function isRetryableError(error: unknown): boolean {
-  const anyErr = error as any
+// Statuses the OpenAI SDK itself treats as retryable (client shouldRetry):
+// request timeout, lock timeout, and rate limit. 5xx is handled as a range.
+const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 429])
 
-  // Don't retry user-initiated aborts
-  if (
-    (typeof DOMException !== 'undefined' &&
-      anyErr instanceof DOMException &&
-      anyErr.name === 'AbortError') ||
-    anyErr?.name === 'AbortError'
-  ) {
+// Typed classification only — never inspect error message strings, which
+// vary across browsers, SDK versions, and locales.
+export function isRetryableError(error: unknown): boolean {
+  // Don't retry user-initiated aborts. APIUserAbortError is the SDK wrapper
+  // for our AbortSignal; "AbortError" is the spec-defined DOMException name
+  // for the same condition on raw fetch paths.
+  if (error instanceof APIUserAbortError) {
+    return false
+  }
+  if ((error as { name?: unknown })?.name === 'AbortError') {
     return false
   }
 
-  // Retry network errors
-  if (
-    anyErr?.message?.includes('network') ||
-    anyErr?.message?.includes('fetch')
-  ) {
+  // Transport failures raised by the SDK, including its request timeout
+  // (APIConnectionTimeoutError extends APIConnectionError).
+  if (error instanceof APIConnectionError) {
     return true
   }
 
-  // Retry connection errors
-  if (
-    anyErr?.message?.includes('connection') ||
-    anyErr?.message?.includes('ECONNRESET')
-  ) {
+  // fetch() signals a network failure by rejecting with a TypeError.
+  if (error instanceof TypeError) {
     return true
   }
 
-  // Retry timeout errors
-  if (
-    anyErr?.message?.includes('timeout') ||
-    anyErr?.message?.includes('ETIMEDOUT')
-  ) {
-    return true
-  }
-
-  // Retry 5xx server errors
-  if (anyErr?.status >= 500 && anyErr?.status < 600) {
-    return true
-  }
-
-  // Retry 429 rate limit errors
-  if (anyErr?.status === 429) {
-    return true
+  // Retry 5xx server errors, timeouts, and rate limits by HTTP status
+  const status = (error as { status?: unknown })?.status
+  if (typeof status === 'number') {
+    return status >= 500 || RETRYABLE_HTTP_STATUSES.has(status)
   }
 
   // Default to not retrying - only explicitly identified conditions should trigger retries
@@ -251,9 +239,11 @@ export async function sendChatStream(
       }
 
       try {
-        // Check if this is a retry test that should fail
+        // Check if this is a retry test that should fail. A TypeError is
+        // what fetch() rejects with on a real network failure, so the
+        // simulation exercises the same retry classification as production.
         if (shouldRetryTestFail(queryText)) {
-          throw new Error('Simulated network error for retry testing')
+          throw new TypeError('Simulated network error for retry testing')
         }
 
         const response = await fetch(simulatorUrl, {

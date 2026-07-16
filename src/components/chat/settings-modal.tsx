@@ -20,6 +20,7 @@ import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import { buildChatExport } from '@/services/chat-export/export-archive'
+import { parseLocalTinfoilExport } from '@/services/chat-import/local-tinfoil-import'
 import { runOffDeviceImport } from '@/services/chat-import/off-device-import'
 import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
@@ -187,12 +188,7 @@ const STEP_CIRCLE_CLASSES = cn(
 )
 
 export type SettingsTab =
-  | 'general'
-  | 'chat'
-  | 'personalization'
-  | 'prompts'
-  | 'cloud-sync'
-  | 'account'
+  'general' | 'chat' | 'personalization' | 'prompts' | 'cloud-sync' | 'account'
 
 import type { ThemeMode } from './hooks/use-ui-state'
 
@@ -1236,6 +1232,62 @@ export function SettingsModal({
     isCloudSyncEnabled: isCloudSyncEnabled(),
   })
 
+  const saveImportedChats = async (
+    chats: Chat[],
+  ): Promise<{ imported: number; errors: string[] }> => {
+    setImportProgress({ current: 0, total: chats.length, type: 'chats' })
+
+    let imported = 0
+    const errors: string[] = []
+
+    // Save all chats to IndexedDB first (skip cloud sync on individual saves)
+    for (let i = 0; i < chats.length; i++) {
+      try {
+        await chatStorage.saveChat(chats[i], true) // skipCloudSync = true
+        imported++
+      } catch {
+        errors.push(`Failed to save "${chats[i].title}" locally`)
+      }
+      setImportProgress({
+        current: i + 1,
+        total: chats.length,
+        type: 'chats',
+      })
+    }
+
+    // Bulk upload to cloud if sync is enabled
+    if (isCloudSyncEnabled() && (await cloudStorage.isAuthenticated())) {
+      const CHUNK_SIZE = 100
+      const chatsToUpload = chats.filter((c) => !c.isLocalOnly)
+      let cloudUploadFailed = false
+
+      for (let i = 0; i < chatsToUpload.length; i += CHUNK_SIZE) {
+        const chunk = chatsToUpload.slice(i, i + CHUNK_SIZE)
+        try {
+          const result = await cloudStorage.bulkUploadChats(chunk)
+          if (result.failed > 0) {
+            result.results
+              .filter((r) => !r.success)
+              .forEach((r) =>
+                errors.push(
+                  `Cloud upload failed: ${r.error || r.conversationId}`,
+                ),
+              )
+          }
+        } catch (err) {
+          if (!cloudUploadFailed) {
+            errors.push(
+              `Cloud sync failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+            )
+            cloudUploadFailed = true
+          }
+        }
+      }
+    }
+
+    return { imported, errors }
+  }
+
   // Cloud-sync users import off-device: the raw export is uploaded to
   // the enclave, which parses, seals, and stores everything without the
   // plaintext touching app servers, then emails the user on completion.
@@ -1316,55 +1368,7 @@ export function SettingsModal({
       }
 
       const chats = parseChatGPTConversations(data, getParseOptions())
-      setImportProgress({ current: 0, total: chats.length, type: 'chats' })
-
-      let imported = 0
-      const errors: string[] = []
-
-      // Save all chats to IndexedDB first (skip cloud sync on individual saves)
-      for (let i = 0; i < chats.length; i++) {
-        try {
-          await chatStorage.saveChat(chats[i], true) // skipCloudSync = true
-          imported++
-        } catch (err) {
-          errors.push(`Failed to save "${chats[i].title}" locally`)
-        }
-        setImportProgress({
-          current: i + 1,
-          total: chats.length,
-          type: 'chats',
-        })
-      }
-
-      // Bulk upload to cloud if sync is enabled
-      if (isCloudSyncEnabled() && (await cloudStorage.isAuthenticated())) {
-        const CHUNK_SIZE = 100
-        const chatsToUpload = chats.filter((c) => !c.isLocalOnly)
-        let cloudUploadFailed = false
-
-        for (let i = 0; i < chatsToUpload.length; i += CHUNK_SIZE) {
-          const chunk = chatsToUpload.slice(i, i + CHUNK_SIZE)
-          try {
-            const result = await cloudStorage.bulkUploadChats(chunk)
-            if (result.failed > 0) {
-              result.results
-                .filter((r) => !r.success)
-                .forEach((r) =>
-                  errors.push(
-                    `Cloud upload failed: ${r.error || r.conversationId}`,
-                  ),
-                )
-            }
-          } catch (err) {
-            if (!cloudUploadFailed) {
-              errors.push(
-                `Cloud sync failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-              )
-              cloudUploadFailed = true
-            }
-          }
-        }
-      }
+      const { imported, errors } = await saveImportedChats(chats)
 
       setImportResult({
         success: errors.length === 0,
@@ -1413,21 +1417,45 @@ export function SettingsModal({
     }
 
     setImportSource('tinfoil')
-    setImportResult({
-      success: false,
-      chatsImported: 0,
-      projectsImported: 0,
-      errors: [
-        'Tinfoil exports with attachments can be re-imported when cloud sync is enabled.',
-      ],
-    })
-    toast({
-      title: 'Cloud sync required',
-      description:
-        'Turn on cloud sync to re-import Tinfoil exports securely through the enclave.',
-      variant: 'destructive',
-    })
-    e.target.value = ''
+    setIsImporting(true)
+    setImportResult(null)
+
+    try {
+      const chats = await parseLocalTinfoilExport(file, getParseOptions())
+      const { imported, errors } = await saveImportedChats(chats)
+
+      setImportResult({
+        success: errors.length === 0,
+        chatsImported: imported,
+        projectsImported: 0,
+        errors,
+      })
+
+      if (onChatsUpdated) {
+        onChatsUpdated()
+      }
+
+      toast({
+        title: 'Import complete',
+        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Tinfoil`,
+      })
+    } catch (err) {
+      setImportResult({
+        success: false,
+        chatsImported: 0,
+        projectsImported: 0,
+        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
+      })
+      toast({
+        title: 'Import failed',
+        description: 'Could not parse the Tinfoil export file',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsImporting(false)
+      setImportProgress(null)
+      e.target.value = ''
+    }
   }
 
   const handleImportClaudeConversations = async (
@@ -1455,55 +1483,7 @@ export function SettingsModal({
       }
 
       const chats = parseClaudeConversations(data, getParseOptions())
-      setImportProgress({ current: 0, total: chats.length, type: 'chats' })
-
-      let imported = 0
-      const errors: string[] = []
-
-      // Save all chats to IndexedDB first (skip cloud sync on individual saves)
-      for (let i = 0; i < chats.length; i++) {
-        try {
-          await chatStorage.saveChat(chats[i], true) // skipCloudSync = true
-          imported++
-        } catch (err) {
-          errors.push(`Failed to save "${chats[i].title}" locally`)
-        }
-        setImportProgress({
-          current: i + 1,
-          total: chats.length,
-          type: 'chats',
-        })
-      }
-
-      // Bulk upload to cloud if sync is enabled
-      if (isCloudSyncEnabled() && (await cloudStorage.isAuthenticated())) {
-        const CHUNK_SIZE = 100
-        const chatsToUpload = chats.filter((c) => !c.isLocalOnly)
-        let cloudUploadFailed = false
-
-        for (let i = 0; i < chatsToUpload.length; i += CHUNK_SIZE) {
-          const chunk = chatsToUpload.slice(i, i + CHUNK_SIZE)
-          try {
-            const result = await cloudStorage.bulkUploadChats(chunk)
-            if (result.failed > 0) {
-              result.results
-                .filter((r) => !r.success)
-                .forEach((r) =>
-                  errors.push(
-                    `Cloud upload failed: ${r.error || r.conversationId}`,
-                  ),
-                )
-            }
-          } catch (err) {
-            if (!cloudUploadFailed) {
-              errors.push(
-                `Cloud sync failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-              )
-              cloudUploadFailed = true
-            }
-          }
-        }
-      }
+      const { imported, errors } = await saveImportedChats(chats)
 
       setImportResult({
         success: errors.length === 0,
@@ -4089,9 +4069,8 @@ ${encryptionKey.replace('key_', '')}
                       )}
                     >
                       <div className="font-aeonik-fono text-xs text-content-muted">
-                        Re-import a Tinfoil conversations export through the
-                        sync enclave. We&apos;ll email you when the import is
-                        done.
+                        Re-import a Tinfoil conversations export. When cloud
+                        sync is off, chats and attachments stay in this browser.
                       </div>
                       <input
                         ref={tinfoilFileInputRef}
