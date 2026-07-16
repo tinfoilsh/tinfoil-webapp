@@ -38,6 +38,7 @@ interface TinfoilExportedConversation {
 
 export interface LocalTinfoilImportOptions {
   generateChatId: (createdAt?: Date) => string
+  isCloudSyncEnabled: boolean
 }
 
 function isZip(file: File): boolean {
@@ -168,7 +169,7 @@ export async function parseLocalTinfoilExport(
         messages,
         createdAt,
         updatedAt: conversation.updated_at,
-        isLocalOnly: true,
+        isLocalOnly: !options.isCloudSyncEnabled,
       })
     }
   }

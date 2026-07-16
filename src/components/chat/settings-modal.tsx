@@ -1421,25 +1421,8 @@ export function SettingsModal({
     setImportResult(null)
 
     try {
-      const chats = await parseLocalTinfoilExport(file, { generateChatId })
-      setImportProgress({ current: 0, total: chats.length, type: 'chats' })
-
-      let imported = 0
-      const errors: string[] = []
-
-      for (let i = 0; i < chats.length; i++) {
-        try {
-          await chatStorage.saveChat(chats[i], true) // skipCloudSync = true
-          imported++
-        } catch {
-          errors.push(`Failed to save "${chats[i].title}" locally`)
-        }
-        setImportProgress({
-          current: i + 1,
-          total: chats.length,
-          type: 'chats',
-        })
-      }
+      const chats = await parseLocalTinfoilExport(file, getParseOptions())
+      const { imported, errors } = await saveImportedChats(chats)
 
       setImportResult({
         success: errors.length === 0,

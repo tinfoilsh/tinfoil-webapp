@@ -5,6 +5,7 @@ import { parseLocalTinfoilExport } from '@/services/chat-import/local-tinfoil-im
 
 const options = {
   generateChatId: () => 'imported-chat',
+  isCloudSyncEnabled: false,
 }
 
 function conversation(attachments?: unknown[]) {
@@ -47,6 +48,21 @@ describe('parseLocalTinfoilExport', () => {
       role: 'user',
       content: 'Hello from another device',
     })
+  })
+
+  it('marks chats as syncable when cloud sync is enabled', async () => {
+    const file = new File(
+      [JSON.stringify(conversation())],
+      'conversations.json',
+    )
+
+    const chats = await parseLocalTinfoilExport(file, {
+      ...options,
+      isCloudSyncEnabled: true,
+    })
+
+    expect(chats).toHaveLength(1)
+    expect(chats[0].isLocalOnly).toBe(false)
   })
 
   it('drops project associations that local import cannot restore', async () => {
