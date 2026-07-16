@@ -2,21 +2,17 @@ import { cn } from '@/components/ui/utils'
 
 const DASHED_LINE_COLOR = 'rgba(6, 24, 32, 0.18)'
 
-const horizontalStyle = {
-  backgroundImage: `repeating-linear-gradient(to right, ${DASHED_LINE_COLOR} 0, ${DASHED_LINE_COLOR} 4px, transparent 4px, transparent 8px)`,
-  maskImage:
-    'linear-gradient(to right, transparent, black 30%, black 70%, transparent)',
-  WebkitMaskImage:
-    'linear-gradient(to right, transparent, black 30%, black 70%, transparent)',
+function createDashedLineStyle(direction: 'to right' | 'to bottom') {
+  const mask = `linear-gradient(${direction}, transparent, black 30%, black 70%, transparent)`
+  return {
+    backgroundImage: `repeating-linear-gradient(${direction}, ${DASHED_LINE_COLOR} 0, ${DASHED_LINE_COLOR} 4px, transparent 4px, transparent 8px)`,
+    maskImage: mask,
+    WebkitMaskImage: mask,
+  }
 }
 
-const verticalStyle = {
-  backgroundImage: `repeating-linear-gradient(to bottom, ${DASHED_LINE_COLOR} 0, ${DASHED_LINE_COLOR} 4px, transparent 4px, transparent 8px)`,
-  maskImage:
-    'linear-gradient(to bottom, transparent, black 30%, black 70%, transparent)',
-  WebkitMaskImage:
-    'linear-gradient(to bottom, transparent, black 30%, black 70%, transparent)',
-}
+const horizontalStyle = createDashedLineStyle('to right')
+const verticalStyle = createDashedLineStyle('to bottom')
 
 export function DashedLines({
   horizontalClassName = '-left-6 -right-6',

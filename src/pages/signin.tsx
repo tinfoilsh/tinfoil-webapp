@@ -3,10 +3,11 @@
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { logError } from '@/utils/error-handling'
+import { sanitizeRelativeRedirect } from '@/utils/redirect-url'
 import { useSignIn, useSignUp } from '@clerk/nextjs'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FaApple } from 'react-icons/fa'
 import { FcGoogle } from 'react-icons/fc'
 import { PiSpinner } from 'react-icons/pi'
@@ -113,6 +114,13 @@ export default function SignInPage() {
     return () => observer.disconnect()
   }, [])
 
+  // Optional relative return path (e.g. /signin?redirect_url=/some/page) so
+  // entry points like the subscribe prompt can send users back where they
+  // were after authenticating.
+  const postAuthRedirectUrl =
+    sanitizeRelativeRedirect(router.query.redirect_url) ??
+    POST_AUTH_REDIRECT_URL
+
   const navigateAfterAuth = async ({
     session,
     decorateUrl,
@@ -122,7 +130,7 @@ export default function SignInPage() {
       return
     }
 
-    const url = decorateUrl(POST_AUTH_REDIRECT_URL)
+    const url = decorateUrl(postAuthRedirectUrl)
     if (url.startsWith('http')) {
       window.location.href = url
       return
@@ -248,10 +256,16 @@ export default function SignInPage() {
       'Could not start social sign-in',
       'handleSocialSignIn',
       async () => {
+        // Carry the return path on the callback URL so resumed flows (MFA,
+        // sign-up details) can restore it when they land back on /signin.
+        const redirectCallbackUrl =
+          postAuthRedirectUrl === POST_AUTH_REDIRECT_URL
+            ? SSO_CALLBACK_URL
+            : `${SSO_CALLBACK_URL}?redirect_url=${encodeURIComponent(postAuthRedirectUrl)}`
         const { error } = await signIn.sso({
           strategy,
-          redirectCallbackUrl: SSO_CALLBACK_URL,
-          redirectUrl: POST_AUTH_REDIRECT_URL,
+          redirectCallbackUrl,
+          redirectUrl: postAuthRedirectUrl,
         })
         if (error) {
           setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
@@ -368,6 +382,72 @@ export default function SignInPage() {
       },
     )
   }
+
+  // Social sign-ins that still need MFA, client trust, or sign-up details
+  // come back from the SSO callback with ?resume=1 — pick the flow back up
+  // instead of dropping the user on the blank email form.
+  const resumeAttemptedRef = useRef(false)
+  useEffect(() => {
+    if (!router.isReady || router.query.resume !== '1') return
+    if (resumeAttemptedRef.current) return
+
+    if (
+      signIn.status === 'needs_second_factor' ||
+      signIn.status === 'needs_client_trust'
+    ) {
+      resumeAttemptedRef.current = true
+      if (signIn.identifier) {
+        setEmailAddress(signIn.identifier)
+      }
+      void runAuthAction(
+        'verify',
+        'Could not resume social sign-in',
+        'resumeSsoSignIn',
+        continueSignIn,
+      )
+      return
+    }
+
+    if (signIn.status === 'needs_first_factor') {
+      resumeAttemptedRef.current = true
+      const hasEmailCode = signIn.supportedFirstFactors.some(
+        (factor) => factor.strategy === 'email_code',
+      )
+      if (!hasEmailCode) {
+        setErrorMessage(UNSUPPORTED_REQUIREMENTS_MESSAGE)
+        return
+      }
+      if (signIn.identifier) {
+        setEmailAddress(signIn.identifier)
+      }
+      void runAuthAction(
+        'email',
+        'Could not resume social sign-in',
+        'resumeSsoFirstFactor',
+        async () => {
+          const { error } = await signIn.emailCode.sendCode()
+          if (error) {
+            setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+            return
+          }
+          setVerificationKind('primary')
+          setStep('code')
+        },
+      )
+      return
+    }
+
+    if (signUp.status === 'missing_requirements') {
+      resumeAttemptedRef.current = true
+      void runAuthAction(
+        'details',
+        'Could not resume social sign-up',
+        'resumeSsoSignUp',
+        showAdditionalRequirements,
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router.isReady, router.query.resume, signIn, signUp])
 
   const startOver = () => {
     signIn.reset()

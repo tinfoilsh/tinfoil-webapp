@@ -27,23 +27,40 @@ interface ClearUserDataOptions {
   preserveUserId?: string
   /** If true, keep the encryption key in localStorage (for signout without passkey backup) */
   preserveEncryptionKey?: boolean
+  /**
+   * If true, don't surface progress in the signout overlay. Used for
+   * user-switch cleanup, which is not a signout.
+   */
+  skipProgressReporting?: boolean
   /** Logging context label */
   context: string
 }
 
 async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
-  const { context, preserveUserId, preserveEncryptionKey } = options
+  const {
+    context,
+    preserveUserId,
+    preserveEncryptionKey,
+    skipProgressReporting = false,
+  } = options
+
+  const reportStep = (step: number) => {
+    if (!skipProgressReporting) reportSignoutStep(step)
+  }
+  const completeStep = (step: number) => {
+    if (!skipProgressReporting) completeSignoutStep(step)
+  }
 
   // Clear encryption key immediately (in-memory + localStorage) before any
   // async work, so concurrent code cannot re-persist a stale key.
-  reportSignoutStep(SIGNOUT_STEPS.CLEAR_KEY)
+  reportStep(SIGNOUT_STEPS.CLEAR_KEY)
   if (!preserveEncryptionKey) {
     encryptionService.clearKey({ persist: true })
   }
-  completeSignoutStep(SIGNOUT_STEPS.CLEAR_KEY)
+  completeStep(SIGNOUT_STEPS.CLEAR_KEY)
 
   // Reset renderer registry to clear any cached renderers
-  reportSignoutStep(SIGNOUT_STEPS.RESET_CACHES)
+  reportStep(SIGNOUT_STEPS.RESET_CACHES)
   resetRendererRegistry()
 
   // Reset tinfoil client to clear cached API key
@@ -72,10 +89,10 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
     component: context,
     action: 'clearAllUserData',
   })
-  completeSignoutStep(SIGNOUT_STEPS.RESET_CACHES)
+  completeStep(SIGNOUT_STEPS.RESET_CACHES)
 
   // Clear localStorage, preserving only non-user-specific keys
-  reportSignoutStep(SIGNOUT_STEPS.CLEAR_STORAGE)
+  reportStep(SIGNOUT_STEPS.CLEAR_STORAGE)
   try {
     const encryptionKey = preserveEncryptionKey
       ? localStorage.getItem(USER_ENCRYPTION_KEY)
@@ -101,10 +118,10 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   } catch {
     // best-effort
   }
-  completeSignoutStep(SIGNOUT_STEPS.CLEAR_STORAGE)
+  completeStep(SIGNOUT_STEPS.CLEAR_STORAGE)
 
   // Clear IndexedDB
-  reportSignoutStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
+  reportStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
   try {
     await indexedDBStorage.clearAll()
   } catch (error) {
@@ -123,7 +140,7 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
       // best-effort
     }
   }
-  completeSignoutStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
+  completeStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
 }
 
 export async function performSignoutCleanup(opts?: {
@@ -182,6 +199,7 @@ export function performUserSwitchCleanup(newUserId: string): void {
   clearAllUserData({
     context: 'AuthCleanupHandler',
     preserveUserId: newUserId,
+    skipProgressReporting: true,
   })
     .catch((error) => {
       logError('Failed to clear user data during switch', error, {

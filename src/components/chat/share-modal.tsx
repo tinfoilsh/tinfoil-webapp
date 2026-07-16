@@ -329,7 +329,7 @@ export function ShareModal({
         <DialogPrimitive.Content
           aria-modal="true"
           aria-describedby={undefined}
-          className="fixed left-[50%] top-[50%] z-50 flex h-[80vh] w-[90vw] max-w-4xl translate-x-[-50%] translate-y-[-50%] flex-col rounded-xl border border-border-subtle bg-surface-sidebar shadow-xl focus:outline-none"
+          className="fixed left-[50%] top-[50%] z-50 flex h-[80vh] w-[90vw] max-w-4xl translate-x-[-50%] translate-y-[-50%] flex-col rounded-site-lg border border-border-subtle bg-surface-card shadow-xl focus:outline-none"
           style={{
             maxWidth: `min(896px, calc(90vw - ${leftOffset + rightOffset}px))`,
             marginLeft: `${(leftOffset - rightOffset) / 2}px`,

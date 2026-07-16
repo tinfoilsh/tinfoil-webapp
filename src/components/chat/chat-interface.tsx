@@ -46,7 +46,6 @@ import {
 import { StreamErrorBanner } from '@/components/chat/stream-error-banner'
 import { classifyCloudKeySetupError } from '@/components/modals/cloud-sync-setup-mode'
 import {
-  ProjectModeBanner,
   ProjectSidebar,
   useProject,
   useProjectSystemPrompt,
@@ -269,7 +268,12 @@ export function ChatInterface({
             has_completed_onboarding: true,
           },
         })
-        .catch(() => {})
+        .catch((error) => {
+          logError('Failed to backfill onboarding completion flag', error, {
+            component: 'ChatInterface',
+            action: 'backfillOnboardingFlag',
+          })
+        })
     }
   }, [isSignedIn, user])
 
@@ -743,6 +747,9 @@ export function ChatInterface({
     initialChatDecryptionFailed,
     clearInitialChatDecryptionFailed,
     localChatNotFound,
+    initialChatLoadFailed,
+    cloudChatNotFound,
+    retryInitialChatLoad,
   } = useChatState({
     systemPrompt: finalSystemPrompt,
     rules: processedRules,
@@ -864,8 +871,11 @@ export function ChatInterface({
   useEffect(() => {
     // Don't update URL during initial load
     if (isInitialLoad) return
-    // Don't clear URL when showing decryption failed screen
+    // Don't clear URL when showing error screens
     if (initialChatDecryptionFailed) return
+    if (initialChatLoadFailed) return
+    if (cloudChatNotFound) return
+    if (localChatNotFound) return
 
     // Track when we've successfully loaded the initial chat from URL
     if (initialChatId && currentChat.id === initialChatId) {
@@ -940,6 +950,9 @@ export function ChatInterface({
     activeProject?.id,
     isInitialLoad,
     initialChatDecryptionFailed,
+    initialChatLoadFailed,
+    cloudChatNotFound,
+    localChatNotFound,
     isSignedIn,
     isLocalChatUrl,
     initialChatId,
@@ -2631,6 +2644,93 @@ export function ChatInterface({
     )
   }
 
+  // Cloud chat referenced by the URL does not exist on the server.
+  if (cloudChatNotFound) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
+        <div className="max-w-md text-center">
+          <div className="mb-6 flex justify-center">
+            <div className="rounded-full bg-surface-chat p-4">
+              <ChatBubbleLeftRightIcon className="h-8 w-8 text-content-secondary" />
+            </div>
+          </div>
+          <h2 className="mb-3 text-xl font-semibold text-content-primary">
+            Chat not found
+          </h2>
+          <p className="mb-6 text-content-secondary">
+            This chat may have been deleted or is no longer available.
+          </p>
+          <button
+            onClick={() => {
+              clearUrl()
+              window.location.href = '/'
+            }}
+            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+          >
+            Start new chat
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // While the chat referenced by the URL is still being fetched, show a
+  // loading screen instead of flashing the welcome screen before the chat
+  // appears. The ref keeps later in-app chat switches from re-triggering it.
+  if (
+    initialChatId &&
+    !initialUrlChatLoadedRef.current &&
+    currentChat.id !== initialChatId &&
+    !initialChatLoadFailed
+  ) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-surface-chat-background px-4 font-aeonik">
+        <PiSpinner className="h-8 w-8 animate-spin text-content-secondary" />
+        <p className="text-content-secondary">Loading chat...</p>
+      </div>
+    )
+  }
+
+  // Cloud chat failed to load due to a transient error (network, key
+  // not ready, etc.). Offer a retry instead of silently landing on a
+  // blank new chat and losing the URL.
+  if (initialChatLoadFailed) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
+        <div className="max-w-md text-center">
+          <div className="mb-6 flex justify-center">
+            <div className="rounded-full bg-surface-chat p-4">
+              <TfTinSad className="h-8 w-8 text-content-secondary" />
+            </div>
+          </div>
+          <h2 className="mb-3 text-xl font-semibold text-content-primary">
+            Couldn&apos;t load chat
+          </h2>
+          <p className="mb-6 text-content-secondary">
+            A network error occurred while loading this chat. Please try again.
+          </p>
+          <div className="flex justify-center gap-3">
+            <button
+              onClick={retryInitialChatLoad}
+              className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+            >
+              Try again
+            </button>
+            <button
+              onClick={() => {
+                clearUrl()
+                window.location.href = '/'
+              }}
+              className="rounded-lg border border-border-subtle px-6 py-2.5 text-content-primary transition-colors hover:bg-surface-chat"
+            >
+              Start new chat
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // Show error state if no models are available (configuration error)
   if (!isLoadingConfig && models.length === 0) {
     return (
@@ -2823,7 +2923,7 @@ export function ChatInterface({
                   className={cn(
                     'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
                     isTemporaryMode
-                      ? 'border-orange-500/40 bg-orange-500/15 text-orange-500 hover:bg-orange-500/25'
+                      ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
                       : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                   )}
                 >
@@ -3000,6 +3100,8 @@ export function ChatInterface({
                 onCloudSyncSetupClick={
                   isSignedIn ? handleOpenCloudSyncSetup : undefined
                 }
+                passkeySetupAvailable={passkeySetupAvailable}
+                onSetupPasskey={setupPasskey}
                 onAddPasskeyToThisDevice={addPasskeyToThisDevice}
                 passkeyAddDeviceAvailable={passkeyAddDeviceAvailable}
                 backupWarningVisible={
@@ -3187,15 +3289,6 @@ export function ChatInterface({
                 : '',
             )}
           >
-            {/* Project Mode Banner */}
-            {(isProjectMode && activeProject) || loadingProject ? (
-              <ProjectModeBanner
-                projectName={activeProject?.name || loadingProject?.name || ''}
-                isDarkMode={isDarkMode}
-                color={activeProject?.color}
-              />
-            ) : null}
-
             {/* Rate Limit Banner (desktop) — on mobile this renders as a
                 floating pill above the chat input instead. */}
             {shouldShowRateLimitBanner(rateLimit) && (
@@ -3293,7 +3386,6 @@ export function ChatInterface({
                         ? handleCodeExecutionToggle
                         : undefined
                     }
-                    onOpenVerifier={() => setIsVerifierSidebarOpen(true)}
                     isTemporaryMode={isTemporaryMode}
                     activePromptPreset={activePreset}
                     onOpenPromptLibrary={handleOpenPromptLibrary}
@@ -3340,15 +3432,6 @@ export function ChatInterface({
                       onSubmit={handleSubmit}
                       className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8"
                     >
-                      {!currentChat?.messages?.length && (
-                        <div className="mb-3 md:hidden">
-                          <PromptPresetSuggestions
-                            activePreset={activePreset}
-                            onSetActive={handleSetActivePreset}
-                            onOpenLibrary={handleOpenPromptLibrary}
-                          />
-                        </div>
-                      )}
                       {shouldShowRateLimitBanner(rateLimit) && (
                         <RateLimitBanner
                           rateLimit={rateLimit}
@@ -3390,6 +3473,17 @@ export function ChatInterface({
                         activePromptPreset={activePreset}
                         onOpenPromptLibrary={handleOpenPromptLibrary}
                         onClearPromptPreset={() => handleSetActivePreset(null)}
+                        mobileHeader={
+                          !currentChat?.messages?.length ? (
+                            <div className="mb-3 md:hidden">
+                              <PromptPresetSuggestions
+                                activePreset={activePreset}
+                                onSetActive={handleSetActivePreset}
+                                onOpenLibrary={handleOpenPromptLibrary}
+                              />
+                            </div>
+                          ) : undefined
+                        }
                         hasMessages={
                           currentChat?.messages &&
                           currentChat.messages.length > 0
@@ -3556,7 +3650,8 @@ export function ChatInterface({
             passkeyActive ||
             passkeyRecoveryNeeded ||
             passkeySetupAvailable ||
-            passkeyAddDeviceAvailable
+            passkeyAddDeviceAvailable ||
+            passkeyFirstTimePromptAvailable
           }
           passkeyRecoveryNeeded={passkeyRecoveryNeeded}
           manualRecoveryNeeded={manualRecoveryNeeded}

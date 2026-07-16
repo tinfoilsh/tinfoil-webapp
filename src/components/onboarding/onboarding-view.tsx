@@ -1,4 +1,6 @@
+import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
+import { GridTexture } from '@/components/ui/grid-texture'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/nextjs'
@@ -72,7 +74,8 @@ export function OnboardingView({
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4">
+      <GridTexture opacity={0.02} />
+      <div className="relative z-10 flex min-h-0 flex-1 items-center justify-center overflow-y-auto p-4">
         <div className="flex w-full max-w-md flex-col items-center">
           {/* Page content */}
           <div className="relative flex min-h-[420px] w-full flex-col items-center justify-center">
@@ -111,7 +114,7 @@ export function OnboardingView({
               size="landing"
               chevron
               onClick={handleContinue}
-              className="mx-auto w-fit"
+              className="w-full"
             >
               {currentPage === PRIVACY_PAGE_INDEX && privacyEnabled
                 ? 'Get Started'
@@ -121,7 +124,7 @@ export function OnboardingView({
         </div>
       </div>
 
-      <p className="text-balance px-6 pb-4 text-center text-sm text-content-muted">
+      <p className="relative z-10 text-balance px-6 pb-4 text-center text-sm text-content-muted">
         By continuing, you agree to our{' '}
         <a
           href={TERMS_URL}
@@ -148,8 +151,8 @@ export function OnboardingView({
 // MARK: - Page 1: Letter from the Founders
 
 const FOUNDERS_LETTER_PARAGRAPHS = [
-  'This chat was built as a sanctuary for thought.',
-  'We believe that AI is the most intimate technology yet created. We see AI as a space to explore, to make mistakes, to think out loud, to reflect with a beautiful and deep intelligence on the other end.',
+  'Tinfoil Chat was built as a sanctuary for thought.',
+  'At Tinfoil, we believe that AI is the most intimate technology yet created. We see AI as a space to explore, to make mistakes, to think out loud, to reflect with a beautiful and deep intelligence on the other end.',
   <>
     This is <em>your</em> space to explore ideas in private.
   </>,
@@ -165,6 +168,10 @@ function OnboardingLetterPage() {
       transition={{ duration: 0.3, ease: 'easeInOut' }}
     >
       <div className="flex w-full flex-col gap-5">
+        <div className="flex justify-center">
+          <Logo className="h-8 w-auto dark:hidden" />
+          <Logo dark className="hidden h-8 w-auto dark:block" />
+        </div>
         <div className="relative overflow-hidden rounded-xl">
           <img
             src="/onboarding/intro-banner.jpeg"
@@ -254,7 +261,7 @@ function OnboardingPrivacyPage({
 
         <div className="space-y-2 text-center">
           <h2 className="font-aeonik text-3xl font-bold text-content-primary">
-            Private by Design
+            Private, by Design.
           </h2>
           <p className="text-balance text-base text-content-secondary">
             Tinfoil Chat runs every conversation inside secure enclaves, giving
@@ -273,7 +280,7 @@ function OnboardingPrivacyPage({
               onClick={() => onChange(!privacyEnabled)}
               aria-label="Toggle privacy"
               aria-pressed={privacyEnabled}
-              className={`group flex h-14 w-28 items-center rounded-full p-1 shadow-inner outline-none focus-visible:ring-2 focus-visible:ring-brand-accent-light focus-visible:ring-offset-2 ${
+              className={`group flex h-14 w-28 items-center rounded-full p-1 shadow-inner outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-surface-chat-background ${
                 privacyEnabled
                   ? 'justify-end bg-brand-accent-dark dark:bg-brand-accent-light'
                   : 'justify-start bg-destructive/90'

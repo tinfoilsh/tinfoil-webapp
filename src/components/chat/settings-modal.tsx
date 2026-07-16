@@ -488,10 +488,6 @@ export function SettingsModal({
     }
   }, [isOpen, activeTab])
 
-  // Placeholder animation state
-  const [placeholderIndex, setPlaceholderIndex] = useState(0)
-  const [placeholderVisible, setPlaceholderVisible] = useState(true)
-
   // Upgrade state
   const [upgradeLoading, setUpgradeLoading] = useState(false)
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
@@ -554,36 +550,6 @@ export function SettingsModal({
     'skeptical',
     'optimistic',
   ]
-
-  // Cycling profession placeholders
-  const professionPlaceholders = [
-    'Software engineer',
-    'Designer',
-    'Product manager',
-    'Teacher',
-    'Student',
-    'Writer',
-    'Entrepreneur',
-    'Researcher',
-    'Marketing specialist',
-    'Data scientist',
-  ]
-
-  // Cycle through profession placeholders with fade animation
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPlaceholderVisible(false)
-      setTimeout(() => {
-        setPlaceholderIndex(
-          (prev) => (prev + 1) % professionPlaceholders.length,
-        )
-        setPlaceholderVisible(true)
-      }, 150)
-    }, 2000)
-    return () => clearInterval(interval)
-  }, [professionPlaceholders.length])
-
-  const getCurrentPlaceholder = () => professionPlaceholders[placeholderIndex]
 
   // Available languages for dropdown
   const availableLanguages = [
@@ -2154,7 +2120,7 @@ ${encryptionKey.replace('key_', '')}
           stiffness: 300,
         }}
         className={cn(
-          'relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col overflow-hidden rounded-xl border font-aeonik shadow-xl md:flex-row',
+          'relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col overflow-hidden rounded-site-lg border font-aeonik shadow-xl md:flex-row',
           'border-border-subtle bg-surface-sidebar text-content-primary',
         )}
       >
@@ -2423,7 +2389,7 @@ ${encryptionKey.replace('key_', '')}
                           value={language}
                           onChange={(e) => handleLanguageChange(e.target.value)}
                           className={cn(
-                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
                             isDarkMode
                               ? 'border-border-strong bg-surface-chat text-content-secondary'
                               : 'border-border-subtle bg-surface-sidebar text-content-primary',
@@ -2844,7 +2810,7 @@ ${encryptionKey.replace('key_', '')}
                             }
                             placeholder="Nickname"
                             className={cn(
-                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
                               isDarkMode
                                 ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                 : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -2869,40 +2835,27 @@ ${encryptionKey.replace('key_', '')}
                               What do you do?
                             </div>
                           </div>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={profession}
-                              onChange={(e) =>
-                                handleProfessionChange(e.target.value)
-                              }
-                              className={cn(
-                                'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
-                                isDarkMode
-                                  ? 'border-border-strong bg-surface-chat text-content-secondary'
-                                  : 'border-border-subtle bg-surface-sidebar text-content-primary',
-                              )}
-                            />
-                            {!profession && (
-                              <span
-                                className={cn(
-                                  'pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-content-muted transition-opacity duration-150',
-                                  placeholderVisible
-                                    ? 'opacity-100'
-                                    : 'opacity-0',
-                                )}
-                              >
-                                {getCurrentPlaceholder()}
-                              </span>
+                          <input
+                            type="text"
+                            value={profession}
+                            onChange={(e) =>
+                              handleProfessionChange(e.target.value)
+                            }
+                            placeholder="Your occupation"
+                            className={cn(
+                              'w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
+                              isDarkMode
+                                ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
                             )}
-                          </div>
+                          />
                         </div>
                       </div>
 
                       {/* Traits */}
                       <div
                         className={cn(
-                          'rounded-lg border border-border-subtle p-4',
+                          'rounded-site-lg border border-border-subtle p-4',
                           isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
                       >
@@ -2921,7 +2874,7 @@ ${encryptionKey.replace('key_', '')}
                                 key={trait}
                                 onClick={() => handleTraitToggle(trait)}
                                 className={cn(
-                                  'rounded-full px-3 py-1.5 text-sm transition-colors',
+                                  'rounded-site-control px-3 py-1.5 text-sm transition-colors',
                                   selectedTraits.includes(trait)
                                     ? 'bg-brand-accent-light text-brand-accent-dark'
                                     : isDarkMode
@@ -2961,7 +2914,7 @@ ${encryptionKey.replace('key_', '')}
                             placeholder="Interests and other preferences you'd like Tin to know about you."
                             rows={3}
                             className={cn(
-                              'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                              'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
                               isDarkMode
                                 ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                 : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -3051,7 +3004,7 @@ ${encryptionKey.replace('key_', '')}
                                   placeholder="Enter your custom system prompt..."
                                   rows={6}
                                   className={cn(
-                                    'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500',
+                                    'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
                                     isDarkMode
                                       ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                                       : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -4474,7 +4427,7 @@ ${encryptionKey.replace('key_', '')}
       {/* Sign-out confirmation when local-only mode is enabled */}
       {showSignOutConfirm && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="mx-4 w-full max-w-sm rounded-2xl border border-border-subtle bg-surface-card p-6 shadow-xl">
+          <div className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
             <h3 className="font-aeonik text-lg font-medium text-content-primary">
               Sign Out
             </h3>

@@ -5,17 +5,53 @@ import {
 } from '@/utils/signout-progress'
 import { CheckIcon } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 export function SignoutProgressOverlay() {
-  const [state, setState] = useState(getSignoutProgressState())
+  const [state, setState] = useState(getSignoutProgressState)
+  // Tracks visibility through the exit animation so the background stays
+  // inert until the overlay has fully faded out.
+  const [overlayPresent, setOverlayPresent] = useState(state.visible)
+  const overlayRef = useRef<HTMLDivElement | null>(null)
 
-  useEffect(() => subscribeToSignoutProgress(setState), [])
+  useEffect(() => {
+    const unsubscribe = subscribeToSignoutProgress(setState)
+    // Re-read after subscribing so updates emitted between the initial
+    // render and this effect are not missed.
+    setState(getSignoutProgressState())
+    return unsubscribe
+  }, [])
 
-  return (
-    <AnimatePresence>
+  useEffect(() => {
+    if (state.visible) setOverlayPresent(true)
+  }, [state.visible])
+
+  // The overlay only blocks pointer interaction visually; also make the
+  // rest of the app inert so keyboard users cannot activate background
+  // controls while destructive cleanup runs.
+  useEffect(() => {
+    if (!overlayPresent) return
+    const overlay = overlayRef.current
+    const inerted: Element[] = []
+    for (const el of Array.from(document.body.children)) {
+      if (overlay && el.contains(overlay)) continue
+      if (el.hasAttribute('inert')) continue
+      el.setAttribute('inert', '')
+      inerted.push(el)
+    }
+    return () => {
+      for (const el of inerted) el.removeAttribute('inert')
+    }
+  }, [overlayPresent])
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <AnimatePresence onExitComplete={() => setOverlayPresent(false)}>
       {state.visible && (
         <motion.div
+          ref={overlayRef}
           className="fixed inset-0 z-[100] flex items-center justify-center bg-surface-chat-background"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -36,7 +72,8 @@ export function SignoutProgressOverlay() {
           </div>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }
 

@@ -44,7 +44,7 @@ vi.mock('@clerk/nextjs', () => ({
 }))
 
 vi.mock('next/router', () => ({
-  useRouter: () => ({ push: auth.routerPush }),
+  useRouter: () => ({ push: auth.routerPush, query: {}, isReady: true }),
 }))
 
 describe('SignInPage', () => {
