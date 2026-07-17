@@ -35,7 +35,11 @@
       "destination": "/share/%5B%5B...slug%5D%5D.html"
     },
     { "source": "/newchat", "destination": "/newchat.html" },
-    { "source": "/newchat/", "destination": "/newchat.html" }
+    { "source": "/newchat/", "destination": "/newchat.html" },
+    { "source": "/signin", "destination": "/signin.html" },
+    { "source": "/signin/", "destination": "/signin.html" },
+    { "source": "/sso-callback", "destination": "/sso-callback.html" },
+    { "source": "/sso-callback/", "destination": "/sso-callback.html" }
   ],
   "headers": [
     {
