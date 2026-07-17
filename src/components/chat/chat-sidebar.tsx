@@ -1905,7 +1905,7 @@ export function ChatSidebar({
                         placeholder="Search chats..."
                         aria-label="Search chats"
                         className={cn(
-                          'w-full rounded-md border py-1.5 pl-8 pr-7 text-xs',
+                          'h-9 w-full rounded-md border pl-8 pr-7 text-sm',
                           isDarkMode
                             ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                             : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
