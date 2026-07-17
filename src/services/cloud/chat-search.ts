@@ -54,10 +54,22 @@ export interface ChatSearchOutcome {
    * UI should fall back to local title filtering.
    */
   available: boolean
+  /**
+   * Settles when the in-flight reindex completes; null when no reindex
+   * was kicked. Callers should re-query once this resolves
+   * `completed` so results fill in without a user action.
+   */
+  reindexSettled: Promise<ReindexSettleResult> | null
 }
 
 function unavailableOutcome(): ChatSearchOutcome {
-  return { results: [], totalIndexed: 0, indexing: false, available: false }
+  return {
+    results: [],
+    totalIndexed: 0,
+    indexing: false,
+    available: false,
+    reindexSettled: null,
+  }
 }
 
 /**
@@ -90,14 +102,13 @@ export async function searchSyncedChats(
     throw err
   }
   const indexing = resp.needs_reindex === true
-  if (indexing) {
-    void ensureSearchIndex()
-  }
+  const reindexSettled = indexing ? ensureSearchIndex() : null
   return {
     results: resp.results,
     totalIndexed: resp.total_indexed,
     indexing,
     available: true,
+    reindexSettled,
   }
 }
 

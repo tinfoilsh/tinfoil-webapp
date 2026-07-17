@@ -1905,7 +1905,7 @@ export function ChatSidebar({
                         placeholder="Search chats..."
                         aria-label="Search chats"
                         className={cn(
-                          'w-full rounded-md border py-1.5 pl-8 pr-7 text-xs',
+                          'h-9 w-full rounded-md border pl-8 pr-7 text-sm',
                           isDarkMode
                             ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
                             : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
@@ -2121,7 +2121,7 @@ export function ChatSidebar({
                               No matching chats
                             </p>
                             {chatSearch.isIndexing && (
-                              <p className="mt-1 text-xs text-content-muted">
+                              <p className="mt-1 text-balance text-xs text-content-muted">
                                 The search index is still being built; results
                                 will fill in shortly
                               </p>

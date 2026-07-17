@@ -3,6 +3,7 @@ import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { resetEditClockCache } from '@/services/cloud/edit-clock'
 import { profileSync } from '@/services/cloud/profile-sync'
+import { invalidateProfileSyncGeneration } from '@/services/cloud/profile-sync-coordinator'
 import { resetSyncHealth } from '@/services/cloud/sync-health'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
@@ -18,7 +19,7 @@ vi.mock('@/components/chat/renderers', () => ({
 }))
 
 vi.mock('@/services/cloud/cloud-sync', () => ({
-  cloudSync: { clearSyncStatus: vi.fn() },
+  cloudSync: { resetForAccountChange: vi.fn() },
 }))
 
 vi.mock('@/services/cloud/edit-clock', () => ({
@@ -27,6 +28,10 @@ vi.mock('@/services/cloud/edit-clock', () => ({
 
 vi.mock('@/services/cloud/profile-sync', () => ({
   profileSync: { clearCache: vi.fn() },
+}))
+
+vi.mock('@/services/cloud/profile-sync-coordinator', () => ({
+  invalidateProfileSyncGeneration: vi.fn(),
 }))
 
 vi.mock('@/services/cloud/sync-health', () => ({
@@ -50,7 +55,7 @@ vi.mock('@/services/storage/deleted-chats-tracker', () => ({
 }))
 
 vi.mock('@/services/storage/indexed-db', () => ({
-  indexedDBStorage: { clearAll: vi.fn().mockResolvedValue(undefined) },
+  indexedDBStorage: { deleteAllChats: vi.fn().mockResolvedValue(0) },
 }))
 
 vi.mock('@/services/sync-enclave', () => ({
@@ -95,18 +100,19 @@ describe('performSignoutCleanup', () => {
     expect(resetTinfoilClient).toHaveBeenCalled()
     expect(resetSyncEnclaveClient).toHaveBeenCalled()
     expect(profileSync.clearCache).toHaveBeenCalled()
-    expect(cloudSync.clearSyncStatus).toHaveBeenCalled()
+    expect(invalidateProfileSyncGeneration).toHaveBeenCalledWith(true)
+    expect(cloudSync.resetForAccountChange).toHaveBeenCalled()
     expect(deletedChatsTracker.clear).toHaveBeenCalled()
     expect(resetSyncHealth).toHaveBeenCalled()
     expect(resetEditClockCache).toHaveBeenCalled()
     expect(projectEvents.clear).toHaveBeenCalled()
-    expect(indexedDBStorage.clearAll).toHaveBeenCalled()
+    expect(indexedDBStorage.deleteAllChats).toHaveBeenCalled()
   })
 
   it('keeps the encryption key when preserveEncryptionKey is set', async () => {
     await performSignoutCleanup({ preserveEncryptionKey: true })
 
     expect(encryptionService.clearKey).not.toHaveBeenCalled()
-    expect(indexedDBStorage.clearAll).toHaveBeenCalled()
+    expect(indexedDBStorage.deleteAllChats).toHaveBeenCalled()
   })
 })

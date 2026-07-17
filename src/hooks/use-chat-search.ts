@@ -1,7 +1,7 @@
 import {
-  ensureSearchIndex,
   resolveSearchResultChats,
   searchSyncedChats,
+  type ReindexSettleResult,
   type SearchResultChat,
 } from '@/services/cloud/chat-search'
 import { logError } from '@/utils/error-handling'
@@ -63,12 +63,12 @@ export function useChatSearch(term: string, enabled: boolean): ChatSearchState {
         if (cancelled) return
         setResults(chats)
         setIsSearching(false)
-        if (outcome.indexing) {
+        if (outcome.reindexSettled) {
           // Re-query only after a successful rebuild. Refreshing on a
           // failed or skipped settle would report needs_reindex again
           // and kick another full rebuild, looping a persistent
           // failure at full embedding cost.
-          void ensureSearchIndex().then((settled) => {
+          outcome.reindexSettled.then((settled: ReindexSettleResult) => {
             if (cancelled) return
             if (settled === 'completed') {
               setRefreshNonce((n) => n + 1)
