@@ -47,7 +47,7 @@ describe('ProfileSyncService', () => {
   it('re-pushes the fresher local profile after a stale-blob conflict', async () => {
     mockPush
       .mockRejectedValueOnce(
-        new SyncEnclaveError('STALE_BLOB', 412, 'STALE_BLOB'),
+        new SyncEnclaveError('SYNC_CONFLICT', 409, 'SYNC_CONFLICT'),
       )
       .mockResolvedValueOnce({
         ok: true,
@@ -70,11 +70,14 @@ describe('ProfileSyncService', () => {
     })
 
     const service = new ProfileSyncService()
-    const result = await service.saveProfile({
-      nickname: 'Sacha',
-      version: 0,
-      updatedAt: '2026-06-16T10:00:00.000Z',
-    })
+    const result = await service.saveProfile(
+      {
+        nickname: 'Sacha',
+        version: 0,
+        updatedAt: '2026-06-16T10:00:00.000Z',
+      },
+      { nickname: 'Remote', version: 0 },
+    )
 
     expect(result.success).toBe(true)
     expect(result.version).toBe(10)
@@ -110,11 +113,14 @@ describe('ProfileSyncService', () => {
     })
 
     const service = new ProfileSyncService()
-    const result = await service.saveProfile({
-      nickname: 'Sacha',
-      version: 0,
-      updatedAt: '2026-06-16T10:00:00.000Z',
-    })
+    const result = await service.saveProfile(
+      {
+        nickname: 'Sacha',
+        version: 0,
+        updatedAt: '2026-06-16T10:00:00.000Z',
+      },
+      { nickname: 'Sacha', version: 0 },
+    )
 
     expect(result.success).toBe(true)
     expect(result.version).toBe(10)
@@ -124,6 +130,30 @@ describe('ProfileSyncService', () => {
     expect(mockPush).toHaveBeenCalledTimes(2)
     expect(mockPush.mock.calls[1][0]).toMatchObject({ ifMatch: '9' })
     expect(service.getCachedProfile()).toMatchObject({ nickname: 'Remote' })
+  })
+
+  it('does not overwrite the remote when a conflict is ambiguous', async () => {
+    mockPush.mockRejectedValueOnce(
+      new SyncEnclaveError('STALE_BLOB', 412, 'STALE_BLOB'),
+    )
+    mockPull.mockResolvedValue({
+      items: [
+        {
+          ok: true,
+          etag: '9',
+          plaintext: btoa(JSON.stringify({ nickname: 'Lin' })),
+        },
+      ],
+    })
+
+    const service = new ProfileSyncService()
+    const result = await service.saveProfile(
+      { nickname: 'Grace', version: 7 },
+      { nickname: 'Ada', version: 7 },
+    )
+
+    expect(result.success).toBe(false)
+    expect(mockPush).toHaveBeenCalledTimes(1)
   })
 
   it('preserves unknown profile fields across a fetch and re-push', async () => {
@@ -145,7 +175,10 @@ describe('ProfileSyncService', () => {
 
     const service = new ProfileSyncService()
     await service.fetchProfile()
-    const result = await service.saveProfile({ nickname: 'Sacha', version: 7 })
+    const result = await service.saveProfile(
+      { nickname: 'Sacha', version: 7 },
+      { nickname: 'Remote', version: 7 },
+    )
 
     expect(result.success).toBe(true)
     const pushed = JSON.parse(
@@ -155,6 +188,34 @@ describe('ProfileSyncService', () => {
     // known field still wins.
     expect(pushed.experimentalSetting).toEqual({ foo: 1 })
     expect(pushed.nickname).toBe('Sacha')
+  })
+
+  it('preserves unknown profile fields after a service restart', async () => {
+    mockPull.mockResolvedValue({
+      items: [
+        {
+          ok: true,
+          etag: '7',
+          plaintext: btoa(
+            JSON.stringify({
+              nickname: 'Remote',
+              futureSetting: { enabled: true },
+            }),
+          ),
+        },
+      ],
+    })
+
+    await new ProfileSyncService().fetchProfile()
+    await new ProfileSyncService().saveProfile(
+      { nickname: 'Sacha', version: 7 },
+      { nickname: 'Remote', version: 7 },
+    )
+
+    const pushed = JSON.parse(
+      new TextDecoder().decode(mockPush.mock.calls[0][0].plaintext),
+    )
+    expect(pushed.futureSetting).toEqual({ enabled: true })
   })
 
   it('carries unknown remote fields onto the rebased push when local wins', async () => {
@@ -184,11 +245,14 @@ describe('ProfileSyncService', () => {
     })
 
     const service = new ProfileSyncService()
-    const result = await service.saveProfile({
-      nickname: 'Sacha',
-      version: 0,
-      updatedAt: '2026-06-16T10:00:00.000Z',
-    })
+    const result = await service.saveProfile(
+      {
+        nickname: 'Sacha',
+        version: 0,
+        updatedAt: '2026-06-16T10:00:00.000Z',
+      },
+      { nickname: 'Remote', version: 0 },
+    )
 
     expect(result.success).toBe(true)
     const rebased = JSON.parse(
@@ -200,7 +264,10 @@ describe('ProfileSyncService', () => {
 
   it('saves profile updates with the caller last-synced etag', async () => {
     const service = new ProfileSyncService()
-    const result = await service.saveProfile({ nickname: 'Sacha', version: 7 })
+    const result = await service.saveProfile(
+      { nickname: 'Sacha', version: 7 },
+      { nickname: 'Remote', version: 7 },
+    )
 
     expect(result.success).toBe(true)
     expect(mockListStatus).not.toHaveBeenCalled()
@@ -209,6 +276,10 @@ describe('ProfileSyncService', () => {
         scope: 'profile',
         id: 'profile',
         ifMatch: '7',
+        metadata: {
+          version: 8,
+          profile_sync_protocol: 2,
+        },
       }),
     )
   })

@@ -30,6 +30,7 @@ const mockGetProjectChatsSyncStatus = vi.fn()
 const mockEncryptionInitialize = vi.fn()
 const mockGetKey = vi.fn()
 const mockRunLegacyBlobMigration = vi.fn()
+const mockFinalizeAlternatives = vi.fn()
 const mockRunLegacyChatEviction = vi.fn()
 const mockKeyCurrent = vi.fn()
 const mockPrimaryKeyIdHex = vi.fn()
@@ -50,6 +51,7 @@ const mockOnStreamEnd = vi.fn()
 const mockChatEventsEmit = vi.fn()
 const mockReportChatSynced = vi.fn()
 const mockReportChatSyncFailed = vi.fn()
+const mockReportSyncSuccess = vi.fn()
 const mockIngestRemoteChats = vi.fn()
 const mockSyncRemoteDeletions = vi.fn()
 const mockCanWriteToCloud = vi.fn()
@@ -164,7 +166,7 @@ vi.mock('@/services/cloud/sync-health', () => ({
   reportChatSyncFailed: (...args: any[]) => mockReportChatSyncFailed(...args),
   reportKeyActionRequired: vi.fn(),
   reportSyncPaused: vi.fn(),
-  reportSyncSuccess: vi.fn(),
+  reportSyncSuccess: (...args: any[]) => mockReportSyncSuccess(...args),
 }))
 
 vi.mock('@/services/cloud/chat-ingestion', () => ({
@@ -173,8 +175,10 @@ vi.mock('@/services/cloud/chat-ingestion', () => ({
 }))
 
 vi.mock('@/services/cloud/legacy-blob-migration', () => ({
-  runLegacyBlobMigrationAndFinalize: (...args: any[]) =>
+  runLegacyBlobMigration: (...args: any[]) =>
     mockRunLegacyBlobMigration(...args),
+  finalizeAlternativesIfMigrated: (...args: any[]) =>
+    mockFinalizeAlternatives(...args),
 }))
 
 vi.mock('@/services/cloud/legacy-chat-eviction', () => ({
@@ -216,6 +220,7 @@ describe('CloudSyncService', () => {
       totalBlocked: 0,
       fullyMigrated: true,
     })
+    mockFinalizeAlternatives.mockReturnValue(true)
     mockRunLegacyChatEviction.mockResolvedValue(undefined)
     mockIsAuthenticated.mockResolvedValue(true)
     mockUploadChat.mockResolvedValue({ syncVersion: null, rewrites: [] })
@@ -321,6 +326,99 @@ describe('CloudSyncService', () => {
           rewrites: [],
         }),
       )
+    })
+
+    it('does not enqueue an upload after the account changes', async () => {
+      let releaseChat: (() => void) | undefined
+      mockGetChat.mockImplementation(async () => {
+        await new Promise<void>((resolve) => {
+          releaseChat = resolve
+        })
+        return {
+          id: 'old-account-chat',
+          title: 'Old account',
+          messages: [{ role: 'user', content: 'hi' }],
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          lastAccessedAt: Date.now(),
+          isBlankChat: false,
+          isLocalOnly: false,
+          syncVersion: 1,
+        }
+      })
+
+      const service = new CloudSyncService()
+      const backup = service.backupChat('old-account-chat')
+      await vi.waitFor(() => expect(mockGetChat).toHaveBeenCalled())
+
+      service.resetForAccountChange()
+      releaseChat?.()
+      await backup
+
+      expect(mockUploadChat).not.toHaveBeenCalled()
+    })
+
+    it('does not upload immediately after the account changes', async () => {
+      let releaseChat: (() => void) | undefined
+      mockGetChat.mockImplementation(async () => {
+        await new Promise<void>((resolve) => {
+          releaseChat = resolve
+        })
+        return {
+          id: 'old-account-chat',
+          title: 'Old account',
+          messages: [{ role: 'user', content: 'hi' }],
+          createdAt: '2024-01-01T00:00:00.000Z',
+          updatedAt: '2024-01-01T00:00:00.000Z',
+          lastAccessedAt: Date.now(),
+          isBlankChat: false,
+          isLocalOnly: false,
+          syncVersion: 1,
+        }
+      })
+
+      const service = new CloudSyncService()
+      const backup = service.backupChatNow('old-account-chat')
+      await vi.waitFor(() => expect(mockGetChat).toHaveBeenCalled())
+
+      service.resetForAccountChange()
+      releaseChat?.()
+      await backup
+
+      expect(mockUploadChat).not.toHaveBeenCalled()
+    })
+
+    it('does not upload when the account changes during worker loading', async () => {
+      const chat = {
+        id: 'old-account-chat',
+        title: 'Old account',
+        messages: [{ role: 'user', content: 'hi' }],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        lastAccessedAt: Date.now(),
+        isBlankChat: false,
+        isLocalOnly: false,
+        syncVersion: 1,
+      }
+      let releaseWorkerLoad: (() => void) | undefined
+      mockGetChat
+        .mockResolvedValueOnce(chat)
+        .mockImplementationOnce(async () => {
+          await new Promise<void>((resolve) => {
+            releaseWorkerLoad = resolve
+          })
+          return chat
+        })
+
+      const service = new CloudSyncService()
+      await service.backupChat('old-account-chat')
+      await vi.waitFor(() => expect(mockGetChat).toHaveBeenCalledTimes(2))
+
+      service.resetForAccountChange()
+      releaseWorkerLoad?.()
+      await Promise.resolve()
+
+      expect(mockUploadChat).not.toHaveBeenCalled()
     })
   })
 
@@ -650,6 +748,62 @@ describe('CloudSyncService', () => {
       expect(mockListChats).toHaveBeenCalledTimes(1)
     })
 
+    it('does not repopulate sync status after an account change', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      mockGetChatSyncStatus.mockResolvedValue({
+        count: 1,
+        lastUpdated: '2026-01-01T00:00:00.000Z',
+      })
+      let finishCount: ((count: number) => void) | undefined
+      mockGetCloudChatCount.mockReturnValue(
+        new Promise((resolve) => {
+          finishCount = resolve
+        }),
+      )
+
+      const service = new CloudSyncService()
+      const sync = service.syncAllChats()
+      await vi.waitFor(() =>
+        expect(mockGetCloudChatCount).toHaveBeenCalledTimes(1),
+      )
+
+      service.resetForAccountChange()
+      finishCount?.(1)
+      await sync
+
+      expect(localStorage.getItem(SYNC_CHAT_STATUS)).toBeNull()
+      expect(mockReportSyncSuccess).not.toHaveBeenCalled()
+    })
+
+    it('does not report a stale sync as healthy', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      mockGetCloudChatCount.mockResolvedValue(0)
+      let finishCrossScope:
+        | ((status: { count: number; lastUpdated: null }) => void)
+        | undefined
+      mockGetAllChatsSyncStatus.mockReturnValue(
+        new Promise((resolve) => {
+          finishCrossScope = resolve
+        }),
+      )
+
+      const service = new CloudSyncService()
+      const sync = service.syncAllChats()
+      await vi.waitFor(() =>
+        expect(mockGetAllChatsSyncStatus).toHaveBeenCalledTimes(1),
+      )
+
+      service.resetForAccountChange()
+      finishCrossScope?.({ count: 0, lastUpdated: null })
+      await sync
+
+      expect(mockReportSyncSuccess).not.toHaveBeenCalled()
+    })
+
     it('defers the legacy blob migration until the local key is the registered current key', async () => {
       mockGetUnsyncedChats.mockResolvedValue([])
       mockGetAllChats.mockResolvedValue([])
@@ -700,6 +854,48 @@ describe('CloudSyncService', () => {
       await service.syncAllChats()
       await flush()
       expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not finalize a previous account migration', async () => {
+      mockGetUnsyncedChats.mockResolvedValue([])
+      mockGetAllChats.mockResolvedValue([])
+      mockListChats.mockResolvedValue({ conversations: [], hasMore: false })
+      mockGetKey.mockReturnValue('key_local')
+      mockPrimaryKeyIdHex.mockResolvedValue('kid-local')
+      mockKeyCurrent.mockResolvedValue({ key_id: 'kid-local' })
+      let finishMigration:
+        | ((report: {
+            scopes: []
+            totalMigrated: number
+            totalRemaining: number
+            totalBlocked: number
+            fullyMigrated: boolean
+          }) => void)
+        | undefined
+      mockRunLegacyBlobMigration.mockReturnValue(
+        new Promise((resolve) => {
+          finishMigration = resolve
+        }),
+      )
+
+      const service = new CloudSyncService()
+      await service.syncAllChats()
+      await vi.waitFor(() =>
+        expect(mockRunLegacyBlobMigration).toHaveBeenCalledTimes(1),
+      )
+
+      service.resetForAccountChange()
+      finishMigration?.({
+        scopes: [],
+        totalMigrated: 1,
+        totalRemaining: 0,
+        totalBlocked: 0,
+        fullyMigrated: true,
+      })
+      await Promise.resolve()
+
+      expect(mockFinalizeAlternatives).not.toHaveBeenCalled()
+      expect(mockRunLegacyChatEviction).not.toHaveBeenCalled()
     })
 
     it('adopts the local key so legacy data can migrate without a passkey', async () => {
@@ -1103,6 +1299,59 @@ describe('CloudSyncService', () => {
 
       // Should only register one callback
       expect(mockOnStreamEnd).toHaveBeenCalledTimes(1)
+    })
+
+    it('ignores a streaming callback from a previous account', async () => {
+      mockIsStreaming.mockReturnValue(true)
+      let callback: (() => void) | undefined
+      mockOnStreamEnd.mockImplementation((_id: string, onEnd: () => void) => {
+        callback = onEnd
+      })
+
+      const service = new CloudSyncService()
+      await service.backupChat('old-account-chat')
+      service.resetForAccountChange()
+
+      mockIsStreaming.mockReturnValue(false)
+      callback?.()
+      await Promise.resolve()
+
+      expect(mockUploadChat).not.toHaveBeenCalled()
+    })
+
+    it('does not finalize an upload after the account changes', async () => {
+      const chat = {
+        id: 'old-account-chat',
+        title: 'Old account',
+        messages: [{ role: 'user', content: 'hi' }],
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-01T00:00:00.000Z',
+        lastAccessedAt: Date.now(),
+        isBlankChat: false,
+        isLocalOnly: false,
+        decryptionFailed: false,
+        locallyModified: true,
+      }
+      mockGetChat.mockResolvedValue(chat)
+      let finishUpload:
+        | ((value: { syncVersion: number; rewrites: [] }) => void)
+        | undefined
+      mockUploadChat.mockReturnValue(
+        new Promise((resolve) => {
+          finishUpload = resolve
+        }),
+      )
+
+      const service = new CloudSyncService()
+      await service.backupChat('old-account-chat')
+      await vi.waitFor(() => expect(mockUploadChat).toHaveBeenCalledTimes(1))
+
+      service.resetForAccountChange()
+      finishUpload?.({ syncVersion: 2, rewrites: [] })
+      await Promise.resolve()
+
+      expect(mockFinalizeUpload).not.toHaveBeenCalled()
+      expect(mockReportChatSynced).not.toHaveBeenCalled()
     })
   })
 

@@ -61,11 +61,7 @@ export function changedProfileFields(
   for (const field of PROFILE_MERGE_FIELDS) {
     const a = (local as Record<string, unknown>)[field]
     const b = (baseline as Record<string, unknown>)[field]
-    const differ =
-      typeof a === 'object' || typeof b === 'object'
-        ? JSON.stringify(a ?? null) !== JSON.stringify(b ?? null)
-        : a !== b
-    if (differ) changed.push(field)
+    if (!valuesEqual(a, b)) changed.push(field)
   }
   return changed
 }
@@ -102,6 +98,89 @@ function laterTimestamp(a?: string, b?: string): string | undefined {
   if (Number.isNaN(ta)) return b
   if (Number.isNaN(tb)) return a
   return ta >= tb ? a : b
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (typeof a === 'object' || typeof b === 'object') {
+    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
+  }
+  return a === b
+}
+
+function laterClock(
+  localClock: EditClock | undefined,
+  remoteClock: EditClock | undefined,
+): EditClock | undefined {
+  if (!localClock) return remoteClock
+  if (!remoteClock) return localClock
+  return remoteWins({ localClock, remoteClock }) ? remoteClock : localClock
+}
+
+export interface ThreeWayProfileMergeResult {
+  merged: ProfileData
+  conflicts: string[]
+  adoptedRemote: boolean
+}
+
+export function mergeProfilesThreeWay(args: {
+  baseline: ProfileData
+  local: ProfileData
+  remote: ProfileData
+}): ThreeWayProfileMergeResult {
+  const { baseline, local, remote } = args
+  const localTrusted = clocksTrusted(local)
+  const remoteTrusted = clocksTrusted(remote)
+  const merged: ProfileData = { ...local }
+  const mergedClocks: Record<string, EditClock> = {}
+  const conflicts: string[] = []
+  let adoptedRemote = false
+
+  for (const field of PROFILE_MERGE_FIELDS) {
+    const baselineValue = (baseline as Record<string, unknown>)[field]
+    const localValue = (local as Record<string, unknown>)[field]
+    const remoteValue = (remote as Record<string, unknown>)[field]
+    const lc = fieldClock(local, field, localTrusted)
+    const rc = fieldClock(remote, field, remoteTrusted)
+
+    if (valuesEqual(localValue, baselineValue)) {
+      if (Object.prototype.hasOwnProperty.call(remote, field)) {
+        ;(merged as Record<string, unknown>)[field] = remoteValue
+      } else {
+        delete (merged as Record<string, unknown>)[field]
+      }
+      if (rc) mergedClocks[field] = rc
+      adoptedRemote ||= !valuesEqual(localValue, remoteValue)
+    } else if (valuesEqual(localValue, remoteValue)) {
+      const clock = laterClock(lc, rc)
+      if (clock) mergedClocks[field] = clock
+    } else if (valuesEqual(remoteValue, baselineValue)) {
+      if (lc) mergedClocks[field] = lc
+    } else if (lc && rc) {
+      if (
+        remoteWins({
+          localClock: lc,
+          remoteClock: rc,
+        })
+      ) {
+        ;(merged as Record<string, unknown>)[field] = remoteValue
+        mergedClocks[field] = rc
+        adoptedRemote = true
+      } else {
+        mergedClocks[field] = lc
+      }
+    } else {
+      conflicts.push(field)
+      if (lc) mergedClocks[field] = lc
+    }
+  }
+
+  merged.version = remote.version
+  merged.clockVersion = remote.version
+  merged.fieldClocks =
+    Object.keys(mergedClocks).length > 0 ? mergedClocks : undefined
+  merged.updatedAt = laterTimestamp(local.updatedAt, remote.updatedAt)
+
+  return { merged, conflicts, adoptedRemote }
 }
 
 /**

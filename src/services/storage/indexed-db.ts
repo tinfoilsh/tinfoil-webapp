@@ -456,6 +456,37 @@ export class IndexedDBStorage {
     })
   }
 
+  async deleteChatIfUnchanged(
+    id: string,
+    expectedUpdatedAt: string,
+    isCurrent: () => boolean = () => true,
+  ): Promise<boolean> {
+    return this.enqueueSave('deleteChatIfUnchanged', async () => {
+      if (!isCurrent()) return false
+      const db = await this.ensureDB()
+      if (!isCurrent()) return false
+      return new Promise<boolean>((resolve, reject) => {
+        const transaction = db.transaction([CHATS_STORE], 'readwrite')
+        const store = transaction.objectStore(CHATS_STORE)
+        let deleted = false
+        const getRequest = store.get(id)
+
+        getRequest.onsuccess = () => {
+          if (!isCurrent()) return
+          const chat = getRequest.result as StoredChat | undefined
+          if (!chat || chat.updatedAt !== expectedUpdatedAt) return
+          store.delete(id)
+          deleted = true
+        }
+        transaction.oncomplete = () => resolve(deleted)
+        transaction.onerror = () =>
+          reject(new Error('Failed to conditionally delete chat'))
+        getRequest.onerror = () =>
+          reject(new Error('Failed to read chat for conditional deletion'))
+      })
+    })
+  }
+
   async deleteAllNonLocalChats(): Promise<number> {
     const db = await this.ensureDB()
 
@@ -834,10 +865,15 @@ export class IndexedDBStorage {
     expectedLocalUpdatedAt: string | null | undefined
     setLoadedAt?: boolean
     allowLocallyModified?: boolean
+    isCurrent?: () => boolean
   }): Promise<{ applied: boolean }> {
     return this.enqueueSave('applyRemoteChatIfFresh', async () => {
+      const isCurrent = opts.isCurrent ?? (() => true)
+      if (!isCurrent()) return { applied: false }
       const db = await this.ensureDB()
+      if (!isCurrent()) return { applied: false }
       const existing = await this.getChatInternal(opts.chat.id)
+      if (!isCurrent()) return { applied: false }
 
       if (opts.expectedLocalUpdatedAt !== undefined) {
         if (opts.expectedLocalUpdatedAt === null) {
@@ -875,6 +911,7 @@ export class IndexedDBStorage {
         isLocalOnly: (opts.chat as any).isLocalOnly ?? false,
       }
 
+      if (!isCurrent()) return { applied: false }
       await new Promise<void>((resolve, reject) => {
         const transaction = db.transaction([CHATS_STORE], 'readwrite')
         const store = transaction.objectStore(CHATS_STORE)
@@ -967,15 +1004,22 @@ export class IndexedDBStorage {
   async applyRemoteChatProject(
     chatId: string,
     projectId: string | null,
-  ): Promise<void> {
+    expectedLocalUpdatedAt: string | null,
+  ): Promise<boolean> {
     return this.enqueueSave('applyRemoteChatProject', async () => {
       const chat = await this.getChatInternal(chatId)
-      if (chat) {
-        chat.projectId = projectId ?? undefined
-        await this.saveChatInternal(chat, {
-          markContentChangesAsLocal: false,
-        })
+      if (
+        !chat ||
+        chat.updatedAt !== expectedLocalUpdatedAt ||
+        chat.locallyModified
+      ) {
+        return false
       }
+      chat.projectId = projectId ?? undefined
+      await this.saveChatInternal(chat, {
+        markContentChangesAsLocal: false,
+      })
+      return true
     })
   }
 

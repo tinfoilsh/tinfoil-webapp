@@ -57,6 +57,8 @@ export interface IngestOptions {
    * never silently overwrites in-progress local edits.
    */
   forceOverwriteLocal?: boolean
+  /** Abort before local mutations when the owning account generation changed. */
+  isCurrent?: () => boolean
 }
 
 export interface IngestResult {
@@ -84,6 +86,7 @@ export async function ingestRemoteChats(
     setLoadedAt = false,
     eventReason = 'sync',
     forceOverwriteLocal = false,
+    isCurrent = () => true,
   } = options
 
   const result: IngestResult = {
@@ -93,6 +96,7 @@ export async function ingestRemoteChats(
   }
 
   for (const remoteChat of remoteChats) {
+    if (!isCurrent()) break
     // Skip recently deleted chats
     if (skipDeleted && deletedChatsTracker.isDeleted(remoteChat.id)) {
       continue
@@ -140,6 +144,7 @@ export async function ingestRemoteChats(
       }
 
       const codecResult = await processRemoteChat(codecInput, codecOptions)
+      if (!isCurrent()) break
       const chat = codecResult.chat
 
       if (chat) {
@@ -154,7 +159,9 @@ export async function ingestRemoteChats(
           syncVersion: chat.syncVersion ?? 0,
           expectedLocalUpdatedAt,
           setLoadedAt,
+          isCurrent,
         })
+        if (!isCurrent()) break
         if (applyResult.applied) {
           result.savedIds.push(chat.id)
           result.downloaded++
@@ -168,6 +175,7 @@ export async function ingestRemoteChats(
   }
 
   if (result.savedIds.length > 0) {
+    if (!isCurrent()) return result
     chatEvents.emit({ reason: eventReason, ids: result.savedIds })
   }
 
@@ -181,13 +189,17 @@ export async function ingestRemoteChats(
 export async function syncRemoteDeletions(
   since: string,
   logAction: string,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   try {
     const { deletedIds } = await cloudStorage.getDeletedChatsSince(since)
+    if (!isCurrent()) return
     const successfulIds: string[] = []
     for (const id of deletedIds) {
+      if (!isCurrent()) break
       try {
         const localChat = await indexedDBStorage.getChat(id)
+        if (!isCurrent()) break
         // Already gone locally (e.g. a prior reconciliation pass handled
         // it) or a local-only chat the cloud never owned. Skipping keeps
         // repeated reconciliation passes idempotent and event-free.
@@ -201,7 +213,13 @@ export async function syncRemoteDeletions(
           continue
         }
 
-        await indexedDBStorage.deleteChat(id)
+        const deleted = await indexedDBStorage.deleteChatIfUnchanged(
+          id,
+          localChat.updatedAt,
+          isCurrent,
+        )
+        if (!isCurrent()) break
+        if (!deleted) continue
         // Mirror the deletion into the in-memory tracker so any concurrent
         // listing/ingest pass that already observed the chat won't bring
         // it back into IndexedDB before the next deletion sync runs.
@@ -218,7 +236,7 @@ export async function syncRemoteDeletions(
         )
       }
     }
-    if (successfulIds.length > 0) {
+    if (successfulIds.length > 0 && isCurrent()) {
       chatEvents.emit({ reason: 'sync', ids: successfulIds })
     }
   } catch (error) {

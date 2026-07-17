@@ -41,6 +41,7 @@ export const CLOUD_SYNC = {
   RETRY_DELAY: 100, // milliseconds
   CHAT_SYNC_INTERVAL: 20000, // 20 seconds - frequency for syncing chats
   PROFILE_SYNC_INTERVAL: 60000, // 60 seconds (1 minute) - frequency for syncing profile
+  PROFILE_SYNC_DEBOUNCE: 2000,
   KEY_VALIDATION_PROBE_LIMIT: 3,
 } as const
 

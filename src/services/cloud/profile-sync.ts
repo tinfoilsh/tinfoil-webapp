@@ -1,3 +1,4 @@
+import { SYNC_PROFILE_UNKNOWN_FIELDS } from '@/constants/storage-keys'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import {
@@ -12,11 +13,12 @@ import { WIRE_CODES } from '../sync-enclave/wire-contract'
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import type { ProfileSyncStatus } from './cloud-storage'
 import { observe } from './edit-clock'
-import { mergeProfiles } from './profile-merge'
+import { mergeProfilesThreeWay } from './profile-merge'
 import { ProfileDataSchema } from './schemas'
 
 const PROFILE_SCOPE = 'profile'
 const PROFILE_ROW_ID = 'profile'
+export const PROFILE_SYNC_PROTOCOL_VERSION = 2
 
 // A STALE_BLOB (HTTP 412) push means our If-Match version no longer
 // matches the server: either the row advanced under another writer or
@@ -24,7 +26,9 @@ const PROFILE_ROW_ID = 'profile'
 function isStaleBlobConflict(error: unknown): boolean {
   return (
     error instanceof SyncEnclaveError &&
-    (error.code === WIRE_CODES.StaleBlob || error.status === 412)
+    (error.code === WIRE_CODES.StaleBlob ||
+      error.status === 412 ||
+      (error.status === 409 && error.code === WIRE_CODES.SyncConflict))
   )
 }
 
@@ -109,6 +113,33 @@ export class ProfileSyncService {
   // owned by another client.
   private unknownRemoteFields: Record<string, unknown> = {}
 
+  constructor() {
+    if (typeof window === 'undefined') return
+    try {
+      const stored = localStorage.getItem(SYNC_PROFILE_UNKNOWN_FIELDS)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          this.unknownRemoteFields = parsed as Record<string, unknown>
+        }
+      }
+    } catch {
+      localStorage.removeItem(SYNC_PROFILE_UNKNOWN_FIELDS)
+    }
+  }
+
+  private persistUnknownRemoteFields(): void {
+    if (typeof window === 'undefined') return
+    if (Object.keys(this.unknownRemoteFields).length === 0) {
+      localStorage.removeItem(SYNC_PROFILE_UNKNOWN_FIELDS)
+      return
+    }
+    localStorage.setItem(
+      SYNC_PROFILE_UNKNOWN_FIELDS,
+      JSON.stringify(this.unknownRemoteFields),
+    )
+  }
+
   async isAuthenticated(): Promise<boolean> {
     return authTokenManager.isAuthenticated()
   }
@@ -138,6 +169,7 @@ export class ProfileSyncService {
       if (!item || !item.ok) {
         if (item && item.code === 'NOT_FOUND') {
           this.unknownRemoteFields = {}
+          this.persistUnknownRemoteFields()
           return null
         }
         throw new Error(
@@ -162,6 +194,7 @@ export class ProfileSyncService {
       this.unknownRemoteFields = extractUnknownProfileFields(
         validation.data as Record<string, unknown>,
       )
+      this.persistUnknownRemoteFields()
       const etagVersion = item.etag ? parseInt(item.etag, 10) : NaN
       if (Number.isFinite(etagVersion)) {
         decoded.version = etagVersion
@@ -213,7 +246,10 @@ export class ProfileSyncService {
   }
 
   // Save profile to cloud
-  async saveProfile(profile: ProfileData): Promise<{
+  async saveProfile(
+    profile: ProfileData,
+    baseline?: ProfileData | null,
+  ): Promise<{
     success: boolean
     version?: number
     remoteProfile?: ProfileData
@@ -275,6 +311,7 @@ export class ProfileSyncService {
           idempotencyKey: newIdempotencyKey(),
           metadata: {
             version: profileWithMetadata.version,
+            profile_sync_protocol: PROFILE_SYNC_PROTOCOL_VERSION,
           },
         })
         const pushedVersion = parseInt(pushResp.etag, 10)
@@ -319,10 +356,19 @@ export class ProfileSyncService {
           return await pushAtVersion(0)
         }
 
-        const { merged, adoptedRemote } = mergeProfiles({
+        if (!baseline) {
+          throw pushError
+        }
+        const { merged, conflicts, adoptedRemote } = mergeProfilesThreeWay({
+          baseline,
           local: profile,
           remote,
         })
+        if (conflicts.length > 0) {
+          throw new Error(
+            `Profile changes conflict on fields: ${conflicts.join(', ')}`,
+          )
+        }
         working = merged
 
         logInfo('Profile conflict resolved by field-level merge', {
@@ -396,6 +442,7 @@ export class ProfileSyncService {
     this.cachedProfile = null
     this.failedDecryptionData = null
     this.unknownRemoteFields = {}
+    this.persistUnknownRemoteFields()
   }
 
   // Get sync status to check if profile changed without fetching full data

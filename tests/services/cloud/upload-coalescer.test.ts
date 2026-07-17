@@ -322,6 +322,28 @@ describe('UploadCoalescer', () => {
       expect(coalescer.activeUploadCount).toBe(0)
       expect(coalescer.getPendingChatIds()).toHaveLength(0)
     })
+
+    it('cancels waiters and retries when cleared during backoff', async () => {
+      const uploadFn = vi.fn().mockRejectedValue(new Error('Network error'))
+      const coalescer = new UploadCoalescer(uploadFn, {
+        baseDelayMs: 1000,
+        maxRetries: 3,
+        scheduler: {
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          random: () => 0.9999,
+        },
+      })
+
+      const upload = coalescer.enqueueAndWait('chat-1')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(uploadFn).toHaveBeenCalledTimes(1)
+
+      coalescer.clear()
+      await expect(upload).rejects.toThrow('account change')
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(uploadFn).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('Edge cases', () => {

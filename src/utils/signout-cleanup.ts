@@ -8,6 +8,7 @@ import {
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { resetEditClockCache } from '@/services/cloud/edit-clock'
 import { profileSync } from '@/services/cloud/profile-sync'
+import { invalidateProfileSyncGeneration } from '@/services/cloud/profile-sync-coordinator'
 import { resetSyncHealth } from '@/services/cloud/sync-health'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
@@ -51,6 +52,9 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
     if (!skipProgressReporting) completeSignoutStep(step)
   }
 
+  invalidateProfileSyncGeneration(true)
+  cloudSync.resetForAccountChange()
+
   // Clear encryption key immediately (in-memory + localStorage) before any
   // async work, so concurrent code cannot re-persist a stale key.
   reportStep(SIGNOUT_STEPS.CLEAR_KEY)
@@ -73,8 +77,6 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   // Clear profile sync cache
   profileSync.clearCache()
 
-  // Clear sync caches so stale state doesn't leak into the next session
-  cloudSync.clearSyncStatus()
   deletedChatsTracker.clear()
   resetSyncHealth()
 
@@ -123,7 +125,7 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   // Clear IndexedDB
   reportStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
   try {
-    await indexedDBStorage.clearAll()
+    await indexedDBStorage.deleteAllChats()
   } catch (error) {
     logError('Failed to clear IndexedDB', error, {
       component: context,
