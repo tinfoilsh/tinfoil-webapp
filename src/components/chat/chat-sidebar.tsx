@@ -2121,7 +2121,7 @@ export function ChatSidebar({
                               No matching chats
                             </p>
                             {chatSearch.isIndexing && (
-                              <p className="mt-1 text-xs text-content-muted">
+                              <p className="mt-1 text-balance text-xs text-content-muted">
                                 The search index is still being built; results
                                 will fill in shortly
                               </p>
