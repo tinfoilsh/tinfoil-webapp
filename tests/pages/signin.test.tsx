@@ -14,6 +14,7 @@ const auth = vi.hoisted(() => {
     mfa: {
       sendEmailCode: vi.fn(),
       verifyEmailCode: vi.fn(),
+      verifyTOTP: vi.fn(),
     },
     sso: vi.fn(),
     finalize: vi.fn(),
@@ -59,6 +60,7 @@ describe('SignInPage', () => {
     auth.signIn.emailCode.verifyCode.mockResolvedValue({ error: null })
     auth.signIn.mfa.sendEmailCode.mockResolvedValue({ error: null })
     auth.signIn.mfa.verifyEmailCode.mockResolvedValue({ error: null })
+    auth.signIn.mfa.verifyTOTP.mockResolvedValue({ error: null })
     auth.signIn.sso.mockResolvedValue({ error: null })
     auth.signUp.create.mockResolvedValue({ error: null })
     auth.signUp.update.mockResolvedValue({ error: null })
@@ -170,6 +172,99 @@ describe('SignInPage', () => {
       expect(auth.signUp.finalize).toHaveBeenCalledWith({
         navigate: expect.any(Function),
       })
+    })
+  })
+
+  it('verifies an authenticator app code when TOTP is the second factor', async () => {
+    auth.signIn.emailCode.verifyCode.mockImplementation(async () => {
+      auth.signIn.status = 'needs_second_factor'
+      auth.signIn.supportedSecondFactors = [{ strategy: 'totp' }]
+      return { error: null }
+    })
+    auth.signIn.mfa.verifyTOTP.mockImplementation(async () => {
+      auth.signIn.status = 'complete'
+      return { error: null }
+    })
+    render(<SignInPage />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
+      target: { value: 'person@example.com' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.change(
+      await screen.findByRole('textbox', { name: 'Verification code' }),
+      { target: { value: '123456' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Two-step verification' }),
+    ).toBeInTheDocument()
+    expect(auth.signIn.mfa.sendEmailCode).not.toHaveBeenCalled()
+
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'Verification code' }),
+      { target: { value: '987654' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+
+    await waitFor(() => {
+      expect(auth.signIn.mfa.verifyTOTP).toHaveBeenCalledWith({
+        code: '987654',
+      })
+      expect(auth.signIn.finalize).toHaveBeenCalledWith({
+        navigate: expect.any(Function),
+      })
+    })
+  })
+
+  it('lets the user fall back to an email MFA code from the TOTP prompt', async () => {
+    auth.signIn.emailCode.verifyCode.mockImplementation(async () => {
+      auth.signIn.status = 'needs_second_factor'
+      auth.signIn.supportedSecondFactors = [
+        { strategy: 'totp' },
+        { strategy: 'email_code' },
+      ]
+      return { error: null }
+    })
+    render(<SignInPage />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
+      target: { value: 'person@example.com' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.change(
+      await screen.findByRole('textbox', { name: 'Verification code' }),
+      { target: { value: '123456' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Email me a code instead' }),
+    )
+
+    await waitFor(() => {
+      expect(auth.signIn.mfa.sendEmailCode).toHaveBeenCalledTimes(1)
+    })
+    expect(
+      await screen.findByRole('heading', { name: 'Check your email' }),
+    ).toBeInTheDocument()
+
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'Verification code' }),
+      { target: { value: '555555' } },
+    )
+    auth.signIn.mfa.verifyEmailCode.mockImplementation(async () => {
+      auth.signIn.status = 'complete'
+      return { error: null }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+
+    await waitFor(() => {
+      expect(auth.signIn.mfa.verifyEmailCode).toHaveBeenCalledWith({
+        code: '555555',
+      })
+      expect(auth.signIn.finalize).toHaveBeenCalled()
     })
   })
 
