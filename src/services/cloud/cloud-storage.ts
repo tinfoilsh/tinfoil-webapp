@@ -287,6 +287,17 @@ export class CloudStorageService {
       metadata,
     })
 
+    // The blob stored fine but the enclave's inline search-index
+    // update failed; the chat won't surface in search until the next
+    // reindex (the search UI kicks one when queries report the gap).
+    if (pushResp.search_indexed === false) {
+      logWarning('Chat stored but not search-indexed', {
+        component: 'CloudStorage',
+        action: 'uploadChat',
+        metadata: { chatId: chat.id },
+      })
+    }
+
     return {
       syncVersion: etagToSyncVersion(pushResp.etag) ?? null,
       rewrites,

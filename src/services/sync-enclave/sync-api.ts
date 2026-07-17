@@ -53,6 +53,13 @@ export interface PushResponse {
   ok: true
   etag: string
   key_id: string
+  /**
+   * Whether the enclave's inline search-index update succeeded for a
+   * chat push. `false` means the blob stored fine but the chat won't
+   * surface in search until a reindex runs. Absent when search does
+   * not apply (non-chat scope or search backend unconfigured).
+   */
+  search_indexed?: boolean
 }
 
 export interface PullKey {
@@ -286,6 +293,62 @@ export interface MigrateAllResponse {
    */
   status?: MigrateAllStatus
   job_id?: string
+  started_at?: string
+  updated_at?: string
+  error?: string
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Encrypted chat search                                                     */
+/* -------------------------------------------------------------------------- */
+
+export interface SearchQueryRequest {
+  /** User's CEK, base64 raw 32 bytes. The enclave derives the
+   *  search-index subkey from it; the index never leaves the enclave
+   *  unencrypted. */
+  keyB64: string
+  query: string
+  limit?: number
+}
+
+export interface SearchQueryResult {
+  /** Chat id; contents come from the normal pull path. */
+  id: string
+  score: number
+}
+
+export interface SearchQueryResponse {
+  results: SearchQueryResult[]
+  total_indexed: number
+  /**
+   * True when no readable index exists for the supplied key (never
+   * built, different key, or the enclave's embedding model changed).
+   * The client should kick /v1/search/reindex and poll status.
+   */
+  needs_reindex?: boolean
+}
+
+export interface SearchReindexRequest {
+  /** Primary key first, then any legacy keys still sealing old rows. */
+  keys: PullKey[]
+}
+
+export type SearchReindexStatus = 'idle' | 'running' | 'completed' | 'failed'
+
+/**
+ * Wire shape returned by both the reindex kickoff and the status
+ * poll. The kickoff joins an already-running job for the same key
+ * set instead of starting a second one.
+ */
+export interface SearchReindexStatusResponse {
+  job_id?: string
+  status: SearchReindexStatus
+  indexed: number
+  failed: number
+  total_indexed: number
+  /** True when the run stopped at its wall-clock budget before
+   *  draining every chat; a fresh kickoff restarts the build. */
+  partial: boolean
   started_at?: string
   updated_at?: string
   error?: string
@@ -617,6 +680,48 @@ function normalizeMigrateAllResponse(
       blocked: s.blocked ?? [],
     })),
   }
+}
+
+/**
+ * Rank the caller's synced chats against a natural-language query.
+ * Returns chat ids + scores only; resolve titles/contents through the
+ * normal pull path. `needs_reindex: true` means the enclave has no
+ * readable index for this key and the caller should drive a reindex.
+ */
+export async function searchQuery(
+  req: SearchQueryRequest,
+): Promise<SearchQueryResponse> {
+  const client = await getSyncEnclaveClient()
+  const resp = await client.post<SearchQueryResponse>('/v1/search/query', {
+    key: req.keyB64,
+    query: req.query,
+    limit: req.limit,
+  })
+  return { ...resp, results: resp.results ?? [] }
+}
+
+/**
+ * Kick off (or join) the enclave-side background job that rebuilds
+ * the search index from the stored chat blobs. Returns the job's
+ * current status snapshot; poll `searchReindexStatus()` until the
+ * status is terminal.
+ */
+export async function searchReindex(
+  req: SearchReindexRequest,
+): Promise<SearchReindexStatusResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<SearchReindexStatusResponse>('/v1/search/reindex', {
+    keys: req.keys,
+  })
+}
+
+/** Poll the caller's current reindex job; `status: 'idle'` when none. */
+export async function searchReindexStatus(): Promise<SearchReindexStatusResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<SearchReindexStatusResponse>(
+    '/v1/search/reindex-status',
+    {},
+  )
 }
 
 /* -------------------------------------------------------------------------- */

@@ -31,6 +31,7 @@ import {
   ExclamationTriangleIcon,
   FolderIcon,
   FolderPlusIcon,
+  MagnifyingGlassIcon,
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
@@ -60,6 +61,7 @@ import {
 } from '@/constants/project-colors'
 import { useCloudPagination } from '@/hooks/use-cloud-pagination'
 
+import { useChatSearch } from '@/hooks/use-chat-search'
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '../link'
@@ -82,6 +84,11 @@ type ChatSidebarProps = {
   isDarkMode: boolean
   createNewChat: (isLocalOnly?: boolean, fromUserAction?: boolean) => void
   handleChatSelect: (chatId: string) => void
+  /**
+   * Opens a chat that is not in the loaded `chats` pages (search
+   * results can reach past pagination); downloads and selects it.
+   */
+  onOpenChatById?: (chatId: string) => Promise<void>
   updateChatTitle: (chatId: string, newTitle: string) => void
   deleteChat: (chatId: string) => void
   isClient: boolean
@@ -159,6 +166,7 @@ export function ChatSidebar({
   isDarkMode,
   createNewChat,
   handleChatSelect,
+  onOpenChatById,
   updateChatTitle,
   deleteChat,
   isClient,
@@ -658,6 +666,62 @@ export function ChatSidebar({
       onCloudSyncSetupClick()
     }
   }
+
+  // Encrypted server-side search over synced chats. Only offered on
+  // the cloud tab: local-only chats never reach the enclave, so the
+  // index cannot know about them.
+  const [chatSearchTerm, setChatSearchTerm] = useState('')
+  const searchEnabled =
+    !!isSignedIn &&
+    cloudSyncEnabled &&
+    !(localOnlyModeEnabled && activeTab === 'local')
+  const chatSearch = useChatSearch(chatSearchTerm, searchEnabled)
+  const isSearchActive = searchEnabled && chatSearchTerm.trim().length > 0
+
+  const searchResultChats = useMemo((): ChatItemData[] => {
+    if (!isSearchActive) return []
+    // Enclave unavailable (older deploy, no key): degrade to filtering
+    // the locally loaded titles so the box still does something useful.
+    if (!chatSearch.available) {
+      const needle = chatSearchTerm.trim().toLowerCase()
+      return (sortedChats as ChatItemData[]).filter(
+        (chat) =>
+          !chat.isBlankChat && chat.title.toLowerCase().includes(needle),
+      )
+    }
+    return chatSearch.results.map((r) => ({
+      id: r.id,
+      title: r.title,
+      updatedAt: r.updatedAt,
+      messageCount: r.messageCount,
+    }))
+  }, [
+    isSearchActive,
+    chatSearch.available,
+    chatSearch.results,
+    chatSearchTerm,
+    sortedChats,
+  ])
+
+  const handleSearchResultSelect = useCallback(
+    (chatId: string) => {
+      if (chats.some((c) => c.id === chatId)) {
+        handleChatSelect(chatId)
+        return
+      }
+      // A hit outside the loaded pagination pages: download + select.
+      if (onOpenChatById) {
+        void onOpenChatById(chatId).catch((error) => {
+          logError('Failed to open searched chat', error, {
+            component: 'ChatSidebar',
+            action: 'handleSearchResultSelect',
+            metadata: { chatId },
+          })
+        })
+      }
+    },
+    [chats, handleChatSelect, onOpenChatById],
+  )
 
   const handleCloudSyncToggle = async (enabled: boolean) => {
     if (enabled) {
@@ -1830,6 +1894,37 @@ export function ChatSidebar({
                     </div>
                   )}
 
+                  {/* Encrypted search over synced chats */}
+                  {searchEnabled && (
+                    <div className="relative mx-4 mb-2">
+                      <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-content-muted" />
+                      <input
+                        type="text"
+                        value={chatSearchTerm}
+                        onChange={(e) => setChatSearchTerm(e.target.value)}
+                        placeholder="Search chats..."
+                        aria-label="Search chats"
+                        className={cn(
+                          'w-full rounded-md border py-1.5 pl-8 pr-7 text-xs',
+                          isDarkMode
+                            ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                            : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
+                          'focus:outline-none focus:ring-1 focus:ring-border-strong',
+                        )}
+                      />
+                      {chatSearchTerm.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setChatSearchTerm('')}
+                          aria-label="Clear search"
+                          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-content-muted transition-colors hover:text-content-secondary"
+                        >
+                          <XMarkIcon className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {/* Cloud Sync Setup - show when signed in and cloud sync is OFF */}
                   {isSignedIn && !cloudSyncEnabled && (
                     <div className="px-3 py-2">
@@ -1936,15 +2031,25 @@ export function ChatSidebar({
                 >
                   {isClient && (
                     <ChatList
-                      chats={sortedChats as ChatItemData[]}
+                      chats={
+                        isSearchActive
+                          ? searchResultChats
+                          : (sortedChats as ChatItemData[])
+                      }
                       currentChatId={currentChat?.id}
                       currentChatIsBlank={currentChat?.isBlankChat}
                       currentChatIsLocalOnly={currentChat?.isLocalOnly}
                       isDarkMode={isDarkMode}
+                      isLoading={
+                        isSearchActive &&
+                        chatSearch.isSearching &&
+                        searchResultChats.length === 0
+                      }
                       showEncryptionStatus={true}
                       showSyncStatus={true}
                       enableTitleAnimation={true}
                       isDraggable={
+                        !isSearchActive &&
                         isSignedIn &&
                         cloudSyncEnabled &&
                         (!!onMoveChatToProject ||
@@ -1952,12 +2057,17 @@ export function ChatSidebar({
                           !!onConvertChatToLocal)
                       }
                       showMoveToProject={
+                        !isSearchActive &&
                         isSignedIn &&
                         isPremium &&
                         cloudSyncEnabled &&
                         !!onMoveChatToProject
                       }
-                      onSelectChat={handleChatSelect}
+                      onSelectChat={
+                        isSearchActive
+                          ? handleSearchResultSelect
+                          : handleChatSelect
+                      }
                       onAfterSelect={undefined}
                       onUpdateTitle={updateChatTitle}
                       onDeleteChat={deleteChat}
@@ -1983,7 +2093,14 @@ export function ChatSidebar({
                           : undefined
                       }
                       loadingIndicator={
-                        chatDecryptionProgress?.isDecrypting ? (
+                        isSearchActive && chatSearch.isIndexing ? (
+                          <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
+                            <PiSpinner className="h-4 w-4 animate-spin" />
+                            <span className="text-sm">
+                              Building search index...
+                            </span>
+                          </div>
+                        ) : chatDecryptionProgress?.isDecrypting ? (
                           <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
                             <PiSpinner className="h-4 w-4 animate-spin" />
                             <span className="text-sm">
@@ -1998,7 +2115,19 @@ export function ChatSidebar({
                       onConvertToCloud={onConvertChatToCloud}
                       onConvertToLocal={onConvertChatToLocal}
                       emptyState={
-                        activeTab === 'local' ? (
+                        isSearchActive ? (
+                          <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
+                            <p className="text-sm text-content-muted">
+                              No matching chats
+                            </p>
+                            {chatSearch.isIndexing && (
+                              <p className="mt-1 text-xs text-content-muted">
+                                The search index is still being built; results
+                                will fill in shortly
+                              </p>
+                            )}
+                          </div>
+                        ) : activeTab === 'local' ? (
                           <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
                             <p className="text-sm text-content-muted">
                               No local chats yet
@@ -2011,46 +2140,48 @@ export function ChatSidebar({
                         ) : undefined
                       }
                       loadMoreButton={
-                        <>
-                          {/* Sentinel element for intersection observer */}
-                          <div ref={loadMoreSentinelRef} className="h-1" />
-                          {/* Shimmer placeholder while loading or waiting for chats to render */}
-                          {(isLoadingMore || pendingChatsRender) && (
-                            <div className="space-y-1 px-2">
-                              {[...Array(3)].map((_, i) => (
-                                <div
-                                  key={i}
-                                  className="animate-pulse rounded-lg px-3 py-2"
-                                >
+                        isSearchActive ? undefined : (
+                          <>
+                            {/* Sentinel element for intersection observer */}
+                            <div ref={loadMoreSentinelRef} className="h-1" />
+                            {/* Shimmer placeholder while loading or waiting for chats to render */}
+                            {(isLoadingMore || pendingChatsRender) && (
+                              <div className="space-y-1 px-2">
+                                {[...Array(3)].map((_, i) => (
                                   <div
-                                    className={cn(
-                                      'mb-1.5 h-3.5 w-3/4 rounded',
-                                      isDarkMode
-                                        ? 'bg-gray-700'
-                                        : 'bg-gray-200',
-                                    )}
-                                  />
-                                  <div
-                                    className={cn(
-                                      'h-3 w-1/3 rounded',
-                                      isDarkMode
-                                        ? 'bg-gray-700'
-                                        : 'bg-gray-200',
-                                    )}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {isSignedIn &&
-                            !shouldShowLoadMore &&
-                            !hasMoreRemote &&
-                            hasAttemptedLoadMore && (
-                              <div className="px-3 py-2 text-center text-xs text-content-muted">
-                                No more chats
+                                    key={i}
+                                    className="animate-pulse rounded-lg px-3 py-2"
+                                  >
+                                    <div
+                                      className={cn(
+                                        'mb-1.5 h-3.5 w-3/4 rounded',
+                                        isDarkMode
+                                          ? 'bg-gray-700'
+                                          : 'bg-gray-200',
+                                      )}
+                                    />
+                                    <div
+                                      className={cn(
+                                        'h-3 w-1/3 rounded',
+                                        isDarkMode
+                                          ? 'bg-gray-700'
+                                          : 'bg-gray-200',
+                                      )}
+                                    />
+                                  </div>
+                                ))}
                               </div>
                             )}
-                        </>
+                            {isSignedIn &&
+                              !shouldShowLoadMore &&
+                              !hasMoreRemote &&
+                              hasAttemptedLoadMore && (
+                                <div className="px-3 py-2 text-center text-xs text-content-muted">
+                                  No more chats
+                                </div>
+                              )}
+                          </>
+                        )
                       }
                     />
                   )}
