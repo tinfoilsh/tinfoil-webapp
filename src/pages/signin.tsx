@@ -25,15 +25,9 @@ const UNSUPPORTED_REQUIREMENTS_MESSAGE =
   'Your account needs additional setup. Please contact support.'
 
 type AuthStep = 'email' | 'code' | 'details'
-type VerificationKind = 'primary' | 'mfa'
+type VerificationKind = 'primary' | 'mfa' | 'totp'
 type PendingAction =
-  | 'google'
-  | 'apple'
-  | 'email'
-  | 'verify'
-  | 'resend'
-  | 'details'
-  | null
+  'google' | 'apple' | 'email' | 'verify' | 'resend' | 'details' | null
 type ActiveAuthAction = Exclude<PendingAction, null>
 
 type SignInFinalizeParams = NonNullable<
@@ -104,6 +98,7 @@ export default function SignInPage() {
   const [lastName, setLastName] = useState('')
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [emailMfaAvailable, setEmailMfaAvailable] = useState(false)
 
   useEffect(() => {
     const root = document.documentElement
@@ -202,9 +197,22 @@ export default function SignInPage() {
       signIn.status === 'needs_second_factor' ||
       signIn.status === 'needs_client_trust'
     ) {
+      const hasTotp = signIn.supportedSecondFactors.some(
+        (factor) => factor.strategy === 'totp',
+      )
       const hasEmailCode = signIn.supportedSecondFactors.some(
         (factor) => factor.strategy === 'email_code',
       )
+
+      // Prefer the authenticator app when enrolled; it needs no send step.
+      if (hasTotp) {
+        setCode('')
+        setEmailMfaAvailable(hasEmailCode)
+        setVerificationKind('totp')
+        setStep('code')
+        return
+      }
+
       if (!hasEmailCode) {
         setErrorMessage(UNSUPPORTED_REQUIREMENTS_MESSAGE)
         return
@@ -312,7 +320,9 @@ export default function SignInPage() {
         const { error } =
           verificationKind === 'primary'
             ? await signIn.emailCode.verifyCode({ code })
-            : await signIn.mfa.verifyEmailCode({ code })
+            : verificationKind === 'mfa'
+              ? await signIn.mfa.verifyEmailCode({ code })
+              : await signIn.mfa.verifyTOTP({ code })
 
         if (error) {
           const errorCode = clerkErrorCode(error)
@@ -346,6 +356,23 @@ export default function SignInPage() {
         if (error) {
           setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
         }
+      },
+    )
+  }
+
+  const handleUseEmailMfa = async () => {
+    await runAuthAction(
+      'resend',
+      'Could not send sign-in code',
+      'handleUseEmailMfa',
+      async () => {
+        const { error } = await signIn.mfa.sendEmailCode()
+        if (error) {
+          setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+          return
+        }
+        setCode('')
+        setVerificationKind('mfa')
       },
     )
   }
@@ -454,6 +481,7 @@ export default function SignInPage() {
     setCode('')
     setErrorMessage(null)
     setVerificationKind('primary')
+    setEmailMfaAvailable(false)
     setStep('email')
   }
 
@@ -473,12 +501,18 @@ export default function SignInPage() {
         {step !== 'email' && (
           <div className="mb-8">
             <h1 className="text-2xl font-medium leading-tight text-content-primary">
-              {step === 'code' ? 'Check your email' : 'Complete your account'}
+              {step !== 'code'
+                ? 'Complete your account'
+                : verificationKind === 'totp'
+                  ? 'Two-step verification'
+                  : 'Check your email'}
             </h1>
             <p className="mt-1 text-lg leading-tight text-content-muted">
-              {step === 'code'
-                ? `We sent a verification code to ${emailAddress}`
-                : 'Your email is verified'}
+              {step !== 'code'
+                ? 'Your email is verified'
+                : verificationKind === 'totp'
+                  ? 'Enter the code from your authenticator app'
+                  : `We sent a verification code to ${emailAddress}`}
             </p>
           </div>
         )}
@@ -607,14 +641,29 @@ export default function SignInPage() {
               Verify
             </Button>
             <div className="flex justify-center gap-4 text-sm">
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={handleResendCode}
-                className="text-content-secondary transition-colors hover:text-content-primary disabled:opacity-60"
-              >
-                {pendingAction === 'resend' ? 'Sending...' : 'Resend code'}
-              </button>
+              {verificationKind !== 'totp' ? (
+                <button
+                  type="button"
+                  disabled={isPending}
+                  onClick={handleResendCode}
+                  className="text-content-secondary transition-colors hover:text-content-primary disabled:opacity-60"
+                >
+                  {pendingAction === 'resend' ? 'Sending...' : 'Resend code'}
+                </button>
+              ) : (
+                emailMfaAvailable && (
+                  <button
+                    type="button"
+                    disabled={isPending}
+                    onClick={handleUseEmailMfa}
+                    className="text-content-secondary transition-colors hover:text-content-primary disabled:opacity-60"
+                  >
+                    {pendingAction === 'resend'
+                      ? 'Sending...'
+                      : 'Email me a code instead'}
+                  </button>
+                )
+              )}
               <button
                 type="button"
                 disabled={isPending}
