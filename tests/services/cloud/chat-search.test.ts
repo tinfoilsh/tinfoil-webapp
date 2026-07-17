@@ -79,6 +79,7 @@ describe('chat-search', () => {
       totalIndexed: 0,
       indexing: false,
       available: false,
+      reindexSettled: null,
     })
     expect(mockSearchQuery).not.toHaveBeenCalled()
   })
@@ -125,6 +126,7 @@ describe('chat-search', () => {
       totalIndexed: 9,
       indexing: false,
       available: true,
+      reindexSettled: null,
     })
     expect(mockSearchQuery).toHaveBeenCalledWith({
       keyB64: 'primary-b64',
@@ -154,10 +156,13 @@ describe('chat-search', () => {
     expect(first.indexing).toBe(true)
     expect(second.indexing).toBe(true)
 
-    const settled = search.ensureSearchIndex()
+    // Both calls share the same in-flight reindex promise.
+    expect(first.reindexSettled).not.toBeNull()
+    expect(first.reindexSettled).toBe(second.reindexSettled)
+
     await vi.advanceTimersByTimeAsync(search.SEARCH_REINDEX_POLL_INTERVAL_MS)
     await vi.advanceTimersByTimeAsync(search.SEARCH_REINDEX_POLL_INTERVAL_MS)
-    await expect(settled).resolves.toBe('completed')
+    await expect(first.reindexSettled).resolves.toBe('completed')
 
     const { pullKey } = await import('@/services/cloud/cek-encoding')
     expect(mockSearchReindex).toHaveBeenCalledTimes(1)
