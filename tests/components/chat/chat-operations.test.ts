@@ -25,7 +25,7 @@ describe('canToggleTemporaryChat', () => {
     expect(canToggleTemporaryChat(createChat())).toBe(false)
   })
 
-  it('allows an active temporary chat to be saved', () => {
+  it('shows the temporary mode toggle for an active temporary chat', () => {
     expect(
       canToggleTemporaryChat(
         createChat({ isBlankChat: false, isTemporary: true }),
