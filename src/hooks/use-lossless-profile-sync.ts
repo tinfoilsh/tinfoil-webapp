@@ -341,6 +341,7 @@ export function useProfileSync() {
       'promptLibraryChanged',
       'reasoningSettingsChanged',
       'webSearchEnabledChanged',
+      'webSearchAvailableChanged',
       'codeExecutionEnabledChanged',
       'piiCheckEnabledChanged',
       'genUIEnabledChanged',

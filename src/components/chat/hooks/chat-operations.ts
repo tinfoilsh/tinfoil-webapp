@@ -24,6 +24,10 @@ export function createBlankChat(isLocalOnly = false): Chat {
   }
 }
 
+export function canToggleTemporaryChat(chat: Chat | null | undefined): boolean {
+  return !chat || chat.isBlankChat === true || chat.isTemporary === true
+}
+
 /**
  * Loads all chats from storage
  */

@@ -23,6 +23,7 @@ export const PROFILE_MERGE_FIELDS = [
   'reasoningEffort',
   'thinkingEnabled',
   'webSearchEnabled',
+  'webSearchAvailable',
   'codeExecutionEnabled',
   'piiCheckEnabled',
   'genUIEnabled',

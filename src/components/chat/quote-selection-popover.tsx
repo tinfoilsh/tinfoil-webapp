@@ -154,7 +154,7 @@ export function QuoteSelectionPopover({
         // Prevent losing the selection when clicking the popover.
         e.preventDefault()
       }}
-      className="flex items-center gap-1 rounded-full border border-border-subtle bg-surface-chat p-0.5 shadow-md"
+      className="hidden items-center gap-1 rounded-full border border-border-subtle bg-surface-chat p-0.5 shadow-md md:flex"
     >
       <button
         type="button"

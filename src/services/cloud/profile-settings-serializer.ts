@@ -7,6 +7,7 @@ import {
   SETTINGS_THEME,
   SETTINGS_THEME_MODE,
   SETTINGS_THINKING_ENABLED,
+  SETTINGS_WEB_SEARCH_AVAILABLE,
   SETTINGS_WEB_SEARCH_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
@@ -88,6 +89,7 @@ export function hasProfileChanged(
     profile1.reasoningEffort !== profile2.reasoningEffort ||
     profile1.thinkingEnabled !== profile2.thinkingEnabled ||
     profile1.webSearchEnabled !== profile2.webSearchEnabled ||
+    profile1.webSearchAvailable !== profile2.webSearchAvailable ||
     profile1.codeExecutionEnabled !== profile2.codeExecutionEnabled ||
     profile1.piiCheckEnabled !== profile2.piiCheckEnabled ||
     profile1.genUIEnabled !== profile2.genUIEnabled ||
@@ -197,6 +199,10 @@ export function loadLocalSettings(): ProfileData {
     settings.webSearchEnabled = webSearchEnabled === 'true'
   }
 
+  const webSearchAvailable = localStorage.getItem(SETTINGS_WEB_SEARCH_AVAILABLE)
+  settings.webSearchAvailable =
+    webSearchAvailable === null ? true : webSearchAvailable === 'true'
+
   const codeExecutionEnabled = localStorage.getItem(
     SETTINGS_CODE_EXECUTION_ENABLED,
   )
@@ -253,6 +259,7 @@ export function resetSettingsToLocalDefaults(): ProfileData {
     reasoningEffort: 'medium',
     thinkingEnabled: true,
     webSearchEnabled: true,
+    webSearchAvailable: true,
     codeExecutionEnabled: false,
     piiCheckEnabled: true,
     genUIEnabled: true,
@@ -423,6 +430,18 @@ export function applySettingsToLocal(settings: ProfileData): void {
     window.dispatchEvent(
       new CustomEvent('webSearchEnabledChanged', {
         detail: { enabled: settings.webSearchEnabled },
+      }),
+    )
+  }
+
+  if (settings.webSearchAvailable !== undefined) {
+    localStorage.setItem(
+      SETTINGS_WEB_SEARCH_AVAILABLE,
+      String(settings.webSearchAvailable),
+    )
+    window.dispatchEvent(
+      new CustomEvent('webSearchAvailableChanged', {
+        detail: { enabled: settings.webSearchAvailable },
       }),
     )
   }

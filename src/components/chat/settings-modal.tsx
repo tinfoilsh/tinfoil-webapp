@@ -7,6 +7,7 @@ import {
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   SETTINGS_GENUI_ENABLED,
   SETTINGS_PII_CHECK_ENABLED,
+  SETTINGS_WEB_SEARCH_AVAILABLE,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
   USER_PREFS_CUSTOM_SYSTEM_PROMPT,
@@ -431,6 +432,8 @@ export function SettingsModal({
   // Web Search PII check setting (defaults to on)
   const [piiCheckEnabled, setPiiCheckEnabled] = useState<boolean>(true)
 
+  const [webSearchAvailable, setWebSearchAvailable] = useState<boolean>(true)
+
   // Generative UI setting (defaults to on)
   const [genUIEnabled, setGenUIEnabled] = useState<boolean>(true)
 
@@ -636,6 +639,15 @@ export function SettingsModal({
     const savedPiiCheck = localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)
     setPiiCheckEnabled(savedPiiCheck === null ? true : savedPiiCheck === 'true')
 
+    const savedWebSearchAvailable = localStorage.getItem(
+      SETTINGS_WEB_SEARCH_AVAILABLE,
+    )
+    setWebSearchAvailable(
+      savedWebSearchAvailable === null
+        ? true
+        : savedWebSearchAvailable === 'true',
+    )
+
     // Load Generative UI setting (defaults to true if not set)
     const savedGenUI = localStorage.getItem(SETTINGS_GENUI_ENABLED)
     setGenUIEnabled(savedGenUI === null ? true : savedGenUI === 'true')
@@ -683,6 +695,10 @@ export function SettingsModal({
       'customSystemPromptChanged',
       handleProfileSyncUpdate,
     )
+    window.addEventListener(
+      'webSearchAvailableChanged',
+      handleProfileSyncUpdate,
+    )
     window.addEventListener('cloudSyncSettingChanged', handleCloudSyncUpdate)
 
     return () => {
@@ -694,6 +710,10 @@ export function SettingsModal({
       window.removeEventListener('languageChanged', handleProfileSyncUpdate)
       window.removeEventListener(
         'customSystemPromptChanged',
+        handleProfileSyncUpdate,
+      )
+      window.removeEventListener(
+        'webSearchAvailableChanged',
         handleProfileSyncUpdate,
       )
       window.removeEventListener(
@@ -2417,6 +2437,51 @@ ${encryptionKey.replace('key_', '')}
                       Advanced Settings
                     </h3>
                     <div className="space-y-4">
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="mr-3 flex-1">
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Web Search
+                            </div>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              Show web search controls and allow chats to search
+                              the web.
+                            </div>
+                          </div>
+                          <label className="relative inline-flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={webSearchAvailable}
+                              onChange={(e) => {
+                                const newValue = e.target.checked
+                                setWebSearchAvailable(newValue)
+                                if (isClient) {
+                                  localStorage.setItem(
+                                    SETTINGS_WEB_SEARCH_AVAILABLE,
+                                    newValue.toString(),
+                                  )
+                                  window.dispatchEvent(
+                                    new CustomEvent(
+                                      'webSearchAvailableChanged',
+                                      {
+                                        detail: { enabled: newValue },
+                                      },
+                                    ),
+                                  )
+                                }
+                              }}
+                              className="peer sr-only"
+                            />
+                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                          </label>
+                        </div>
+                      </div>
+
                       {/* Web Search PII Detection */}
                       <div
                         className={cn(

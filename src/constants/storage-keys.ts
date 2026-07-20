@@ -35,6 +35,8 @@ export const SETTINGS_SELECTED_MODEL = 'tinfoil-settings-selected-model'
 export const SETTINGS_REASONING_EFFORT = 'tinfoil-settings-reasoning-effort'
 export const SETTINGS_THINKING_ENABLED = 'tinfoil-settings-thinking-enabled'
 export const SETTINGS_WEB_SEARCH_ENABLED = 'tinfoil-settings-web-search-enabled'
+export const SETTINGS_WEB_SEARCH_AVAILABLE =
+  'tinfoil-settings-web-search-available'
 export const SETTINGS_CODE_EXECUTION_ENABLED =
   'tinfoil-settings-code-execution-enabled'
 export const SETTINGS_PII_CHECK_ENABLED = 'tinfoil-settings-pii-check-enabled'

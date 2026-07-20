@@ -77,6 +77,7 @@ export interface ProfileData {
   reasoningEffort?: 'low' | 'medium' | 'high'
   thinkingEnabled?: boolean
   webSearchEnabled?: boolean
+  webSearchAvailable?: boolean
   codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
   genUIEnabled?: boolean
