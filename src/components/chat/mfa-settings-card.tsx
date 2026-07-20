@@ -1,6 +1,6 @@
 import { cn } from '@/components/ui/utils'
 import { getClerkErrorMessage } from '@/utils/clerk-errors'
-import { logError } from '@/utils/error-handling'
+import { logError, logWarning } from '@/utils/error-handling'
 import { useReverification, useUser } from '@clerk/nextjs'
 import { isReverificationCancelledError } from '@clerk/nextjs/errors'
 import {
@@ -8,8 +8,8 @@ import {
   ClipboardDocumentIcon,
   ShieldCheckIcon,
 } from '@heroicons/react/24/outline'
-import { memo, useCallback, useState, type FormEvent } from 'react'
-import { createPortal } from 'react-dom'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { memo, useCallback, useRef, useState, type FormEvent } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
 import { ConfirmDialog } from './components/confirm-dialog'
@@ -44,6 +44,11 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
   const [copiedTarget, setCopiedTarget] = useState<
     'setup-key' | 'backup-codes' | null
   >(null)
+  const [totpEnabledOverride, setTotpEnabledOverride] = useState<{
+    userId: string
+    enabled: boolean
+  } | null>(null)
+  const mfaActionButtonRef = useRef<HTMLButtonElement>(null)
 
   const createTOTP = useReverification(
     useCallback(async () => {
@@ -63,7 +68,25 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
     }, [user]),
   )
 
-  const totpEnabled = user?.totpEnabled ?? false
+  const totpEnabled =
+    user && totpEnabledOverride?.userId === user.id
+      ? totpEnabledOverride.enabled
+      : (user?.totpEnabled ?? false)
+
+  const refreshUserAfterMfaMutation = async (enabled: boolean) => {
+    if (!user) return
+
+    setTotpEnabledOverride({ userId: user.id, enabled })
+    try {
+      await user.reload()
+      setTotpEnabledOverride(null)
+    } catch {
+      logWarning('Could not refresh user after MFA update', {
+        component: 'MfaSettingsCard',
+        action: 'refreshUserAfterMfaMutation',
+      })
+    }
+  }
 
   const handleStartSetup = async () => {
     setIsStartingSetup(true)
@@ -100,6 +123,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
         return
       }
 
+      await refreshUserAfterMfaMutation(true)
       setTotpSetup(null)
       setVerificationCode('')
       setBackupCodes(resource.backupCodes?.length ? resource.backupCodes : [])
@@ -127,6 +151,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
     setErrorMessage(null)
     try {
       await disableTOTP()
+      await refreshUserAfterMfaMutation(false)
       setBackupCodes(null)
     } catch (error) {
       if (!isReverificationCancelledError(error)) {
@@ -155,74 +180,6 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
       })
       setErrorMessage('Could not copy to the clipboard.')
     }
-  }
-
-  if (backupCodes) {
-    return createPortal(
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="mfa-enabled-title"
-        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
-      >
-        <div
-          className={cn(
-            'w-full max-w-md rounded-site-lg border border-border-subtle p-5 shadow-xl',
-            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-          )}
-        >
-          <div className="flex items-start gap-3">
-            <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
-            <div>
-              <h3
-                id="mfa-enabled-title"
-                className="font-aeonik text-base font-medium text-content-primary"
-              >
-                Authenticator app enabled
-              </h3>
-              <p className="mt-1 text-xs text-content-muted">
-                You will use an authenticator code when signing in.
-              </p>
-            </div>
-          </div>
-
-          {backupCodes.length > 0 && (
-            <div className="mt-4">
-              <p className="text-sm font-medium text-content-primary">
-                Save your backup codes
-              </p>
-              <p className="mt-1 text-xs text-content-muted">
-                Store these somewhere safe. Each code can only be used once.
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-surface-chat p-3 font-aeonik-fono text-xs text-content-primary">
-                {backupCodes.map((code) => (
-                  <span key={code}>{code}</span>
-                ))}
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  void handleCopy(backupCodes.join('\n'), 'backup-codes')
-                }
-                className="mt-3 flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
-              >
-                <ClipboardDocumentIcon className="h-4 w-4" />
-                {copiedTarget === 'backup-codes' ? 'Copied' : 'Copy'} all codes
-              </button>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => setBackupCodes(null)}
-            className="mt-4 w-full rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
-          >
-            Done
-          </button>
-        </div>
-      </div>,
-      document.body,
-    )
   }
 
   return (
@@ -262,6 +219,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
 
             {!totpSetup && (
               <button
+                ref={mfaActionButtonRef}
                 type="button"
                 disabled={!isLoaded || !user || isStartingSetup || isDisabling}
                 onClick={
@@ -396,6 +354,80 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
           </p>
         )}
       </div>
+
+      <DialogPrimitive.Root
+        open={backupCodes !== null}
+        onOpenChange={(open) => {
+          if (!open) setBackupCodes(null)
+        }}
+      >
+        <DialogPrimitive.Portal>
+          <DialogPrimitive.Overlay className="fixed inset-0 z-[70] bg-black/60" />
+          <DialogPrimitive.Content
+            aria-modal="true"
+            aria-describedby="mfa-enabled-description"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              mfaActionButtonRef.current?.focus()
+            }}
+            className={cn(
+              'fixed left-1/2 top-1/2 z-[70] w-[92vw] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-site-lg border border-border-subtle p-5 shadow-xl focus:outline-none',
+              isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+            )}
+          >
+            <div className="flex items-start gap-3">
+              <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
+              <div>
+                <DialogPrimitive.Title className="font-aeonik text-base font-medium text-content-primary">
+                  Authenticator app enabled
+                </DialogPrimitive.Title>
+                <DialogPrimitive.Description
+                  id="mfa-enabled-description"
+                  className="mt-1 text-xs text-content-muted"
+                >
+                  You will use an authenticator code when signing in.
+                </DialogPrimitive.Description>
+              </div>
+            </div>
+
+            {backupCodes && backupCodes.length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium text-content-primary">
+                  Save your backup codes
+                </p>
+                <p className="mt-1 text-xs text-content-muted">
+                  Store these somewhere safe. Each code can only be used once.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-surface-chat p-3 font-aeonik-fono text-xs text-content-primary">
+                  {backupCodes.map((code) => (
+                    <span key={code}>{code}</span>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void handleCopy(backupCodes.join('\n'), 'backup-codes')
+                  }
+                  className="mt-3 flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
+                >
+                  <ClipboardDocumentIcon className="h-4 w-4" />
+                  {copiedTarget === 'backup-codes' ? 'Copied' : 'Copy'} all
+                  codes
+                </button>
+              </div>
+            )}
+
+            <DialogPrimitive.Close asChild>
+              <button
+                type="button"
+                className="mt-4 w-full rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+              >
+                Done
+              </button>
+            </DialogPrimitive.Close>
+          </DialogPrimitive.Content>
+        </DialogPrimitive.Portal>
+      </DialogPrimitive.Root>
 
       <ConfirmDialog
         isOpen={showDisableConfirm}
