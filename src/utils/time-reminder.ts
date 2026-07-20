@@ -16,10 +16,20 @@ const TIME_REMINDER_FORMAT: Intl.DateTimeFormatOptions = {
   hour: '2-digit',
   minute: '2-digit',
   timeZoneName: 'short',
+  // Explicit hour cycle so OS-level 24-hour preferences cannot alter the
+  // fixed format on engines that let them leak into explicit locales.
+  hour12: true,
 }
 
+// Cached because Intl.DateTimeFormat construction is expensive and this
+// runs on every chat request build.
+const timeReminderFormatter = new Intl.DateTimeFormat(
+  'en-US',
+  TIME_REMINDER_FORMAT,
+)
+
 export function formatCurrentTimeReminder(now: Date = new Date()): string {
-  const dateTime = now.toLocaleString('en-US', TIME_REMINDER_FORMAT)
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const dateTime = timeReminderFormatter.format(now)
+  const timezone = timeReminderFormatter.resolvedOptions().timeZone
   return `<system-reminder>Current time: ${dateTime} (${timezone})</system-reminder>`
 }
