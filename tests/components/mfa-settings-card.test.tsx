@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => {
     user,
     logError: vi.fn(),
     logWarning: vi.fn(),
+    createObjectURL: vi.fn(),
+    revokeObjectURL: vi.fn(),
   }
 })
 
@@ -40,6 +42,15 @@ beforeEach(() => {
   vi.resetAllMocks()
   mocks.user.totpEnabled = false
   mocks.user.reload.mockResolvedValue(mocks.user)
+  mocks.createObjectURL.mockReturnValue('blob:backup-codes')
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    value: mocks.createObjectURL,
+  })
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: mocks.revokeObjectURL,
+  })
 })
 
 describe('MfaSettingsCard', () => {
@@ -88,6 +99,23 @@ describe('MfaSettingsCard', () => {
       expect(dialog).toContainElement(document.activeElement as HTMLElement)
     })
     expect(mocks.user.reload).toHaveBeenCalledTimes(1)
+
+    const appendChild = vi.spyOn(document.body, 'appendChild')
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+
+    fireEvent.click(screen.getByRole('button', { name: 'Download .txt' }))
+
+    const anchor = appendChild.mock.calls[0][0] as HTMLAnchorElement
+    expect(anchor.download).toBe('tinfoil-backup-codes.txt')
+    expect(anchor.href).toBe('blob:backup-codes')
+    expect(anchorClick).toHaveBeenCalledTimes(1)
+    expect(mocks.revokeObjectURL).toHaveBeenCalledWith('blob:backup-codes')
+    const backupCodesFile = mocks.createObjectURL.mock.calls[0][0] as Blob
+    expect(await backupCodesFile.text()).toBe(
+      'Tinfoil backup codes\n\nbackup-one\nbackup-two\n',
+    )
 
     fireEvent.keyDown(document, { key: 'Escape' })
 

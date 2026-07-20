@@ -4,6 +4,7 @@ import { logError, logWarning } from '@/utils/error-handling'
 import { useReverification, useUser } from '@clerk/nextjs'
 import { isReverificationCancelledError } from '@clerk/nextjs/errors'
 import {
+  ArrowDownTrayIcon,
   CheckCircleIcon,
   ClipboardDocumentIcon,
   ShieldCheckIcon,
@@ -15,6 +16,8 @@ import QRCode from 'react-qr-code'
 import { ConfirmDialog } from './components/confirm-dialog'
 
 const TOTP_CODE_LENGTH = 6
+const BACKUP_CODES_FILENAME = 'tinfoil-backup-codes.txt'
+const BACKUP_CODES_MIME_TYPE = 'text/plain;charset=utf-8'
 const MFA_ERROR_MESSAGE =
   'Could not update multi-factor authentication. Please try again.'
 
@@ -180,6 +183,21 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
       })
       setErrorMessage('Could not copy to the clipboard.')
     }
+  }
+
+  const handleDownloadBackupCodes = () => {
+    if (!backupCodes?.length) return
+
+    const content = ['Tinfoil backup codes', '', ...backupCodes, ''].join('\n')
+    const blob = new Blob([content], { type: BACKUP_CODES_MIME_TYPE })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = BACKUP_CODES_FILENAME
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -403,17 +421,27 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                     <span key={code}>{code}</span>
                   ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    void handleCopy(backupCodes.join('\n'), 'backup-codes')
-                  }
-                  className="mt-3 flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
-                >
-                  <ClipboardDocumentIcon className="h-4 w-4" />
-                  {copiedTarget === 'backup-codes' ? 'Copied' : 'Copy'} all
-                  codes
-                </button>
+                <div className="mt-3 flex flex-wrap items-center gap-5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void handleCopy(backupCodes.join('\n'), 'backup-codes')
+                    }
+                    className="flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
+                  >
+                    <ClipboardDocumentIcon className="h-4 w-4" />
+                    {copiedTarget === 'backup-codes' ? 'Copied' : 'Copy'} all
+                    codes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadBackupCodes}
+                    className="flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
+                  >
+                    <ArrowDownTrayIcon className="h-4 w-4" />
+                    Download .txt
+                  </button>
+                </div>
               </div>
             )}
 
