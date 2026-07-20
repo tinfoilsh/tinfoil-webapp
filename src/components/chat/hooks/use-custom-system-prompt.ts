@@ -25,13 +25,6 @@ type UseCustomSystemPromptReturn = {
   isUsingPersonalization: boolean
 }
 
-// Stable replacement for the legacy {CURRENT_DATETIME} placeholder. The live
-// timestamp is delivered via an ephemeral reminder message at the end of the
-// request instead, so the system prompt stays byte-stable and server-side
-// prefix caching keeps working.
-const CURRENT_DATETIME_POINTER =
-  'provided in a reminder message at the end of the conversation'
-
 const stripSystemTags = (prompt: string): string =>
   prompt
     .replace(/^<system>\s*\n?/, '')
@@ -234,7 +227,6 @@ export const useCustomSystemPrompt = (
     return text
       .replace('{USER_PREFERENCES}', userPreferencesXML)
       .replace('{LANGUAGE}', effectiveLanguage)
-      .replace('{CURRENT_DATETIME}', CURRENT_DATETIME_POINTER)
       .replace('{TIMEZONE}', timezone)
   }
 
