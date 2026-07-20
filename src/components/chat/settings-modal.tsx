@@ -3094,10 +3094,10 @@ ${encryptionKey.replace('key_', '')}
                                       Tip:
                                     </span>{' '}
                                     Use placeholders like {'{USER_PREFERENCES}'}
-                                    , {'{LANGUAGE}'}, {'{CURRENT_DATETIME}'},
-                                    and {'{TIMEZONE}'} to tell the model about
-                                    your preferences, timezone, and the current
-                                    time and date.
+                                    , {'{LANGUAGE}'}, and {'{TIMEZONE}'} to tell
+                                    the model about your preferences and
+                                    timezone. The current time and date are
+                                    always provided to the model automatically.
                                   </div>
                                 </div>
                                 <div className="flex justify-center">

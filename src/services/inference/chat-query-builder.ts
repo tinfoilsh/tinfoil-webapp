@@ -5,6 +5,7 @@ import {
 import { buildGenUIPromptHint } from '@/components/chat/genui/system-prompt'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import { formatCurrentTimeReminder } from '@/utils/time-reminder'
 import { selectMessagesWithinBudget } from '@/utils/token-estimation'
 import type {
   ChatCompletionAssistantMessageParam,
@@ -43,6 +44,14 @@ export interface ChatQueryBuilderParams {
    * don't support the system role (e.g. DeepSeek).
    */
   forcePrependSystemPrompt?: boolean
+  /**
+   * Append an ephemeral current-time reminder as the final message. The
+   * reminder is built at request time and never persisted, keeping the
+   * system prompt and history byte-stable so prefix caching works.
+   * Defaults to `false` so internal utilities (title gen, memory) stay
+   * unaffected.
+   */
+  includeTimeReminder?: boolean
 }
 
 export class ChatQueryBuilder {
@@ -59,6 +68,7 @@ export class ChatQueryBuilder {
       messages: conversationMessages,
       includeGenUIHint,
       forcePrependSystemPrompt,
+      includeTimeReminder,
     } = params
     const modelId = model.modelName
 
@@ -168,6 +178,13 @@ export class ChatQueryBuilder {
           }
         }
       }
+    }
+
+    if (includeTimeReminder) {
+      result.push({
+        role: 'user',
+        content: formatCurrentTimeReminder(),
+      } as ChatCompletionUserMessageParam)
     }
 
     return result

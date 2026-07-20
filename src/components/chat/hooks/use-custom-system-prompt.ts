@@ -25,6 +25,13 @@ type UseCustomSystemPromptReturn = {
   isUsingPersonalization: boolean
 }
 
+// Stable replacement for the legacy {CURRENT_DATETIME} placeholder. The live
+// timestamp is delivered via an ephemeral reminder message at the end of the
+// request instead, so the system prompt stays byte-stable and server-side
+// prefix caching keeps working.
+const CURRENT_DATETIME_POINTER =
+  'provided in a reminder message at the end of the conversation'
+
 const stripSystemTags = (prompt: string): string =>
   prompt
     .replace(/^<system>\s*\n?/, '')
@@ -220,19 +227,6 @@ export const useCustomSystemPrompt = (
     // Get the effective language (default to English if not set)
     const effectiveLanguage = personalization.language.trim() || 'English'
 
-    // Generate current date/time string and timezone
-    const now = new Date()
-    const currentDateTime = now.toLocaleString('en-US', {
-      weekday: 'long',
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      timeZoneName: 'short',
-    })
-
     // Extract timezone separately
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -240,7 +234,7 @@ export const useCustomSystemPrompt = (
     return text
       .replace('{USER_PREFERENCES}', userPreferencesXML)
       .replace('{LANGUAGE}', effectiveLanguage)
-      .replace('{CURRENT_DATETIME}', currentDateTime)
+      .replace('{CURRENT_DATETIME}', CURRENT_DATETIME_POINTER)
       .replace('{TIMEZONE}', timezone)
   }
 
