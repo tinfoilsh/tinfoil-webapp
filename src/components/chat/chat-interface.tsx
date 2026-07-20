@@ -108,7 +108,7 @@ import {
   OPEN_ARTIFACT_PREVIEW_EVENT,
   type ArtifactPreviewSidebarDetail,
 } from './genui/widgets/ArtifactPreview'
-import { sortChats } from './hooks/chat-operations'
+import { canToggleTemporaryChat, sortChats } from './hooks/chat-operations'
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
 import { useMessageQueue } from './hooks/use-message-queue'
@@ -1656,6 +1656,8 @@ export function ChatInterface({
   }, [createNewChat, exitProjectMode])
 
   const handleToggleTemporaryMode = useCallback(() => {
+    if (!canToggleTemporaryChat(currentChat)) return
+
     const hasMessages = (currentChat?.messages?.length ?? 0) > 0
     const storeHistory = isSignedIn || !isCloudSyncEnabled()
 
@@ -1713,10 +1715,8 @@ export function ChatInterface({
             generateTitle([{ role: 'user', content: titleContent }])
               .then((generated) => {
                 if (!generated || generated === 'Untitled') return
-                // If the user re-converted this chat to temporary (or
-                // navigated away) while the title was generating, skip
-                // persistence so the async completion can't resurrect a
-                // chat the user just removed.
+                // If the user navigated away while the title was generating,
+                // skip persistence for the inactive chat.
                 const active = currentChatRef.current
                 if (
                   !active ||
@@ -1751,33 +1751,6 @@ export function ChatInterface({
         setCurrentChat(restored)
       } else {
         createNewChat(false, true)
-      }
-      return
-    }
-
-    // Selecting temporary mode on a started chat removes it from history and
-    // keeps the conversation in memory only.
-    if (hasMessages && currentChat) {
-      const chatId = currentChat.id
-      const tempChat: Chat = {
-        ...currentChat,
-        id: `temp-${Date.now()}`,
-        isTemporary: true,
-        isBlankChat: false,
-      }
-      previousChatIdRef.current = null
-      setCurrentChat(tempChat)
-      setChats((prev) => prev.filter((c) => c.id !== chatId))
-      if (storeHistory) {
-        chatStorage.deleteChat(chatId).catch((err) => {
-          logError('Failed to remove chat during temporary conversion', err, {
-            component: 'ChatInterface',
-            action: 'handleToggleTemporaryMode.remove',
-            metadata: { chatId },
-          })
-        })
-      } else {
-        sessionChatStorage.deleteChat(chatId)
       }
       return
     }
@@ -2918,42 +2891,37 @@ export function ChatInterface({
               </button>
             )}
 
-          {/* Temporary chat toggle. Remains available after a chat has
-              started so it can convert between temporary and permanent:
-              turning it off saves the conversation, turning it on removes
-              it from history again. */}
-          {(() => {
-            const hasMessages =
-              !!currentChat?.messages && currentChat.messages.length > 0
-            const label = hasMessages
-              ? isTemporaryMode
-                ? 'Save chat'
-                : 'Make temporary'
-              : isTemporaryMode
-                ? 'Exit temporary chat'
+          {canToggleTemporaryChat(currentChat) &&
+            (() => {
+              const hasMessages =
+                !!currentChat?.messages && currentChat.messages.length > 0
+              const label = isTemporaryMode
+                ? hasMessages
+                  ? 'Save chat'
+                  : 'Exit temporary chat'
                 : 'Temporary chat'
-            return (
-              <div className="group relative">
-                <button
-                  type="button"
-                  onClick={handleToggleTemporaryMode}
-                  aria-label={label}
-                  aria-pressed={isTemporaryMode}
-                  className={cn(
-                    'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
-                    isTemporaryMode
-                      ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
-                      : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                  )}
-                >
-                  <SlGhost className="h-4 w-4" />
-                </button>
-                <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                  {label}
-                </span>
-              </div>
-            )
-          })()}
+              return (
+                <div className="group relative">
+                  <button
+                    type="button"
+                    onClick={handleToggleTemporaryMode}
+                    aria-label={label}
+                    aria-pressed={isTemporaryMode}
+                    className={cn(
+                      'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
+                      isTemporaryMode
+                        ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
+                        : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                    )}
+                  >
+                    <SlGhost className="h-4 w-4" />
+                  </button>
+                  <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                    {label}
+                  </span>
+                </div>
+              )
+            })()}
 
           {/* Share button - only show when there are messages and chat is not temporary */}
           {!currentChat?.isTemporary &&
