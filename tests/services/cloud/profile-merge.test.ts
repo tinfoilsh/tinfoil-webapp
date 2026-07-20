@@ -192,14 +192,16 @@ describe('changedProfileFields', () => {
       nickname: 'a',
       traits: ['x'],
       thinkingEnabled: true,
+      webSearchAvailable: true,
     }
     const local: ProfileData = {
       nickname: 'b',
       traits: ['x', 'y'],
       thinkingEnabled: true,
+      webSearchAvailable: false,
     }
     const fields = changedProfileFields(local, baseline)
-    expect(fields.sort()).toEqual(['nickname', 'traits'])
+    expect(fields.sort()).toEqual(['nickname', 'traits', 'webSearchAvailable'])
   })
 })
 

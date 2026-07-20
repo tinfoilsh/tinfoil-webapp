@@ -81,6 +81,7 @@ export const ProfileDataSchema = z
     reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
     thinkingEnabled: z.boolean().optional(),
     webSearchEnabled: z.boolean().optional(),
+    webSearchAvailable: z.boolean().optional(),
     codeExecutionEnabled: z.boolean().optional(),
     piiCheckEnabled: z.boolean().optional(),
     genUIEnabled: z.boolean().optional(),

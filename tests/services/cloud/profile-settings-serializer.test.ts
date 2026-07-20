@@ -5,6 +5,7 @@ import {
   SETTINGS_REASONING_EFFORT,
   SETTINGS_SELECTED_MODEL,
   SETTINGS_THINKING_ENABLED,
+  SETTINGS_WEB_SEARCH_AVAILABLE,
   SETTINGS_WEB_SEARCH_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
@@ -101,6 +102,7 @@ describe('profile-settings-serializer', () => {
     localStorage.setItem(SETTINGS_REASONING_EFFORT, 'high')
     localStorage.setItem(SETTINGS_THINKING_ENABLED, 'false')
     localStorage.setItem(SETTINGS_WEB_SEARCH_ENABLED, 'false')
+    localStorage.setItem(SETTINGS_WEB_SEARCH_AVAILABLE, 'false')
     localStorage.setItem(SETTINGS_CODE_EXECUTION_ENABLED, 'true')
     localStorage.setItem(SETTINGS_PII_CHECK_ENABLED, 'false')
     localStorage.setItem(SETTINGS_CHAT_FONT, 'mono')
@@ -114,6 +116,7 @@ describe('profile-settings-serializer', () => {
       reasoningEffort: 'high',
       thinkingEnabled: false,
       webSearchEnabled: false,
+      webSearchAvailable: false,
       codeExecutionEnabled: true,
       piiCheckEnabled: false,
       chatFont: 'mono',
@@ -166,6 +169,7 @@ describe('profile-settings-serializer', () => {
       reasoningEffort: 'low',
       thinkingEnabled: true,
       webSearchEnabled: true,
+      webSearchAvailable: false,
       codeExecutionEnabled: false,
       piiCheckEnabled: true,
       chatFont: 'serif',
@@ -182,9 +186,14 @@ describe('profile-settings-serializer', () => {
     expect(localStorage.getItem(SETTINGS_REASONING_EFFORT)).toBe('low')
     expect(localStorage.getItem(SETTINGS_THINKING_ENABLED)).toBe('true')
     expect(localStorage.getItem(SETTINGS_WEB_SEARCH_ENABLED)).toBe('true')
+    expect(localStorage.getItem(SETTINGS_WEB_SEARCH_AVAILABLE)).toBe('false')
     expect(localStorage.getItem(SETTINGS_CODE_EXECUTION_ENABLED)).toBe('false')
     expect(localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)).toBe('true')
     expect(localStorage.getItem(SETTINGS_CHAT_FONT)).toBe('serif')
     expect(localStorage.getItem(USER_PREFS_PROJECT_UPLOAD)).toBe('chat')
+  })
+
+  it('defaults web search availability to on', () => {
+    expect(loadLocalSettings().webSearchAvailable).toBe(true)
   })
 })

@@ -11,6 +11,7 @@ import {
   SETTINGS_HAS_SEEN_ONBOARDING,
   SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
   SETTINGS_PII_CHECK_ENABLED,
+  SETTINGS_WEB_SEARCH_AVAILABLE,
   SETTINGS_WEB_SEARCH_ENABLED,
   UI_EXPAND_PROJECT_DOCUMENTS,
 } from '@/constants/storage-keys'
@@ -475,6 +476,13 @@ export function ChatInterface({
     return saved === null ? true : saved === 'true'
   })
 
+  const [webSearchAvailable, setWebSearchAvailable] = useState(() => {
+    if (typeof window === 'undefined') return true
+    const saved = localStorage.getItem(SETTINGS_WEB_SEARCH_AVAILABLE)
+    return saved === null ? true : saved === 'true'
+  })
+  const effectiveWebSearchEnabled = webSearchAvailable && webSearchEnabled
+
   // State for code execution toggle (persisted in localStorage, defaults to off)
   const [codeExecutionEnabled, setCodeExecutionEnabled] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -764,7 +772,7 @@ export function ChatInterface({
     thinkingEnabled,
     initialChatId,
     isLocalChatUrl,
-    webSearchEnabled,
+    webSearchEnabled: effectiveWebSearchEnabled,
     // Feature flag gates key derivation in useExecSnapshot; the toggle
     // gates request plumbing. Both layers must be on to use code-exec.
     canUseCodeExecution,
@@ -866,7 +874,7 @@ export function ChatInterface({
     selectedModel,
     reasoningEffort,
     thinkingEnabled,
-    webSearchEnabled,
+    webSearchEnabled: effectiveWebSearchEnabled,
     piiCheckEnabled,
   })
 
@@ -1092,6 +1100,11 @@ export function ChatInterface({
     ) => {
       setWebSearchEnabled(event.detail.enabled)
     }
+    const handleWebSearchAvailableChange = (
+      event: CustomEvent<{ enabled: boolean }>,
+    ) => {
+      setWebSearchAvailable(event.detail.enabled)
+    }
     const handleCodeExecutionChange = (
       event: CustomEvent<{ enabled: boolean }>,
     ) => {
@@ -1103,6 +1116,10 @@ export function ChatInterface({
       handleWebSearchChange as EventListener,
     )
     window.addEventListener(
+      'webSearchAvailableChanged',
+      handleWebSearchAvailableChange as EventListener,
+    )
+    window.addEventListener(
       'codeExecutionEnabledChanged',
       handleCodeExecutionChange as EventListener,
     )
@@ -1111,6 +1128,10 @@ export function ChatInterface({
       window.removeEventListener(
         'webSearchEnabledChanged',
         handleWebSearchChange as EventListener,
+      )
+      window.removeEventListener(
+        'webSearchAvailableChanged',
+        handleWebSearchAvailableChange as EventListener,
       )
       window.removeEventListener(
         'codeExecutionEnabledChanged',
@@ -3360,8 +3381,10 @@ export function ChatInterface({
                     onEditMessage={editMessage}
                     onRegenerateMessage={regenerateMessage}
                     showScrollButton={showScrollButton}
-                    webSearchEnabled={webSearchEnabled}
-                    onWebSearchToggle={handleWebSearchToggle}
+                    webSearchEnabled={effectiveWebSearchEnabled}
+                    onWebSearchToggle={
+                      webSearchAvailable ? handleWebSearchToggle : undefined
+                    }
                     reasoningEffort={reasoningEffort}
                     setReasoningEffort={setReasoningEffort}
                     thinkingEnabled={thinkingEnabled}
@@ -3573,8 +3596,10 @@ export function ChatInterface({
                             />
                           )
                         })()}
-                        webSearchEnabled={webSearchEnabled}
-                        onWebSearchToggle={handleWebSearchToggle}
+                        webSearchEnabled={effectiveWebSearchEnabled}
+                        onWebSearchToggle={
+                          webSearchAvailable ? handleWebSearchToggle : undefined
+                        }
                         codeExecutionEnabled={
                           canEnableCodeExecution ? codeExecutionEnabled : false
                         }
