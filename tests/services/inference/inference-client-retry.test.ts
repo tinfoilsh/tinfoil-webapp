@@ -6,7 +6,10 @@ import {
 } from 'openai'
 import { describe, expect, it } from 'vitest'
 
-import { isRetryableError } from '@/services/inference/inference-client'
+import {
+  generateRecoverySessionId,
+  isRetryableError,
+} from '@/services/inference/inference-client'
 
 function statusError(status: number) {
   return APIError.generate(status, undefined, undefined, new Headers())
@@ -43,5 +46,16 @@ describe('isRetryableError', () => {
     // A bare Error carrying a transport-sounding message is not enough
     expect(isRetryableError(new Error('Connection error.'))).toBe(false)
     expect(isRetryableError(undefined)).toBe(false)
+  })
+
+  it('generates fresh 128-bit recovery capabilities', () => {
+    const sessionIds = new Set(
+      Array.from({ length: 100 }, () => generateRecoverySessionId()),
+    )
+
+    expect(sessionIds.size).toBe(100)
+    for (const sessionId of sessionIds) {
+      expect(sessionId).toMatch(/^[0-9a-f]{32}$/)
+    }
   })
 })

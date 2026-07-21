@@ -15,6 +15,7 @@ import {
   remoteWins,
   remoteWinsLastWrite,
   shouldIngestRemoteChat,
+  trustedChatClock,
 } from '@/services/cloud/sync-predicates'
 import type { StoredChat } from '@/services/storage/indexed-db'
 import { describe, expect, it } from 'vitest'
@@ -348,6 +349,46 @@ describe('Sync Predicates', () => {
       }
 
       expect(isUploadableChat(blankCloudChat)).toBe(false)
+    })
+  })
+
+  describe('trustedChatClock', () => {
+    it('accepts a version-bound positive safe clock', () => {
+      expect(
+        trustedChatClock({
+          clock: 4,
+          writer: 'writer-a',
+          clockVersion: 3,
+          syncVersion: 3,
+        }),
+      ).toEqual({ v: 4, w: 'writer-a' })
+    })
+
+    it.each([Number.NaN, Infinity, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+      'rejects malformed clock value %s',
+      (clock) => {
+        expect(
+          trustedChatClock({
+            clock,
+            writer: 'writer-a',
+            clockVersion: 3,
+            syncVersion: 3,
+          }),
+        ).toBeUndefined()
+      },
+    )
+
+    it('rejects an empty writer identifier', () => {
+      for (const writer of ['', '   ']) {
+        expect(
+          trustedChatClock({
+            clock: 4,
+            writer,
+            clockVersion: 3,
+            syncVersion: 3,
+          }),
+        ).toBeUndefined()
+      }
     })
   })
 })

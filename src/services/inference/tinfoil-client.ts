@@ -10,6 +10,7 @@ import OpenAI from 'openai'
 import {
   AuthenticationError,
   SecureClient,
+  type SessionRecoveryToken,
   type VerificationDocument,
 } from 'tinfoil'
 import { authTokenManager } from '../auth'
@@ -445,6 +446,81 @@ export async function getSecureFetch(): Promise<typeof fetch> {
     return fetch
   }
   return secureClient.fetch
+}
+
+export interface RecoverableTinfoilClient {
+  client: OpenAI
+  baseURL: string
+}
+
+export interface RecoverableTinfoilTransport {
+  secureClient: SecureClient
+  baseURL: string
+}
+
+export function isChatRecoveryAvailable(): boolean {
+  return !IS_DEV
+}
+
+function controlplaneBaseURL(): string {
+  const configured =
+    API_BASE_URL ||
+    (typeof window !== 'undefined' ? window.location.origin : null)
+  if (!configured) {
+    throw new Error('Controlplane base URL is unavailable')
+  }
+  const parsed = new URL(configured)
+  if (parsed.protocol !== 'https:' || !parsed.hostname) {
+    throw new Error('Controlplane base URL must use HTTPS')
+  }
+  return configured
+}
+
+export async function createRecoverableTinfoilTransport(): Promise<RecoverableTinfoilTransport> {
+  if (IS_DEV) {
+    throw new Error('Chat recovery is unavailable in local development')
+  }
+  const baseURL = new URL('/v1/', controlplaneBaseURL()).toString()
+  const dedicatedSecureClient = new SecureClient({ baseURL })
+  await dedicatedSecureClient.ready()
+  return { secureClient: dedicatedSecureClient, baseURL }
+}
+
+export async function createRecoverableTinfoilClient(
+  transport: RecoverableTinfoilTransport,
+  sessionId: string,
+  onTokenCaptured: (token: SessionRecoveryToken) => Promise<void>,
+): Promise<RecoverableTinfoilClient> {
+  if (IS_DEV) {
+    throw new Error('Chat recovery is unavailable in local development')
+  }
+
+  const sessionToken = await fetchSessionToken()
+  const recoverableFetch: typeof fetch = async (input, init) => {
+    const response = await transport.secureClient.fetch(input, init)
+    const token = await transport.secureClient.getSessionRecoveryToken()
+    await onTokenCaptured(token)
+    return response
+  }
+
+  return {
+    baseURL: transport.baseURL,
+    client: new OpenAI({
+      apiKey: sessionToken,
+      baseURL: transport.baseURL,
+      dangerouslyAllowBrowser: true,
+      maxRetries: 0,
+      defaultHeaders: {
+        [TINFOIL_EVENTS_HEADER]: `${TINFOIL_EVENTS_VALUE_WEB_SEARCH},${TINFOIL_EVENTS_VALUE_CODE_EXECUTION}`,
+        'X-Session-Id': sessionId,
+      },
+      fetch: recoverableFetch,
+    }),
+  }
+}
+
+export function getRecoveryBaseURL(): string {
+  return controlplaneBaseURL()
 }
 
 /**

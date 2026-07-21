@@ -28,6 +28,7 @@ vi.mock('@/services/cloud/cek-encoding', () => ({
 
 const mockClearFallbackKeys = vi.fn()
 const mockGetFallbackKeyCount = vi.fn<() => number>()
+const mockHasPendingChatRecoveries = vi.fn()
 
 vi.mock('@/services/encryption/encryption-service', () => ({
   encryptionService: {
@@ -36,8 +37,17 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   },
 }))
 
+vi.mock('@/services/storage/indexed-db', () => ({
+  indexedDBStorage: {
+    hasPendingChatRecoveries: () => mockHasPendingChatRecoveries(),
+  },
+}))
+
 import {
   finalizeAlternativesIfMigrated,
+  hasDeferredAlternativesFinalization,
+  markRecoveryHistoryReady,
+  resetAlternativesFinalizationState,
   runLegacyBlobMigration,
   runLegacyBlobMigrationAndFinalize,
   type MigrationReport,
@@ -69,6 +79,9 @@ describe('runLegacyBlobMigration', () => {
     mockClearFallbackKeys.mockReset()
     mockGetFallbackKeyCount.mockReset()
     mockGetFallbackKeyCount.mockReturnValue(0)
+    mockHasPendingChatRecoveries.mockReset()
+    mockHasPendingChatRecoveries.mockResolvedValue(false)
+    resetAlternativesFinalizationState()
     mockRequirePrimaryKeyB64.mockReturnValue('PRIMARY_B64')
     mockPullKeys.mockReturnValue([{ key: 'PRIMARY_B64' }, { key: 'ALT_B64' }])
   })
@@ -252,29 +265,83 @@ describe('finalizeAlternativesIfMigrated', () => {
     mockClearFallbackKeys.mockReset()
     mockGetFallbackKeyCount.mockReset()
     mockGetFallbackKeyCount.mockReturnValue(0)
+    mockHasPendingChatRecoveries.mockReset()
+    mockHasPendingChatRecoveries.mockResolvedValue(false)
+    resetAlternativesFinalizationState()
   })
 
-  it('is a no-op when migration is not fully complete', () => {
-    const ran = finalizeAlternativesIfMigrated(
+  it('is a no-op when migration is not fully complete', async () => {
+    const ran = await finalizeAlternativesIfMigrated(
       buildReport({ fullyMigrated: false, totalRemaining: 5 }),
     )
     expect(ran).toBe(false)
     expect(mockClearFallbackKeys).not.toHaveBeenCalled()
   })
 
-  it('clears fallback keys when fullyMigrated is true', () => {
+  it('clears fallback keys when fullyMigrated is true', async () => {
     mockGetFallbackKeyCount.mockReturnValue(3)
-    const ran = finalizeAlternativesIfMigrated(
-      buildReport({ totalMigrated: 12 }),
-    )
-    expect(ran).toBe(true)
+    expect(
+      await finalizeAlternativesIfMigrated(buildReport({ totalMigrated: 12 })),
+    ).toBe(false)
+    await markRecoveryHistoryReady()
     expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
   })
 
-  it('is idempotent — still returns true when no fallbacks remain', () => {
+  it('keeps fallback keys while recovery envelopes still need them', async () => {
+    mockHasPendingChatRecoveries.mockResolvedValue(true)
+    expect(await finalizeAlternativesIfMigrated(buildReport())).toBe(false)
+    await markRecoveryHistoryReady()
+    expect(mockClearFallbackKeys).not.toHaveBeenCalled()
+  })
+
+  it('clears fallback keys after deferred history readiness', async () => {
     mockGetFallbackKeyCount.mockReturnValue(0)
-    expect(finalizeAlternativesIfMigrated(buildReport())).toBe(true)
+    await finalizeAlternativesIfMigrated(buildReport())
+    await markRecoveryHistoryReady()
     expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
+  })
+
+  it('retries deferred cleanup after recovery history is fully ingested', async () => {
+    expect(await finalizeAlternativesIfMigrated(buildReport())).toBe(false)
+    expect(mockClearFallbackKeys).not.toHaveBeenCalled()
+
+    await markRecoveryHistoryReady()
+
+    expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
+  })
+
+  it('preserves history readiness reported before migration completes', async () => {
+    await markRecoveryHistoryReady()
+
+    expect(await finalizeAlternativesIfMigrated(buildReport())).toBe(true)
+    expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
+  })
+
+  it('keeps repeated finalization of the same report idempotent', async () => {
+    const report = buildReport()
+    expect(await finalizeAlternativesIfMigrated(report)).toBe(false)
+    await markRecoveryHistoryReady()
+
+    expect(await finalizeAlternativesIfMigrated(report)).toBe(true)
+    expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
+    expect(hasDeferredAlternativesFinalization()).toBe(false)
+  })
+
+  it('does not clear fallback keys after finalization state resets', async () => {
+    let resolvePending: ((value: boolean) => void) | undefined
+    await finalizeAlternativesIfMigrated(buildReport())
+    mockHasPendingChatRecoveries.mockReturnValueOnce(
+      new Promise<boolean>((resolve) => {
+        resolvePending = resolve
+      }),
+    )
+
+    const readiness = markRecoveryHistoryReady()
+    resetAlternativesFinalizationState()
+    resolvePending?.(false)
+    await readiness
+
+    expect(mockClearFallbackKeys).not.toHaveBeenCalled()
   })
 })
 
@@ -286,6 +353,9 @@ describe('runLegacyBlobMigrationAndFinalize', () => {
     mockClearFallbackKeys.mockReset()
     mockGetFallbackKeyCount.mockReset()
     mockGetFallbackKeyCount.mockReturnValue(0)
+    mockHasPendingChatRecoveries.mockReset()
+    mockHasPendingChatRecoveries.mockResolvedValue(false)
+    resetAlternativesFinalizationState()
     mockRequirePrimaryKeyB64.mockReturnValue('PRIMARY_B64')
     mockPullKeys.mockReturnValue([{ key: 'PRIMARY_B64' }])
   })
@@ -294,6 +364,8 @@ describe('runLegacyBlobMigrationAndFinalize', () => {
     mockMigrateAll.mockResolvedValue(emptyEnclaveReport())
     const report = await runLegacyBlobMigrationAndFinalize()
     expect(report.fullyMigrated).toBe(true)
+    expect(mockClearFallbackKeys).not.toHaveBeenCalled()
+    await markRecoveryHistoryReady()
     expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
   })
 

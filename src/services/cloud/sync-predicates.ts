@@ -9,6 +9,29 @@
 import type { StoredChat } from '@/services/storage/indexed-db'
 import type { EditClock } from './edit-clock'
 
+export function trustedChatClock(
+  chat:
+    | Pick<StoredChat, 'clock' | 'writer' | 'clockVersion' | 'syncVersion'>
+    | null
+    | undefined,
+): EditClock | undefined {
+  if (
+    !chat ||
+    typeof chat.clock !== 'number' ||
+    !Number.isSafeInteger(chat.clock) ||
+    chat.clock <= 0 ||
+    typeof chat.writer !== 'string' ||
+    chat.writer.trim().length === 0 ||
+    typeof chat.clockVersion !== 'number' ||
+    !Number.isSafeInteger(chat.clockVersion) ||
+    chat.clockVersion <= 0 ||
+    chat.clockVersion !== (chat.syncVersion ?? -1)
+  ) {
+    return undefined
+  }
+  return { v: chat.clock, w: chat.writer }
+}
+
 /**
  * Determines if a chat is eligible for upload to the cloud.
  *

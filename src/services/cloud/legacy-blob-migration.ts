@@ -25,6 +25,7 @@
 
 import { logError, logInfo } from '@/utils/error-handling'
 import { encryptionService } from '../encryption/encryption-service'
+import { indexedDBStorage } from '../storage/indexed-db'
 import {
   migrateAll as enclaveMigrateAll,
   migrateStatus as enclaveMigrateStatus,
@@ -38,6 +39,9 @@ const MIGRATION_POLL_INTERVAL_MS = 2_000
 const MIGRATION_POLL_TIMEOUT_MS = 15 * 60_000
 /** Terminal coordinator status for a job that died mid-run. */
 const FAILED_JOB_STATUS = 'failed'
+let deferredFinalizationReport: MigrationReport | null = null
+let finalizedFinalizationReport: MigrationReport | null = null
+let recoveryHistoryReady = false
 
 export interface ScopeMigrationResult {
   scope: Scope
@@ -203,14 +207,32 @@ function sleep(ms: number): Promise<void> {
  * Idempotent and a no-op when `report.fullyMigrated` is false.
  * Returns true when the local state was cleared (or already empty).
  */
-export function finalizeAlternativesIfMigrated(
+export async function finalizeAlternativesIfMigrated(
   report: MigrationReport,
-): boolean {
-  if (!report.fullyMigrated) {
+  isCurrent: () => boolean = () => true,
+): Promise<boolean> {
+  if (!report.fullyMigrated || !isCurrent()) {
+    return false
+  }
+  if (finalizedFinalizationReport === report) {
+    return true
+  }
+  if (deferredFinalizationReport !== report) {
+    deferredFinalizationReport = report
+  }
+  if (
+    !recoveryHistoryReady ||
+    (await indexedDBStorage.hasPendingChatRecoveries())
+  ) {
+    return false
+  }
+  if (deferredFinalizationReport !== report || !isCurrent()) {
     return false
   }
   const before = encryptionService.getFallbackKeyCount()
   encryptionService.clearFallbackKeys()
+  deferredFinalizationReport = null
+  finalizedFinalizationReport = report
   logInfo('Cleared alternative keys after enclave migration', {
     component: 'LegacyBlobMigration',
     action: 'finalizeAlternativesIfMigrated',
@@ -223,6 +245,37 @@ export function finalizeAlternativesIfMigrated(
   return true
 }
 
+export async function markRecoveryHistoryReady(
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
+  if (!isCurrent()) return
+  recoveryHistoryReady = true
+  await retryDeferredAlternativesFinalization(isCurrent)
+}
+
+export async function retryDeferredAlternativesFinalization(
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
+  const report = deferredFinalizationReport
+  if (report) {
+    await finalizeAlternativesIfMigrated(report, isCurrent)
+  }
+}
+
+export function hasDeferredAlternativesFinalization(): boolean {
+  return deferredFinalizationReport !== null
+}
+
+export function needsRecoveryHistorySync(): boolean {
+  return deferredFinalizationReport !== null && !recoveryHistoryReady
+}
+
+export function resetAlternativesFinalizationState(): void {
+  deferredFinalizationReport = null
+  finalizedFinalizationReport = null
+  recoveryHistoryReady = false
+}
+
 /**
  * Convenience: run the migration and, on success, drop the
  * client-side alternatives. Returns the report so callers can still
@@ -230,6 +283,6 @@ export function finalizeAlternativesIfMigrated(
  */
 export async function runLegacyBlobMigrationAndFinalize(): Promise<MigrationReport> {
   const report = await runLegacyBlobMigration()
-  finalizeAlternativesIfMigrated(report)
+  await finalizeAlternativesIfMigrated(report)
   return report
 }

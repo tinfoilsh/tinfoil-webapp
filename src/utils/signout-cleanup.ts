@@ -11,6 +11,7 @@ import { profileSync } from '@/services/cloud/profile-sync'
 import { invalidateProfileSyncGeneration } from '@/services/cloud/profile-sync-coordinator'
 import { resetSyncHealth } from '@/services/cloud/sync-health'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { resetChatRecoveryState } from '@/services/inference/chat-recovery'
 import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
 import { projectEvents } from '@/services/project/project-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
@@ -69,6 +70,7 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
 
   // Reset tinfoil client to clear cached API key
   resetTinfoilClient()
+  resetChatRecoveryState()
 
   // Drop the verified sync-enclave SecureClient so the next signed-in
   // user re-runs attestation from scratch.

@@ -36,6 +36,16 @@ vi.mock('@/services/cloud/streaming-tracker', () => ({
   },
 }))
 
+vi.mock('@/services/inference/chat-recovery', () => ({
+  abandonChatRecoveryAttempt: vi.fn(),
+  cancelChatRecovery: vi.fn(async () => undefined),
+  completeLiveChatRecovery: vi.fn(),
+  persistChatRecoveryToken: vi.fn(),
+  releaseActiveChatRecovery: vi.fn(),
+  scanPendingChatRecoveries: vi.fn(),
+  startChatRecoveryAttempt: vi.fn(),
+}))
+
 vi.mock('@/components/chat/hooks/use-chat-streams', async () => {
   const actual = await vi.importActual<
     typeof import('@/components/chat/hooks/use-chat-streams')

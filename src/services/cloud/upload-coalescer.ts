@@ -215,7 +215,24 @@ export class UploadCoalescer {
       return
     }
 
-    await new Promise<void>((resolve, reject) => {
+    await this.waitForResult(state)
+  }
+
+  async ensureUploadAndWait(chatId: string): Promise<void> {
+    const existing = this.states.get(chatId)
+    if (!existing?.inFlight) {
+      this.enqueue(chatId)
+    }
+    const state = this.states.get(chatId)
+    if (!state?.inFlight) {
+      return
+    }
+
+    await this.waitForResult(state)
+  }
+
+  private waitForResult(state: ChatUploadState): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       state.resultWaiters.push({ resolve, reject })
     })
   }

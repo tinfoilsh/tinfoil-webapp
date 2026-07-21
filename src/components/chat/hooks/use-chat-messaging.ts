@@ -23,9 +23,19 @@ import { resolveModelSelection, type BaseModel } from '@/config/models'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { getCodeExecutionContainerAuthTokenForChat } from '@/services/exec-snapshot/use-exec-snapshot'
+import {
+  abandonChatRecoveryAttempt,
+  cancelChatRecovery,
+  completeLiveChatRecovery,
+  persistChatRecoveryToken,
+  releaseActiveChatRecovery,
+  scanPendingChatRecoveries,
+  startChatRecoveryAttempt,
+} from '@/services/inference/chat-recovery'
 import { sendChatStream } from '@/services/inference/inference-client'
 import {
   getRateLimitInfo,
+  isChatRecoveryAvailable,
   refreshRateLimit,
 } from '@/services/inference/tinfoil-client'
 import { generateTitle } from '@/services/inference/title'
@@ -104,6 +114,27 @@ interface UseChatMessagingReturn {
   ) => void
 }
 
+const CHAT_RECOVERY_POLL_INTERVAL_MS = 10_000
+
+function canUseChatRecovery(options: {
+  isSignedIn: boolean | null | undefined
+  userId: string | null | undefined
+  storeHistory: boolean
+  chat?: Pick<Chat, 'isLocalOnly' | 'isTemporary'>
+}): boolean {
+  const { isSignedIn, userId, storeHistory, chat } = options
+  return (
+    isSignedIn === true &&
+    typeof userId === 'string' &&
+    userId.length > 0 &&
+    storeHistory &&
+    isCloudSyncEnabled() &&
+    isChatRecoveryAvailable() &&
+    chat?.isLocalOnly !== true &&
+    chat?.isTemporary !== true
+  )
+}
+
 export function useChatMessaging({
   systemPrompt,
   rules = '',
@@ -124,10 +155,26 @@ export function useChatMessaging({
   genUIEnabled,
   codeExecutionEncryptionKey,
 }: UseChatMessagingProps): UseChatMessagingReturn {
-  const { isSignedIn } = useAuth()
+  const { isSignedIn, userId } = useAuth()
   const { isProjectMode, activeProject } = useProject()
 
   const [input, setInput] = useState('')
+
+  useEffect(() => {
+    if (!isSignedIn || !userId || !storeHistory) return
+
+    const scan = () => {
+      if (!canUseChatRecovery({ isSignedIn, userId, storeHistory })) return
+      void scanPendingChatRecoveries(userId)
+    }
+    scan()
+    window.addEventListener('online', scan)
+    const interval = window.setInterval(scan, CHAT_RECOVERY_POLL_INTERVAL_MS)
+    return () => {
+      window.removeEventListener('online', scan)
+      window.clearInterval(interval)
+    }
+  }, [isSignedIn, storeHistory, userId])
 
   // Per-chat stream status so several conversations can stream at once.
   const {
@@ -196,6 +243,7 @@ export function useChatMessaging({
     async (chatId?: string) => {
       const targetId = chatId ?? viewedChatIdRef.current
 
+      const recoveryCancellation = cancelChatRecovery(targetId)
       abort(targetId)
       patchStatus(targetId, {
         loadingState: 'idle',
@@ -269,6 +317,8 @@ export function useChatMessaging({
 
         streamingTracker.endStreaming(targetId)
       }
+
+      await recoveryCancellation
 
       // Wait for any pending state updates
       await new Promise((resolve) =>
@@ -362,11 +412,13 @@ export function useChatMessaging({
         query.trim() !== '' ||
         (attachments && attachments.length > 0) ||
         Boolean(quote)
+      const turnId = hasUserContent ? crypto.randomUUID() : null
 
       const userMessage: Message | null = hasUserContent
         ? {
             role: 'user',
             content: query,
+            turnId: turnId as string,
             attachments:
               attachments && attachments.length > 0 ? attachments : undefined,
             timestamp: new Date(),
@@ -663,6 +715,37 @@ export function useChatMessaging({
             )) ?? undefined)
           : undefined
 
+        const recoveryUserId = typeof userId === 'string' ? userId : null
+        const recoveryEligible =
+          recoveryUserId !== null &&
+          turnId !== null &&
+          canUseChatRecovery({
+            isSignedIn,
+            userId: recoveryUserId,
+            storeHistory,
+            chat: updatedChat,
+          })
+        // Recovery is best-effort: if the user turn cannot be committed to
+        // the cloud right now, stream normally instead of failing the send.
+        let recoveryEnabled = recoveryEligible
+
+        if (recoveryEnabled) {
+          try {
+            updatedChat = await chatStorage.saveChatAndWaitForSync(updatedChat)
+          } catch (error) {
+            recoveryEnabled = false
+            logError(
+              'Chat upload for recovery failed; streaming without recovery',
+              error,
+              {
+                component: 'useChatMessaging',
+                action: 'handleQuery.recoveryPreUpload',
+                metadata: { chatId: updatedChat.id },
+              },
+            )
+          }
+        }
+
         // Mark the chat as streaming up front (after the initial creation
         // save above) so the sidebar indicator and cloud-sync gating cover
         // the whole request, including the wait for the first token. The
@@ -689,6 +772,27 @@ export function useChatMessaging({
           codeExecutionAccessToken: updatedChat.codeExecutionAccessToken,
           codeExecutionEncryptionKey: codeExecutionEncryptionKey ?? undefined,
           codeExecutionContainerAuthToken,
+          recovery:
+            recoveryEligible && recoveryEnabled
+              ? {
+                  onAttemptStarted: (sessionId) => {
+                    startChatRecoveryAttempt(
+                      streamChatIdRef.current,
+                      turnId,
+                      sessionId,
+                    )
+                  },
+                  onTokenCaptured: (sessionId, token) =>
+                    persistChatRecoveryToken({
+                      userId: recoveryUserId as string,
+                      chatId: streamChatIdRef.current,
+                      turnId,
+                      sessionId,
+                      token,
+                    }),
+                  onAttemptAbandoned: abandonChatRecoveryAttempt,
+                }
+              : undefined,
         })
 
         const assistantMessage = await processStreamingResponse(response, {
@@ -708,6 +812,9 @@ export function useChatMessaging({
           storeHistory,
           startingChatId,
         })
+        if (assistantMessage && turnId) {
+          assistantMessage.turnId = turnId
+        }
 
         const hasAssistantMessageToSave =
           !!assistantMessage &&
@@ -822,21 +929,68 @@ export function useChatMessaging({
             },
           })
 
-          updateChatWithHistoryCheck(
-            setChats,
-            chatToSave,
-            setCurrentChat,
-            chatId,
-            finalMessages,
-            false,
-          )
+          if (recoveryEnabled && turnId) {
+            try {
+              await completeLiveChatRecovery({
+                chatId,
+                turnId,
+                assistantMessage,
+                chatPatch: {
+                  title: resolvedTitle,
+                  titleState: resolvedTitleState,
+                  model: selectedModel,
+                  projectId: updatedChat.projectId,
+                },
+              })
+            } catch (error) {
+              releaseActiveChatRecovery(chatId)
+              if (
+                error instanceof DOMException &&
+                error.name === 'AbortError'
+              ) {
+                throw error
+              }
+              logError('Failed to finalize recoverable chat response', error, {
+                component: 'useChatMessaging',
+                action: 'handleQuery.recoveryComplete',
+                metadata: { chatId },
+              })
+              updateChatWithHistoryCheck(
+                setChats,
+                chatToSave,
+                setCurrentChat,
+                chatId,
+                finalMessages,
+                false,
+              )
+            }
+          } else {
+            updateChatWithHistoryCheck(
+              setChats,
+              chatToSave,
+              setCurrentChat,
+              chatId,
+              finalMessages,
+              false,
+            )
+          }
         } else {
+          if (recoveryEnabled) {
+            await cancelChatRecovery(streamChatIdRef.current)
+          }
           logWarning('No assistant content to save after streaming', {
             component: 'useChatMessaging',
             action: 'handleQuery',
           })
         }
       } catch (error) {
+        releaseActiveChatRecovery(streamChatIdRef.current)
+        if (
+          typeof userId === 'string' &&
+          canUseChatRecovery({ isSignedIn, userId, storeHistory })
+        ) {
+          void scanPendingChatRecoveries(userId)
+        }
         // Ensure UI loading flags are reset on pre-stream errors
         setIsWaitingForResponseFor(false)
         setIsStreamingFor(false)
@@ -911,6 +1065,8 @@ export function useChatMessaging({
     },
     [
       currentChat,
+      isSignedIn,
+      userId,
       storeHistory,
       setChats,
       setCurrentChat,

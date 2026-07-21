@@ -68,10 +68,12 @@ export function chatContentFingerprint(chat: {
   title?: string
   projectId?: string
   messages?: any[]
+  pendingRecoveries?: any[]
 }): string {
   const messages = (chat.messages || []).map((m) => ({
     role: m.role,
     content: m.content,
+    turnId: m.turnId,
     thoughts: m.thoughts,
     isThinking: m.isThinking,
     thinkingDuration: m.thinkingDuration,
@@ -111,6 +113,7 @@ export function chatContentFingerprint(chat: {
     title: chat.title ?? '',
     projectId: chat.projectId ?? null,
     messages,
+    pendingRecoveries: chat.pendingRecoveries ?? [],
   })
 }
 
@@ -324,11 +327,13 @@ export class IndexedDBStorage {
               title: existingChat.title,
               projectId: existingChat.projectId,
               messages: existingChat.messages,
+              pendingRecoveries: existingChat.pendingRecoveries,
             }) !==
             chatContentFingerprint({
               title: chat.title,
               projectId: (chat as StoredChat).projectId,
               messages: messagesForStorage,
+              pendingRecoveries: (chat as StoredChat).pendingRecoveries,
             })
           : false
 
@@ -627,6 +632,76 @@ export class IndexedDBStorage {
       }
 
       request.onerror = () => reject(new Error('Failed to count chats'))
+    })
+  }
+
+  async hasPendingChatRecoveries(): Promise<boolean> {
+    await this.saveQueue.catch(() => {})
+    const db = await this.ensureDB()
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([CHATS_STORE], 'readonly')
+      const store = transaction.objectStore(CHATS_STORE)
+      const request = store.openCursor()
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
+          .result
+        if (!cursor) {
+          resolve(false)
+          return
+        }
+        const chat = cursor.value as StoredChat
+        if ((chat.pendingRecoveries?.length ?? 0) > 0) {
+          resolve(true)
+          return
+        }
+        cursor.continue()
+      }
+
+      request.onerror = () =>
+        reject(new Error('Failed to inspect pending chat recoveries'))
+    })
+  }
+
+  async isChatHistoryAuthoritative(
+    expectedCloudVersions: ReadonlyMap<string, number>,
+  ): Promise<boolean> {
+    await this.saveQueue.catch(() => {})
+    const db = await this.ensureDB()
+
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction([CHATS_STORE], 'readonly')
+      const store = transaction.objectStore(CHATS_STORE)
+      const request = store.openCursor()
+      const missingCloudVersions = new Map(expectedCloudVersions)
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
+          .result
+        if (!cursor) {
+          resolve(missingCloudVersions.size === 0)
+          return
+        }
+        const chat = cursor.value as StoredChat
+        if (!chat.isLocalOnly) {
+          const expectedVersion = missingCloudVersions.get(chat.id)
+          if (
+            chat.locallyModified ||
+            chat.decryptionFailed ||
+            expectedVersion === undefined ||
+            chat.syncVersion !== expectedVersion
+          ) {
+            resolve(false)
+            return
+          }
+          missingCloudVersions.delete(chat.id)
+        }
+        cursor.continue()
+      }
+
+      request.onerror = () =>
+        reject(new Error('Failed to verify local chat history'))
     })
   }
 

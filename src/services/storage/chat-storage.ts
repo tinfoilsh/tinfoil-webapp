@@ -120,6 +120,15 @@ export class ChatStorageService {
     return await this.saveChat(chat, false)
   }
 
+  async saveChatAndWaitForSync(chat: Chat): Promise<Chat> {
+    const saved = await this.saveChat(chat, true)
+    if (saved.isBlankChat) {
+      return saved
+    }
+    await cloudSync.backupChatAndWait(saved.id)
+    return (await this.getChat(saved.id)) ?? saved
+  }
+
   async getChat(id: string): Promise<Chat | null> {
     await this.initialize()
 

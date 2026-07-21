@@ -5,6 +5,7 @@ const saveChatSpy = vi.fn(async (chat: unknown) => chat)
 const getChatSpy = vi.fn(async () => null as unknown)
 const getAllChatsSpy = vi.fn(async () => [] as unknown[])
 const backupChatSpy = vi.fn(async () => {})
+const backupChatAndWaitSpy = vi.fn(async () => {})
 
 vi.mock('@/services/storage/indexed-db', () => ({
   indexedDBStorage: {
@@ -15,7 +16,10 @@ vi.mock('@/services/storage/indexed-db', () => ({
   },
 }))
 vi.mock('@/services/cloud/cloud-sync', () => ({
-  cloudSync: { backupChat: (...args: unknown[]) => backupChatSpy(...args) },
+  cloudSync: {
+    backupChat: (...args: unknown[]) => backupChatSpy(...args),
+    backupChatAndWait: (...args: unknown[]) => backupChatAndWaitSpy(...args),
+  },
 }))
 vi.mock('@/services/cloud/cloud-storage', () => ({ cloudStorage: {} }))
 vi.mock('@/services/cloud/streaming-tracker', () => ({
@@ -98,5 +102,20 @@ describe('chatStorage pendingSave is not persisted', () => {
     const chats = await chatStorage.getAllChatsWithSyncStatus()
 
     expect('pendingSave' in chats[0]).toBe(false)
+  })
+
+  it('propagates a required cloud upload failure', async () => {
+    backupChatAndWaitSpy.mockRejectedValueOnce(new Error('upload failed'))
+
+    await expect(
+      chatStorage.saveChatAndWaitForSync(makeChat()),
+    ).rejects.toThrow('upload failed')
+  })
+
+  it('does not require a cloud upload for a blank chat', async () => {
+    const blank = makeChat({ isBlankChat: true })
+
+    await expect(chatStorage.saveChatAndWaitForSync(blank)).resolves.toBe(blank)
+    expect(backupChatAndWaitSpy).not.toHaveBeenCalled()
   })
 })
