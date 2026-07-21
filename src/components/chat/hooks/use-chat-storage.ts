@@ -78,7 +78,8 @@ export function useChatStorage({
   const { isSignedIn } = useAuth()
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const initialChatLoadedRef = useRef(false)
-  const recoveryReloadGenerationRef = useRef(0)
+  const reloadGenerationRef = useRef(0)
+  const pendingRecoveryReloadIdsRef = useRef(new Set<string>())
   const [initialChatDecryptionFailed, setInitialChatDecryptionFailed] =
     useState(false)
   const [localChatNotFound, setLocalChatNotFound] = useState(false)
@@ -115,17 +116,18 @@ export function useChatStorage({
 
   // Load chats from storage
   const reloadChats = useCallback(
-    async (recoveryIds?: readonly string[], recoveryGeneration?: number) => {
+    async (recoveryIds?: readonly string[]) => {
       if (typeof window === 'undefined') return
 
+      recoveryIds?.forEach((id) => pendingRecoveryReloadIdsRef.current.add(id))
+      const reloadGeneration = ++reloadGenerationRef.current
       try {
         const loadedChats = await loadChats(storeHistory && !!isSignedIn)
-        if (
-          recoveryGeneration !== undefined &&
-          recoveryGeneration !== recoveryReloadGenerationRef.current
-        ) {
+        if (reloadGeneration !== reloadGenerationRef.current) {
           return
         }
+        const pendingRecoveryIds = [...pendingRecoveryReloadIdsRef.current]
+        pendingRecoveryReloadIdsRef.current.clear()
 
         setChats((prevChats) => {
           // Always ensure we have blank chats for both modes
@@ -165,7 +167,7 @@ export function useChatStorage({
           // Only update metadata (syncedAt, title) if the same chat exists in storage
           const existingChat = loadedChats.find((c) => c.id === prev.id)
           if (existingChat) {
-            if (recoveryIds?.includes(prev.id)) {
+            if (pendingRecoveryIds.includes(prev.id)) {
               if (streamingTracker.isStreaming(prev.id)) {
                 return {
                   ...prev,
@@ -229,8 +231,7 @@ export function useChatStorage({
         }
 
         if (event.reason === 'recovery') {
-          const generation = ++recoveryReloadGenerationRef.current
-          void reloadChats(event.ids, generation)
+          void reloadChats(event.ids)
         } else {
           void reloadChats()
         }
