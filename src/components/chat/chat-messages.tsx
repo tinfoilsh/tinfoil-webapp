@@ -178,8 +178,8 @@ const RecoveryMessage = memo(function RecoveryMessage() {
       aria-labelledby={titleId}
       aria-describedby={detailId}
     >
-      <div className="flex items-center gap-2.5 py-1.5">
-        <span aria-hidden="true">
+      <div className="flex items-start gap-2.5 py-1.5">
+        <span aria-hidden="true" className="flex h-5 items-center">
           <StreamingTracerDot tone="secondary" />
         </span>
         <div className="flex flex-col gap-1">
