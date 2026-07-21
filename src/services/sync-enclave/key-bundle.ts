@@ -9,6 +9,14 @@
  * Phase 4 opportunistic migration.
  */
 
+import {
+  bytesToHex,
+  deriveKeyId,
+  hexToBytes,
+  unwrapCek,
+  wrapCek,
+} from '@tinfoilsh/passkey-kit'
+
 /**
  * Local-only descriptor for a wrapped CEK + the bookkeeping needed
  * to unwrap it later. This is NOT the on-wire shape — see
@@ -27,33 +35,8 @@ export interface BundleBody {
   info?: string
 }
 
-const AES_GCM_IV_BYTES = 12
-const CEK_BYTES = 32
-const KEY_ID_BYTES = 16
 const BUNDLE_INFO = 'tinfoil-chat-kek-v1'
 const KEY_ID_INFO = 'tinfoil-key-id-v1'
-
-function bytesToHex(bytes: Uint8Array): string {
-  let out = ''
-  for (let i = 0; i < bytes.length; i++) {
-    out += bytes[i].toString(16).padStart(2, '0')
-  }
-  return out
-}
-
-function hexToBytes(hex: string): Uint8Array {
-  if (hex.length % 2 !== 0) {
-    throw new Error('key-bundle: odd-length hex input')
-  }
-  if (!/^[0-9a-fA-F]*$/.test(hex)) {
-    throw new Error('key-bundle: invalid hex character')
-  }
-  const out = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(hex.substr(i * 2, 2), 16)
-  }
-  return out
-}
 
 /**
  * Wrap a raw 32-byte CEK under a passkey-PRF-derived KEK using
@@ -71,21 +54,15 @@ export async function wrapCekForCredential(opts: {
   cek: Uint8Array
   saltHex?: string
 }): Promise<BundleBody> {
-  if (opts.cek.length !== CEK_BYTES) {
-    throw new Error(
-      `key-bundle: CEK must be ${CEK_BYTES} bytes, got ${opts.cek.length}`,
-    )
-  }
-  const iv = crypto.getRandomValues(new Uint8Array(AES_GCM_IV_BYTES))
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: iv as BufferSource },
-    opts.kek,
-    opts.cek as BufferSource,
-  )
-  return {
+  const wrapped = await wrapCek({
     credentialId: opts.credentialId,
-    kekIvHex: bytesToHex(iv),
-    wrappedKeyHex: bytesToHex(new Uint8Array(ciphertext)),
+    kek: opts.kek,
+    cek: opts.cek,
+  })
+  return {
+    credentialId: wrapped.credentialId,
+    kekIvHex: wrapped.kekIvHex,
+    wrappedKeyHex: wrapped.wrappedKeyHex,
     saltHex: opts.saltHex ?? '',
     info: BUNDLE_INFO,
   }
@@ -103,24 +80,7 @@ export async function unwrapCekFromBundle(
   const ivHex = 'kekIvHex' in bundle ? bundle.kekIvHex : bundle.kek_iv
   const ctHex =
     'wrappedKeyHex' in bundle ? bundle.wrappedKeyHex : bundle.wrapped_key
-  if (!ivHex || !ctHex) {
-    throw new Error('key-bundle: missing iv or wrapped_key')
-  }
-  const iv = hexToBytes(ivHex)
-  if (iv.length !== AES_GCM_IV_BYTES) {
-    throw new Error('key-bundle: iv length mismatch')
-  }
-  const ciphertext = hexToBytes(ctHex)
-  const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: iv as BufferSource },
-    kek,
-    ciphertext as BufferSource,
-  )
-  const cek = new Uint8Array(plaintext)
-  if (cek.length !== CEK_BYTES) {
-    throw new Error(`key-bundle: unwrapped CEK has wrong length ${cek.length}`)
-  }
-  return cek
+  return unwrapCek(kek, { kekIvHex: ivHex, wrappedKeyHex: ctHex })
 }
 
 /**
@@ -177,28 +137,5 @@ export function cekBytesToHex(bytes: Uint8Array): string {
  * enclave's `crypto.DeriveKeyID` byte-for-byte.
  */
 export async function deriveKeyIdHex(cek: Uint8Array): Promise<string> {
-  if (cek.length !== CEK_BYTES) {
-    throw new Error(
-      `key-bundle: CEK must be ${CEK_BYTES} bytes, got ${cek.length}`,
-    )
-  }
-  const ikm = await crypto.subtle.importKey(
-    'raw',
-    cek as unknown as BufferSource,
-    'HKDF',
-    false,
-    ['deriveBits'],
-  )
-  const enc = new TextEncoder()
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: 'HKDF',
-      hash: 'SHA-256',
-      salt: new Uint8Array(0) as unknown as BufferSource,
-      info: enc.encode(KEY_ID_INFO) as unknown as BufferSource,
-    },
-    ikm,
-    KEY_ID_BYTES * 8,
-  )
-  return bytesToHex(new Uint8Array(bits))
+  return bytesToHex(await deriveKeyId(cek, { info: KEY_ID_INFO }))
 }
