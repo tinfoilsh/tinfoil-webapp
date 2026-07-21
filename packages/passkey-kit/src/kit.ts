@@ -77,6 +77,13 @@ export interface PasskeyKit {
   /** Authenticate against the given wrapped CEKs and unwrap the matching one. */
   unlock(wrappedCeks: WrappedCek[]): Promise<UnlockResult | null>
   /**
+   * Unwrap the wrapped CEK matching the cached PRF output without a
+   * biometric prompt. Returns null when nothing is cached, no wrapped CEK
+   * matches the cached credential, or the cached output fails to unwrap;
+   * fall back to `unlock()` in that case.
+   */
+  unlockWithCachedPrf(wrappedCeks: WrappedCek[]): Promise<UnlockResult | null>
+  /**
    * Re-wrap a CEK using the cached PRF output (no biometric prompt).
    * Returns null when nothing is cached.
    */
@@ -266,6 +273,28 @@ export function createPasskeyKit(config: PasskeyKitConfig): PasskeyKit {
       const kek = await deriveKek(prfResult.prfOutput)
       const cek = await unwrapCek(kek, match)
       return { credentialId: prfResult.credentialId, cek }
+    },
+
+    async unlockWithCachedPrf(
+      wrappedCeks: WrappedCek[],
+    ): Promise<UnlockResult | null> {
+      const cached = getCachedPrfResult()
+      if (!cached) return null
+      const match = wrappedCeks.find(
+        (w) => w.credentialId === cached.credentialId,
+      )
+      if (!match) return null
+      try {
+        const kek = await deriveKek(cached.prfOutput)
+        const cek = await unwrapCek(kek, match)
+        return { credentialId: cached.credentialId, cek }
+      } catch (error) {
+        logger.error?.('failed to unwrap CEK with cached PRF output', error, {
+          action: 'unlockWithCachedPrf',
+          credentialId: cached.credentialId,
+        })
+        return null
+      }
     },
 
     async rewrapWithCachedPrf(cek: Uint8Array): Promise<WrappedCek | null> {

@@ -288,6 +288,92 @@ describe('enroll and unlock', () => {
     await expect(kit.rewrapWithCachedPrf(cek)).resolves.toBeNull()
   })
 
+  it('unlocks with the cached PRF output without prompting', async () => {
+    const rawId = crypto.getRandomValues(new Uint8Array(16))
+      .buffer as ArrayBuffer
+    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
+      .buffer as ArrayBuffer
+    const get = vi.fn()
+    installCredentialsMock({
+      create: vi.fn(async () =>
+        fakeCredential({
+          rawId,
+          prfEnabled: true,
+          prfFirst: prfFirst.slice(0),
+        }),
+      ),
+      get,
+    })
+
+    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
+    const { kit } = makeKit()
+    const enrolled = await kit.enroll({
+      user: { id: 'u1', name: 'u@example.com' },
+      cek,
+    })
+
+    const unlocked = await kit.unlockWithCachedPrf([enrolled!.wrappedCek])
+    expect(unlocked?.credentialId).toBe(enrolled!.credentialId)
+    expect(unlocked?.cek).toEqual(cek)
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  it('returns null from unlockWithCachedPrf when nothing is cached or nothing matches', async () => {
+    const { kit } = makeKit()
+    const stranger = {
+      credentialId: 'someone-else',
+      kekIvHex: '00'.repeat(12),
+      wrappedKeyHex: '00'.repeat(48),
+    }
+    await expect(kit.unlockWithCachedPrf([stranger])).resolves.toBeNull()
+
+    const rawId = crypto.getRandomValues(new Uint8Array(16))
+      .buffer as ArrayBuffer
+    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
+      .buffer as ArrayBuffer
+    installCredentialsMock({
+      create: vi.fn(async () =>
+        fakeCredential({
+          rawId,
+          prfEnabled: true,
+          prfFirst: prfFirst.slice(0),
+        }),
+      ),
+    })
+    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
+    await kit.enroll({ user: { id: 'u1', name: 'u@example.com' }, cek })
+    await expect(kit.unlockWithCachedPrf([stranger])).resolves.toBeNull()
+  })
+
+  it('returns null from unlockWithCachedPrf when the wrapped CEK is tampered', async () => {
+    const rawId = crypto.getRandomValues(new Uint8Array(16))
+      .buffer as ArrayBuffer
+    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
+      .buffer as ArrayBuffer
+    installCredentialsMock({
+      create: vi.fn(async () =>
+        fakeCredential({
+          rawId,
+          prfEnabled: true,
+          prfFirst: prfFirst.slice(0),
+        }),
+      ),
+    })
+
+    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
+    const { kit } = makeKit()
+    const enrolled = await kit.enroll({
+      user: { id: 'u1', name: 'u@example.com' },
+      cek,
+    })
+
+    const tampered = {
+      ...enrolled!.wrappedCek,
+      wrappedKeyHex: '00'.repeat(48),
+    }
+    await expect(kit.unlockWithCachedPrf([tampered])).resolves.toBeNull()
+  })
+
   it('rewraps with the cached PRF output when destructured off the kit', async () => {
     const rawId = crypto.getRandomValues(new Uint8Array(16))
       .buffer as ArrayBuffer

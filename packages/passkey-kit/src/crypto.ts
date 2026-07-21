@@ -16,6 +16,20 @@ export const CEK_BYTES = 32
 const AES_GCM_IV_BYTES = 12
 const DEFAULT_KEY_ID_BYTES = 16
 
+/** Generate a fresh random 32-byte CEK suitable for {@link wrapCek}. */
+export function generateCek(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(CEK_BYTES))
+}
+
+/**
+ * Type guard for a well-formed CEK: a Uint8Array of exactly
+ * {@link CEK_BYTES} bytes. Useful for validating deserialized input
+ * before wrapping.
+ */
+export function isValidCek(cek: unknown): cek is Uint8Array {
+  return cek instanceof Uint8Array && cek.length === CEK_BYTES
+}
+
 /**
  * Derive an AES-256-GCM Key Encryption Key (KEK) from PRF output using HKDF.
  *

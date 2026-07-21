@@ -13,19 +13,22 @@ extension into a small, typed API:
 ## Usage
 
 ```ts
-import { createPasskeyKit } from '@tinfoilsh/passkey-kit'
+import { createPasskeyKit, generateCek } from '@tinfoilsh/passkey-kit'
 
 const kit = createPasskeyKit({
   rpId: 'example.com',
   rpName: 'Example App',
 })
 
+// Bring your own 32-byte CEK, or generate a fresh one.
+const cek = generateCek()
+
 // Enroll: create a passkey and wrap the user's 32-byte CEK under it.
 // `wrappedCek` is safe to persist server-side; `prfResult` is cached
 // locally through the storage adapter automatically.
 const enrolled = await kit.enroll({
   user: { id: userId, name: email, displayName },
-  cek, // Uint8Array(32)
+  cek,
 })
 if (enrolled) {
   await api.saveBundle(enrolled.wrappedCek)
@@ -37,13 +40,17 @@ if (unlocked) {
   useCek(unlocked.cek)
 }
 
+// Silent unlock via the cached PRF output (no biometric prompt).
+// Returns null when nothing usable is cached — fall back to unlock().
+const silent = await kit.unlockWithCachedPrf(bundlesFromServer)
+
 // Re-wrap without a biometric prompt using the cached PRF output.
 const rewrapped = await kit.rewrapWithCachedPrf(newCek)
 ```
 
 Lower-level building blocks (`createPasskey`, `authenticate`, `deriveKek`,
-`wrapCek`, `unwrapCek`, `deriveKeyId`) are exported for flows that need
-finer control.
+`generateCek`, `isValidCek`, `wrapCek`, `unwrapCek`, `deriveKeyId`) are
+exported for flows that need finer control.
 
 ## Conventions
 
@@ -57,6 +64,8 @@ finer control.
 - The default storage adapter is best-effort `localStorage`; pass
   `storage: null` to disable local persistence, or supply your own
   `StorageAdapter`.
+- Error messages default to brand-neutral text; pass `errorMessages` to
+  brand or localize them without affecting the error classes.
 
 ## Security
 

@@ -4,6 +4,8 @@ import {
   CEK_BYTES,
   deriveKeyEncryptionKey,
   deriveKeyId,
+  generateCek,
+  isValidCek,
   unwrapCek,
   wrapCek,
 } from '../src/crypto'
@@ -15,6 +17,28 @@ const HKDF_INFO = 'test-kek-v1'
 function randomPrfOutput(): ArrayBuffer {
   return crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
 }
+
+describe('generateCek / isValidCek', () => {
+  it('generates a valid CEK that wrap/unwrap accepts', async () => {
+    const cek = generateCek()
+    expect(isValidCek(cek)).toBe(true)
+    const kek = await deriveKeyEncryptionKey(randomPrfOutput(), HKDF_INFO)
+    const wrapped = await wrapCek({ credentialId: 'c', kek, cek })
+    expect(await unwrapCek(kek, wrapped)).toEqual(cek)
+  })
+
+  it('generates a distinct CEK per call', () => {
+    expect(generateCek()).not.toEqual(generateCek())
+  })
+
+  it('rejects wrong lengths and non-byte inputs', () => {
+    expect(isValidCek(new Uint8Array(CEK_BYTES - 1))).toBe(false)
+    expect(isValidCek(new Uint8Array(CEK_BYTES + 1))).toBe(false)
+    expect(isValidCek(Array.from(generateCek()))).toBe(false)
+    expect(isValidCek(generateCek().buffer)).toBe(false)
+    expect(isValidCek(null)).toBe(false)
+  })
+})
 
 describe('deriveKeyEncryptionKey', () => {
   it('derives a non-extractable AES-256-GCM key', async () => {

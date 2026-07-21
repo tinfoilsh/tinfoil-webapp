@@ -11,6 +11,8 @@ export {
   CEK_BYTES,
   deriveKeyEncryptionKey,
   deriveKeyId,
+  generateCek,
+  isValidCek,
   unwrapCek,
   wrapCek,
 } from './crypto'
