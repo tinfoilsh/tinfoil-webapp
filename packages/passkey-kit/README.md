@@ -57,3 +57,13 @@ finer control.
 - The default storage adapter is best-effort `localStorage`; pass
   `storage: null` to disable local persistence, or supply your own
   `StorageAdapter`.
+
+## Security
+
+The cached PRF output is raw key material: anyone who can read it can
+re-derive the KEK and unwrap the CEK. The default adapter stores it in
+`localStorage` as plaintext, which is only as strong as the origin's
+script-injection defenses. Hosts that need at-rest protection should
+supply a `StorageAdapter` with their own encryption, or set
+`storage: null` to keep nothing on device and re-prompt biometrics
+instead.

@@ -57,7 +57,7 @@ export function base64UrlToBytes(base64url: string): Uint8Array {
 /** Convert a BufferSource (ArrayBuffer or view) to a standalone ArrayBuffer copy. */
 export function bufferSourceToArrayBuffer(source: BufferSource): ArrayBuffer {
   if (source instanceof ArrayBuffer) {
-    return source
+    return source.slice(0)
   }
   return source.buffer.slice(
     source.byteOffset,

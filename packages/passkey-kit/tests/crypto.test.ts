@@ -8,6 +8,7 @@ import {
   wrapCek,
 } from '../src/crypto'
 import { PasskeyKitError } from '../src/errors'
+import { TINFOIL_HKDF_INFO_V1 } from '../src/protocol'
 
 const HKDF_INFO = 'test-kek-v1'
 
@@ -40,6 +41,18 @@ describe('deriveKeyEncryptionKey', () => {
     const kek2 = await deriveKeyEncryptionKey(prf.slice(), 'other-info')
     const wrapped = await wrapCek({ credentialId: 'c', kek: kek1, cek })
     await expect(unwrapCek(kek2, wrapped)).rejects.toThrow()
+  })
+
+  it('defaults hkdfInfo to the exported Tinfoil v1 constant', async () => {
+    const prf = crypto.getRandomValues(new Uint8Array(32))
+    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
+    const defaulted = await deriveKeyEncryptionKey(prf.slice())
+    const explicit = await deriveKeyEncryptionKey(
+      prf.slice(),
+      TINFOIL_HKDF_INFO_V1,
+    )
+    const wrapped = await wrapCek({ credentialId: 'c', kek: defaulted, cek })
+    expect(await unwrapCek(explicit, wrapped)).toEqual(cek)
   })
 })
 

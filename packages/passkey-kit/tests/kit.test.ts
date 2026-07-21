@@ -283,4 +283,37 @@ describe('local state', () => {
     expect(kit.getCachedPrfResult()).toBeNull()
     expect(kit.getLocalCredentialId()).toBeNull()
   })
+
+  it('does not discard the ceremony result when a custom adapter throws', async () => {
+    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
+      .buffer as ArrayBuffer
+    installCredentialsMock({
+      create: vi.fn(async () =>
+        fakeCredential({ prfEnabled: true, prfFirst, attachment: 'platform' }),
+      ),
+    })
+
+    const kit = createPasskeyKit({
+      rpId: 'example.com',
+      rpName: 'Example',
+      storage: {
+        getItem: () => null,
+        setItem: () => {
+          throw new Error('storage is broken')
+        },
+        removeItem: () => {},
+      },
+    })
+    const result = await kit.createPasskey({ id: 'u1', name: 'u@example.com' })
+    expect(result).not.toBeNull()
+  })
+
+  it('authenticate([]) resolves null without opening a passkey prompt', async () => {
+    const get = vi.fn()
+    installCredentialsMock({ get })
+
+    const { kit } = makeKit()
+    await expect(kit.authenticate([])).resolves.toBeNull()
+    expect(get).not.toHaveBeenCalled()
+  })
 })

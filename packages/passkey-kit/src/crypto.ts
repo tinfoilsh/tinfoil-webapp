@@ -9,6 +9,7 @@
 
 import { bytesToHex, hexToBytes, toBytes } from './codec'
 import { PasskeyKitError } from './errors'
+import { TINFOIL_HKDF_INFO_V1 } from './protocol'
 import type { WrappedCek } from './types'
 
 export const CEK_BYTES = 32
@@ -22,10 +23,13 @@ const DEFAULT_KEY_ID_BYTES = 16
  * directly as a key. HKDF with a purpose-binding info string produces the
  * final non-extractable CryptoKey. An empty HKDF salt is used, which is
  * fine for high-entropy IKM (RFC 5869 §3.1).
+ *
+ * `hkdfInfo` defaults to the Tinfoil v1 protocol constant so standalone
+ * callers derive the same interoperable KEK as a default-configured kit.
  */
 export async function deriveKeyEncryptionKey(
   prfOutput: ArrayBuffer | Uint8Array,
-  hkdfInfo: string | Uint8Array,
+  hkdfInfo: string | Uint8Array = TINFOIL_HKDF_INFO_V1,
 ): Promise<CryptoKey> {
   const masterKey = await crypto.subtle.importKey(
     'raw',

@@ -11,6 +11,7 @@ import {
   unwrapCek,
   wrapCek,
 } from './crypto'
+import { TINFOIL_HKDF_INFO_V1, TINFOIL_PRF_SALT_INPUT_V1 } from './protocol'
 import { browserLocalStorageAdapter, type StorageAdapter } from './storage'
 import { detectPrfSupport } from './support'
 import type {
@@ -27,12 +28,6 @@ import {
   createPrfPasskey,
   type CeremonyContext,
 } from './webauthn'
-
-// Tinfoil v1 protocol constants. Kept as defaults so every Tinfoil client
-// wrapping the same CEK stays interoperable; override both for a new
-// protocol domain.
-const DEFAULT_PRF_SALT_INPUT = 'tinfoil-chat-key-encryption'
-const DEFAULT_HKDF_INFO = 'tinfoil-chat-kek-v1'
 
 const DEFAULT_STORAGE_KEYS: PasskeyKitStorageKeys = {
   prfResult: 'tinfoil-secret-passkey-prf-output',
@@ -119,11 +114,20 @@ export function createPasskeyKit(config: PasskeyKitConfig): PasskeyKit {
     ...DEFAULT_STORAGE_KEYS,
     ...config.storageKeys,
   }
+  // Byte inputs are snapshotted so later caller-side buffer reuse cannot
+  // silently change the PRF domain or KEK derivation between ceremonies.
   const prfSalt =
     typeof config.prfSaltInput === 'string' || config.prfSaltInput === undefined
-      ? new TextEncoder().encode(config.prfSaltInput ?? DEFAULT_PRF_SALT_INPUT)
-      : config.prfSaltInput
-  const hkdfInfo = config.hkdfInfo ?? DEFAULT_HKDF_INFO
+      ? new TextEncoder().encode(
+          config.prfSaltInput ?? TINFOIL_PRF_SALT_INPUT_V1,
+        )
+      : config.prfSaltInput.slice()
+  const hkdfInfo =
+    config.hkdfInfo === undefined
+      ? TINFOIL_HKDF_INFO_V1
+      : typeof config.hkdfInfo === 'string'
+        ? config.hkdfInfo
+        : config.hkdfInfo.slice()
 
   let prfSupportCache: boolean | null = null
 
@@ -157,7 +161,12 @@ export function createPasskeyKit(config: PasskeyKitConfig): PasskeyKit {
   ): void {
     cachePrfResult(result)
     if (credential.authenticatorAttachment === 'platform') {
-      setLocalCredentialId(result.credentialId)
+      try {
+        setLocalCredentialId(result.credentialId)
+      } catch {
+        // best-effort: a throwing custom adapter must not discard the
+        // ceremony result
+      }
     }
   }
 
@@ -197,10 +206,14 @@ export function createPasskeyKit(config: PasskeyKitConfig): PasskeyKit {
       return createPrfPasskey(ceremonyContext, user)
     },
 
-    authenticate(
+    async authenticate(
       credentialIds: string[],
       options: { throwOnCancel?: boolean } = {},
     ): Promise<PrfPasskeyResult | null> {
+      // An empty allowCredentials list would start a discoverable-passkey
+      // ceremony against ANY credential, breaking the "only the supplied
+      // ids" contract.
+      if (credentialIds.length === 0) return null
       return authenticatePrfPasskey(ceremonyContext, credentialIds, options)
     },
 

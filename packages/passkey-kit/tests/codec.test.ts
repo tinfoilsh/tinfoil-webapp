@@ -40,4 +40,12 @@ describe('codec', () => {
     backing[2] = 99
     expect(copy[1]).toBe(3)
   })
+
+  it('copies raw ArrayBuffers instead of returning the original reference', () => {
+    const original = new Uint8Array([1, 2, 3]).buffer
+    const copy = bufferSourceToArrayBuffer(original)
+    expect(copy).not.toBe(original)
+    new Uint8Array(original)[0] = 99
+    expect(new Uint8Array(copy)[0]).toBe(1)
+  })
 })

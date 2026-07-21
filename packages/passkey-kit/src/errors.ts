@@ -11,13 +11,16 @@ export class PasskeyKitError extends Error {
   }
 }
 
+const PROVIDER_SUGGESTION =
+  "Try using iCloud Keychain, Chrome's built-in passkey manager, or the Passwords app in your device settings."
+
 /**
  * The authenticator created a credential but does not support the WebAuthn
  * PRF extension, so no key material can be derived from it.
  */
 export class PrfNotSupportedError extends PasskeyKitError {
   constructor(
-    message = "Your passkey provider doesn't support the security features required by Tinfoil. Try using iCloud Keychain, Chrome's built-in passkey manager, or the Passwords app in your device settings.",
+    message = `Your passkey provider doesn't support the security features required by Tinfoil. ${PROVIDER_SUGGESTION}`,
   ) {
     super(message)
     this.name = 'PrfNotSupportedError'
@@ -30,7 +33,7 @@ export class PrfNotSupportedError extends PasskeyKitError {
  */
 export class PasskeyTimeoutError extends PasskeyKitError {
   constructor(
-    message = "Your passkey provider took too long to respond. This can happen with some browser extension password managers. Try using iCloud Keychain, Chrome's built-in passkey manager, or the Passwords app in your device settings.",
+    message = `Your passkey provider took too long to respond. This can happen with some browser extension password managers. ${PROVIDER_SUGGESTION}`,
   ) {
     super(message)
     this.name = 'PasskeyTimeoutError'

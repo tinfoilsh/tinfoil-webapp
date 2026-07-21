@@ -21,6 +21,7 @@ export {
 } from './errors'
 export { createPasskeyKit } from './kit'
 export type { PasskeyKit } from './kit'
+export { TINFOIL_HKDF_INFO_V1, TINFOIL_PRF_SALT_INPUT_V1 } from './protocol'
 export {
   browserLocalStorageAdapter,
   createMemoryStorageAdapter,
