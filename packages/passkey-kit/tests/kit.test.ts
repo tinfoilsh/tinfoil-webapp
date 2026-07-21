@@ -208,45 +208,11 @@ describe('createPasskey', () => {
 })
 
 describe('enroll and unlock', () => {
-  it('round-trips a CEK through enroll → unlock', async () => {
-    const rawId = crypto.getRandomValues(new Uint8Array(16))
-      .buffer as ArrayBuffer
-    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
-      .buffer as ArrayBuffer
-    installCredentialsMock({
-      create: vi.fn(async () =>
-        fakeCredential({
-          rawId,
-          prfEnabled: true,
-          prfFirst: prfFirst.slice(0),
-        }),
-      ),
-      get: vi.fn(async () =>
-        fakeCredential({ rawId, prfFirst: prfFirst.slice(0) }),
-      ),
-    })
-
-    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
-    const { kit } = makeKit()
-
-    const enrolled = await kit.enroll({
-      user: { id: 'u1', name: 'u@example.com' },
-      cek,
-    })
-    expect(enrolled).not.toBeNull()
-    expect(enrolled!.wrappedCek.credentialId).toBe(enrolled!.credentialId)
-
-    const unlocked = await kit.unlock([enrolled!.wrappedCek])
-    expect(unlocked?.credentialId).toBe(enrolled!.credentialId)
-    expect(unlocked?.cek).toEqual(cek)
-  })
-
-  it('returns null from unlock when there is nothing to unwrap', async () => {
-    const { kit } = makeKit()
-    await expect(kit.unlock([])).resolves.toBeNull()
-  })
-
-  it('rewraps with the cached PRF output without prompting', async () => {
+  /**
+   * Install a PRF-capable credentials mock and enroll a fresh CEK on a new
+   * kit. Returns the `get` spy so tests can assert whether a ceremony ran.
+   */
+  async function enrollWithMock() {
     const rawId = crypto.getRandomValues(new Uint8Array(16))
       .buffer as ArrayBuffer
     const prfFirst = crypto.getRandomValues(new Uint8Array(32))
@@ -271,6 +237,26 @@ describe('enroll and unlock', () => {
       user: { id: 'u1', name: 'u@example.com' },
       cek,
     })
+    expect(enrolled).not.toBeNull()
+    return { kit, cek, enrolled: enrolled!, get }
+  }
+
+  it('round-trips a CEK through enroll → unlock', async () => {
+    const { kit, cek, enrolled } = await enrollWithMock()
+    expect(enrolled.wrappedCek.credentialId).toBe(enrolled.credentialId)
+
+    const unlocked = await kit.unlock([enrolled.wrappedCek])
+    expect(unlocked?.credentialId).toBe(enrolled.credentialId)
+    expect(unlocked?.cek).toEqual(cek)
+  })
+
+  it('returns null from unlock when there is nothing to unwrap', async () => {
+    const { kit } = makeKit()
+    await expect(kit.unlock([])).resolves.toBeNull()
+  })
+
+  it('rewraps with the cached PRF output without prompting', async () => {
+    const { kit, enrolled, get } = await enrollWithMock()
 
     const newCek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
     const rewrapped = await kit.rewrapWithCachedPrf(newCek)
@@ -279,7 +265,7 @@ describe('enroll and unlock', () => {
 
     const unlocked = await kit.unlock([rewrapped!])
     expect(unlocked?.cek).toEqual(newCek)
-    expect(enrolled!.credentialId).toBe(rewrapped!.credentialId)
+    expect(enrolled.credentialId).toBe(rewrapped!.credentialId)
   })
 
   it('returns null from rewrapWithCachedPrf when nothing is cached', async () => {
@@ -289,117 +275,44 @@ describe('enroll and unlock', () => {
   })
 
   it('unlocks with the cached PRF output without prompting', async () => {
-    const rawId = crypto.getRandomValues(new Uint8Array(16))
-      .buffer as ArrayBuffer
-    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
-      .buffer as ArrayBuffer
-    const get = vi.fn()
-    installCredentialsMock({
-      create: vi.fn(async () =>
-        fakeCredential({
-          rawId,
-          prfEnabled: true,
-          prfFirst: prfFirst.slice(0),
-        }),
-      ),
-      get,
-    })
+    const { kit, cek, enrolled, get } = await enrollWithMock()
 
-    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
-    const { kit } = makeKit()
-    const enrolled = await kit.enroll({
-      user: { id: 'u1', name: 'u@example.com' },
-      cek,
-    })
-
-    const unlocked = await kit.unlockWithCachedPrf([enrolled!.wrappedCek])
-    expect(unlocked?.credentialId).toBe(enrolled!.credentialId)
+    const unlocked = await kit.unlockWithCachedPrf([enrolled.wrappedCek])
+    expect(unlocked?.credentialId).toBe(enrolled.credentialId)
     expect(unlocked?.cek).toEqual(cek)
     expect(get).not.toHaveBeenCalled()
   })
 
   it('returns null from unlockWithCachedPrf when nothing is cached or nothing matches', async () => {
-    const { kit } = makeKit()
     const stranger = {
       credentialId: 'someone-else',
       kekIvHex: '00'.repeat(12),
       wrappedKeyHex: '00'.repeat(48),
     }
-    await expect(kit.unlockWithCachedPrf([stranger])).resolves.toBeNull()
 
-    const rawId = crypto.getRandomValues(new Uint8Array(16))
-      .buffer as ArrayBuffer
-    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
-      .buffer as ArrayBuffer
-    installCredentialsMock({
-      create: vi.fn(async () =>
-        fakeCredential({
-          rawId,
-          prfEnabled: true,
-          prfFirst: prfFirst.slice(0),
-        }),
-      ),
-    })
-    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
-    await kit.enroll({ user: { id: 'u1', name: 'u@example.com' }, cek })
+    const { kit: emptyKit } = makeKit()
+    await expect(emptyKit.unlockWithCachedPrf([stranger])).resolves.toBeNull()
+
+    const { kit } = await enrollWithMock()
     await expect(kit.unlockWithCachedPrf([stranger])).resolves.toBeNull()
   })
 
   it('returns null from unlockWithCachedPrf when the wrapped CEK is tampered', async () => {
-    const rawId = crypto.getRandomValues(new Uint8Array(16))
-      .buffer as ArrayBuffer
-    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
-      .buffer as ArrayBuffer
-    installCredentialsMock({
-      create: vi.fn(async () =>
-        fakeCredential({
-          rawId,
-          prfEnabled: true,
-          prfFirst: prfFirst.slice(0),
-        }),
-      ),
-    })
-
-    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
-    const { kit } = makeKit()
-    const enrolled = await kit.enroll({
-      user: { id: 'u1', name: 'u@example.com' },
-      cek,
-    })
+    const { kit, enrolled } = await enrollWithMock()
 
     const tampered = {
-      ...enrolled!.wrappedCek,
+      ...enrolled.wrappedCek,
       wrappedKeyHex: '00'.repeat(48),
     }
     await expect(kit.unlockWithCachedPrf([tampered])).resolves.toBeNull()
   })
 
   it('rewraps with the cached PRF output when destructured off the kit', async () => {
-    const rawId = crypto.getRandomValues(new Uint8Array(16))
-      .buffer as ArrayBuffer
-    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
-      .buffer as ArrayBuffer
-    installCredentialsMock({
-      create: vi.fn(async () =>
-        fakeCredential({
-          rawId,
-          prfEnabled: true,
-          prfFirst: prfFirst.slice(0),
-        }),
-      ),
-    })
-
-    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
-    const { kit } = makeKit()
-    const enrolled = await kit.enroll({
-      user: { id: 'u1', name: 'u@example.com' },
-      cek,
-    })
-    expect(enrolled).not.toBeNull()
+    const { kit, cek, enrolled } = await enrollWithMock()
 
     const { rewrapWithCachedPrf } = kit
     const rewrapped = await rewrapWithCachedPrf(cek)
-    expect(rewrapped?.credentialId).toBe(enrolled!.credentialId)
+    expect(rewrapped?.credentialId).toBe(enrolled.credentialId)
   })
 })
 
