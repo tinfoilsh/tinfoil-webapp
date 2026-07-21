@@ -7,7 +7,7 @@ import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CONSTANTS } from '../constants'
-import type { Chat } from '../types'
+import type { Chat, PendingRecoveryEnvelope } from '../types'
 import {
   createBlankChat,
   deleteChat as deleteChatFromStorage,
@@ -46,6 +46,27 @@ interface UseChatStorageReturn {
   initialChatLoadFailed: boolean
   cloudChatNotFound: boolean
   retryInitialChatLoad: () => void
+}
+
+function pendingRecoveriesMatch(
+  left: readonly PendingRecoveryEnvelope[] = [],
+  right: readonly PendingRecoveryEnvelope[] = [],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((envelope, index) => {
+      const candidate = right[index]
+      return (
+        candidate?.v === envelope.v &&
+        candidate.turnId === envelope.turnId &&
+        candidate.keyId === envelope.keyId &&
+        candidate.createdAt === envelope.createdAt &&
+        candidate.expiresAt === envelope.expiresAt &&
+        candidate.nonce === envelope.nonce &&
+        candidate.ciphertext === envelope.ciphertext
+      )
+    })
+  )
 }
 
 export function useChatStorage({
@@ -157,12 +178,17 @@ export function useChatStorage({
             }
             if (
               prev.syncedAt !== existingChat.syncedAt ||
-              prev.title !== existingChat.title
+              prev.title !== existingChat.title ||
+              !pendingRecoveriesMatch(
+                prev.pendingRecoveries,
+                existingChat.pendingRecoveries,
+              )
             ) {
               return {
                 ...prev,
                 syncedAt: existingChat.syncedAt,
                 title: existingChat.title,
+                pendingRecoveries: existingChat.pendingRecoveries,
               }
             }
           }
@@ -527,6 +553,7 @@ export function useChatStorage({
           decryptionFailed: downloadedChat.decryptionFailed,
           projectId: downloadedChat.projectId,
           model: downloadedChat.model,
+          pendingRecoveries: downloadedChat.pendingRecoveries,
         }
 
         // Add to chats list and select it

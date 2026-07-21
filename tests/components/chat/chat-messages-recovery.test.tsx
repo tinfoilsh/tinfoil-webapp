@@ -72,11 +72,11 @@ describe('ChatMessages recovery indicator', () => {
     })
 
     expect(userMessage.nextElementSibling).toBe(indicator)
-    expect(
-      screen.getByText(
-        'Decrypting and restoring this message. This can take up to a minute.',
-      ),
-    ).toBeInTheDocument()
+    expect(screen.getByText('This may take a few minutes')).toBeInTheDocument()
+    expect(indicator.firstElementChild).not.toHaveClass(
+      'border',
+      'bg-surface-chat',
+    )
   })
 
   it('hides the widget for the actively streaming turn', async () => {

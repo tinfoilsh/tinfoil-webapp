@@ -178,9 +178,9 @@ const RecoveryMessage = memo(function RecoveryMessage() {
       aria-labelledby={titleId}
       aria-describedby={detailId}
     >
-      <div className="flex items-start gap-3 rounded-xl border border-border-subtle bg-surface-chat px-4 py-3">
+      <div className="flex items-center gap-2.5 py-1.5">
         <span aria-hidden="true">
-          <StreamingTracerDot className="mt-1" tone="secondary" />
+          <StreamingTracerDot tone="secondary" />
         </span>
         <div className="flex flex-col gap-1">
           <span
@@ -190,7 +190,7 @@ const RecoveryMessage = memo(function RecoveryMessage() {
             Recovering response
           </span>
           <span id={detailId} className="text-sm text-content-secondary">
-            Decrypting and restoring this message. This can take up to a minute.
+            This may take a few minutes
           </span>
         </div>
       </div>
