@@ -33,6 +33,9 @@ const nextConfig = {
   // Optimize production builds
   productionBrowserSourceMaps: false,
 
+  // Local packages ship TypeScript source; let Next compile them.
+  transpilePackages: ['@tinfoilsh/passkey-kit'],
+
   // Tree-shake large icon and utility packages.
   experimental: {
     optimizePackageImports: ['react-icons', 'lucide-react', '@heroicons/react'],
