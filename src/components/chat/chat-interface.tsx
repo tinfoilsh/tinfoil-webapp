@@ -3358,6 +3358,7 @@ export function ChatInterface({
                 <div className="flex min-h-full min-w-0 flex-1 [container-type:inline-size]">
                   <ChatMessages
                     messages={currentChat?.messages || []}
+                    pendingRecoveries={currentChat?.pendingRecoveries}
                     isDarkMode={isDarkMode}
                     chatId={currentChat.id}
                     isWaitingForResponse={isWaitingForResponse}

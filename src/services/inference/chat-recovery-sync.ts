@@ -106,7 +106,7 @@ async function mutateSyncedChat(
           if (!applied.applied) {
             continue
           }
-          chatEvents.emit({ reason: 'sync', ids: [chatId] })
+          chatEvents.emit({ reason: 'recovery', ids: [chatId] })
         }
         return result.chat
       }
@@ -147,7 +147,7 @@ async function mutateSyncedChat(
           isCurrent: mutationIsCurrent,
         })
         if (applied.applied) {
-          chatEvents.emit({ reason: 'sync', ids: [chatId] })
+          chatEvents.emit({ reason: 'recovery', ids: [chatId] })
           return syncedChat
         }
         continue

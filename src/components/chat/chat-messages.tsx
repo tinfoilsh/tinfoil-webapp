@@ -6,7 +6,7 @@ import {
   getContextTokenBudget,
 } from '@/utils/token-estimation'
 import 'katex/dist/katex.min.css'
-import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
+import React, { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CONSTANTS } from './constants'
 import { ensureTimeline } from './ensure-timeline'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
@@ -15,11 +15,12 @@ import { PrintableChat } from './PrintableChat'
 import type { PromptPreset } from './prompts/types'
 import { getRendererRegistry } from './renderers/client'
 import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
-import type { LabelType, Message } from './types'
+import type { LabelType, Message, PendingRecoveryEnvelope } from './types'
 import { WelcomeScreen } from './WelcomeScreen'
 
 type ChatMessagesProps = {
   messages: Message[]
+  pendingRecoveries?: PendingRecoveryEnvelope[]
   isDarkMode: boolean
   chatId: string
   messagesEndRef?: React.RefObject<HTMLDivElement | null>
@@ -166,6 +167,37 @@ const LoadingMessage = memo(function LoadingMessage({
   )
 })
 
+const RecoveryMessage = memo(function RecoveryMessage() {
+  const titleId = useId()
+  const detailId = useId()
+
+  return (
+    <div
+      className="no-scroll-anchoring mx-auto mb-6 flex w-full max-w-3xl px-4 pt-2"
+      role="status"
+      aria-labelledby={titleId}
+      aria-describedby={detailId}
+    >
+      <div className="flex items-start gap-3 rounded-xl border border-border-subtle bg-surface-chat px-4 py-3">
+        <span aria-hidden="true">
+          <StreamingTracerDot className="mt-1" tone="secondary" />
+        </span>
+        <div className="flex flex-col gap-1">
+          <span
+            id={titleId}
+            className="text-sm font-medium text-content-primary"
+          >
+            Recovering response
+          </span>
+          <span id={detailId} className="text-sm text-content-secondary">
+            Decrypting and restoring this message. This can take up to a minute.
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+})
+
 const getMessageKey = (
   prefix: string,
   message: Message,
@@ -197,6 +229,7 @@ const MessagesSeparator = memo(function MessagesSeparator({
 
 export function ChatMessages({
   messages,
+  pendingRecoveries = [],
   isDarkMode,
   chatId,
   isWaitingForResponse = false,
@@ -362,6 +395,19 @@ export function ChatMessages({
     (lastMessage.isThinking || (lastMessage.thoughts && !lastMessage.content)),
   )
   const showLoadingPlaceholder = isWaitingForResponse && !hasAssistantThinking
+  const pendingRecoveryTurnIds = new Set(
+    pendingRecoveries.map((recovery) => recovery.turnId),
+  )
+  const activeTurnId =
+    isWaitingForResponse || isStreamingResponse
+      ? [...messages].reverse().find((message) => message.role === 'user')
+          ?.turnId
+      : undefined
+  const showRecoveryAfter = (message: Message) =>
+    message.role === 'user' &&
+    message.turnId !== undefined &&
+    message.turnId !== activeTurnId &&
+    pendingRecoveryTurnIds.has(message.turnId)
 
   return (
     <ImageGalleryProvider messages={messages}>
@@ -376,19 +422,24 @@ export function ChatMessages({
         {archivedMessages.length > 0 && (
           <>
             <div className={`opacity-70`}>
-              {archivedMessages.map((message, i) => (
-                <ChatMessage
-                  key={getMessageKey(`${chatId}-archived`, message, i)}
-                  message={message}
-                  messageIndex={i}
-                  model={currentModel}
-                  isDarkMode={isDarkMode}
-                  isLastMessage={false}
-                  isStreaming={false}
-                  onEditMessage={onEditMessage}
-                  onRegenerateMessage={onRegenerateMessage}
-                />
-              ))}
+              {archivedMessages.map((message, i) => {
+                const key = getMessageKey(`${chatId}-archived`, message, i)
+                return (
+                  <React.Fragment key={key}>
+                    <ChatMessage
+                      message={message}
+                      messageIndex={i}
+                      model={currentModel}
+                      isDarkMode={isDarkMode}
+                      isLastMessage={false}
+                      isStreaming={false}
+                      onEditMessage={onEditMessage}
+                      onRegenerateMessage={onRegenerateMessage}
+                    />
+                    {showRecoveryAfter(message) && <RecoveryMessage />}
+                  </React.Fragment>
+                )
+              })}
             </div>
 
             {/* Separator */}
@@ -397,19 +448,26 @@ export function ChatMessages({
         )}
 
         {/* Live Messages - the last messages up to max prompt limit */}
-        {liveMessages.map((message, i) => (
-          <ChatMessage
-            key={getMessageKey(`${chatId}-live`, message, i)}
-            message={message}
-            messageIndex={archivedMessages.length + i}
-            model={currentModel}
-            isDarkMode={isDarkMode}
-            isLastMessage={i === liveMessages.length - 1}
-            isStreaming={i === liveMessages.length - 1 && isStreamingResponse}
-            onEditMessage={onEditMessage}
-            onRegenerateMessage={onRegenerateMessage}
-          />
-        ))}
+        {liveMessages.map((message, i) => {
+          const key = getMessageKey(`${chatId}-live`, message, i)
+          return (
+            <React.Fragment key={key}>
+              <ChatMessage
+                message={message}
+                messageIndex={archivedMessages.length + i}
+                model={currentModel}
+                isDarkMode={isDarkMode}
+                isLastMessage={i === liveMessages.length - 1}
+                isStreaming={
+                  i === liveMessages.length - 1 && isStreamingResponse
+                }
+                onEditMessage={onEditMessage}
+                onRegenerateMessage={onRegenerateMessage}
+              />
+              {showRecoveryAfter(message) && <RecoveryMessage />}
+            </React.Fragment>
+          )
+        })}
         {showLoadingPlaceholder && (
           <LoadingMessage
             isDarkMode={isDarkMode}

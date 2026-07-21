@@ -1,6 +1,7 @@
 import { logError } from '@/utils/error-handling'
 
-export type ChatChangeReason = 'save' | 'delete' | 'sync' | 'pagination'
+export type ChatChangeReason =
+  'save' | 'delete' | 'sync' | 'pagination' | 'recovery'
 
 export interface ChatIdChange {
   from: string

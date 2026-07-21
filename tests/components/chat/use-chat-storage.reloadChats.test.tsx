@@ -3,6 +3,11 @@ import { chatEvents } from '@/services/storage/chat-events'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const { mockLoadChats, mockIsStreaming } = vi.hoisted(() => ({
+  mockLoadChats: vi.fn(),
+  mockIsStreaming: vi.fn(),
+}))
+
 vi.mock('@clerk/nextjs', () => ({
   useAuth: () => ({
     isSignedIn: true,
@@ -17,13 +22,21 @@ vi.mock('@/components/chat/hooks/chat-operations', async () => {
   >('@/components/chat/hooks/chat-operations')
   return {
     ...actual,
-    loadChats: vi.fn(async () => []),
+    loadChats: mockLoadChats,
   }
 })
+
+vi.mock('@/services/cloud/streaming-tracker', () => ({
+  streamingTracker: {
+    isStreaming: mockIsStreaming,
+  },
+}))
 
 describe('useChatStorage.reloadChats', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockLoadChats.mockResolvedValue([])
+    mockIsStreaming.mockReturnValue(false)
   })
 
   it('does not reset currentChat to blank during temp-id window', async () => {
@@ -123,5 +136,132 @@ describe('useChatStorage.reloadChats', () => {
     })
 
     expect(result.current.currentChat.id).toBe('server-def')
+  })
+
+  it('refreshes pending recoveries for the selected chat', async () => {
+    const { result } = renderHook(() =>
+      useChatStorage({
+        storeHistory: true,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(result.current.isInitialLoad).toBe(false)
+    })
+
+    const current = {
+      id: 'chat-1',
+      title: 'Recovery chat',
+      messages: [
+        {
+          role: 'user' as const,
+          content: 'Question',
+          turnId: 'turn-1',
+          timestamp: new Date(),
+        },
+      ],
+      createdAt: new Date(),
+      isBlankChat: false,
+      isLocalOnly: false,
+    }
+    const recovery = {
+      v: 1 as const,
+      turnId: 'turn-1',
+      keyId: '0'.repeat(32),
+      createdAt: '2026-07-21T00:00:00.000Z',
+      expiresAt: '2026-07-22T00:00:00.000Z',
+      nonce: 'nonce',
+      ciphertext: 'ciphertext',
+    }
+
+    await act(async () => {
+      result.current.setCurrentChat(current as any)
+    })
+    mockLoadChats.mockResolvedValue([
+      { ...current, pendingRecoveries: [recovery] },
+    ])
+
+    act(() => {
+      chatEvents.emit({ reason: 'recovery', ids: ['chat-1'] })
+    })
+    await waitFor(() => {
+      expect(result.current.currentChat.pendingRecoveries).toEqual([recovery])
+    })
+  })
+
+  it('does not apply an older recovery refresh after completion', async () => {
+    const { result } = renderHook(() =>
+      useChatStorage({
+        storeHistory: true,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(result.current.isInitialLoad).toBe(false)
+    })
+
+    const userMessage = {
+      role: 'user' as const,
+      content: 'Question',
+      turnId: 'turn-1',
+      timestamp: new Date(),
+    }
+    const current = {
+      id: 'chat-1',
+      title: 'Recovery chat',
+      messages: [userMessage],
+      createdAt: new Date(),
+      isBlankChat: false,
+      isLocalOnly: false,
+    }
+    const recovery = {
+      v: 1 as const,
+      turnId: 'turn-1',
+      keyId: '0'.repeat(32),
+      createdAt: '2026-07-21T00:00:00.000Z',
+      expiresAt: '2026-07-22T00:00:00.000Z',
+      nonce: 'nonce',
+      ciphertext: 'ciphertext',
+    }
+    let finishOlderReload: ((chats: any[]) => void) | undefined
+    mockLoadChats
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishOlderReload = resolve
+        }),
+      )
+      .mockResolvedValueOnce([
+        {
+          ...current,
+          messages: [
+            userMessage,
+            {
+              role: 'assistant',
+              content: 'Recovered answer',
+              turnId: 'turn-1',
+              timestamp: new Date(),
+            },
+          ],
+        },
+      ])
+
+    await act(async () => {
+      result.current.setCurrentChat(current as any)
+    })
+    act(() => {
+      chatEvents.emit({ reason: 'recovery', ids: ['chat-1'] })
+      chatEvents.emit({ reason: 'recovery', ids: ['chat-1'] })
+    })
+    await waitFor(() => {
+      expect(result.current.currentChat.messages).toHaveLength(2)
+    })
+
+    finishOlderReload?.([{ ...current, pendingRecoveries: [recovery] }])
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(result.current.currentChat.messages).toHaveLength(2)
+    expect(result.current.currentChat.pendingRecoveries).toBeUndefined()
   })
 })
