@@ -242,6 +242,34 @@ describe('enroll and unlock', () => {
     const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
     await expect(kit.rewrapWithCachedPrf(cek)).resolves.toBeNull()
   })
+
+  it('rewraps with the cached PRF output when destructured off the kit', async () => {
+    const rawId = crypto.getRandomValues(new Uint8Array(16))
+      .buffer as ArrayBuffer
+    const prfFirst = crypto.getRandomValues(new Uint8Array(32))
+      .buffer as ArrayBuffer
+    installCredentialsMock({
+      create: vi.fn(async () =>
+        fakeCredential({
+          rawId,
+          prfEnabled: true,
+          prfFirst: prfFirst.slice(0),
+        }),
+      ),
+    })
+
+    const cek = crypto.getRandomValues(new Uint8Array(CEK_BYTES))
+    const { kit } = makeKit()
+    const enrolled = await kit.enroll({
+      user: { id: 'u1', name: 'u@example.com' },
+      cek,
+    })
+    expect(enrolled).not.toBeNull()
+
+    const { rewrapWithCachedPrf } = kit
+    const rewrapped = await rewrapWithCachedPrf(cek)
+    expect(rewrapped?.credentialId).toBe(enrolled!.credentialId)
+  })
 })
 
 describe('local state', () => {

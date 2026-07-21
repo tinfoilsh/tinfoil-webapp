@@ -144,6 +144,21 @@ export function createPasskeyKit(config: PasskeyKitConfig): PasskeyKit {
     }
   }
 
+  function getCachedPrfResult(): PrfPasskeyResult | null {
+    if (!storage) return null
+    try {
+      const raw = storage.getItem(storageKeys.prfResult)
+      if (!raw) return null
+      const entry = JSON.parse(raw) as PrfCacheEntry
+      return {
+        credentialId: entry.credentialId,
+        prfOutput: base64ToBytes(entry.prfOutput).buffer as ArrayBuffer,
+      }
+    } catch {
+      return null
+    }
+  }
+
   function setLocalCredentialId(credentialId: string): void {
     storage?.setItem(storageKeys.localCredentialId, credentialId)
   }
@@ -253,7 +268,7 @@ export function createPasskeyKit(config: PasskeyKitConfig): PasskeyKit {
     },
 
     async rewrapWithCachedPrf(cek: Uint8Array): Promise<WrappedCek | null> {
-      const cached = this.getCachedPrfResult()
+      const cached = getCachedPrfResult()
       if (!cached) return null
       return wrapWithPrfResult(cached, cek)
     },
@@ -268,20 +283,7 @@ export function createPasskeyKit(config: PasskeyKitConfig): PasskeyKit {
       return unwrapCek(kek, wrapped)
     },
 
-    getCachedPrfResult(): PrfPasskeyResult | null {
-      if (!storage) return null
-      try {
-        const raw = storage.getItem(storageKeys.prfResult)
-        if (!raw) return null
-        const entry = JSON.parse(raw) as PrfCacheEntry
-        return {
-          credentialId: entry.credentialId,
-          prfOutput: base64ToBytes(entry.prfOutput).buffer as ArrayBuffer,
-        }
-      } catch {
-        return null
-      }
-    },
+    getCachedPrfResult,
 
     clearCachedPrfResult(): void {
       storage?.removeItem(storageKeys.prfResult)
