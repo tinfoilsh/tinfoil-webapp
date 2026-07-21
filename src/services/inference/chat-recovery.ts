@@ -165,12 +165,15 @@ export async function abandonChatRecoveryAttempt(
 ): Promise<void> {
   const active = activeRecoveries.get(sessionId)
   activeRecoveries.delete(sessionId)
-  await deleteRecoveryQuietly(sessionId)
-  if (active) {
-    const isCurrent = () => active.generation === recoveryGeneration
-    if (isCurrent()) {
-      await removePendingRecovery(active.chatId, active.turnId, isCurrent)
+  try {
+    if (active) {
+      const isCurrent = () => active.generation === recoveryGeneration
+      if (isCurrent()) {
+        await removePendingRecovery(active.chatId, active.turnId, isCurrent)
+      }
     }
+  } finally {
+    await deleteRecoveryQuietly(sessionId)
   }
 }
 
@@ -209,17 +212,20 @@ export async function cancelChatRecovery(chatId: string): Promise<void> {
     cancelledTurns.add(turnKey(recovery.chatId, recovery.turnId))
     activeRecoveries.delete(recovery.sessionId)
   }
-  await Promise.all(
-    active.map((recovery) => deleteRecoveryQuietly(recovery.sessionId)),
-  )
-  await Promise.all(
-    active.map((recovery) => {
-      const isCurrent = () => recovery.generation === recoveryGeneration
-      return isCurrent()
-        ? removePendingRecovery(recovery.chatId, recovery.turnId, isCurrent)
-        : undefined
-    }),
-  )
+  try {
+    await Promise.all(
+      active.map((recovery) => {
+        const isCurrent = () => recovery.generation === recoveryGeneration
+        return isCurrent()
+          ? removePendingRecovery(recovery.chatId, recovery.turnId, isCurrent)
+          : undefined
+      }),
+    )
+  } finally {
+    await Promise.all(
+      active.map((recovery) => deleteRecoveryQuietly(recovery.sessionId)),
+    )
+  }
 }
 
 export function releaseActiveChatRecovery(chatId: string): void {
@@ -249,6 +255,7 @@ async function processEnvelope(
   }
 
   if (Date.now() >= Date.parse(envelope.expiresAt)) {
+    let sessionId: string | undefined
     try {
       const opened = await openEnvelope(
         userId,
@@ -257,7 +264,7 @@ async function processEnvelope(
         Date.parse(envelope.expiresAt) - 1,
       )
       if (!isCurrent()) return
-      await deleteRecoveryQuietly(opened.payload.sessionId)
+      sessionId = opened.payload.sessionId
     } catch (error) {
       logError('Failed to clean up expired chat recovery session', error, {
         component: 'chat-recovery',
@@ -266,7 +273,13 @@ async function processEnvelope(
       })
     }
     if (!isCurrent()) return
-    await removePendingRecovery(chatId, envelope.turnId, isCurrent)
+    try {
+      await removePendingRecovery(chatId, envelope.turnId, isCurrent)
+    } finally {
+      if (sessionId) {
+        await deleteRecoveryQuietly(sessionId)
+      }
+    }
     return
   }
 
@@ -303,9 +316,11 @@ async function processEnvelope(
   if (!isCurrent()) return
   if (state === 'processing') return
   if (state === 'failed') {
-    await deleteRecoveryQuietly(payload.sessionId)
-    if (!isCurrent()) return
-    await removePendingRecovery(chatId, envelope.turnId, isCurrent)
+    try {
+      await removePendingRecovery(chatId, envelope.turnId, isCurrent)
+    } finally {
+      await deleteRecoveryQuietly(payload.sessionId)
+    }
     return
   }
   if (state === 'missing') {

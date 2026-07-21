@@ -236,44 +236,91 @@ describe('chat recovery lifecycle', () => {
     expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
-  it('does not abandon an old account envelope after reset', async () => {
-    let finishDeletion: (() => void) | undefined
-    deleteChatRecovery.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        finishDeletion = resolve
+  it('lets an in-flight abandonment reject stale account cleanup', async () => {
+    let rejectRemoval: ((error: Error) => void) | undefined
+    removePendingRecovery.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectRemoval = reject
       }),
     )
     startChatRecoveryAttempt('chat-1', 'turn-1', SESSION_ID)
 
     const abandonment = abandonChatRecoveryAttempt(SESSION_ID)
     await vi.waitFor(() =>
-      expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID),
+      expect(removePendingRecovery).toHaveBeenCalledWith(
+        'chat-1',
+        'turn-1',
+        expect.any(Function),
+      ),
     )
+    const isCurrent = removePendingRecovery.mock.calls[0][2]
     resetChatRecoveryState()
-    finishDeletion?.()
-    await abandonment
+    expect(isCurrent()).toBe(false)
+    rejectRemoval?.(new DOMException('Aborted', 'AbortError'))
+    await expect(abandonment).rejects.toMatchObject({ name: 'AbortError' })
 
-    expect(removePendingRecovery).not.toHaveBeenCalled()
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
-  it('does not cancel an old account envelope after reset', async () => {
-    let finishDeletion: (() => void) | undefined
-    deleteChatRecovery.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        finishDeletion = resolve
+  it('lets an in-flight cancellation reject stale account cleanup', async () => {
+    let rejectRemoval: ((error: Error) => void) | undefined
+    removePendingRecovery.mockReturnValueOnce(
+      new Promise<void>((_resolve, reject) => {
+        rejectRemoval = reject
       }),
     )
     startChatRecoveryAttempt('chat-1', 'turn-1', SESSION_ID)
 
     const cancellation = cancelChatRecovery('chat-1')
     await vi.waitFor(() =>
-      expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID),
+      expect(removePendingRecovery).toHaveBeenCalledWith(
+        'chat-1',
+        'turn-1',
+        expect.any(Function),
+      ),
     )
+    const isCurrent = removePendingRecovery.mock.calls[0][2]
     resetChatRecoveryState()
-    finishDeletion?.()
-    await cancellation
+    expect(isCurrent()).toBe(false)
+    rejectRemoval?.(new DOMException('Aborted', 'AbortError'))
+    await expect(cancellation).rejects.toMatchObject({ name: 'AbortError' })
 
-    expect(removePendingRecovery).not.toHaveBeenCalled()
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
+  })
+
+  it('removes a failed envelope before deleting its server session', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState.mockResolvedValue('failed')
+    let finishRemoval: (() => void) | undefined
+    removePendingRecovery.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishRemoval = resolve
+      }),
+    )
+
+    const scan = scanPendingChatRecoveries('user-1')
+    await vi.waitFor(() =>
+      expect(removePendingRecovery).toHaveBeenCalledWith(
+        'chat-1',
+        'turn-1',
+        expect.any(Function),
+      ),
+    )
+    expect(deleteChatRecovery).not.toHaveBeenCalled()
+
+    finishRemoval?.()
+    await scan
+
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
   it('rewraps an envelope opened with a historical CEK', async () => {

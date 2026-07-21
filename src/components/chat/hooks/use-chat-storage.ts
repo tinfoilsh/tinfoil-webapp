@@ -3,6 +3,7 @@ import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { chatEvents } from '@/services/storage/chat-events'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -157,7 +158,7 @@ export function useChatStorage({
         // This prevents race conditions in Safari PWA where timing differences
         // could cause unexpected chat resets.
         setCurrentChat((prev) => {
-          if (isSwitchingChatRef.current || prev.isBlankChat) {
+          if (prev.isBlankChat) {
             return prev
           }
 
@@ -554,6 +555,19 @@ export function useChatStorage({
           projectId: downloadedChat.projectId,
           model: downloadedChat.model,
           pendingRecoveries: downloadedChat.pendingRecoveries,
+        }
+
+        try {
+          await indexedDBStorage.applyRemoteChatIfFresh({
+            chat: downloadedChat,
+            syncVersion: downloadedChat.syncVersion ?? 1,
+            expectedLocalUpdatedAt: null,
+          })
+        } catch (error) {
+          logError('Failed to cache URL-loaded chat', error, {
+            component: 'useChatStorage',
+            metadata: { chatId },
+          })
         }
 
         // Add to chats list and select it

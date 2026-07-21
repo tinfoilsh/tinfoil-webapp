@@ -39,6 +39,7 @@ import {
   refreshRateLimit,
 } from '@/services/inference/tinfoil-client'
 import { generateTitle } from '@/services/inference/title'
+import { chatEvents } from '@/services/storage/chat-events'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
@@ -169,9 +170,15 @@ export function useChatMessaging({
     }
     scan()
     window.addEventListener('online', scan)
+    const unsubscribe = chatEvents.on((event) => {
+      if (event.reason === 'sync' || event.reason === 'pagination') {
+        scan()
+      }
+    })
     const interval = window.setInterval(scan, CHAT_RECOVERY_POLL_INTERVAL_MS)
     return () => {
       window.removeEventListener('online', scan)
+      unsubscribe()
       window.clearInterval(interval)
     }
   }, [isSignedIn, storeHistory, userId])

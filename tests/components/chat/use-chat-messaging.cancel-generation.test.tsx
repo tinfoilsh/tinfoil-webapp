@@ -1,5 +1,6 @@
 import { useChatMessaging } from '@/components/chat/hooks/use-chat-messaging'
 import type { Chat } from '@/components/chat/types'
+import { chatEvents } from '@/services/storage/chat-events'
 import { act, renderHook } from '@testing-library/react'
 import {
   type Dispatch,
@@ -15,11 +16,16 @@ const resetStatusMock = vi.fn()
 const moveStatusMock = vi.fn()
 const registerControllerMock = vi.fn()
 const clearControllerMock = vi.fn()
+const { authState, scanPendingChatRecoveriesMock } = vi.hoisted(() => ({
+  authState: {
+    isSignedIn: false,
+    userId: undefined as string | undefined,
+  },
+  scanPendingChatRecoveriesMock: vi.fn(),
+}))
 
 vi.mock('@clerk/nextjs', () => ({
-  useAuth: () => ({
-    isSignedIn: false,
-  }),
+  useAuth: () => authState,
 }))
 
 vi.mock('@/components/project', () => ({
@@ -36,13 +42,27 @@ vi.mock('@/services/cloud/streaming-tracker', () => ({
   },
 }))
 
+vi.mock('@/services/inference/tinfoil-client', async () => {
+  const actual = await vi.importActual<
+    typeof import('@/services/inference/tinfoil-client')
+  >('@/services/inference/tinfoil-client')
+  return {
+    ...actual,
+    isChatRecoveryAvailable: () => true,
+  }
+})
+
+vi.mock('@/utils/cloud-sync-settings', () => ({
+  isCloudSyncEnabled: () => true,
+}))
+
 vi.mock('@/services/inference/chat-recovery', () => ({
   abandonChatRecoveryAttempt: vi.fn(),
   cancelChatRecovery: vi.fn(async () => undefined),
   completeLiveChatRecovery: vi.fn(),
   persistChatRecoveryToken: vi.fn(),
   releaseActiveChatRecovery: vi.fn(),
-  scanPendingChatRecoveries: vi.fn(),
+  scanPendingChatRecoveries: scanPendingChatRecoveriesMock,
   startChatRecoveryAttempt: vi.fn(),
 }))
 
@@ -114,6 +134,8 @@ function useChatMessagingHarness({
 describe('useChatMessaging cancelGeneration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authState.isSignedIn = false
+    authState.userId = undefined
   })
 
   it('targets the latest rendered chat during a chat switch', () => {
@@ -145,5 +167,34 @@ describe('useChatMessaging cancelGeneration', () => {
         isStreaming: false,
       }),
     )
+  })
+
+  it('rescans pending recoveries when cloud sync downloads a chat', () => {
+    authState.isSignedIn = true
+    authState.userId = 'user-1'
+    const chat = createChat('chat-a')
+
+    const { unmount } = renderHook(() =>
+      useChatMessaging({
+        systemPrompt: '',
+        rules: '',
+        storeHistory: true,
+        models: [],
+        selectedModel: 'test-model',
+        chats: [chat],
+        currentChat: chat,
+        setChats: noopSetChats,
+        setCurrentChat: noopSetCurrentChat,
+        messagesEndRef,
+      }),
+    )
+    scanPendingChatRecoveriesMock.mockClear()
+
+    act(() => {
+      chatEvents.emit({ reason: 'sync', ids: ['chat-a'] })
+    })
+
+    expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1')
+    unmount()
   })
 })

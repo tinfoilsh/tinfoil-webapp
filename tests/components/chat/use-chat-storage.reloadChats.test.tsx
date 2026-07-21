@@ -3,13 +3,19 @@ import { chatEvents } from '@/services/storage/chat-events'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockLoadChats, mockIsStreaming, mockDownloadChat, mockLoadChatImages } =
-  vi.hoisted(() => ({
-    mockLoadChats: vi.fn(),
-    mockIsStreaming: vi.fn(),
-    mockDownloadChat: vi.fn(),
-    mockLoadChatImages: vi.fn(),
-  }))
+const {
+  mockLoadChats,
+  mockIsStreaming,
+  mockDownloadChat,
+  mockLoadChatImages,
+  mockApplyRemoteChat,
+} = vi.hoisted(() => ({
+  mockLoadChats: vi.fn(),
+  mockIsStreaming: vi.fn(),
+  mockDownloadChat: vi.fn(),
+  mockLoadChatImages: vi.fn(),
+  mockApplyRemoteChat: vi.fn(),
+}))
 
 vi.mock('@clerk/nextjs', () => ({
   useAuth: () => ({
@@ -42,12 +48,19 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
   },
 }))
 
+vi.mock('@/services/storage/indexed-db', () => ({
+  indexedDBStorage: {
+    applyRemoteChatIfFresh: mockApplyRemoteChat,
+  },
+}))
+
 describe('useChatStorage.reloadChats', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockLoadChats.mockResolvedValue([])
     mockIsStreaming.mockReturnValue(false)
     mockLoadChatImages.mockResolvedValue(new Map())
+    mockApplyRemoteChat.mockResolvedValue({ applied: true })
   })
 
   it('does not reset currentChat to blank during temp-id window', async () => {
@@ -200,6 +213,55 @@ describe('useChatStorage.reloadChats', () => {
     })
   })
 
+  it('refreshes pending recoveries while the selected chat is switching', async () => {
+    const current = {
+      id: 'chat-1',
+      title: 'Recovery chat',
+      messages: [
+        {
+          role: 'user' as const,
+          content: 'Question',
+          turnId: 'turn-1',
+          timestamp: new Date(),
+        },
+      ],
+      createdAt: new Date(),
+      isBlankChat: false,
+      isLocalOnly: false,
+    }
+    const recovery = {
+      v: 1 as const,
+      turnId: 'turn-1',
+      keyId: '0'.repeat(32),
+      createdAt: '2026-07-21T00:00:00.000Z',
+      expiresAt: '2026-07-22T00:00:00.000Z',
+      nonce: 'nonce',
+      ciphertext: 'ciphertext',
+    }
+    const { result } = renderHook(() =>
+      useChatStorage({
+        storeHistory: true,
+      }),
+    )
+    await waitFor(() => {
+      expect(result.current.isInitialLoad).toBe(false)
+    })
+
+    await act(async () => {
+      await result.current.switchChat(current as any)
+    })
+    mockLoadChats.mockResolvedValue([
+      { ...current, pendingRecoveries: [recovery] },
+    ])
+    act(() => {
+      chatEvents.emit({ reason: 'sync', ids: ['chat-1'] })
+    })
+
+    await waitFor(() => {
+      expect(result.current.currentChat.pendingRecoveries).toEqual([recovery])
+    })
+  })
+
   it('preserves pending recoveries when loading a chat from a URL', async () => {
     const recovery = {
       v: 1 as const,
@@ -238,6 +300,14 @@ describe('useChatStorage.reloadChats', () => {
       expect(result.current.currentChat.id).toBe('chat-1')
     })
     expect(result.current.currentChat.pendingRecoveries).toEqual([recovery])
+    expect(mockApplyRemoteChat).toHaveBeenCalledWith({
+      chat: expect.objectContaining({
+        id: 'chat-1',
+        pendingRecoveries: [recovery],
+      }),
+      syncVersion: 1,
+      expectedLocalUpdatedAt: null,
+    })
   })
 
   it('does not apply an older recovery refresh after completion', async () => {
