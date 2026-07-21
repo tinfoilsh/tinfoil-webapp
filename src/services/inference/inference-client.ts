@@ -222,6 +222,7 @@ export async function sendChatStream(
       rules,
       messages: updatedMessages,
       includeGenUIHint: genUIEnabled,
+      includeTimeReminder: true,
     })
 
     // Get the last user message for retry test check
@@ -340,6 +341,7 @@ export async function sendChatStream(
     messages: updatedMessages,
     includeGenUIHint: genUIEnabled,
     forcePrependSystemPrompt,
+    includeTimeReminder: true,
   })
 
   let lastError: unknown = null

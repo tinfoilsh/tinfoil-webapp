@@ -110,7 +110,8 @@ export function PresetEditor({
           />
           <span className="text-[11px] text-content-muted">
             Placeholders supported: {`{USER_PREFERENCES}`}, {`{LANGUAGE}`},{' '}
-            {`{CURRENT_DATETIME}`}, {`{TIMEZONE}`}.
+            {`{TIMEZONE}`}. The current time is always provided to the model
+            automatically.
           </span>
         </label>
       </div>
