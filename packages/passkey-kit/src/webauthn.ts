@@ -10,7 +10,12 @@ import {
   bytesToBase64Url,
 } from './codec'
 import { PasskeyTimeoutError, PrfNotSupportedError } from './errors'
-import type { PasskeyKitLogger, PasskeyUser, PrfPasskeyResult } from './types'
+import type {
+  PasskeyKitErrorMessages,
+  PasskeyKitLogger,
+  PasskeyUser,
+  PrfPasskeyResult,
+} from './types'
 
 export interface CeremonyContext {
   rpId: string
@@ -20,6 +25,7 @@ export interface CeremonyContext {
   prfSalt: Uint8Array
   webauthnTimeoutMs: number
   stuckTimeoutMs: number
+  errorMessages?: PasskeyKitErrorMessages
   logger: PasskeyKitLogger
   /** Invoked after every successful PRF ceremony so the kit can cache state. */
   onPrfResult(result: PrfPasskeyResult, credential: PublicKeyCredential): void
@@ -27,7 +33,7 @@ export interface CeremonyContext {
 
 async function withStuckTimeout<T>(
   promise: Promise<T>,
-  stuckTimeoutMs: number,
+  ctx: CeremonyContext,
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -35,8 +41,8 @@ async function withStuckTimeout<T>(
       promise,
       new Promise<T>((_, reject) => {
         timer = setTimeout(
-          () => reject(new PasskeyTimeoutError()),
-          stuckTimeoutMs,
+          () => reject(new PasskeyTimeoutError(ctx.errorMessages?.timeout)),
+          ctx.stuckTimeoutMs,
         )
       }),
     ])
@@ -83,7 +89,7 @@ export async function createPrfPasskey(
           },
         },
       }),
-      ctx.stuckTimeoutMs,
+      ctx,
     )) as PublicKeyCredential | null
 
     if (!credential) {
@@ -97,7 +103,7 @@ export async function createPrfPasskey(
       ctx.logger.info?.('Authenticator does not support PRF', {
         action: 'createPrfPasskey',
       })
-      throw new PrfNotSupportedError()
+      throw new PrfNotSupportedError(ctx.errorMessages?.prfNotSupported)
     }
 
     const credentialId = bytesToBase64Url(new Uint8Array(credential.rawId))
@@ -131,7 +137,7 @@ export async function createPrfPasskey(
       // The provider claimed PRF support during creation but didn't deliver
       // a PRF output on the immediately-following assertion. Treat this as
       // a lack of real PRF support rather than a silent failure.
-      throw new PrfNotSupportedError()
+      throw new PrfNotSupportedError(ctx.errorMessages?.prfNotSupported)
     }
     return postCreateAuth
   } catch (error) {
@@ -187,7 +193,7 @@ export async function authenticatePrfPasskey(
           },
         },
       }),
-      ctx.stuckTimeoutMs,
+      ctx,
     )) as PublicKeyCredential | null
 
     if (!assertion) {

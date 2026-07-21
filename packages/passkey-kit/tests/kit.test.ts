@@ -137,6 +137,51 @@ describe('createPasskey', () => {
     ).rejects.toBeInstanceOf(PrfNotSupportedError)
   })
 
+  it('uses a brand-neutral default message and honors errorMessages overrides', async () => {
+    installCredentialsMock({
+      create: vi.fn(async () => fakeCredential({ prfEnabled: false })),
+    })
+
+    const { kit } = makeKit()
+    const defaultError = await kit
+      .createPasskey({ id: 'u1', name: 'u@example.com' })
+      .catch((error: unknown) => error as Error)
+    expect((defaultError as Error).message).toContain('this app')
+
+    const branded = createPasskeyKit({
+      rpId: 'example.com',
+      rpName: 'Example',
+      storage: createMemoryStorageAdapter(),
+      errorMessages: { prfNotSupported: 'Example App needs PRF support.' },
+    })
+    const brandedError = await branded
+      .createPasskey({ id: 'u1', name: 'u@example.com' })
+      .catch((error: unknown) => error as Error)
+    expect(brandedError).toBeInstanceOf(PrfNotSupportedError)
+    expect((brandedError as Error).message).toBe(
+      'Example App needs PRF support.',
+    )
+  })
+
+  it('honors the errorMessages timeout override when the provider hangs', async () => {
+    vi.useFakeTimers()
+    installCredentialsMock({ create: vi.fn(() => new Promise(() => {})) })
+
+    const kit = createPasskeyKit({
+      rpId: 'example.com',
+      rpName: 'Example',
+      storage: createMemoryStorageAdapter(),
+      errorMessages: { timeout: 'Example App timed out.' },
+    })
+    const promise = kit.createPasskey({ id: 'u1', name: 'u@example.com' })
+    promise.catch(() => {})
+    await vi.advanceTimersByTimeAsync(15_000)
+    await expect(promise).rejects.toMatchObject({
+      name: 'PasskeyTimeoutError',
+      message: 'Example App timed out.',
+    })
+  })
+
   it('returns null when the user cancels', async () => {
     installCredentialsMock({
       create: vi.fn(async () => {

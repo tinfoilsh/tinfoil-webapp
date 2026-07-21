@@ -24,6 +24,11 @@ export const passkeyKit = createPasskeyKit({
     prfResult: SECRET_PASSKEY_PRF_OUTPUT,
     localCredentialId: LOCAL_PASSKEY_CREDENTIAL_ID,
   },
+  errorMessages: {
+    prfNotSupported:
+      "Your passkey provider doesn't support the security features required by Tinfoil. " +
+      "Try using iCloud Keychain, Chrome's built-in passkey manager, or the Passwords app in your device settings.",
+  },
   logger: {
     info: (message, metadata) =>
       logInfo(message, { component: 'PasskeyKit', metadata }),

@@ -31,6 +31,7 @@ export { detectPrfSupport } from './support'
 export type {
   EnrollResult,
   PasskeyKitConfig,
+  PasskeyKitErrorMessages,
   PasskeyKitLogger,
   PasskeyKitStorageKeys,
   PasskeyUser,

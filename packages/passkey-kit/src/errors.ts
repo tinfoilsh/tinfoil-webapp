@@ -20,7 +20,7 @@ const PROVIDER_SUGGESTION =
  */
 export class PrfNotSupportedError extends PasskeyKitError {
   constructor(
-    message = `Your passkey provider doesn't support the security features required by Tinfoil. ${PROVIDER_SUGGESTION}`,
+    message = `Your passkey provider doesn't support the security features required by this app. ${PROVIDER_SUGGESTION}`,
   ) {
     super(message)
     this.name = 'PrfNotSupportedError'

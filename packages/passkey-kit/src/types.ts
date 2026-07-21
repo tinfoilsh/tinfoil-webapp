@@ -17,6 +17,18 @@ export interface PasskeyKitStorageKeys {
   localCredentialId: string
 }
 
+/**
+ * Overrides for the messages on errors the SDK throws. Useful for branding
+ * or localization; the error classes themselves stay the same, so
+ * `instanceof` checks are unaffected.
+ */
+export interface PasskeyKitErrorMessages {
+  /** Message used for `PrfNotSupportedError`. */
+  prfNotSupported?: string
+  /** Message used for `PasskeyTimeoutError`. */
+  timeout?: string
+}
+
 export interface PasskeyKitConfig {
   /** WebAuthn relying party id (e.g. `example.com`, or `localhost` in dev). */
   rpId: string
@@ -47,6 +59,8 @@ export interface PasskeyKitConfig {
    * the WebAuthn promise. When exceeded, `PasskeyTimeoutError` is thrown.
    */
   stuckTimeoutMs?: number
+  /** Custom messages for the errors the SDK throws. */
+  errorMessages?: PasskeyKitErrorMessages
   logger?: PasskeyKitLogger
 }
 

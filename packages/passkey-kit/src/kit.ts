@@ -191,6 +191,7 @@ export function createPasskeyKit(config: PasskeyKitConfig): PasskeyKit {
     prfSalt,
     webauthnTimeoutMs: config.webauthnTimeoutMs ?? DEFAULT_WEBAUTHN_TIMEOUT_MS,
     stuckTimeoutMs: config.stuckTimeoutMs ?? DEFAULT_STUCK_TIMEOUT_MS,
+    errorMessages: config.errorMessages,
     logger,
     onPrfResult,
   }
