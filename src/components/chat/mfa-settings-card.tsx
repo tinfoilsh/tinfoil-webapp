@@ -10,14 +10,7 @@ import {
   ShieldCheckIcon,
 } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-} from 'react'
+import { memo, useCallback, useRef, useState, type FormEvent } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
 import { ConfirmDialog } from './components/confirm-dialog'
@@ -57,8 +50,6 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
   const [totpEnabledOverride, setTotpEnabledOverride] = useState<{
     userId: string
     enabled: boolean
-    sourceEnabled: boolean
-    sourceUpdatedAt: number | null
   } | null>(null)
   const mfaActionButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -80,30 +71,10 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
     }, [user]),
   )
 
-  const userId = user?.id
-  const userTotpEnabled = user?.totpEnabled
-  const userUpdatedAt = user?.updatedAt?.getTime() ?? null
   const totpEnabled =
     user && totpEnabledOverride?.userId === user.id
       ? totpEnabledOverride.enabled
       : (user?.totpEnabled ?? false)
-
-  useEffect(() => {
-    if (
-      !totpEnabledOverride ||
-      userId !== totpEnabledOverride.userId ||
-      userTotpEnabled === undefined
-    ) {
-      return
-    }
-
-    if (
-      userTotpEnabled !== totpEnabledOverride.sourceEnabled ||
-      userUpdatedAt !== totpEnabledOverride.sourceUpdatedAt
-    ) {
-      setTotpEnabledOverride(null)
-    }
-  }, [totpEnabledOverride, userId, userTotpEnabled, userUpdatedAt])
 
   const refreshUserAfterMfaMutation = async (enabled: boolean) => {
     if (!user) return
@@ -111,8 +82,6 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
     setTotpEnabledOverride({
       userId: user.id,
       enabled,
-      sourceEnabled: user.totpEnabled,
-      sourceUpdatedAt: user.updatedAt?.getTime() ?? null,
     })
     try {
       await user.reload()

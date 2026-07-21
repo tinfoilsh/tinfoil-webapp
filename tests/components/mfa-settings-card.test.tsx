@@ -1,12 +1,11 @@
 import { MfaSettingsCard } from '@/components/chat/mfa-settings-card'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   const user = {
     id: 'user_123',
     totpEnabled: false,
-    updatedAt: new Date('2026-07-20T00:00:00.000Z'),
     createTOTP: vi.fn(),
     verifyTOTP: vi.fn(),
     disableTOTP: vi.fn(),
@@ -42,7 +41,6 @@ vi.mock('@/utils/error-handling', () => ({
 beforeEach(() => {
   vi.resetAllMocks()
   mocks.user.totpEnabled = false
-  mocks.user.updatedAt = new Date('2026-07-20T00:00:00.000Z')
   mocks.user.reload.mockResolvedValue(mocks.user)
   mocks.createObjectURL.mockReturnValue('blob:backup-codes')
   Object.defineProperty(URL, 'createObjectURL', {
@@ -53,6 +51,10 @@ beforeEach(() => {
     configurable: true,
     value: mocks.revokeObjectURL,
   })
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('MfaSettingsCard', () => {
@@ -150,7 +152,9 @@ describe('MfaSettingsCard', () => {
       expect(mocks.user.disableTOTP).toHaveBeenCalledTimes(1)
     })
     expect(mocks.user.reload).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Set up' }),
+    ).toBeInTheDocument()
   })
 
   it('keeps the enabled status when refreshing Clerk fails', async () => {
@@ -164,7 +168,7 @@ describe('MfaSettingsCard', () => {
     })
     mocks.user.reload.mockRejectedValue(new Error('Refresh failed'))
 
-    const { rerender } = render(<MfaSettingsCard isDarkMode />)
+    render(<MfaSettingsCard isDarkMode />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Set up' }))
     await screen.findByTestId('totp-qr-code')
@@ -179,14 +183,6 @@ describe('MfaSettingsCard', () => {
     expect(screen.getByText('On')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Turn off' })).toBeInTheDocument()
     expect(mocks.logWarning).toHaveBeenCalledTimes(1)
-
-    mocks.user.updatedAt = new Date('2026-07-20T00:01:00.000Z')
-    rerender(<MfaSettingsCard isDarkMode />)
-
-    await waitFor(() => {
-      expect(screen.getByText('Off')).toBeInTheDocument()
-    })
-    expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument()
   })
 
   it('shows Clerk verification errors without completing setup', async () => {
