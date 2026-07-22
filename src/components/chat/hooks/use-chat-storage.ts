@@ -586,17 +586,19 @@ export function useChatStorage({
           pendingRecoveries: downloadedChat.pendingRecoveries,
         }
 
-        try {
-          await indexedDBStorage.applyRemoteChatIfFresh({
-            chat: downloadedChat,
-            syncVersion: downloadedChat.syncVersion ?? 1,
-            expectedLocalUpdatedAt: null,
-          })
-        } catch (error) {
-          logError('Failed to cache URL-loaded chat', error, {
-            component: 'useChatStorage',
-            metadata: { chatId },
-          })
+        if (storeHistory) {
+          try {
+            await indexedDBStorage.applyRemoteChatIfFresh({
+              chat: downloadedChat,
+              syncVersion: downloadedChat.syncVersion ?? 1,
+              expectedLocalUpdatedAt: null,
+            })
+          } catch (error) {
+            logError('Failed to cache URL-loaded chat', error, {
+              component: 'useChatStorage',
+              metadata: { chatId },
+            })
+          }
         }
 
         // Add to chats list and select it
@@ -627,7 +629,7 @@ export function useChatStorage({
         setInitialChatLoadFailed(true)
       }
     },
-    [chats, isSignedIn, switchChat],
+    [chats, isSignedIn, storeHistory, switchChat],
   )
 
   // Load initial chat from URL if provided
