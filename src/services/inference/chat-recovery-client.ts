@@ -81,8 +81,9 @@ export async function getChatRecoveryState(
 export async function fetchRecoveredChatResponse(
   sessionId: string,
   token: SessionRecoveryToken,
+  signal?: AbortSignal,
 ): Promise<Response> {
-  const response = await recoveryFetch(sessionId)
+  const response = await recoveryFetch(sessionId, '', { signal })
   if (response.status === 404) {
     throw new ChatRecoveryError('Recovery session not found', 'missing')
   }

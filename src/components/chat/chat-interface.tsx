@@ -14,6 +14,7 @@ import {
   SETTINGS_WEB_SEARCH_AVAILABLE,
   UI_EXPAND_PROJECT_DOCUMENTS,
 } from '@/constants/storage-keys'
+import { useChatRecoveryDrafts } from '@/hooks/use-chat-recovery-drafts'
 import { useChatRouter } from '@/hooks/use-chat-router'
 import { useProjects } from '@/hooks/use-projects'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
@@ -1249,6 +1250,7 @@ export function ChatInterface({
   // on every stream flush and sync update, which would re-run this effect and
   // repeatedly steal focus from whatever the user is typing in.
   const currentChatId = currentChat?.id
+  const recoveryDrafts = useChatRecoveryDrafts(currentChatId ?? '')
   useEffect(() => {
     if (isClient && !isLoadingConfig && currentChatId) {
       // Skip auto-focus when sidebar is open on mobile — focusing the input
@@ -3359,6 +3361,7 @@ export function ChatInterface({
                   <ChatMessages
                     messages={currentChat?.messages || []}
                     pendingRecoveries={currentChat?.pendingRecoveries}
+                    recoveryDrafts={recoveryDrafts}
                     isDarkMode={isDarkMode}
                     chatId={currentChat.id}
                     isWaitingForResponse={isWaitingForResponse}

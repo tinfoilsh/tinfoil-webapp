@@ -80,6 +80,25 @@ describe('chat recovery client', () => {
     expect(decryptResponseWithToken).toHaveBeenCalledWith(encrypted, token)
   })
 
+  it('keeps a recovery stream tied to its scan signal', async () => {
+    const encrypted = new Response('encrypted')
+    const decrypted = new Response('decrypted')
+    const token = {
+      exportedSecret: new Uint8Array(32),
+      requestEnc: new Uint8Array(32),
+    }
+    const controller = new AbortController()
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(encrypted)
+    decryptResponseWithToken.mockResolvedValue(decrypted)
+
+    await fetchRecoveredChatResponse(SESSION_ID, token, controller.signal)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `https://api.example/recovery/${SESSION_ID}`,
+      expect.objectContaining({ signal: controller.signal }),
+    )
+  })
+
   it.each([
     [404, 'missing'],
     [410, 'failed'],

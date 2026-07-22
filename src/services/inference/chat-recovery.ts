@@ -22,6 +22,11 @@ import {
   rewrapRecoveryEnvelope,
 } from './chat-recovery-crypto'
 import {
+  clearChatRecoveryDrafts,
+  pruneChatRecoveryDrafts,
+  setChatRecoveryDraft,
+} from './chat-recovery-drafts'
+import {
   addPendingRecovery,
   completePendingRecovery,
   removePendingRecovery,
@@ -39,22 +44,35 @@ type ActiveRecovery = {
 const activeRecoveries = new Map<string, ActiveRecovery>()
 const cancelledTurns = new Set<string>()
 const RECOVERY_SCAN_CONCURRENCY = 4
-// Upper bound on how long a scan may hold the dedupe slot. Cloud sync
-// requests carry no timeout, so a scan wedged on a dead socket (e.g.
-// after laptop sleep) would otherwise absorb every future scan and
-// silently disable recovery for the rest of the session.
+// Upper bound on how long a scan may make no progress while holding the
+// dedupe slot. A stream wedged on a dead socket (e.g. after laptop sleep)
+// would otherwise absorb every future scan and silently disable recovery
+// for the rest of the session.
 const RECOVERY_SCAN_MAX_AGE_MS = 120_000
 let recoveryGeneration = 0
 let recoveryScanGeneration = 0
 let scanInFlight: {
   userId: string
   promise: Promise<void>
-  startedAt: number
+  lastProgressAt: number
   controller: AbortController
 } | null = null
 
 function turnKey(chatId: string, turnId: string): string {
   return `${chatId}\u0000${turnId}`
+}
+
+function hasVisibleRecoveryDraft(message: Message): boolean {
+  return Boolean(
+    message.content ||
+    message.thoughts ||
+    message.isThinking ||
+    message.timeline?.length ||
+    message.urlFetches?.length ||
+    message.webSearch ||
+    message.toolCalls?.length ||
+    message.codeExecCalls?.length,
+  )
 }
 
 function recoveryTokenFromPayload(
@@ -328,7 +346,6 @@ async function processEnvelope(
   const payload = opened.payload
   const state = await getChatRecoveryState(payload.sessionId)
   if (!isCurrent()) return
-  if (state === 'processing') return
   if (state === 'failed') {
     try {
       await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
@@ -345,10 +362,50 @@ async function processEnvelope(
   const response = await fetchRecoveredChatResponse(
     payload.sessionId,
     recoveryTokenFromPayload(payload.recoveryToken),
+    signal,
   )
   if (!isCurrent()) return
-  const assistantMessage = await parseRichStreamingResponse(response)
+  const assistantMessage = await parseRichStreamingResponse(response, {
+    onUpdate: (message) => {
+      if (!isCurrent()) return
+      if (scanInFlight?.controller.signal === signal) {
+        scanInFlight.lastProgressAt = Date.now()
+      }
+      if (!hasVisibleRecoveryDraft(message)) return
+      setChatRecoveryDraft({
+        chatId,
+        turnId: envelope.turnId,
+        sessionId: payload.sessionId,
+        message: {
+          ...message,
+          role: 'assistant',
+          turnId: envelope.turnId,
+        },
+      })
+    },
+  })
   if (!isCurrent()) return
+  const terminalState = await getChatRecoveryState(payload.sessionId)
+  if (!isCurrent()) return
+  if (terminalState !== 'complete') {
+    if (terminalState === 'failed') {
+      try {
+        await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
+      } finally {
+        await deleteRecoveryQuietly(payload.sessionId)
+      }
+      return
+    }
+    if (terminalState === 'missing') {
+      await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
+      return
+    }
+    throw new ChatRecoveryError(
+      'Encrypted response recovery stream ended before completion',
+      'processing',
+      true,
+    )
+  }
   await completePendingRecovery(
     chatId,
     envelope.turnId,
@@ -366,7 +423,7 @@ async function processEnvelope(
 export function scanPendingChatRecoveries(userId: string): Promise<void> {
   if (
     scanInFlight?.userId === userId &&
-    Date.now() - scanInFlight.startedAt < RECOVERY_SCAN_MAX_AGE_MS
+    Date.now() - scanInFlight.lastProgressAt < RECOVERY_SCAN_MAX_AGE_MS
   ) {
     return scanInFlight.promise
   }
@@ -382,6 +439,13 @@ export function scanPendingChatRecoveries(userId: string): Promise<void> {
           chatId: chat.id,
           envelope,
         })),
+      )
+      pruneChatRecoveryDrafts(
+        new Set(
+          pending.map((candidate) =>
+            turnKey(candidate.chatId, candidate.envelope.turnId),
+          ),
+        ),
       )
       let nextIndex = 0
       const worker = async () => {
@@ -434,7 +498,7 @@ export function scanPendingChatRecoveries(userId: string): Promise<void> {
   scanInFlight = {
     userId,
     promise,
-    startedAt: Date.now(),
+    lastProgressAt: Date.now(),
     controller,
   }
   const clear = () => {
@@ -452,6 +516,7 @@ export function resetChatRecoveryState(): void {
   scanInFlight?.controller.abort()
   activeRecoveries.clear()
   cancelledTurns.clear()
+  clearChatRecoveryDrafts()
   scanInFlight = null
   resetChatRecoverySyncState()
 }

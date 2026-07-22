@@ -21,6 +21,7 @@ import { WelcomeScreen } from './WelcomeScreen'
 type ChatMessagesProps = {
   messages: Message[]
   pendingRecoveries?: PendingRecoveryEnvelope[]
+  recoveryDrafts?: ReadonlyArray<{ turnId: string; message: Message }>
   isDarkMode: boolean
   chatId: string
   messagesEndRef?: React.RefObject<HTMLDivElement | null>
@@ -230,6 +231,7 @@ const MessagesSeparator = memo(function MessagesSeparator({
 export function ChatMessages({
   messages,
   pendingRecoveries = [],
+  recoveryDrafts = [],
   isDarkMode,
   chatId,
   isWaitingForResponse = false,
@@ -398,6 +400,17 @@ export function ChatMessages({
   const pendingRecoveryTurnIds = new Set(
     pendingRecoveries.map((recovery) => recovery.turnId),
   )
+  const recoveryDraftsByTurnId = new Map(
+    recoveryDrafts.map((draft) => [draft.turnId, draft.message]),
+  )
+  const persistedAssistantTurnIds = new Set(
+    messages.flatMap((message) =>
+      message.role === 'assistant' && message.turnId ? [message.turnId] : [],
+    ),
+  )
+  const hasActiveRecoveryDraft = recoveryDrafts.some((draft) =>
+    pendingRecoveryTurnIds.has(draft.turnId),
+  )
   const activeTurnId =
     isWaitingForResponse || isStreamingResponse
       ? [...messages].reverse().find((message) => message.role === 'user')
@@ -407,7 +420,33 @@ export function ChatMessages({
     message.role === 'user' &&
     message.turnId !== undefined &&
     message.turnId !== activeTurnId &&
+    pendingRecoveryTurnIds.has(message.turnId) &&
+    !persistedAssistantTurnIds.has(message.turnId)
+  const recoveryDraftForMessage = (message: Message) =>
+    message.role === 'assistant' &&
+    message.turnId &&
+    message.turnId !== activeTurnId &&
     pendingRecoveryTurnIds.has(message.turnId)
+      ? recoveryDraftsByTurnId.get(message.turnId)
+      : undefined
+  const renderRecoveryAfter = (message: Message, messageIndex: number) => {
+    if (!showRecoveryAfter(message)) return null
+    const draft = message.turnId
+      ? recoveryDraftsByTurnId.get(message.turnId)
+      : undefined
+    return draft ? (
+      <ChatMessage
+        message={draft}
+        messageIndex={messageIndex + 1}
+        model={currentModel}
+        isDarkMode={isDarkMode}
+        isLastMessage={false}
+        isStreaming
+      />
+    ) : (
+      <RecoveryMessage />
+    )
+  }
 
   return (
     <ImageGalleryProvider messages={messages}>
@@ -415,7 +454,7 @@ export function ChatMessages({
         role="log"
         aria-label="Conversation"
         aria-live="polite"
-        aria-busy={isStreamingResponse}
+        aria-busy={isStreamingResponse || hasActiveRecoveryDraft}
         className="mx-auto w-full min-w-0 px-0 pb-6 pt-24 font-chat md:px-4"
       >
         {/* Archived Messages - only shown if there are more than the max prompt messages */}
@@ -424,19 +463,22 @@ export function ChatMessages({
             <div className={`opacity-70`}>
               {archivedMessages.map((message, i) => {
                 const key = getMessageKey(`${chatId}-archived`, message, i)
+                const recoveryDraft = recoveryDraftForMessage(message)
                 return (
                   <React.Fragment key={key}>
                     <ChatMessage
-                      message={message}
+                      message={recoveryDraft ?? message}
                       messageIndex={i}
                       model={currentModel}
                       isDarkMode={isDarkMode}
                       isLastMessage={false}
-                      isStreaming={false}
-                      onEditMessage={onEditMessage}
-                      onRegenerateMessage={onRegenerateMessage}
+                      isStreaming={Boolean(recoveryDraft)}
+                      onEditMessage={recoveryDraft ? undefined : onEditMessage}
+                      onRegenerateMessage={
+                        recoveryDraft ? undefined : onRegenerateMessage
+                      }
                     />
-                    {showRecoveryAfter(message) && <RecoveryMessage />}
+                    {renderRecoveryAfter(message, i)}
                   </React.Fragment>
                 )
               })}
@@ -450,21 +492,25 @@ export function ChatMessages({
         {/* Live Messages - the last messages up to max prompt limit */}
         {liveMessages.map((message, i) => {
           const key = getMessageKey(`${chatId}-live`, message, i)
+          const recoveryDraft = recoveryDraftForMessage(message)
           return (
             <React.Fragment key={key}>
               <ChatMessage
-                message={message}
+                message={recoveryDraft ?? message}
                 messageIndex={archivedMessages.length + i}
                 model={currentModel}
                 isDarkMode={isDarkMode}
                 isLastMessage={i === liveMessages.length - 1}
                 isStreaming={
-                  i === liveMessages.length - 1 && isStreamingResponse
+                  Boolean(recoveryDraft) ||
+                  (i === liveMessages.length - 1 && isStreamingResponse)
                 }
-                onEditMessage={onEditMessage}
-                onRegenerateMessage={onRegenerateMessage}
+                onEditMessage={recoveryDraft ? undefined : onEditMessage}
+                onRegenerateMessage={
+                  recoveryDraft ? undefined : onRegenerateMessage
+                }
               />
-              {showRecoveryAfter(message) && <RecoveryMessage />}
+              {renderRecoveryAfter(message, archivedMessages.length + i)}
             </React.Fragment>
           )
         })}

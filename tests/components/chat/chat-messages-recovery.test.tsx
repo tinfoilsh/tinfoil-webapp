@@ -9,8 +9,19 @@ vi.mock('@/config/models', () => ({
 vi.mock('@/components/chat/renderers/client', () => ({
   getRendererRegistry: () => ({
     getMessageRenderer: () => ({
-      render: ({ message }: { message: { role: string; turnId?: string } }) => (
-        <div data-testid={`message-${message.turnId}`}>{message.role}</div>
+      render: ({
+        message,
+        isStreaming,
+      }: {
+        message: { role: string; turnId?: string; content?: string }
+        isStreaming?: boolean
+      }) => (
+        <div
+          data-testid={`message-${message.turnId}`}
+          data-streaming={isStreaming}
+        >
+          {message.role}: {message.content}
+        </div>
       ),
     }),
   }),
@@ -88,5 +99,67 @@ describe('ChatMessages recovery indicator', () => {
     expect(
       screen.queryByRole('status', { name: /Recovering response/ }),
     ).not.toBeInTheDocument()
+  })
+
+  it('replaces the recovery widget with a progressive draft', async () => {
+    render(
+      <ChatMessages
+        {...baseProps}
+        recoveryDrafts={[
+          {
+            turnId: 'turn-1',
+            message: {
+              role: 'assistant',
+              turnId: 'turn-1',
+              content: 'Partial answer',
+              timestamp: new Date('2026-07-21T00:00:01.000Z'),
+            },
+          },
+        ]}
+      />,
+    )
+
+    const renderedMessages = await screen.findAllByTestId('message-turn-1')
+    expect(renderedMessages).toHaveLength(2)
+    expect(renderedMessages[0].nextElementSibling).toBe(renderedMessages[1])
+    expect(renderedMessages[1]).toHaveAttribute('data-streaming', 'true')
+    expect(screen.getByText('assistant: Partial answer')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('status', { name: /Recovering response/ }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('substitutes a progressive draft for a persisted partial response', async () => {
+    render(
+      <ChatMessages
+        {...baseProps}
+        messages={[
+          ...messages,
+          {
+            role: 'assistant',
+            turnId: 'turn-1',
+            content: 'Persisted partial',
+            timestamp: new Date('2026-07-21T00:00:01.000Z'),
+          },
+        ]}
+        recoveryDrafts={[
+          {
+            turnId: 'turn-1',
+            message: {
+              role: 'assistant',
+              turnId: 'turn-1',
+              content: 'New streamed partial',
+              timestamp: new Date('2026-07-21T00:00:02.000Z'),
+            },
+          },
+        ]}
+      />,
+    )
+
+    expect(await screen.findAllByTestId('message-turn-1')).toHaveLength(2)
+    expect(
+      screen.getByText('assistant: New streamed partial'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Persisted partial/)).not.toBeInTheDocument()
   })
 })
