@@ -179,6 +179,34 @@ export function useChatStorage({
                 pendingSave: prev.pendingSave,
               }
             }
+            // A turn this view still tracks as pending recovery may have been
+            // completed elsewhere (another device, or a background scan) and
+            // reached storage through a plain sync. Metadata-only merging
+            // would clear the indicator but keep the stale on-screen
+            // messages, so adopt the stored chat that carries the recovered
+            // response.
+            const recoveryResolvedElsewhere = (
+              prev.pendingRecoveries ?? []
+            ).some(
+              (envelope) =>
+                !existingChat.pendingRecoveries?.some(
+                  (candidate) => candidate.turnId === envelope.turnId,
+                ) &&
+                existingChat.messages.some(
+                  (message) =>
+                    message.role === 'assistant' &&
+                    message.turnId === envelope.turnId,
+                ),
+            )
+            if (
+              recoveryResolvedElsewhere &&
+              !streamingTracker.isStreaming(prev.id)
+            ) {
+              return {
+                ...existingChat,
+                pendingSave: prev.pendingSave,
+              }
+            }
             if (
               prev.syncedAt !== existingChat.syncedAt ||
               prev.title !== existingChat.title ||
