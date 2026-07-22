@@ -3349,7 +3349,9 @@ export function ChatInterface({
                 style={
                   {
                     paddingBottom:
-                      inputAreaHeight + CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX,
+                      inputAreaHeight > 0
+                        ? inputAreaHeight + CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX
+                        : 0,
                     '--input-area-height': `${inputAreaHeight}px`,
                   } as React.CSSProperties
                 }
