@@ -39,9 +39,18 @@ type ActiveRecovery = {
 const activeRecoveries = new Map<string, ActiveRecovery>()
 const cancelledTurns = new Set<string>()
 const RECOVERY_SCAN_CONCURRENCY = 4
+// Upper bound on how long a scan may hold the dedupe slot. Cloud sync
+// requests carry no timeout, so a scan wedged on a dead socket (e.g.
+// after laptop sleep) would otherwise absorb every future scan and
+// silently disable recovery for the rest of the session.
+const RECOVERY_SCAN_MAX_AGE_MS = 120_000
 let recoveryGeneration = 0
 let recoveryScanGeneration = 0
-let scanInFlight: { userId: string; promise: Promise<void> } | null = null
+let scanInFlight: {
+  userId: string
+  promise: Promise<void>
+  startedAt: number
+} | null = null
 
 function turnKey(chatId: string, turnId: string): string {
   return `${chatId}\u0000${turnId}`
@@ -349,7 +358,12 @@ async function processEnvelope(
 }
 
 export function scanPendingChatRecoveries(userId: string): Promise<void> {
-  if (scanInFlight?.userId === userId) return scanInFlight.promise
+  if (
+    scanInFlight?.userId === userId &&
+    Date.now() - scanInFlight.startedAt < RECOVERY_SCAN_MAX_AGE_MS
+  ) {
+    return scanInFlight.promise
+  }
   const generation = ++recoveryScanGeneration
   const promise = (async () => {
     try {
@@ -407,7 +421,7 @@ export function scanPendingChatRecoveries(userId: string): Promise<void> {
       }
     }
   })()
-  scanInFlight = { userId, promise }
+  scanInFlight = { userId, promise, startedAt: Date.now() }
   const clear = () => {
     if (scanInFlight?.promise === promise) {
       scanInFlight = null
