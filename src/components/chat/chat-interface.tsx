@@ -469,7 +469,9 @@ export function ChatInterface({
   const [artifactPreview, setArtifactPreview] =
     useState<ArtifactPreviewSidebarDetail | null>(null)
 
-  // State for web search toggle (persisted in localStorage)
+  // Global web search default (persisted in localStorage). Serves as the
+  // fallback for chats without a per-chat preference; the toolbar toggle
+  // writes a per-chat override instead of mutating this value.
   const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
     if (typeof window === 'undefined') return true
     const saved = localStorage.getItem(SETTINGS_WEB_SEARCH_ENABLED)
@@ -481,7 +483,6 @@ export function ChatInterface({
     const saved = localStorage.getItem(SETTINGS_WEB_SEARCH_AVAILABLE)
     return saved === null ? true : saved === 'true'
   })
-  const effectiveWebSearchEnabled = webSearchAvailable && webSearchEnabled
 
   // State for code execution toggle (persisted in localStorage, defaults to off)
   const [codeExecutionEnabled, setCodeExecutionEnabled] = useState(() => {
@@ -772,7 +773,8 @@ export function ChatInterface({
     thinkingEnabled,
     initialChatId,
     isLocalChatUrl,
-    webSearchEnabled: effectiveWebSearchEnabled,
+    webSearchEnabled,
+    webSearchAvailable,
     // Feature flag gates key derivation in useExecSnapshot; the toggle
     // gates request plumbing. Both layers must be on to use code-exec.
     canUseCodeExecution,
@@ -782,6 +784,11 @@ export function ChatInterface({
   })
 
   const isTemporaryMode = currentChat?.isTemporary === true
+
+  // Per-chat web search preference wins; chats that never touched the
+  // toggle fall back to the global default.
+  const effectiveWebSearchEnabled =
+    webSearchAvailable && (currentChat?.webSearchEnabled ?? webSearchEnabled)
 
   const currentChatRef = useRef<Chat | null>(null)
   useEffect(() => {
@@ -1063,16 +1070,29 @@ export function ChatInterface({
   }, [webSearchEnabled])
 
   const handleWebSearchToggle = useCallback(() => {
-    setWebSearchEnabled((prev) => {
-      const next = !prev
-      window.dispatchEvent(
-        new CustomEvent('webSearchEnabledChanged', {
-          detail: { enabled: next },
-        }),
-      )
-      return next
-    })
-  }, [])
+    if (!currentChat) {
+      setWebSearchEnabled((prev) => !prev)
+      return
+    }
+    const next = !(currentChat.webSearchEnabled ?? webSearchEnabled)
+    const updatedChat: Chat = {
+      ...currentChat,
+      webSearchEnabled: next,
+    }
+    setCurrentChat(updatedChat)
+    setChats((prev) =>
+      prev.map((c) => (c.id === currentChat.id ? updatedChat : c)),
+    )
+    const storeHistory = isSignedIn || !isCloudSyncEnabled()
+    if (!updatedChat.isTemporary && !updatedChat.isBlankChat && storeHistory) {
+      chatStorage.saveChat(updatedChat).catch((err) => {
+        logError('Failed to persist web search preference', err, {
+          component: 'ChatInterface',
+          metadata: { chatId: updatedChat.id, webSearchEnabled: next },
+        })
+      })
+    }
+  }, [currentChat, webSearchEnabled, setCurrentChat, setChats, isSignedIn])
 
   // Persist code execution toggle to localStorage
   useEffect(() => {
@@ -1786,6 +1806,7 @@ export function ChatInterface({
       isBlankChat: true,
       isTemporary: true,
       presetId: currentChat?.presetId,
+      webSearchEnabled: currentChat?.webSearchEnabled,
     }
     setCurrentChat(tempChat)
   }, [chats, createNewChat, currentChat, isSignedIn, setChats, setCurrentChat])

@@ -98,6 +98,7 @@ export function useChatState({
   initialChatId,
   isLocalChatUrl = false,
   webSearchEnabled,
+  webSearchAvailable,
   canUseCodeExecution = false,
   codeExecutionEnabled,
   piiCheckEnabled,
@@ -112,7 +113,9 @@ export function useChatState({
   thinkingEnabled?: boolean
   initialChatId?: string | null
   isLocalChatUrl?: boolean
+  // Global default; each chat's own webSearchEnabled field overrides it.
   webSearchEnabled?: boolean
+  webSearchAvailable?: boolean
   // Feature flag: when false, useExecSnapshot stays a no-op and no
   // key material is derived. Distinct from `codeExecutionEnabled`,
   // which is the user-facing toggle.
@@ -247,6 +250,7 @@ export function useChatState({
     reasoningEffort,
     thinkingEnabled,
     webSearchEnabled,
+    webSearchAvailable,
     // code-exec requires encryptionKey for snapshots
     codeExecutionEnabled:
       codeExecutionEnabled && codeExecutionEncryptionKey != null,

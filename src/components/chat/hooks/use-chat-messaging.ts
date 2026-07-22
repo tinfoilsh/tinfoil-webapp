@@ -63,7 +63,9 @@ interface UseChatMessagingProps {
   scrollToBottom?: () => void
   reasoningEffort?: ReasoningEffort
   thinkingEnabled?: boolean
+  // Global default; the chat's own webSearchEnabled field overrides it.
   webSearchEnabled?: boolean
+  webSearchAvailable?: boolean
   codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
   genUIEnabled?: boolean
@@ -115,6 +117,7 @@ export function useChatMessaging({
   reasoningEffort,
   thinkingEnabled,
   webSearchEnabled,
+  webSearchAvailable,
   codeExecutionEnabled,
   piiCheckEnabled,
   genUIEnabled,
@@ -615,8 +618,13 @@ export function useChatMessaging({
         const preferMultimodal = updatedMessages.some(
           (m) => getMessageImages(m).length > 0,
         )
+        const chatWebSearchEnabled =
+          (webSearchAvailable ?? true) &&
+          (updatedChat.webSearchEnabled ?? webSearchEnabled ?? true)
         const preferToolCalling = Boolean(
-          webSearchEnabled || codeExecutionEnabled || (genUIEnabled ?? true),
+          chatWebSearchEnabled ||
+          codeExecutionEnabled ||
+          (genUIEnabled ?? true),
         )
         const { model, autoCandidates } = resolveModelSelection(
           selectedModel,
@@ -666,7 +674,7 @@ export function useChatMessaging({
           signal: controller.signal,
           reasoningEffort,
           thinkingEnabled,
-          webSearchEnabled,
+          webSearchEnabled: chatWebSearchEnabled,
           codeExecutionEnabled,
           piiCheckEnabled,
           genUIEnabled: genUIEnabled ?? true,
@@ -909,6 +917,7 @@ export function useChatMessaging({
       isProjectMode,
       activeProject,
       webSearchEnabled,
+      webSearchAvailable,
       codeExecutionEnabled,
       piiCheckEnabled,
       genUIEnabled,

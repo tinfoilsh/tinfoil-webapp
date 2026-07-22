@@ -238,7 +238,18 @@ export function useChatStorage({
       if (blankChat) {
         // Always switch when from user action, or when we're on a different blank chat
         if (fromUserAction || currentChat.isBlankChat) {
-          setCurrentChat(blankChat)
+          // A reused blank represents a fresh chat, so drop any per-chat
+          // web search override left behind by an earlier visit.
+          const freshBlank =
+            blankChat.webSearchEnabled === undefined
+              ? blankChat
+              : { ...blankChat, webSearchEnabled: undefined }
+          if (freshBlank !== blankChat) {
+            setChats((prev) =>
+              prev.map((c) => (c.id === blankChat.id ? freshBlank : c)),
+            )
+          }
+          setCurrentChat(freshBlank)
         }
       } else {
         // Create a new blank chat if it doesn't exist (shouldn't normally happen)

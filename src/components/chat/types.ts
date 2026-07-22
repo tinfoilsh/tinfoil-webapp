@@ -189,6 +189,10 @@ export type Chat = {
   // is active and the model used for new messages. Falls back to the first
   // available model when unset or no longer available.
   model?: string
+  // Per-chat web search preference. When unset, falls back to the global
+  // default. Persisted with the chat and synced across devices (the iOS
+  // app reads/writes the same field).
+  webSearchEnabled?: boolean
   // For code execution.
   codeExecutionAccessToken?: string
 }
@@ -216,11 +220,7 @@ export type LabelType = 'verify' | 'model' | 'info' | 'reasoning' | null
 
 // Document processing types
 export type DocumentProcessingStatus =
-  | 'idle'
-  | 'uploading'
-  | 'processing'
-  | 'complete'
-  | 'error'
+  'idle' | 'uploading' | 'processing' | 'complete' | 'error'
 
 export interface DocumentMetadata {
   filename?: string

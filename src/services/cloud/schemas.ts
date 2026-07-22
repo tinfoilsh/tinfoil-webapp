@@ -37,6 +37,7 @@ export const RemoteChatPlaintextSchema = z
     createdAt: z.union([z.string(), z.number()]).optional(),
     updatedAt: z.union([z.string(), z.number()]).optional(),
     model: z.string().optional(),
+    webSearchEnabled: z.boolean().optional(),
     isLocalOnly: z.boolean().optional(),
     isBlankChat: z.boolean().optional(),
     syncVersion: z.number().optional(),
