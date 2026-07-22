@@ -50,6 +50,7 @@ let scanInFlight: {
   userId: string
   promise: Promise<void>
   startedAt: number
+  controller: AbortController
 } | null = null
 
 function turnKey(chatId: string, turnId: string): string {
@@ -250,8 +251,10 @@ async function processEnvelope(
   chatId: string,
   envelope: PendingRecoveryEnvelope,
   generation: number,
+  signal: AbortSignal,
 ): Promise<void> {
-  const isCurrent = () => generation === recoveryScanGeneration
+  const isCurrent = () =>
+    generation === recoveryScanGeneration && !signal.aborted
   if (!isCurrent()) return
   const key = turnKey(chatId, envelope.turnId)
   if (cancelledTurns.has(key)) return
@@ -283,7 +286,7 @@ async function processEnvelope(
     }
     if (!isCurrent()) return
     try {
-      await removePendingRecovery(chatId, envelope.turnId, isCurrent)
+      await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
     } finally {
       if (sessionId) {
         await deleteRecoveryQuietly(sessionId)
@@ -307,6 +310,8 @@ async function processEnvelope(
       chatId,
       envelope,
       rewrapped,
+      isCurrent,
+      signal,
     )
     if (!isCurrent()) return
     if (
@@ -326,14 +331,14 @@ async function processEnvelope(
   if (state === 'processing') return
   if (state === 'failed') {
     try {
-      await removePendingRecovery(chatId, envelope.turnId, isCurrent)
+      await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
     } finally {
       await deleteRecoveryQuietly(payload.sessionId)
     }
     return
   }
   if (state === 'missing') {
-    await removePendingRecovery(chatId, envelope.turnId, isCurrent)
+    await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
     return
   }
 
@@ -353,6 +358,7 @@ async function processEnvelope(
     },
     undefined,
     isCurrent,
+    signal,
   )
   await deleteRecoveryQuietly(payload.sessionId)
 }
@@ -365,6 +371,8 @@ export function scanPendingChatRecoveries(userId: string): Promise<void> {
     return scanInFlight.promise
   }
   const generation = ++recoveryScanGeneration
+  scanInFlight?.controller.abort()
+  const controller = new AbortController()
   const promise = (async () => {
     try {
       const chats = await indexedDBStorage.getAllChats()
@@ -388,6 +396,7 @@ export function scanPendingChatRecoveries(userId: string): Promise<void> {
               candidate.chatId,
               candidate.envelope,
               generation,
+              controller.signal,
             )
           } catch (error) {
             if (generation !== recoveryScanGeneration) return
@@ -397,6 +406,7 @@ export function scanPendingChatRecoveries(userId: string): Promise<void> {
                   candidate.chatId,
                   candidate.envelope.turnId,
                   () => generation === recoveryScanGeneration,
+                  controller.signal,
                 )
               }
               continue
@@ -421,7 +431,12 @@ export function scanPendingChatRecoveries(userId: string): Promise<void> {
       }
     }
   })()
-  scanInFlight = { userId, promise, startedAt: Date.now() }
+  scanInFlight = {
+    userId,
+    promise,
+    startedAt: Date.now(),
+    controller,
+  }
   const clear = () => {
     if (scanInFlight?.promise === promise) {
       scanInFlight = null
@@ -434,6 +449,7 @@ export function scanPendingChatRecoveries(userId: string): Promise<void> {
 export function resetChatRecoveryState(): void {
   recoveryGeneration += 1
   recoveryScanGeneration += 1
+  scanInFlight?.controller.abort()
   activeRecoveries.clear()
   cancelledTurns.clear()
   scanInFlight = null

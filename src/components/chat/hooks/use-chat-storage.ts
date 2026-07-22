@@ -1,5 +1,6 @@
 import { cloudStorage } from '@/services/cloud/cloud-storage'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
+import { sameRecoveredResponse } from '@/services/inference/chat-recovery-sync'
 import { chatEvents } from '@/services/storage/chat-events'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
@@ -167,16 +168,12 @@ export function useChatStorage({
           // Only update metadata (syncedAt, title) if the same chat exists in storage
           const existingChat = loadedChats.find((c) => c.id === prev.id)
           if (existingChat) {
-            if (pendingRecoveryIds.includes(prev.id)) {
-              if (streamingTracker.isStreaming(prev.id)) {
-                return {
-                  ...prev,
-                  pendingRecoveries: existingChat.pendingRecoveries,
-                }
-              }
+            const isStreaming = streamingTracker.isStreaming(prev.id)
+            const isRecoveryReload = pendingRecoveryIds.includes(prev.id)
+            if (isRecoveryReload && isStreaming) {
               return {
-                ...existingChat,
-                pendingSave: prev.pendingSave,
+                ...prev,
+                pendingRecoveries: existingChat.pendingRecoveries,
               }
             }
             // A turn this view still tracks as pending recovery may have been
@@ -192,15 +189,27 @@ export function useChatStorage({
                 !existingChat.pendingRecoveries?.some(
                   (candidate) => candidate.turnId === envelope.turnId,
                 ) &&
-                existingChat.messages.some(
-                  (message) =>
-                    message.role === 'assistant' &&
-                    message.turnId === envelope.turnId,
-                ),
+                existingChat.messages.some((message) => {
+                  if (
+                    message.role !== 'assistant' ||
+                    message.turnId !== envelope.turnId
+                  ) {
+                    return false
+                  }
+                  const currentResponse = prev.messages.find(
+                    (candidate) =>
+                      candidate.role === 'assistant' &&
+                      candidate.turnId === envelope.turnId,
+                  )
+                  return (
+                    currentResponse === undefined ||
+                    !sameRecoveredResponse(currentResponse, message)
+                  )
+                }),
             )
             if (
-              recoveryResolvedElsewhere &&
-              !streamingTracker.isStreaming(prev.id)
+              (isRecoveryReload || recoveryResolvedElsewhere) &&
+              !isStreaming
             ) {
               return {
                 ...existingChat,

@@ -90,6 +90,7 @@ import {
 } from '@/services/inference/chat-recovery'
 
 const SESSION_ID = '0123456789abcdef0123456789abcdef'
+const RECOVERY_SCAN_MAX_AGE_MS = 120_000
 const envelope: PendingRecoveryEnvelope = {
   v: 1,
   turnId: 'turn-1',
@@ -167,6 +168,7 @@ describe('chat recovery lifecycle', () => {
       }),
       undefined,
       expect.any(Function),
+      expect.any(AbortSignal),
     )
     expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
@@ -187,6 +189,55 @@ describe('chat recovery lifecycle', () => {
     expect(decryptRecoveryEnvelope).not.toHaveBeenCalled()
     getAllChats.mockResolvedValueOnce([])
     await expect(scanPendingChatRecoveries('new-user')).resolves.toBeUndefined()
+  })
+
+  it('aborts an aged scan before starting its replacement', async () => {
+    let now = 1_000
+    const dateNow = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState.mockResolvedValue('complete')
+    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    parseRichStreamingResponse.mockResolvedValue({
+      role: 'assistant',
+      content: 'Recovered',
+      timestamp: new Date().toISOString(),
+    })
+    let firstSignal: AbortSignal | undefined
+    completePendingRecovery.mockImplementationOnce((...args: unknown[]) => {
+      firstSignal = args[5] as AbortSignal
+      return new Promise<void>((_resolve, reject) => {
+        firstSignal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Aborted', 'AbortError')),
+          { once: true },
+        )
+      })
+    })
+
+    const oldScan = scanPendingChatRecoveries('user-1')
+    await vi.waitFor(() =>
+      expect(completePendingRecovery).toHaveBeenCalledTimes(1),
+    )
+
+    now += RECOVERY_SCAN_MAX_AGE_MS
+    const replacement = scanPendingChatRecoveries('user-1')
+
+    await expect(replacement).resolves.toBeUndefined()
+    await expect(oldScan).resolves.toBeUndefined()
+    expect(firstSignal?.aborted).toBe(true)
+    expect(completePendingRecovery).toHaveBeenCalledTimes(2)
+    expect(completePendingRecovery.mock.calls[1][5]).toBeInstanceOf(AbortSignal)
+    expect(completePendingRecovery.mock.calls[1][5].aborted).toBe(false)
+    dateNow.mockRestore()
   })
 
   it('does not invalidate a live attempt when a recovery scan starts', async () => {
@@ -313,6 +364,7 @@ describe('chat recovery lifecycle', () => {
         'chat-1',
         'turn-1',
         expect.any(Function),
+        expect.any(AbortSignal),
       ),
     )
     expect(deleteChatRecovery).not.toHaveBeenCalled()
@@ -356,6 +408,8 @@ describe('chat recovery lifecycle', () => {
       expect.objectContaining({
         keyId: 'abcdefabcdefabcdefabcdefabcdefab',
       }),
+      expect.any(Function),
+      expect.any(AbortSignal),
     )
   })
 })

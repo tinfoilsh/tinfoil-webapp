@@ -18,34 +18,60 @@ const RECOVERY_MUTATION_MAX_ATTEMPTS = 3
 
 type ChatMutation = (chat: StoredChat) => { chat: StoredChat; changed: boolean }
 
-const mutationTails = new Map<string, Promise<unknown>>()
+const mutationTails = new Map<string, Promise<void>>()
 let mutationGeneration = 0
 
-function enqueueMutation<T>(chatId: string, operation: () => Promise<T>) {
-  const generation = mutationGeneration
+function rejectWhenAborted<T>(
+  promise: Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  if (!signal) return promise
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const onAbort = () => {
+      if (settled) return
+      settled = true
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(
+      (value) => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      },
+      (error) => {
+        if (settled) return
+        settled = true
+        signal.removeEventListener('abort', onAbort)
+        reject(error)
+      },
+    )
+    if (signal.aborted) onAbort()
+  })
+}
+
+function enqueueMutation<T>(
+  chatId: string,
+  operation: () => Promise<T>,
+  signal?: AbortSignal,
+) {
   const previous = mutationTails.get(chatId) ?? Promise.resolve()
-  const current = previous
-    .catch(() => undefined)
-    .then(() => {
-      if (generation !== mutationGeneration) {
-        throw new DOMException('Aborted', 'AbortError')
-      }
-      return operation()
-    })
-  mutationTails.set(chatId, current)
-  void current.then(
-    () => {
-      if (mutationTails.get(chatId) === current) {
-        mutationTails.delete(chatId)
-      }
-    },
-    () => {
-      if (mutationTails.get(chatId) === current) {
-        mutationTails.delete(chatId)
-      }
-    },
+  const started = previous.then(operation)
+  const result = rejectWhenAborted(started, signal)
+  const settledResult = result.then(
+    () => undefined,
+    () => undefined,
   )
-  return current
+  const tail = Promise.all([previous, settledResult]).then(() => undefined)
+  mutationTails.set(chatId, tail)
+  void tail.then(() => {
+    if (mutationTails.get(chatId) === tail) {
+      mutationTails.delete(chatId)
+    }
+  })
+  return result
 }
 
 function isSyncConflict(error: unknown): boolean {
@@ -56,11 +82,12 @@ async function mutateSyncedChat(
   chatId: string,
   mutation: ChatMutation,
   isCurrent: () => boolean = () => true,
+  signal?: AbortSignal,
 ): Promise<StoredChat> {
   const generation = mutationGeneration
   const mutationIsCurrent = () =>
-    generation === mutationGeneration && isCurrent()
-  return enqueueMutation(chatId, async () => {
+    generation === mutationGeneration && isCurrent() && !signal?.aborted
+  const operation = async () => {
     for (let attempt = 0; attempt < RECOVERY_MUTATION_MAX_ATTEMPTS; attempt++) {
       if (!mutationIsCurrent()) {
         throw new DOMException('Aborted', 'AbortError')
@@ -158,7 +185,8 @@ async function mutateSyncedChat(
       }
     }
     throw new Error('Chat recovery could not resolve a sync conflict')
-  })
+  }
+  return enqueueMutation(chatId, operation, signal)
 }
 
 export function resetChatRecoverySyncState(): void {
@@ -193,31 +221,39 @@ export function replacePendingRecovery(
   chatId: string,
   current: PendingRecoveryEnvelope,
   replacement: PendingRecoveryEnvelope,
+  isCurrent?: () => boolean,
+  signal?: AbortSignal,
 ): Promise<StoredChat> {
-  return mutateSyncedChat(chatId, (chat) => {
-    const pending = chat.pendingRecoveries ?? []
-    const index = pending.findIndex(
-      (envelope) =>
-        envelope.turnId === current.turnId &&
-        envelope.keyId === current.keyId &&
-        envelope.ciphertext === current.ciphertext,
-    )
-    if (index < 0) {
-      return { chat, changed: false }
-    }
-    const next = [...pending]
-    next[index] = replacement
-    return {
-      chat: { ...chat, pendingRecoveries: next },
-      changed: true,
-    }
-  })
+  return mutateSyncedChat(
+    chatId,
+    (chat) => {
+      const pending = chat.pendingRecoveries ?? []
+      const index = pending.findIndex(
+        (envelope) =>
+          envelope.turnId === current.turnId &&
+          envelope.keyId === current.keyId &&
+          envelope.ciphertext === current.ciphertext,
+      )
+      if (index < 0) {
+        return { chat, changed: false }
+      }
+      const next = [...pending]
+      next[index] = replacement
+      return {
+        chat: { ...chat, pendingRecoveries: next },
+        changed: true,
+      }
+    },
+    isCurrent,
+    signal,
+  )
 }
 
 export function removePendingRecovery(
   chatId: string,
   turnId: string,
   isCurrent?: () => boolean,
+  signal?: AbortSignal,
 ): Promise<StoredChat> {
   return mutateSyncedChat(
     chatId,
@@ -236,10 +272,14 @@ export function removePendingRecovery(
       }
     },
     isCurrent,
+    signal,
   )
 }
 
-function sameRecoveredResponse(existing: Message, recovered: Message): boolean {
+export function sameRecoveredResponse(
+  existing: Message,
+  recovered: Message,
+): boolean {
   const snapshot = (message: Message) =>
     JSON.stringify({
       content: message.content,
@@ -252,6 +292,7 @@ function sameRecoveredResponse(existing: Message, recovered: Message): boolean {
       timeline: message.timeline ?? null,
       toolCalls: message.toolCalls ?? null,
       codeExecCalls: message.codeExecCalls ?? null,
+      searchReasoning: message.searchReasoning ?? null,
     })
   return snapshot(existing) === snapshot(recovered)
 }
@@ -264,6 +305,7 @@ export function completePendingRecovery(
     Pick<StoredChat, 'title' | 'titleState' | 'model' | 'projectId'>
   > = {},
   isCurrent?: () => boolean,
+  signal?: AbortSignal,
 ): Promise<StoredChat> {
   return mutateSyncedChat(
     chatId,
@@ -331,5 +373,6 @@ export function completePendingRecovery(
       }
     },
     isCurrent,
+    signal,
   )
 }

@@ -8,36 +8,41 @@ let localChat: StoredChat | undefined
 let uploadAttempts = 0
 let conflictOnce = false
 let applyFailures = 0
+const downloadChat = vi.fn(async () => structuredClone(remoteChat))
+const uploadChat = vi.fn(async (chat: StoredChat) => {
+  uploadAttempts += 1
+  if (conflictOnce) {
+    conflictOnce = false
+    throw new SyncEnclaveError('conflict', 409, 'SYNC_CONFLICT')
+  }
+  remoteChat = {
+    ...structuredClone(chat),
+    syncVersion: uploadAttempts + 1,
+  }
+  return remoteChat
+})
+const getChat = vi.fn(async () => structuredClone(localChat))
+const applyRemoteChatIfFresh = vi.fn(async ({ chat }: { chat: StoredChat }) => {
+  if (applyFailures > 0) {
+    applyFailures -= 1
+    return { applied: false }
+  }
+  localChat = structuredClone(chat)
+  return { applied: true }
+})
 
 vi.mock('@/services/cloud/cloud-storage', () => ({
   cloudStorage: {
-    downloadChat: vi.fn(async () => structuredClone(remoteChat)),
-    uploadChat: vi.fn(async (chat: StoredChat) => {
-      uploadAttempts += 1
-      if (conflictOnce) {
-        conflictOnce = false
-        throw new SyncEnclaveError('conflict', 409, 'SYNC_CONFLICT')
-      }
-      remoteChat = {
-        ...structuredClone(chat),
-        syncVersion: uploadAttempts + 1,
-      }
-      return remoteChat
-    }),
+    downloadChat: (chatId: string) => downloadChat(chatId),
+    uploadChat: (chat: StoredChat) => uploadChat(chat),
   },
 }))
 
 vi.mock('@/services/storage/indexed-db', () => ({
   indexedDBStorage: {
-    getChat: vi.fn(async () => structuredClone(localChat)),
-    applyRemoteChatIfFresh: vi.fn(async ({ chat }: { chat: StoredChat }) => {
-      if (applyFailures > 0) {
-        applyFailures -= 1
-        return { applied: false }
-      }
-      localChat = structuredClone(chat)
-      return { applied: true }
-    }),
+    getChat: (chatId: string) => getChat(chatId),
+    applyRemoteChatIfFresh: (args: { chat: StoredChat }) =>
+      applyRemoteChatIfFresh(args),
   },
 }))
 
@@ -57,6 +62,7 @@ import {
   addPendingRecovery,
   completePendingRecovery,
   replacePendingRecovery,
+  resetChatRecoverySyncState,
 } from '@/services/inference/chat-recovery-sync'
 
 function message(
@@ -82,9 +88,14 @@ function envelope(turnId: string): PendingRecoveryEnvelope {
 
 describe('chat recovery sync mutations', () => {
   beforeEach(() => {
+    resetChatRecoverySyncState()
     uploadAttempts = 0
     conflictOnce = false
     applyFailures = 0
+    downloadChat.mockClear()
+    uploadChat.mockClear()
+    getChat.mockClear()
+    applyRemoteChatIfFresh.mockClear()
     remoteChat = {
       id: 'chat-id',
       title: 'Chat',
@@ -178,6 +189,25 @@ describe('chat recovery sync mutations', () => {
     expect(remoteChat.pendingRecoveries).toBeUndefined()
   })
 
+  it('updates recovered search reasoning when response content is unchanged', async () => {
+    remoteChat.messages.push({
+      ...message('assistant', 'Recovered answer', 'turn-1'),
+      searchReasoning: 'Partial search context',
+    })
+    remoteChat.pendingRecoveries = [envelope('turn-1')]
+    localChat = structuredClone(remoteChat)
+
+    await completePendingRecovery(remoteChat.id, 'turn-1', {
+      ...message('assistant', 'Recovered answer', 'turn-1'),
+      searchReasoning: 'Complete search context',
+    })
+
+    expect(remoteChat.messages[1].searchReasoning).toBe(
+      'Complete search context',
+    )
+    expect(remoteChat.pendingRecoveries).toBeUndefined()
+  })
+
   it('appends the recovered response when the user turn has not synced', async () => {
     remoteChat.messages = [message('user', 'Question', 'other-turn')]
     remoteChat.pendingRecoveries = [envelope('turn-1')]
@@ -228,5 +258,115 @@ describe('chat recovery sync mutations', () => {
 
     expect(remoteChat.pendingRecoveries).toBeUndefined()
     expect(uploadAttempts).toBe(0)
+  })
+
+  it('releases queued mutations when a stalled mutation is aborted', async () => {
+    remoteChat.pendingRecoveries = [envelope('turn-1')]
+    localChat = structuredClone(remoteChat)
+    const controller = new AbortController()
+    let finishStalledUpload: ((chat: StoredChat) => void) | undefined
+    let markStalledUploadSettled: (() => void) | undefined
+    const stalledUploadSettled = new Promise<void>((resolve) => {
+      markStalledUploadSettled = resolve
+    })
+    uploadChat.mockImplementationOnce((chat: StoredChat) =>
+      new Promise<StoredChat>((resolve) => {
+        finishStalledUpload = resolve
+      }).then((uploaded) => {
+        uploadAttempts += 1
+        markStalledUploadSettled?.()
+        return uploaded
+      }),
+    )
+
+    const stalled = completePendingRecovery(
+      remoteChat.id,
+      'turn-1',
+      message('assistant', 'Stale answer', 'turn-1'),
+      undefined,
+      undefined,
+      controller.signal,
+    )
+    await vi.waitFor(() => expect(uploadChat).toHaveBeenCalledTimes(1))
+
+    const replacement = completePendingRecovery(
+      remoteChat.id,
+      'turn-1',
+      message('assistant', 'Recovered answer', 'turn-1'),
+    )
+    expect(uploadChat).toHaveBeenCalledTimes(1)
+
+    controller.abort()
+    await expect(stalled).rejects.toMatchObject({ name: 'AbortError' })
+    await replacement
+
+    expect(uploadChat).toHaveBeenCalledTimes(2)
+    expect(applyRemoteChatIfFresh).toHaveBeenCalledTimes(1)
+    expect(localChat?.messages[1].content).toBe('Recovered answer')
+
+    const staleUploadResult = {
+      ...structuredClone(remoteChat),
+      messages: [
+        remoteChat.messages[0],
+        message('assistant', 'Stale answer', 'turn-1'),
+      ],
+      syncVersion: 2,
+    }
+    finishStalledUpload?.(staleUploadResult)
+    await stalledUploadSettled
+    await Promise.resolve()
+
+    expect(applyRemoteChatIfFresh).toHaveBeenCalledTimes(1)
+    expect(localChat?.messages[1].content).toBe('Recovered answer')
+  })
+
+  it('does not execute an aborted mutation that is waiting in the queue', async () => {
+    remoteChat.pendingRecoveries = [envelope('turn-1')]
+    localChat = structuredClone(remoteChat)
+    let finishFirstUpload: (() => void) | undefined
+    uploadChat.mockImplementationOnce((chat: StoredChat) => {
+      const uploadedChat = structuredClone(chat)
+      return new Promise<StoredChat>((resolve) => {
+        finishFirstUpload = () => {
+          uploadAttempts += 1
+          remoteChat = {
+            ...uploadedChat,
+            syncVersion: 2,
+          }
+          resolve(remoteChat)
+        }
+      })
+    })
+
+    const first = completePendingRecovery(
+      remoteChat.id,
+      'turn-1',
+      message('assistant', 'Recovered answer', 'turn-1'),
+    )
+    await vi.waitFor(() => expect(uploadChat).toHaveBeenCalledTimes(1))
+
+    const controller = new AbortController()
+    const aborted = replacePendingRecovery(
+      remoteChat.id,
+      envelope('turn-1'),
+      { ...envelope('turn-1'), keyId: 'replacement-key' },
+      undefined,
+      controller.signal,
+    )
+    const following = addPendingRecovery(remoteChat.id, envelope('turn-2'))
+
+    controller.abort()
+    await expect(aborted).rejects.toMatchObject({ name: 'AbortError' })
+    expect(downloadChat).toHaveBeenCalledTimes(1)
+
+    finishFirstUpload?.()
+    await first
+    const result = await following
+
+    expect(uploadChat).toHaveBeenCalledTimes(2)
+    expect(downloadChat).toHaveBeenCalledTimes(2)
+    expect(result.pendingRecoveries?.map((pending) => pending.turnId)).toEqual([
+      'turn-2',
+    ])
   })
 })

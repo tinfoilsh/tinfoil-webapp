@@ -426,4 +426,130 @@ describe('useChatStorage.reloadChats', () => {
     expect(result.current.currentChat.messages).toHaveLength(2)
     expect(result.current.currentChat.pendingRecoveries).toBeUndefined()
   })
+
+  it('adopts a recovered response delivered by a plain sync', async () => {
+    const recovery = createMockRecovery()
+    const userMessage = {
+      role: 'user' as const,
+      content: 'Question',
+      turnId: 'turn-1',
+      timestamp: new Date(),
+    }
+    const current = {
+      id: 'chat-1',
+      title: 'Recovery chat',
+      messages: [
+        userMessage,
+        {
+          role: 'assistant' as const,
+          content: 'Partial',
+          turnId: 'turn-1',
+          timestamp: new Date(),
+        },
+      ],
+      pendingRecoveries: [recovery],
+      createdAt: new Date(),
+      isBlankChat: false,
+      isLocalOnly: false,
+    }
+    mockLoadChats.mockResolvedValue([
+      {
+        ...current,
+        messages: [
+          userMessage,
+          {
+            role: 'assistant',
+            content: 'Recovered answer',
+            turnId: 'turn-1',
+            timestamp: new Date(),
+          },
+        ],
+        pendingRecoveries: undefined,
+      },
+    ])
+    const { result } = renderHook(() =>
+      useChatStorage({
+        storeHistory: true,
+      }),
+    )
+    await waitFor(() => {
+      expect(result.current.isInitialLoad).toBe(false)
+    })
+    await act(async () => {
+      result.current.setCurrentChat(current as any)
+    })
+
+    act(() => {
+      chatEvents.emit({ reason: 'sync', ids: ['chat-1'] })
+    })
+
+    await waitFor(() => {
+      expect(result.current.currentChat.messages[1].content).toBe(
+        'Recovered answer',
+      )
+    })
+    expect(result.current.currentChat.pendingRecoveries).toBeUndefined()
+  })
+
+  it('keeps a partial response when sync only removes its recovery', async () => {
+    const recovery = createMockRecovery()
+    const currentTimestamp = new Date('2026-07-21T00:00:00.000Z')
+    const current = {
+      id: 'chat-1',
+      title: 'Recovery chat',
+      messages: [
+        {
+          role: 'user' as const,
+          content: 'Question',
+          turnId: 'turn-1',
+          timestamp: new Date(),
+        },
+        {
+          role: 'assistant' as const,
+          content: 'Partial',
+          turnId: 'turn-1',
+          timestamp: currentTimestamp,
+        },
+      ],
+      pendingRecoveries: [recovery],
+      createdAt: new Date(),
+      isBlankChat: false,
+      isLocalOnly: false,
+    }
+    mockLoadChats.mockResolvedValue([
+      {
+        ...current,
+        messages: [
+          current.messages[0],
+          {
+            ...current.messages[1],
+            timestamp: new Date('2026-07-21T00:01:00.000Z'),
+          },
+        ],
+        pendingRecoveries: undefined,
+      },
+    ])
+    const { result } = renderHook(() =>
+      useChatStorage({
+        storeHistory: true,
+      }),
+    )
+    await waitFor(() => {
+      expect(result.current.isInitialLoad).toBe(false)
+    })
+    await act(async () => {
+      result.current.setCurrentChat(current as any)
+    })
+
+    act(() => {
+      chatEvents.emit({ reason: 'sync', ids: ['chat-1'] })
+    })
+
+    await waitFor(() => {
+      expect(result.current.currentChat.pendingRecoveries).toBeUndefined()
+    })
+    expect(result.current.currentChat.messages[1].timestamp).toBe(
+      currentTimestamp,
+    )
+  })
 })
