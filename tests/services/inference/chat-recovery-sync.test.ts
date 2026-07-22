@@ -157,6 +157,45 @@ describe('chat recovery sync mutations', () => {
     expect(localChat?.pendingRecoveries).toBeUndefined()
   })
 
+  it('replaces an interrupted partial message with the recovered response', async () => {
+    remoteChat.messages.push({
+      ...message('assistant', '', 'turn-1'),
+      thoughts: 'Drafting an outline',
+      isThinking: true,
+    })
+    remoteChat.pendingRecoveries = [envelope('turn-1')]
+    localChat = structuredClone(remoteChat)
+
+    await completePendingRecovery(
+      remoteChat.id,
+      'turn-1',
+      message('assistant', 'Recovered answer', 'turn-1'),
+    )
+
+    expect(remoteChat.messages).toHaveLength(2)
+    expect(remoteChat.messages[1].content).toBe('Recovered answer')
+    expect(remoteChat.messages[1].isThinking).toBeUndefined()
+    expect(remoteChat.pendingRecoveries).toBeUndefined()
+  })
+
+  it('appends the recovered response when the user turn has not synced', async () => {
+    remoteChat.messages = [message('user', 'Question', 'other-turn')]
+    remoteChat.pendingRecoveries = [envelope('turn-1')]
+    localChat = structuredClone(remoteChat)
+
+    await completePendingRecovery(
+      remoteChat.id,
+      'turn-1',
+      message('assistant', 'Recovered answer', 'turn-1'),
+    )
+
+    expect(remoteChat.messages.map((item) => item.content)).toEqual([
+      'Question',
+      'Recovered answer',
+    ])
+    expect(remoteChat.pendingRecoveries).toBeUndefined()
+  })
+
   it('does not restore a response after another device cancels the turn', async () => {
     const assistant = message('assistant', 'Late recovered answer', 'turn-1')
 

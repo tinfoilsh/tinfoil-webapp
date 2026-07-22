@@ -239,6 +239,23 @@ export function removePendingRecovery(
   )
 }
 
+function sameRecoveredResponse(existing: Message, recovered: Message): boolean {
+  const snapshot = (message: Message) =>
+    JSON.stringify({
+      content: message.content,
+      thoughts: message.thoughts ?? null,
+      isThinking: message.isThinking ?? false,
+      thinkingDuration: message.thinkingDuration ?? null,
+      webSearch: message.webSearch ?? null,
+      urlFetches: message.urlFetches ?? null,
+      annotations: message.annotations ?? null,
+      timeline: message.timeline ?? null,
+      toolCalls: message.toolCalls ?? null,
+      codeExecCalls: message.codeExecCalls ?? null,
+    })
+  return snapshot(existing) === snapshot(recovered)
+}
+
 export function completePendingRecovery(
   chatId: string,
   turnId: string,
@@ -258,25 +275,44 @@ export function completePendingRecovery(
       const pending = currentPending.filter(
         (envelope) => envelope.turnId !== turnId,
       )
-      const hasAssistant = chat.messages.some(
+      const assistantIndex = chat.messages.findIndex(
         (message) => message.role === 'assistant' && message.turnId === turnId,
       )
+      const hasAssistant = assistantIndex >= 0
       if (!hasPending && !hasAssistant) {
         return { chat, changed: false }
       }
+      const recoveredMessage: Message = {
+        ...assistantMessage,
+        role: 'assistant',
+        turnId,
+      }
       let messages = chat.messages
+      let messagesChanged = false
       if (!hasAssistant) {
+        // Insert after the originating user turn, or append when the user
+        // message has not reached this copy of the chat yet. Throwing here
+        // would leave the envelope stuck in a permanent retry loop.
         const userIndex = chat.messages.findIndex(
           (message) => message.role === 'user' && message.turnId === turnId,
         )
-        if (userIndex < 0) {
-          throw new Error('Chat recovery could not find the originating turn')
-        }
+        const insertAt = userIndex >= 0 ? userIndex + 1 : chat.messages.length
         messages = [
-          ...chat.messages.slice(0, userIndex + 1),
-          { ...assistantMessage, role: 'assistant', turnId },
-          ...chat.messages.slice(userIndex + 1),
+          ...chat.messages.slice(0, insertAt),
+          recoveredMessage,
+          ...chat.messages.slice(insertAt),
         ]
+        messagesChanged = true
+      } else if (
+        hasPending &&
+        !sameRecoveredResponse(chat.messages[assistantIndex], recoveredMessage)
+      ) {
+        // An assistant message with this turnId may be a partial persisted
+        // before the stream was interrupted; the recovered response is the
+        // complete one, so it wins.
+        messages = [...chat.messages]
+        messages[assistantIndex] = recoveredMessage
+        messagesChanged = true
       }
       const patchChanged = Object.entries(chatPatch).some(
         ([key, value]) => chat[key as keyof StoredChat] !== value,
@@ -289,7 +325,7 @@ export function completePendingRecovery(
           pendingRecoveries: pending.length > 0 ? pending : undefined,
         },
         changed:
-          !hasAssistant ||
+          messagesChanged ||
           pending.length !== currentPending.length ||
           patchChanged,
       }
