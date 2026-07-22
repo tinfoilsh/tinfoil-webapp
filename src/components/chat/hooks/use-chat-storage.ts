@@ -245,8 +245,12 @@ export function useChatStorage({
               ? blankChat
               : { ...blankChat, webSearchEnabled: undefined }
           if (freshBlank !== blankChat) {
+            // Blank chats share an empty id, so match by mode to avoid
+            // touching the other mode's blank entry.
             setChats((prev) =>
-              prev.map((c) => (c.id === blankChat.id ? freshBlank : c)),
+              prev.map((c) =>
+                c.isBlankChat && c.isLocalOnly === isLocalOnly ? freshBlank : c,
+              ),
             )
           }
           setCurrentChat(freshBlank)

@@ -21,11 +21,16 @@ interface CreateUpdateChatWithHistoryCheckParams {
   // a streamed update should also be reflected into `currentChat`. With
   // concurrent streams this is independent of which chat is streaming.
   viewedChatIdRef: React.MutableRefObject<string>
+  // Live mirror of the chats state. Streamed updates spread a send-time
+  // chat snapshot, so per-chat preferences toggled mid-stream must be
+  // re-read from here or they would be reverted by the next flush.
+  chatsRef: React.MutableRefObject<Chat[]>
 }
 
 export function createUpdateChatWithHistoryCheck({
   storeHistory,
   viewedChatIdRef,
+  chatsRef,
 }: CreateUpdateChatWithHistoryCheckParams) {
   return function updateChatWithHistoryCheck(
     setChats: React.Dispatch<React.SetStateAction<Chat[]>>,
@@ -41,11 +46,17 @@ export function createUpdateChatWithHistoryCheck({
     // Only update messages and set isBlankChat based on message count
     // Keep all other properties from chatSnapshot (including title, isLocalOnly, etc.)
     // IMPORTANT: Preserve title from current state to avoid race with early title generation
+    const liveChat = chatsRef.current.find((c) => c.id === chatId)
     const updatedChat: Chat = {
       ...chatSnapshot,
       id: chatId,
       messages: newMessages,
       isBlankChat: newMessages.length === 0,
+      // Same rationale as title: the web search toggle can flip while this
+      // chat is streaming, so the live value wins over the snapshot.
+      webSearchEnabled: liveChat
+        ? liveChat.webSearchEnabled
+        : chatSnapshot.webSearchEnabled,
     }
 
     setChats((prevChats) => {

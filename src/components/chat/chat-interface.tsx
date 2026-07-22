@@ -1080,8 +1080,15 @@ export function ChatInterface({
       webSearchEnabled: next,
     }
     setCurrentChat(updatedChat)
+    // Blank chats share an empty id (one per storage mode), so also match
+    // the mode to avoid rewriting the other blank entry.
     setChats((prev) =>
-      prev.map((c) => (c.id === currentChat.id ? updatedChat : c)),
+      prev.map((c) =>
+        c.id === currentChat.id &&
+        (!currentChat.isBlankChat || c.isLocalOnly === currentChat.isLocalOnly)
+          ? updatedChat
+          : c,
+      ),
     )
     const storeHistory = isSignedIn || !isCloudSyncEnabled()
     if (!updatedChat.isTemporary && !updatedChat.isBlankChat && storeHistory) {

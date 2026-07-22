@@ -165,6 +165,11 @@ export function useChatMessaging({
   const viewedChatIdRef = useRef<string>(currentChat?.id || '')
   viewedChatIdRef.current = currentChat?.id || ''
 
+  // Live mirror of the chats state so the persistence helper can re-read
+  // per-chat preferences that changed after a stream's snapshot was taken.
+  const chatsRef = useRef<Chat[]>(chats)
+  chatsRef.current = chats
+
   const dismissStreamError = useCallback(() => {
     patchStatus(viewedChatIdRef.current, { streamError: null })
   }, [patchStatus])
@@ -178,6 +183,7 @@ export function useChatMessaging({
       createUpdateChatWithHistoryCheck({
         storeHistory,
         viewedChatIdRef,
+        chatsRef,
       }),
     [storeHistory],
   )
