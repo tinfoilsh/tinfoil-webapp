@@ -4418,7 +4418,14 @@ ${encryptionKey.replace('key_', '')}
                               </div>
                             </div>
                             <div className="text-sm text-content-muted">
-                              {billingLoading ? '...' : '→'}
+                              {billingLoading ? (
+                                '...'
+                              ) : (
+                                <ArrowTopRightOnSquareIcon
+                                  className="h-4 w-4"
+                                  aria-hidden="true"
+                                />
+                              )}
                             </div>
                           </button>
                         )}
