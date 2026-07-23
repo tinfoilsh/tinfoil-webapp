@@ -2,6 +2,7 @@
 
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
+import { getClerkErrorMessage } from '@/utils/clerk-errors'
 import { logError } from '@/utils/error-handling'
 import { sanitizeRelativeRedirect } from '@/utils/redirect-url'
 import { useSignIn, useSignUp } from '@clerk/nextjs'
@@ -36,36 +37,6 @@ type SignInFinalizeParams = NonNullable<
 type FinalizeNavigateParams = Parameters<
   NonNullable<SignInFinalizeParams['navigate']>
 >[0]
-
-function clerkErrorMessage(error: unknown, fallback: string): string {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'errors' in error &&
-    Array.isArray(error.errors)
-  ) {
-    const firstError = error.errors[0]
-    if (
-      typeof firstError === 'object' &&
-      firstError !== null &&
-      'longMessage' in firstError &&
-      typeof firstError.longMessage === 'string'
-    ) {
-      return firstError.longMessage
-    }
-  }
-
-  if (typeof error === 'object' && error !== null) {
-    if ('longMessage' in error && typeof error.longMessage === 'string') {
-      return error.longMessage
-    }
-    if ('message' in error && typeof error.message === 'string') {
-      return error.message
-    }
-  }
-
-  return fallback
-}
 
 function clerkErrorCode(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null) return undefined
@@ -155,7 +126,7 @@ export default function SignInPage() {
     ) {
       const { error } = await signUp.update({ legalAccepted: true })
       if (error) {
-        setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+        setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
         return
       }
       if (signUp.status === 'complete') {
@@ -170,7 +141,7 @@ export default function SignInPage() {
   const transferToSignUp = async () => {
     const { error } = await signUp.create({ transfer: true })
     if (error) {
-      setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+      setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
       return
     }
 
@@ -220,7 +191,7 @@ export default function SignInPage() {
 
       const { error } = await signIn.mfa.sendEmailCode()
       if (error) {
-        setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+        setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
         return
       }
 
@@ -276,7 +247,7 @@ export default function SignInPage() {
           redirectUrl: postAuthRedirectUrl,
         })
         if (error) {
-          setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+          setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
         }
       },
     )
@@ -294,13 +265,13 @@ export default function SignInPage() {
           signUpIfMissing: true,
         })
         if (createError) {
-          setErrorMessage(clerkErrorMessage(createError, AUTH_ERROR_MESSAGE))
+          setErrorMessage(getClerkErrorMessage(createError, AUTH_ERROR_MESSAGE))
           return
         }
 
         const { error: sendError } = await signIn.emailCode.sendCode()
         if (sendError) {
-          setErrorMessage(clerkErrorMessage(sendError, AUTH_ERROR_MESSAGE))
+          setErrorMessage(getClerkErrorMessage(sendError, AUTH_ERROR_MESSAGE))
           return
         }
 
@@ -334,7 +305,7 @@ export default function SignInPage() {
             return
           }
 
-          setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+          setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
           return
         }
 
@@ -354,7 +325,7 @@ export default function SignInPage() {
             ? await signIn.emailCode.sendCode()
             : await signIn.mfa.sendEmailCode()
         if (error) {
-          setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+          setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
         }
       },
     )
@@ -368,7 +339,7 @@ export default function SignInPage() {
       async () => {
         const { error } = await signIn.mfa.sendEmailCode()
         if (error) {
-          setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+          setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
           return
         }
         setCode('')
@@ -396,7 +367,7 @@ export default function SignInPage() {
             : undefined,
         })
         if (error) {
-          setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+          setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
           return
         }
 
@@ -454,7 +425,7 @@ export default function SignInPage() {
         async () => {
           const { error } = await signIn.emailCode.sendCode()
           if (error) {
-            setErrorMessage(clerkErrorMessage(error, AUTH_ERROR_MESSAGE))
+            setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
             return
           }
           setVerificationKind('primary')

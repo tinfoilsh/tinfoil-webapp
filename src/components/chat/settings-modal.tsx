@@ -97,6 +97,7 @@ import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
+import { MfaSettingsCard } from './mfa-settings-card'
 import {
   EMPTY_PRESET_EDITOR_STATE,
   PresetEditor,
@@ -4436,6 +4437,8 @@ ${encryptionKey.replace('key_', '')}
                           </p>
                         )}
                       </div>
+
+                      <MfaSettingsCard isDarkMode={isDarkMode} />
 
                       {/* Account Management */}
                       <div className="space-y-3">
