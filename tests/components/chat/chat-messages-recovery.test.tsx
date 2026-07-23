@@ -13,15 +13,18 @@ vi.mock('@/components/chat/renderers/client', () => ({
         message,
         isStreaming,
         isLastMessage,
+        hideActions,
       }: {
         message: { role: string; turnId?: string; content?: string }
         isStreaming?: boolean
         isLastMessage?: boolean
+        hideActions?: boolean
       }) => (
         <div
           data-testid={`message-${message.turnId}`}
           data-streaming={isStreaming}
           data-last={isLastMessage}
+          data-actions-hidden={hideActions}
         >
           {message.role}: {message.content}
         </div>
@@ -86,9 +89,10 @@ describe('ChatMessages recovery indicator', () => {
     })
 
     expect(userMessage.nextElementSibling).toBe(indicator)
+    expect(screen.getByText('Recovering stream...')).toBeInTheDocument()
     expect(
-      screen.getByText('Catching up to the live response'),
-    ).toBeInTheDocument()
+      screen.queryByText('Catching up to the live response'),
+    ).not.toBeInTheDocument()
     expect(indicator.firstElementChild).not.toHaveClass('border')
     expect(indicator.firstElementChild).not.toHaveClass('bg-surface-chat')
   })
@@ -182,6 +186,7 @@ describe('ChatMessages recovery indicator', () => {
 
     const assistant = (await screen.findAllByTestId('message-turn-1'))[1]
     expect(assistant).toHaveAttribute('data-streaming', 'false')
+    expect(assistant).toHaveAttribute('data-actions-hidden', 'true')
     expect(assistant.nextElementSibling).toBe(
       screen.getByRole('status', { name: /Recovering stream/ }),
     )

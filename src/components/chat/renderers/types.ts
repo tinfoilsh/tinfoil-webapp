@@ -25,6 +25,7 @@ export interface MessageRenderProps {
   isDarkMode: boolean
   isLastMessage?: boolean
   isStreaming?: boolean
+  hideActions?: boolean
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
 }

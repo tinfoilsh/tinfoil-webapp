@@ -31,6 +31,7 @@ const DefaultMessageComponent = ({
   isDarkMode,
   isLastMessage,
   isStreaming,
+  hideActions,
   onEditMessage,
   onRegenerateMessage,
 }: MessageRenderProps) => {
@@ -211,6 +212,11 @@ const DefaultMessageComponent = ({
       }),
     }
   }, [message.timestamp])
+  const showAssistantActions =
+    !isUser &&
+    message.content &&
+    !hideActions &&
+    !(isStreaming && isLastMessage)
 
   return (
     <div
@@ -675,7 +681,7 @@ const DefaultMessageComponent = ({
         )}
 
       {/* Actions for assistant messages - hidden while streaming the last response */}
-      {!isUser && message.content && !(isStreaming && isLastMessage) && (
+      {showAssistantActions && (
         <div
           className={`mt-4 flex items-center justify-between gap-3 px-4 transition-opacity duration-500 ease-in-out ${
             showActions ? 'opacity-100' : 'pointer-events-none opacity-0'

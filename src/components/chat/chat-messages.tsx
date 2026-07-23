@@ -78,6 +78,7 @@ const ChatMessage = memo(
     isDarkMode,
     isLastMessage = false,
     isStreaming = false,
+    hideActions = false,
     onEditMessage,
     onRegenerateMessage,
   }: {
@@ -87,6 +88,7 @@ const ChatMessage = memo(
     isDarkMode: boolean
     isLastMessage?: boolean
     isStreaming?: boolean
+    hideActions?: boolean
     onEditMessage?: (messageIndex: number, newContent: string) => void
     onRegenerateMessage?: (messageIndex: number) => void
   }) {
@@ -102,6 +104,7 @@ const ChatMessage = memo(
         isDarkMode={isDarkMode}
         isLastMessage={isLastMessage}
         isStreaming={isStreaming}
+        hideActions={hideActions}
         onEditMessage={onEditMessage}
         onRegenerateMessage={onRegenerateMessage}
       />
@@ -118,6 +121,7 @@ const ChatMessage = memo(
       prevProps.isDarkMode === nextProps.isDarkMode &&
       prevProps.isLastMessage === nextProps.isLastMessage &&
       prevProps.isStreaming === nextProps.isStreaming &&
+      prevProps.hideActions === nextProps.hideActions &&
       prevProps.onEditMessage === nextProps.onEditMessage &&
       prevProps.onRegenerateMessage === nextProps.onRegenerateMessage
     )
@@ -175,30 +179,20 @@ const LoadingMessage = memo(function LoadingMessage({
 
 const RecoveryMessage = memo(function RecoveryMessage() {
   const titleId = useId()
-  const detailId = useId()
 
   return (
     <div
       className="no-scroll-anchoring mx-auto mb-6 flex w-full max-w-3xl px-4 pt-2"
       role="status"
       aria-labelledby={titleId}
-      aria-describedby={detailId}
     >
       <div className="flex items-start gap-2.5 py-1.5">
         <span aria-hidden="true" className="flex h-5 items-center">
           <StreamingTracerDot tone="secondary" />
         </span>
-        <div className="flex flex-col gap-1">
-          <span
-            id={titleId}
-            className="text-sm font-medium text-content-primary"
-          >
-            Recovering stream
-          </span>
-          <span id={detailId} className="text-sm text-content-secondary">
-            Catching up to the live response
-          </span>
-        </div>
+        <span id={titleId} className="text-sm font-medium text-content-primary">
+          Recovering stream...
+        </span>
       </div>
     </div>
   )
@@ -468,6 +462,7 @@ export function ChatMessages({
             isDarkMode={isDarkMode}
             isLastMessage
             isStreaming={phase !== 'replaying'}
+            hideActions={phase === 'replaying'}
           />
         )}
         {(!draft || phase === 'replaying') && <RecoveryMessage />}
@@ -505,6 +500,7 @@ export function ChatMessages({
                       isStreaming={
                         Boolean(recoveryDraft) && recoveryPhase !== 'replaying'
                       }
+                      hideActions={recoveryPhase === 'replaying'}
                       onEditMessage={recoveryDraft ? undefined : onEditMessage}
                       onRegenerateMessage={
                         recoveryDraft ? undefined : onRegenerateMessage
@@ -545,6 +541,7 @@ export function ChatMessages({
                     isStreamingResponse &&
                     recoveryPhase !== 'replaying')
                 }
+                hideActions={recoveryPhase === 'replaying'}
                 onEditMessage={recoveryDraft ? undefined : onEditMessage}
                 onRegenerateMessage={
                   recoveryDraft ? undefined : onRegenerateMessage
