@@ -143,6 +143,39 @@ describe('chat recovery client', () => {
     )
   })
 
+  it('marks an exact replay boundary without waiting for another byte', async () => {
+    const encryptedBytes = new TextEncoder().encode('replay')
+    const replayComplete = vi.fn()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encryptedBytes)
+          },
+        }),
+      ),
+    )
+    decryptResponseWithToken.mockImplementation(async (response: Response) => {
+      const reader = response.body?.getReader()
+      const replay = await reader?.read()
+      expect(new TextDecoder().decode(replay?.value)).toBe('replay')
+      await vi.waitFor(() => expect(replayComplete).toHaveBeenCalledOnce())
+      await reader?.cancel()
+      return new Response('decrypted')
+    })
+
+    await fetchRecoveredChatResponse(
+      SESSION_ID,
+      {
+        exportedSecret: new Uint8Array(32),
+        requestEnc: new Uint8Array(32),
+      },
+      undefined,
+      encryptedBytes.byteLength,
+      replayComplete,
+    )
+  })
+
   it('does not mark a truncated replay as caught up', async () => {
     const encryptedBytes = new TextEncoder().encode('short')
     const replayComplete = vi.fn()

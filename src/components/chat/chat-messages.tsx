@@ -22,6 +22,7 @@ type ChatMessagesProps = {
   messages: Message[]
   pendingRecoveries?: PendingRecoveryEnvelope[]
   recoveryDrafts?: ReadonlyArray<{ turnId: string; message: Message }>
+  activeRecoveryTurnIds?: readonly string[]
   isDarkMode: boolean
   chatId: string
   messagesEndRef?: React.RefObject<HTMLDivElement | null>
@@ -232,6 +233,7 @@ export function ChatMessages({
   messages,
   pendingRecoveries = [],
   recoveryDrafts = [],
+  activeRecoveryTurnIds = [],
   isDarkMode,
   chatId,
   isWaitingForResponse = false,
@@ -411,10 +413,15 @@ export function ChatMessages({
   const hasActiveRecoveryDraft = recoveryDrafts.some((draft) =>
     pendingRecoveryTurnIds.has(draft.turnId),
   )
-  const activeTurnId =
+  const activeRecoveryTurns = new Set(activeRecoveryTurnIds)
+  const activeTurnCandidate =
     isWaitingForResponse || isStreamingResponse
       ? [...messages].reverse().find((message) => message.role === 'user')
           ?.turnId
+      : undefined
+  const activeTurnId =
+    activeTurnCandidate && !activeRecoveryTurns.has(activeTurnCandidate)
+      ? activeTurnCandidate
       : undefined
   const showRecoveryAfter = (message: Message) =>
     message.role === 'user' &&

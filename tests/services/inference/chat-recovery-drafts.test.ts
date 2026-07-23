@@ -1,8 +1,11 @@
 import {
+  clearActiveChatRecoveries,
   clearChatRecoveryDraft,
   clearChatRecoveryDrafts,
+  getActiveChatRecoverySnapshot,
   getChatRecoveryDraftSnapshot,
   pruneChatRecoveryDrafts,
+  setChatRecoveryActive,
   setChatRecoveryDraft,
   subscribeChatRecoveryDrafts,
 } from '@/services/inference/chat-recovery-drafts'
@@ -17,6 +20,7 @@ const message = (content: string) => ({
 describe('chat recovery drafts', () => {
   beforeEach(() => {
     clearChatRecoveryDrafts()
+    clearActiveChatRecoveries()
   })
 
   it('replaces reconnect snapshots without letting an old session clear them', () => {
@@ -58,5 +62,18 @@ describe('chat recovery drafts', () => {
     pruneChatRecoveryDrafts(new Set())
 
     expect(getChatRecoveryDraftSnapshot()).toEqual([])
+  })
+
+  it('publishes active resumed recoveries', () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeChatRecoveryDrafts(listener)
+
+    setChatRecoveryActive('chat-1', 'turn-1', true)
+    expect(getActiveChatRecoverySnapshot()).toEqual(['chat-1\u0000turn-1'])
+
+    setChatRecoveryActive('chat-1', 'turn-1', false)
+    expect(getActiveChatRecoverySnapshot()).toEqual([])
+    expect(listener).toHaveBeenCalledTimes(2)
+    unsubscribe()
   })
 })

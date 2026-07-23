@@ -144,6 +144,9 @@ export async function fetchRecoveredChatResponse(
         liveRemainder = undefined
         return
       }
+      if (replayBytesRemaining === 0) {
+        markReplayComplete()
+      }
 
       const { done, value } = await reader.read()
       if (done) {
@@ -154,7 +157,6 @@ export async function fetchRecoveredChatResponse(
         return
       }
       if (replayBytesRemaining === 0) {
-        markReplayComplete()
         controller.enqueue(value)
         return
       }

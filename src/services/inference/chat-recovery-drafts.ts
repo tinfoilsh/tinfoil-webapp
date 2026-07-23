@@ -10,8 +10,10 @@ export type ChatRecoveryDraft = {
 type Listener = () => void
 
 const drafts = new Map<string, ChatRecoveryDraft>()
+const activeTurns = new Set<string>()
 const listeners = new Set<Listener>()
 let snapshot: readonly ChatRecoveryDraft[] = []
+let activeSnapshot: readonly string[] = []
 
 function draftKey(chatId: string, turnId: string): string {
   return `${chatId}\u0000${turnId}`
@@ -19,6 +21,7 @@ function draftKey(chatId: string, turnId: string): string {
 
 function publish(): void {
   snapshot = [...drafts.values()]
+  activeSnapshot = [...activeTurns]
   listeners.forEach((listener) => listener())
 }
 
@@ -33,6 +36,26 @@ export function subscribeChatRecoveryDrafts(listener: Listener): () => void {
 
 export function getChatRecoveryDraftSnapshot(): readonly ChatRecoveryDraft[] {
   return snapshot
+}
+
+export function getActiveChatRecoverySnapshot(): readonly string[] {
+  return activeSnapshot
+}
+
+export function setChatRecoveryActive(
+  chatId: string,
+  turnId: string,
+  active: boolean,
+): void {
+  const key = draftKey(chatId, turnId)
+  const changed = active ? !activeTurns.has(key) : activeTurns.has(key)
+  if (!changed) return
+  if (active) {
+    activeTurns.add(key)
+  } else {
+    activeTurns.delete(key)
+  }
+  publish()
 }
 
 export function setChatRecoveryDraft(draft: ChatRecoveryDraft): void {
@@ -71,6 +94,13 @@ export function pruneChatRecoveryDrafts(
 export function clearChatRecoveryDrafts(): void {
   if (drafts.size > 0) {
     drafts.clear()
+    publish()
+  }
+}
+
+export function clearActiveChatRecoveries(): void {
+  if (activeTurns.size > 0) {
+    activeTurns.clear()
     publish()
   }
 }

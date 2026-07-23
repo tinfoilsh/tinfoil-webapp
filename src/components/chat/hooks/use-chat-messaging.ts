@@ -20,6 +20,7 @@
  */
 import { useProject } from '@/components/project'
 import { resolveModelSelection, type BaseModel } from '@/config/models'
+import { useChatRecoveryActive } from '@/hooks/use-chat-recovery-drafts'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { getCodeExecutionContainerAuthTokenForChat } from '@/services/exec-snapshot/use-exec-snapshot'
@@ -158,6 +159,12 @@ export function useChatMessaging({
   const { isProjectMode, activeProject } = useProject()
 
   const [input, setInput] = useState('')
+  const currentChatId = currentChat?.id ?? ''
+  const currentChatIsTemporary = currentChat?.isTemporary
+  const recoveryScanKey =
+    currentChat?.pendingRecoveries
+      ?.map((envelope) => envelope.turnId)
+      .join('\u0000') ?? ''
 
   useEffect(() => {
     if (!isSignedIn || !userId || !storeHistory) return
@@ -181,6 +188,31 @@ export function useChatMessaging({
     }
   }, [isSignedIn, storeHistory, userId])
 
+  useEffect(() => {
+    if (
+      !recoveryScanKey ||
+      !userId ||
+      !canUseChatRecovery({
+        isSignedIn,
+        userId,
+        storeHistory,
+        chat: currentChatIsTemporary
+          ? { isTemporary: currentChatIsTemporary }
+          : undefined,
+      })
+    ) {
+      return
+    }
+    void scanPendingChatRecoveries(userId, true)
+  }, [
+    currentChatId,
+    currentChatIsTemporary,
+    isSignedIn,
+    recoveryScanKey,
+    storeHistory,
+    userId,
+  ])
+
   // Per-chat stream status so several conversations can stream at once.
   const {
     statusByChat,
@@ -199,16 +231,21 @@ export function useChatMessaging({
 
   // Status for the chat on screen drives the input area, stop button,
   // thinking indicator, and error banner.
-  const currentStatus =
-    statusByChat[currentChat?.id ?? ''] ?? IDLE_STREAM_STATUS
+  const currentStatus = statusByChat[currentChatId] ?? IDLE_STREAM_STATUS
   const {
-    loadingState,
+    loadingState: streamLoadingState,
     retryInfo,
     isThinking,
     isWaitingForResponse,
-    isStreaming,
+    isStreaming: isLiveStreaming,
     streamError,
   } = currentStatus
+  const isRecoveryActive = useChatRecoveryActive(currentChatId)
+  const loadingState =
+    streamLoadingState === 'idle' && isRecoveryActive
+      ? 'loading'
+      : streamLoadingState
+  const isStreaming = isLiveStreaming || isRecoveryActive
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
 

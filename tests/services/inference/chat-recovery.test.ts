@@ -13,7 +13,9 @@ const removePendingRecovery = vi.fn()
 const replacePendingRecovery = vi.fn()
 const resetChatRecoverySyncState = vi.fn()
 const clearChatRecoveryDrafts = vi.fn()
+const clearActiveChatRecoveries = vi.fn()
 const pruneChatRecoveryDrafts = vi.fn()
+const setChatRecoveryActive = vi.fn()
 const setChatRecoveryDraft = vi.fn()
 const retryDeferredAlternativesFinalization = vi.fn()
 const parseRichStreamingResponse = vi.fn()
@@ -61,9 +63,11 @@ vi.mock('@/services/inference/chat-recovery-sync', () => ({
 }))
 
 vi.mock('@/services/inference/chat-recovery-drafts', () => ({
+  clearActiveChatRecoveries: () => clearActiveChatRecoveries(),
   clearChatRecoveryDrafts: () => clearChatRecoveryDrafts(),
   pruneChatRecoveryDrafts: (...args: unknown[]) =>
     pruneChatRecoveryDrafts(...args),
+  setChatRecoveryActive: (...args: unknown[]) => setChatRecoveryActive(...args),
   setChatRecoveryDraft: (...args: unknown[]) => setChatRecoveryDraft(...args),
 }))
 
@@ -273,6 +277,67 @@ describe('chat recovery lifecycle', () => {
     expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
+  it('publishes the recovered partial when replay catches up', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('complete')
+    let markReplayComplete: (() => void) | undefined
+    fetchRecoveredChatResponse.mockImplementation(
+      async (
+        _sessionId: string,
+        _token: unknown,
+        _signal: AbortSignal,
+        _replayBytes: number,
+        onReplayComplete: () => void,
+      ) => {
+        markReplayComplete = onReplayComplete
+        return new Response('stream')
+      },
+    )
+    parseRichStreamingResponse.mockImplementation(
+      async (
+        _response: Response,
+        options: { onUpdate: (message: object) => void },
+      ) => {
+        options.onUpdate({
+          role: 'assistant',
+          content: 'Recovered so far',
+          timestamp: new Date().toISOString(),
+        })
+        expect(setChatRecoveryDraft).not.toHaveBeenCalled()
+        markReplayComplete?.()
+        expect(setChatRecoveryDraft).toHaveBeenCalledWith(
+          expect.objectContaining({
+            chatId: 'chat-1',
+            turnId: 'turn-1',
+            message: expect.objectContaining({
+              content: 'Recovered so far',
+            }),
+          }),
+        )
+        return {
+          role: 'assistant',
+          content: 'Recovered so far',
+          timestamp: new Date().toISOString(),
+        }
+      },
+    )
+
+    await scanPendingChatRecoveries('user-1')
+
+    expect(setChatRecoveryDraft).toHaveBeenCalledTimes(1)
+  })
+
   it('does not persist a stream that ends before the session is complete', async () => {
     getAllChats.mockResolvedValue([
       { id: 'chat-1', pendingRecoveries: [envelope] },
@@ -317,6 +382,80 @@ describe('chat recovery lifecycle', () => {
     expect(setChatRecoveryDraft).toHaveBeenCalled()
     expect(completePendingRecovery).not.toHaveBeenCalled()
     expect(deleteChatRecovery).not.toHaveBeenCalled()
+  })
+
+  it('cancels a recovery stream resumed by a scan', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState.mockResolvedValue('processing')
+    let recoverySignal: AbortSignal | undefined
+    fetchRecoveredChatResponse.mockImplementation(
+      async (_sessionId: string, _token: unknown, signal: AbortSignal) => {
+        recoverySignal = signal
+        return new Response('stream')
+      },
+    )
+    parseRichStreamingResponse.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          const rejectAbort = () =>
+            reject(new DOMException('Aborted', 'AbortError'))
+          if (recoverySignal?.aborted) {
+            rejectAbort()
+          } else {
+            recoverySignal?.addEventListener('abort', rejectAbort, {
+              once: true,
+            })
+          }
+        }),
+    )
+    let finishRemoval: (() => void) | undefined
+    removePendingRecovery.mockImplementationOnce(
+      (_chatId: string, _turnId: string, isCurrent: () => boolean) =>
+        new Promise<void>((resolve) => {
+          finishRemoval = () => {
+            expect(isCurrent()).toBe(true)
+            resolve()
+          }
+        }),
+    )
+
+    const scan = scanPendingChatRecoveries('user-1')
+    await vi.waitFor(() => {
+      expect(setChatRecoveryActive).toHaveBeenCalledWith(
+        'chat-1',
+        'turn-1',
+        true,
+      )
+    })
+
+    const cancellation = cancelChatRecovery('chat-1')
+    await vi.waitFor(() => expect(removePendingRecovery).toHaveBeenCalled())
+    await scanPendingChatRecoveries('user-1', true)
+    finishRemoval?.()
+    await cancellation
+    await scan
+
+    expect(recoverySignal?.aborted).toBe(true)
+    expect(setChatRecoveryActive).toHaveBeenCalledWith(
+      'chat-1',
+      'turn-1',
+      false,
+    )
+    expect(removePendingRecovery).toHaveBeenCalledWith(
+      'chat-1',
+      'turn-1',
+      expect.any(Function),
+    )
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
   it('does not replay a completed response through progressive drafts', async () => {

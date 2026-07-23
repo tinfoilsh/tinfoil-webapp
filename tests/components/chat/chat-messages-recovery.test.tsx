@@ -133,6 +133,31 @@ describe('ChatMessages recovery indicator', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('renders the progressive draft while the recovered turn is active', async () => {
+    render(
+      <ChatMessages
+        {...baseProps}
+        isStreamingResponse
+        activeRecoveryTurnIds={['turn-1']}
+        recoveryDrafts={[
+          {
+            turnId: 'turn-1',
+            message: {
+              role: 'assistant',
+              turnId: 'turn-1',
+              content: 'Live recovered answer',
+              timestamp: new Date('2026-07-21T00:00:01.000Z'),
+            },
+          },
+        ]}
+      />,
+    )
+
+    expect(
+      await screen.findByText('assistant: Live recovered answer'),
+    ).toBeInTheDocument()
+  })
+
   it('substitutes a progressive draft for a persisted partial response', async () => {
     render(
       <ChatMessages

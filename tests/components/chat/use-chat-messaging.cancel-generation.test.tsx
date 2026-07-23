@@ -1,5 +1,9 @@
 import { useChatMessaging } from '@/components/chat/hooks/use-chat-messaging'
 import type { Chat } from '@/components/chat/types'
+import {
+  clearActiveChatRecoveries,
+  setChatRecoveryActive,
+} from '@/services/inference/chat-recovery-drafts'
 import { chatEvents } from '@/services/storage/chat-events'
 import { act, renderHook } from '@testing-library/react'
 import {
@@ -137,6 +141,7 @@ function useChatMessagingHarness({
 describe('useChatMessaging cancelGeneration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    clearActiveChatRecoveries()
     authState.isSignedIn = false
     authState.userId = undefined
     cloudSyncState.enabled = true
@@ -171,6 +176,23 @@ describe('useChatMessaging cancelGeneration', () => {
         isStreaming: false,
       }),
     )
+  })
+
+  it('exposes a resumed recovery as an active stream', () => {
+    const chat = createChat('chat-a')
+    const { result } = renderHook(useChatMessagingHarness, {
+      initialProps: {
+        currentChat: chat,
+        triggerCancelOnLayout: false,
+      },
+    })
+
+    act(() => {
+      setChatRecoveryActive('chat-a', 'turn-1', true)
+    })
+
+    expect(result.current.loadingState).toBe('loading')
+    expect(result.current.isStreaming).toBe(true)
   })
 
   it('rescans pending recoveries when cloud sync downloads a chat', () => {
@@ -225,5 +247,49 @@ describe('useChatMessaging cancelGeneration', () => {
 
     expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1')
     unmount()
+  })
+
+  it('scans a recovery loaded after the initial page scan', () => {
+    authState.isSignedIn = true
+    authState.userId = 'user-1'
+    const chat = createChat('chat-a')
+    const { rerender } = renderHook(
+      ({ currentChat }: { currentChat: Chat }) =>
+        useChatMessaging({
+          systemPrompt: '',
+          rules: '',
+          storeHistory: true,
+          models: [],
+          selectedModel: 'test-model',
+          chats: [currentChat],
+          currentChat,
+          setChats: noopSetChats,
+          setCurrentChat: noopSetCurrentChat,
+          messagesEndRef,
+        }),
+      {
+        initialProps: { currentChat: chat },
+      },
+    )
+    scanPendingChatRecoveriesMock.mockClear()
+
+    rerender({
+      currentChat: {
+        ...chat,
+        pendingRecoveries: [
+          {
+            v: 1,
+            storage: 'local',
+            turnId: 'turn-1',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            sessionId: '0123456789abcdef0123456789abcdef',
+            recoveryToken: 'token',
+          },
+        ],
+      },
+    })
+
+    expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1', true)
   })
 })
