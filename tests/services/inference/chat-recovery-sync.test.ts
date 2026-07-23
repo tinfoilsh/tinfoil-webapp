@@ -8,6 +8,7 @@ let localChat: StoredChat | undefined
 let uploadAttempts = 0
 let conflictOnce = false
 let applyFailures = 0
+let cloudSyncEnabled = true
 const downloadChat = vi.fn(async () => structuredClone(remoteChat))
 const uploadChat = vi.fn(async (chat: StoredChat) => {
   uploadAttempts += 1
@@ -30,6 +31,22 @@ const applyRemoteChatIfFresh = vi.fn(async ({ chat }: { chat: StoredChat }) => {
   localChat = structuredClone(chat)
   return { applied: true }
 })
+const mutateChat = vi.fn(
+  async (
+    _chatId: string,
+    mutation: (chat: StoredChat) => {
+      chat: StoredChat
+      changed: boolean
+    },
+  ) => {
+    if (!localChat) return null
+    const result = mutation(structuredClone(localChat))
+    if (result.changed) {
+      localChat = structuredClone(result.chat)
+    }
+    return structuredClone(result.chat)
+  },
+)
 
 vi.mock('@/services/cloud/cloud-storage', () => ({
   cloudStorage: {
@@ -41,9 +58,20 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
 vi.mock('@/services/storage/indexed-db', () => ({
   indexedDBStorage: {
     getChat: (chatId: string) => getChat(chatId),
+    mutateChat: (
+      chatId: string,
+      mutation: (chat: StoredChat) => {
+        chat: StoredChat
+        changed: boolean
+      },
+    ) => mutateChat(chatId, mutation),
     applyRemoteChatIfFresh: (args: { chat: StoredChat }) =>
       applyRemoteChatIfFresh(args),
   },
+}))
+
+vi.mock('@/utils/cloud-sync-settings', () => ({
+  isCloudSyncEnabled: () => cloudSyncEnabled,
 }))
 
 vi.mock('@/services/cloud/edit-clock', () => ({
@@ -92,10 +120,12 @@ describe('chat recovery sync mutations', () => {
     uploadAttempts = 0
     conflictOnce = false
     applyFailures = 0
+    cloudSyncEnabled = true
     downloadChat.mockClear()
     uploadChat.mockClear()
     getChat.mockClear()
     applyRemoteChatIfFresh.mockClear()
+    mutateChat.mockClear()
     remoteChat = {
       id: 'chat-id',
       title: 'Chat',
@@ -116,6 +146,55 @@ describe('chat recovery sync mutations', () => {
     expect(uploadAttempts).toBe(2)
     expect(result.pendingRecoveries).toHaveLength(1)
     expect(localChat?.pendingRecoveries).toEqual(result.pendingRecoveries)
+  })
+
+  it('keeps recovery state local when cloud sync is disabled', async () => {
+    cloudSyncEnabled = false
+
+    await addPendingRecovery(remoteChat.id, envelope('turn-1'))
+    await completePendingRecovery(
+      remoteChat.id,
+      'turn-1',
+      message('assistant', 'Recovered answer', 'turn-1'),
+    )
+
+    expect(downloadChat).not.toHaveBeenCalled()
+    expect(uploadChat).not.toHaveBeenCalled()
+    expect(mutateChat).toHaveBeenCalledTimes(2)
+    expect(localChat?.messages.map((item) => item.content)).toEqual([
+      'Question',
+      'Recovered answer',
+    ])
+    expect(localChat?.pendingRecoveries).toBeUndefined()
+  })
+
+  it('finishes a local recovery after cloud sync is enabled', async () => {
+    localChat = {
+      ...localChat!,
+      isLocalOnly: false,
+      pendingRecoveries: [
+        {
+          v: 1,
+          storage: 'local',
+          turnId: 'turn-1',
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          sessionId: '0123456789abcdef0123456789abcdef',
+          recoveryToken: 'local-token',
+        },
+      ],
+    }
+
+    await completePendingRecovery(
+      remoteChat.id,
+      'turn-1',
+      message('assistant', 'Recovered answer', 'turn-1'),
+    )
+
+    expect(downloadChat).not.toHaveBeenCalled()
+    expect(uploadChat).not.toHaveBeenCalled()
+    expect(localChat?.messages[1].content).toBe('Recovered answer')
+    expect(localChat?.pendingRecoveries).toBeUndefined()
   })
 
   it('preserves a newer unsynced local edit while adding recovery state', async () => {

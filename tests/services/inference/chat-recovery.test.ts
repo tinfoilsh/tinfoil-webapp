@@ -18,7 +18,9 @@ const setChatRecoveryDraft = vi.fn()
 const retryDeferredAlternativesFinalization = vi.fn()
 const parseRichStreamingResponse = vi.fn()
 const getAllChats = vi.fn()
+const getChat = vi.fn()
 let storedAlternatives: string[] = []
+let cloudSyncEnabled = true
 
 vi.mock('@/services/inference/chat-recovery-crypto', () => ({
   decryptRecoveryEnvelope: (...args: unknown[]) =>
@@ -86,7 +88,12 @@ vi.mock('@/services/encryption/encryption-service', () => ({
 vi.mock('@/services/storage/indexed-db', () => ({
   indexedDBStorage: {
     getAllChats: () => getAllChats(),
+    getChat: (...args: unknown[]) => getChat(...args),
   },
+}))
+
+vi.mock('@/utils/cloud-sync-settings', () => ({
+  isCloudSyncEnabled: () => cloudSyncEnabled,
 }))
 
 vi.mock('@/utils/error-handling', () => ({
@@ -119,6 +126,8 @@ describe('chat recovery lifecycle', () => {
     vi.clearAllMocks()
     resetChatRecoveryState()
     storedAlternatives = []
+    cloudSyncEnabled = true
+    getChat.mockResolvedValue({ id: 'chat-1', isLocalOnly: false })
     deleteChatRecovery.mockResolvedValue(undefined)
     removePendingRecovery.mockResolvedValue(undefined)
     addPendingRecovery.mockResolvedValue(undefined)
@@ -148,6 +157,34 @@ describe('chat recovery lifecycle', () => {
     expect(encryptRecoveryEnvelope).not.toHaveBeenCalled()
     expect(addPendingRecovery).not.toHaveBeenCalled()
     expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
+  })
+
+  it('stores a local recovery token without a cloud encryption key', async () => {
+    cloudSyncEnabled = false
+    getChat.mockResolvedValue({ id: 'chat-1', isLocalOnly: true })
+    startChatRecoveryAttempt('chat-1', 'turn-1', SESSION_ID)
+
+    await persistChatRecoveryToken({
+      userId: 'user-1',
+      chatId: 'chat-1',
+      turnId: 'turn-1',
+      sessionId: SESSION_ID,
+      token: {
+        exportedSecret: new Uint8Array(32),
+        requestEnc: new Uint8Array(32),
+      },
+    })
+
+    expect(encryptRecoveryEnvelope).not.toHaveBeenCalled()
+    expect(addPendingRecovery).toHaveBeenCalledWith(
+      'chat-1',
+      expect.objectContaining({
+        storage: 'local',
+        sessionId: SESSION_ID,
+        turnId: 'turn-1',
+        recoveryToken: expect.any(String),
+      }),
+    )
   })
 
   it('streams a processing session and persists only after completion', async () => {
@@ -316,6 +353,49 @@ describe('chat recovery lifecycle', () => {
     await scanPendingChatRecoveries('user-1')
 
     expect(setChatRecoveryDraft).not.toHaveBeenCalled()
+    expect(completePendingRecovery).toHaveBeenCalled()
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
+  })
+
+  it('recovers a device-local token directly from IndexedDB', async () => {
+    getAllChats.mockResolvedValue([
+      {
+        id: 'chat-1',
+        isLocalOnly: true,
+        pendingRecoveries: [
+          {
+            v: 1,
+            storage: 'local',
+            turnId: 'turn-1',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            sessionId: SESSION_ID,
+            recoveryToken: JSON.stringify({
+              exportedSecret: '00'.repeat(32),
+              requestEnc: '11'.repeat(32),
+            }),
+          },
+        ],
+      },
+    ])
+    getChatRecoveryState.mockResolvedValue('complete')
+    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    parseRichStreamingResponse.mockResolvedValue({
+      role: 'assistant',
+      content: 'Recovered locally',
+      timestamp: new Date().toISOString(),
+    })
+
+    await scanPendingChatRecoveries('user-1')
+
+    expect(decryptRecoveryEnvelope).not.toHaveBeenCalled()
+    expect(fetchRecoveredChatResponse).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.any(Object),
+      expect.any(AbortSignal),
+      128,
+      expect.any(Function),
+    )
     expect(completePendingRecovery).toHaveBeenCalled()
     expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })

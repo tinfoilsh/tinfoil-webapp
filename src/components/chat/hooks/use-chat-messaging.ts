@@ -121,7 +121,7 @@ function canUseChatRecovery(options: {
   isSignedIn: boolean | null | undefined
   userId: string | null | undefined
   storeHistory: boolean
-  chat?: Pick<Chat, 'isLocalOnly' | 'isTemporary'>
+  chat?: Pick<Chat, 'isTemporary'>
 }): boolean {
   const { isSignedIn, userId, storeHistory, chat } = options
   return (
@@ -129,9 +129,7 @@ function canUseChatRecovery(options: {
     typeof userId === 'string' &&
     userId.length > 0 &&
     storeHistory &&
-    isCloudSyncEnabled() &&
     isChatRecoveryAvailable() &&
-    chat?.isLocalOnly !== true &&
     chat?.isTemporary !== true
   )
 }
@@ -732,17 +730,20 @@ export function useChatMessaging({
             storeHistory,
             chat: updatedChat,
           })
-        // Recovery is best-effort: if the user turn cannot be committed to
-        // the cloud right now, stream normally instead of failing the send.
+        // Recovery is best-effort: the user turn must be durable before the
+        // recovery token is captured, locally or across devices.
         let recoveryEnabled = recoveryEligible
 
         if (recoveryEnabled) {
           try {
-            updatedChat = await chatStorage.saveChatAndWaitForSync(updatedChat)
+            updatedChat =
+              updatedChat.isLocalOnly || !isCloudSyncEnabled()
+                ? await chatStorage.saveChat(updatedChat, true)
+                : await chatStorage.saveChatAndWaitForSync(updatedChat)
           } catch (error) {
             recoveryEnabled = false
             logError(
-              'Chat upload for recovery failed; streaming without recovery',
+              'Chat persistence for recovery failed; streaming without recovery',
               error,
               {
                 component: 'useChatMessaging',

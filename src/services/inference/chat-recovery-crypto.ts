@@ -1,7 +1,7 @@
 import { deriveKeyIdHex } from '@/services/sync-enclave/key-bundle'
 import {
   RECOVERY_ENVELOPE_EXPIRY_MS,
-  type PendingRecoveryEnvelope,
+  type SyncedRecoveryEnvelope,
 } from '@/types/chat-recovery'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import {
@@ -56,13 +56,13 @@ export type DecryptRecoveryEnvelopeOptions = {
   cek: Uint8Array
   userId: string
   chatId: string
-  envelope: PendingRecoveryEnvelope
+  envelope: SyncedRecoveryEnvelope
   keyId?: string
   now?: Date | number
 }
 
 export type RewrapRecoveryEnvelopeOptions = {
-  envelope: PendingRecoveryEnvelope
+  envelope: SyncedRecoveryEnvelope
   userId: string
   chatId: string
   oldCek: Uint8Array
@@ -155,7 +155,7 @@ function aadBytes(
   userId: string,
   chatId: string,
   envelope: Pick<
-    PendingRecoveryEnvelope,
+    SyncedRecoveryEnvelope,
     'v' | 'turnId' | 'keyId' | 'createdAt' | 'expiresAt'
   >,
 ): Uint8Array {
@@ -228,10 +228,10 @@ async function sealPayload(
   userId: string,
   chatId: string,
   metadata: Pick<
-    PendingRecoveryEnvelope,
+    SyncedRecoveryEnvelope,
     'v' | 'turnId' | 'keyId' | 'createdAt' | 'expiresAt'
   >,
-): Promise<PendingRecoveryEnvelope> {
+): Promise<SyncedRecoveryEnvelope> {
   validatePayload(payload)
   const key = await deriveEnvelopeKey(cek)
   const nonce = crypto.getRandomValues(new Uint8Array(NONCE_BYTES))
@@ -245,7 +245,7 @@ async function sealPayload(
     key,
     textEncoder.encode(JSON.stringify(payload)),
   )
-  const envelope: PendingRecoveryEnvelope = {
+  const envelope: SyncedRecoveryEnvelope = {
     ...metadata,
     nonce: uint8ArrayToBase64(nonce),
     ciphertext: uint8ArrayToBase64(new Uint8Array(ciphertext)),
@@ -256,7 +256,7 @@ async function sealPayload(
 
 export async function encryptRecoveryEnvelope(
   options: EncryptRecoveryEnvelopeOptions,
-): Promise<PendingRecoveryEnvelope> {
+): Promise<SyncedRecoveryEnvelope> {
   requireRecoveryId(options.turnId, 'turnId')
   const keyId = await resolveKeyId(options.cek, options.keyId)
   const createdAtMilliseconds = nowMilliseconds(options.now)
@@ -322,7 +322,7 @@ export async function decryptRecoveryEnvelope(
 
 export async function rewrapRecoveryEnvelope(
   options: RewrapRecoveryEnvelopeOptions,
-): Promise<PendingRecoveryEnvelope> {
+): Promise<SyncedRecoveryEnvelope> {
   const payload = await decryptRecoveryEnvelope({
     cek: options.oldCek,
     keyId: options.oldKeyId,

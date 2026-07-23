@@ -3,7 +3,7 @@ export const MAX_PENDING_RECOVERIES_PER_CHAT = 8
 export const MAX_RECOVERY_ID_LENGTH = 256
 export const MAX_RECOVERY_CIPHERTEXT_BYTES = 4096
 
-export type PendingRecoveryEnvelope = {
+export type SyncedRecoveryEnvelope = {
   v: 1
   turnId: string
   keyId: string
@@ -12,3 +12,16 @@ export type PendingRecoveryEnvelope = {
   nonce: string
   ciphertext: string
 }
+
+export type LocalRecoveryEnvelope = {
+  v: 1
+  storage: 'local'
+  turnId: string
+  createdAt: string
+  expiresAt: string
+  sessionId: string
+  recoveryToken: string
+}
+
+export type PendingRecoveryEnvelope =
+  SyncedRecoveryEnvelope | LocalRecoveryEnvelope

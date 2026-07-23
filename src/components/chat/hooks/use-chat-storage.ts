@@ -58,8 +58,19 @@ function pendingRecoveriesMatch(
     left.length === right.length &&
     left.every((envelope, index) => {
       const candidate = right[index]
+      if (!candidate || candidate.v !== envelope.v) return false
+      if ('storage' in envelope || 'storage' in candidate) {
+        return (
+          'storage' in envelope &&
+          'storage' in candidate &&
+          candidate.turnId === envelope.turnId &&
+          candidate.createdAt === envelope.createdAt &&
+          candidate.expiresAt === envelope.expiresAt &&
+          candidate.sessionId === envelope.sessionId &&
+          candidate.recoveryToken === envelope.recoveryToken
+        )
+      }
       return (
-        candidate?.v === envelope.v &&
         candidate.turnId === envelope.turnId &&
         candidate.keyId === envelope.keyId &&
         candidate.createdAt === envelope.createdAt &&

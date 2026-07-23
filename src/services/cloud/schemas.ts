@@ -13,7 +13,7 @@
 import {
   MAX_PENDING_RECOVERIES_PER_CHAT,
   MAX_RECOVERY_ID_LENGTH,
-  type PendingRecoveryEnvelope,
+  type SyncedRecoveryEnvelope,
 } from '@/types/chat-recovery'
 import { validateRecoveryEnvelope } from '@/utils/chat-recovery-envelope'
 import { z } from 'zod'
@@ -47,7 +47,7 @@ export const PendingRecoveryEnvelopeSchema = z
   .passthrough()
   .superRefine((envelope, context) => {
     try {
-      validateRecoveryEnvelope(envelope as PendingRecoveryEnvelope)
+      validateRecoveryEnvelope(envelope as SyncedRecoveryEnvelope)
     } catch (error) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

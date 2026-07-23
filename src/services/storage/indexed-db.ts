@@ -252,6 +252,59 @@ export class IndexedDBStorage {
     )
   }
 
+  async mutateChat(
+    chatId: string,
+    mutation: (chat: StoredChat) => {
+      chat: StoredChat
+      changed: boolean
+    },
+  ): Promise<StoredChat | null> {
+    return this.enqueueSave('mutateChat', async () => {
+      const db = await this.ensureDB()
+      return new Promise<StoredChat | null>((resolve, reject) => {
+        const transaction = db.transaction([CHATS_STORE], 'readwrite')
+        const store = transaction.objectStore(CHATS_STORE)
+        let output: StoredChat | null = null
+
+        transaction.oncomplete = () => resolve(output)
+        transaction.onerror = () => reject(new Error('Failed to mutate chat'))
+        transaction.onabort = () =>
+          reject(new Error('Chat mutation transaction aborted'))
+
+        const request = store.get(chatId)
+        request.onerror = () => reject(new Error('Failed to read chat'))
+        request.onsuccess = () => {
+          const current = request.result as StoredChat | undefined
+          if (!current) return
+
+          const result = mutation(current)
+          if (!result.changed) {
+            output = result.chat
+            return
+          }
+
+          const clock = nextClock(current.clock)
+          output = {
+            ...result.chat,
+            messages: result.chat.messages.map((message) => ({
+              ...message,
+              timestamp:
+                message.timestamp instanceof Date
+                  ? message.timestamp.toISOString()
+                  : message.timestamp,
+            })) as any,
+            lastAccessedAt: Date.now(),
+            clock: clock.v,
+            writer: clock.w,
+            locallyModified: true,
+            version: 1,
+          }
+          store.put(output)
+        }
+      })
+    })
+  }
+
   private async saveChatInternal(
     chat: Chat,
     options: {

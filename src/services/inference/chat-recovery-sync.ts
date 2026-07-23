@@ -12,7 +12,9 @@ import { newIdempotencyKey } from '@/services/sync-enclave/sync-api'
 import {
   MAX_PENDING_RECOVERIES_PER_CHAT,
   type PendingRecoveryEnvelope,
+  type SyncedRecoveryEnvelope,
 } from '@/types/chat-recovery'
+import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 
 const RECOVERY_MUTATION_MAX_ATTEMPTS = 3
 
@@ -88,6 +90,47 @@ async function mutateSyncedChat(
   const mutationIsCurrent = () =>
     generation === mutationGeneration && isCurrent() && !signal?.aborted
   const operation = async () => {
+    const initialLocal = await indexedDBStorage.getChat(chatId)
+    if (!mutationIsCurrent()) {
+      throw new DOMException('Aborted', 'AbortError')
+    }
+    const hasLocalRecovery = initialLocal?.pendingRecoveries?.some(
+      (recovery) => 'storage' in recovery,
+    )
+    if (
+      initialLocal?.isLocalOnly ||
+      !isCloudSyncEnabled() ||
+      hasLocalRecovery
+    ) {
+      let changed = false
+      const local = await indexedDBStorage.mutateChat(chatId, (chat) => {
+        if (!mutationIsCurrent()) {
+          throw new DOMException('Aborted', 'AbortError')
+        }
+        const result = mutation(chat)
+        changed = result.changed
+        return result.changed
+          ? {
+              chat: {
+                ...result.chat,
+                updatedAt: new Date().toISOString(),
+              },
+              changed: true,
+            }
+          : result
+      })
+      if (!local) {
+        throw new Error('Chat recovery could not find the target chat')
+      }
+      if (!mutationIsCurrent()) {
+        throw new DOMException('Aborted', 'AbortError')
+      }
+      if (changed) {
+        chatEvents.emit({ reason: 'recovery', ids: [chatId] })
+      }
+      return local
+    }
+
     for (let attempt = 0; attempt < RECOVERY_MUTATION_MAX_ATTEMPTS; attempt++) {
       if (!mutationIsCurrent()) {
         throw new DOMException('Aborted', 'AbortError')
@@ -219,8 +262,8 @@ export function addPendingRecovery(
 
 export function replacePendingRecovery(
   chatId: string,
-  current: PendingRecoveryEnvelope,
-  replacement: PendingRecoveryEnvelope,
+  current: SyncedRecoveryEnvelope,
+  replacement: SyncedRecoveryEnvelope,
   isCurrent?: () => boolean,
   signal?: AbortSignal,
 ): Promise<StoredChat> {
@@ -230,6 +273,7 @@ export function replacePendingRecovery(
       const pending = chat.pendingRecoveries ?? []
       const index = pending.findIndex(
         (envelope) =>
+          !('storage' in envelope) &&
           envelope.turnId === current.turnId &&
           envelope.keyId === current.keyId &&
           envelope.ciphertext === current.ciphertext,

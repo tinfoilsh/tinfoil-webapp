@@ -16,13 +16,16 @@ const resetStatusMock = vi.fn()
 const moveStatusMock = vi.fn()
 const registerControllerMock = vi.fn()
 const clearControllerMock = vi.fn()
-const { authState, scanPendingChatRecoveriesMock } = vi.hoisted(() => ({
-  authState: {
-    isSignedIn: false,
-    userId: undefined as string | undefined,
-  },
-  scanPendingChatRecoveriesMock: vi.fn(),
-}))
+const { authState, cloudSyncState, scanPendingChatRecoveriesMock } = vi.hoisted(
+  () => ({
+    authState: {
+      isSignedIn: false,
+      userId: undefined as string | undefined,
+    },
+    cloudSyncState: { enabled: true },
+    scanPendingChatRecoveriesMock: vi.fn(),
+  }),
+)
 
 vi.mock('@clerk/nextjs', () => ({
   useAuth: () => authState,
@@ -53,7 +56,7 @@ vi.mock('@/services/inference/tinfoil-client', async () => {
 })
 
 vi.mock('@/utils/cloud-sync-settings', () => ({
-  isCloudSyncEnabled: () => true,
+  isCloudSyncEnabled: () => cloudSyncState.enabled,
 }))
 
 vi.mock('@/services/inference/chat-recovery', () => ({
@@ -136,6 +139,7 @@ describe('useChatMessaging cancelGeneration', () => {
     vi.clearAllMocks()
     authState.isSignedIn = false
     authState.userId = undefined
+    cloudSyncState.enabled = true
   })
 
   it('targets the latest rendered chat during a chat switch', () => {
@@ -193,6 +197,31 @@ describe('useChatMessaging cancelGeneration', () => {
     act(() => {
       chatEvents.emit({ reason: 'sync', ids: ['chat-a'] })
     })
+
+    expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1')
+    unmount()
+  })
+
+  it('scans IndexedDB recoveries when cloud sync is disabled', () => {
+    authState.isSignedIn = true
+    authState.userId = 'user-1'
+    cloudSyncState.enabled = false
+    const chat = { ...createChat('chat-a'), isLocalOnly: true }
+
+    const { unmount } = renderHook(() =>
+      useChatMessaging({
+        systemPrompt: '',
+        rules: '',
+        storeHistory: true,
+        models: [],
+        selectedModel: 'test-model',
+        chats: [chat],
+        currentChat: chat,
+        setChats: noopSetChats,
+        setCurrentChat: noopSetCurrentChat,
+        messagesEndRef,
+      }),
+    )
 
     expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1')
     unmount()

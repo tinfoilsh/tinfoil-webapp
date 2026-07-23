@@ -3,7 +3,12 @@ import type { Message } from '@/components/chat/types'
 import { retryDeferredAlternativesFinalization } from '@/services/cloud/legacy-blob-migration'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
-import type { PendingRecoveryEnvelope } from '@/types/chat-recovery'
+import {
+  RECOVERY_ENVELOPE_EXPIRY_MS,
+  type PendingRecoveryEnvelope,
+  type SyncedRecoveryEnvelope,
+} from '@/types/chat-recovery'
+import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
 import {
   deserializeSessionRecoveryToken,
@@ -98,6 +103,16 @@ async function openEnvelope(
   envelope: PendingRecoveryEnvelope,
   now?: number,
 ) {
+  if ('storage' in envelope) {
+    return {
+      cek: null,
+      payload: {
+        sessionId: envelope.sessionId,
+        recoveryToken: envelope.recoveryToken,
+      },
+      usesPrimary: true,
+    }
+  }
   let lastError: unknown
   const candidates = candidateCEKs()
   for (let index = 0; index < candidates.length; index++) {
@@ -116,6 +131,12 @@ async function openEnvelope(
     }
   }
   throw lastError ?? new Error('Unable to decrypt chat recovery envelope')
+}
+
+function isSyncedRecoveryEnvelope(
+  envelope: PendingRecoveryEnvelope,
+): envelope is SyncedRecoveryEnvelope {
+  return !('storage' in envelope)
 }
 
 async function deleteRecoveryQuietly(sessionId: string): Promise<void> {
@@ -161,14 +182,34 @@ export async function persistChatRecoveryToken(args: {
     throw new DOMException('Aborted', 'AbortError')
   }
 
-  const envelope = await encryptRecoveryEnvelope({
-    cek: encryptionService.getKeyBytesOrThrow(),
-    userId: args.userId,
-    chatId: args.chatId,
-    turnId: args.turnId,
-    sessionId: args.sessionId,
-    recoveryToken: serializeSessionRecoveryToken(args.token),
-  })
+  const recoveryToken = serializeSessionRecoveryToken(args.token)
+  const chat = await indexedDBStorage.getChat(args.chatId)
+  if (!chat) {
+    await deleteRecoveryQuietly(args.sessionId)
+    throw new Error('Chat recovery could not find the target chat')
+  }
+  const localOnly = chat.isLocalOnly || !isCloudSyncEnabled()
+  const now = new Date()
+  const envelope: PendingRecoveryEnvelope = localOnly
+    ? {
+        v: 1,
+        storage: 'local',
+        turnId: args.turnId,
+        createdAt: now.toISOString(),
+        expiresAt: new Date(
+          now.getTime() + RECOVERY_ENVELOPE_EXPIRY_MS,
+        ).toISOString(),
+        sessionId: args.sessionId,
+        recoveryToken,
+      }
+    : await encryptRecoveryEnvelope({
+        cek: encryptionService.getKeyBytesOrThrow(),
+        userId: args.userId,
+        chatId: args.chatId,
+        turnId: args.turnId,
+        sessionId: args.sessionId,
+        recoveryToken,
+      })
   if (!isCurrentAttempt()) {
     await deleteRecoveryQuietly(args.sessionId)
     throw new DOMException('Aborted', 'AbortError')
@@ -315,12 +356,12 @@ async function processEnvelope(
 
   const opened = await openEnvelope(userId, chatId, envelope)
   if (!isCurrent()) return
-  if (!opened.usesPrimary) {
+  if (!opened.usesPrimary && isSyncedRecoveryEnvelope(envelope)) {
     const rewrapped = await rewrapRecoveryEnvelope({
       envelope,
       userId,
       chatId,
-      oldCek: opened.cek,
+      oldCek: opened.cek as Uint8Array,
       newCek: encryptionService.getKeyBytesOrThrow(),
     })
     if (!isCurrent()) return
@@ -335,6 +376,7 @@ async function processEnvelope(
     if (
       !rewrappedChat.pendingRecoveries?.some(
         (candidate) =>
+          isSyncedRecoveryEnvelope(candidate) &&
           candidate.turnId === rewrapped.turnId &&
           candidate.keyId === rewrapped.keyId &&
           candidate.ciphertext === rewrapped.ciphertext,
