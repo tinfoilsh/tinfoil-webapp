@@ -285,6 +285,101 @@ describe('chat recovery lifecycle', () => {
     expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
+  it('releases recovery activity before deleting the completed session', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('complete')
+    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    parseRichStreamingResponse.mockResolvedValue({
+      role: 'assistant',
+      content: 'Recovered',
+      timestamp: new Date().toISOString(),
+    })
+    let finishDeletion: (() => void) | undefined
+    deleteChatRecovery.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDeletion = resolve
+        }),
+    )
+
+    const scan = scanPendingChatRecoveries('user-1')
+    await vi.waitFor(() => {
+      expect(completePendingRecovery).toHaveBeenCalled()
+      expect(setChatRecoveryActive).toHaveBeenLastCalledWith(
+        'chat-1',
+        'turn-1',
+        false,
+      )
+    })
+
+    finishDeletion?.()
+    await scan
+  })
+
+  it('ignores a replay callback after recovery cancellation', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState.mockResolvedValue('processing')
+    let replayComplete: (() => void) | undefined
+    let recoverySignal: AbortSignal | undefined
+    fetchRecoveredChatResponse.mockImplementation(
+      async (
+        _sessionId: string,
+        _token: unknown,
+        signal: AbortSignal,
+        _replayBytes: number,
+        onReplayComplete: () => void,
+      ) => {
+        recoverySignal = signal
+        replayComplete = onReplayComplete
+        return new Response('stream')
+      },
+    )
+    parseRichStreamingResponse.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          const rejectAbort = () =>
+            reject(new DOMException('Aborted', 'AbortError'))
+          if (recoverySignal?.aborted) {
+            rejectAbort()
+          } else {
+            recoverySignal?.addEventListener('abort', rejectAbort, {
+              once: true,
+            })
+          }
+        }),
+    )
+
+    const scan = scanPendingChatRecoveries('user-1')
+    await vi.waitFor(() => expect(replayComplete).toBeTypeOf('function'))
+    await cancelChatRecovery('chat-1')
+    setChatRecoveryPhase.mockClear()
+
+    replayComplete?.()
+
+    expect(setChatRecoveryPhase).not.toHaveBeenCalled()
+    await scan
+  })
+
   it('publishes the recovered partial when replay catches up', async () => {
     getAllChats.mockResolvedValue([
       { id: 'chat-1', pendingRecoveries: [envelope] },
@@ -593,17 +688,25 @@ describe('chat recovery lifecycle', () => {
     )
   })
 
-  it('releases retained activity when a later scan completes recovery', async () => {
+  it('cleans up a retained session when a replacement completes recovery', async () => {
     getAllChats.mockResolvedValue([
       { id: 'chat-1', pendingRecoveries: [envelope] },
     ])
-    decryptRecoveryEnvelope.mockResolvedValue({
-      sessionId: SESSION_ID,
-      recoveryToken: JSON.stringify({
-        exportedSecret: '00'.repeat(32),
-        requestEnc: '11'.repeat(32),
-      }),
-    })
+    decryptRecoveryEnvelope
+      .mockResolvedValueOnce({
+        sessionId: SESSION_ID,
+        recoveryToken: JSON.stringify({
+          exportedSecret: '00'.repeat(32),
+          requestEnc: '11'.repeat(32),
+        }),
+      })
+      .mockResolvedValueOnce({
+        sessionId: REPLACEMENT_SESSION_ID,
+        recoveryToken: JSON.stringify({
+          exportedSecret: '00'.repeat(32),
+          requestEnc: '11'.repeat(32),
+        }),
+      })
     getChatRecoveryState
       .mockResolvedValueOnce('processing')
       .mockResolvedValueOnce('processing')
@@ -633,7 +736,19 @@ describe('chat recovery lifecycle', () => {
       ['chat-1', 'turn-1', true],
     ])
 
-    await scanPendingChatRecoveries('user-1', true)
+    let finishRetainedDeletion: (() => void) | undefined
+    deleteChatRecovery.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRetainedDeletion = resolve
+        }),
+    )
+    const replacementScan = scanPendingChatRecoveries('user-1', true)
+    await vi.waitFor(() =>
+      expect(fetchRecoveredChatResponse).toHaveBeenCalledTimes(3),
+    )
+    finishRetainedDeletion?.()
+    await replacementScan
 
     expect(completePendingRecovery).toHaveBeenCalledWith(
       'chat-1',
@@ -649,6 +764,8 @@ describe('chat recovery lifecycle', () => {
       ['chat-1', 'turn-1', true],
       ['chat-1', 'turn-1', false],
     ])
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
+    expect(deleteChatRecovery).toHaveBeenCalledWith(REPLACEMENT_SESSION_ID)
   })
 
   it('releases retained activity when the pending envelope disappears', async () => {
@@ -682,6 +799,7 @@ describe('chat recovery lifecycle', () => {
       ['chat-1', 'turn-1', true],
       ['chat-1', 'turn-1', false],
     ])
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
   it('does not readopt retained recovery after cancellation during status', async () => {

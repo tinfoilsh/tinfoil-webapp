@@ -58,6 +58,11 @@ export function getActiveChatRecoveryPhaseSnapshot(): readonly ActiveChatRecover
   return activeRecoverySnapshot
 }
 
+export function isChatRecoveryActive(chatId: string): boolean {
+  const prefix = `${chatId}\u0000`
+  return [...activeTurns.keys()].some((key) => key.startsWith(prefix))
+}
+
 export function setChatRecoveryActive(
   chatId: string,
   turnId: string,

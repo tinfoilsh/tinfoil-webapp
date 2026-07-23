@@ -412,6 +412,7 @@ async function processEnvelope(
   const payload = opened.payload
   const initialStatus = await getChatRecoveryStatus(payload.sessionId)
   if (!isCurrent()) return
+  const replacedRecoveryDeletions: Promise<void>[] = []
   for (const [sessionId, retained] of scannedRecoveries) {
     if (retained.chatId !== chatId || retained.turnId !== envelope.turnId) {
       continue
@@ -419,17 +420,27 @@ async function processEnvelope(
     scannedRecoveries.delete(sessionId)
     retained.controller.abort()
     setChatRecoveryActive(retained.chatId, retained.turnId, false)
+    if (sessionId !== payload.sessionId) {
+      replacedRecoveryDeletions.push(deleteRecoveryQuietly(sessionId))
+    }
   }
   if (initialStatus.state === 'failed') {
     try {
       await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
     } finally {
-      await deleteRecoveryQuietly(payload.sessionId)
+      await Promise.all([
+        deleteRecoveryQuietly(payload.sessionId),
+        ...replacedRecoveryDeletions,
+      ])
     }
     return
   }
   if (initialStatus.state === 'missing') {
-    await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
+    try {
+      await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
+    } finally {
+      await Promise.all(replacedRecoveryDeletions)
+    }
     return
   }
 
@@ -504,6 +515,7 @@ async function processEnvelope(
           recoverySignal,
           replayBytes,
           () => {
+            if (!isRecoveryCurrent()) return
             replayComplete = true
             setChatRecoveryPhase(chatId, envelope.turnId, 'streaming')
             if (latestVisibleDraft) publishDraft(latestVisibleDraft)
@@ -602,6 +614,10 @@ async function processEnvelope(
         isRecoveryCurrent,
         recoverySignal,
       )
+      if (scannedRecoveries.get(payload.sessionId) === scannedRecovery) {
+        scannedRecoveries.delete(payload.sessionId)
+        setChatRecoveryActive(chatId, envelope.turnId, false)
+      }
       await deleteRecoveryQuietly(payload.sessionId)
       return
     }
@@ -613,6 +629,7 @@ async function processEnvelope(
         setChatRecoveryActive(chatId, envelope.turnId, false)
       }
     }
+    await Promise.all(replacedRecoveryDeletions)
   }
 }
 
@@ -645,6 +662,7 @@ export function scanPendingChatRecoveries(
           turnKey(candidate.chatId, candidate.envelope.turnId),
         ),
       )
+      const orphanedRecoveryDeletions: Promise<void>[] = []
       for (const [sessionId, retained] of scannedRecoveries) {
         if (pendingTurnKeys.has(turnKey(retained.chatId, retained.turnId))) {
           continue
@@ -652,6 +670,7 @@ export function scanPendingChatRecoveries(
         scannedRecoveries.delete(sessionId)
         retained.controller.abort()
         setChatRecoveryActive(retained.chatId, retained.turnId, false)
+        orphanedRecoveryDeletions.push(deleteRecoveryQuietly(sessionId))
       }
       pruneChatRecoveryDrafts(pendingTurnKeys)
       let nextIndex = 0
@@ -698,12 +717,13 @@ export function scanPendingChatRecoveries(
           }
         }
       }
-      await Promise.all(
-        Array.from(
+      await Promise.all([
+        ...Array.from(
           { length: Math.min(RECOVERY_SCAN_CONCURRENCY, pending.length) },
           worker,
         ),
-      )
+        ...orphanedRecoveryDeletions,
+      ])
     } finally {
       if (generation === recoveryScanGeneration) {
         await retryDeferredAlternativesFinalization()

@@ -111,6 +111,21 @@ describe('ChatMessages recovery indicator', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('ignores an active phase after its pending recovery is removed', () => {
+    render(
+      <ChatMessages
+        {...baseProps}
+        pendingRecoveries={[]}
+        activeRecoveryPhases={[{ turnId: 'turn-1', phase: 'streaming' }]}
+      />,
+    )
+
+    expect(screen.getByRole('log')).toHaveAttribute('aria-busy', 'false')
+    expect(
+      screen.queryByRole('status', { name: /Recovering stream/ }),
+    ).not.toBeInTheDocument()
+  })
+
   it('replaces the recovery widget with a progressive draft', async () => {
     render(
       <ChatMessages

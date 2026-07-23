@@ -411,10 +411,14 @@ export function ChatMessages({
   const recoveryPhaseByTurnId = new Map(
     activeRecoveryPhases.map((recovery) => [recovery.turnId, recovery.phase]),
   )
+  const activeRecoveryTurns = new Set(
+    [...recoveryPhaseByTurnId.keys()].filter((turnId) =>
+      pendingRecoveryTurnIds.has(turnId),
+    ),
+  )
   const hasActiveRecovery =
-    activeRecoveryPhases.length > 0 ||
+    activeRecoveryTurns.size > 0 ||
     recoveryDrafts.some((draft) => pendingRecoveryTurnIds.has(draft.turnId))
-  const activeRecoveryTurns = new Set(recoveryPhaseByTurnId.keys())
   const activeTurnCandidate =
     isWaitingForResponse || isStreamingResponse
       ? [...messages].reverse().find((message) => message.role === 'user')

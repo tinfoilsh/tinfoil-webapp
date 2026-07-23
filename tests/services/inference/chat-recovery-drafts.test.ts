@@ -5,6 +5,7 @@ import {
   getActiveChatRecoveryPhaseSnapshot,
   getActiveChatRecoverySnapshot,
   getChatRecoveryDraftSnapshot,
+  isChatRecoveryActive,
   pruneChatRecoveryDrafts,
   setChatRecoveryActive,
   setChatRecoveryDraft,
@@ -71,6 +72,7 @@ describe('chat recovery drafts', () => {
     const unsubscribe = subscribeChatRecoveryDrafts(listener)
 
     setChatRecoveryActive('chat-1', 'turn-1', true)
+    expect(isChatRecoveryActive('chat-1')).toBe(true)
     expect(getActiveChatRecoverySnapshot()).toEqual(['chat-1\u0000turn-1'])
     expect(getActiveChatRecoveryPhaseSnapshot()).toEqual([
       { key: 'chat-1\u0000turn-1', phase: 'replaying' },
@@ -82,7 +84,9 @@ describe('chat recovery drafts', () => {
     ])
 
     setChatRecoveryActive('chat-1', 'turn-1', false)
+    expect(isChatRecoveryActive('chat-1')).toBe(false)
     expect(getActiveChatRecoverySnapshot()).toEqual([])
+    expect(getActiveChatRecoveryPhaseSnapshot()).toEqual([])
     expect(listener).toHaveBeenCalledTimes(3)
     unsubscribe()
   })
