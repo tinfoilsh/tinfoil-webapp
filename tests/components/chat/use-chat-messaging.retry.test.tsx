@@ -151,12 +151,10 @@ describe('useChatMessaging retryLastMessage', () => {
       result.current.retryLastMessage()
     })
 
-    // streamError should be cleared
     expect(patchStatusMock).toHaveBeenCalledWith('chat-a', {
       streamError: null,
     })
 
-    // handleQuery should have been called, which triggers resetStatus
     expect(resetStatusMock).toHaveBeenCalledWith('chat-a', {
       loadingState: 'loading',
       isWaitingForResponse: true,

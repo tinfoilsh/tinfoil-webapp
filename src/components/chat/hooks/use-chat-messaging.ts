@@ -1135,8 +1135,7 @@ export function useChatMessaging({
         const originalMessage = currentChat.messages[i]
         patchStatus(currentChat.id, { streamError: null })
         const truncatedMessages = currentChat.messages.slice(0, i)
-        const attachments =
-          originalMessage.attachments ?? getMessageAttachments(originalMessage)
+        const attachments = getMessageAttachments(originalMessage)
         handleQuery(
           originalMessage.content || '',
           attachments.length > 0 ? attachments : undefined,
