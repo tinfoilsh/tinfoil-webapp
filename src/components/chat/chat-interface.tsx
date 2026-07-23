@@ -23,7 +23,7 @@ import { useToast } from '@/hooks/use-toast'
 import {
   getRateLimitInfo,
   getSessionToken,
-  invalidateAnonymousSessionCache,
+  invalidateSessionCache,
   snapshotAndDecrementRemaining,
   type RateLimitInfo,
 } from '@/services/inference/tinfoil-client'
@@ -1041,17 +1041,16 @@ export function ChatInterface({
     }
   }, [])
 
-  // Once the user signs in (and the auth token manager has been
-  // initialized via useCloudSync), discard any anonymous session token /
-  // free-tier rate-limit info cached before sign-in and force a fresh
-  // fetch so the banner reflects the authenticated user's quota.
+  // Refresh credentials after sign-in or an entitlement transition so a
+  // free-tier token cannot remain cached after upgrade and a premium token
+  // cannot remain cached after access ends.
   useEffect(() => {
     if (!isSignedIn || !cloudSyncInitialized) return
-    invalidateAnonymousSessionCache()
+    invalidateSessionCache()
     void getSessionToken().catch(() => {
       // best-effort; the next real request will retry
     })
-  }, [isSignedIn, cloudSyncInitialized])
+  }, [isSignedIn, cloudSyncInitialized, chat_subscription_active])
 
   // Handle upgrade requests from error CTA buttons
   useEffect(() => {

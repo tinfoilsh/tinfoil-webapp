@@ -38,6 +38,15 @@ let cachedSessionTokenWasAuthenticated = false
 let cachedRateLimit: RateLimitInfo | null = null
 let remainingBeforeRequest: number | null = null
 let refreshInFlight: Promise<void> | null = null
+let sessionCacheGeneration = 0
+
+class SessionCacheInvalidatedError extends Error {}
+
+function assertSessionCacheGeneration(cacheGeneration: number): void {
+  if (cacheGeneration !== sessionCacheGeneration) {
+    throw new SessionCacheInvalidatedError()
+  }
+}
 
 function dispatchRateLimitUpdate(): void {
   if (typeof window !== 'undefined') {
@@ -90,6 +99,7 @@ function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
 // through the opaque path.
 async function fetchChatJWT(
   authBearer: string,
+  cacheGeneration: number,
 ): Promise<{ key: string; expiresAt: number | null } | null> {
   let response: Response
   try {
@@ -124,15 +134,20 @@ async function fetchChatJWT(
 
   const parsedError = parseErrorBody(await response.text())
   if (isHourlyLimit(response.status, parsedError)) {
+    assertSessionCacheGeneration(cacheGeneration)
     surfaceHourlyLimit(parsedError)
   }
   return null
 }
 
-async function fetchSessionToken(): Promise<string> {
+async function fetchSessionTokenForGeneration(
+  cacheGeneration: number,
+): Promise<string> {
   if (IS_DEV) {
     return DEV_API_KEY
   }
+
+  assertSessionCacheGeneration(cacheGeneration)
 
   // If the user was previously signed in, wait for Clerk to initialize
   // the auth token manager before fetching — otherwise we'd get an
@@ -164,6 +179,7 @@ async function fetchSessionToken(): Promise<string> {
       )
     }
   }
+  assertSessionCacheGeneration(cacheGeneration)
   const usedAuthHeader = authBearer !== null
 
   // If the cached token was fetched anonymously but we now have an
@@ -196,7 +212,8 @@ async function fetchSessionToken(): Promise<string> {
   // Anonymous users (and signed-in users without an active subscription) fall
   // back to the opaque /api/keys/chat path below.
   if (authBearer) {
-    const jwt = await fetchChatJWT(authBearer)
+    const jwt = await fetchChatJWT(authBearer, cacheGeneration)
+    assertSessionCacheGeneration(cacheGeneration)
     if (jwt !== null) {
       cachedSessionToken = jwt.key
       cachedSessionTokenWasAuthenticated = true
@@ -216,9 +233,11 @@ async function fetchSessionToken(): Promise<string> {
   const response = await fetch(`${API_BASE_URL}/api/keys/chat`, {
     headers,
   })
+  assertSessionCacheGeneration(cacheGeneration)
 
   if (!response.ok) {
     const errorText = await response.text()
+    assertSessionCacheGeneration(cacheGeneration)
     logError('Failed to fetch session token from server', undefined, {
       component: 'tinfoil-client',
       action: 'fetchSessionToken',
@@ -242,6 +261,7 @@ async function fetchSessionToken(): Promise<string> {
   }
 
   const data = await response.json()
+  assertSessionCacheGeneration(cacheGeneration)
   cachedSessionToken = data.key
   cachedSessionTokenWasAuthenticated = usedAuthHeader
   if (data.expires_at) {
@@ -262,6 +282,16 @@ async function fetchSessionToken(): Promise<string> {
   dispatchRateLimitUpdate()
 
   return data.key
+}
+
+async function fetchSessionToken(): Promise<string> {
+  while (true) {
+    try {
+      return await fetchSessionTokenForGeneration(sessionCacheGeneration)
+    } catch (error) {
+      if (!(error instanceof SessionCacheInvalidatedError)) throw error
+    }
+  }
 }
 
 export function getRateLimitInfo(): RateLimitInfo | null {
@@ -295,14 +325,16 @@ export function snapshotAndDecrementRemaining(): void {
 export async function refreshRateLimit(): Promise<void> {
   if (refreshInFlight) return refreshInFlight
 
-  refreshInFlight = (async () => {
+  const refresh = (async () => {
+    const refreshGeneration = sessionCacheGeneration
     const snapshot = remainingBeforeRequest
     remainingBeforeRequest = null
     cachedSessionToken = null
     cachedSessionTokenExpiresAt = null
     try {
-      await fetchSessionToken()
+      await fetchSessionTokenForGeneration(refreshGeneration)
       if (
+        refreshGeneration === sessionCacheGeneration &&
         snapshot !== null &&
         cachedRateLimit &&
         cachedRateLimit.remaining >= snapshot
@@ -314,19 +346,26 @@ export async function refreshRateLimit(): Promise<void> {
         dispatchRateLimitUpdate()
       }
     } catch (error) {
+      if (error instanceof SessionCacheInvalidatedError) return
       logError('Failed to refresh rate limit from server', error, {
         component: 'tinfoil-client',
         action: 'refreshRateLimit',
       })
-    } finally {
-      refreshInFlight = null
     }
   })()
+  refreshInFlight = refresh
 
-  return refreshInFlight
+  try {
+    await refresh
+  } finally {
+    if (refreshInFlight === refresh) {
+      refreshInFlight = null
+    }
+  }
 }
 
 export function resetTinfoilClient(): void {
+  sessionCacheGeneration++
   clientInstance = null
   secureClient = null
   lastSessionToken = null
@@ -338,16 +377,13 @@ export function resetTinfoilClient(): void {
   refreshInFlight = null
 }
 
-/**
- * Discards any cached anonymous session token + rate limit so the next
- * request fetches a fresh authenticated token from the server.  Called
- * after sign-in transitions so a leftover anonymous free-tier banner
- * does not persist for a now-authenticated user.
- */
-export function invalidateAnonymousSessionCache(): void {
-  if (cachedSessionTokenWasAuthenticated) return
+export function invalidateSessionCache(): void {
+  sessionCacheGeneration++
+  refreshInFlight = null
   cachedSessionToken = null
   cachedSessionTokenExpiresAt = null
+  cachedSessionTokenWasAuthenticated = false
+  remainingBeforeRequest = null
   if (cachedRateLimit !== null) {
     cachedRateLimit = null
     dispatchRateLimitUpdate()
