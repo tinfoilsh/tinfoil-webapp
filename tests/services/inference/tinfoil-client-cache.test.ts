@@ -50,21 +50,30 @@ describe('tinfoil-client session cache', () => {
 
   it('does not restore stale rate limits after invalidation', async () => {
     let resolveStaleResponse: (response: Response) => void = () => {}
+    let resolveCurrentResponse: (response: Response) => void = () => {}
     const staleResponse = new Promise<Response>((resolve) => {
       resolveStaleResponse = resolve
+    })
+    const currentResponse = new Promise<Response>((resolve) => {
+      resolveCurrentResponse = resolve
     })
     const fetchMock = vi
       .fn()
       .mockReturnValueOnce(staleResponse)
-      .mockResolvedValueOnce(chatKeyResponse('current-key', 6))
+      .mockReturnValueOnce(currentResponse)
     vi.stubGlobal('fetch', fetchMock)
 
-    const refresh = refreshRateLimit()
+    const staleRefresh = refreshRateLimit()
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
 
     invalidateSessionCache()
+    const currentRefresh = refreshRateLimit()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
     resolveStaleResponse(chatKeyResponse('stale-key', 1))
-    await refresh
+    await staleRefresh
+    resolveCurrentResponse(chatKeyResponse('current-key', 6))
+    await currentRefresh
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(getRateLimitInfo()?.remaining).toBe(6)
@@ -83,7 +92,6 @@ describe('tinfoil-client session cache', () => {
       .fn()
       .mockReturnValueOnce(oldResponse)
       .mockReturnValueOnce(newResponse)
-      .mockResolvedValueOnce(chatKeyResponse('retried-key', 5))
       .mockResolvedValue(chatKeyResponse('unexpected-key', 4))
     vi.stubGlobal('fetch', fetchMock)
 
@@ -96,13 +104,13 @@ describe('tinfoil-client session cache', () => {
 
     resolveOldResponse(chatKeyResponse('stale-key', 1))
     await oldRefresh
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
 
     const coalescedRefresh = refreshRateLimit()
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
 
     resolveNewResponse(chatKeyResponse('current-key', 6))
     await Promise.all([newRefresh, coalescedRefresh])
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
