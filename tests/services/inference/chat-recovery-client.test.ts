@@ -138,6 +138,7 @@ describe('chat recovery client', () => {
       requestEnc: new Uint8Array(32),
     }
     const replayComplete = vi.fn()
+    const encryptedProgress = vi.fn()
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(encryptedBytes),
     )
@@ -159,7 +160,9 @@ describe('chat recovery client', () => {
       undefined,
       'replay'.length,
       replayComplete,
+      encryptedProgress,
     )
+    expect(encryptedProgress).toHaveBeenCalledWith(encryptedBytes.byteLength)
   })
 
   it('marks an exact replay boundary without waiting for another byte', async () => {
@@ -193,6 +196,34 @@ describe('chat recovery client', () => {
       encryptedBytes.byteLength,
       replayComplete,
     )
+  })
+
+  it('tracks encrypted progress from a zero-byte boundary', async () => {
+    const encryptedBytes = new TextEncoder().encode('live')
+    const replayComplete = vi.fn()
+    const encryptedProgress = vi.fn()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(encryptedBytes),
+    )
+    decryptResponseWithToken.mockImplementation(async (response: Response) => {
+      await response.arrayBuffer()
+      return new Response('decrypted')
+    })
+
+    await fetchRecoveredChatResponse(
+      SESSION_ID,
+      {
+        exportedSecret: new Uint8Array(32),
+        requestEnc: new Uint8Array(32),
+      },
+      undefined,
+      0,
+      replayComplete,
+      encryptedProgress,
+    )
+
+    expect(replayComplete).toHaveBeenCalledOnce()
+    expect(encryptedProgress).toHaveBeenCalledWith(encryptedBytes.byteLength)
   })
 
   it('does not mark a truncated replay as caught up', async () => {

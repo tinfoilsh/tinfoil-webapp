@@ -334,11 +334,12 @@ async function processEnvelope(
   generation: number,
   signal: AbortSignal,
 ): Promise<void> {
-  const isCurrent = () =>
-    generation === recoveryScanGeneration && !signal.aborted
-  if (!isCurrent()) return
   const key = turnKey(chatId, envelope.turnId)
-  if (cancelledTurns.has(key)) return
+  const isCurrent = () =>
+    generation === recoveryScanGeneration &&
+    !signal.aborted &&
+    !cancelledTurns.has(key)
+  if (!isCurrent()) return
   if (
     [...activeRecoveries.values()].some(
       (active) => active.chatId === chatId && active.turnId === envelope.turnId,
@@ -410,6 +411,14 @@ async function processEnvelope(
   const payload = opened.payload
   const initialStatus = await getChatRecoveryStatus(payload.sessionId)
   if (!isCurrent()) return
+  for (const [sessionId, retained] of scannedRecoveries) {
+    if (retained.chatId !== chatId || retained.turnId !== envelope.turnId) {
+      continue
+    }
+    scannedRecoveries.delete(sessionId)
+    retained.controller.abort()
+    setChatRecoveryActive(retained.chatId, retained.turnId, false)
+  }
   if (initialStatus.state === 'failed') {
     try {
       await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
@@ -459,57 +468,104 @@ async function processEnvelope(
       },
     })
   }
+  let keepRecoveryActive = false
   try {
-    let replayComplete = initialStatus.bytes === 0
+    let replayBytes = initialStatus.bytes
+    let retriedWithoutProgress = false
     let latestVisibleDraft: Message | null = null
-    const response = await fetchRecoveredChatResponse(
-      payload.sessionId,
-      recoveryTokenFromPayload(payload.recoveryToken),
-      recoverySignal,
-      initialStatus.bytes,
-      () => {
-        replayComplete = true
-        if (latestVisibleDraft) publishDraft(latestVisibleDraft)
-      },
-    )
-    if (!isRecoveryCurrent()) return
-    if (!response.ok) {
-      await response.arrayBuffer()
-      if (!isRecoveryCurrent()) return
-      try {
-        await removePendingRecovery(
-          chatId,
-          envelope.turnId,
-          isRecoveryCurrent,
-          recoverySignal,
-        )
-      } finally {
-        await deleteRecoveryQuietly(payload.sessionId)
+    const prepareReconnect = (
+      state: 'processing' | 'complete' | 'failed' | 'missing',
+      consumedBytes: number,
+    ) => {
+      if (state !== 'processing' && state !== 'complete') {
+        return false
       }
-      return
-    }
-    const assistantMessage = await parseRichStreamingResponse(response, {
-      onUpdate: (message) => {
-        if (!isRecoveryCurrent()) return
-        if (scanInFlight?.controller.signal === signal) {
-          scanInFlight.lastProgressAt = Date.now()
+      if (consumedBytes <= replayBytes) {
+        if (retriedWithoutProgress) {
+          keepRecoveryActive = true
+          throw new ChatRecoveryError(
+            'Encrypted response recovery stream ended before completion',
+            'processing',
+            true,
+          )
         }
-        if (
-          initialStatus.state !== 'processing' ||
-          !hasVisibleRecoveryDraft(message)
-        ) {
+        retriedWithoutProgress = true
+      } else {
+        retriedWithoutProgress = false
+      }
+      replayBytes = Math.max(replayBytes, consumedBytes)
+      return true
+    }
+    while (isRecoveryCurrent()) {
+      let replayComplete = replayBytes === 0
+      let consumedEncryptedBytes = 0
+      let measuredEncryptedBytes = false
+      let assistantMessage: Message
+      try {
+        const response = await fetchRecoveredChatResponse(
+          payload.sessionId,
+          recoveryTokenFromPayload(payload.recoveryToken),
+          recoverySignal,
+          replayBytes,
+          () => {
+            replayComplete = true
+            if (latestVisibleDraft) publishDraft(latestVisibleDraft)
+          },
+          (bytes) => {
+            measuredEncryptedBytes = true
+            consumedEncryptedBytes += bytes
+          },
+        )
+        if (!isRecoveryCurrent()) return
+        if (!response.ok) {
+          await response.arrayBuffer()
+          if (!isRecoveryCurrent()) return
+          try {
+            await removePendingRecovery(
+              chatId,
+              envelope.turnId,
+              isRecoveryCurrent,
+              recoverySignal,
+            )
+          } finally {
+            await deleteRecoveryQuietly(payload.sessionId)
+          }
           return
         }
-        latestVisibleDraft = message
-        if (!replayComplete) return
-        publishDraft(message)
-      },
-    })
-    if (!isRecoveryCurrent()) return
-    const terminalState = (await getChatRecoveryStatus(payload.sessionId)).state
-    if (!isRecoveryCurrent()) return
-    if (terminalState !== 'complete') {
-      if (terminalState === 'failed') {
+        assistantMessage = await parseRichStreamingResponse(response, {
+          onUpdate: (message) => {
+            if (!isRecoveryCurrent()) return
+            if (scanInFlight?.controller.signal === signal) {
+              scanInFlight.lastProgressAt = Date.now()
+            }
+            if (
+              initialStatus.state !== 'processing' ||
+              !hasVisibleRecoveryDraft(message)
+            ) {
+              return
+            }
+            latestVisibleDraft = message
+            if (!replayComplete) return
+            publishDraft(message)
+          },
+        })
+      } catch (error) {
+        if (!isRecoveryCurrent()) return
+        const retryStatus = await getChatRecoveryStatus(payload.sessionId)
+        if (!isRecoveryCurrent()) return
+        if (prepareReconnect(retryStatus.state, consumedEncryptedBytes)) {
+          continue
+        }
+        throw error
+      }
+      if (!isRecoveryCurrent()) return
+      const terminalStatus = await getChatRecoveryStatus(payload.sessionId)
+      if (!isRecoveryCurrent()) return
+      if (terminalStatus.state === 'processing') {
+        prepareReconnect(terminalStatus.state, consumedEncryptedBytes)
+        continue
+      }
+      if (terminalStatus.state === 'failed') {
         try {
           await removePendingRecovery(
             chatId,
@@ -522,7 +578,7 @@ async function processEnvelope(
         }
         return
       }
-      if (terminalState === 'missing') {
+      if (terminalStatus.state === 'missing') {
         await removePendingRecovery(
           chatId,
           envelope.turnId,
@@ -531,32 +587,37 @@ async function processEnvelope(
         )
         return
       }
-      throw new ChatRecoveryError(
-        'Encrypted response recovery stream ended before completion',
-        'processing',
-        true,
+      if (
+        measuredEncryptedBytes &&
+        consumedEncryptedBytes < terminalStatus.bytes
+      ) {
+        prepareReconnect(terminalStatus.state, consumedEncryptedBytes)
+        continue
+      }
+      await completePendingRecovery(
+        chatId,
+        envelope.turnId,
+        {
+          ...assistantMessage,
+          turnId: envelope.turnId,
+        },
+        undefined,
+        isRecoveryCurrent,
+        recoverySignal,
       )
+      await deleteRecoveryQuietly(payload.sessionId)
+      return
     }
-    await completePendingRecovery(
-      chatId,
-      envelope.turnId,
-      {
-        ...assistantMessage,
-        turnId: envelope.turnId,
-      },
-      undefined,
-      isRecoveryCurrent,
-      recoverySignal,
-    )
-    await deleteRecoveryQuietly(payload.sessionId)
   } finally {
     signal.removeEventListener('abort', abortRecovery)
     if (
       scannedRecovery &&
       scannedRecoveries.get(payload.sessionId) === scannedRecovery
     ) {
-      scannedRecoveries.delete(payload.sessionId)
-      setChatRecoveryActive(chatId, envelope.turnId, false)
+      if (!keepRecoveryActive) {
+        scannedRecoveries.delete(payload.sessionId)
+        setChatRecoveryActive(chatId, envelope.turnId, false)
+      }
     }
   }
 }
@@ -585,13 +646,20 @@ export function scanPendingChatRecoveries(
           envelope,
         })),
       )
-      pruneChatRecoveryDrafts(
-        new Set(
-          pending.map((candidate) =>
-            turnKey(candidate.chatId, candidate.envelope.turnId),
-          ),
+      const pendingTurnKeys = new Set(
+        pending.map((candidate) =>
+          turnKey(candidate.chatId, candidate.envelope.turnId),
         ),
       )
+      for (const [sessionId, retained] of scannedRecoveries) {
+        if (pendingTurnKeys.has(turnKey(retained.chatId, retained.turnId))) {
+          continue
+        }
+        scannedRecoveries.delete(sessionId)
+        retained.controller.abort()
+        setChatRecoveryActive(retained.chatId, retained.turnId, false)
+      }
+      pruneChatRecoveryDrafts(pendingTurnKeys)
       let nextIndex = 0
       const worker = async () => {
         while (

@@ -102,6 +102,7 @@ export async function fetchRecoveredChatResponse(
   signal?: AbortSignal,
   replayBytes = 0,
   onReplayComplete?: () => void,
+  onEncryptedBytes?: (bytes: number) => void,
 ): Promise<Response> {
   const response = await recoveryFetch(sessionId, '', { signal })
   const encryptedResponse = response.headers.has(EHBP_RESPONSE_NONCE_HEADER)
@@ -118,19 +119,22 @@ export async function fetchRecoveredChatResponse(
       response.status >= 500,
     )
   }
-  if (!response.body || replayBytes <= 0 || !onReplayComplete) {
+  const suppressReplay = replayBytes > 0 && Boolean(onReplayComplete)
+  if (!response.body || (!suppressReplay && !onEncryptedBytes)) {
     onReplayComplete?.()
     return decryptResponseWithToken(response, token)
   }
 
-  let replayBytesRemaining = replayBytes
-  let replayComplete = false
+  let replayBytesRemaining = suppressReplay ? replayBytes : 0
+  let replayComplete = !suppressReplay
+  if (replayComplete) onReplayComplete?.()
   let liveRemainder: Uint8Array | undefined
   const reader = response.body.getReader()
+  onEncryptedBytes?.(0)
   const markReplayComplete = () => {
     if (replayComplete) return
     replayComplete = true
-    onReplayComplete()
+    onReplayComplete?.()
   }
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -152,6 +156,7 @@ export async function fetchRecoveredChatResponse(
         controller.close()
         return
       }
+      onEncryptedBytes?.(value.byteLength)
       if (replayBytesRemaining === 0) {
         controller.enqueue(value)
         return

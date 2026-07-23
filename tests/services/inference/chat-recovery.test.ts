@@ -114,6 +114,7 @@ import {
 } from '@/services/inference/chat-recovery'
 
 const SESSION_ID = '0123456789abcdef0123456789abcdef'
+const REPLACEMENT_SESSION_ID = 'abcdef0123456789abcdef0123456789'
 const RECOVERY_SCAN_MAX_AGE_MS = 120_000
 const envelope: PendingRecoveryEnvelope = {
   v: 1,
@@ -248,6 +249,7 @@ describe('chat recovery lifecycle', () => {
       expect.any(Object),
       expect.any(AbortSignal),
       128,
+      expect.any(Function),
       expect.any(Function),
     )
     expect(setChatRecoveryDraft).toHaveBeenCalledWith({
@@ -411,6 +413,319 @@ describe('chat recovery lifecycle', () => {
     expect(setChatRecoveryDraft).toHaveBeenCalled()
     expect(completePendingRecovery).not.toHaveBeenCalled()
     expect(deleteChatRecovery).not.toHaveBeenCalled()
+    expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+    ])
+  })
+
+  it('keeps streaming when a recovered response ends while processing', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('complete')
+    fetchRecoveredChatResponse
+      .mockResolvedValueOnce(new Response('partial'))
+      .mockResolvedValueOnce(new Response('complete'))
+    parseRichStreamingResponse
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'Partial',
+        timestamp: new Date().toISOString(),
+      })
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'Complete',
+        timestamp: new Date().toISOString(),
+      })
+
+    await scanPendingChatRecoveries('user-1')
+
+    expect(fetchRecoveredChatResponse).toHaveBeenCalledTimes(2)
+    expect(completePendingRecovery).toHaveBeenCalledWith(
+      'chat-1',
+      'turn-1',
+      expect.objectContaining({ content: 'Complete' }),
+      undefined,
+      expect.any(Function),
+      expect.any(AbortSignal),
+    )
+    expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+      ['chat-1', 'turn-1', false],
+    ])
+  })
+
+  it('reconnects when a recovered response transport terminates', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('complete')
+    fetchRecoveredChatResponse.mockImplementation(
+      async (
+        _sessionId: string,
+        _token: unknown,
+        _signal: AbortSignal,
+        _replayBytes: number,
+        _onReplayComplete: () => void,
+        onEncryptedBytes: (bytes: number) => void,
+      ) => {
+        onEncryptedBytes(160)
+        return new Response('stream')
+      },
+    )
+    parseRichStreamingResponse
+      .mockRejectedValueOnce(new TypeError('terminated'))
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'Complete',
+        timestamp: new Date().toISOString(),
+      })
+
+    await scanPendingChatRecoveries('user-1')
+
+    expect(fetchRecoveredChatResponse).toHaveBeenCalledTimes(2)
+    expect(fetchRecoveredChatResponse.mock.calls[1]?.[3]).toBe(160)
+    expect(completePendingRecovery).toHaveBeenCalledWith(
+      'chat-1',
+      'turn-1',
+      expect.objectContaining({ content: 'Complete' }),
+      undefined,
+      expect.any(Function),
+      expect.any(AbortSignal),
+    )
+    expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+      ['chat-1', 'turn-1', false],
+    ])
+  })
+
+  it('reconnects when completion reports more bytes than the stream read', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('complete')
+      .mockResolvedValueOnce('complete')
+    fetchRecoveredChatResponse
+      .mockImplementationOnce(
+        async (
+          _sessionId: string,
+          _token: unknown,
+          _signal: AbortSignal,
+          _replayBytes: number,
+          _onReplayComplete: () => void,
+          onEncryptedBytes: (bytes: number) => void,
+        ) => {
+          onEncryptedBytes(0)
+          return new Response('partial')
+        },
+      )
+      .mockImplementationOnce(
+        async (
+          _sessionId: string,
+          _token: unknown,
+          _signal: AbortSignal,
+          _replayBytes: number,
+          _onReplayComplete: () => void,
+          onEncryptedBytes: (bytes: number) => void,
+        ) => {
+          onEncryptedBytes(160)
+          return new Response('complete')
+        },
+      )
+    parseRichStreamingResponse
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: '',
+        timestamp: new Date().toISOString(),
+      })
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'Complete',
+        timestamp: new Date().toISOString(),
+      })
+
+    await scanPendingChatRecoveries('user-1')
+
+    expect(fetchRecoveredChatResponse).toHaveBeenCalledTimes(2)
+    expect(fetchRecoveredChatResponse.mock.calls[1]?.[3]).toBe(128)
+    expect(completePendingRecovery).toHaveBeenCalledWith(
+      'chat-1',
+      'turn-1',
+      expect.objectContaining({ content: 'Complete' }),
+      undefined,
+      expect.any(Function),
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('releases retained activity when a later scan completes recovery', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('complete')
+      .mockResolvedValueOnce('complete')
+    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    parseRichStreamingResponse
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'Partial',
+        timestamp: new Date().toISOString(),
+      })
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'Partial',
+        timestamp: new Date().toISOString(),
+      })
+      .mockResolvedValueOnce({
+        role: 'assistant',
+        content: 'Complete',
+        timestamp: new Date().toISOString(),
+      })
+
+    await scanPendingChatRecoveries('user-1')
+    expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+    ])
+
+    await scanPendingChatRecoveries('user-1', true)
+
+    expect(completePendingRecovery).toHaveBeenCalledWith(
+      'chat-1',
+      'turn-1',
+      expect.objectContaining({ content: 'Complete' }),
+      undefined,
+      expect.any(Function),
+      expect.any(AbortSignal),
+    )
+    expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+      ['chat-1', 'turn-1', false],
+    ])
+  })
+
+  it('releases retained activity when the pending envelope disappears', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState.mockResolvedValue('processing')
+    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    parseRichStreamingResponse.mockResolvedValue({
+      role: 'assistant',
+      content: 'Partial',
+      timestamp: new Date().toISOString(),
+    })
+
+    await scanPendingChatRecoveries('user-1')
+    expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+    ])
+
+    getAllChats.mockResolvedValue([])
+    await scanPendingChatRecoveries('user-1', true)
+
+    expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+      ['chat-1', 'turn-1', false],
+    ])
+  })
+
+  it('does not readopt retained recovery after cancellation during status', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope
+      .mockResolvedValueOnce({
+        sessionId: SESSION_ID,
+        recoveryToken: JSON.stringify({
+          exportedSecret: '00'.repeat(32),
+          requestEnc: '11'.repeat(32),
+        }),
+      })
+      .mockResolvedValueOnce({
+        sessionId: REPLACEMENT_SESSION_ID,
+        recoveryToken: JSON.stringify({
+          exportedSecret: '00'.repeat(32),
+          requestEnc: '11'.repeat(32),
+        }),
+      })
+    getChatRecoveryState.mockResolvedValue('processing')
+    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    parseRichStreamingResponse.mockResolvedValue({
+      role: 'assistant',
+      content: 'Partial',
+      timestamp: new Date().toISOString(),
+    })
+
+    await scanPendingChatRecoveries('user-1')
+    const fetchCountBeforeRescan = fetchRecoveredChatResponse.mock.calls.length
+    let resolveStatus: ((state: string) => void) | undefined
+    getChatRecoveryState.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveStatus = resolve
+        }),
+    )
+
+    const rescan = scanPendingChatRecoveries('user-1', true)
+    await vi.waitFor(() => expect(resolveStatus).toBeTypeOf('function'))
+    const cancellation = cancelChatRecovery('chat-1')
+    resolveStatus?.('processing')
+    await Promise.all([rescan, cancellation])
+
+    expect(fetchRecoveredChatResponse).toHaveBeenCalledTimes(
+      fetchCountBeforeRescan,
+    )
+    expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+      ['chat-1', 'turn-1', false],
+    ])
   })
 
   it('cancels a recovery stream resumed by a scan', async () => {
@@ -562,6 +877,7 @@ describe('chat recovery lifecycle', () => {
       expect.any(Object),
       expect.any(AbortSignal),
       128,
+      expect.any(Function),
       expect.any(Function),
     )
     expect(completePendingRecovery).toHaveBeenCalled()
