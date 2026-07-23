@@ -3,6 +3,7 @@ import { getRecoveryBaseURL } from './tinfoil-client'
 
 const RECOVERY_SESSION_ID_PATTERN = /^[0-9a-f]{32}$/
 const RECOVERY_REQUEST_TIMEOUT_MS = 30_000
+const EHBP_RESPONSE_NONCE_HEADER = 'Ehbp-Response-Nonce'
 
 export type RecoveryState = 'processing' | 'complete' | 'failed' | 'missing'
 export type RecoveryStatus = {
@@ -103,19 +104,14 @@ export async function fetchRecoveredChatResponse(
   onReplayComplete?: () => void,
 ): Promise<Response> {
   const response = await recoveryFetch(sessionId, '', { signal })
-  if (response.status === 404) {
+  const encryptedResponse = response.headers.has(EHBP_RESPONSE_NONCE_HEADER)
+  if (!encryptedResponse && response.status === 404) {
     throw new ChatRecoveryError('Recovery session not found', 'missing')
   }
-  if (response.status === 409) {
-    throw new ChatRecoveryError(
-      'Recovery session is still processing',
-      'processing',
-    )
-  }
-  if (response.status === 410) {
+  if (!encryptedResponse && response.status === 410) {
     throw new ChatRecoveryError('Recovery session failed', 'failed')
   }
-  if (!response.ok) {
+  if (!encryptedResponse && !response.ok) {
     throw new ChatRecoveryError(
       'Encrypted response recovery failed',
       undefined,

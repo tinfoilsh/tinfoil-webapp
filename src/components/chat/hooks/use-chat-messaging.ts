@@ -22,6 +22,7 @@ import { useProject } from '@/components/project'
 import { resolveModelSelection, type BaseModel } from '@/config/models'
 import { useChatRecoveryActive } from '@/hooks/use-chat-recovery-drafts'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
+import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { getCodeExecutionContainerAuthTokenForChat } from '@/services/exec-snapshot/use-exec-snapshot'
 import {
@@ -169,20 +170,27 @@ export function useChatMessaging({
   useEffect(() => {
     if (!isSignedIn || !userId || !storeHistory) return
 
-    const scan = () => {
+    const scan = (refreshPending = false) => {
       if (!canUseChatRecovery({ isSignedIn, userId, storeHistory })) return
-      void scanPendingChatRecoveries(userId)
+      void scanPendingChatRecoveries(userId, refreshPending)
     }
     scan()
-    window.addEventListener('online', scan)
+    const scanCurrent = () => scan()
+    const refreshScan = () => scan(true)
+    window.addEventListener('online', scanCurrent)
+    window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, refreshScan)
     const unsubscribe = chatEvents.on((event) => {
       if (event.reason === 'sync' || event.reason === 'pagination') {
-        scan()
+        scanCurrent()
       }
     })
-    const interval = window.setInterval(scan, CHAT_RECOVERY_POLL_INTERVAL_MS)
+    const interval = window.setInterval(
+      scanCurrent,
+      CHAT_RECOVERY_POLL_INTERVAL_MS,
+    )
     return () => {
-      window.removeEventListener('online', scan)
+      window.removeEventListener('online', scanCurrent)
+      window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, refreshScan)
       unsubscribe()
       window.clearInterval(interval)
     }
@@ -241,11 +249,11 @@ export function useChatMessaging({
     streamError,
   } = currentStatus
   const isRecoveryActive = useChatRecoveryActive(currentChatId)
+  const isStreaming = isLiveStreaming || isRecoveryActive
   const loadingState =
-    streamLoadingState === 'idle' && isRecoveryActive
+    isStreaming && streamLoadingState !== 'retrying'
       ? 'loading'
       : streamLoadingState
-  const isStreaming = isLiveStreaming || isRecoveryActive
 
   const inputRef = useRef<HTMLTextAreaElement>(null)
 

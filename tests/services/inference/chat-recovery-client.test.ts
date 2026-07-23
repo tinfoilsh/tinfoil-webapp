@@ -93,6 +93,25 @@ describe('chat recovery client', () => {
     expect(decryptResponseWithToken).toHaveBeenCalledWith(encrypted, token)
   })
 
+  it('decrypts an authenticated upstream conflict response', async () => {
+    const encrypted = new Response('encrypted conflict', {
+      status: 409,
+      headers: { 'Ehbp-Response-Nonce': 'nonce' },
+    })
+    const decrypted = new Response('decrypted conflict', { status: 409 })
+    const token = {
+      exportedSecret: new Uint8Array(32),
+      requestEnc: new Uint8Array(32),
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(encrypted)
+    decryptResponseWithToken.mockResolvedValue(decrypted)
+
+    await expect(fetchRecoveredChatResponse(SESSION_ID, token)).resolves.toBe(
+      decrypted,
+    )
+    expect(decryptResponseWithToken).toHaveBeenCalledWith(encrypted, token)
+  })
+
   it('keeps a recovery stream tied to its scan signal', async () => {
     const encrypted = new Response('encrypted')
     const decrypted = new Response('decrypted')

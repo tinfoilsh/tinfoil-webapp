@@ -338,6 +338,35 @@ describe('chat recovery lifecycle', () => {
     expect(setChatRecoveryDraft).toHaveBeenCalledTimes(1)
   })
 
+  it('preserves the partial response when recovery returns an upstream error', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState.mockResolvedValue('processing')
+    fetchRecoveredChatResponse.mockResolvedValue(
+      new Response('{"error":"conflict"}', { status: 409 }),
+    )
+
+    await scanPendingChatRecoveries('user-1')
+
+    expect(parseRichStreamingResponse).not.toHaveBeenCalled()
+    expect(completePendingRecovery).not.toHaveBeenCalled()
+    expect(removePendingRecovery).toHaveBeenCalledWith(
+      'chat-1',
+      'turn-1',
+      expect.any(Function),
+      expect.any(AbortSignal),
+    )
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
+  })
+
   it('does not persist a stream that ends before the session is complete', async () => {
     getAllChats.mockResolvedValue([
       { id: 'chat-1', pendingRecoveries: [envelope] },

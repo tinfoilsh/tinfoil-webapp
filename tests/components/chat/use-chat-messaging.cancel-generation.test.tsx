@@ -20,6 +20,7 @@ const resetStatusMock = vi.fn()
 const moveStatusMock = vi.fn()
 const registerControllerMock = vi.fn()
 const clearControllerMock = vi.fn()
+const streamStatuses: Record<string, object> = {}
 const { authState, cloudSyncState, scanPendingChatRecoveriesMock } = vi.hoisted(
   () => ({
     authState: {
@@ -81,7 +82,7 @@ vi.mock('@/components/chat/hooks/use-chat-streams', async () => {
   return {
     ...actual,
     useChatStreams: () => ({
-      statusByChat: {},
+      statusByChat: streamStatuses,
       patchStatus: patchStatusMock,
       resetStatus: resetStatusMock,
       moveStatus: moveStatusMock,
@@ -145,6 +146,9 @@ describe('useChatMessaging cancelGeneration', () => {
     authState.isSignedIn = false
     authState.userId = undefined
     cloudSyncState.enabled = true
+    for (const chatId of Object.keys(streamStatuses)) {
+      delete streamStatuses[chatId]
+    }
   })
 
   it('targets the latest rendered chat during a chat switch', () => {
@@ -180,6 +184,14 @@ describe('useChatMessaging cancelGeneration', () => {
 
   it('exposes a resumed recovery as an active stream', () => {
     const chat = createChat('chat-a')
+    streamStatuses['chat-a'] = {
+      loadingState: 'streaming',
+      retryInfo: null,
+      isThinking: false,
+      isWaitingForResponse: false,
+      isStreaming: true,
+      streamError: null,
+    }
     const { result } = renderHook(useChatMessagingHarness, {
       initialProps: {
         currentChat: chat,
@@ -189,6 +201,28 @@ describe('useChatMessaging cancelGeneration', () => {
 
     act(() => {
       setChatRecoveryActive('chat-a', 'turn-1', true)
+    })
+
+    expect(result.current.loadingState).toBe('loading')
+    expect(result.current.isStreaming).toBe(true)
+  })
+
+  it('keeps the Stop action active whenever the chat is streaming', () => {
+    const chat = createChat('chat-a')
+    streamStatuses['chat-a'] = {
+      loadingState: 'idle',
+      retryInfo: null,
+      isThinking: false,
+      isWaitingForResponse: false,
+      isStreaming: true,
+      streamError: null,
+    }
+
+    const { result } = renderHook(useChatMessagingHarness, {
+      initialProps: {
+        currentChat: chat,
+        triggerCancelOnLayout: false,
+      },
     })
 
     expect(result.current.loadingState).toBe('loading')
@@ -220,7 +254,35 @@ describe('useChatMessaging cancelGeneration', () => {
       chatEvents.emit({ reason: 'sync', ids: ['chat-a'] })
     })
 
-    expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1')
+    expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1', false)
+    unmount()
+  })
+
+  it('rescans pending recoveries when the encryption key becomes available', () => {
+    authState.isSignedIn = true
+    authState.userId = 'user-1'
+    const chat = createChat('chat-a')
+    const { unmount } = renderHook(() =>
+      useChatMessaging({
+        systemPrompt: '',
+        rules: '',
+        storeHistory: true,
+        models: [],
+        selectedModel: 'test-model',
+        chats: [chat],
+        currentChat: chat,
+        setChats: noopSetChats,
+        setCurrentChat: noopSetCurrentChat,
+        messagesEndRef,
+      }),
+    )
+    scanPendingChatRecoveriesMock.mockClear()
+
+    act(() => {
+      window.dispatchEvent(new Event('encryptionKeyChanged'))
+    })
+
+    expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1', true)
     unmount()
   })
 
@@ -245,7 +307,7 @@ describe('useChatMessaging cancelGeneration', () => {
       }),
     )
 
-    expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1')
+    expect(scanPendingChatRecoveriesMock).toHaveBeenCalledWith('user-1', false)
     unmount()
   })
 

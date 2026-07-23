@@ -473,6 +473,21 @@ async function processEnvelope(
       },
     )
     if (!isRecoveryCurrent()) return
+    if (!response.ok) {
+      await response.arrayBuffer()
+      if (!isRecoveryCurrent()) return
+      try {
+        await removePendingRecovery(
+          chatId,
+          envelope.turnId,
+          isRecoveryCurrent,
+          recoverySignal,
+        )
+      } finally {
+        await deleteRecoveryQuietly(payload.sessionId)
+      }
+      return
+    }
     const assistantMessage = await parseRichStreamingResponse(response, {
       onUpdate: (message) => {
         if (!isRecoveryCurrent()) return
