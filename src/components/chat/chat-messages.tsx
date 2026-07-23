@@ -429,6 +429,12 @@ export function ChatMessages({
     pendingRecoveryTurnIds.has(message.turnId)
       ? recoveryDraftsByTurnId.get(message.turnId)
       : undefined
+  const showRecoveryStatusAfter = (message: Message) =>
+    message.role === 'assistant' &&
+    message.turnId !== undefined &&
+    message.turnId !== activeTurnId &&
+    pendingRecoveryTurnIds.has(message.turnId) &&
+    !recoveryDraftsByTurnId.has(message.turnId)
   const renderRecoveryAfter = (message: Message, messageIndex: number) => {
     if (!showRecoveryAfter(message)) return null
     const draft = message.turnId
@@ -440,7 +446,7 @@ export function ChatMessages({
         messageIndex={messageIndex + 1}
         model={currentModel}
         isDarkMode={isDarkMode}
-        isLastMessage={false}
+        isLastMessage
         isStreaming
       />
     ) : (
@@ -471,13 +477,14 @@ export function ChatMessages({
                       messageIndex={i}
                       model={currentModel}
                       isDarkMode={isDarkMode}
-                      isLastMessage={false}
+                      isLastMessage={Boolean(recoveryDraft)}
                       isStreaming={Boolean(recoveryDraft)}
                       onEditMessage={recoveryDraft ? undefined : onEditMessage}
                       onRegenerateMessage={
                         recoveryDraft ? undefined : onRegenerateMessage
                       }
                     />
+                    {showRecoveryStatusAfter(message) && <RecoveryMessage />}
                     {renderRecoveryAfter(message, i)}
                   </React.Fragment>
                 )
@@ -500,7 +507,9 @@ export function ChatMessages({
                 messageIndex={archivedMessages.length + i}
                 model={currentModel}
                 isDarkMode={isDarkMode}
-                isLastMessage={i === liveMessages.length - 1}
+                isLastMessage={
+                  Boolean(recoveryDraft) || i === liveMessages.length - 1
+                }
                 isStreaming={
                   Boolean(recoveryDraft) ||
                   (i === liveMessages.length - 1 && isStreamingResponse)
@@ -510,6 +519,7 @@ export function ChatMessages({
                   recoveryDraft ? undefined : onRegenerateMessage
                 }
               />
+              {showRecoveryStatusAfter(message) && <RecoveryMessage />}
               {renderRecoveryAfter(message, archivedMessages.length + i)}
             </React.Fragment>
           )

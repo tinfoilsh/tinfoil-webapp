@@ -12,13 +12,16 @@ vi.mock('@/components/chat/renderers/client', () => ({
       render: ({
         message,
         isStreaming,
+        isLastMessage,
       }: {
         message: { role: string; turnId?: string; content?: string }
         isStreaming?: boolean
+        isLastMessage?: boolean
       }) => (
         <div
           data-testid={`message-${message.turnId}`}
           data-streaming={isStreaming}
+          data-last={isLastMessage}
         >
           {message.role}: {message.content}
         </div>
@@ -123,6 +126,7 @@ describe('ChatMessages recovery indicator', () => {
     expect(renderedMessages).toHaveLength(2)
     expect(renderedMessages[0].nextElementSibling).toBe(renderedMessages[1])
     expect(renderedMessages[1]).toHaveAttribute('data-streaming', 'true')
+    expect(renderedMessages[1]).toHaveAttribute('data-last', 'true')
     expect(screen.getByText('assistant: Partial answer')).toBeInTheDocument()
     expect(
       screen.queryByRole('status', { name: /Recovering response/ }),
@@ -161,5 +165,31 @@ describe('ChatMessages recovery indicator', () => {
       screen.getByText('assistant: New streamed partial'),
     ).toBeInTheDocument()
     expect(screen.queryByText(/Persisted partial/)).not.toBeInTheDocument()
+    expect(screen.getAllByTestId('message-turn-1')[1]).toHaveAttribute(
+      'data-last',
+      'true',
+    )
+  })
+
+  it('keeps recovery status visible beside a persisted partial', async () => {
+    render(
+      <ChatMessages
+        {...baseProps}
+        messages={[
+          ...messages,
+          {
+            role: 'assistant',
+            turnId: 'turn-1',
+            content: 'Persisted partial',
+            timestamp: new Date('2026-07-21T00:00:01.000Z'),
+          },
+        ]}
+      />,
+    )
+
+    const assistant = screen.getAllByTestId('message-turn-1')[1]
+    expect(assistant.nextElementSibling).toBe(
+      screen.getByRole('status', { name: /Recovering response/ }),
+    )
   })
 })

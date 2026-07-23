@@ -838,6 +838,40 @@ export function useChatMessaging({
           // The response is always saved to that chat, even if the user has
           // navigated to a different conversation while it streamed.
           const chatId = streamChatIdRef.current
+          let recoveryFinalized = false
+
+          if (recoveryEnabled && turnId) {
+            try {
+              await completeLiveChatRecovery({
+                chatId,
+                turnId,
+                assistantMessage,
+                chatPatch: {
+                  title: updatedChat.title,
+                  titleState: updatedChat.titleState,
+                  model: selectedModel,
+                  projectId: updatedChat.projectId,
+                },
+              })
+              recoveryFinalized = true
+            } catch (error) {
+              if (
+                error instanceof DOMException &&
+                error.name === 'AbortError'
+              ) {
+                throw error
+              }
+              logError(
+                'Failed to promptly finalize recoverable chat response',
+                error,
+                {
+                  component: 'useChatMessaging',
+                  action: 'handleQuery.recoveryPromptComplete',
+                  metadata: { chatId },
+                },
+              )
+            }
+          }
 
           logInfo('[handleQuery] Streaming completed, processing response', {
             component: 'useChatMessaging',
@@ -936,7 +970,7 @@ export function useChatMessaging({
             },
           })
 
-          if (recoveryEnabled && turnId) {
+          if (recoveryEnabled && turnId && !recoveryFinalized) {
             try {
               await completeLiveChatRecovery({
                 chatId,

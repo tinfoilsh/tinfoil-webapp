@@ -26,7 +26,7 @@ describe('chat recovery client', () => {
 
   it('reads complete recovery status without sending credentials', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ status: 'complete' }), {
+      new Response(JSON.stringify({ status: 'complete', bytes: 128 }), {
         headers: { 'Content-Type': 'application/json' },
       }),
     )
@@ -54,6 +54,19 @@ describe('chat recovery client', () => {
   it('rejects a null recovery status response with a typed error', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('null', {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    await expect(getChatRecoveryState(SESSION_ID)).rejects.toMatchObject({
+      name: 'ChatRecoveryError',
+      retryable: false,
+    })
+  })
+
+  it('rejects recovery status without a valid byte count', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ status: 'processing' }), {
         headers: { 'Content-Type': 'application/json' },
       }),
     )
@@ -96,6 +109,37 @@ describe('chat recovery client', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       `https://api.example/recovery/${SESSION_ID}`,
       expect.objectContaining({ signal: controller.signal }),
+    )
+  })
+
+  it('marks the persisted replay boundary before forwarding live bytes', async () => {
+    const encryptedBytes = new TextEncoder().encode('replay-live')
+    const token = {
+      exportedSecret: new Uint8Array(32),
+      requestEnc: new Uint8Array(32),
+    }
+    const replayComplete = vi.fn()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(encryptedBytes),
+    )
+    decryptResponseWithToken.mockImplementation(async (response: Response) => {
+      const reader = response.body?.getReader()
+      expect(replayComplete).not.toHaveBeenCalled()
+      const replay = await reader?.read()
+      expect(new TextDecoder().decode(replay?.value)).toBe('replay')
+      expect(replayComplete).not.toHaveBeenCalled()
+      const live = await reader?.read()
+      expect(new TextDecoder().decode(live?.value)).toBe('-live')
+      expect(replayComplete).toHaveBeenCalledTimes(1)
+      return new Response('decrypted')
+    })
+
+    await fetchRecoveredChatResponse(
+      SESSION_ID,
+      token,
+      undefined,
+      'replay'.length,
+      replayComplete,
     )
   })
 

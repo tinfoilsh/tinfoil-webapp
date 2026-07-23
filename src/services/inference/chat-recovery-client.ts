@@ -5,6 +5,10 @@ const RECOVERY_SESSION_ID_PATTERN = /^[0-9a-f]{32}$/
 const RECOVERY_REQUEST_TIMEOUT_MS = 30_000
 
 export type RecoveryState = 'processing' | 'complete' | 'failed' | 'missing'
+export type RecoveryStatus = {
+  state: RecoveryState
+  bytes: number
+}
 
 export class ChatRecoveryError extends Error {
   constructor(
@@ -54,12 +58,12 @@ async function recoveryFetch(
   }
 }
 
-export async function getChatRecoveryState(
+export async function getChatRecoveryStatus(
   sessionId: string,
-): Promise<RecoveryState> {
+): Promise<RecoveryStatus> {
   const response = await recoveryFetch(sessionId, '/status')
-  if (response.status === 404) return 'missing'
-  if (response.status === 410) return 'failed'
+  if (response.status === 404) return { state: 'missing', bytes: 0 }
+  if (response.status === 410) return { state: 'failed', bytes: 0 }
   if (!response.ok) {
     throw new ChatRecoveryError(
       'Encrypted response recovery status failed',
@@ -72,16 +76,31 @@ export async function getChatRecoveryState(
     typeof body === 'object' && body !== null && 'status' in body
       ? body.status
       : undefined
+  const bytes =
+    typeof body === 'object' && body !== null && 'bytes' in body
+      ? body.bytes
+      : undefined
   if (status !== 'processing' && status !== 'complete' && status !== 'failed') {
     throw new ChatRecoveryError('Invalid encrypted recovery status response')
   }
-  return status
+  if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 0) {
+    throw new ChatRecoveryError('Invalid encrypted recovery byte count')
+  }
+  return { state: status, bytes }
+}
+
+export async function getChatRecoveryState(
+  sessionId: string,
+): Promise<RecoveryState> {
+  return (await getChatRecoveryStatus(sessionId)).state
 }
 
 export async function fetchRecoveredChatResponse(
   sessionId: string,
   token: SessionRecoveryToken,
   signal?: AbortSignal,
+  replayBytes = 0,
+  onReplayComplete?: () => void,
 ): Promise<Response> {
   const response = await recoveryFetch(sessionId, '', { signal })
   if (response.status === 404) {
@@ -103,7 +122,62 @@ export async function fetchRecoveredChatResponse(
       response.status >= 500,
     )
   }
-  return decryptResponseWithToken(response, token)
+  if (!response.body || replayBytes <= 0 || !onReplayComplete) {
+    onReplayComplete?.()
+    return decryptResponseWithToken(response, token)
+  }
+
+  let replayBytesRemaining = replayBytes
+  let replayComplete = false
+  let liveRemainder: Uint8Array | undefined
+  const reader = response.body.getReader()
+  const markReplayComplete = () => {
+    if (replayComplete) return
+    replayComplete = true
+    onReplayComplete()
+  }
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (liveRemainder) {
+        markReplayComplete()
+        controller.enqueue(liveRemainder)
+        liveRemainder = undefined
+        return
+      }
+
+      const { done, value } = await reader.read()
+      if (done) {
+        markReplayComplete()
+        controller.close()
+        return
+      }
+      if (replayBytesRemaining === 0) {
+        markReplayComplete()
+        controller.enqueue(value)
+        return
+      }
+      if (value.byteLength <= replayBytesRemaining) {
+        replayBytesRemaining -= value.byteLength
+        controller.enqueue(value)
+        return
+      }
+
+      liveRemainder = value.slice(replayBytesRemaining)
+      controller.enqueue(value.slice(0, replayBytesRemaining))
+      replayBytesRemaining = 0
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    },
+  })
+  return decryptResponseWithToken(
+    new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    }),
+    token,
+  )
 }
 
 export async function deleteChatRecovery(sessionId: string): Promise<void> {

@@ -14,7 +14,7 @@ import {
   ChatRecoveryError,
   deleteChatRecovery,
   fetchRecoveredChatResponse,
-  getChatRecoveryState,
+  getChatRecoveryStatus,
 } from './chat-recovery-client'
 import {
   decryptRecoveryEnvelope,
@@ -344,9 +344,9 @@ async function processEnvelope(
     }
   }
   const payload = opened.payload
-  const state = await getChatRecoveryState(payload.sessionId)
+  const initialStatus = await getChatRecoveryStatus(payload.sessionId)
   if (!isCurrent()) return
-  if (state === 'failed') {
+  if (initialStatus.state === 'failed') {
     try {
       await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
     } finally {
@@ -354,15 +354,20 @@ async function processEnvelope(
     }
     return
   }
-  if (state === 'missing') {
+  if (initialStatus.state === 'missing') {
     await removePendingRecovery(chatId, envelope.turnId, isCurrent, signal)
     return
   }
 
+  let replayComplete = initialStatus.bytes === 0
   const response = await fetchRecoveredChatResponse(
     payload.sessionId,
     recoveryTokenFromPayload(payload.recoveryToken),
     signal,
+    initialStatus.bytes,
+    () => {
+      replayComplete = true
+    },
   )
   if (!isCurrent()) return
   const assistantMessage = await parseRichStreamingResponse(response, {
@@ -371,7 +376,13 @@ async function processEnvelope(
       if (scanInFlight?.controller.signal === signal) {
         scanInFlight.lastProgressAt = Date.now()
       }
-      if (!hasVisibleRecoveryDraft(message)) return
+      if (
+        initialStatus.state !== 'processing' ||
+        !replayComplete ||
+        !hasVisibleRecoveryDraft(message)
+      ) {
+        return
+      }
       setChatRecoveryDraft({
         chatId,
         turnId: envelope.turnId,
@@ -385,7 +396,7 @@ async function processEnvelope(
     },
   })
   if (!isCurrent()) return
-  const terminalState = await getChatRecoveryState(payload.sessionId)
+  const terminalState = (await getChatRecoveryStatus(payload.sessionId)).state
   if (!isCurrent()) return
   if (terminalState !== 'complete') {
     if (terminalState === 'failed') {

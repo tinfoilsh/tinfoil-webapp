@@ -42,7 +42,10 @@ vi.mock('@/services/inference/chat-recovery-client', () => ({
   deleteChatRecovery: (...args: unknown[]) => deleteChatRecovery(...args),
   fetchRecoveredChatResponse: (...args: unknown[]) =>
     fetchRecoveredChatResponse(...args),
-  getChatRecoveryState: (...args: unknown[]) => getChatRecoveryState(...args),
+  getChatRecoveryStatus: async (...args: unknown[]) => ({
+    state: await getChatRecoveryState(...args),
+    bytes: 128,
+  }),
 }))
 
 vi.mock('@/services/inference/chat-recovery-sync', () => ({
@@ -161,7 +164,18 @@ describe('chat recovery lifecycle', () => {
     getChatRecoveryState
       .mockResolvedValueOnce('processing')
       .mockResolvedValueOnce('complete')
-    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    fetchRecoveredChatResponse.mockImplementation(
+      async (
+        _sessionId: string,
+        _token: unknown,
+        _signal: AbortSignal,
+        _replayBytes: number,
+        onReplayComplete: () => void,
+      ) => {
+        onReplayComplete()
+        return new Response('stream')
+      },
+    )
     parseRichStreamingResponse.mockImplementation(
       async (
         _response: Response,
@@ -192,6 +206,8 @@ describe('chat recovery lifecycle', () => {
       SESSION_ID,
       expect.any(Object),
       expect.any(AbortSignal),
+      128,
+      expect.any(Function),
     )
     expect(setChatRecoveryDraft).toHaveBeenCalledWith({
       chatId: 'chat-1',
@@ -232,7 +248,18 @@ describe('chat recovery lifecycle', () => {
       }),
     })
     getChatRecoveryState.mockResolvedValue('processing')
-    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    fetchRecoveredChatResponse.mockImplementation(
+      async (
+        _sessionId: string,
+        _token: unknown,
+        _signal: AbortSignal,
+        _replayBytes: number,
+        onReplayComplete: () => void,
+      ) => {
+        onReplayComplete()
+        return new Response('stream')
+      },
+    )
     parseRichStreamingResponse.mockImplementation(
       async (
         _response: Response,
@@ -253,6 +280,44 @@ describe('chat recovery lifecycle', () => {
     expect(setChatRecoveryDraft).toHaveBeenCalled()
     expect(completePendingRecovery).not.toHaveBeenCalled()
     expect(deleteChatRecovery).not.toHaveBeenCalled()
+  })
+
+  it('does not replay a completed response through progressive drafts', async () => {
+    getAllChats.mockResolvedValue([
+      { id: 'chat-1', pendingRecoveries: [envelope] },
+    ])
+    decryptRecoveryEnvelope.mockResolvedValue({
+      sessionId: SESSION_ID,
+      recoveryToken: JSON.stringify({
+        exportedSecret: '00'.repeat(32),
+        requestEnc: '11'.repeat(32),
+      }),
+    })
+    getChatRecoveryState.mockResolvedValue('complete')
+    fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
+    parseRichStreamingResponse.mockImplementation(
+      async (
+        _response: Response,
+        options: { onUpdate: (message: object) => void },
+      ) => {
+        options.onUpdate({
+          role: 'assistant',
+          content: 'Replay prefix',
+          timestamp: new Date().toISOString(),
+        })
+        return {
+          role: 'assistant',
+          content: 'Recovered',
+          timestamp: new Date().toISOString(),
+        }
+      },
+    )
+
+    await scanPendingChatRecoveries('user-1')
+
+    expect(setChatRecoveryDraft).not.toHaveBeenCalled()
+    expect(completePendingRecovery).toHaveBeenCalled()
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
   it('stops an old account scan when recovery state is reset', async () => {
