@@ -15,8 +15,8 @@ import {
   UI_EXPAND_PROJECT_DOCUMENTS,
 } from '@/constants/storage-keys'
 import {
-  useChatRecoveryActiveTurnIds,
   useChatRecoveryDrafts,
+  useChatRecoveryPhases,
 } from '@/hooks/use-chat-recovery-drafts'
 import { useChatRouter } from '@/hooks/use-chat-router'
 import { useProjects } from '@/hooks/use-projects'
@@ -1254,9 +1254,7 @@ export function ChatInterface({
   // repeatedly steal focus from whatever the user is typing in.
   const currentChatId = currentChat?.id
   const recoveryDrafts = useChatRecoveryDrafts(currentChatId ?? '')
-  const activeRecoveryTurnIds = useChatRecoveryActiveTurnIds(
-    currentChatId ?? '',
-  )
+  const activeRecoveryPhases = useChatRecoveryPhases(currentChatId ?? '')
   useEffect(() => {
     if (isClient && !isLoadingConfig && currentChatId) {
       // Skip auto-focus when sidebar is open on mobile — focusing the input
@@ -3368,7 +3366,7 @@ export function ChatInterface({
                     messages={currentChat?.messages || []}
                     pendingRecoveries={currentChat?.pendingRecoveries}
                     recoveryDrafts={recoveryDrafts}
-                    activeRecoveryTurnIds={activeRecoveryTurnIds}
+                    activeRecoveryPhases={activeRecoveryPhases}
                     isDarkMode={isDarkMode}
                     chatId={currentChat.id}
                     isWaitingForResponse={isWaitingForResponse}

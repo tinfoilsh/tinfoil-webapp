@@ -1,6 +1,7 @@
 import { GridTexture } from '@/components/ui/grid-texture'
 import { findSelectableModel, type BaseModel } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
+import type { ChatRecoveryPhase } from '@/services/inference/chat-recovery-drafts'
 import {
   findContextStartIndex,
   getContextTokenBudget,
@@ -22,7 +23,10 @@ type ChatMessagesProps = {
   messages: Message[]
   pendingRecoveries?: PendingRecoveryEnvelope[]
   recoveryDrafts?: ReadonlyArray<{ turnId: string; message: Message }>
-  activeRecoveryTurnIds?: readonly string[]
+  activeRecoveryPhases?: ReadonlyArray<{
+    turnId: string
+    phase: ChatRecoveryPhase
+  }>
   isDarkMode: boolean
   chatId: string
   messagesEndRef?: React.RefObject<HTMLDivElement | null>
@@ -189,10 +193,10 @@ const RecoveryMessage = memo(function RecoveryMessage() {
             id={titleId}
             className="text-sm font-medium text-content-primary"
           >
-            Recovering response
+            Recovering stream
           </span>
           <span id={detailId} className="text-sm text-content-secondary">
-            This may take a few minutes
+            Catching up to the live response
           </span>
         </div>
       </div>
@@ -233,7 +237,7 @@ export function ChatMessages({
   messages,
   pendingRecoveries = [],
   recoveryDrafts = [],
-  activeRecoveryTurnIds = [],
+  activeRecoveryPhases = [],
   isDarkMode,
   chatId,
   isWaitingForResponse = false,
@@ -410,10 +414,13 @@ export function ChatMessages({
       message.role === 'assistant' && message.turnId ? [message.turnId] : [],
     ),
   )
-  const hasActiveRecoveryDraft = recoveryDrafts.some((draft) =>
-    pendingRecoveryTurnIds.has(draft.turnId),
+  const recoveryPhaseByTurnId = new Map(
+    activeRecoveryPhases.map((recovery) => [recovery.turnId, recovery.phase]),
   )
-  const activeRecoveryTurns = new Set(activeRecoveryTurnIds)
+  const hasActiveRecovery =
+    activeRecoveryPhases.length > 0 ||
+    recoveryDrafts.some((draft) => pendingRecoveryTurnIds.has(draft.turnId))
+  const activeRecoveryTurns = new Set(recoveryPhaseByTurnId.keys())
   const activeTurnCandidate =
     isWaitingForResponse || isStreamingResponse
       ? [...messages].reverse().find((message) => message.role === 'user')
@@ -441,23 +448,30 @@ export function ChatMessages({
     message.turnId !== undefined &&
     message.turnId !== activeTurnId &&
     pendingRecoveryTurnIds.has(message.turnId) &&
-    !recoveryDraftsByTurnId.has(message.turnId)
+    (recoveryPhaseByTurnId.get(message.turnId) === 'replaying' ||
+      !recoveryDraftsByTurnId.has(message.turnId))
   const renderRecoveryAfter = (message: Message, messageIndex: number) => {
     if (!showRecoveryAfter(message)) return null
     const draft = message.turnId
       ? recoveryDraftsByTurnId.get(message.turnId)
       : undefined
-    return draft ? (
-      <ChatMessage
-        message={draft}
-        messageIndex={messageIndex + 1}
-        model={currentModel}
-        isDarkMode={isDarkMode}
-        isLastMessage
-        isStreaming
-      />
-    ) : (
-      <RecoveryMessage />
+    const phase = message.turnId
+      ? recoveryPhaseByTurnId.get(message.turnId)
+      : undefined
+    return (
+      <>
+        {draft && (
+          <ChatMessage
+            message={draft}
+            messageIndex={messageIndex + 1}
+            model={currentModel}
+            isDarkMode={isDarkMode}
+            isLastMessage
+            isStreaming={phase !== 'replaying'}
+          />
+        )}
+        {(!draft || phase === 'replaying') && <RecoveryMessage />}
+      </>
     )
   }
 
@@ -467,7 +481,7 @@ export function ChatMessages({
         role="log"
         aria-label="Conversation"
         aria-live="polite"
-        aria-busy={isStreamingResponse || hasActiveRecoveryDraft}
+        aria-busy={isStreamingResponse || hasActiveRecovery}
         className="mx-auto w-full min-w-0 px-0 pb-6 pt-24 font-chat md:px-4"
       >
         {/* Archived Messages - only shown if there are more than the max prompt messages */}
@@ -477,6 +491,9 @@ export function ChatMessages({
               {archivedMessages.map((message, i) => {
                 const key = getMessageKey(`${chatId}-archived`, message, i)
                 const recoveryDraft = recoveryDraftForMessage(message)
+                const recoveryPhase = message.turnId
+                  ? recoveryPhaseByTurnId.get(message.turnId)
+                  : undefined
                 return (
                   <React.Fragment key={key}>
                     <ChatMessage
@@ -485,7 +502,9 @@ export function ChatMessages({
                       model={currentModel}
                       isDarkMode={isDarkMode}
                       isLastMessage={Boolean(recoveryDraft)}
-                      isStreaming={Boolean(recoveryDraft)}
+                      isStreaming={
+                        Boolean(recoveryDraft) && recoveryPhase !== 'replaying'
+                      }
                       onEditMessage={recoveryDraft ? undefined : onEditMessage}
                       onRegenerateMessage={
                         recoveryDraft ? undefined : onRegenerateMessage
@@ -507,6 +526,9 @@ export function ChatMessages({
         {liveMessages.map((message, i) => {
           const key = getMessageKey(`${chatId}-live`, message, i)
           const recoveryDraft = recoveryDraftForMessage(message)
+          const recoveryPhase = message.turnId
+            ? recoveryPhaseByTurnId.get(message.turnId)
+            : undefined
           return (
             <React.Fragment key={key}>
               <ChatMessage
@@ -518,8 +540,10 @@ export function ChatMessages({
                   Boolean(recoveryDraft) || i === liveMessages.length - 1
                 }
                 isStreaming={
-                  Boolean(recoveryDraft) ||
-                  (i === liveMessages.length - 1 && isStreamingResponse)
+                  (Boolean(recoveryDraft) && recoveryPhase !== 'replaying') ||
+                  (i === liveMessages.length - 1 &&
+                    isStreamingResponse &&
+                    recoveryPhase !== 'replaying')
                 }
                 onEditMessage={recoveryDraft ? undefined : onEditMessage}
                 onRegenerateMessage={

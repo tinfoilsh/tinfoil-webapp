@@ -2,11 +2,13 @@ import {
   clearActiveChatRecoveries,
   clearChatRecoveryDraft,
   clearChatRecoveryDrafts,
+  getActiveChatRecoveryPhaseSnapshot,
   getActiveChatRecoverySnapshot,
   getChatRecoveryDraftSnapshot,
   pruneChatRecoveryDrafts,
   setChatRecoveryActive,
   setChatRecoveryDraft,
+  setChatRecoveryPhase,
   subscribeChatRecoveryDrafts,
 } from '@/services/inference/chat-recovery-drafts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -70,10 +72,18 @@ describe('chat recovery drafts', () => {
 
     setChatRecoveryActive('chat-1', 'turn-1', true)
     expect(getActiveChatRecoverySnapshot()).toEqual(['chat-1\u0000turn-1'])
+    expect(getActiveChatRecoveryPhaseSnapshot()).toEqual([
+      { key: 'chat-1\u0000turn-1', phase: 'replaying' },
+    ])
+
+    setChatRecoveryPhase('chat-1', 'turn-1', 'streaming')
+    expect(getActiveChatRecoveryPhaseSnapshot()).toEqual([
+      { key: 'chat-1\u0000turn-1', phase: 'streaming' },
+    ])
 
     setChatRecoveryActive('chat-1', 'turn-1', false)
     expect(getActiveChatRecoverySnapshot()).toEqual([])
-    expect(listener).toHaveBeenCalledTimes(2)
+    expect(listener).toHaveBeenCalledTimes(3)
     unsubscribe()
   })
 })

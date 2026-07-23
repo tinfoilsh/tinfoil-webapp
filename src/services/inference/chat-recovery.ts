@@ -33,6 +33,7 @@ import {
   pruneChatRecoveryDrafts,
   setChatRecoveryActive,
   setChatRecoveryDraft,
+  setChatRecoveryPhase,
 } from './chat-recovery-drafts'
 import {
   addPendingRecovery,
@@ -432,29 +433,23 @@ async function processEnvelope(
     return
   }
 
-  const recoveryController =
-    initialStatus.state === 'processing' ? new AbortController() : null
-  const abortRecovery = () => recoveryController?.abort(signal.reason)
-  const scannedRecovery: ScannedRecovery | null = recoveryController
-    ? {
-        chatId,
-        turnId: envelope.turnId,
-        sessionId: payload.sessionId,
-        generation: recoveryGeneration,
-        controller: recoveryController,
-      }
-    : null
-  if (scannedRecovery) {
-    signal.addEventListener('abort', abortRecovery, { once: true })
-    scannedRecoveries.set(payload.sessionId, scannedRecovery)
-    setChatRecoveryActive(chatId, envelope.turnId, true)
+  const recoveryController = new AbortController()
+  const abortRecovery = () => recoveryController.abort(signal.reason)
+  const scannedRecovery: ScannedRecovery = {
+    chatId,
+    turnId: envelope.turnId,
+    sessionId: payload.sessionId,
+    generation: recoveryGeneration,
+    controller: recoveryController,
   }
-  const recoverySignal = recoveryController?.signal ?? signal
+  signal.addEventListener('abort', abortRecovery, { once: true })
+  scannedRecoveries.set(payload.sessionId, scannedRecovery)
+  setChatRecoveryActive(chatId, envelope.turnId, true)
+  const recoverySignal = recoveryController.signal
   const isRecoveryCurrent = () =>
     isCurrent() &&
     !recoverySignal.aborted &&
-    (!scannedRecovery ||
-      scannedRecoveries.get(payload.sessionId) === scannedRecovery)
+    scannedRecoveries.get(payload.sessionId) === scannedRecovery
   const publishDraft = (message: Message) => {
     if (!isRecoveryCurrent() || !hasVisibleRecoveryDraft(message)) return
     setChatRecoveryDraft({
@@ -501,6 +496,7 @@ async function processEnvelope(
       let consumedEncryptedBytes = 0
       let measuredEncryptedBytes = false
       let assistantMessage: Message
+      setChatRecoveryPhase(chatId, envelope.turnId, 'replaying')
       try {
         const response = await fetchRecoveredChatResponse(
           payload.sessionId,
@@ -509,6 +505,7 @@ async function processEnvelope(
           replayBytes,
           () => {
             replayComplete = true
+            setChatRecoveryPhase(chatId, envelope.turnId, 'streaming')
             if (latestVisibleDraft) publishDraft(latestVisibleDraft)
           },
           (bytes) => {
@@ -610,10 +607,7 @@ async function processEnvelope(
     }
   } finally {
     signal.removeEventListener('abort', abortRecovery)
-    if (
-      scannedRecovery &&
-      scannedRecoveries.get(payload.sessionId) === scannedRecovery
-    ) {
+    if (scannedRecoveries.get(payload.sessionId) === scannedRecovery) {
       if (!keepRecoveryActive) {
         scannedRecoveries.delete(payload.sessionId)
         setChatRecoveryActive(chatId, envelope.turnId, false)

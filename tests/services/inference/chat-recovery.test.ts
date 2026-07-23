@@ -17,6 +17,7 @@ const clearActiveChatRecoveries = vi.fn()
 const pruneChatRecoveryDrafts = vi.fn()
 const setChatRecoveryActive = vi.fn()
 const setChatRecoveryDraft = vi.fn()
+const setChatRecoveryPhase = vi.fn()
 const retryDeferredAlternativesFinalization = vi.fn()
 const parseRichStreamingResponse = vi.fn()
 const getAllChats = vi.fn()
@@ -69,6 +70,7 @@ vi.mock('@/services/inference/chat-recovery-drafts', () => ({
     pruneChatRecoveryDrafts(...args),
   setChatRecoveryActive: (...args: unknown[]) => setChatRecoveryActive(...args),
   setChatRecoveryDraft: (...args: unknown[]) => setChatRecoveryDraft(...args),
+  setChatRecoveryPhase: (...args: unknown[]) => setChatRecoveryPhase(...args),
 }))
 
 vi.mock('@/services/cloud/legacy-blob-migration', () => ({
@@ -263,6 +265,10 @@ describe('chat recovery lifecycle', () => {
       }),
     })
     expect(setChatRecoveryDraft).toHaveBeenCalledTimes(1)
+    expect(setChatRecoveryPhase.mock.calls).toEqual([
+      ['chat-1', 'turn-1', 'replaying'],
+      ['chat-1', 'turn-1', 'streaming'],
+    ])
 
     expect(completePendingRecovery).toHaveBeenCalledWith(
       'chat-1',
@@ -638,6 +644,8 @@ describe('chat recovery lifecycle', () => {
       expect.any(AbortSignal),
     )
     expect(setChatRecoveryActive.mock.calls).toEqual([
+      ['chat-1', 'turn-1', true],
+      ['chat-1', 'turn-1', false],
       ['chat-1', 'turn-1', true],
       ['chat-1', 'turn-1', false],
     ])

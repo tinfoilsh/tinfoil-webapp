@@ -82,11 +82,13 @@ describe('ChatMessages recovery indicator', () => {
 
     const userMessage = await screen.findByTestId('message-turn-1')
     const indicator = screen.getByRole('status', {
-      name: /Recovering response/,
+      name: /Recovering stream/,
     })
 
     expect(userMessage.nextElementSibling).toBe(indicator)
-    expect(screen.getByText('This may take a few minutes')).toBeInTheDocument()
+    expect(
+      screen.getByText('Catching up to the live response'),
+    ).toBeInTheDocument()
     expect(indicator.firstElementChild).not.toHaveClass('border')
     expect(indicator.firstElementChild).not.toHaveClass('bg-surface-chat')
   })
@@ -100,7 +102,7 @@ describe('ChatMessages recovery indicator', () => {
       expect(screen.getByTestId('message-turn-1')).toBeInTheDocument()
     })
     expect(
-      screen.queryByRole('status', { name: /Recovering response/ }),
+      screen.queryByRole('status', { name: /Recovering stream/ }),
     ).not.toBeInTheDocument()
   })
 
@@ -129,7 +131,7 @@ describe('ChatMessages recovery indicator', () => {
     expect(renderedMessages[1]).toHaveAttribute('data-last', 'true')
     expect(screen.getByText('assistant: Partial answer')).toBeInTheDocument()
     expect(
-      screen.queryByRole('status', { name: /Recovering response/ }),
+      screen.queryByRole('status', { name: /Recovering stream/ }),
     ).not.toBeInTheDocument()
   })
 
@@ -138,7 +140,7 @@ describe('ChatMessages recovery indicator', () => {
       <ChatMessages
         {...baseProps}
         isStreamingResponse
-        activeRecoveryTurnIds={['turn-1']}
+        activeRecoveryPhases={[{ turnId: 'turn-1', phase: 'streaming' }]}
         recoveryDrafts={[
           {
             turnId: 'turn-1',
@@ -156,6 +158,33 @@ describe('ChatMessages recovery indicator', () => {
     expect(
       await screen.findByText('assistant: Live recovered answer'),
     ).toBeInTheDocument()
+  })
+
+  it('shows catch-up status instead of streaming while replaying', async () => {
+    render(
+      <ChatMessages
+        {...baseProps}
+        isStreamingResponse
+        activeRecoveryPhases={[{ turnId: 'turn-1', phase: 'replaying' }]}
+        recoveryDrafts={[
+          {
+            turnId: 'turn-1',
+            message: {
+              role: 'assistant',
+              turnId: 'turn-1',
+              content: 'Recovered so far',
+              timestamp: new Date('2026-07-21T00:00:01.000Z'),
+            },
+          },
+        ]}
+      />,
+    )
+
+    const assistant = (await screen.findAllByTestId('message-turn-1'))[1]
+    expect(assistant).toHaveAttribute('data-streaming', 'false')
+    expect(assistant.nextElementSibling).toBe(
+      screen.getByRole('status', { name: /Recovering stream/ }),
+    )
   })
 
   it('substitutes a progressive draft for a persisted partial response', async () => {
@@ -214,7 +243,7 @@ describe('ChatMessages recovery indicator', () => {
 
     const assistant = screen.getAllByTestId('message-turn-1')[1]
     expect(assistant.nextElementSibling).toBe(
-      screen.getByRole('status', { name: /Recovering response/ }),
+      screen.getByRole('status', { name: /Recovering stream/ }),
     )
   })
 })
