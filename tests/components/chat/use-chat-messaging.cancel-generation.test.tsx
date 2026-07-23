@@ -207,6 +207,28 @@ describe('useChatMessaging cancelGeneration', () => {
     expect(result.current.isStreaming).toBe(true)
   })
 
+  it('does not start a new prompt while recovery is active', async () => {
+    const chat = createChat('chat-a')
+    const { result } = renderHook(useChatMessagingHarness, {
+      initialProps: {
+        currentChat: chat,
+        triggerCancelOnLayout: false,
+      },
+    })
+    act(() => {
+      setChatRecoveryActive('chat-a', 'turn-1', true)
+    })
+    resetStatusMock.mockClear()
+    registerControllerMock.mockClear()
+
+    await act(async () => {
+      await result.current.handleQuery('Another prompt')
+    })
+
+    expect(resetStatusMock).not.toHaveBeenCalled()
+    expect(registerControllerMock).not.toHaveBeenCalled()
+  })
+
   it('keeps the Stop action active whenever the chat is streaming', () => {
     const chat = createChat('chat-a')
     streamStatuses['chat-a'] = {

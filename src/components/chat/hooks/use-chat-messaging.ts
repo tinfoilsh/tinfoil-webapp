@@ -405,7 +405,8 @@ export function useChatMessaging({
           !systemPromptOverride &&
           !attachments?.length &&
           !quote) ||
-        targetChatStatus.loadingState !== 'idle'
+        targetChatStatus.loadingState !== 'idle' ||
+        isRecoveryActive
       )
         return
 
@@ -1172,6 +1173,7 @@ export function useChatMessaging({
       piiCheckEnabled,
       genUIEnabled,
       codeExecutionEncryptionKey,
+      isRecoveryActive,
       patchStatus,
       resetStatus,
       moveStatus,
