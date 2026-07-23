@@ -10,6 +10,7 @@ import {
 import { decideRecovery } from '@/services/sync-enclave'
 import { newIdempotencyKey } from '@/services/sync-enclave/sync-api'
 import {
+  isLocalRecoveryEnvelope,
   MAX_PENDING_RECOVERIES_PER_CHAT,
   type PendingRecoveryEnvelope,
   type SyncedRecoveryEnvelope,
@@ -95,7 +96,7 @@ async function mutateSyncedChat(
       throw new DOMException('Aborted', 'AbortError')
     }
     const hasLocalRecovery = initialLocal?.pendingRecoveries?.some(
-      (recovery) => 'storage' in recovery,
+      isLocalRecoveryEnvelope,
     )
     if (
       initialLocal?.isLocalOnly ||
@@ -273,7 +274,7 @@ export function replacePendingRecovery(
       const pending = chat.pendingRecoveries ?? []
       const index = pending.findIndex(
         (envelope) =>
-          !('storage' in envelope) &&
+          !isLocalRecoveryEnvelope(envelope) &&
           envelope.turnId === current.turnId &&
           envelope.keyId === current.keyId &&
           envelope.ciphertext === current.ciphertext,

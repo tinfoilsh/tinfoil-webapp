@@ -5,6 +5,7 @@ import { chatEvents } from '@/services/storage/chat-events'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { isLocalRecoveryEnvelope } from '@/types/chat-recovery'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -59,10 +60,13 @@ function pendingRecoveriesMatch(
     left.every((envelope, index) => {
       const candidate = right[index]
       if (!candidate || candidate.v !== envelope.v) return false
-      if ('storage' in envelope || 'storage' in candidate) {
+      if (
+        isLocalRecoveryEnvelope(envelope) ||
+        isLocalRecoveryEnvelope(candidate)
+      ) {
         return (
-          'storage' in envelope &&
-          'storage' in candidate &&
+          isLocalRecoveryEnvelope(envelope) &&
+          isLocalRecoveryEnvelope(candidate) &&
           candidate.turnId === envelope.turnId &&
           candidate.createdAt === envelope.createdAt &&
           candidate.expiresAt === envelope.expiresAt &&

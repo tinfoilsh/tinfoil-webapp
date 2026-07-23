@@ -46,6 +46,14 @@ export const PendingRecoveryEnvelopeSchema = z
   })
   .passthrough()
   .superRefine((envelope, context) => {
+    if ('storage' in envelope) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'device-local recovery envelopes cannot be synced',
+        path: ['storage'],
+      })
+      return
+    }
     try {
       validateRecoveryEnvelope(envelope as SyncedRecoveryEnvelope)
     } catch (error) {

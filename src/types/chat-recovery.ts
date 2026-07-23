@@ -5,6 +5,7 @@ export const MAX_RECOVERY_CIPHERTEXT_BYTES = 4096
 
 export type SyncedRecoveryEnvelope = {
   v: 1
+  storage?: never
   turnId: string
   keyId: string
   createdAt: string
@@ -25,3 +26,9 @@ export type LocalRecoveryEnvelope = {
 
 export type PendingRecoveryEnvelope =
   SyncedRecoveryEnvelope | LocalRecoveryEnvelope
+
+export function isLocalRecoveryEnvelope(
+  envelope: PendingRecoveryEnvelope,
+): envelope is LocalRecoveryEnvelope {
+  return envelope.storage === 'local'
+}

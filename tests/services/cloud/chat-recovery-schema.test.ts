@@ -58,4 +58,17 @@ describe('remote chat recovery schema', () => {
       }).success,
     ).toBe(false)
   })
+
+  it('rejects the device-local recovery discriminator', () => {
+    expect(
+      RemoteChatPlaintextSchema.safeParse(
+        chatWithEnvelope({
+          ...envelope(17),
+          storage: 'local',
+          sessionId: '0123456789abcdef0123456789abcdef',
+          recoveryToken: 'local-token',
+        }),
+      ).success,
+    ).toBe(false)
+  })
 })

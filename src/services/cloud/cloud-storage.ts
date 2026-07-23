@@ -1,5 +1,6 @@
 import type { Message } from '@/components/chat/types'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import { isLocalRecoveryEnvelope } from '@/types/chat-recovery'
 import {
   base64ToUint8Array,
   decryptAttachment,
@@ -259,7 +260,7 @@ export class CloudStorageService {
     // later clock-unaware write that would force the updatedAt fallback.
     const baseVersion = options.restoreDeleted ? 0 : (chat.syncVersion ?? 0)
     const syncedRecoveries = chat.pendingRecoveries?.filter(
-      (recovery) => !('storage' in recovery),
+      (recovery) => !isLocalRecoveryEnvelope(recovery),
     )
     const strippedChat = {
       ...chat,

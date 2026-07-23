@@ -5,6 +5,7 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
   RECOVERY_ENVELOPE_EXPIRY_MS,
+  isLocalRecoveryEnvelope,
   type PendingRecoveryEnvelope,
   type SyncedRecoveryEnvelope,
 } from '@/types/chat-recovery'
@@ -103,7 +104,7 @@ async function openEnvelope(
   envelope: PendingRecoveryEnvelope,
   now?: number,
 ) {
-  if ('storage' in envelope) {
+  if (isLocalRecoveryEnvelope(envelope)) {
     return {
       cek: null,
       payload: {
@@ -136,7 +137,7 @@ async function openEnvelope(
 function isSyncedRecoveryEnvelope(
   envelope: PendingRecoveryEnvelope,
 ): envelope is SyncedRecoveryEnvelope {
-  return !('storage' in envelope)
+  return !isLocalRecoveryEnvelope(envelope)
 }
 
 async function deleteRecoveryQuietly(sessionId: string): Promise<void> {

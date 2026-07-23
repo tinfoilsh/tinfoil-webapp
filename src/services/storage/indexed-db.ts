@@ -296,7 +296,12 @@ export class IndexedDBStorage {
             lastAccessedAt: Date.now(),
             clock: clock.v,
             writer: clock.w,
-            locallyModified: true,
+            locallyModified: computeLocallyModified({
+              isFailedDecryption: current.decryptionFailed === true,
+              existingChat: current,
+              hasContentChanges: true,
+              callerValue: result.chat.locallyModified,
+            }),
             version: 1,
           }
           store.put(output)
