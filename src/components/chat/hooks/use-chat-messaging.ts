@@ -39,7 +39,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { getMessageAttachments, getMessageImages } from '../attachment-helpers'
 import { CONSTANTS } from '../constants'
 import type { Chat, LoadingState, Message } from '../types'
-import { createBlankChat, sortChats } from './chat-operations'
+import {
+  createBlankChat,
+  resolveWebSearchEnabled,
+  sortChats,
+} from './chat-operations'
 import { createUpdateChatWithHistoryCheck } from './chat-persistence'
 import { processStreamingResponse } from './streaming'
 import {
@@ -63,8 +67,6 @@ interface UseChatMessagingProps {
   scrollToBottom?: () => void
   reasoningEffort?: ReasoningEffort
   thinkingEnabled?: boolean
-  // Global default; the chat's own webSearchEnabled field overrides it.
-  webSearchEnabled?: boolean
   webSearchAvailable?: boolean
   codeExecutionEnabled?: boolean
   piiCheckEnabled?: boolean
@@ -116,7 +118,6 @@ export function useChatMessaging({
   scrollToBottom,
   reasoningEffort,
   thinkingEnabled,
-  webSearchEnabled,
   webSearchAvailable,
   codeExecutionEnabled,
   piiCheckEnabled,
@@ -624,9 +625,10 @@ export function useChatMessaging({
         const preferMultimodal = updatedMessages.some(
           (m) => getMessageImages(m).length > 0,
         )
-        const chatWebSearchEnabled =
-          (webSearchAvailable ?? true) &&
-          (updatedChat.webSearchEnabled ?? webSearchEnabled ?? true)
+        const chatWebSearchEnabled = resolveWebSearchEnabled(
+          webSearchAvailable ?? true,
+          updatedChat.webSearchEnabled,
+        )
         const preferToolCalling = Boolean(
           chatWebSearchEnabled ||
           codeExecutionEnabled ||
@@ -922,7 +924,6 @@ export function useChatMessaging({
       thinkingEnabled,
       isProjectMode,
       activeProject,
-      webSearchEnabled,
       webSearchAvailable,
       codeExecutionEnabled,
       piiCheckEnabled,

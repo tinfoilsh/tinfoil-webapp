@@ -28,6 +28,13 @@ export function canToggleTemporaryChat(chat: Chat | null | undefined): boolean {
   return !chat || chat.isBlankChat === true || chat.isTemporary === true
 }
 
+export function resolveWebSearchEnabled(
+  webSearchAvailable: boolean,
+  chatWebSearchEnabled?: boolean,
+): boolean {
+  return webSearchAvailable && (chatWebSearchEnabled ?? true)
+}
+
 /**
  * Loads all chats from storage
  */

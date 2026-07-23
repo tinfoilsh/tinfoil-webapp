@@ -12,7 +12,6 @@ import {
   SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_WEB_SEARCH_AVAILABLE,
-  SETTINGS_WEB_SEARCH_ENABLED,
   UI_EXPAND_PROJECT_DOCUMENTS,
 } from '@/constants/storage-keys'
 import { useChatRouter } from '@/hooks/use-chat-router'
@@ -109,7 +108,11 @@ import {
   OPEN_ARTIFACT_PREVIEW_EVENT,
   type ArtifactPreviewSidebarDetail,
 } from './genui/widgets/ArtifactPreview'
-import { canToggleTemporaryChat, sortChats } from './hooks/chat-operations'
+import {
+  canToggleTemporaryChat,
+  resolveWebSearchEnabled,
+  sortChats,
+} from './hooks/chat-operations'
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
 import { useMessageQueue } from './hooks/use-message-queue'
@@ -469,15 +472,6 @@ export function ChatInterface({
   const [artifactPreview, setArtifactPreview] =
     useState<ArtifactPreviewSidebarDetail | null>(null)
 
-  // Global web search default (persisted in localStorage). Serves as the
-  // fallback for chats without a per-chat preference; the toolbar toggle
-  // writes a per-chat override instead of mutating this value.
-  const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
-    if (typeof window === 'undefined') return true
-    const saved = localStorage.getItem(SETTINGS_WEB_SEARCH_ENABLED)
-    return saved === null ? true : saved === 'true'
-  })
-
   const [webSearchAvailable, setWebSearchAvailable] = useState(() => {
     if (typeof window === 'undefined') return true
     const saved = localStorage.getItem(SETTINGS_WEB_SEARCH_AVAILABLE)
@@ -773,7 +767,6 @@ export function ChatInterface({
     thinkingEnabled,
     initialChatId,
     isLocalChatUrl,
-    webSearchEnabled,
     webSearchAvailable,
     // Feature flag gates key derivation in useExecSnapshot; the toggle
     // gates request plumbing. Both layers must be on to use code-exec.
@@ -785,10 +778,10 @@ export function ChatInterface({
 
   const isTemporaryMode = currentChat?.isTemporary === true
 
-  // Per-chat web search preference wins; chats that never touched the
-  // toggle fall back to the global default.
-  const effectiveWebSearchEnabled =
-    webSearchAvailable && (currentChat?.webSearchEnabled ?? webSearchEnabled)
+  const effectiveWebSearchEnabled = resolveWebSearchEnabled(
+    webSearchAvailable,
+    currentChat?.webSearchEnabled,
+  )
 
   const currentChatRef = useRef<Chat | null>(null)
   useEffect(() => {
@@ -1063,17 +1056,9 @@ export function ChatInterface({
     }
   }, [])
 
-  // Persist web search toggle to localStorage
-  useEffect(() => {
-    localStorage.setItem(SETTINGS_WEB_SEARCH_ENABLED, String(webSearchEnabled))
-  }, [webSearchEnabled])
-
   const handleWebSearchToggle = useCallback(() => {
-    if (!currentChat) {
-      setWebSearchEnabled((prev) => !prev)
-      return
-    }
-    const next = !(currentChat.webSearchEnabled ?? webSearchEnabled)
+    if (!currentChat) return
+    const next = !resolveWebSearchEnabled(true, currentChat.webSearchEnabled)
     const updatedChat: Chat = {
       ...currentChat,
       webSearchEnabled: next,
@@ -1098,7 +1083,7 @@ export function ChatInterface({
         })
       })
     }
-  }, [currentChat, webSearchEnabled, setCurrentChat, setChats, isSignedIn])
+  }, [currentChat, setCurrentChat, setChats, isSignedIn])
 
   // Persist code execution toggle to localStorage
   useEffect(() => {
@@ -1121,11 +1106,6 @@ export function ChatInterface({
   }, [])
 
   useEffect(() => {
-    const handleWebSearchChange = (
-      event: CustomEvent<{ enabled: boolean }>,
-    ) => {
-      setWebSearchEnabled(event.detail.enabled)
-    }
     const handleWebSearchAvailableChange = (
       event: CustomEvent<{ enabled: boolean }>,
     ) => {
@@ -1138,10 +1118,6 @@ export function ChatInterface({
     }
 
     window.addEventListener(
-      'webSearchEnabledChanged',
-      handleWebSearchChange as EventListener,
-    )
-    window.addEventListener(
       'webSearchAvailableChanged',
       handleWebSearchAvailableChange as EventListener,
     )
@@ -1151,10 +1127,6 @@ export function ChatInterface({
     )
 
     return () => {
-      window.removeEventListener(
-        'webSearchEnabledChanged',
-        handleWebSearchChange as EventListener,
-      )
       window.removeEventListener(
         'webSearchAvailableChanged',
         handleWebSearchAvailableChange as EventListener,

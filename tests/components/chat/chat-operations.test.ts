@@ -1,4 +1,7 @@
-import { canToggleTemporaryChat } from '@/components/chat/hooks/chat-operations'
+import {
+  canToggleTemporaryChat,
+  resolveWebSearchEnabled,
+} from '@/components/chat/hooks/chat-operations'
 import type { Chat } from '@/components/chat/types'
 import { describe, expect, it } from 'vitest'
 
@@ -31,5 +34,19 @@ describe('canToggleTemporaryChat', () => {
         createChat({ isBlankChat: false, isTemporary: true }),
       ),
     ).toBe(true)
+  })
+})
+
+describe('resolveWebSearchEnabled', () => {
+  it('enables web search by default when it is available', () => {
+    expect(resolveWebSearchEnabled(true)).toBe(true)
+  })
+
+  it('preserves an existing chat override', () => {
+    expect(resolveWebSearchEnabled(true, false)).toBe(false)
+  })
+
+  it('disables web search when it is unavailable', () => {
+    expect(resolveWebSearchEnabled(false, true)).toBe(false)
   })
 })
