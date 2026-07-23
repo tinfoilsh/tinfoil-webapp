@@ -1124,17 +1124,29 @@ export function useChatMessaging({
     editMessage,
   ])
 
-  // Re-send the most recent user message, e.g. after a failed stream
+  // Re-send the most recent user message, e.g. after a failed stream.
+  // Calls handleQuery directly instead of going through regenerateMessage
+  // → editMessage, whose closure-based guards (pendingRegenerateRef,
+  // loadingState) can be stale after a stream error and silently no-op.
   const retryLastMessage = useCallback(() => {
     if (!currentChat) return
     for (let i = currentChat.messages.length - 1; i >= 0; i--) {
       if (currentChat.messages[i].role === 'user') {
+        const originalMessage = currentChat.messages[i]
         patchStatus(currentChat.id, { streamError: null })
-        regenerateMessage(i)
+        const truncatedMessages = currentChat.messages.slice(0, i)
+        const attachments = getMessageAttachments(originalMessage)
+        handleQuery(
+          originalMessage.content || '',
+          attachments.length > 0 ? attachments : undefined,
+          undefined,
+          truncatedMessages,
+          originalMessage.quote,
+        )
         return
       }
     }
-  }, [currentChat, regenerateMessage, patchStatus])
+  }, [currentChat, patchStatus, handleQuery])
 
   return {
     input,
