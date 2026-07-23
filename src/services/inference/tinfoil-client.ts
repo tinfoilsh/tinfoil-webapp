@@ -333,21 +333,16 @@ export function resetTinfoilClient(): void {
   cachedSessionToken = null
   cachedSessionTokenExpiresAt = null
   cachedSessionTokenWasAuthenticated = false
+  remainingBeforeRequest = null
   cachedRateLimit = null
   remainingBeforeRequest = null
   refreshInFlight = null
 }
 
-/**
- * Discards any cached anonymous session token + rate limit so the next
- * request fetches a fresh authenticated token from the server.  Called
- * after sign-in transitions so a leftover anonymous free-tier banner
- * does not persist for a now-authenticated user.
- */
-export function invalidateAnonymousSessionCache(): void {
-  if (cachedSessionTokenWasAuthenticated) return
+export function invalidateSessionCache(): void {
   cachedSessionToken = null
   cachedSessionTokenExpiresAt = null
+  cachedSessionTokenWasAuthenticated = false
   if (cachedRateLimit !== null) {
     cachedRateLimit = null
     dispatchRateLimitUpdate()

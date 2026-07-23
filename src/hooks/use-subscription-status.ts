@@ -1,6 +1,6 @@
 import { SETTINGS_CACHED_SUBSCRIPTION_STATUS } from '@/constants/storage-keys'
 import { useUser } from '@clerk/nextjs'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useState } from 'react'
 
 type StripeSubscriptionStatus =
   | 'active'
@@ -22,6 +22,7 @@ const SUPPORTED_STATUSES = new Set<StripeSubscriptionStatus>([
   'trialing',
   'unpaid',
 ])
+const MAX_TIMEOUT_MS = 2_147_483_647
 
 const isValidStatus = (status: unknown): status is StripeSubscriptionStatus =>
   typeof status === 'string' &&
@@ -40,7 +41,7 @@ const parseExpiration = (expiration: unknown): Date | null => {
   return parsed
 }
 
-const hasActiveSubscription = (
+export const hasActiveSubscription = (
   status: StripeSubscriptionStatus | null,
   expiration: Date | null,
   now: Date,
@@ -50,7 +51,7 @@ const hasActiveSubscription = (
   }
 
   if (status === 'active' || status === 'trialing') {
-    return true
+    return !expiration || expiration.getTime() > now.getTime()
   }
 
   if (status === 'canceled' && expiration) {
@@ -66,29 +67,31 @@ const hasActiveSubscription = (
  */
 export function useSubscriptionStatus() {
   const { user, isLoaded } = useUser()
+  const [expirationTick, setExpirationTick] = useState(0)
 
-  const subscriptionStatus = useMemo(() => {
-    if (!isLoaded || !user) {
-      return { chat_subscription_active: false }
-    }
+  const publicMetadata = (user?.publicMetadata ?? {}) as Record<string, unknown>
+  const rawChatStatus = publicMetadata['chat_subscription_status']
+  const chatStatus = isValidStatus(rawChatStatus) ? rawChatStatus : null
+  const chatExpiration = parseExpiration(
+    publicMetadata['chat_subscription_expires_at'],
+  )
+  const expirationTime = chatExpiration?.getTime() ?? null
 
-    const publicMetadata = (user.publicMetadata ?? {}) as Record<
-      string,
-      unknown
-    >
-
-    const rawChatStatus = publicMetadata['chat_subscription_status']
-    const chatStatus = isValidStatus(rawChatStatus) ? rawChatStatus : null
-
-    const chatExpiration = parseExpiration(
-      publicMetadata['chat_subscription_expires_at'],
+  useEffect(() => {
+    if (expirationTime === null) return
+    const delay = expirationTime - Date.now()
+    if (delay <= 0) return
+    const timeout = window.setTimeout(
+      () => setExpirationTick((tick) => tick + 1),
+      Math.min(delay + 1, MAX_TIMEOUT_MS),
     )
+    return () => window.clearTimeout(timeout)
+  }, [expirationTime, expirationTick])
 
-    const now = new Date()
-    const chatActive = hasActiveSubscription(chatStatus, chatExpiration, now)
-
-    return { chat_subscription_active: chatActive }
-  }, [user, isLoaded])
+  const chatSubscriptionActive =
+    isLoaded &&
+    !!user &&
+    hasActiveSubscription(chatStatus, chatExpiration, new Date())
 
   // Persist subscription status so next page load can use it immediately
   useEffect(() => {
@@ -100,16 +103,18 @@ export function useSubscriptionStatus() {
       }
       localStorage.setItem(
         SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-        JSON.stringify(subscriptionStatus),
+        JSON.stringify({
+          chat_subscription_active: chatSubscriptionActive,
+        }),
       )
     } catch {
       // best-effort
     }
-  }, [isLoaded, user, subscriptionStatus])
+  }, [isLoaded, user, chatSubscriptionActive])
 
   return {
     isLoading: !isLoaded,
     error: null,
-    ...subscriptionStatus,
+    chat_subscription_active: chatSubscriptionActive,
   }
 }
