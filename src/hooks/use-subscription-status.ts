@@ -67,7 +67,7 @@ export const hasActiveSubscription = (
  */
 export function useSubscriptionStatus() {
   const { user, isLoaded } = useUser()
-  const [expirationTick, setExpirationTick] = useState(0)
+  const [, setExpirationTick] = useState(0)
 
   const publicMetadata = (user?.publicMetadata ?? {}) as Record<string, unknown>
   const rawChatStatus = publicMetadata['chat_subscription_status']
@@ -79,14 +79,23 @@ export function useSubscriptionStatus() {
 
   useEffect(() => {
     if (expirationTime === null) return
-    const delay = expirationTime - Date.now()
-    if (delay <= 0) return
-    const timeout = window.setTimeout(
-      () => setExpirationTick((tick) => tick + 1),
-      Math.min(delay + 1, MAX_TIMEOUT_MS),
-    )
-    return () => window.clearTimeout(timeout)
-  }, [expirationTime, expirationTick])
+    let timeout: number | undefined
+    const scheduleExpiration = () => {
+      const delay = expirationTime - Date.now()
+      if (delay <= 0) {
+        setExpirationTick((tick) => tick + 1)
+        return
+      }
+      timeout = window.setTimeout(
+        scheduleExpiration,
+        Math.min(delay + 1, MAX_TIMEOUT_MS),
+      )
+    }
+    scheduleExpiration()
+    return () => {
+      if (timeout !== undefined) window.clearTimeout(timeout)
+    }
+  }, [expirationTime])
 
   const chatSubscriptionActive =
     isLoaded &&

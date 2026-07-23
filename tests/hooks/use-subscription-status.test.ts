@@ -18,6 +18,11 @@ describe('hasActiveSubscription', () => {
     expect(hasActiveSubscription('active', past, now)).toBe(false)
   })
 
+  it('allows trialing subscriptions with or without a future cutoff', () => {
+    expect(hasActiveSubscription('trialing', null, now)).toBe(true)
+    expect(hasActiveSubscription('trialing', future, now)).toBe(true)
+  })
+
   it('allows canceled subscriptions before their cutoff', () => {
     expect(hasActiveSubscription('canceled', future, now)).toBe(true)
   })
