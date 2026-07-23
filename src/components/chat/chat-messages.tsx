@@ -182,7 +182,7 @@ const RecoveryMessage = memo(function RecoveryMessage() {
 
   return (
     <div
-      className="no-scroll-anchoring mx-auto mb-6 flex w-full max-w-3xl px-4 pt-2"
+      className="no-scroll-anchoring mx-auto -mt-6 mb-6 flex w-full max-w-3xl px-4"
       role="status"
       aria-labelledby={titleId}
     >

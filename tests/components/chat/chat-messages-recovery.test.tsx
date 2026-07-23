@@ -93,6 +93,7 @@ describe('ChatMessages recovery indicator', () => {
     expect(
       screen.queryByText('Catching up to the live response'),
     ).not.toBeInTheDocument()
+    expect(indicator).toHaveClass('-mt-6')
     expect(indicator.firstElementChild).not.toHaveClass('border')
     expect(indicator.firstElementChild).not.toHaveClass('bg-surface-chat')
   })
