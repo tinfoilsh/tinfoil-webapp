@@ -147,7 +147,9 @@ export async function fetchRecoveredChatResponse(
 
       const { done, value } = await reader.read()
       if (done) {
-        markReplayComplete()
+        if (replayBytesRemaining === 0) {
+          markReplayComplete()
+        }
         controller.close()
         return
       }

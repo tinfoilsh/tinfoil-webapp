@@ -143,6 +143,31 @@ describe('chat recovery client', () => {
     )
   })
 
+  it('does not mark a truncated replay as caught up', async () => {
+    const encryptedBytes = new TextEncoder().encode('short')
+    const replayComplete = vi.fn()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(encryptedBytes),
+    )
+    decryptResponseWithToken.mockImplementation(async (response: Response) => {
+      await response.arrayBuffer()
+      return new Response('decrypted')
+    })
+
+    await fetchRecoveredChatResponse(
+      SESSION_ID,
+      {
+        exportedSecret: new Uint8Array(32),
+        requestEnc: new Uint8Array(32),
+      },
+      undefined,
+      encryptedBytes.byteLength + 1,
+      replayComplete,
+    )
+
+    expect(replayComplete).not.toHaveBeenCalled()
+  })
+
   it.each([
     [404, 'missing'],
     [410, 'failed'],
