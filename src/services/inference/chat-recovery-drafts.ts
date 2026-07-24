@@ -38,6 +38,13 @@ export function getChatRecoveryDraftSnapshot(): readonly ChatRecoveryDraft[] {
   return snapshot
 }
 
+export function getChatRecoveryDraft(
+  chatId: string,
+  turnId: string,
+): ChatRecoveryDraft | undefined {
+  return drafts.get(draftKey(chatId, turnId))
+}
+
 export function getActiveChatRecoverySnapshot(): readonly string[] {
   return activeSnapshot
 }
