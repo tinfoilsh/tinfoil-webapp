@@ -63,7 +63,6 @@ const activeRecoveries = new Map<string, ActiveRecovery>()
 const scannedRecoveries = new Map<string, ScannedRecovery>()
 const cancelledTurns = new Set<string>()
 const RECOVERY_SCAN_CONCURRENCY = 4
-const RECOVERY_MAX_STREAM_ATTEMPTS = 3
 const RECOVERY_RETRY_BASE_DELAY_MS = 100
 const RECOVERY_RETRY_MAX_DELAY_MS = 10_000
 // Upper bound on how long a scan may make no progress while holding the
@@ -600,13 +599,6 @@ async function processEnvelope(
         if (scanInFlight?.controller.signal === signal) {
           scanInFlight.lastProgressAt = Date.now()
         }
-        if (attempt + 1 >= RECOVERY_MAX_STREAM_ATTEMPTS) {
-          throw new ChatRecoveryError(
-            'Encrypted response recovery transport remained unavailable',
-            retryStatus.state,
-            true,
-          )
-        }
         await waitForRecoveryRetry(attempt, recoverySignal)
         continue
       }
@@ -616,13 +608,6 @@ async function processEnvelope(
       if (terminalStatus.state === 'processing') {
         if (scanInFlight?.controller.signal === signal) {
           scanInFlight.lastProgressAt = Date.now()
-        }
-        if (attempt + 1 >= RECOVERY_MAX_STREAM_ATTEMPTS) {
-          throw new ChatRecoveryError(
-            'Encrypted response recovery stream ended before completion',
-            'processing',
-            true,
-          )
         }
         await waitForRecoveryRetry(attempt, recoverySignal)
         continue
@@ -655,13 +640,6 @@ async function processEnvelope(
       ) {
         if (scanInFlight?.controller.signal === signal) {
           scanInFlight.lastProgressAt = Date.now()
-        }
-        if (attempt + 1 >= RECOVERY_MAX_STREAM_ATTEMPTS) {
-          throw new ChatRecoveryError(
-            'Encrypted response recovery stream ended before completion',
-            'complete',
-            true,
-          )
         }
         await waitForRecoveryRetry(attempt, recoverySignal)
         continue

@@ -463,7 +463,7 @@ describe('chat recovery lifecycle', () => {
     expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
   })
 
-  it('does not persist a stream that ends before the session is complete', async () => {
+  it('keeps recovery active through repeated processing reconnects', async () => {
     getAllChats.mockResolvedValue([
       { id: 'chat-1', pendingRecoveries: [envelope] },
     ])
@@ -474,7 +474,12 @@ describe('chat recovery lifecycle', () => {
         requestEnc: '11'.repeat(32),
       }),
     })
-    getChatRecoveryState.mockResolvedValue('processing')
+    getChatRecoveryState
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('complete')
     fetchRecoveredChatResponse.mockResolvedValue(new Response('stream'))
     parseRichStreamingResponse.mockImplementation(
       async (
@@ -494,9 +499,16 @@ describe('chat recovery lifecycle', () => {
     await scanPendingChatRecoveries('user-1')
 
     expect(setChatRecoveryDraft).toHaveBeenCalled()
-    expect(fetchRecoveredChatResponse).toHaveBeenCalledTimes(3)
-    expect(completePendingRecovery).not.toHaveBeenCalled()
-    expect(deleteChatRecovery).not.toHaveBeenCalled()
+    expect(fetchRecoveredChatResponse).toHaveBeenCalledTimes(4)
+    expect(completePendingRecovery).toHaveBeenCalledWith(
+      'chat-1',
+      'turn-1',
+      expect.objectContaining({ content: 'Partial' }),
+      undefined,
+      expect.any(Function),
+      expect.any(AbortSignal),
+    )
+    expect(deleteChatRecovery).toHaveBeenCalledWith(SESSION_ID)
     expect(setChatRecoveryActive.mock.calls).toEqual([
       ['chat-1', 'turn-1', true],
       ['chat-1', 'turn-1', false],
@@ -1277,7 +1289,9 @@ describe('chat recovery lifecycle', () => {
     replacePendingRecovery.mockResolvedValue({
       pendingRecoveries: [rewrapped],
     })
-    getChatRecoveryState.mockResolvedValue('processing')
+    getChatRecoveryState
+      .mockResolvedValueOnce('processing')
+      .mockResolvedValueOnce('failed')
 
     await scanPendingChatRecoveries('user-1')
 
