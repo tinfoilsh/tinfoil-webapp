@@ -1,3 +1,11 @@
+import type { PendingRecoveryEnvelope } from '@/types/chat-recovery'
+
+export {
+  MAX_PENDING_RECOVERIES_PER_CHAT,
+  RECOVERY_ENVELOPE_EXPIRY_MS,
+  type PendingRecoveryEnvelope,
+} from '@/types/chat-recovery'
+
 export type URLCitation = {
   title: string
   url: string
@@ -126,6 +134,7 @@ export type Attachment = {
 export type Message = {
   role: 'user' | 'assistant'
   content: string
+  turnId?: string
   attachments?: Attachment[]
   // Legacy fields — kept for reading old messages, not written for new ones
   documentContent?: string
@@ -163,6 +172,7 @@ export type Chat = {
   title: string
   titleState?: TitleState
   messages: Message[]
+  pendingRecoveries?: PendingRecoveryEnvelope[]
   createdAt: Date
   // Latest server-bumped write time, used as the canonical sort
   // key for the sidebar. Absent for chats that have never been

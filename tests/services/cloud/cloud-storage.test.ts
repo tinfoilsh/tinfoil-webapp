@@ -139,6 +139,35 @@ describe('CloudStorageService auth readiness', () => {
     expect(pushArg.metadata).toMatchObject({ restoreDeleted: true })
   })
 
+  it('never uploads device-local recovery tokens', async () => {
+    const service = new CloudStorageService()
+    await service.uploadChat({
+      id: 'chat-1',
+      title: 'Local chat',
+      messages: [{ role: 'user', content: 'hi' }],
+      pendingRecoveries: [
+        {
+          v: 1,
+          storage: 'local',
+          turnId: 'turn-1',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          expiresAt: '2026-01-02T00:00:00.000Z',
+          sessionId: '0123456789abcdef0123456789abcdef',
+          recoveryToken: 'sensitive-local-token',
+        },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      lastAccessedAt: 0,
+    } as any)
+
+    const plaintext = JSON.parse(
+      new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+    )
+    expect(plaintext.pendingRecoveries).toBeUndefined()
+    expect(JSON.stringify(plaintext)).not.toContain('sensitive-local-token')
+  })
+
   it('reuses stable attachment idempotency keys across upload retries', async () => {
     const service = new CloudStorageService()
     const chat = {

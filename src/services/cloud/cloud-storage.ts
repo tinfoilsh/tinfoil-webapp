@@ -1,5 +1,6 @@
 import type { Message } from '@/components/chat/types'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import { isLocalRecoveryEnvelope } from '@/types/chat-recovery'
 import {
   base64ToUint8Array,
   decryptAttachment,
@@ -258,9 +259,16 @@ export class CloudStorageService {
     // can tell the clock is current (etag === clockVersion) versus a
     // later clock-unaware write that would force the updatedAt fallback.
     const baseVersion = options.restoreDeleted ? 0 : (chat.syncVersion ?? 0)
+    const syncedRecoveries = chat.pendingRecoveries?.filter(
+      (recovery) => !isLocalRecoveryEnvelope(recovery),
+    )
     const strippedChat = {
       ...chat,
       messages: stripBase64FromMessages(messages),
+      pendingRecoveries:
+        syncedRecoveries && syncedRecoveries.length > 0
+          ? syncedRecoveries
+          : undefined,
       clockVersion: baseVersion + 1,
     }
     const plaintext = new TextEncoder().encode(JSON.stringify(strippedChat))

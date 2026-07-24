@@ -72,6 +72,33 @@ describe('Chat Codec - processRemoteChat', () => {
       expect(result.chat.syncVersion).toBe(5)
     })
 
+    it('does not trust a plaintext clock without a server row version', async () => {
+      const result = await processRemoteChat({
+        ...baseRemoteChat,
+        plaintext: basePlaintext({
+          clock: 7,
+          writer: 'device-a',
+          clockVersion: 5,
+        }),
+      })
+
+      expect(result.chat.clockVersion).toBeUndefined()
+    })
+
+    it('preserves a clock version when the server row is versioned', async () => {
+      const result = await processRemoteChat({
+        ...baseRemoteChat,
+        syncVersion: 5,
+        plaintext: basePlaintext({
+          clock: 7,
+          writer: 'device-a',
+          clockVersion: 5,
+        }),
+      })
+
+      expect(result.chat.clockVersion).toBe(5)
+    })
+
     it('uses remote ID over plaintext ID', async () => {
       const result = await processRemoteChat({
         ...baseRemoteChat,

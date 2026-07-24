@@ -298,6 +298,47 @@ describe('useMessageQueue concurrency', () => {
     )
   })
 
+  it('holds a queued message while recovery is active', async () => {
+    const handleQuery = vi.fn(() => Promise.resolve())
+    let recoveryActive = true
+
+    const { result, rerender } = renderHook(
+      ({ dispatchBlocked }) =>
+        useMessageQueue({
+          chatId: 'A',
+          loadingState: 'idle' as LoadingState,
+          handleQuery,
+          isRateLimited: () => false,
+          isDispatchBlocked: () => recoveryActive,
+          dispatchBlocked,
+        }),
+      { initialProps: { dispatchBlocked: true } },
+    )
+
+    act(() => {
+      result.current.submit({ text: 'q1' })
+    })
+    await flushMicrotasks()
+
+    expect(handleQuery).not.toHaveBeenCalled()
+    expect(
+      result.current.queuedMessages.map((message) => message.text),
+    ).toEqual(['q1'])
+
+    recoveryActive = false
+    rerender({ dispatchBlocked: false })
+    await flushMicrotasks()
+
+    expect(handleQuery).toHaveBeenCalledTimes(1)
+    expect(handleQuery).toHaveBeenLastCalledWith(
+      'q1',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    )
+  })
+
   it('removes a specific queued message from the active chat', async () => {
     const handleQuery = vi.fn(() => new Promise<void>(() => {}))
 

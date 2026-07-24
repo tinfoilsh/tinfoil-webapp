@@ -10,14 +10,60 @@
  * survive a round-trip while the fields we depend on are type-checked.
  */
 
+import {
+  MAX_PENDING_RECOVERIES_PER_CHAT,
+  MAX_RECOVERY_ID_LENGTH,
+  type SyncedRecoveryEnvelope,
+} from '@/types/chat-recovery'
+import { validateRecoveryEnvelope } from '@/utils/chat-recovery-envelope'
 import { z } from 'zod'
+
+const RecoveryIdSchema = z
+  .string()
+  .min(1)
+  .max(MAX_RECOVERY_ID_LENGTH)
+  .refine((value) => value.trim().length > 0)
+const RecoveryTimestampSchema = z.string().datetime({ offset: true })
+const RecoveryKeyIdSchema = z.string().regex(/^[0-9a-f]{32}$/)
 
 const MessageSchema = z
   .object({
     role: z.enum(['user', 'assistant']),
     content: z.string(),
+    turnId: RecoveryIdSchema.optional(),
   })
   .passthrough()
+
+export const PendingRecoveryEnvelopeSchema = z
+  .object({
+    v: z.literal(1),
+    turnId: RecoveryIdSchema,
+    keyId: RecoveryKeyIdSchema,
+    createdAt: RecoveryTimestampSchema,
+    expiresAt: RecoveryTimestampSchema,
+    nonce: z.string(),
+    ciphertext: z.string(),
+  })
+  .passthrough()
+  .superRefine((envelope, context) => {
+    if ('storage' in envelope) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'device-local recovery envelopes cannot be synced',
+        path: ['storage'],
+      })
+      return
+    }
+    try {
+      validateRecoveryEnvelope(envelope as SyncedRecoveryEnvelope)
+    } catch (error) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          error instanceof Error ? error.message : 'invalid recovery envelope',
+      })
+    }
+  })
 
 // Per-unit logical edit clock: `v` is a Lamport counter, `w` the
 // writing device id used as a deterministic tiebreak. Passthrough keeps
@@ -34,6 +80,23 @@ export const RemoteChatPlaintextSchema = z
   .object({
     title: z.string().optional(),
     messages: z.array(MessageSchema),
+    pendingRecoveries: z
+      .array(PendingRecoveryEnvelopeSchema)
+      .max(MAX_PENDING_RECOVERIES_PER_CHAT)
+      .superRefine((envelopes, context) => {
+        const seen = new Set<string>()
+        for (const [index, envelope] of envelopes.entries()) {
+          if (seen.has(envelope.turnId)) {
+            context.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: 'recovery turn identifiers must be unique',
+              path: [index, 'turnId'],
+            })
+          }
+          seen.add(envelope.turnId)
+        }
+      })
+      .optional(),
     createdAt: z.union([z.string(), z.number()]).optional(),
     updatedAt: z.union([z.string(), z.number()]).optional(),
     model: z.string().optional(),

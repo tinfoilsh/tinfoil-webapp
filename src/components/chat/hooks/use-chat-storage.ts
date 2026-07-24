@@ -1,12 +1,16 @@
 import { cloudStorage } from '@/services/cloud/cloud-storage'
+import { streamingTracker } from '@/services/cloud/streaming-tracker'
+import { sameRecoveredResponse } from '@/services/inference/chat-recovery-sync'
 import { chatEvents } from '@/services/storage/chat-events'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { isLocalRecoveryEnvelope } from '@/types/chat-recovery'
 import { logError, logInfo } from '@/utils/error-handling'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CONSTANTS } from '../constants'
-import type { Chat } from '../types'
+import type { Chat, PendingRecoveryEnvelope } from '../types'
 import {
   createBlankChat,
   deleteChat as deleteChatFromStorage,
@@ -47,6 +51,41 @@ interface UseChatStorageReturn {
   retryInitialChatLoad: () => void
 }
 
+function pendingRecoveriesMatch(
+  left: readonly PendingRecoveryEnvelope[] = [],
+  right: readonly PendingRecoveryEnvelope[] = [],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((envelope, index) => {
+      const candidate = right[index]
+      if (!candidate || candidate.v !== envelope.v) return false
+      if (
+        isLocalRecoveryEnvelope(envelope) ||
+        isLocalRecoveryEnvelope(candidate)
+      ) {
+        return (
+          isLocalRecoveryEnvelope(envelope) &&
+          isLocalRecoveryEnvelope(candidate) &&
+          candidate.turnId === envelope.turnId &&
+          candidate.createdAt === envelope.createdAt &&
+          candidate.expiresAt === envelope.expiresAt &&
+          candidate.sessionId === envelope.sessionId &&
+          candidate.recoveryToken === envelope.recoveryToken
+        )
+      }
+      return (
+        candidate.turnId === envelope.turnId &&
+        candidate.keyId === envelope.keyId &&
+        candidate.createdAt === envelope.createdAt &&
+        candidate.expiresAt === envelope.expiresAt &&
+        candidate.nonce === envelope.nonce &&
+        candidate.ciphertext === envelope.ciphertext
+      )
+    })
+  )
+}
+
 export function useChatStorage({
   storeHistory,
   initialChatId,
@@ -55,6 +94,8 @@ export function useChatStorage({
   const { isSignedIn } = useAuth()
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const initialChatLoadedRef = useRef(false)
+  const reloadGenerationRef = useRef(0)
+  const pendingRecoveryReloadIdsRef = useRef(new Set<string>())
   const [initialChatDecryptionFailed, setInitialChatDecryptionFailed] =
     useState(false)
   const [localChatNotFound, setLocalChatNotFound] = useState(false)
@@ -90,71 +131,142 @@ export function useChatStorage({
   }, [persistenceManager])
 
   // Load chats from storage
-  const reloadChats = useCallback(async () => {
-    if (typeof window === 'undefined') return
+  const reloadChats = useCallback(
+    async (recoveryIds?: readonly string[]) => {
+      if (typeof window === 'undefined') return
 
-    try {
-      const loadedChats = await loadChats(storeHistory && !!isSignedIn)
-
-      setChats((prevChats) => {
-        // Always ensure we have blank chats for both modes
-        const cloudBlank =
-          getBlankChat(prevChats, false) || createBlankChat(false)
-        const localBlank =
-          getBlankChat(prevChats, true) || createBlankChat(true)
-
-        // Merge loaded chats with state (excluding blank chats). Re-check the
-        // deleted tracker at apply-time: a chat can be deleted after this
-        // reload's loadChats() snapshot resolved but before this setChats runs.
-        // Without this re-filter, an in-flight reload would resurrect a chat
-        // the user just deleted until the next page refresh.
-        const nonBlankChats = loadedChats.filter(
-          (c) => !c.isBlankChat && !deletedChatsTracker.isDeleted(c.id),
-        )
-
-        // Combine blank chats with loaded chats and sort
-        const finalChats = sortChats([cloudBlank, localBlank, ...nonBlankChats])
-
-        return finalChats
-      })
-
-      // Update current chat metadata only - NEVER switch to a different chat.
-      // Chat switching should only happen through explicit user actions.
-      // This prevents race conditions in Safari PWA where timing differences
-      // could cause unexpected chat resets.
-      setCurrentChat((prev) => {
-        if (isSwitchingChatRef.current || prev.isBlankChat) {
-          return prev
+      recoveryIds?.forEach((id) => pendingRecoveryReloadIdsRef.current.add(id))
+      const reloadGeneration = ++reloadGenerationRef.current
+      try {
+        const loadedChats = await loadChats(storeHistory && !!isSignedIn)
+        if (reloadGeneration !== reloadGenerationRef.current) {
+          return
         }
+        const pendingRecoveryIds = [...pendingRecoveryReloadIdsRef.current]
+        pendingRecoveryReloadIdsRef.current.clear()
 
-        // Only update metadata (syncedAt, title) if the same chat exists in storage
-        const existingChat = loadedChats.find((c) => c.id === prev.id)
-        if (existingChat) {
-          if (
-            prev.syncedAt !== existingChat.syncedAt ||
-            prev.title !== existingChat.title
-          ) {
-            return {
-              ...prev,
-              syncedAt: existingChat.syncedAt,
-              title: existingChat.title,
+        setChats((prevChats) => {
+          // Always ensure we have blank chats for both modes
+          const cloudBlank =
+            getBlankChat(prevChats, false) || createBlankChat(false)
+          const localBlank =
+            getBlankChat(prevChats, true) || createBlankChat(true)
+
+          // Merge loaded chats with state (excluding blank chats). Re-check the
+          // deleted tracker at apply-time: a chat can be deleted after this
+          // reload's loadChats() snapshot resolved but before this setChats runs.
+          // Without this re-filter, an in-flight reload would resurrect a chat
+          // the user just deleted until the next page refresh.
+          const nonBlankChats = loadedChats.filter(
+            (c) => !c.isBlankChat && !deletedChatsTracker.isDeleted(c.id),
+          )
+
+          // Combine blank chats with loaded chats and sort
+          const finalChats = sortChats([
+            cloudBlank,
+            localBlank,
+            ...nonBlankChats,
+          ])
+
+          return finalChats
+        })
+
+        // Update current chat metadata only - NEVER switch to a different chat.
+        // Chat switching should only happen through explicit user actions.
+        // This prevents race conditions in Safari PWA where timing differences
+        // could cause unexpected chat resets.
+        setCurrentChat((prev) => {
+          if (prev.isBlankChat) {
+            return prev
+          }
+
+          // Only update metadata (syncedAt, title) if the same chat exists in storage
+          const existingChat = loadedChats.find((c) => c.id === prev.id)
+          if (existingChat) {
+            const isStreaming = streamingTracker.isStreaming(prev.id)
+            const isRecoveryReload = pendingRecoveryIds.includes(prev.id)
+            if (isRecoveryReload && isStreaming) {
+              return {
+                ...prev,
+                pendingRecoveries: existingChat.pendingRecoveries,
+              }
+            }
+            // A turn this view still tracks as pending recovery may have been
+            // completed elsewhere (another device, or a background scan) and
+            // reached storage through a plain sync. Metadata-only merging
+            // would clear the indicator but keep the stale on-screen
+            // messages, so adopt the stored chat that carries the recovered
+            // response.
+            const recoveryResolvedElsewhere = (
+              prev.pendingRecoveries ?? []
+            ).some(
+              (envelope) =>
+                !existingChat.pendingRecoveries?.some(
+                  (candidate) => candidate.turnId === envelope.turnId,
+                ) &&
+                existingChat.messages.some((message) => {
+                  if (
+                    message.role !== 'assistant' ||
+                    message.turnId !== envelope.turnId
+                  ) {
+                    return false
+                  }
+                  const currentResponse = prev.messages.find(
+                    (candidate) =>
+                      candidate.role === 'assistant' &&
+                      candidate.turnId === envelope.turnId,
+                  )
+                  return (
+                    currentResponse === undefined ||
+                    !sameRecoveredResponse(currentResponse, message)
+                  )
+                }),
+            )
+            if (
+              (isRecoveryReload || recoveryResolvedElsewhere) &&
+              !isStreaming
+            ) {
+              return {
+                ...existingChat,
+                pendingSave: prev.pendingSave,
+              }
+            }
+            if (
+              prev.syncedAt !== existingChat.syncedAt ||
+              prev.title !== existingChat.title ||
+              !pendingRecoveriesMatch(
+                prev.pendingRecoveries,
+                existingChat.pendingRecoveries,
+              )
+            ) {
+              return {
+                ...prev,
+                syncedAt: existingChat.syncedAt,
+                title: existingChat.title,
+                pendingRecoveries: existingChat.pendingRecoveries,
+              }
             }
           }
-        }
 
-        return prev
-      })
-    } catch (error) {
-      logError('Failed to reload chats', error, {
-        component: 'useChatStorage',
-      })
-    }
-  }, [storeHistory, isSignedIn])
+          return prev
+        })
+      } catch (error) {
+        logError('Failed to reload chats', error, {
+          component: 'useChatStorage',
+        })
+      }
+    },
+    [storeHistory, isSignedIn],
+  )
 
   // Listen for chat events (cloud sync, pagination, etc.)
   useEffect(() => {
     const cleanup = chatEvents.on((event) => {
-      if (event.reason === 'sync' || event.reason === 'pagination') {
+      if (
+        event.reason === 'sync' ||
+        event.reason === 'pagination' ||
+        event.reason === 'recovery'
+      ) {
         // Apply ID changes eagerly to avoid temp/server ID mismatch races before reload
         if (event.idChanges && event.idChanges.length > 0) {
           const idMap = new Map(event.idChanges.map((c) => [c.from, c.to]))
@@ -170,7 +282,11 @@ export function useChatStorage({
           )
         }
 
-        reloadChats()
+        if (event.reason === 'recovery') {
+          void reloadChats(event.ids)
+        } else {
+          void reloadChats()
+        }
       }
     })
 
@@ -491,6 +607,22 @@ export function useChatStorage({
           decryptionFailed: downloadedChat.decryptionFailed,
           projectId: downloadedChat.projectId,
           model: downloadedChat.model,
+          pendingRecoveries: downloadedChat.pendingRecoveries,
+        }
+
+        if (storeHistory) {
+          try {
+            await indexedDBStorage.applyRemoteChatIfFresh({
+              chat: downloadedChat,
+              syncVersion: downloadedChat.syncVersion ?? 1,
+              expectedLocalUpdatedAt: null,
+            })
+          } catch (error) {
+            logError('Failed to cache URL-loaded chat', error, {
+              component: 'useChatStorage',
+              metadata: { chatId },
+            })
+          }
         }
 
         // Add to chats list and select it
@@ -521,7 +653,7 @@ export function useChatStorage({
         setInitialChatLoadFailed(true)
       }
     },
-    [chats, isSignedIn, switchChat],
+    [chats, isSignedIn, storeHistory, switchChat],
   )
 
   // Load initial chat from URL if provided

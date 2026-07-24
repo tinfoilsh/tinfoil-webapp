@@ -12,9 +12,20 @@ import type { BaseModel } from '@/config/models'
 import { AUTO_MODEL_OPTIONS_FIELD, AUTO_REQUEST_MODEL } from '@/config/models'
 import { shouldRetryTestFail } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
-import { APIConnectionError, APIUserAbortError } from 'openai'
+import {
+  APIConnectionError,
+  APIUserAbortError,
+  AuthenticationError,
+} from 'openai'
+import type { SessionRecoveryToken } from 'tinfoil'
 import { ChatQueryBuilder } from './chat-query-builder'
-import { getTinfoilClient } from './tinfoil-client'
+import {
+  createRecoverableTinfoilClient,
+  createRecoverableTinfoilTransport,
+  getTinfoilClient,
+  resetTinfoilClient,
+  type RecoverableTinfoilTransport,
+} from './tinfoil-client'
 
 const CHAT_COMPLETIONS_ENDPOINT = '/v1/chat/completions'
 
@@ -120,6 +131,25 @@ function delay(ms: number): Promise<void> {
 // Statuses the OpenAI SDK itself treats as retryable (client shouldRetry):
 // request timeout, lock timeout, and rate limit. 5xx is handled as a range.
 const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 429])
+const RECOVERY_SESSION_ID_BYTES = 16
+
+export function generateRecoverySessionId(): string {
+  const bytes = crypto.getRandomValues(
+    new Uint8Array(RECOVERY_SESSION_ID_BYTES),
+  )
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  )
+}
+
+export interface ChatRecoveryCallbacks {
+  onAttemptStarted: (sessionId: string) => void
+  onTokenCaptured: (
+    sessionId: string,
+    token: SessionRecoveryToken,
+  ) => Promise<void>
+  onAttemptAbandoned: (sessionId: string) => Promise<void>
+}
 
 // Typed classification only — never inspect error message strings, which
 // vary across browsers, SDK versions, and locales.
@@ -188,6 +218,7 @@ export interface SendChatStreamParams {
   codeExecutionEncryptionKey?: string
   /** Per-chat hex token authenticating the code-exec container. */
   codeExecutionContainerAuthToken?: string
+  recovery?: ChatRecoveryCallbacks
 }
 
 export async function sendChatStream(
@@ -210,6 +241,7 @@ export async function sendChatStream(
     codeExecutionAccessToken,
     codeExecutionEncryptionKey,
     codeExecutionContainerAuthToken,
+    recovery,
   } = params
 
   const genUITools = genUIEnabled ? buildGenUIToolSchemas() : []
@@ -346,8 +378,10 @@ export async function sendChatStream(
 
   let lastError: unknown = null
   const maxRetries = CONSTANTS.MESSAGE_SEND_MAX_RETRIES
+  let recoverableTransport: RecoverableTinfoilTransport | null = null
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let recoverySessionId: string | null = null
     if (signal.aborted) {
       throw new DOMException('Aborted', 'AbortError')
     }
@@ -421,7 +455,21 @@ export async function sendChatStream(
         }
       }
 
-      const client = await getTinfoilClient()
+      let client
+      if (recovery) {
+        recoverableTransport ??= await createRecoverableTinfoilTransport()
+        recoverySessionId = generateRecoverySessionId()
+        recovery.onAttemptStarted(recoverySessionId)
+        const recoverable = await createRecoverableTinfoilClient(
+          recoverableTransport,
+          recoverySessionId,
+          (token) =>
+            recovery.onTokenCaptured(recoverySessionId as string, token),
+        )
+        client = recoverable.client
+      } else {
+        client = await getTinfoilClient()
+      }
 
       const stream: any = await (client.chat.completions.create as Function)(
         requestBody,
@@ -456,6 +504,17 @@ export async function sendChatStream(
         headers: { 'Content-Type': 'text/event-stream' },
       })
     } catch (err: unknown) {
+      if (recoverySessionId && recovery) {
+        try {
+          await recovery.onAttemptAbandoned(recoverySessionId)
+        } catch (cleanupError) {
+          logError('Failed to abandon chat recovery attempt', cleanupError, {
+            component: 'inference-client',
+            action: 'sendChatStream.recoveryCleanup',
+            metadata: { sessionId: recoverySessionId },
+          })
+        }
+      }
       lastError = err
       const anyErr = err as any
 
@@ -469,7 +528,15 @@ export async function sendChatStream(
         throw err
       }
 
-      if (attempt < maxRetries && isRetryableError(err)) {
+      const refreshAuthentication =
+        recovery && err instanceof AuthenticationError
+      if (refreshAuthentication) {
+        resetTinfoilClient()
+      }
+      if (
+        attempt < maxRetries &&
+        (refreshAuthentication || isRetryableError(err))
+      ) {
         const backoffDelay =
           CONSTANTS.MESSAGE_SEND_RETRY_DELAY_MS * Math.pow(2, attempt)
 

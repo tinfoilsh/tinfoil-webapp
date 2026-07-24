@@ -103,18 +103,23 @@ export class TimelineBuilder {
 
   // -- Web Search ---------------------------------------------------------
 
-  pushWebSearch(state: WebSearchState): void {
+  pushWebSearch(state: WebSearchState): string {
     this.finalizeThinkingForTool()
+    const id = `web-search-${this.blocks.length}`
     this.blocks.push({
       type: 'web_search',
-      id: `web-search-${this.blocks.length}`,
+      id,
       state: { ...state },
     })
+    return id
   }
 
-  updateWebSearch(state: WebSearchState): void {
+  updateWebSearch(state: WebSearchState, id?: string): void {
     for (let i = this.blocks.length - 1; i >= 0; i--) {
-      if (this.blocks[i].type === 'web_search') {
+      if (
+        this.blocks[i].type === 'web_search' &&
+        (!id || this.blocks[i].id === id)
+      ) {
         this.blocks[i] = {
           ...this.blocks[i],
           state: { ...state },
@@ -122,6 +127,33 @@ export class TimelineBuilder {
         break
       }
     }
+  }
+
+  getWebSearchState(id: string): WebSearchState | undefined {
+    const block = this.blocks.find(
+      (candidate) => candidate.type === 'web_search' && candidate.id === id,
+    )
+    return block?.type === 'web_search' ? { ...block.state } : undefined
+  }
+
+  findSearchingWebSearch(
+    query?: string,
+  ): { id: string; state: WebSearchState } | undefined {
+    let uniqueMatch: { id: string; state: WebSearchState } | undefined
+    for (let i = this.blocks.length - 1; i >= 0; i--) {
+      const block = this.blocks[i]
+      if (
+        block.type === 'web_search' &&
+        block.state.status === 'searching' &&
+        (query === undefined || block.state.query === query)
+      ) {
+        const match = { id: block.id, state: { ...block.state } }
+        if (query !== undefined) return match
+        if (uniqueMatch) return undefined
+        uniqueMatch = match
+      }
+    }
+    return uniqueMatch
   }
 
   // -- URL Fetches --------------------------------------------------------

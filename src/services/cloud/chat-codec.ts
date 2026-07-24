@@ -118,6 +118,8 @@ export async function processRemoteChat(
     syncedAt: Date.now(),
     locallyModified: false,
     syncVersion: remote.syncVersion ?? decrypted.syncVersion ?? 1,
+    clockVersion:
+      remote.syncVersion === undefined ? undefined : decrypted.clockVersion,
     formatVersion: 2,
     projectId: projectId ?? decrypted.projectId ?? localChat?.projectId,
   }

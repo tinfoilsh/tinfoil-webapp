@@ -68,6 +68,50 @@ describe('chatContentFingerprint', () => {
     expect(fp1).not.toBe(fp2)
   })
 
+  it('changes when message turnId changes', () => {
+    const message = {
+      role: 'user',
+      content: 'hello',
+      timestamp: '2024-01-01T00:00:00Z',
+    }
+    const fp1 = chatContentFingerprint({
+      title: 'T',
+      messages: [{ ...message, turnId: 'turn-1' }],
+    })
+    const fp2 = chatContentFingerprint({
+      title: 'T',
+      messages: [{ ...message, turnId: 'turn-2' }],
+    })
+
+    expect(fp1).not.toBe(fp2)
+  })
+
+  it('changes when only pending recovery envelopes change', () => {
+    const recovery = {
+      v: 1,
+      turnId: 'turn-1',
+      keyId: 'a'.repeat(32),
+      createdAt: '2026-07-20T00:00:00.000Z',
+      expiresAt: '2026-07-27T00:00:00.000Z',
+      nonce: 'AAAAAAAAAAAAAAAA',
+      ciphertext: 'AAAAAAAAAAAAAAAAAAAAAA==',
+    }
+    const fp1 = chatContentFingerprint({
+      title: 'T',
+      messages: [],
+      pendingRecoveries: [recovery],
+    })
+    const fp2 = chatContentFingerprint({
+      title: 'T',
+      messages: [],
+      pendingRecoveries: [
+        { ...recovery, ciphertext: 'AQAAAAAAAAAAAAAAAAAAAA==' },
+      ],
+    })
+
+    expect(fp1).not.toBe(fp2)
+  })
+
   it('does not depend on full documentContent string (hashes it)', () => {
     const fp1 = chatContentFingerprint({
       title: 'T',
