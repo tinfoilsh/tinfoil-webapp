@@ -442,6 +442,17 @@ async function processEnvelope(
     if (retained.chatId !== chatId || retained.turnId !== envelope.turnId) {
       continue
     }
+    if (
+      sessionId === payload.sessionId &&
+      (initialStatus.state === 'processing' ||
+        initialStatus.state === 'complete')
+    ) {
+      if (!retained.controller.signal.aborted) {
+        return
+      }
+      scannedRecoveries.delete(sessionId)
+      continue
+    }
     scannedRecoveries.delete(sessionId)
     retained.controller.abort()
     setChatRecoveryActive(retained.chatId, retained.turnId, false)
@@ -486,6 +497,18 @@ async function processEnvelope(
     isCurrent() &&
     !recoverySignal.aborted &&
     scannedRecoveries.get(payload.sessionId) === scannedRecovery
+  let highestEncryptedBytes = 0
+  let highestPersistedBytes = initialStatus.persistedBytes
+  const markRecoveryProgress = () => {
+    if (scanInFlight?.controller.signal === signal) {
+      scanInFlight.lastProgressAt = Date.now()
+    }
+  }
+  const observePersistedBytes = (bytes: number) => {
+    if (bytes <= highestPersistedBytes) return
+    highestPersistedBytes = bytes
+    markRecoveryProgress()
+  }
   const publishDraft = (message: Message): Message | undefined => {
     if (!isRecoveryCurrent() || !hasVisibleRecoveryDraft(message)) {
       return undefined
@@ -504,10 +527,11 @@ async function processEnvelope(
     return draftMessage
   }
   try {
-    let presentationCheckpoint = getChatRecoveryDraft(
-      chatId,
-      envelope.turnId,
-    )?.message
+    const recoveryDraft = getChatRecoveryDraft(chatId, envelope.turnId)
+    let presentationCheckpoint =
+      recoveryDraft?.sessionId === payload.sessionId
+        ? recoveryDraft.message
+        : undefined
     if (!presentationCheckpoint) {
       const storedChat = await indexedDBStorage.getChat(chatId)
       if (!isRecoveryCurrent()) return
@@ -532,8 +556,9 @@ async function processEnvelope(
           (bytes) => {
             measuredEncryptedBytes = true
             consumedEncryptedBytes += bytes
-            if (scanInFlight?.controller.signal === signal) {
-              scanInFlight.lastProgressAt = Date.now()
+            if (consumedEncryptedBytes > highestEncryptedBytes) {
+              highestEncryptedBytes = consumedEncryptedBytes
+              markRecoveryProgress()
             }
           },
         )
@@ -556,9 +581,6 @@ async function processEnvelope(
         assistantMessage = await parseRichStreamingResponse(response, {
           onUpdate: (message) => {
             if (!isRecoveryCurrent()) return
-            if (scanInFlight?.controller.signal === signal) {
-              scanInFlight.lastProgressAt = Date.now()
-            }
             if (!checkpointReached && attemptCheckpoint) {
               checkpointReached = sameRecoveredResponse(
                 attemptCheckpoint,
@@ -566,14 +588,22 @@ async function processEnvelope(
               )
               return
             }
-            presentationCheckpoint =
-              publishDraft(message) ?? presentationCheckpoint
+            const published = publishDraft(message)
+            if (
+              published &&
+              (!presentationCheckpoint ||
+                !sameRecoveredResponse(presentationCheckpoint, published))
+            ) {
+              presentationCheckpoint = published
+              markRecoveryProgress()
+            }
           },
         })
       } catch {
         if (!isRecoveryCurrent()) return
         const retryStatus = await getChatRecoveryStatus(payload.sessionId)
         if (!isRecoveryCurrent()) return
+        observePersistedBytes(retryStatus.persistedBytes)
         if (retryStatus.state === 'failed') {
           try {
             await removePendingRecovery(
@@ -596,19 +626,14 @@ async function processEnvelope(
           )
           return
         }
-        if (scanInFlight?.controller.signal === signal) {
-          scanInFlight.lastProgressAt = Date.now()
-        }
         await waitForRecoveryRetry(attempt, recoverySignal)
         continue
       }
       if (!isRecoveryCurrent()) return
       const terminalStatus = await getChatRecoveryStatus(payload.sessionId)
       if (!isRecoveryCurrent()) return
+      observePersistedBytes(terminalStatus.persistedBytes)
       if (terminalStatus.state === 'processing') {
-        if (scanInFlight?.controller.signal === signal) {
-          scanInFlight.lastProgressAt = Date.now()
-        }
         await waitForRecoveryRetry(attempt, recoverySignal)
         continue
       }
@@ -638,9 +663,6 @@ async function processEnvelope(
         measuredEncryptedBytes &&
         consumedEncryptedBytes < terminalStatus.persistedBytes
       ) {
-        if (scanInFlight?.controller.signal === signal) {
-          scanInFlight.lastProgressAt = Date.now()
-        }
         await waitForRecoveryRetry(attempt, recoverySignal)
         continue
       }
@@ -664,7 +686,10 @@ async function processEnvelope(
     }
   } finally {
     signal.removeEventListener('abort', abortRecovery)
-    if (scannedRecoveries.get(payload.sessionId) === scannedRecovery) {
+    if (
+      scannedRecoveries.get(payload.sessionId) === scannedRecovery &&
+      isCurrent()
+    ) {
       scannedRecoveries.delete(payload.sessionId)
       setChatRecoveryActive(chatId, envelope.turnId, false)
     }
