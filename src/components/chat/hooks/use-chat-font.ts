@@ -1,14 +1,7 @@
 import { SETTINGS_CHAT_FONT } from '@/constants/storage-keys'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 export type ChatFont = 'system' | 'serif' | 'mono' | 'dyslexic'
-
-export const CHAT_FONT_CLASSES: Record<ChatFont, string> = {
-  system: 'font-system',
-  serif: 'font-lora',
-  mono: 'font-aeonik-fono',
-  dyslexic: 'font-opendyslexic',
-}
 
 export const normalizeChatFont = (
   value: string | null | undefined,
@@ -20,18 +13,19 @@ export const normalizeChatFont = (
   return 'system'
 }
 
-export const useChatFont = () => {
-  const [chatFont, setChatFont] = useState<ChatFont>('system')
+const applyChatFont = (font: ChatFont) => {
+  document.documentElement.setAttribute('data-chat-font', font)
+}
 
+/**
+ * Keeps the data-chat-font attribute on <html> in sync with the saved
+ * setting. The attribute is first set before paint by an inline script in
+ * _document.tsx; elements using the `font-chat` class pick the font up from
+ * CSS (see globals.css), so no per-component state is needed.
+ */
+export const useChatFontSync = () => {
   useEffect(() => {
-    const loadChatFont = () => {
-      if (typeof window !== 'undefined') {
-        const saved = localStorage.getItem(SETTINGS_CHAT_FONT)
-        setChatFont(normalizeChatFont(saved))
-      }
-    }
-
-    loadChatFont()
+    applyChatFont(normalizeChatFont(localStorage.getItem(SETTINGS_CHAT_FONT)))
 
     const handleStorageChange = (e: StorageEvent | CustomEvent) => {
       let key: string | null = null
@@ -46,7 +40,7 @@ export const useChatFont = () => {
       }
 
       if (key === SETTINGS_CHAT_FONT) {
-        setChatFont(normalizeChatFont(newValue))
+        applyChatFont(normalizeChatFont(newValue))
       }
     }
 
@@ -63,6 +57,4 @@ export const useChatFont = () => {
       )
     }
   }, [])
-
-  return chatFont
 }

@@ -1,3 +1,22 @@
+/* Chat font selection. The data-chat-font attribute is set on <html> before
+   first paint (see _document.tsx) and kept in sync by useChatFontSync, so the
+   statically exported HTML renders with the saved font immediately. The
+   font-chat Tailwind utility reads this variable. */
+:root {
+  --font-chat:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue',
+    Helvetica, Arial, sans-serif;
+}
+html[data-chat-font='serif'] {
+  --font-chat: var(--font-lora), serif;
+}
+html[data-chat-font='mono'] {
+  --font-chat: var(--font-aeonik-fono), sans-serif;
+}
+html[data-chat-font='dyslexic'] {
+  --font-chat: var(--font-opendyslexic), sans-serif;
+}
+
 /* Use dynamic viewport units for better mobile handling */
 .h-dvh {
   height: 100dvh;

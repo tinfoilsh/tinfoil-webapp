@@ -34,7 +34,6 @@ import {
 } from './components/context-usage-indicator'
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
-import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
 import type { PromptPreset } from './prompts/types'
 import type { ProcessedDocument } from './renderers/types'
 import type { LoadingState } from './types'
@@ -124,7 +123,6 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const documentsScrollRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
-  const chatFont = useChatFont()
   const { isProjectMode, activeProject, loadingProject } = useProject()
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
@@ -1086,8 +1084,7 @@ export function ChatInput({
             placeholder={hasMessages ? 'Reply to Tin...' : placeholder}
             rows={1}
             className={cn(
-              'w-full resize-none bg-transparent text-lg leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
-              CHAT_FONT_CLASSES[chatFont],
+              'w-full resize-none bg-transparent font-chat text-lg leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
             )}
             style={{
               minHeight: inputMinHeight,
