@@ -799,6 +799,7 @@ describe('chat recovery lifecycle', () => {
 
     await scanPendingChatRecoveries('user-1')
 
+    expect(setChatRecoveryDraft).toHaveBeenCalledTimes(1)
     expect(setChatRecoveryDraft).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: SESSION_ID,
@@ -1224,6 +1225,9 @@ describe('chat recovery lifecycle', () => {
     await vi.waitFor(() =>
       expect(fetchRecoveredChatResponse).toHaveBeenCalledTimes(3),
     )
+    expect(
+      (fetchRecoveredChatResponse.mock.calls[0][2] as AbortSignal).aborted,
+    ).toBe(true)
     expect(setChatRecoveryActive.mock.calls).toEqual([
       ['chat-1', 'turn-1', true],
       ['chat-1', 'turn-1', true],
