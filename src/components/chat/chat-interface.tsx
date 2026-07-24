@@ -15,8 +15,8 @@ import {
   UI_EXPAND_PROJECT_DOCUMENTS,
 } from '@/constants/storage-keys'
 import {
+  useChatRecoveryActiveTurnIds,
   useChatRecoveryDrafts,
-  useChatRecoveryPhases,
 } from '@/hooks/use-chat-recovery-drafts'
 import { useChatRouter } from '@/hooks/use-chat-router'
 import { useProjects } from '@/hooks/use-projects'
@@ -784,7 +784,9 @@ export function ChatInterface({
   const isTemporaryMode = currentChat?.isTemporary === true
   const currentChatId = currentChat?.id
   const recoveryDrafts = useChatRecoveryDrafts(currentChatId ?? '')
-  const activeRecoveryPhases = useChatRecoveryPhases(currentChatId ?? '')
+  const activeRecoveryTurnIds = useChatRecoveryActiveTurnIds(
+    currentChatId ?? '',
+  )
   const hasPendingRecovery = Boolean(currentChat?.pendingRecoveries?.length)
   const hasPendingRecoveryRef = useRef(hasPendingRecovery)
   hasPendingRecoveryRef.current = hasPendingRecovery
@@ -871,7 +873,7 @@ export function ChatInterface({
     isDispatchBlocked: () =>
       hasPendingRecoveryRef.current ||
       (currentChatId ? isChatRecoveryActive(currentChatId) : false),
-    dispatchBlocked: hasPendingRecovery || activeRecoveryPhases.length > 0,
+    dispatchBlocked: hasPendingRecovery || activeRecoveryTurnIds.length > 0,
     onBeforeDispatch: handleQueueDispatch,
     onRateLimited: handleQueueRateLimited,
   })
@@ -3374,7 +3376,7 @@ export function ChatInterface({
                     messages={currentChat?.messages || []}
                     pendingRecoveries={currentChat?.pendingRecoveries}
                     recoveryDrafts={recoveryDrafts}
-                    activeRecoveryPhases={activeRecoveryPhases}
+                    activeRecoveryTurnIds={activeRecoveryTurnIds}
                     isDarkMode={isDarkMode}
                     chatId={currentChat.id}
                     isWaitingForResponse={isWaitingForResponse}

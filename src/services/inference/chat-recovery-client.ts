@@ -8,7 +8,7 @@ const EHBP_RESPONSE_NONCE_HEADER = 'Ehbp-Response-Nonce'
 export type RecoveryState = 'processing' | 'complete' | 'failed' | 'missing'
 export type RecoveryStatus = {
   state: RecoveryState
-  bytes: number
+  persistedBytes: number
 }
 
 export class ChatRecoveryError extends Error {
@@ -63,8 +63,8 @@ export async function getChatRecoveryStatus(
   sessionId: string,
 ): Promise<RecoveryStatus> {
   const response = await recoveryFetch(sessionId, '/status')
-  if (response.status === 404) return { state: 'missing', bytes: 0 }
-  if (response.status === 410) return { state: 'failed', bytes: 0 }
+  if (response.status === 404) return { state: 'missing', persistedBytes: 0 }
+  if (response.status === 410) return { state: 'failed', persistedBytes: 0 }
   if (!response.ok) {
     throw new ChatRecoveryError(
       'Encrypted response recovery status failed',
@@ -77,17 +77,21 @@ export async function getChatRecoveryStatus(
     typeof body === 'object' && body !== null && 'status' in body
       ? body.status
       : undefined
-  const bytes =
+  const persistedBytes =
     typeof body === 'object' && body !== null && 'bytes' in body
       ? body.bytes
       : undefined
   if (status !== 'processing' && status !== 'complete' && status !== 'failed') {
     throw new ChatRecoveryError('Invalid encrypted recovery status response')
   }
-  if (typeof bytes !== 'number' || !Number.isSafeInteger(bytes) || bytes < 0) {
+  if (
+    typeof persistedBytes !== 'number' ||
+    !Number.isSafeInteger(persistedBytes) ||
+    persistedBytes < 0
+  ) {
     throw new ChatRecoveryError('Invalid encrypted recovery byte count')
   }
-  return { state: status, bytes }
+  return { state: status, persistedBytes }
 }
 
 export async function getChatRecoveryState(
@@ -100,8 +104,6 @@ export async function fetchRecoveredChatResponse(
   sessionId: string,
   token: SessionRecoveryToken,
   signal?: AbortSignal,
-  replayBytes = 0,
-  onReplayComplete?: () => void,
   onEncryptedBytes?: (bytes: number) => void,
 ): Promise<Response> {
   const response = await recoveryFetch(sessionId, '', { signal })
@@ -119,62 +121,19 @@ export async function fetchRecoveredChatResponse(
       response.status >= 500,
     )
   }
-  const suppressReplay = replayBytes > 0 && Boolean(onReplayComplete)
-  if (!response.body || (!suppressReplay && !onEncryptedBytes)) {
-    onReplayComplete?.()
+  if (!response.body || !onEncryptedBytes) {
     return decryptResponseWithToken(response, token)
   }
 
-  let replayBytesRemaining = suppressReplay ? replayBytes : 0
-  let replayComplete = !suppressReplay
-  if (replayComplete) onReplayComplete?.()
-  let liveRemainder: Uint8Array | undefined
-  const reader = response.body.getReader()
-  onEncryptedBytes?.(0)
-  const markReplayComplete = () => {
-    if (replayComplete) return
-    replayComplete = true
-    onReplayComplete?.()
-  }
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (liveRemainder) {
-        markReplayComplete()
-        controller.enqueue(liveRemainder)
-        liveRemainder = undefined
-        return
-      }
-      if (replayBytesRemaining === 0) {
-        markReplayComplete()
-      }
-
-      const { done, value } = await reader.read()
-      if (done) {
-        if (replayBytesRemaining === 0) {
-          markReplayComplete()
-        }
-        controller.close()
-        return
-      }
-      onEncryptedBytes?.(value.byteLength)
-      if (replayBytesRemaining === 0) {
-        controller.enqueue(value)
-        return
-      }
-      if (value.byteLength <= replayBytesRemaining) {
-        replayBytesRemaining -= value.byteLength
-        controller.enqueue(value)
-        return
-      }
-
-      liveRemainder = value.slice(replayBytesRemaining)
-      controller.enqueue(value.slice(0, replayBytesRemaining))
-      replayBytesRemaining = 0
-    },
-    cancel(reason) {
-      return reader.cancel(reason)
-    },
-  })
+  onEncryptedBytes(0)
+  const body = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        onEncryptedBytes(chunk.byteLength)
+        controller.enqueue(chunk)
+      },
+    }),
+  )
   return decryptResponseWithToken(
     new Response(body, {
       status: response.status,

@@ -64,7 +64,7 @@ describe('chat recovery client', () => {
     })
   })
 
-  it('rejects recovery status without a valid byte count', async () => {
+  it('rejects recovery status without a persisted byte count', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ status: 'processing' }), {
         headers: { 'Content-Type': 'application/json' },
@@ -131,58 +131,16 @@ describe('chat recovery client', () => {
     )
   })
 
-  it('marks the persisted replay boundary before forwarding live bytes', async () => {
-    const encryptedBytes = new TextEncoder().encode('replay-live')
-    const token = {
-      exportedSecret: new Uint8Array(32),
-      requestEnc: new Uint8Array(32),
-    }
-    const replayComplete = vi.fn()
+  it('counts encrypted bytes without splitting the replay stream', async () => {
+    const encryptedBytes = new TextEncoder().encode('replay-and-live')
     const encryptedProgress = vi.fn()
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(encryptedBytes),
     )
     decryptResponseWithToken.mockImplementation(async (response: Response) => {
-      const reader = response.body?.getReader()
-      expect(replayComplete).not.toHaveBeenCalled()
-      const replay = await reader?.read()
-      expect(new TextDecoder().decode(replay?.value)).toBe('replay')
-      expect(replayComplete).not.toHaveBeenCalled()
-      const live = await reader?.read()
-      expect(new TextDecoder().decode(live?.value)).toBe('-live')
-      expect(replayComplete).toHaveBeenCalledTimes(1)
-      return new Response('decrypted')
-    })
-
-    await fetchRecoveredChatResponse(
-      SESSION_ID,
-      token,
-      undefined,
-      'replay'.length,
-      replayComplete,
-      encryptedProgress,
-    )
-    expect(encryptedProgress).toHaveBeenCalledWith(encryptedBytes.byteLength)
-  })
-
-  it('marks an exact replay boundary without waiting for another byte', async () => {
-    const encryptedBytes = new TextEncoder().encode('replay')
-    const replayComplete = vi.fn()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        new ReadableStream({
-          start(controller) {
-            controller.enqueue(encryptedBytes)
-          },
-        }),
-      ),
-    )
-    decryptResponseWithToken.mockImplementation(async (response: Response) => {
-      const reader = response.body?.getReader()
-      const replay = await reader?.read()
-      expect(new TextDecoder().decode(replay?.value)).toBe('replay')
-      await vi.waitFor(() => expect(replayComplete).toHaveBeenCalledOnce())
-      await reader?.cancel()
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(
+        encryptedBytes,
+      )
       return new Response('decrypted')
     })
 
@@ -193,62 +151,10 @@ describe('chat recovery client', () => {
         requestEnc: new Uint8Array(32),
       },
       undefined,
-      encryptedBytes.byteLength,
-      replayComplete,
-    )
-  })
-
-  it('tracks encrypted progress from a zero-byte boundary', async () => {
-    const encryptedBytes = new TextEncoder().encode('live')
-    const replayComplete = vi.fn()
-    const encryptedProgress = vi.fn()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(encryptedBytes),
-    )
-    decryptResponseWithToken.mockImplementation(async (response: Response) => {
-      await response.arrayBuffer()
-      return new Response('decrypted')
-    })
-
-    await fetchRecoveredChatResponse(
-      SESSION_ID,
-      {
-        exportedSecret: new Uint8Array(32),
-        requestEnc: new Uint8Array(32),
-      },
-      undefined,
-      0,
-      replayComplete,
       encryptedProgress,
     )
 
-    expect(replayComplete).toHaveBeenCalledOnce()
     expect(encryptedProgress).toHaveBeenCalledWith(encryptedBytes.byteLength)
-  })
-
-  it('does not mark a truncated replay as caught up', async () => {
-    const encryptedBytes = new TextEncoder().encode('short')
-    const replayComplete = vi.fn()
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(encryptedBytes),
-    )
-    decryptResponseWithToken.mockImplementation(async (response: Response) => {
-      await response.arrayBuffer()
-      return new Response('decrypted')
-    })
-
-    await fetchRecoveredChatResponse(
-      SESSION_ID,
-      {
-        exportedSecret: new Uint8Array(32),
-        requestEnc: new Uint8Array(32),
-      },
-      undefined,
-      encryptedBytes.byteLength + 1,
-      replayComplete,
-    )
-
-    expect(replayComplete).not.toHaveBeenCalled()
   })
 
   it.each([

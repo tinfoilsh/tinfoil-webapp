@@ -7,21 +7,13 @@ export type ChatRecoveryDraft = {
   message: Message
 }
 
-export type ChatRecoveryPhase = 'replaying' | 'streaming'
-
-export type ActiveChatRecovery = {
-  key: string
-  phase: ChatRecoveryPhase
-}
-
 type Listener = () => void
 
 const drafts = new Map<string, ChatRecoveryDraft>()
-const activeTurns = new Map<string, ChatRecoveryPhase>()
+const activeTurns = new Set<string>()
 const listeners = new Set<Listener>()
 let snapshot: readonly ChatRecoveryDraft[] = []
 let activeSnapshot: readonly string[] = []
-let activeRecoverySnapshot: readonly ActiveChatRecovery[] = []
 
 function draftKey(chatId: string, turnId: string): string {
   return `${chatId}\u0000${turnId}`
@@ -29,11 +21,7 @@ function draftKey(chatId: string, turnId: string): string {
 
 function publish(): void {
   snapshot = [...drafts.values()]
-  activeSnapshot = [...activeTurns.keys()]
-  activeRecoverySnapshot = [...activeTurns].map(([key, phase]) => ({
-    key,
-    phase,
-  }))
+  activeSnapshot = [...activeTurns]
   listeners.forEach((listener) => listener())
 }
 
@@ -54,13 +42,9 @@ export function getActiveChatRecoverySnapshot(): readonly string[] {
   return activeSnapshot
 }
 
-export function getActiveChatRecoveryPhaseSnapshot(): readonly ActiveChatRecovery[] {
-  return activeRecoverySnapshot
-}
-
 export function isChatRecoveryActive(chatId: string): boolean {
   const prefix = `${chatId}\u0000`
-  return [...activeTurns.keys()].some((key) => key.startsWith(prefix))
+  return [...activeTurns].some((key) => key.startsWith(prefix))
 }
 
 export function setChatRecoveryActive(
@@ -72,21 +56,10 @@ export function setChatRecoveryActive(
   const changed = active ? !activeTurns.has(key) : activeTurns.has(key)
   if (!changed) return
   if (active) {
-    activeTurns.set(key, 'replaying')
+    activeTurns.add(key)
   } else {
     activeTurns.delete(key)
   }
-  publish()
-}
-
-export function setChatRecoveryPhase(
-  chatId: string,
-  turnId: string,
-  phase: ChatRecoveryPhase,
-): void {
-  const key = draftKey(chatId, turnId)
-  if (!activeTurns.has(key) || activeTurns.get(key) === phase) return
-  activeTurns.set(key, phase)
   publish()
 }
 

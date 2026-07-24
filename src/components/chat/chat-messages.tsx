@@ -1,7 +1,6 @@
 import { GridTexture } from '@/components/ui/grid-texture'
 import { findSelectableModel, type BaseModel } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
-import type { ChatRecoveryPhase } from '@/services/inference/chat-recovery-drafts'
 import {
   findContextStartIndex,
   getContextTokenBudget,
@@ -23,10 +22,7 @@ type ChatMessagesProps = {
   messages: Message[]
   pendingRecoveries?: PendingRecoveryEnvelope[]
   recoveryDrafts?: ReadonlyArray<{ turnId: string; message: Message }>
-  activeRecoveryPhases?: ReadonlyArray<{
-    turnId: string
-    phase: ChatRecoveryPhase
-  }>
+  activeRecoveryTurnIds?: readonly string[]
   isDarkMode: boolean
   chatId: string
   messagesEndRef?: React.RefObject<HTMLDivElement | null>
@@ -231,7 +227,7 @@ export function ChatMessages({
   messages,
   pendingRecoveries = [],
   recoveryDrafts = [],
-  activeRecoveryPhases = [],
+  activeRecoveryTurnIds = [],
   isDarkMode,
   chatId,
   isWaitingForResponse = false,
@@ -408,11 +404,8 @@ export function ChatMessages({
       message.role === 'assistant' && message.turnId ? [message.turnId] : [],
     ),
   )
-  const recoveryPhaseByTurnId = new Map(
-    activeRecoveryPhases.map((recovery) => [recovery.turnId, recovery.phase]),
-  )
   const activeRecoveryTurns = new Set(
-    [...recoveryPhaseByTurnId.keys()].filter((turnId) =>
+    activeRecoveryTurnIds.filter((turnId) =>
       pendingRecoveryTurnIds.has(turnId),
     ),
   )
@@ -446,15 +439,11 @@ export function ChatMessages({
     message.turnId !== undefined &&
     message.turnId !== activeTurnId &&
     pendingRecoveryTurnIds.has(message.turnId) &&
-    (recoveryPhaseByTurnId.get(message.turnId) === 'replaying' ||
-      !recoveryDraftsByTurnId.has(message.turnId))
+    !recoveryDraftsByTurnId.has(message.turnId)
   const renderRecoveryAfter = (message: Message, messageIndex: number) => {
     if (!showRecoveryAfter(message)) return null
     const draft = message.turnId
       ? recoveryDraftsByTurnId.get(message.turnId)
-      : undefined
-    const phase = message.turnId
-      ? recoveryPhaseByTurnId.get(message.turnId)
       : undefined
     return (
       <>
@@ -465,11 +454,10 @@ export function ChatMessages({
             model={currentModel}
             isDarkMode={isDarkMode}
             isLastMessage
-            isStreaming={phase !== 'replaying'}
-            hideActions={phase === 'replaying'}
+            isStreaming
           />
         )}
-        {(!draft || phase === 'replaying') && <RecoveryMessage />}
+        {!draft && <RecoveryMessage />}
       </>
     )
   }
@@ -490,9 +478,6 @@ export function ChatMessages({
               {archivedMessages.map((message, i) => {
                 const key = getMessageKey(`${chatId}-archived`, message, i)
                 const recoveryDraft = recoveryDraftForMessage(message)
-                const recoveryPhase = message.turnId
-                  ? recoveryPhaseByTurnId.get(message.turnId)
-                  : undefined
                 return (
                   <React.Fragment key={key}>
                     <ChatMessage
@@ -501,10 +486,7 @@ export function ChatMessages({
                       model={currentModel}
                       isDarkMode={isDarkMode}
                       isLastMessage={Boolean(recoveryDraft)}
-                      isStreaming={
-                        Boolean(recoveryDraft) && recoveryPhase !== 'replaying'
-                      }
-                      hideActions={recoveryPhase === 'replaying'}
+                      isStreaming={Boolean(recoveryDraft)}
                       onEditMessage={recoveryDraft ? undefined : onEditMessage}
                       onRegenerateMessage={
                         recoveryDraft ? undefined : onRegenerateMessage
@@ -526,9 +508,6 @@ export function ChatMessages({
         {liveMessages.map((message, i) => {
           const key = getMessageKey(`${chatId}-live`, message, i)
           const recoveryDraft = recoveryDraftForMessage(message)
-          const recoveryPhase = message.turnId
-            ? recoveryPhaseByTurnId.get(message.turnId)
-            : undefined
           return (
             <React.Fragment key={key}>
               <ChatMessage
@@ -540,12 +519,9 @@ export function ChatMessages({
                   Boolean(recoveryDraft) || i === liveMessages.length - 1
                 }
                 isStreaming={
-                  (Boolean(recoveryDraft) && recoveryPhase !== 'replaying') ||
-                  (i === liveMessages.length - 1 &&
-                    isStreamingResponse &&
-                    recoveryPhase !== 'replaying')
+                  Boolean(recoveryDraft) ||
+                  (i === liveMessages.length - 1 && isStreamingResponse)
                 }
-                hideActions={recoveryPhase === 'replaying'}
                 onEditMessage={recoveryDraft ? undefined : onEditMessage}
                 onRegenerateMessage={
                   recoveryDraft ? undefined : onRegenerateMessage

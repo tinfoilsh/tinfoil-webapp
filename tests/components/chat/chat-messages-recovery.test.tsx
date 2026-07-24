@@ -111,12 +111,12 @@ describe('ChatMessages recovery indicator', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('ignores an active phase after its pending recovery is removed', () => {
+  it('ignores an active recovery after its pending envelope is removed', () => {
     render(
       <ChatMessages
         {...baseProps}
         pendingRecoveries={[]}
-        activeRecoveryPhases={[{ turnId: 'turn-1', phase: 'streaming' }]}
+        activeRecoveryTurnIds={['turn-1']}
       />,
     )
 
@@ -160,7 +160,7 @@ describe('ChatMessages recovery indicator', () => {
       <ChatMessages
         {...baseProps}
         isStreamingResponse
-        activeRecoveryPhases={[{ turnId: 'turn-1', phase: 'streaming' }]}
+        activeRecoveryTurnIds={['turn-1']}
         recoveryDrafts={[
           {
             turnId: 'turn-1',
@@ -180,12 +180,12 @@ describe('ChatMessages recovery indicator', () => {
     ).toBeInTheDocument()
   })
 
-  it('shows catch-up status instead of streaming while replaying', async () => {
+  it('streams replayed events without a separate catch-up state', async () => {
     render(
       <ChatMessages
         {...baseProps}
         isStreamingResponse
-        activeRecoveryPhases={[{ turnId: 'turn-1', phase: 'replaying' }]}
+        activeRecoveryTurnIds={['turn-1']}
         recoveryDrafts={[
           {
             turnId: 'turn-1',
@@ -201,11 +201,11 @@ describe('ChatMessages recovery indicator', () => {
     )
 
     const assistant = (await screen.findAllByTestId('message-turn-1'))[1]
-    expect(assistant).toHaveAttribute('data-streaming', 'false')
-    expect(assistant).toHaveAttribute('data-actions-hidden', 'true')
-    expect(assistant.nextElementSibling).toBe(
-      screen.getByRole('status', { name: /Recovering stream/ }),
-    )
+    expect(assistant).toHaveAttribute('data-streaming', 'true')
+    expect(assistant).toHaveAttribute('data-actions-hidden', 'false')
+    expect(
+      screen.queryByRole('status', { name: /Recovering stream/ }),
+    ).not.toBeInTheDocument()
   })
 
   it('substitutes a progressive draft for a persisted partial response', async () => {

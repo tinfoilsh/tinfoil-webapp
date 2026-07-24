@@ -33,7 +33,6 @@ import {
   pruneChatRecoveryDrafts,
   setChatRecoveryActive,
   setChatRecoveryDraft,
-  setChatRecoveryPhase,
 } from './chat-recovery-drafts'
 import {
   addPendingRecovery,
@@ -476,50 +475,16 @@ async function processEnvelope(
   }
   let keepRecoveryActive = false
   try {
-    let replayBytes = initialStatus.bytes
-    let retriedWithoutProgress = false
-    let latestVisibleDraft: Message | null = null
-    const prepareReconnect = (
-      state: 'processing' | 'complete' | 'failed' | 'missing',
-      consumedBytes: number,
-    ) => {
-      if (state !== 'processing' && state !== 'complete') {
-        return false
-      }
-      if (consumedBytes <= replayBytes) {
-        if (retriedWithoutProgress) {
-          keepRecoveryActive = true
-          throw new ChatRecoveryError(
-            'Encrypted response recovery stream ended before completion',
-            'processing',
-            true,
-          )
-        }
-        retriedWithoutProgress = true
-      } else {
-        retriedWithoutProgress = false
-      }
-      replayBytes = Math.max(replayBytes, consumedBytes)
-      return true
-    }
+    let reconnectAttempted = false
     while (isRecoveryCurrent()) {
-      let replayComplete = replayBytes === 0
       let consumedEncryptedBytes = 0
       let measuredEncryptedBytes = false
       let assistantMessage: Message
-      setChatRecoveryPhase(chatId, envelope.turnId, 'replaying')
       try {
         const response = await fetchRecoveredChatResponse(
           payload.sessionId,
           recoveryTokenFromPayload(payload.recoveryToken),
           recoverySignal,
-          replayBytes,
-          () => {
-            if (!isRecoveryCurrent()) return
-            replayComplete = true
-            setChatRecoveryPhase(chatId, envelope.turnId, 'streaming')
-            if (latestVisibleDraft) publishDraft(latestVisibleDraft)
-          },
           (bytes) => {
             measuredEncryptedBytes = true
             consumedEncryptedBytes += bytes
@@ -547,14 +512,6 @@ async function processEnvelope(
             if (scanInFlight?.controller.signal === signal) {
               scanInFlight.lastProgressAt = Date.now()
             }
-            if (
-              initialStatus.state !== 'processing' ||
-              !hasVisibleRecoveryDraft(message)
-            ) {
-              return
-            }
-            latestVisibleDraft = message
-            if (!replayComplete) return
             publishDraft(message)
           },
         })
@@ -562,16 +519,31 @@ async function processEnvelope(
         if (!isRecoveryCurrent()) return
         const retryStatus = await getChatRecoveryStatus(payload.sessionId)
         if (!isRecoveryCurrent()) return
-        if (prepareReconnect(retryStatus.state, consumedEncryptedBytes)) {
+        if (
+          !reconnectAttempted &&
+          (retryStatus.state === 'processing' ||
+            retryStatus.state === 'complete')
+        ) {
+          reconnectAttempted = true
           continue
         }
+        keepRecoveryActive =
+          retryStatus.state === 'processing' || retryStatus.state === 'complete'
         throw error
       }
       if (!isRecoveryCurrent()) return
       const terminalStatus = await getChatRecoveryStatus(payload.sessionId)
       if (!isRecoveryCurrent()) return
       if (terminalStatus.state === 'processing') {
-        prepareReconnect(terminalStatus.state, consumedEncryptedBytes)
+        if (reconnectAttempted) {
+          keepRecoveryActive = true
+          throw new ChatRecoveryError(
+            'Encrypted response recovery stream ended before completion',
+            'processing',
+            true,
+          )
+        }
+        reconnectAttempted = true
         continue
       }
       if (terminalStatus.state === 'failed') {
@@ -598,9 +570,17 @@ async function processEnvelope(
       }
       if (
         measuredEncryptedBytes &&
-        consumedEncryptedBytes < terminalStatus.bytes
+        consumedEncryptedBytes < terminalStatus.persistedBytes
       ) {
-        prepareReconnect(terminalStatus.state, consumedEncryptedBytes)
+        if (reconnectAttempted) {
+          keepRecoveryActive = true
+          throw new ChatRecoveryError(
+            'Encrypted response recovery stream ended before completion',
+            'complete',
+            true,
+          )
+        }
+        reconnectAttempted = true
         continue
       }
       await completePendingRecovery(

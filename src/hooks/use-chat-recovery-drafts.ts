@@ -1,9 +1,7 @@
 import {
-  getActiveChatRecoveryPhaseSnapshot,
   getActiveChatRecoverySnapshot,
   getChatRecoveryDraftSnapshot,
   subscribeChatRecoveryDrafts,
-  type ChatRecoveryPhase,
 } from '@/services/inference/chat-recovery-drafts'
 import { useMemo, useSyncExternalStore } from 'react'
 
@@ -39,27 +37,4 @@ export function useChatRecoveryActiveTurnIds(
 
 export function useChatRecoveryActive(chatId: string): boolean {
   return useChatRecoveryActiveTurnIds(chatId).length > 0
-}
-
-export function useChatRecoveryPhases(
-  chatId: string,
-): ReadonlyArray<{ turnId: string; phase: ChatRecoveryPhase }> {
-  const recoveries = useSyncExternalStore(
-    subscribeChatRecoveryDrafts,
-    getActiveChatRecoveryPhaseSnapshot,
-    () => emptySnapshot,
-  )
-  return useMemo(() => {
-    const prefix = `${chatId}\u0000`
-    return recoveries.flatMap((recovery) =>
-      recovery.key.startsWith(prefix)
-        ? [
-            {
-              turnId: recovery.key.slice(prefix.length),
-              phase: recovery.phase,
-            },
-          ]
-        : [],
-    )
-  }, [chatId, recoveries])
 }
