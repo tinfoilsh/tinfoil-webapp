@@ -36,11 +36,15 @@ export default function Document() {
   // Inline script to apply the saved chat font before first paint. The app is
   // statically exported, so the prerendered HTML would otherwise show the
   // default font until React hydrates. CSS keys the chat font off this
-  // attribute (see globals.css).
+  // attribute (see globals.css). The storage key and font names must stay in
+  // sync with SETTINGS_CHAT_FONT (constants/storage-keys.ts) and
+  // normalizeChatFont (components/chat/hooks/use-chat-font.ts). The legacy
+  // 'chatFont' key is read as a fallback until migrateStorageKeys() runs.
   const chatFontScript = `
     (function() {
       try {
-        var font = localStorage.getItem('tinfoil-settings-chat-font');
+        var font = localStorage.getItem('tinfoil-settings-chat-font')
+          || localStorage.getItem('chatFont');
         if (font === 'serif' || font === 'mono' || font === 'dyslexic') {
           document.documentElement.setAttribute('data-chat-font', font);
         }

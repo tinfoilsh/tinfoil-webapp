@@ -25,7 +25,13 @@ const applyChatFont = (font: ChatFont) => {
  */
 export const useChatFontSync = () => {
   useEffect(() => {
-    applyChatFont(normalizeChatFont(localStorage.getItem(SETTINGS_CHAT_FONT)))
+    let saved: string | null = null
+    try {
+      saved = localStorage.getItem(SETTINGS_CHAT_FONT)
+    } catch {
+      // Storage can be blocked (e.g. disabled cookies); keep the default font.
+    }
+    applyChatFont(normalizeChatFont(saved))
 
     const handleStorageChange = (e: StorageEvent | CustomEvent) => {
       let key: string | null = null
