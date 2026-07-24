@@ -13,7 +13,6 @@ import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
 import { RxCopy } from 'react-icons/rx'
 import { hasMessageAttachments } from '../../attachment-helpers'
-import { CHAT_FONT_CLASSES, useChatFont } from '../../hooks/use-chat-font'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
@@ -36,7 +35,6 @@ const DefaultMessageComponent = ({
   onRegenerateMessage,
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
-  const chatFont = useChatFont()
   const [isEditing, setIsEditing] = React.useState(false)
   const [editContent, setEditContent] = React.useState(message.content || '')
   const [copiedUser, setCopiedUser] = React.useState(false)
@@ -567,8 +565,7 @@ const DefaultMessageComponent = ({
                       }
                     }}
                     className={cn(
-                      'w-full resize-none bg-transparent text-base leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
-                      CHAT_FONT_CLASSES[chatFont],
+                      'w-full resize-none bg-transparent font-chat text-base leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
                     )}
                     rows={Math.min(
                       10,

@@ -36,6 +36,9 @@ module.exports = {
         ],
         opendyslexic: ['var(--font-opendyslexic)', 'sans-serif'],
         lora: ['var(--font-lora)', 'serif'],
+        // User-selected chat font, resolved via the data-chat-font attribute
+        // on <html> (see globals.css)
+        chat: ['var(--font-chat)'],
         mono: ['ui-monospace', 'SFMono-Regular', 'Consolas', 'monospace'],
       },
       borderRadius: {

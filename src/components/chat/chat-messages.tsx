@@ -9,7 +9,6 @@ import 'katex/dist/katex.min.css'
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { CONSTANTS } from './constants'
 import { ensureTimeline } from './ensure-timeline'
-import { CHAT_FONT_CLASSES, useChatFont } from './hooks/use-chat-font'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
 import { ImageGalleryProvider } from './image-gallery-context'
 import { PrintableChat } from './PrintableChat'
@@ -236,7 +235,6 @@ export function ChatMessages({
   onSelectPromptPreset,
 }: ChatMessagesProps) {
   const [mounted, setMounted] = useState(false)
-  const chatFont = useChatFont()
   const [showSpacer, setShowSpacer] = useState(false)
   const prevMessageCountRef = React.useRef(messages.length)
   const prevShowScrollButtonRef = React.useRef(showScrollButton)
@@ -372,7 +370,7 @@ export function ChatMessages({
         aria-label="Conversation"
         aria-live="polite"
         aria-busy={isStreamingResponse}
-        className={`mx-auto w-full min-w-0 px-0 pb-6 pt-24 md:px-4 ${CHAT_FONT_CLASSES[chatFont]}`}
+        className="mx-auto w-full min-w-0 px-0 pb-6 pt-24 font-chat md:px-4"
       >
         {/* Archived Messages - only shown if there are more than the max prompt messages */}
         {archivedMessages.length > 0 && (

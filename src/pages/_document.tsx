@@ -33,6 +33,25 @@ export default function Document() {
     })();
   `
 
+  // Inline script to apply the saved chat font before first paint. The app is
+  // statically exported, so the prerendered HTML would otherwise show the
+  // default font until React hydrates. CSS keys the chat font off this
+  // attribute (see globals.css). The storage key and font names must stay in
+  // sync with SETTINGS_CHAT_FONT (constants/storage-keys.ts) and
+  // normalizeChatFont (components/chat/hooks/use-chat-font.ts). The legacy
+  // 'chatFont' key is read as a fallback until migrateStorageKeys() runs.
+  const chatFontScript = `
+    (function() {
+      try {
+        var font = localStorage.getItem('tinfoil-settings-chat-font')
+          || localStorage.getItem('chatFont');
+        if (font === 'serif' || font === 'mono' || font === 'dyslexic') {
+          document.documentElement.setAttribute('data-chat-font', font);
+        }
+      } catch (_) {}
+    })();
+  `
+
   // Inline script to set --app-height before first paint, so the bottom-anchored
   // chat input is positioned correctly on every browser, including ones that
   // don't support 100dvh (older Chrome/Firefox/Edge on Android, in-app webviews).
@@ -58,6 +77,7 @@ export default function Document() {
     <Html lang="en" data-theme="light" className="overflow-x-hidden">
       <Head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script dangerouslySetInnerHTML={{ __html: chatFontScript }} />
         <script dangerouslySetInnerHTML={{ __html: appHeightScript }} />
         <link rel="preconnect" href="https://clerk.accounts.dev" />
 

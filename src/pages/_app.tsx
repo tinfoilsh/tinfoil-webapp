@@ -1,4 +1,5 @@
 import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
+import { useChatFontSync } from '@/components/chat/hooks/use-chat-font'
 import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
 import { Toaster } from '@/components/ui/toaster'
 import '@/styles/globals.css'
@@ -114,6 +115,8 @@ const openDyslexic = localFont({
 migrateStorageKeys()
 
 export default function App({ Component, pageProps }: AppProps) {
+  useChatFontSync()
+
   return (
     <>
       <Head>
