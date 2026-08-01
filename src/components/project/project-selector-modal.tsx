@@ -3,11 +3,8 @@
 import { cn } from '@/components/ui/utils'
 import { useProjects } from '@/hooks/use-projects'
 import type { Project } from '@/types/project'
-import {
-  FolderIcon,
-  FolderPlusIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
+import { FolderPlusIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { TfFolder } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
 import { useProject } from './project-context'
@@ -166,7 +163,10 @@ export function ProjectSelectorModal({
                       </div>
                     ) : projects.length === 0 ? (
                       <div className="py-8 text-center">
-                        <FolderIcon className="mx-auto mb-2 h-10 w-10 text-content-muted" />
+                        <TfFolder
+                          className="mx-auto mb-2 h-10 w-10 !text-content-muted"
+                          aria-hidden="true"
+                        />
                         <p className="font-aeonik-fono text-sm text-content-muted">
                           No projects yet
                         </p>
@@ -189,13 +189,14 @@ export function ProjectSelectorModal({
                               loadingAction && 'cursor-not-allowed opacity-50',
                             )}
                           >
-                            <FolderIcon
+                            <TfFolder
                               className={cn(
                                 'mt-0.5 h-5 w-5 flex-shrink-0',
                                 isDarkMode
-                                  ? 'text-emerald-400'
-                                  : 'text-emerald-600',
+                                  ? '!text-emerald-400'
+                                  : '!text-emerald-600',
                               )}
+                              aria-hidden="true"
                             />
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-aeonik font-medium text-content-primary">

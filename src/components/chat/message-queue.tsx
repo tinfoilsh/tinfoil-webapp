@@ -1,6 +1,6 @@
 import { FiArrowUp } from '@/components/icons/lazy-icons'
 import { cn } from '@/components/ui/utils'
-import { TrashIcon } from '@heroicons/react/24/outline'
+import { TfTrash } from '@tinfoilsh/tinfoil-icons'
 import { HiOutlineQueueList } from 'react-icons/hi2'
 import type { Attachment, QueuedMessage } from './types'
 
@@ -93,7 +93,7 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
               aria-label="Remove queued message"
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
             >
-              <TrashIcon className="h-3.5 w-3.5" />
+              <TfTrash className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
         )

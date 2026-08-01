@@ -1,7 +1,10 @@
+import {
+  TfKey,
+  TfLockLocked,
+  TfServer1,
+  TfShieldCheck,
+} from '@tinfoilsh/tinfoil-icons'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
-import { BiSolidLock } from 'react-icons/bi'
-import { HiOutlineServer } from 'react-icons/hi'
-import { HiOutlineKey, HiShieldCheck } from 'react-icons/hi2'
 
 const ARROW_COLOR = 'hsl(var(--content-muted) / 0.7)'
 
@@ -142,7 +145,7 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
           style={{ left: 'calc(50% - 30px)', transform: 'translateX(-50%)' }}
         >
           <div className="flex items-center gap-1.5 whitespace-nowrap rounded border border-brand-accent-light/40 bg-brand-accent-light/10 px-3 py-1.5 text-base font-medium text-brand-accent-dark dark:border-brand-accent-light/30 dark:bg-brand-accent-light/10 dark:text-brand-accent-light">
-            <HiShieldCheck className="h-4 w-4" />
+            <TfShieldCheck className="h-4 w-4" aria-hidden="true" />
             <span>Attestation Proof</span>
           </div>
         </div>
@@ -158,7 +161,7 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
           }}
         >
           <div className="flex items-center gap-2 whitespace-nowrap">
-            <HiOutlineServer className="h-4 w-4 shrink-0 text-content-muted" />
+            <TfServer1 className="h-4 w-4 shrink-0 !text-content-muted" />
             <span className="text-base font-medium text-content-primary">
               Tinfoil Server
             </span>
@@ -181,7 +184,7 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
           }}
         >
           <div className="flex items-center gap-2 whitespace-nowrap">
-            <BiSolidLock className="h-3.5 w-3.5 shrink-0 text-brand-accent-dark dark:text-brand-accent-light" />
+            <TfLockLocked className="h-3.5 w-3.5 shrink-0 !text-brand-accent-dark dark:!text-brand-accent-light" />
             <span className="text-base font-medium text-content-primary">
               Secure Enclave
             </span>
@@ -197,7 +200,10 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
           style={{ left: 0, top: 190, width: 195 }}
         >
           <div className="flex items-center gap-2 whitespace-nowrap">
-            <HiOutlineKey className="h-4 w-4 shrink-0 text-content-muted" />
+            <TfKey
+              className="h-4 w-4 shrink-0 !text-content-muted"
+              aria-hidden="true"
+            />
             <span className="text-base font-medium text-content-primary">
               Tinfoil Chat App
             </span>

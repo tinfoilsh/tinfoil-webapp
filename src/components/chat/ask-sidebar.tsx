@@ -1,8 +1,8 @@
 import { cn } from '@/components/ui/utils'
 import { findSelectableModel, type BaseModel } from '@/config/models'
 import { XMarkIcon } from '@heroicons/react/24/outline'
+import { TfChat2 } from '@tinfoilsh/tinfoil-icons'
 import { memo, useRef } from 'react'
-import { PiChatCircleText } from 'react-icons/pi'
 import { LoadingDots } from '../loading-dots'
 import { CONSTANTS } from './constants'
 import type { SidebarChatState } from './hooks/use-sidebar-chat'
@@ -89,7 +89,7 @@ export function AskSidebar({
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 py-3">
           <div className="flex items-center gap-2 text-content-primary">
-            <PiChatCircleText className="h-5 w-5" />
+            <TfChat2 className="h-5 w-5" />
             <span className="text-sm font-medium">Ask</span>
           </div>
           <button

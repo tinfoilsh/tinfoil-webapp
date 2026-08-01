@@ -2,7 +2,7 @@
 
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
-import { FolderIcon } from '@heroicons/react/24/outline'
+import { TfFolder } from '@tinfoilsh/tinfoil-icons'
 
 interface ProjectModeBannerProps {
   projectName: string
@@ -36,7 +36,7 @@ export function ProjectModeBanner({
         )}
         style={colorStyle}
       >
-        <FolderIcon className="h-3.5 w-3.5" />
+        <TfFolder className="h-3.5 w-3.5" aria-hidden="true" />
         <span className="font-aeonik text-xs font-medium">
           You&apos;re working in the{' '}
           <span className="font-bold">{projectName}</span> project
