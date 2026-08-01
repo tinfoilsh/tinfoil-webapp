@@ -3,13 +3,9 @@ import { getClerkErrorMessage } from '@/utils/clerk-errors'
 import { logError, logWarning } from '@/utils/error-handling'
 import { useReverification, useUser } from '@clerk/nextjs'
 import { isReverificationCancelledError } from '@clerk/nextjs/errors'
-import {
-  ArrowDownTrayIcon,
-  CheckCircleIcon,
-  ShieldCheckIcon,
-} from '@heroicons/react/24/outline'
+import { ArrowDownTrayIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { TfCopy } from '@tinfoilsh/tinfoil-icons'
+import { TfCopy, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
 import { memo, useCallback, useRef, useState, type FormEvent } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
@@ -215,7 +211,10 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
         )}
       >
         <div className="flex items-start gap-3">
-          <ShieldCheckIcon className="mt-0.5 h-5 w-5 shrink-0 text-content-muted" />
+          <TfShieldCheck
+            className="mt-0.5 h-5 w-5 shrink-0 !text-content-muted"
+            aria-hidden="true"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center justify-between gap-3">
               <div>
