@@ -10,7 +10,13 @@ import {
   StopIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
-import { TfAttachment, TfFolder, TfMicrophone } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfAttachment,
+  TfFolder,
+  TfGlobe,
+  TfMicrophone,
+  TfTerminal,
+} from '@tinfoilsh/tinfoil-icons'
 import type { FormEvent, RefObject } from 'react'
 import {
   useCallback,
@@ -19,14 +25,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import {
-  PiGlobe,
-  PiGlobeX,
-  PiPlusLight,
-  PiQuotes,
-  PiSpinner,
-  PiTerminalWindow,
-} from 'react-icons/pi'
+import { PiGlobeX, PiPlusLight, PiQuotes, PiSpinner } from 'react-icons/pi'
 import {
   ContextUsageIndicator,
   type ContextUsage,
@@ -1326,7 +1325,10 @@ export function ChatInput({
                             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                           >
                             {webSearchEnabled ? (
-                              <PiGlobe className="h-5 w-5 text-content-secondary" />
+                              <TfGlobe
+                                className="h-5 w-5 !text-content-secondary"
+                                aria-hidden="true"
+                              />
                             ) : (
                               <PiGlobeX className="h-5 w-5 text-content-secondary" />
                             )}
@@ -1347,7 +1349,10 @@ export function ChatInput({
                             }}
                             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                           >
-                            <PiTerminalWindow className="h-5 w-5 text-content-secondary" />
+                            <TfTerminal
+                              className="h-5 w-5 !text-content-secondary"
+                              aria-hidden="true"
+                            />
                             <span className="flex-1">Code execution</span>
                             {codeExecutionEnabled && (
                               <MenuCheckmark className="h-4 w-4 text-brand-accent-light" />

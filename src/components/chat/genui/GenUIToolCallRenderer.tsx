@@ -10,8 +10,7 @@
  * via `GenUIInputAreaRenderer`.
  */
 import { logError } from '@/utils/error-handling'
-import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
-import { Sparkles } from 'lucide-react'
+import { TfRefresh1, TfStars } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useEffect, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { tryParsePartialJson } from './partial-json'
@@ -134,8 +133,8 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
               key={tc.id}
               className="my-4 flex items-start gap-2.5 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-2.5 text-sm"
             >
-              <Sparkles
-                className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-500"
+              <TfStars
+                className="mt-0.5 h-4 w-4 flex-shrink-0 !text-orange-500"
                 aria-hidden
               />
               <div className="flex flex-col">
