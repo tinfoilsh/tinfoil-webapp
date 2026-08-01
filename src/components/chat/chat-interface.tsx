@@ -47,17 +47,11 @@ import {
 } from '@/services/inference/tinfoil-client'
 import { generateTitle, getTitleContent } from '@/services/inference/title'
 import { useAuth, useUser } from '@clerk/react'
-import {
-  ArrowDownIcon,
-  ChatBubbleLeftRightIcon,
-} from '@heroicons/react/24/outline'
+import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
-import { BiSolidLock, BiSolidLockOpen } from 'react-icons/bi'
 import { GoSidebarCollapse } from 'react-icons/go'
-import { IoShareOutline } from 'react-icons/io5'
-import { PiFilePlusLight, PiNotePencilLight, PiSpinner } from 'react-icons/pi'
-import { SlGhost } from 'react-icons/sl'
+import { PiFilePlusLight, PiSpinner } from 'react-icons/pi'
 import { getMessageImages } from './attachment-helpers'
 
 import {
@@ -125,7 +119,15 @@ import {
   getContextTokenBudget,
   getHistoryTokenBudget,
 } from '@/utils/token-estimation'
-import { TfTinSad } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfChat2,
+  TfGhost,
+  TfLockLocked,
+  TfLockOpened,
+  TfShare,
+  TfTinSad,
+  TfWriting2,
+} from '@tinfoilsh/tinfoil-icons'
 import dynamic from 'next/dynamic'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
@@ -3676,7 +3678,10 @@ export function ChatInterface({
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
             <div className="rounded-full bg-surface-chat p-4">
-              <ChatBubbleLeftRightIcon className="h-8 w-8 text-content-secondary" />
+              <TfChat2
+                className="h-8 w-8 !text-content-secondary"
+                aria-hidden="true"
+              />
             </div>
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">
@@ -3703,7 +3708,10 @@ export function ChatInterface({
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
             <div className="rounded-full bg-surface-chat p-4">
-              <ChatBubbleLeftRightIcon className="h-8 w-8 text-content-secondary" />
+              <TfChat2
+                className="h-8 w-8 !text-content-secondary"
+                aria-hidden="true"
+              />
             </div>
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">
@@ -3749,7 +3757,7 @@ export function ChatInterface({
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
             <div className="rounded-full bg-surface-chat p-4">
-              <TfTinSad className="h-8 w-8 text-content-secondary" />
+              <TfTinSad className="h-8 w-8 !text-content-secondary" />
             </div>
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">
@@ -3783,7 +3791,7 @@ export function ChatInterface({
       <div className="flex h-screen items-center justify-center bg-surface-chat-background px-4 font-aeonik">
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
-            <TfTinSad className="h-24 w-24 text-content-secondary" />
+            <TfTinSad className="h-24 w-24 !text-content-secondary" />
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">
             Something went wrong
@@ -3873,7 +3881,7 @@ export function ChatInterface({
           className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden"
           aria-label="New chat"
         >
-          <PiNotePencilLight className="h-4 w-4" />
+          <TfWriting2 className="h-4 w-4" aria-hidden="true" />
         </Link>
       )}
 
@@ -3900,7 +3908,7 @@ export function ChatInterface({
                     : 'border-transparent bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
                 )}
               >
-                <SlGhost className="h-4 w-4" />
+                <TfGhost className="h-4 w-4" aria-hidden="true" />
               </button>
               <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 {label}
@@ -3919,7 +3927,7 @@ export function ChatInterface({
             className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
             aria-label="Share"
           >
-            <IoShareOutline className="h-4 w-4" />
+            <TfShare className="h-4 w-4" aria-hidden="true" />
             <span className="hidden text-sm @3xl/conversation:inline">
               Share
             </span>
@@ -3960,7 +3968,10 @@ export function ChatInterface({
             </>
           ) : verificationStatus === 'verified' ? (
             <>
-              <BiSolidLock className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light" />
+              <TfLockLocked
+                className="h-4 w-4 !text-brand-accent-dark dark:!text-brand-accent-light"
+                aria-hidden="true"
+              />
               <span
                 className={cn(
                   'text-sm leading-none text-brand-accent-dark dark:text-brand-accent-light',
@@ -3973,7 +3984,10 @@ export function ChatInterface({
             </>
           ) : (
             <>
-              <BiSolidLockOpen className="h-4 w-4 text-red-500" />
+              <TfLockOpened
+                className="h-4 w-4 !text-red-500"
+                aria-hidden="true"
+              />
               <span
                 className={cn(
                   'text-sm leading-none text-red-500',
@@ -4072,7 +4086,7 @@ export function ChatInterface({
             })(),
           }}
         >
-          <SlGhost className="h-3.5 w-3.5 shrink-0" />
+          <TfGhost className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>Temporary chat</span>
         </div>
       )}

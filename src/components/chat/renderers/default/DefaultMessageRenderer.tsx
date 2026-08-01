@@ -4,20 +4,18 @@ import { cn } from '@/components/ui/utils'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
 import {
-  ArrowPathIcon,
   ArrowUturnLeftIcon,
   ChevronDownIcon,
   ForwardIcon,
   InformationCircleIcon,
   LockClosedIcon,
-  PencilSquareIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
+import { TfCopy, TfRefresh1, TfWriting } from '@tinfoilsh/tinfoil-icons'
 import { GitFork } from 'lucide-react'
 import React, { memo, useState, type JSX } from 'react'
 import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
-import { RxCopy } from 'react-icons/rx'
 import { hasMessageAttachments } from '../../attachment-helpers'
 import { CONSTANTS } from '../../constants'
 import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
@@ -299,7 +297,7 @@ const DefaultMessageComponent = ({
       items.push({
         label: 'Edit',
         ariaLabel: 'Edit response',
-        icon: <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />,
+        icon: <TfWriting className="h-4 w-4" aria-hidden="true" />,
         onSelect: handleStartEdit,
       })
     }
@@ -822,10 +820,7 @@ const DefaultMessageComponent = ({
                           aria-label="Regenerate response"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <ArrowPathIcon
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          />
+                          <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
                         </button>
                         <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
                           Regenerate
@@ -840,10 +835,7 @@ const DefaultMessageComponent = ({
                           aria-label="Edit message"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <PencilSquareIcon
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          />
+                          <TfWriting className="h-4 w-4" aria-hidden="true" />
                         </button>
                         <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
                           Edit
@@ -898,7 +890,7 @@ const DefaultMessageComponent = ({
                               <span>Copied!</span>
                             </>
                           ) : (
-                            <RxCopy className="h-4 w-4" aria-hidden="true" />
+                            <TfCopy className="h-4 w-4" aria-hidden="true" />
                           )}
                         </button>
                         {!copiedUser && (
@@ -949,10 +941,7 @@ const DefaultMessageComponent = ({
                       aria-label="Regenerate response"
                       className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
                     >
-                      <ArrowPathIcon
-                        className="h-3.5 w-3.5"
-                        aria-hidden="true"
-                      />
+                      <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                     <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
                       Regenerate

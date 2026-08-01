@@ -114,31 +114,34 @@ import {
   ArrowPathIcon,
   ArrowTopRightOnSquareIcon,
   ArrowUpTrayIcon,
-  ChatBubbleLeftRightIcon,
   CheckCircleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleStackIcon,
-  ComputerDesktopIcon,
-  CreditCardIcon,
   EyeIcon,
   EyeSlashIcon,
-  MoonIcon,
   ShieldExclamationIcon,
   Squares2X2Icon,
-  SunIcon,
-  TrashIcon,
   UserCircleIcon,
   UserIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
+import {
+  TfAdjustmentToggle,
+  TfCard,
+  TfChat2,
+  TfCloudSync,
+  TfComputer,
+  TfMoon,
+  TfSunLightMode,
+  TfTrash,
+} from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { AiOutlineCloudSync, AiOutlineExport } from 'react-icons/ai'
+import { AiOutlineExport } from 'react-icons/ai'
 import { BsQrCode } from 'react-icons/bs'
 import { GoPasskeyFill } from 'react-icons/go'
-import { HiOutlineAdjustmentsVertical } from 'react-icons/hi2'
 import { IoShieldCheckmark } from 'react-icons/io5'
 import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
@@ -2404,12 +2407,12 @@ ${encryptionKey.replace('key_', '')}
     {
       id: 'general' as const,
       label: 'General',
-      icon: HiOutlineAdjustmentsVertical,
+      icon: TfAdjustmentToggle,
     },
     {
       id: 'chat' as const,
       label: 'Chat Settings',
-      icon: ChatBubbleLeftRightIcon,
+      icon: TfChat2,
     },
     {
       id: 'personalization' as const,
@@ -2426,7 +2429,7 @@ ${encryptionKey.replace('key_', '')}
           {
             id: 'cloud-sync' as const,
             label: 'Cloud Sync',
-            icon: AiOutlineCloudSync,
+            icon: TfCloudSync,
           },
           {
             id: 'safeguards' as const,
@@ -2508,7 +2511,7 @@ ${encryptionKey.replace('key_', '')}
                 {item.id === 'account' && isSignedIn ? (
                   <UserAvatar size={16} />
                 ) : (
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className="h-4 w-4" aria-hidden="true" />
                 )}
                 {item.label}
                 {item.id === 'cloud-sync' && syncNeedsAttention && (
@@ -2558,7 +2561,7 @@ ${encryptionKey.replace('key_', '')}
                 {item.id === 'account' && isSignedIn ? (
                   <UserAvatar size={20} />
                 ) : (
-                  <item.icon className="h-5 w-5" />
+                  <item.icon className="h-5 w-5" aria-hidden="true" />
                 )}
                 {item.label}
                 {item.id === 'cloud-sync' && syncNeedsAttention && (
@@ -2623,17 +2626,17 @@ ${encryptionKey.replace('key_', '')}
                           {
                             id: 'light' as const,
                             label: 'Light',
-                            icon: SunIcon,
+                            icon: TfSunLightMode,
                           },
                           {
                             id: 'dark' as const,
                             label: 'Dark',
-                            icon: MoonIcon,
+                            icon: TfMoon,
                           },
                           {
                             id: 'system' as const,
                             label: 'System',
-                            icon: ComputerDesktopIcon,
+                            icon: TfComputer,
                           },
                         ].map((theme) => (
                           <button
@@ -2646,7 +2649,10 @@ ${encryptionKey.replace('key_', '')}
                                 : 'border-border-subtle hover:border-border-strong',
                             )}
                           >
-                            <theme.icon className="h-5 w-5 text-content-primary" />
+                            <theme.icon
+                              className="h-5 w-5 !text-content-primary"
+                              aria-hidden="true"
+                            />
                             <span className="text-xs text-content-secondary">
                               {theme.label}
                             </span>
@@ -3980,7 +3986,7 @@ ${encryptionKey.replace('key_', '')}
                                     : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
                                 )}
                               >
-                                <TrashIcon
+                                <TfTrash
                                   className="h-4 w-4 shrink-0"
                                   aria-hidden="true"
                                 />
@@ -4100,7 +4106,7 @@ ${encryptionKey.replace('key_', '')}
                                       : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
                                   )}
                                 >
-                                  <TrashIcon
+                                  <TfTrash
                                     className="h-4 w-4 shrink-0"
                                     aria-hidden="true"
                                   />
@@ -4752,7 +4758,10 @@ ${encryptionKey.replace('key_', '')}
                           >
                             <div className="text-left">
                               <div className="flex items-center gap-3">
-                                <CreditCardIcon className="h-5 w-5 text-content-muted" />
+                                <TfCard
+                                  className="h-5 w-5 !text-content-muted"
+                                  aria-hidden="true"
+                                />
                                 <div className="font-aeonik text-sm font-medium text-content-primary">
                                   Manage Billing
                                 </div>
