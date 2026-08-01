@@ -20,7 +20,8 @@ import {
 } from '@/components/ui/card'
 import { cn } from '@/components/ui/utils'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { Code2, Download, ExternalLink, Eye, FileText } from 'lucide-react'
+import { TfCode2 } from '@tinfoilsh/tinfoil-icons'
+import { Download, ExternalLink, Eye, FileText } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { z } from 'zod'
@@ -364,7 +365,7 @@ export function ArtifactPreviewPanel({
           >
             {mode === 'preview' ? (
               <>
-                <Code2 className="h-3.5 w-3.5" />
+                <TfCode2 className="h-3.5 w-3.5" />
                 <span>Source</span>
               </>
             ) : (

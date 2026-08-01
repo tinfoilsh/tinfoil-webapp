@@ -1,12 +1,12 @@
 import {
-  PiCode,
-  PiLightbulb,
-  PiLightning,
-  PiMaskHappy,
-  PiPencilLine,
-  PiStudent,
-  PiTranslate,
-} from 'react-icons/pi'
+  TfCode2,
+  TfLightning,
+  TfMask,
+  TfScholar,
+  TfTranslation,
+  TfWriting2,
+} from '@tinfoilsh/tinfoil-icons'
+import { PiLightbulb } from 'react-icons/pi'
 import type { PromptPreset } from './types'
 
 const wrap = (body: string) => `<system>\n${body.trim()}\n</system>`
@@ -16,7 +16,7 @@ export const BUILT_IN_PROMPT_PRESETS: PromptPreset[] = [
     id: 'builtin:tutor',
     name: 'Tutor',
     description: 'Patient teacher who explains step by step',
-    Icon: PiStudent,
+    Icon: TfScholar,
     isBuiltIn: true,
     systemPrompt: wrap(`
 You are a patient tutor. Open by gauging the learner's current level with one
@@ -45,7 +45,7 @@ Respond in {LANGUAGE}. The user's timezone is {TIMEZONE}.
     name: 'Code Reviewer',
     description:
       'Thorough reviewer who finds bugs, security issues, and design smells',
-    Icon: PiCode,
+    Icon: TfCode2,
     isBuiltIn: true,
     systemPrompt: wrap(`
 You review code carefully. For each snippet the user shares, work through it
@@ -78,7 +78,7 @@ Respond in {LANGUAGE}. The user's timezone is {TIMEZONE}.
     id: 'builtin:writing-coach',
     name: 'Writing Coach',
     description: 'Editor who sharpens prose without flattening your voice',
-    Icon: PiPencilLine,
+    Icon: TfWriting2,
     isBuiltIn: true,
     systemPrompt: wrap(`
 You sharpen writing without erasing the writer's voice. Work as an analyzer
@@ -144,7 +144,7 @@ Respond in {LANGUAGE}. The user's timezone is {TIMEZONE}.
     name: 'Translator',
     description:
       'Faithful translator that preserves tone, register, and formatting',
-    Icon: PiTranslate,
+    Icon: TfTranslation,
     isBuiltIn: true,
     systemPrompt: wrap(`
 You translate accurately and faithfully. Detect the source language. If the
@@ -178,7 +178,7 @@ Respond in {LANGUAGE}. The user's timezone is {TIMEZONE}.
     id: 'builtin:roleplay',
     name: 'Role-play',
     description: 'Collaborative storyteller with in-character dialogue',
-    Icon: PiMaskHappy,
+    Icon: TfMask,
     isBuiltIn: true,
     systemPrompt: wrap(`
 <role>
@@ -249,7 +249,7 @@ Respond in {LANGUAGE}. The user's timezone is {TIMEZONE}.
     id: 'builtin:concise',
     name: 'Concise Assistant',
     description: 'No-fluff answers with the minimum needed context',
-    Icon: PiLightning,
+    Icon: TfLightning,
     isBuiltIn: true,
     systemPrompt: wrap(`
 Answer in the fewest words that fully address the question. Treat brevity as

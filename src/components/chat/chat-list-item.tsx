@@ -7,12 +7,10 @@ import {
   CheckIcon,
   CloudIcon,
   EllipsisVerticalIcon,
-  FolderIcon,
-  PencilSquareIcon,
-  TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { FlagIcon } from '@heroicons/react/24/solid'
+import { TfFolder, TfTrash, TfWriting } from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -519,7 +517,7 @@ export function ChatListItem({
                 aria-label="Rename chat"
                 title="Rename"
               >
-                <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />
+                <TfWriting className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
             {!chat.isBlankChat && (
@@ -535,7 +533,7 @@ export function ChatListItem({
                 aria-label="Delete chat"
                 title="Delete"
               >
-                <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                <TfTrash className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -614,10 +612,7 @@ export function ChatListItem({
                               onStartEdit()
                             }}
                           >
-                            <PencilSquareIcon
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
+                            <TfWriting className="h-4 w-4" aria-hidden="true" />
                             Rename
                           </button>
                         )}
@@ -677,7 +672,7 @@ export function ChatListItem({
                               }}
                             >
                               <span className="flex items-center gap-3">
-                                <FolderIcon
+                                <TfFolder
                                   className="h-4 w-4"
                                   aria-hidden="true"
                                 />
@@ -718,10 +713,7 @@ export function ChatListItem({
                               onRemoveFromProject()
                             }}
                           >
-                            <FolderIcon
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
+                            <TfFolder className="h-4 w-4" aria-hidden="true" />
                             Move out of project
                           </button>
                         )}
@@ -797,7 +789,7 @@ export function ChatListItem({
                             onRequestDelete()
                           }}
                         >
-                          <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                          <TfTrash className="h-4 w-4" aria-hidden="true" />
                           Delete
                         </button>
                       </>
@@ -856,8 +848,8 @@ export function ChatListItem({
                                 onMoveToProject?.(project.id)
                               }}
                             >
-                              <FolderIcon
-                                className="h-4 w-4 text-content-muted"
+                              <TfFolder
+                                className="h-4 w-4 !text-content-muted"
                                 aria-hidden="true"
                               />
                               <span className="truncate">{project.name}</span>

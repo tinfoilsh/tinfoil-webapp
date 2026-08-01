@@ -50,18 +50,21 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   ChevronUpIcon,
-  Cog6ToothIcon,
   DocumentIcon,
   DocumentPlusIcon,
-  FolderIcon,
   NoSymbolIcon,
-  PencilSquareIcon,
-  TrashIcon,
 } from '@heroicons/react/24/outline'
+import {
+  TfFolder,
+  TfSetting,
+  TfTrash,
+  TfWriting,
+  TfWriting2,
+} from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
-import { PiNotePencilLight, PiPushPin } from 'react-icons/pi'
+import { PiPushPin } from 'react-icons/pi'
 import { useProject } from './project-context'
 
 const MOBILE_BREAKPOINT = 1024
@@ -195,7 +198,7 @@ function DangerZoneAction({
           : 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100',
       )}
     >
-      <TrashIcon className="h-3.5 w-3.5" aria-hidden="true" />
+      <TfTrash className="h-3.5 w-3.5" aria-hidden="true" />
       {triggerLabel}
     </button>
   )
@@ -703,7 +706,10 @@ export function ProjectSidebar({
               className="group/logo relative rounded-lg p-2"
               aria-label="Expand sidebar"
             >
-              <FolderIcon className="h-6 w-6 text-content-secondary group-hover/logo:opacity-0" />
+              <TfFolder
+                className="h-6 w-6 !text-content-secondary group-hover/logo:opacity-0"
+                aria-hidden="true"
+              />
               <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 group-hover/logo:opacity-100" />
             </button>
           </div>
@@ -724,7 +730,7 @@ export function ProjectSidebar({
                 )}
                 aria-label="New chat"
               >
-                <PiNotePencilLight className="h-5 w-5" />
+                <TfWriting2 className="h-5 w-5" aria-hidden="true" />
               </Link>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 New chat{' '}
@@ -835,7 +841,10 @@ export function ProjectSidebar({
                         displayProjectName
                       )}
                     </span>
-                    <PencilSquareIcon className="h-4 w-4 shrink-0 text-content-muted opacity-0 transition-opacity group-hover:opacity-100" />
+                    <TfWriting
+                      className="h-4 w-4 shrink-0 !text-content-muted opacity-0 transition-opacity group-hover:opacity-100"
+                      aria-hidden="true"
+                    />
                   </button>
                 </h2>
                 <p className="truncate font-aeonik-fono text-xs leading-4 text-content-muted">
@@ -945,7 +954,7 @@ export function ProjectSidebar({
               )}
             >
               <span className="flex items-center gap-2">
-                <PiNotePencilLight className="h-4 w-4" />
+                <TfWriting2 className="h-4 w-4" aria-hidden="true" />
                 <span className="font-aeonik font-medium">New chat</span>
               </span>
               <span className="text-xs text-content-muted">
@@ -1070,7 +1079,7 @@ export function ProjectSidebar({
               )}
             >
               <span className="flex items-center gap-2">
-                <Cog6ToothIcon className="h-4 w-4" />
+                <TfSetting className="h-4 w-4" aria-hidden="true" />
                 <span className="font-aeonik font-medium">
                   Project Settings
                 </span>
@@ -1438,7 +1447,7 @@ export function ProjectSidebar({
                                   'cursor-not-allowed opacity-50',
                               )}
                             >
-                              <TrashIcon className="h-3 w-3" />
+                              <TfTrash className="h-3 w-3" aria-hidden="true" />
                             </button>
                           </div>
                         ))}

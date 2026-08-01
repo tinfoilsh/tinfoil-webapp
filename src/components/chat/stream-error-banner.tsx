@@ -2,11 +2,8 @@
 
 import type { StreamErrorInfo } from '@/components/chat/hooks/use-chat-streams'
 import { cn } from '@/components/ui/utils'
-import {
-  ArrowPathIcon,
-  ChevronDownIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
+import { ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import { useState, useSyncExternalStore } from 'react'
 
 interface StreamErrorBannerProps {
@@ -227,7 +224,7 @@ export function StreamErrorBanner({
                   'cursor-default opacity-50 hover:bg-transparent',
               )}
             >
-              <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden="true" />
+              <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
               {retryDisabled ? 'Offline' : retryLabel}
             </button>
           )}

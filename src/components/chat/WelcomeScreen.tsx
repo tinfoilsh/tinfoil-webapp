@@ -8,9 +8,9 @@ import {
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
 import { useUser } from '@clerk/react'
+import { TfLockLocked } from '@tinfoilsh/tinfoil-icons'
 import { motion } from 'framer-motion'
 import React, { memo, useEffect, useRef, useState } from 'react'
-import { BiSolidLock } from 'react-icons/bi'
 import { ChatInput } from './chat-input'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
@@ -359,8 +359,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
               onClick={() => setIsPrivacyOpen(true)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
             >
-              <BiSolidLock
-                className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
+              <TfLockLocked
+                className="h-4 w-4 !text-brand-accent-dark dark:!text-brand-accent-light"
                 aria-hidden="true"
               />
               <span className="shrink-0 whitespace-nowrap">

@@ -10,7 +10,8 @@
  * via `GenUIInputAreaRenderer`.
  */
 import { logError } from '@/utils/error-handling'
-import { RefreshCw, Sparkles } from 'lucide-react'
+import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import { Sparkles } from 'lucide-react'
 import React, { memo, useEffect, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { tryParsePartialJson } from './partial-json'
@@ -405,7 +406,7 @@ function ParseFailureCard({
             disabled={isRetrying}
             className="inline-flex w-full flex-shrink-0 items-center justify-center gap-1.5 rounded-md border border-brand-accent-dark bg-brand-accent-dark px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-default disabled:opacity-60 md:w-auto"
           >
-            <RefreshCw
+            <TfRefresh1
               className={`h-3.5 w-3.5 ${isRetrying ? 'animate-spin' : ''}`}
             />
             {isRetrying ? 'Fixing widget...' : 'Retry widget'}
