@@ -122,7 +122,6 @@ import {
   EyeSlashIcon,
   ShieldExclamationIcon,
   Squares2X2Icon,
-  UserCircleIcon,
   UserIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
@@ -133,6 +132,7 @@ import {
   TfCloudSync,
   TfComputer,
   TfMoon,
+  TfPerson,
   TfSunLightMode,
   TfTrash,
 } from '@tinfoilsh/tinfoil-icons'
@@ -2403,7 +2403,7 @@ ${encryptionKey.replace('key_', '')}
   if (!isOpen) return null
 
   const navItems = [
-    { id: 'account' as const, label: 'Account', icon: UserCircleIcon },
+    { id: 'account' as const, label: 'Account', icon: TfPerson },
     {
       id: 'general' as const,
       label: 'General',
@@ -4808,7 +4808,10 @@ ${encryptionKey.replace('key_', '')}
                         >
                           <div className="text-left">
                             <div className="flex items-center gap-3">
-                              <UserCircleIcon className="h-5 w-5 text-content-muted" />
+                              <TfPerson
+                                className="h-5 w-5 !text-content-muted"
+                                aria-hidden="true"
+                              />
                               <div className="font-aeonik text-sm font-medium text-content-primary">
                                 Dashboard
                               </div>
@@ -4832,7 +4835,10 @@ ${encryptionKey.replace('key_', '')}
                           isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
                       >
-                        <UserCircleIcon className="mx-auto h-12 w-12 text-content-muted" />
+                        <TfPerson
+                          className="mx-auto h-12 w-12 !text-content-muted"
+                          aria-hidden="true"
+                        />
                         <h3 className="mt-3 font-aeonik text-base font-medium text-content-primary">
                           Sign in to your account
                         </h3>
