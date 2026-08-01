@@ -1,9 +1,6 @@
 import { lazy, Suspense } from 'react'
 import type { IconBaseProps } from 'react-icons'
 
-const AiOutlineCloudSyncLazy = lazy(() =>
-  import('react-icons/ai').then((m) => ({ default: m.AiOutlineCloudSync })),
-)
 const AiOutlineLoading3QuartersLazy = lazy(() =>
   import('react-icons/ai').then((m) => ({
     default: m.AiOutlineLoading3Quarters,
@@ -73,9 +70,6 @@ function IconWrapper({ Icon, ...props }: { Icon: any } & IconBaseProps) {
   )
 }
 
-export const AiOutlineCloudSync = (props: IconBaseProps) => (
-  <IconWrapper Icon={AiOutlineCloudSyncLazy} {...props} />
-)
 export const AiOutlineLoading3Quarters = (props: IconBaseProps) => (
   <IconWrapper Icon={AiOutlineLoading3QuartersLazy} {...props} />
 )

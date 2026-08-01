@@ -5,13 +5,12 @@ import { shareSeal as enclaveShareSeal } from '@/services/sync-enclave/sync-api'
 import type { ShareableChatData } from '@/utils/compression'
 import {
   CheckIcon,
-  DocumentDuplicateIcon,
   GlobeAltIcon,
   LinkIcon,
-  LockClosedIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { TfCopy, TfLockLocked } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent } from '../ui/card'
 import {
@@ -365,7 +364,10 @@ export function ShareModal({
                         {isShareEnabled ? (
                           <GlobeAltIcon className="h-5 w-5" />
                         ) : (
-                          <LockClosedIcon className="h-5 w-5" />
+                          <TfLockLocked
+                            className="h-5 w-5"
+                            aria-hidden="true"
+                          />
                         )}
                       </div>
                       <div className="flex-1 space-y-4">
@@ -445,7 +447,10 @@ export function ShareModal({
                                 </>
                               ) : (
                                 <>
-                                  <DocumentDuplicateIcon className="h-4 w-4" />
+                                  <TfCopy
+                                    className="h-4 w-4"
+                                    aria-hidden="true"
+                                  />
                                   Copy
                                 </>
                               )}
@@ -476,7 +481,7 @@ export function ShareModal({
                         </>
                       ) : (
                         <>
-                          <DocumentDuplicateIcon className="h-3 w-3" />
+                          <TfCopy className="h-3 w-3" aria-hidden="true" />
                           Copy to Clipboard
                         </>
                       )}

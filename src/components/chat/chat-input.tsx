@@ -5,12 +5,8 @@ import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
-import {
-  FolderIcon,
-  MicrophoneIcon,
-  StopIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
+import { StopIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { TfAttachment, TfFolder, TfMicrophone } from '@tinfoilsh/tinfoil-icons'
 import type { FormEvent, RefObject } from 'react'
 import {
   useCallback,
@@ -22,7 +18,6 @@ import {
 import {
   PiGlobe,
   PiGlobeX,
-  PiPaperclipLight,
   PiPlusLight,
   PiQuotes,
   PiSpinner,
@@ -636,7 +631,7 @@ export function ChatInput({
                   )}
                   style={colorStyle}
                 >
-                  <FolderIcon className="h-3 w-3" />
+                  <TfFolder className="h-3 w-3" aria-hidden="true" />
                   <span className="text-xs font-medium">
                     {activeProject.name}
                   </span>
@@ -1122,7 +1117,10 @@ export function ChatInput({
                         }}
                         className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                       >
-                        <PiPaperclipLight className="h-5 w-5 text-content-secondary" />
+                        <TfAttachment
+                          className="h-5 w-5 !text-content-secondary"
+                          aria-hidden="true"
+                        />
                         Add files or photos
                       </button>
                       {onWebSearchToggle && (
@@ -1197,7 +1195,7 @@ export function ChatInput({
                   aria-label="Upload document"
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                 >
-                  <PiPaperclipLight className="h-5 w-5" />
+                  <TfAttachment className="h-5 w-5" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   Upload document
@@ -1310,7 +1308,7 @@ export function ChatInput({
                       aria-hidden="true"
                     />
                   ) : (
-                    <MicrophoneIcon
+                    <TfMicrophone
                       className="h-6 w-6 md:h-5 md:w-5"
                       aria-hidden="true"
                     />

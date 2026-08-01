@@ -1,5 +1,5 @@
 import { cn } from '@/components/ui/utils'
-import { FolderIcon } from '@heroicons/react/24/outline'
+import { TfFolder } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState } from 'react'
 
 interface AddToProjectContextModalProps {
@@ -66,7 +66,10 @@ export function AddToProjectContextModal({
       >
         <div className="mb-3 flex items-center justify-center sm:mb-4">
           <div className="rounded-full bg-emerald-500/20 p-2 sm:p-3">
-            <FolderIcon className="h-6 w-6 text-emerald-500 sm:h-8 sm:w-8" />
+            <TfFolder
+              className="h-6 w-6 !text-emerald-500 sm:h-8 sm:w-8"
+              aria-hidden="true"
+            />
           </div>
         </div>
 

@@ -1,11 +1,8 @@
 'use client'
 
 import { cn } from '@/components/ui/utils'
-import {
-  ArrowLeftIcon,
-  Cog6ToothIcon,
-  FolderIcon,
-} from '@heroicons/react/24/outline'
+import { ArrowLeftIcon } from '@heroicons/react/24/outline'
+import { TfFolder, TfSetting } from '@tinfoilsh/tinfoil-icons'
 import { useProject } from './project-context'
 
 interface ProjectHeaderProps {
@@ -48,11 +45,12 @@ export function ProjectHeader({
         <div className="h-5 w-px bg-border-subtle" />
 
         <div className="flex items-center gap-2">
-          <FolderIcon
+          <TfFolder
             className={cn(
               'h-5 w-5',
-              isDarkMode ? 'text-emerald-400' : 'text-emerald-600',
+              isDarkMode ? '!text-emerald-400' : '!text-emerald-600',
             )}
+            aria-hidden="true"
           />
           <span
             className={cn(
@@ -75,7 +73,7 @@ export function ProjectHeader({
         )}
         title="Project settings"
       >
-        <Cog6ToothIcon className="h-5 w-5" />
+        <TfSetting className="h-5 w-5" aria-hidden="true" />
       </button>
     </div>
   )

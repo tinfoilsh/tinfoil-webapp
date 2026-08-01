@@ -3,9 +3,9 @@ import { Modal, ModalTitle } from '@/components/ui/modal'
 import { findSelectableModel, type BaseModel } from '@/config/models'
 import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
 import { useUser } from '@clerk/nextjs'
+import { TfLockLocked } from '@tinfoilsh/tinfoil-icons'
 import { motion } from 'framer-motion'
 import React, { memo, useEffect, useRef, useState } from 'react'
-import { BiSolidLock } from 'react-icons/bi'
 import { ChatInput } from './chat-input'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
@@ -349,8 +349,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
               onClick={() => setIsPrivacyOpen(true)}
               className="group flex w-full items-center justify-center gap-1.5 py-1.5 text-sm text-content-secondary transition-colors hover:text-content-primary sm:gap-2 sm:text-base md:justify-start"
             >
-              <BiSolidLock
-                className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
+              <TfLockLocked
+                className="h-4 w-4 !text-brand-accent-dark dark:!text-brand-accent-light"
                 aria-hidden="true"
               />
               <span className="shrink-0 whitespace-nowrap">

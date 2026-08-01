@@ -6,10 +6,10 @@ import { isReverificationCancelledError } from '@clerk/nextjs/errors'
 import {
   ArrowDownTrayIcon,
   CheckCircleIcon,
-  ClipboardDocumentIcon,
   ShieldCheckIcon,
 } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { TfCopy } from '@tinfoilsh/tinfoil-icons'
 import { memo, useCallback, useRef, useState, type FormEvent } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
@@ -309,7 +309,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                     {copiedTarget === 'setup-key' ? (
                       <CheckCircleIcon className="h-4 w-4 text-emerald-500" />
                     ) : (
-                      <ClipboardDocumentIcon className="h-4 w-4" />
+                      <TfCopy className="h-4 w-4" aria-hidden="true" />
                     )}
                   </button>
                 </div>
@@ -432,7 +432,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                     }
                     className="flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
                   >
-                    <ClipboardDocumentIcon className="h-4 w-4" />
+                    <TfCopy className="h-4 w-4" aria-hidden="true" />
                     {copiedTarget === 'backup-codes' ? 'Copied' : 'Copy'} all
                     codes
                   </button>
