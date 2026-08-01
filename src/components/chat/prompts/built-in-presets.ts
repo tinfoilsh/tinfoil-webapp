@@ -1,12 +1,12 @@
 import {
   TfCode2,
+  TfLightbulb,
   TfLightning,
   TfMask,
   TfScholar,
   TfTranslation,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
-import { PiLightbulb } from 'react-icons/pi'
 import type { PromptPreset } from './types'
 
 const wrap = (body: string) => `<system>\n${body.trim()}\n</system>`
@@ -110,7 +110,7 @@ Respond in {LANGUAGE}. The user's timezone is {TIMEZONE}.
     name: 'Brainstorming Partner',
     description:
       'Divergence engine that resists settling on the obvious answer',
-    Icon: PiLightbulb,
+    Icon: TfLightbulb,
     isBuiltIn: true,
     systemPrompt: wrap(`
 You are a divergence engine. When the user shares a problem, your job is to

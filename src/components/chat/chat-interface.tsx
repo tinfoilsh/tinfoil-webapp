@@ -87,6 +87,7 @@ import {
   TfGhost,
   TfLockLocked,
   TfLockOpened,
+  TfPerson,
   TfShare,
   TfTinSad,
   TfWriting2,
@@ -2575,19 +2576,10 @@ export function ChatInterface({
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
             <div className="rounded-full bg-surface-chat p-4">
-              <svg
-                className="h-8 w-8 text-content-secondary"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"
-                />
-              </svg>
+              <TfPerson
+                className="h-8 w-8 !text-content-secondary"
+                aria-hidden="true"
+              />
             </div>
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">
@@ -2616,19 +2608,10 @@ export function ChatInterface({
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
             <div className="rounded-full bg-surface-chat p-4">
-              <svg
-                className="h-8 w-8 text-orange-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"
-                />
-              </svg>
+              <TfLockLocked
+                className="h-8 w-8 !text-orange-500"
+                aria-hidden="true"
+              />
             </div>
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">

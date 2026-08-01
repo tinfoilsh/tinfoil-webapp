@@ -6,12 +6,6 @@ const AiOutlineLoading3QuartersLazy = lazy(() =>
     default: m.AiOutlineLoading3Quarters,
   })),
 )
-const FaLockLazy = lazy(() =>
-  import('react-icons/fa').then((m) => ({ default: m.FaLock })),
-)
-const FaKeyLazy = lazy(() =>
-  import('react-icons/fa').then((m) => ({ default: m.FaKey })),
-)
 const MdOutlineCloudOffLazy = lazy(() =>
   import('react-icons/md').then((m) => ({ default: m.MdOutlineCloudOff })),
 )
@@ -72,12 +66,6 @@ function IconWrapper({ Icon, ...props }: { Icon: any } & IconBaseProps) {
 
 export const AiOutlineLoading3Quarters = (props: IconBaseProps) => (
   <IconWrapper Icon={AiOutlineLoading3QuartersLazy} {...props} />
-)
-export const FaLock = (props: IconBaseProps) => (
-  <IconWrapper Icon={FaLockLazy} {...props} />
-)
-export const FaKey = (props: IconBaseProps) => (
-  <IconWrapper Icon={FaKeyLazy} {...props} />
 )
 export const MdOutlineCloudOff = (props: IconBaseProps) => (
   <IconWrapper Icon={MdOutlineCloudOffLazy} {...props} />

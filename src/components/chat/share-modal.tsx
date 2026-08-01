@@ -3,14 +3,9 @@ import { useToast } from '@/hooks/use-toast'
 import { uploadSharedChat } from '@/services/share-api'
 import { shareSeal as enclaveShareSeal } from '@/services/sync-enclave/sync-api'
 import type { ShareableChatData } from '@/utils/compression'
-import {
-  CheckIcon,
-  GlobeAltIcon,
-  LinkIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
+import { CheckIcon, LinkIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { TfCopy, TfLockLocked } from '@tinfoilsh/tinfoil-icons'
+import { TfCopy, TfGlobe, TfLockLocked } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useRef, useState } from 'react'
 import { Card, CardContent } from '../ui/card'
 import {
@@ -362,7 +357,7 @@ export function ShareModal({
                     <div className="flex items-start gap-4 p-4">
                       <div className="mt-1 rounded-full bg-surface-chat p-2 text-content-secondary">
                         {isShareEnabled ? (
-                          <GlobeAltIcon className="h-5 w-5" />
+                          <TfGlobe className="h-5 w-5" aria-hidden="true" />
                         ) : (
                           <TfLockLocked
                             className="h-5 w-5"

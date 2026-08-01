@@ -8,8 +8,8 @@ import type {
 import {
   CheckCircleIcon,
   ExclamationCircleIcon,
-  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline'
+import { TfWarning } from '@tinfoilsh/tinfoil-icons'
 import { cn } from '../ui/utils'
 import { formatRelativeTime } from './chat-list-utils'
 
@@ -131,8 +131,8 @@ export function CloudSyncHealthCard({
               aria-hidden="true"
             />
           ) : status.tone === 'warning' ? (
-            <ExclamationTriangleIcon
-              className="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
+            <TfWarning
+              className="mt-0.5 h-4 w-4 shrink-0 !text-amber-500"
               aria-hidden="true"
             />
           ) : (

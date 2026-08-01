@@ -3,8 +3,8 @@ import {
   USER_PREFS_FAVORITE_PROMPT_PRESETS,
 } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
+import { TfWriting } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { PiNotePencil } from 'react-icons/pi'
 import { BUILT_IN_PROMPT_PRESETS } from '../prompts/built-in-presets'
 import type { PromptPreset, UserPromptPreset } from '../prompts/types'
 
@@ -16,7 +16,7 @@ const PROMPT_LIBRARY_CHANGED_EVENT = 'promptLibraryChanged'
 
 export const MAX_FAVORITE_PRESETS = 3
 
-const DEFAULT_USER_PRESET_ICON = PiNotePencil
+const DEFAULT_USER_PRESET_ICON = TfWriting
 
 type UsePromptLibraryReturn = {
   builtInPresets: PromptPreset[]

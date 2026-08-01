@@ -27,7 +27,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CloudIcon,
-  ExclamationTriangleIcon,
   FolderPlusIcon,
   MagnifyingGlassIcon,
   XMarkIcon,
@@ -36,16 +35,18 @@ import {
   TfChat2,
   TfCloudSync,
   TfFolder,
+  TfLockLocked,
   TfMicrophone,
   TfSetting,
+  TfSparkle,
   TfTrash,
+  TfWarning,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CiFloppyDisk } from 'react-icons/ci'
-import { FaLock } from 'react-icons/fa6'
 import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
-import { PiSparkle, PiSpinner } from 'react-icons/pi'
+import { PiSpinner } from 'react-icons/pi'
 import { ChatList, type ChatItemData } from './chat-list'
 import { formatRelativeTime } from './chat-list-utils'
 import { CONSTANTS } from './constants'
@@ -1047,7 +1048,10 @@ export function ChatSidebar({
                   </div>
 
                   <div className="flex items-center gap-3 text-xs text-content-secondary">
-                    <PiSparkle className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                    <TfSparkle
+                      className="h-4 w-4 flex-shrink-0 !text-content-muted"
+                      aria-hidden="true"
+                    />
                     <span>No daily request limits</span>
                   </div>
 
@@ -1135,7 +1139,10 @@ export function ChatSidebar({
             <div className="relative z-10 flex-none px-2 pt-2">
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
                 <div className="flex items-start gap-2">
-                  <ExclamationTriangleIcon className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" />
+                  <TfWarning
+                    className="mt-0.5 h-4 w-4 flex-shrink-0 !text-amber-500"
+                    aria-hidden="true"
+                  />
                   <div className="flex-1">
                     <p className="font-aeonik text-xs font-semibold text-content-primary">
                       {backupWarningNeedsRecovery
@@ -1365,7 +1372,10 @@ export function ChatSidebar({
                                 const projectContent = (
                                   <>
                                     {project.decryptionFailed ? (
-                                      <FaLock className="mt-0.5 h-4 w-4 shrink-0 self-start text-orange-500" />
+                                      <TfLockLocked
+                                        className="mt-0.5 h-4 w-4 shrink-0 self-start !text-orange-500"
+                                        aria-hidden="true"
+                                      />
                                     ) : (
                                       <TfFolder
                                         className={cn(
