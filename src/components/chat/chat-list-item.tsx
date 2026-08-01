@@ -10,13 +10,17 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { FlagIcon } from '@heroicons/react/24/solid'
-import { TfFolder, TfTrash, TfWriting } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfFolder,
+  TfLockLocked,
+  TfTrash,
+  TfWriting,
+} from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CiFloppyDisk } from 'react-icons/ci'
 import { PiPushPin, PiPushPinFill, PiSpinner } from 'react-icons/pi'
-import { FaLock } from '../icons/lazy-icons'
 import { RedactedText } from '../ui/redacted-text'
 import { cn } from '../ui/utils'
 import { getBlankQueueId } from './message-queue-identity'
@@ -391,8 +395,8 @@ export function ChatListItem({
           <>
             <span className="flex items-center gap-1.5">
               {showEncryptionStatus && chat.decryptionFailed && (
-                <FaLock
-                  className="h-3.5 w-3.5 flex-shrink-0 text-orange-500"
+                <TfLockLocked
+                  className="h-3.5 w-3.5 flex-shrink-0 !text-orange-500"
                   title="Encrypted chat"
                   aria-hidden="true"
                 />

@@ -6,7 +6,6 @@ import {
   BookmarkIcon,
   CheckIcon,
   PlusIcon,
-  SparklesIcon,
   Squares2X2Icon,
   StarIcon,
   XMarkIcon,
@@ -16,7 +15,7 @@ import {
   StarIcon as StarIconSolid,
 } from '@heroicons/react/24/solid'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { TfTrash, TfWriting } from '@tinfoilsh/tinfoil-icons'
+import { TfStars, TfTrash, TfWriting } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
@@ -570,7 +569,7 @@ function PresetDetail({
                   onClick={onUseThis}
                   className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-accent-blue px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-accent-blue-hover"
                 >
-                  <SparklesIcon className="h-4 w-4" />
+                  <TfStars className="h-4 w-4" aria-hidden="true" />
                   Use for this chat
                 </button>
               )}
@@ -595,7 +594,7 @@ function PresetDetail({
               onClick={onUseThis}
               className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-accent-blue px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-accent-blue-hover md:w-auto"
             >
-              <SparklesIcon className="h-4 w-4" />
+              <TfStars className="h-4 w-4" aria-hidden="true" />
               Use for this chat
             </button>
           )}
