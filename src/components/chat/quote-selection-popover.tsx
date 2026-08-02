@@ -181,7 +181,7 @@ export function QuoteSelectionPopover({
         onClick={handleQuoteClick}
         className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background"
       >
-        <PiQuotes className="h-4 w-4" />
+        <PiQuotes className="h-4 w-4" aria-hidden="true" />
         <span>Quote</span>
       </button>
       {onAsk && (
@@ -190,7 +190,7 @@ export function QuoteSelectionPopover({
           onClick={handleAskClick}
           className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background"
         >
-          <TfChat2 className="h-4 w-4" />
+          <TfChat2 className="h-4 w-4" aria-hidden="true" />
           <span>Ask</span>
         </button>
       )}

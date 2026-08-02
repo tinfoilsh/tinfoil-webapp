@@ -2718,7 +2718,10 @@ export function ChatInterface({
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
             <div className="rounded-full bg-surface-chat p-4">
-              <TfTinSad className="h-8 w-8 !text-content-secondary" />
+              <TfTinSad
+                className="h-8 w-8 !text-content-secondary"
+                aria-hidden="true"
+              />
             </div>
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">
@@ -2752,7 +2755,10 @@ export function ChatInterface({
       <div className="flex h-screen items-center justify-center bg-surface-chat-background px-4 font-aeonik">
         <div className="max-w-md text-center">
           <div className="mb-6 flex justify-center">
-            <TfTinSad className="h-24 w-24 !text-content-secondary" />
+            <TfTinSad
+              className="h-24 w-24 !text-content-secondary"
+              aria-hidden="true"
+            />
           </div>
           <h2 className="mb-3 text-xl font-semibold text-content-primary">
             Something went wrong

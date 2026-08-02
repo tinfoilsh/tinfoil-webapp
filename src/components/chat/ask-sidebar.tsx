@@ -89,7 +89,7 @@ export function AskSidebar({
         {/* Header */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 py-3">
           <div className="flex items-center gap-2 text-content-primary">
-            <TfChat2 className="h-5 w-5" />
+            <TfChat2 className="h-5 w-5" aria-hidden="true" />
             <span className="text-sm font-medium">Ask</span>
           </div>
           <button

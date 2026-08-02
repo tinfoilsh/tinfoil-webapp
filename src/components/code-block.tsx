@@ -1046,7 +1046,7 @@ export const CodeBlock = memo(function CodeBlock({
           <button
             onClick={copyToClipboard}
             aria-label={copied ? 'Copied' : 'Copy code'}
-            className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80"
+            className="rounded-lg bg-surface-input p-2 text-content-muted hover:bg-surface-input/80"
           >
             {copied ? (
               <svg
@@ -1064,10 +1064,7 @@ export const CodeBlock = memo(function CodeBlock({
                 />
               </svg>
             ) : (
-              <TfCopy
-                className="h-5 w-5 !text-content-muted"
-                aria-hidden="true"
-              />
+              <TfCopy className="h-5 w-5" aria-hidden="true" />
             )}
           </button>
           <span className="pointer-events-none absolute -top-8 right-0 hidden whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/copy:block">

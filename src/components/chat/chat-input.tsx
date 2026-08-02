@@ -1229,7 +1229,7 @@ export function ChatInput({
                     {webSearchEnabled ? (
                       <TfGlobe className="h-4 w-4" aria-hidden="true" />
                     ) : (
-                      <PiGlobeX className="h-4 w-4" />
+                      <PiGlobeX className="h-4 w-4" aria-hidden="true" />
                     )}
                     {webSearchEnabled && (
                       <span className="translate-y-px text-xs font-medium leading-none">
@@ -1263,7 +1263,7 @@ export function ChatInput({
                         : 'w-7 text-content-secondary hover:bg-surface-chat-background hover:text-content-primary',
                     )}
                   >
-                    <TfTerminal className="h-5 w-5" aria-hidden="true" />
+                    <TfTerminal className="h-4 w-4" aria-hidden="true" />
                     {codeExecutionEnabled && (
                       <span className="translate-y-px text-xs font-medium leading-none">
                         Code

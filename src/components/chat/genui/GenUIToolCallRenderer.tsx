@@ -253,7 +253,7 @@ function ParseFailureCard({
           onClick={onRetry}
           className="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm font-medium text-content-primary transition-colors hover:bg-surface-card"
         >
-          <TfRefresh1 className="h-3.5 w-3.5" />
+          <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
           Try again
         </button>
       )}
