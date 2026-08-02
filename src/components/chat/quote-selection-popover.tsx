@@ -67,6 +67,25 @@ export function QuoteSelectionPopover({
       return
     }
 
+    const getMessageElement = (node: Node) => {
+      const element =
+        node.nodeType === Node.ELEMENT_NODE
+          ? (node as Element)
+          : node.parentElement
+      return (
+        element?.closest(
+          '[data-message-role="user"], [data-message-role="assistant"]',
+        ) ?? null
+      )
+    }
+    const startMessage = getMessageElement(range.startContainer)
+    const endMessage = getMessageElement(range.endContainer)
+
+    if (!startMessage || startMessage !== endMessage) {
+      hidePopover()
+      return
+    }
+
     const text = selection.toString().trim()
     if (text.length < MIN_SELECTION_LENGTH) {
       hidePopover()
