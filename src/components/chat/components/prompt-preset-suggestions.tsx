@@ -1,5 +1,5 @@
 import { cn } from '@/components/ui/utils'
-import { Squares2X2Icon } from '@heroicons/react/24/outline'
+import { TfTools } from '@tinfoilsh/tinfoil-icons'
 import { usePromptLibrary } from '../hooks/use-prompt-library'
 import { BUILT_IN_PROMPT_PRESETS } from '../prompts/built-in-presets'
 import type { PromptPreset } from '../prompts/types'
@@ -60,7 +60,7 @@ export function PromptPresetSuggestions({
           'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
         )}
       >
-        <Squares2X2Icon className="h-3.5 w-3.5" aria-hidden="true" />
+        <TfTools className="h-3.5 w-3.5" aria-hidden="true" />
         <span>More</span>
       </button>
     </>
@@ -74,7 +74,7 @@ export function PromptPresetSuggestions({
           onClick={onOpenLibrary}
           className="flex h-10 items-center justify-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-4 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
         >
-          <Squares2X2Icon className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfTools className="h-3.5 w-3.5" aria-hidden="true" />
           <span>Prompts</span>
         </button>
       </div>

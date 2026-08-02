@@ -70,7 +70,6 @@ import {
   EyeIcon,
   EyeSlashIcon,
   PlusIcon,
-  Squares2X2Icon,
   UserIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
@@ -85,6 +84,7 @@ import {
   TfPerson,
   TfShieldCheck,
   TfSunLightMode,
+  TfTools,
   TfTrash,
   TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
@@ -2095,7 +2095,7 @@ ${encryptionKey.replace('key_', '')}
     {
       id: 'prompts' as const,
       label: 'Prompts',
-      icon: Squares2X2Icon,
+      icon: TfTools,
     },
     ...(isSignedIn
       ? [
