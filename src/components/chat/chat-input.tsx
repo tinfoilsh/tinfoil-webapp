@@ -1330,7 +1330,10 @@ export function ChatInput({
                                 aria-hidden="true"
                               />
                             ) : (
-                              <PiGlobeX className="h-5 w-5 text-content-secondary" />
+                              <PiGlobeX
+                                className="h-5 w-5 text-content-secondary"
+                                aria-hidden="true"
+                              />
                             )}
                             <span className="flex-1">Web search</span>
                             {webSearchEnabled && (
