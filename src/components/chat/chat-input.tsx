@@ -1200,7 +1200,7 @@ export function ChatInput({
                   aria-label="Upload document"
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                 >
-                  <TfAttachment className="h-5 w-5" aria-hidden="true" />
+                  <TfAttachment className="h-4 w-4" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   Upload document
@@ -1227,9 +1227,9 @@ export function ChatInput({
                     )}
                   >
                     {webSearchEnabled ? (
-                      <TfGlobe className="h-5 w-5" aria-hidden="true" />
+                      <TfGlobe className="h-4 w-4" aria-hidden="true" />
                     ) : (
-                      <PiGlobeX className="h-5 w-5" />
+                      <PiGlobeX className="h-4 w-4" />
                     )}
                     {webSearchEnabled && (
                       <span className="translate-y-px text-xs font-medium leading-none">
@@ -1314,7 +1314,7 @@ export function ChatInput({
                     />
                   ) : (
                     <TfMicrophone
-                      className="h-6 w-6 md:h-5 md:w-5"
+                      className="h-6 w-6 md:h-4 md:w-4"
                       aria-hidden="true"
                     />
                   )}
