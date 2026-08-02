@@ -131,6 +131,10 @@ import {
   TfComputer,
   TfLightbulb,
   TfMoon,
+  TfNumber1,
+  TfNumber2,
+  TfNumber3,
+  TfNumber4,
   TfPerson,
   TfShieldCheck,
   TfSunLightMode,
@@ -351,10 +355,26 @@ const ScrambleText = ({
   )
 }
 
-const STEP_CIRCLE_CLASSES = cn(
-  'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-  'bg-content-muted/20 text-content-secondary',
-)
+const STEP_ICONS = {
+  1: TfNumber1,
+  2: TfNumber2,
+  3: TfNumber3,
+  4: TfNumber4,
+} as const
+
+function StepNumber({ step }: { step: keyof typeof STEP_ICONS }) {
+  const Icon = STEP_ICONS[step]
+
+  return (
+    <>
+      <Icon
+        className="h-6 w-6 shrink-0 !text-content-secondary"
+        aria-hidden="true"
+      />
+      <span className="sr-only">Step {step}:</span>
+    </>
+  )
+}
 
 type ImportSection = 'chatgpt' | 'claude' | 'tinfoil'
 
@@ -397,12 +417,12 @@ function ImportStep({
   step,
   children,
 }: {
-  step: number
+  step: keyof typeof STEP_ICONS
   children: React.ReactNode
 }) {
   return (
     <div className="flex items-start gap-3">
-      <div className={STEP_CIRCLE_CLASSES}>{step}</div>
+      <StepNumber step={step} />
       <div className="font-aeonik-fono text-sm text-content-muted">
         {children}
       </div>
@@ -3401,7 +3421,7 @@ ${encryptionKey.replace('key_', '')}
                     {isHowItWorksOpen && (
                       <div className="space-y-3 border-t border-border-subtle p-4">
                         <div className="flex items-start gap-3">
-                          <div className={STEP_CIRCLE_CLASSES}>1</div>
+                          <StepNumber step={1} />
                           <div className="font-aeonik-fono text-sm text-content-muted">
                             Your chats are encrypted with a key that only you
                             possess and stored encrypted in the cloud. Nobody
@@ -3409,14 +3429,14 @@ ${encryptionKey.replace('key_', '')}
                           </div>
                         </div>
                         <div className="flex items-start gap-3">
-                          <div className={STEP_CIRCLE_CLASSES}>2</div>
+                          <StepNumber step={2} />
                           <div className="font-aeonik-fono text-sm text-content-muted">
                             Only you have the encryption key. Tinfoil cannot
                             read your messages.
                           </div>
                         </div>
                         <div className="flex items-start gap-3">
-                          <div className={STEP_CIRCLE_CLASSES}>3</div>
+                          <StepNumber step={3} />
                           <div className="font-aeonik-fono text-sm text-content-muted">
                             Use a passkey to seamlessly sync your chats across
                             devices, or manually enter your encryption key.
