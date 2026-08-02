@@ -70,7 +70,6 @@ import {
   EyeIcon,
   EyeSlashIcon,
   PlusIcon,
-  UserIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import {
@@ -2090,7 +2089,7 @@ ${encryptionKey.replace('key_', '')}
     {
       id: 'personalization' as const,
       label: 'Personalization',
-      icon: UserIcon,
+      icon: TfPerson,
     },
     {
       id: 'prompts' as const,
