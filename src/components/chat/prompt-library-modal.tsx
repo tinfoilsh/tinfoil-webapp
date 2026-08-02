@@ -6,7 +6,6 @@ import {
   BookmarkIcon,
   CheckIcon,
   PlusIcon,
-  Squares2X2Icon,
   StarIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
@@ -15,7 +14,7 @@ import {
   StarIcon as StarIconSolid,
 } from '@heroicons/react/24/solid'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { TfStars, TfTrash, TfWriting } from '@tinfoilsh/tinfoil-icons'
+import { TfStars, TfTools, TfTrash, TfWriting } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
@@ -314,8 +313,8 @@ export function PromptLibraryModal({
                       <ArrowLeftIcon className="h-5 w-5" aria-hidden="true" />
                     </button>
                   )}
-                  <Squares2X2Icon
-                    className="hidden h-5 w-5 text-content-secondary md:block"
+                  <TfTools
+                    className="hidden h-5 w-5 !text-content-secondary md:block"
                     aria-hidden="true"
                   />
                   <DialogPrimitive.Title className="truncate text-base font-semibold text-content-primary md:text-lg">

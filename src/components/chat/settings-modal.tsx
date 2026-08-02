@@ -121,7 +121,6 @@ import {
   EyeIcon,
   EyeSlashIcon,
   ShieldExclamationIcon,
-  Squares2X2Icon,
   UserIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
@@ -136,6 +135,7 @@ import {
   TfPerson,
   TfShieldCheck,
   TfSunLightMode,
+  TfTools,
 } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
@@ -2422,7 +2422,7 @@ ${encryptionKey.replace('key_', '')}
     {
       id: 'prompts' as const,
       label: 'Prompts',
-      icon: Squares2X2Icon,
+      icon: TfTools,
     },
     ...(isSignedIn
       ? [
@@ -3349,7 +3349,7 @@ ${encryptionKey.replace('key_', '')}
                       )}
                     >
                       <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-surface-chat text-content-secondary">
-                        <Squares2X2Icon className="h-5 w-5" />
+                        <TfTools className="h-5 w-5" aria-hidden="true" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block font-aeonik text-sm font-medium text-content-primary">
