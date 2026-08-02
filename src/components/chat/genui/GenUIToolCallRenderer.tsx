@@ -407,6 +407,7 @@ function ParseFailureCard({
           >
             <TfRefresh1
               className={`h-3.5 w-3.5 ${isRetrying ? 'animate-spin' : ''}`}
+              aria-hidden="true"
             />
             {isRetrying ? 'Fixing widget...' : 'Retry widget'}
           </button>
