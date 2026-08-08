@@ -39,7 +39,7 @@ const MessageMetadata = ({
         <span aria-hidden="true">·</span>
       </>
     )}
-    <span className="flex items-center gap-1">
+    <span className="flex items-center gap-1 text-[10px]">
       <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
       Encrypted
     </span>
@@ -467,7 +467,7 @@ const DefaultMessageComponent = ({
                   )}
                 >
                   {isUser && (
-                    <div className="absolute right-3 top-px -translate-y-full rounded-t-site-tab bg-surface-message-user/90 px-2.5 py-1 backdrop-blur-sm">
+                    <div className="absolute right-0 top-px -translate-y-full rounded-t-site-tab bg-surface-message-user/90 px-2.5 py-1 backdrop-blur-sm">
                       <MessageMetadata />
                     </div>
                   )}
