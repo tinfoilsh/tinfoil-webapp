@@ -21,7 +21,10 @@ vi.mock('@/services/cloud/streaming-tracker', () => ({
 }))
 
 vi.mock('@/config/models', () => ({
-  resolveModelSelection: () => ({ model: { modelName: 'test-model' } }),
+  getKnownModelDisplayName: () => 'Test Model',
+  resolveModelSelection: () => ({
+    model: { modelName: 'test-model', name: 'Test Model' },
+  }),
 }))
 
 vi.mock('@/services/inference/inference-client', () => ({

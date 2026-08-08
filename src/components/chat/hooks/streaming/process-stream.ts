@@ -23,6 +23,8 @@ export async function processStreamingResponse(
     trackThinkingDuration: true,
     onFirstEvent: () => ctx.setIsWaitingForResponse(false),
     onThinkingChange: ctx.setIsThinking,
+    modelDisplayName: ctx.modelDisplayName,
+    resolveModelDisplayName: ctx.resolveModelDisplayName,
   })
   const publisher = new AnimationFramePublisher(ctx.onUpdate)
   let interruptionPublished = false

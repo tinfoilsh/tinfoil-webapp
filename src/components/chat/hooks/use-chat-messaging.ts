@@ -18,7 +18,11 @@
  *   this hook are derived for the currently-viewed chat
  */
 import { useProject } from '@/components/project'
-import { resolveModelSelection, type BaseModel } from '@/config/models'
+import {
+  getKnownModelDisplayName,
+  resolveModelSelection,
+  type BaseModel,
+} from '@/config/models'
 import { DEFAULT_CHAT_TITLE, TEMPORARY_CHAT_TITLE } from '@/constants/chat'
 import { useChatRecoveryActive } from '@/hooks/use-chat-recovery-drafts'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
@@ -1060,6 +1064,8 @@ export function useChatMessaging({
           deferStreamCleanup: recoveryEnabled,
           signal: controller.signal,
           turnId: turnId ?? undefined,
+          modelDisplayName: model.name,
+          resolveModelDisplayName: getKnownModelDisplayName,
           onInterrupted: (message) => {
             activeGeneration.latestAssistantMessage = message
           },

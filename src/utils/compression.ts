@@ -27,6 +27,7 @@ export type ShareableChatData = {
   messages: Array<{
     role: 'user' | 'assistant'
     content: string
+    modelDisplayName?: string
     documentContent?: string
     documents?: Array<{ name: string }>
     timestamp: number
@@ -98,7 +99,9 @@ export function validateShareableChatData(
       ((msg as Record<string, unknown>).role !== 'user' &&
         (msg as Record<string, unknown>).role !== 'assistant') ||
       typeof (msg as Record<string, unknown>).content !== 'string' ||
-      typeof (msg as Record<string, unknown>).timestamp !== 'number'
+      typeof (msg as Record<string, unknown>).timestamp !== 'number' ||
+      ('modelDisplayName' in msg &&
+        typeof (msg as Record<string, unknown>).modelDisplayName !== 'string')
     ) {
       logWarning('Invalid message in shareable chat data', {
         component: 'CompressionUtil',

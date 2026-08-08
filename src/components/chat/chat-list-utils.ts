@@ -1,9 +1,11 @@
 /**
  * Formats a date as a relative time string (e.g., "2h ago", "3d ago")
  */
-export function formatRelativeTime(date: Date): string {
-  const now = new Date()
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+export function formatRelativeTime(
+  date: Date,
+  referenceTime = Date.now(),
+): string {
+  const seconds = Math.floor((referenceTime - date.getTime()) / 1000)
 
   if (seconds < 60) {
     return `${seconds}s ago`

@@ -135,6 +135,7 @@ export type Message = {
   role: 'user' | 'assistant'
   content: string
   turnId?: string
+  modelDisplayName?: string
   attachments?: Attachment[]
   // Legacy fields — kept for reading old messages, not written for new ones
   documentContent?: string

@@ -52,6 +52,19 @@ const DEV_MODELS: BaseModel[] = [
   },
 ]
 
+const modelDisplayNames = new Map<string, string>()
+
+const rememberModelDisplayNames = (models: BaseModel[]): BaseModel[] => {
+  for (const model of [...models, ...getAutoModels(models)]) {
+    modelDisplayNames.set(model.modelName, model.name)
+  }
+  return models
+}
+
+export const getKnownModelDisplayName = (
+  modelName: string,
+): string | undefined => modelDisplayNames.get(modelName)
+
 /**
  * Per-endpoint enable/disable parameter blocks for thinking mode.
  * Keyed by full endpoint path (e.g. "/v1/chat/completions", "/v1/responses").
@@ -279,7 +292,7 @@ export const getAIModels = async (): Promise<BaseModel[]> => {
 
   // In dev mode on localhost, return hardcoded models instead of fetching
   if (IS_DEV && isLocalDev) {
-    return [...DEV_MODELS, DEV_SIMULATOR_MODEL]
+    return rememberModelDisplayNames([...DEV_MODELS, DEV_SIMULATOR_MODEL])
   }
 
   try {
@@ -302,7 +315,7 @@ export const getAIModels = async (): Promise<BaseModel[]> => {
       models.unshift(DEV_SIMULATOR_MODEL)
     }
 
-    return models
+    return rememberModelDisplayNames(models)
   } catch (error) {
     logError('Failed to fetch AI models', error, {
       component: 'getAIModels',

@@ -105,5 +105,7 @@ export interface StreamingContext {
   deferStreamCleanup?: boolean
   signal?: AbortSignal
   turnId?: string
+  modelDisplayName?: string
+  resolveModelDisplayName?: (modelName: string) => string | undefined
   onInterrupted?: (message: Message | null) => void
 }

@@ -50,6 +50,23 @@ describe('Chat Codec - processRemoteChat', () => {
       expect(result.chat.decryptionFailed).toBeUndefined()
     })
 
+    it('preserves assistant model display names', async () => {
+      const result = await processRemoteChat({
+        ...baseRemoteChat,
+        plaintext: basePlaintext({
+          messages: [
+            {
+              role: 'assistant',
+              content: 'Hello',
+              modelDisplayName: 'GPT-OSS 120B',
+            },
+          ],
+        }),
+      })
+
+      expect(result.chat.messages[0].modelDisplayName).toBe('GPT-OSS 120B')
+    })
+
     it('sets sync metadata on decoded chat', async () => {
       const result = await processRemoteChat({
         ...baseRemoteChat,

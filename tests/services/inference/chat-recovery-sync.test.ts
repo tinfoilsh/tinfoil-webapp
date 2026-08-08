@@ -97,6 +97,7 @@ import {
   removePendingRecovery,
   replacePendingRecovery,
   resetChatRecoverySyncState,
+  sameRecoveredResponse,
 } from '@/services/inference/chat-recovery-sync'
 
 function message(
@@ -119,6 +120,16 @@ function envelope(turnId: string): PendingRecoveryEnvelope {
     ciphertext: 'AAAAAAAAAAAAAAAAAAAAAAAA',
   }
 }
+
+it('compares recovered model display names', () => {
+  const existing = {
+    ...message('assistant', 'Answer', 'turn-1'),
+    modelDisplayName: 'Model A',
+  }
+  const recovered = { ...existing, modelDisplayName: 'Model B' }
+
+  expect(sameRecoveredResponse(existing, recovered)).toBe(false)
+})
 
 function currentEnvelope(turnId: string): PendingRecoveryEnvelope {
   return (

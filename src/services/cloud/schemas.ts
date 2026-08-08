@@ -31,6 +31,7 @@ const MessageSchema = z
     role: z.enum(['user', 'assistant']),
     content: z.string(),
     turnId: RecoveryIdSchema.optional(),
+    modelDisplayName: z.string().optional(),
   })
   .passthrough()
 

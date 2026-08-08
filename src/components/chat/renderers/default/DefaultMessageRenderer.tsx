@@ -6,6 +6,7 @@ import {
   ArrowUturnLeftIcon,
   ChevronDownIcon,
   InformationCircleIcon,
+  LockClosedIcon,
   PencilSquareIcon,
 } from '@heroicons/react/24/outline'
 import React, { memo, useState, type JSX } from 'react'
@@ -13,6 +14,7 @@ import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
 import { RxCopy } from 'react-icons/rx'
 import { hasMessageAttachments } from '../../attachment-helpers'
+import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
@@ -24,6 +26,25 @@ import { ThoughtProcess } from '../components/ThoughtProcess'
 import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
+
+const MessageMetadata = ({
+  modelDisplayName,
+}: {
+  modelDisplayName?: string
+}) => (
+  <div className="flex shrink-0 items-center gap-1.5 text-xs text-content-muted">
+    {modelDisplayName && (
+      <>
+        <span>{modelDisplayName}</span>
+        <span aria-hidden="true">·</span>
+      </>
+    )}
+    <span className="flex items-center gap-1 text-[10px]">
+      <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
+      Encrypted
+    </span>
+  </div>
+)
 
 const DefaultMessageComponent = ({
   message,
@@ -49,6 +70,8 @@ const DefaultMessageComponent = ({
   const editButtonRef = React.useRef<HTMLButtonElement>(null)
   const isLimitError =
     message.isRateLimitError || message.isHourlyRateLimitError
+  const modelDisplayName = message.modelDisplayName?.trim()
+  const showMetadata = hasVisibleAssistantMessage(message)
 
   const citationUrlTitles = React.useMemo(() => {
     if (!message.annotations || message.annotations.length === 0)
@@ -213,11 +236,8 @@ const DefaultMessageComponent = ({
       }),
     }
   }, [message.timestamp])
-  const showAssistantActions =
-    !isUser &&
-    message.content &&
-    !hideActions &&
-    !(isStreaming && isLastMessage)
+  const showAssistantFooter =
+    !isUser && showMetadata && !(isStreaming && isLastMessage)
 
   return (
     <div
@@ -688,35 +708,46 @@ const DefaultMessageComponent = ({
         )}
 
       {/* Actions for assistant messages - hidden while streaming the last response */}
-      {showAssistantActions && (
-        <div
-          className={`mt-4 flex items-center justify-between gap-3 px-4 transition-opacity duration-500 ease-in-out ${
-            showActions ? 'opacity-100' : 'pointer-events-none opacity-0'
-          }`}
-        >
-          <div className="flex items-center gap-1">
-            {message.webSearch?.sources &&
-              message.webSearch.sources.length > 0 &&
-              !(isStreaming && isLastMessage) && (
-                <SourcesButton sources={message.webSearch.sources} />
-              )}
-            <MessageActions content={message.content} isDarkMode={isDarkMode} />
-            {/* Regenerate button - only on last assistant message */}
-            {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
-              <div className="group/regen relative">
-                <button
-                  onClick={() => onRegenerateMessage(messageIndex - 1)}
-                  aria-label="Regenerate response"
-                  className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
-                >
-                  <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-                <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
-                  Regenerate
-                </span>
-              </div>
+      {showAssistantFooter && (
+        <div className="mt-4 flex w-full items-center justify-between gap-3 px-4">
+          <div
+            className={`flex items-center gap-1 transition-opacity duration-500 ease-in-out ${
+              showActions ? 'opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+          >
+            {!hideActions && message.content && (
+              <>
+                {message.webSearch?.sources &&
+                  message.webSearch.sources.length > 0 &&
+                  !(isStreaming && isLastMessage) && (
+                    <SourcesButton sources={message.webSearch.sources} />
+                  )}
+                <MessageActions
+                  content={message.content}
+                  isDarkMode={isDarkMode}
+                />
+                {/* Regenerate button - only on last assistant message */}
+                {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
+                  <div className="group/regen relative">
+                    <button
+                      onClick={() => onRegenerateMessage(messageIndex - 1)}
+                      aria-label="Regenerate response"
+                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
+                    >
+                      <ArrowPathIcon
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
+                    </button>
+                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
+                      Regenerate
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
+          <MessageMetadata modelDisplayName={modelDisplayName} />
         </div>
       )}
     </div>
