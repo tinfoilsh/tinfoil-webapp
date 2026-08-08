@@ -71,7 +71,7 @@ const DefaultMessageComponent = ({
   const isLimitError =
     message.isRateLimitError || message.isHourlyRateLimitError
   const modelDisplayName = message.modelDisplayName?.trim()
-  const showMetadata = isUser || hasVisibleAssistantMessage(message)
+  const showMetadata = hasVisibleAssistantMessage(message)
 
   const citationUrlTitles = React.useMemo(() => {
     if (!message.annotations || message.annotations.length === 0)
@@ -455,22 +455,17 @@ const DefaultMessageComponent = ({
           <>
             {!(isUser && isEditing) && (
               <div
-                className={`w-full ${isUser ? 'flex justify-end px-4 pb-8 pt-8' : 'px-4 py-2'}`}
+                className={`w-full ${isUser ? 'flex justify-end px-4 pb-8 pt-2' : 'px-4 py-2'}`}
               >
                 <div
                   className={cn(
-                    isUser ? 'relative max-w-[95%]' : 'w-full',
+                    isUser ? 'max-w-[95%]' : 'w-full',
                     isUser &&
                       'rounded-site-lg bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
                     isLimitError &&
                       'rounded-lg border-2 border-brand-accent-dark/30 bg-brand-accent-dark/5 px-4 py-3',
                   )}
                 >
-                  {isUser && (
-                    <div className="absolute right-0 top-px -translate-y-full rounded-t-site-tab bg-surface-message-user/90 px-2.5 py-1 backdrop-blur-sm">
-                      <MessageMetadata />
-                    </div>
-                  )}
                   {message.isHourlyRateLimitError && (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center gap-2">

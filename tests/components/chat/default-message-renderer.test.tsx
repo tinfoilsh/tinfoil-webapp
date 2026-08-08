@@ -26,18 +26,15 @@ const renderMessage = (message: Message) =>
   )
 
 describe('DefaultMessageRenderer metadata', () => {
-  it('shows encrypted under user messages', () => {
+  it('does not show assistant metadata on user messages', () => {
     renderMessage({
       role: 'user',
       content: 'Hello',
       timestamp: new Date('2026-08-07T00:00:00.000Z'),
     })
 
-    expect(screen.getByText('Encrypted')).toBeInTheDocument()
+    expect(screen.queryByText('Encrypted')).not.toBeInTheDocument()
     expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
-    expect(
-      screen.getByText('Encrypted').parentElement?.parentElement,
-    ).toHaveClass('rounded-t-site-tab')
   })
 
   it('shows the persisted model name and encrypted under responses', () => {
