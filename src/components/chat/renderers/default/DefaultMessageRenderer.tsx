@@ -29,7 +29,6 @@ import type { MessageRenderer, MessageRenderProps } from '../types'
 const DefaultMessageComponent = ({
   message,
   messageIndex,
-  model,
   isDarkMode,
   isLastMessage,
   isStreaming,
@@ -51,6 +50,7 @@ const DefaultMessageComponent = ({
   const editButtonRef = React.useRef<HTMLButtonElement>(null)
   const isLimitError =
     message.isRateLimitError || message.isHourlyRateLimitError
+  const modelDisplayName = message.modelDisplayName?.trim()
 
   const citationUrlTitles = React.useMemo(() => {
     if (!message.annotations || message.annotations.length === 0)
@@ -692,12 +692,16 @@ const DefaultMessageComponent = ({
       <div
         className={cn(
           'flex w-full items-center gap-1.5 px-4 text-xs text-content-muted',
-          isUser ? '-mt-6 justify-end pb-1' : 'mt-1 justify-start',
+          isUser
+            ? isEditing
+              ? 'justify-end pb-1'
+              : '-mt-6 justify-end pb-1'
+            : 'mt-1 justify-start',
         )}
       >
-        {!isUser && (
+        {!isUser && modelDisplayName && (
           <>
-            <span>{message.modelDisplayName ?? model.name}</span>
+            <span>{modelDisplayName}</span>
             <span aria-hidden="true">·</span>
           </>
         )}

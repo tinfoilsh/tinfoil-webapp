@@ -37,17 +37,16 @@ export class RichStreamSession {
           ? this.options.resolveModelDisplayName(chunk.model)
           : chunk.model
         : undefined
-    const modelChanged =
-      resolvedModelDisplayName !== undefined &&
+    if (resolvedModelDisplayName !== undefined) {
       this.assembler.setModelDisplayName(resolvedModelDisplayName)
+    }
     const events = this.normalizer.processChunk(
       chunk,
       this.preprocessor,
       streamLogger,
     )
     for (const event of events) this.applyEvent(event)
-    if (modelChanged) this.changed = true
-    return modelChanged || events.length > 0
+    return events.length > 0
   }
 
   snapshot(turnId?: string): Message {

@@ -213,6 +213,7 @@ const PrintableMessage = memo(function PrintableMessage({
   }
 
   const isUser = message.role === 'user'
+  const modelDisplayName = message.modelDisplayName?.trim()
 
   return (
     <div className="printable-message">
@@ -251,9 +252,7 @@ const PrintableMessage = memo(function PrintableMessage({
         </div>
       )}
       <div className="flex items-center gap-1 text-xs text-gray-500">
-        {!isUser && message.modelDisplayName
-          ? `${message.modelDisplayName} · `
-          : ''}
+        {!isUser && modelDisplayName ? `${modelDisplayName} · ` : ''}
         <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
         Encrypted
       </div>

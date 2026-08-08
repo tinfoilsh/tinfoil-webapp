@@ -101,9 +101,7 @@ export function validateShareableChatData(
       typeof (msg as Record<string, unknown>).content !== 'string' ||
       typeof (msg as Record<string, unknown>).timestamp !== 'number' ||
       ('modelDisplayName' in msg &&
-        (typeof (msg as Record<string, unknown>).modelDisplayName !==
-          'string' ||
-          (msg as Record<string, string>).modelDisplayName.length === 0))
+        typeof (msg as Record<string, unknown>).modelDisplayName !== 'string')
     ) {
       logWarning('Invalid message in shareable chat data', {
         component: 'CompressionUtil',

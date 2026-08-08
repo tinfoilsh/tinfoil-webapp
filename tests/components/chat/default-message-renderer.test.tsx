@@ -49,4 +49,15 @@ describe('DefaultMessageRenderer metadata', () => {
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
     expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
   })
+
+  it('does not attribute legacy responses to the current model', () => {
+    renderMessage({
+      role: 'assistant',
+      content: 'Hello',
+      timestamp: new Date('2026-08-07T00:00:01.000Z'),
+    })
+
+    expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
+    expect(screen.getByText('Encrypted')).toBeInTheDocument()
+  })
 })

@@ -10,7 +10,11 @@
  * in-memory messages. This keeps parsing, thinking mode, web search, and
  * citation processing identical to the main chat view.
  */
-import { resolveModelSelection, type BaseModel } from '@/config/models'
+import {
+  getKnownModelDisplayName,
+  resolveModelSelection,
+  type BaseModel,
+} from '@/config/models'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { sendChatStream } from '@/services/inference/inference-client'
 import { logError } from '@/utils/error-handling'
@@ -229,9 +233,7 @@ export function useSidebarChat({
             },
             signal: controller.signal,
             modelDisplayName: model.name,
-            resolveModelDisplayName: (modelName) =>
-              models.find((candidate) => candidate.modelName === modelName)
-                ?.name,
+            resolveModelDisplayName: getKnownModelDisplayName,
           })
 
           if (assistantMessage && abortControllerRef.current === controller) {

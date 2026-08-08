@@ -72,8 +72,9 @@ vi.mock('@/components/project', () => ({
 }))
 
 vi.mock('@/config/models', () => ({
+  getKnownModelDisplayName: () => 'Test Model',
   resolveModelSelection: () => ({
-    model: { modelName: 'test-model' },
+    model: { modelName: 'test-model', name: 'Test Model' },
     autoCandidates: undefined,
   }),
 }))

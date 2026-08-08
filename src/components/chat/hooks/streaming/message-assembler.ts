@@ -30,12 +30,11 @@ export class MessageAssembler {
 
   constructor(private modelDisplayName?: string) {}
 
-  setModelDisplayName(modelDisplayName: string): boolean {
+  setModelDisplayName(modelDisplayName: string): void {
     if (!modelDisplayName || modelDisplayName === this.modelDisplayName) {
-      return false
+      return
     }
     this.modelDisplayName = modelDisplayName
-    return true
   }
 
   addAnnotation(url: string, title: string): void {
