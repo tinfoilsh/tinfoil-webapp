@@ -15,13 +15,14 @@ const model = {
 
 const Renderer = DefaultMessageRenderer.render
 
-const renderMessage = (message: Message) =>
+const renderMessage = (message: Message, hideActions = false) =>
   render(
     <Renderer
       message={message}
       messageIndex={0}
       model={model}
       isDarkMode={false}
+      hideActions={hideActions}
     />,
   )
 
@@ -74,5 +75,23 @@ describe('DefaultMessageRenderer metadata', () => {
 
     expect(screen.queryByText('Retired Model')).not.toBeInTheDocument()
     expect(screen.queryByText('Encrypted')).not.toBeInTheDocument()
+  })
+
+  it('shows response metadata when actions are hidden', () => {
+    renderMessage(
+      {
+        role: 'assistant',
+        content: 'Hello',
+        modelDisplayName: 'Retired Model',
+        timestamp: new Date('2026-08-07T00:00:01.000Z'),
+      },
+      true,
+    )
+
+    expect(screen.getByText('Retired Model')).toBeInTheDocument()
+    expect(screen.getByText('Encrypted')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Copy message' }),
+    ).not.toBeInTheDocument()
   })
 })

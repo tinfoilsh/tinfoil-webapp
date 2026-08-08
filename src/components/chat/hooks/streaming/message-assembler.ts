@@ -31,9 +31,7 @@ export class MessageAssembler {
   constructor(private modelDisplayName?: string) {}
 
   setModelDisplayName(modelDisplayName: string): void {
-    if (!modelDisplayName || modelDisplayName === this.modelDisplayName) {
-      return
-    }
+    if (!modelDisplayName) return
     this.modelDisplayName = modelDisplayName
   }
 

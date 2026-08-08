@@ -315,23 +315,21 @@ export function ChatListItem({
     onDragEnd?.()
   }
 
-  const createdAtInput =
-    chat.createdAt instanceof Date
-      ? chat.createdAt.toISOString()
-      : chat.createdAt
-  const { createdAt, timestamp, createdRelativeTime, updatedRelativeTime } =
-    useMemo(() => {
-      const created = toDate(createdAtInput)
-      const updated = toDate(chat.updatedAt) ?? created
-      return {
-        createdAt: created,
-        timestamp: updated,
-        createdRelativeTime: updated
-          ? formatRelativeTime(created ?? updated)
-          : null,
-        updatedRelativeTime: updated ? formatRelativeTime(updated) : null,
-      }
-    }, [chat.updatedAt, createdAtInput])
+  const createdAt = toDate(chat.createdAt)
+  const timestamp = toDate(chat.updatedAt) ?? createdAt
+  const relativeTimePhase = useMemo(
+    () => ({ isStreaming, referenceTime: Date.now() }),
+    [isStreaming],
+  )
+  const createdRelativeTime = timestamp
+    ? formatRelativeTime(
+        createdAt ?? timestamp,
+        relativeTimePhase.isStreaming
+          ? relativeTimePhase.referenceTime
+          : Date.now(),
+      )
+    : null
+  const updatedRelativeTime = timestamp ? formatRelativeTime(timestamp) : null
   // Skip the updated time when it would read the same as the created
   // time, so rows don't repeat "9h ago · Updated 9h ago". Without a
   // createdAt there is nothing to compare against and the timestamp

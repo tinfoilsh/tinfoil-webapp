@@ -237,7 +237,7 @@ const DefaultMessageComponent = ({
     }
   }, [message.timestamp])
   const showAssistantFooter =
-    !isUser && showMetadata && !hideActions && !(isStreaming && isLastMessage)
+    !isUser && showMetadata && !(isStreaming && isLastMessage)
 
   return (
     <div
@@ -715,7 +715,7 @@ const DefaultMessageComponent = ({
               showActions ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
           >
-            {message.content && (
+            {!hideActions && message.content && (
               <>
                 {message.webSearch?.sources &&
                   message.webSearch.sources.length > 0 &&

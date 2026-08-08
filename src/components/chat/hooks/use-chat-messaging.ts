@@ -209,7 +209,7 @@ export function useChatMessaging({
       .join('\u0000') ?? ''
 
   useEffect(() => {
-    if (!isSignedIn || !userId || !storeHistory || models.length === 0) return
+    if (!isSignedIn || !userId || !storeHistory) return
 
     const scan = (refreshPending = false) => {
       if (!canUseChatRecovery({ isSignedIn, userId, storeHistory })) return
@@ -235,13 +235,12 @@ export function useChatMessaging({
       unsubscribe()
       window.clearInterval(interval)
     }
-  }, [isSignedIn, models.length, storeHistory, userId])
+  }, [isSignedIn, storeHistory, userId])
 
   useEffect(() => {
     if (
       !recoveryScanKey ||
       !userId ||
-      models.length === 0 ||
       !canUseChatRecovery({
         isSignedIn,
         userId,
@@ -258,7 +257,6 @@ export function useChatMessaging({
     currentChatId,
     currentChatIsTemporary,
     isSignedIn,
-    models.length,
     recoveryScanKey,
     storeHistory,
     userId,
