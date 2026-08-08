@@ -696,7 +696,7 @@ const DefaultMessageComponent = ({
             ? isEditing
               ? 'justify-end pb-1'
               : '-mt-6 justify-end pb-1'
-            : 'mt-1 justify-start',
+            : 'mt-1 justify-end',
         )}
       >
         {!isUser && modelDisplayName && (

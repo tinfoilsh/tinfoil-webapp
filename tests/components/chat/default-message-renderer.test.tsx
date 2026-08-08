@@ -48,6 +48,9 @@ describe('DefaultMessageRenderer metadata', () => {
     expect(screen.getByText('Retired Model')).toBeInTheDocument()
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
     expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
+    expect(screen.getByText('Retired Model').parentElement).toHaveClass(
+      'justify-end',
+    )
   })
 
   it('does not attribute legacy responses to the current model', () => {
