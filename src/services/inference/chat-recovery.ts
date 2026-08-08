@@ -4,6 +4,7 @@ import {
   parseRichStreamingResponse,
 } from '@/components/chat/hooks/streaming'
 import type { Chat, Message } from '@/components/chat/types'
+import { getKnownModelDisplayName } from '@/config/models'
 import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { retryDeferredAlternativesFinalization } from '@/services/cloud/legacy-blob-migration'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -662,14 +663,17 @@ async function processEnvelope(
     return draftMessage
   }
   try {
+    const storedChat = await indexedDBStorage.getChat(chatId)
+    if (!isRecoveryCurrent()) return
+    const fallbackModelDisplayName = storedChat?.model
+      ? getKnownModelDisplayName(storedChat.model)
+      : undefined
     const recoveryDraft = getChatRecoveryDraft(chatId, envelope.turnId)
     let presentationCheckpoint =
       recoveryDraft?.sessionId === payload.sessionId
         ? recoveryDraft.message
         : undefined
     if (!presentationCheckpoint) {
-      const storedChat = await indexedDBStorage.getChat(chatId)
-      if (!isRecoveryCurrent()) return
       presentationCheckpoint = (storedChat?.messages ?? []).find(
         (message) =>
           message.role === 'assistant' && message.turnId === envelope.turnId,
@@ -716,6 +720,8 @@ async function processEnvelope(
         assistantMessage = await parseRichStreamingResponse(
           chatChunkStreamFromSSE(response),
           {
+            modelDisplayName: fallbackModelDisplayName,
+            resolveModelDisplayName: getKnownModelDisplayName,
             onUpdate: (message) => {
               if (!isRecoveryCurrent()) return
               if (!checkpointReached && attemptCheckpoint) {

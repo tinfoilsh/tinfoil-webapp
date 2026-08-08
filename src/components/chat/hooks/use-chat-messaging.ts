@@ -1060,6 +1060,9 @@ export function useChatMessaging({
           deferStreamCleanup: recoveryEnabled,
           signal: controller.signal,
           turnId: turnId ?? undefined,
+          modelDisplayName: model.name,
+          resolveModelDisplayName: (modelName) =>
+            models.find((candidate) => candidate.modelName === modelName)?.name,
           onInterrupted: (message) => {
             activeGeneration.latestAssistantMessage = message
           },

@@ -354,6 +354,7 @@ export function sameRecoveredResponse(
   const snapshot = (message: Message) =>
     JSON.stringify({
       content: message.content,
+      modelDisplayName: message.modelDisplayName ?? null,
       thoughts: message.thoughts ?? null,
       isThinking: message.isThinking ?? false,
       thinkingDuration: message.thinkingDuration ?? null,

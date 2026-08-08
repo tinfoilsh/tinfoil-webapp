@@ -16,6 +16,12 @@ describe('MessageAssembler', () => {
       expect(msg.role).toBe('assistant')
     })
 
+    it('stores the model display name on the message', () => {
+      const asm = new MessageAssembler('Kimi K2.6')
+
+      expect(asm.toMessage([]).modelDisplayName).toBe('Kimi K2.6')
+    })
+
     it('derives thoughts from thinking blocks', () => {
       const asm = new MessageAssembler()
       const timeline: TimelineBlock[] = [

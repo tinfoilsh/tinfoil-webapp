@@ -6,6 +6,7 @@ import {
   ArrowUturnLeftIcon,
   ChevronDownIcon,
   InformationCircleIcon,
+  LockClosedIcon,
   PencilSquareIcon,
 } from '@heroicons/react/24/outline'
 import React, { memo, useState, type JSX } from 'react'
@@ -28,6 +29,7 @@ import type { MessageRenderer, MessageRenderProps } from '../types'
 const DefaultMessageComponent = ({
   message,
   messageIndex,
+  model,
   isDarkMode,
   isLastMessage,
   isStreaming,
@@ -686,6 +688,24 @@ const DefaultMessageComponent = ({
             )}
           </>
         )}
+
+      <div
+        className={cn(
+          'flex w-full items-center gap-1.5 px-4 text-xs text-content-muted',
+          isUser ? '-mt-6 justify-end pb-1' : 'mt-1 justify-start',
+        )}
+      >
+        {!isUser && (
+          <>
+            <span>{message.modelDisplayName ?? model.name}</span>
+            <span aria-hidden="true">·</span>
+          </>
+        )}
+        <span className="flex items-center gap-1">
+          <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
+          Encrypted
+        </span>
+      </div>
 
       {/* Actions for assistant messages - hidden while streaming the last response */}
       {showAssistantActions && (

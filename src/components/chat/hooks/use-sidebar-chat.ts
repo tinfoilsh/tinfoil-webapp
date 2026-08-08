@@ -228,6 +228,10 @@ export function useSidebarChat({
                 setLoadingState(value)
             },
             signal: controller.signal,
+            modelDisplayName: model.name,
+            resolveModelDisplayName: (modelName) =>
+              models.find((candidate) => candidate.modelName === modelName)
+                ?.name,
           })
 
           if (assistantMessage && abortControllerRef.current === controller) {

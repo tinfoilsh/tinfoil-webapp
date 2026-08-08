@@ -264,6 +264,13 @@ describe('compression', () => {
       expect(parseShareableChatData(jsonString)).toBeNull()
     })
 
+    it('should return null for an invalid model display name', () => {
+      const data = createValidShareableChatData()
+      ;(data.messages[1] as Record<string, unknown>).modelDisplayName = 42
+
+      expect(parseShareableChatData(JSON.stringify(data))).toBeNull()
+    })
+
     it('should return null for missing message content', () => {
       const chatData = createValidShareableChatData()
       delete (chatData.messages[0] as any).content

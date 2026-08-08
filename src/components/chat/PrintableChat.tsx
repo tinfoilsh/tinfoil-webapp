@@ -5,6 +5,7 @@ import {
 } from '@/utils/latex-processing'
 import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { sanitizeUrl } from '@braintree/sanitize-url'
+import { LockClosedIcon } from '@heroicons/react/24/outline'
 import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
@@ -249,6 +250,13 @@ const PrintableMessage = memo(function PrintableMessage({
           {renderContent(message.content, isUser)}
         </div>
       )}
+      <div className="flex items-center gap-1 text-xs text-gray-500">
+        {!isUser && message.modelDisplayName
+          ? `${message.modelDisplayName} · `
+          : ''}
+        <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
+        Encrypted
+      </div>
     </div>
   )
 })

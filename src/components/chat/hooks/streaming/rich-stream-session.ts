@@ -12,28 +12,42 @@ interface RichStreamSessionOptions {
   trackThinkingDuration?: boolean
   onFirstEvent?: () => void
   onThinkingChange?: (isThinking: boolean) => void
+  modelDisplayName?: string
+  resolveModelDisplayName?: (modelName: string) => string | undefined
 }
 
 export class RichStreamSession {
   private readonly preprocessor = createContentPreprocessor()
   private readonly normalizer = createEventNormalizer()
   private readonly timeline = new TimelineBuilder()
-  private readonly assembler = new MessageAssembler()
+  private readonly assembler: MessageAssembler
   private readonly webSearchBlocks = new Map<string, string>()
   private firstEventSeen = false
   private changed = false
   private thinkingStartedAt: number | null = null
 
-  constructor(private readonly options: RichStreamSessionOptions = {}) {}
+  constructor(private readonly options: RichStreamSessionOptions = {}) {
+    this.assembler = new MessageAssembler(options.modelDisplayName)
+  }
 
   processChunk(chunk: ChatChunk, streamLogger?: StreamLogger): boolean {
+    const resolvedModelDisplayName =
+      typeof chunk.model === 'string'
+        ? this.options.resolveModelDisplayName
+          ? this.options.resolveModelDisplayName(chunk.model)
+          : chunk.model
+        : undefined
+    const modelChanged =
+      resolvedModelDisplayName !== undefined &&
+      this.assembler.setModelDisplayName(resolvedModelDisplayName)
     const events = this.normalizer.processChunk(
       chunk,
       this.preprocessor,
       streamLogger,
     )
     for (const event of events) this.applyEvent(event)
-    return events.length > 0
+    if (modelChanged) this.changed = true
+    return modelChanged || events.length > 0
   }
 
   snapshot(turnId?: string): Message {

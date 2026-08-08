@@ -104,6 +104,27 @@ describe('processStreamingResponse lifecycle', () => {
     expect(endStreamingMock).not.toHaveBeenCalled()
   })
 
+  it('stores the routed model display name in the response', async () => {
+    const stream = (async function* (): ChatChunkStream {
+      yield {
+        model: 'kimi-k2-6',
+        choices: [{ delta: { content: 'Hello' } }],
+      }
+      yield { choices: [{ delta: {}, finish_reason: 'stop' }] }
+    })()
+
+    const message = await processStreamingResponse(
+      stream,
+      createContext({
+        modelDisplayName: 'Auto · Smart',
+        resolveModelDisplayName: (modelName) =>
+          modelName === 'kimi-k2-6' ? 'Kimi K2.6' : undefined,
+      }),
+    )
+
+    expect(message?.modelDisplayName).toBe('Kimi K2.6')
+  })
+
   it('does not start tracking an already-aborted stream', async () => {
     const controller = new AbortController()
     controller.abort()

@@ -28,6 +28,16 @@ export class MessageAssembler {
   private searchReasoning = ''
   private timestamp = new Date()
 
+  constructor(private modelDisplayName?: string) {}
+
+  setModelDisplayName(modelDisplayName: string): boolean {
+    if (!modelDisplayName || modelDisplayName === this.modelDisplayName) {
+      return false
+    }
+    this.modelDisplayName = modelDisplayName
+    return true
+  }
+
   addAnnotation(url: string, title: string): void {
     this.sources.push({ title, url })
     this.annotations.push({
@@ -99,6 +109,7 @@ export class MessageAssembler {
       role: 'assistant',
       content,
       timestamp: this.timestamp,
+      modelDisplayName: this.modelDisplayName,
       thoughts: thoughts || undefined,
       isThinking,
       thinkingDuration,

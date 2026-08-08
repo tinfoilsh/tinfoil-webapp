@@ -217,6 +217,7 @@ export function ShareModal({
         messages: messages.map((m) => ({
           role: m.role,
           content: m.content,
+          modelDisplayName: m.modelDisplayName,
           documentContent:
             m.documentContent ??
             (m.attachments

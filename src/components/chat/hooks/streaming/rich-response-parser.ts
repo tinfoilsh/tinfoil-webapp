@@ -7,6 +7,8 @@ export interface RichResponseParserOptions {
   onUpdate?: (message: Message) => void
   onFirstEvent?: () => void
   onThinkingChange?: (isThinking: boolean) => void
+  modelDisplayName?: string
+  resolveModelDisplayName?: (modelName: string) => string | undefined
 }
 
 export async function parseRichStreamingResponse(

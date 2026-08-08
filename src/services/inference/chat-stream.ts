@@ -30,6 +30,7 @@ export interface ChatChunk {
     [key: string]: unknown
   }>
   id?: string
+  model?: string
   status?: string
   action?: { query?: string }
   reason?: string

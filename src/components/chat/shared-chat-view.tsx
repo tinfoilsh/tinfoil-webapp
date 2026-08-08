@@ -62,19 +62,18 @@ export function SharedChatView({
       chatData.messages.map((m) => ({
         role: m.role,
         content: m.content,
+        modelDisplayName: m.modelDisplayName,
         documentContent: m.documentContent,
         documents: m.documents,
         timestamp: new Date(m.timestamp),
         thoughts: m.thoughts,
         thinkingDuration: m.thinkingDuration,
         isError: m.isError,
-        attachments: m.attachments?.map(
-          (a): Attachment => ({
-            ...a,
-            // Use thumbnail as initial display image until full-res loads
-            base64: a.thumbnailBase64,
-          }),
-        ),
+        attachments: m.attachments?.map((a): Attachment => ({
+          ...a,
+          // Use thumbnail as initial display image until full-res loads
+          base64: a.thumbnailBase64,
+        })),
         timeline: m.timeline,
         annotations: m.annotations,
         webSearch: m.webSearch,
