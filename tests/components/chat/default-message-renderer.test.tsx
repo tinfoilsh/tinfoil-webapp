@@ -35,6 +35,9 @@ describe('DefaultMessageRenderer metadata', () => {
 
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
     expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Encrypted').parentElement?.parentElement,
+    ).toHaveClass('rounded-t-site-tab')
   })
 
   it('shows the persisted model name and encrypted under responses', () => {
@@ -48,9 +51,9 @@ describe('DefaultMessageRenderer metadata', () => {
     expect(screen.getByText('Retired Model')).toBeInTheDocument()
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
     expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
-    expect(screen.getByText('Retired Model').parentElement).toHaveClass(
-      'justify-end',
-    )
+    expect(
+      screen.getByText('Retired Model').parentElement?.parentElement,
+    ).toContainElement(screen.getByRole('button', { name: 'Copy message' }))
   })
 
   it('does not attribute legacy responses to the current model', () => {
@@ -62,5 +65,17 @@ describe('DefaultMessageRenderer metadata', () => {
 
     expect(screen.queryByText('Current Model')).not.toBeInTheDocument()
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
+  })
+
+  it('does not show metadata for an empty cancelled response', () => {
+    renderMessage({
+      role: 'assistant',
+      content: '',
+      modelDisplayName: 'Retired Model',
+      timestamp: new Date('2026-08-07T00:00:01.000Z'),
+    })
+
+    expect(screen.queryByText('Retired Model')).not.toBeInTheDocument()
+    expect(screen.queryByText('Encrypted')).not.toBeInTheDocument()
   })
 })

@@ -14,6 +14,7 @@ import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
 import { RxCopy } from 'react-icons/rx'
 import { hasMessageAttachments } from '../../attachment-helpers'
+import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
@@ -25,6 +26,25 @@ import { ThoughtProcess } from '../components/ThoughtProcess'
 import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
+
+const MessageMetadata = ({
+  modelDisplayName,
+}: {
+  modelDisplayName?: string
+}) => (
+  <div className="flex shrink-0 items-center gap-1.5 text-xs text-content-muted">
+    {modelDisplayName && (
+      <>
+        <span>{modelDisplayName}</span>
+        <span aria-hidden="true">·</span>
+      </>
+    )}
+    <span className="flex items-center gap-1">
+      <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
+      Encrypted
+    </span>
+  </div>
+)
 
 const DefaultMessageComponent = ({
   message,
@@ -51,6 +71,7 @@ const DefaultMessageComponent = ({
   const isLimitError =
     message.isRateLimitError || message.isHourlyRateLimitError
   const modelDisplayName = message.modelDisplayName?.trim()
+  const showMetadata = isUser || hasVisibleAssistantMessage(message)
 
   const citationUrlTitles = React.useMemo(() => {
     if (!message.annotations || message.annotations.length === 0)
@@ -215,11 +236,8 @@ const DefaultMessageComponent = ({
       }),
     }
   }, [message.timestamp])
-  const showAssistantActions =
-    !isUser &&
-    message.content &&
-    !hideActions &&
-    !(isStreaming && isLastMessage)
+  const showAssistantFooter =
+    !isUser && showMetadata && !hideActions && !(isStreaming && isLastMessage)
 
   return (
     <div
@@ -437,17 +455,22 @@ const DefaultMessageComponent = ({
           <>
             {!(isUser && isEditing) && (
               <div
-                className={`w-full ${isUser ? 'flex justify-end px-4 pb-8 pt-2' : 'px-4 py-2'}`}
+                className={`w-full ${isUser ? 'flex justify-end px-4 pb-8 pt-8' : 'px-4 py-2'}`}
               >
                 <div
                   className={cn(
-                    isUser ? 'max-w-[95%]' : 'w-full',
+                    isUser ? 'relative max-w-[95%]' : 'w-full',
                     isUser &&
                       'rounded-site-lg bg-surface-message-user/90 px-4 py-2 shadow-sm backdrop-blur-sm',
                     isLimitError &&
                       'rounded-lg border-2 border-brand-accent-dark/30 bg-brand-accent-dark/5 px-4 py-3',
                   )}
                 >
+                  {isUser && (
+                    <div className="absolute right-3 top-px -translate-y-full rounded-t-site-tab bg-surface-message-user/90 px-2.5 py-1 backdrop-blur-sm">
+                      <MessageMetadata />
+                    </div>
+                  )}
                   {message.isHourlyRateLimitError && (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center gap-2">
@@ -689,58 +712,47 @@ const DefaultMessageComponent = ({
           </>
         )}
 
-      <div
-        className={cn(
-          'flex w-full items-center gap-1.5 px-4 text-xs text-content-muted',
-          isUser
-            ? isEditing
-              ? 'justify-end pb-1'
-              : '-mt-6 justify-end pb-1'
-            : 'mt-1 justify-end',
-        )}
-      >
-        {!isUser && modelDisplayName && (
-          <>
-            <span>{modelDisplayName}</span>
-            <span aria-hidden="true">·</span>
-          </>
-        )}
-        <span className="flex items-center gap-1">
-          <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
-          Encrypted
-        </span>
-      </div>
-
       {/* Actions for assistant messages - hidden while streaming the last response */}
-      {showAssistantActions && (
-        <div
-          className={`mt-4 flex items-center justify-between gap-3 px-4 transition-opacity duration-500 ease-in-out ${
-            showActions ? 'opacity-100' : 'pointer-events-none opacity-0'
-          }`}
-        >
-          <div className="flex items-center gap-1">
-            {message.webSearch?.sources &&
-              message.webSearch.sources.length > 0 &&
-              !(isStreaming && isLastMessage) && (
-                <SourcesButton sources={message.webSearch.sources} />
-              )}
-            <MessageActions content={message.content} isDarkMode={isDarkMode} />
-            {/* Regenerate button - only on last assistant message */}
-            {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
-              <div className="group/regen relative">
-                <button
-                  onClick={() => onRegenerateMessage(messageIndex - 1)}
-                  aria-label="Regenerate response"
-                  className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
-                >
-                  <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-                <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
-                  Regenerate
-                </span>
-              </div>
+      {showAssistantFooter && (
+        <div className="mt-4 flex w-full items-center justify-between gap-3 px-4">
+          <div
+            className={`flex items-center gap-1 transition-opacity duration-500 ease-in-out ${
+              showActions ? 'opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+          >
+            {message.content && (
+              <>
+                {message.webSearch?.sources &&
+                  message.webSearch.sources.length > 0 &&
+                  !(isStreaming && isLastMessage) && (
+                    <SourcesButton sources={message.webSearch.sources} />
+                  )}
+                <MessageActions
+                  content={message.content}
+                  isDarkMode={isDarkMode}
+                />
+                {/* Regenerate button - only on last assistant message */}
+                {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
+                  <div className="group/regen relative">
+                    <button
+                      onClick={() => onRegenerateMessage(messageIndex - 1)}
+                      aria-label="Regenerate response"
+                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
+                    >
+                      <ArrowPathIcon
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
+                    </button>
+                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
+                      Regenerate
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </div>
+          <MessageMetadata modelDisplayName={modelDisplayName} />
         </div>
       )}
     </div>
