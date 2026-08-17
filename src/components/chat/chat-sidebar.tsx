@@ -39,6 +39,7 @@ import {
 } from '@heroicons/react/24/outline'
 import {
   TfChat2,
+  TfFloppyDisk,
   TfFolder,
   TfLockLocked,
   TfMicrophone,
@@ -50,7 +51,6 @@ import {
 } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/router'
-import { CiFloppyDisk } from 'react-icons/ci'
 import { FaLock } from 'react-icons/fa6'
 import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
 import { IoChatbubblesOutline } from 'react-icons/io5'
@@ -2106,7 +2106,7 @@ export function ChatSidebar({
                               STORAGE_TAB_DROP_TARGET_CLASS_NAME,
                           )}
                         >
-                          <CiFloppyDisk className="h-3.5 w-3.5" />
+                          <TfFloppyDisk className="h-3.5 w-3.5" />
                           Local
                         </button>
                       </div>
