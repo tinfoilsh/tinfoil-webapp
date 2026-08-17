@@ -5,11 +5,7 @@ import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
-import {
-  Squares2X2Icon,
-  StopIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
+import { StopIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import {
   TfAttachment,
   TfFolder,
@@ -19,6 +15,7 @@ import {
   TfPlus,
   TfQuote,
   TfTerminal,
+  TfTools,
 } from '@tinfoilsh/tinfoil-icons'
 import type { FormEvent, RefObject } from 'react'
 import {
@@ -1309,7 +1306,7 @@ export function ChatInput({
                             }}
                             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                           >
-                            <Squares2X2Icon className="h-5 w-5 text-content-secondary" />
+                            <TfTools className="h-5 w-5 text-content-secondary" />
                             Change system prompt
                           </button>
                         )}

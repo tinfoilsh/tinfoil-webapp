@@ -54,6 +54,7 @@ import {
   NoSymbolIcon,
 } from '@heroicons/react/24/outline'
 import {
+  TfDocument,
   TfFolder,
   TfSetting,
   TfTrash,

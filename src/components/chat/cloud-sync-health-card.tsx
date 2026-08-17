@@ -5,11 +5,8 @@ import type {
   SyncActionReason,
   SyncHealthSnapshot,
 } from '@/services/cloud/sync-health'
-import {
-  CheckCircleIcon,
-  ExclamationCircleIcon,
-} from '@heroicons/react/24/outline'
-import { TfWarning } from '@tinfoilsh/tinfoil-icons'
+import { ExclamationCircleIcon } from '@heroicons/react/24/outline'
+import { TfBoxCheckmark, TfWarning } from '@tinfoilsh/tinfoil-icons'
 import { cn } from '../ui/utils'
 import { formatRelativeTime } from './chat-list-utils'
 
@@ -128,7 +125,7 @@ export function CloudSyncHealthCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-2">
           {status.tone === 'ok' ? (
-            <CheckCircleIcon
+            <TfBoxCheckmark
               className="mt-0.5 h-4 w-4 shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
               aria-hidden="true"
             />
