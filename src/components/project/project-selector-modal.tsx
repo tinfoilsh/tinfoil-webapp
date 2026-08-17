@@ -3,8 +3,8 @@
 import { cn } from '@/components/ui/utils'
 import { useProjects } from '@/hooks/use-projects'
 import type { Project } from '@/types/project'
-import { FolderPlusIcon, XMarkIcon } from '@heroicons/react/24/outline'
-import { TfFolder } from '@tinfoilsh/tinfoil-icons'
+import { XMarkIcon } from '@heroicons/react/24/outline'
+import { TfFolder, TfFolderPlus } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
 import { useProject } from './project-context'
@@ -141,7 +141,7 @@ export function ProjectSelectorModal({
                           : 'hover:bg-surface-sidebar',
                       )}
                     >
-                      <FolderPlusIcon className="h-6 w-6" />
+                      <TfFolderPlus className="h-6 w-6" />
                       <span className="font-aeonik font-medium">
                         New Project
                       </span>
