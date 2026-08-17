@@ -130,6 +130,7 @@ import {
   TfCloudSync,
   TfComputer,
   TfDownload,
+  TfKey,
   TfLightbulb,
   TfMoon,
   TfNumber1,
@@ -147,7 +148,6 @@ import Link from 'next/link'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { BsQrCode } from 'react-icons/bs'
 import { PiSignIn, PiSpinner } from 'react-icons/pi'
-import { RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
 import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
@@ -368,7 +368,7 @@ function StepNumber({ step }: { step: keyof typeof STEP_ICONS }) {
   return (
     <>
       <Icon
-        className="h-6 w-6 shrink-0 !text-content-secondary"
+        className="h-3 w-3 shrink-0 !text-content-secondary"
         aria-hidden="true"
       />
       <span className="sr-only">Step {step}:</span>
@@ -3524,7 +3524,7 @@ ${encryptionKey.replace('key_', '')}
                     >
                       <div className="flex w-full items-center justify-between p-4">
                         <div className="flex items-center gap-2">
-                          <RiShieldKeyholeFill className="h-4 w-4 text-content-muted" />
+                          <TfKey className="h-4 w-4 text-content-muted" />
                           <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                             Your Personal Encryption Key
                           </h3>
