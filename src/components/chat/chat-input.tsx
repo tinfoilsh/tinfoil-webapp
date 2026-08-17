@@ -14,7 +14,10 @@ import {
   TfAttachment,
   TfFolder,
   TfGlobe,
+  TfGlobeX,
   TfMicrophone,
+  TfPlus,
+  TfQuote,
   TfTerminal,
 } from '@tinfoilsh/tinfoil-icons'
 import type { FormEvent, RefObject } from 'react'
@@ -25,7 +28,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { PiGlobeX, PiPlusLight, PiQuotes, PiSpinner } from 'react-icons/pi'
+import { PiSpinner } from 'react-icons/pi'
 import {
   ContextUsageIndicator,
   type ContextUsage,
@@ -807,7 +810,7 @@ export function ChatInput({
 
           {quote && (
             <div className="mb-3 mt-1 flex items-start gap-2 rounded-2xl border border-border-subtle bg-surface-chat-background px-3 py-2">
-              <PiQuotes className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary" />
+              <TfQuote className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary" />
               <p className="line-clamp-3 flex-1 whitespace-pre-wrap text-sm text-content-secondary">
                 {quote.length > QUOTE_PREVIEW_MAX_LENGTH
                   ? `${quote.slice(0, QUOTE_PREVIEW_MAX_LENGTH).trimEnd()}…`
@@ -1266,7 +1269,7 @@ export function ChatInput({
                     aria-haspopup="menu"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                   >
-                    <PiPlusLight className="h-5 w-5" />
+                    <TfPlus className="h-5 w-5" />
                   </button>
                   {isInputMenuOpen && (
                     <>
@@ -1330,7 +1333,7 @@ export function ChatInput({
                                 aria-hidden="true"
                               />
                             ) : (
-                              <PiGlobeX
+                              <TfGlobeX
                                 className="h-5 w-5 text-content-secondary"
                                 aria-hidden="true"
                               />

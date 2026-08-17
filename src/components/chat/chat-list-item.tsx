@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { FlagIcon } from '@heroicons/react/24/solid'
 import {
+  TfFloppyDisk,
   TfFolder,
   TfLockLocked,
   TfTrash,
@@ -19,7 +20,6 @@ import {
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CiFloppyDisk } from 'react-icons/ci'
 import { PiPushPin, PiPushPinFill, PiSpinner } from 'react-icons/pi'
 import { RedactedText } from '../ui/redacted-text'
 import { cn } from '../ui/utils'
@@ -770,7 +770,7 @@ export function ChatListItem({
                                 onConvertToLocal()
                               }}
                             >
-                              <CiFloppyDisk
+                              <TfFloppyDisk
                                 className="h-4 w-4"
                                 aria-hidden="true"
                               />

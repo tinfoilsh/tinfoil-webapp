@@ -129,6 +129,7 @@ import {
   TfChat2,
   TfCloudSync,
   TfComputer,
+  TfDownload,
   TfLightbulb,
   TfMoon,
   TfNumber1,
@@ -136,6 +137,7 @@ import {
   TfNumber3,
   TfNumber4,
   TfPerson,
+  TfPersonKey,
   TfShieldCheck,
   TfSunLightMode,
   TfTools,
@@ -143,9 +145,7 @@ import {
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { AiOutlineExport } from 'react-icons/ai'
 import { BsQrCode } from 'react-icons/bs'
-import { GoPasskeyFill } from 'react-icons/go'
 import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
@@ -506,7 +506,7 @@ function PasskeyBundleInventory({
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <GoPasskeyFill className="h-4 w-4 shrink-0 text-content-secondary" />
+                  <TfPersonKey className="h-4 w-4 shrink-0 text-content-secondary" />
                   <span className="truncate text-sm font-medium text-content-primary">
                     {isCurrentPlatform ? 'This platform' : 'Other platform'}
                   </span>
@@ -3729,7 +3729,7 @@ ${encryptionKey.replace('key_', '')}
                             )}
                           >
                             <div className="flex items-start gap-2">
-                              <GoPasskeyFill className="mt-0.5 h-4 w-4 shrink-0 text-tinfoil-accent-blue dark:text-blue-400" />
+                              <TfPersonKey className="mt-0.5 h-4 w-4 shrink-0 !text-tinfoil-accent-blue dark:!text-blue-400" />
                               <div>
                                 <span className="text-sm font-medium text-content-primary">
                                   Sync and backup using Passkeys
@@ -3848,7 +3848,7 @@ ${encryptionKey.replace('key_', '')}
                               )}
                             >
                               <div className="flex gap-2">
-                                <GoPasskeyFill className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary" />
+                                <TfPersonKey className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary" />
                                 <div>
                                   <span className="text-sm font-medium leading-tight text-content-primary">
                                     {isSettingUpPasskey
@@ -3902,7 +3902,7 @@ ${encryptionKey.replace('key_', '')}
                               )}
                             >
                               <div className="flex gap-2">
-                                <GoPasskeyFill className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary" />
+                                <TfPersonKey className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary" />
                                 <div>
                                   <span className="text-sm font-medium leading-tight text-content-primary">
                                     {isSettingUpPasskey
@@ -4569,7 +4569,7 @@ ${encryptionKey.replace('key_', '')}
                         exportType === 'chats' ? (
                           <ArrowPathIcon className="h-4 w-4 animate-spin" />
                         ) : (
-                          <AiOutlineExport className="h-4 w-4" />
+                          <TfDownload className="h-4 w-4" />
                         )}
                         {isPreparingExport && exportType === 'chats'
                           ? 'Please wait while we prepare the export...'
@@ -4615,7 +4615,7 @@ ${encryptionKey.replace('key_', '')}
                           {isExporting && exportType === 'projects' ? (
                             <ArrowPathIcon className="h-4 w-4 animate-spin" />
                           ) : (
-                            <AiOutlineExport className="h-4 w-4" />
+                            <TfDownload className="h-4 w-4" />
                           )}
                           {isExporting && exportType === 'projects'
                             ? 'Exporting...'
