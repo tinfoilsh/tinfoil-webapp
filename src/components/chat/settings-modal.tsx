@@ -368,7 +368,7 @@ function StepNumber({ step }: { step: keyof typeof STEP_ICONS }) {
   return (
     <>
       <Icon
-        className="h-3 w-3 shrink-0 !text-content-secondary"
+        className="mt-1 h-3 w-3 shrink-0 !text-content-secondary"
         aria-hidden="true"
       />
       <span className="sr-only">Step {step}:</span>
