@@ -17,7 +17,7 @@
  * dropped from the local model only after the client-side migration
  * loop has re-sealed every legacy row under the current primary CEK.
  *
- * The encrypt/decrypt primitives (`encryptKeyBundle`,
+ * The legacy decoder primitives (`encryptKeyBundle`,
  * `decryptKeyBundle`) are pure client-side AES-256-GCM. Optimistic
  * concurrency is enforced by the enclave: register-key uses
  * `if_match='*'` for first-time writes and returns
@@ -29,14 +29,15 @@
 
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
+import {
+  decodeWrappedKeyRecord,
+  encodeWrappedKeyRecord,
+  type PRFResult,
+  type WrappedKey,
+} from '@tinfoilsh/passkey-kit'
 import { requirePrimaryKeyB64 } from '../cloud/cek-encoding'
 import type { CloudKeyAuthorizationMode } from '../cloud/cloud-key-authorization'
 import { encryptionService } from '../encryption/encryption-service'
-import {
-  deriveKeyIdHex,
-  unwrapCekFromBundle,
-  wrapCekForCredential,
-} from '../sync-enclave/key-bundle'
 import {
   bytesToBase64,
   addBundle as enclaveAddBundle,
@@ -47,10 +48,29 @@ import {
   newIdempotencyKey,
 } from '../sync-enclave/sync-api'
 import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
+import { deriveTinfoilKeyIdHex } from '../sync-enclave/tinfoil-key-id'
 import { IF_MATCH_SENTINELS, WIRE_CODES } from '../sync-enclave/wire-contract'
+import {
+  evaluateTinfoilCredential,
+  getCachedCredentialId,
+  getCachedPrfOutputForLegacyBundle,
+  passkeyKeyManager,
+  TINFOIL_PASSKEY_PROFILE,
+  tinfoilWrappedKeyFromEnclaveBundle,
+} from './kit'
 import { fetchLegacyPasskeyCredentials } from './legacy-passkey-credentials'
 
 const AES_GCM_IV_BYTES = 12
+const AES_GCM_TAG_BYTES = 16
+
+/** AES-GCM ciphertext bytes for one wrapped 32-byte key and its 16-byte tag. */
+export const TINFOIL_RAW_WRAPPED_KEY_CIPHERTEXT_BYTES = 48
+
+/** Version of the app-owned multi-key envelope stored in encrypted_keys. */
+export const TINFOIL_GENERIC_KEY_ENVELOPE_VERSION = 1
+
+const TINFOIL_GENERIC_KEY_ENVELOPE_MAX_ALTERNATIVES = 64
+const TINFOIL_GENERIC_KEY_ENVELOPE_MAX_BYTES = 128 * 1024
 
 export interface KeyBundle {
   primary: string
@@ -63,6 +83,18 @@ export interface KeyBundle {
    */
   alternatives: string[]
   authorizationMode?: CloudKeyAuthorizationMode
+}
+
+export interface TinfoilWrappedKeyBundle {
+  primary: WrappedKey
+  alternatives: WrappedKey[]
+}
+
+interface TinfoilGenericKeyEnvelope {
+  version: typeof TINFOIL_GENERIC_KEY_ENVELOPE_VERSION
+  authorizationMode: CloudKeyAuthorizationMode
+  primary: string
+  alternatives: string[]
 }
 
 export interface PasskeyCredentialEntry {
@@ -100,10 +132,7 @@ export type PasskeyCredentialState = 'exists' | 'empty' | 'unknown'
  *  - `unknown`: enclave was unreachable; caller should leave state alone.
  */
 export type PasskeyDeviceState =
-  | 'this-device'
-  | 'other-device-only'
-  | 'empty'
-  | 'unknown'
+  'this-device' | 'other-device-only' | 'empty' | 'unknown'
 
 export interface StoreEncryptedKeysOptions {
   expectedSyncVersion?: number | null
@@ -176,6 +205,148 @@ export async function decryptKeyBundle(
     alternatives: parsed.alternatives,
     authorizationMode: parsed.authorizationMode,
   }
+}
+
+function validateKeyBundle(keys: KeyBundle): {
+  primary: Uint8Array
+  alternatives: Uint8Array[]
+} {
+  if (
+    keys.alternatives.length > TINFOIL_GENERIC_KEY_ENVELOPE_MAX_ALTERNATIVES
+  ) {
+    throw new Error('Passkey key bundle has too many alternatives')
+  }
+  const primary = encryptionService.getAlternativeKeyBytes(keys.primary)
+  if (!primary) throw new Error('Passkey primary key is invalid')
+  const seen = new Set([keys.primary])
+  const alternatives = keys.alternatives.map((alternative) => {
+    if (seen.has(alternative)) {
+      throw new Error('Passkey key bundle contains duplicate alternatives')
+    }
+    seen.add(alternative)
+    const bytes = encryptionService.getAlternativeKeyBytes(alternative)
+    if (!bytes) throw new Error('Passkey alternative key is invalid')
+    return bytes
+  })
+  return { primary, alternatives }
+}
+
+function decodeCanonicalWrappedKeyRecord(record: string): WrappedKey {
+  const wrappedKey = decodeWrappedKeyRecord(record)
+  if (encodeWrappedKeyRecord(wrappedKey) !== record) {
+    throw new Error('Wrapped key record is not canonical')
+  }
+  return wrappedKey
+}
+
+function encodeGenericKeyEnvelope(
+  wrappedKeys: TinfoilWrappedKeyBundle,
+  keys: KeyBundle,
+): Uint8Array {
+  validateKeyBundle(keys)
+  if (wrappedKeys.alternatives.length !== keys.alternatives.length) {
+    throw new Error('Wrapped alternative key count does not match key bundle')
+  }
+  const credentialId = wrappedKeys.primary.credentialId
+  if (
+    wrappedKeys.alternatives.some(
+      (wrappedKey) => wrappedKey.credentialId !== credentialId,
+    )
+  ) {
+    throw new Error('Wrapped keys must use one credential')
+  }
+  const envelope: TinfoilGenericKeyEnvelope = {
+    version: TINFOIL_GENERIC_KEY_ENVELOPE_VERSION,
+    authorizationMode:
+      keys.authorizationMode === 'explicit_start_fresh'
+        ? 'explicit_start_fresh'
+        : 'validated',
+    primary: encodeWrappedKeyRecord(wrappedKeys.primary),
+    alternatives: wrappedKeys.alternatives.map(encodeWrappedKeyRecord),
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(envelope))
+  if (bytes.length > TINFOIL_GENERIC_KEY_ENVELOPE_MAX_BYTES) {
+    throw new Error('Passkey key envelope is too large')
+  }
+  return bytes
+}
+
+export function tinfoilWrappedKeyBundleToEnclave(
+  wrappedKeys: TinfoilWrappedKeyBundle,
+  keys: KeyBundle,
+): {
+  credentialId: string
+  kekIvHex: string
+  encryptedKeysHex: string
+} {
+  return {
+    credentialId: wrappedKeys.primary.credentialId,
+    kekIvHex: wrappedKeys.primary.kekIvHex,
+    encryptedKeysHex: bytesToHex(encodeGenericKeyEnvelope(wrappedKeys, keys)),
+  }
+}
+
+function parseGenericKeyEnvelope(
+  bytes: Uint8Array,
+): TinfoilGenericKeyEnvelope | null {
+  if (bytes.length > TINFOIL_GENERIC_KEY_ENVELOPE_MAX_BYTES) return null
+  let text: string
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return null
+  }
+  if (!text.trimStart().startsWith('{')) return null
+  const parsed = JSON.parse(text) as Record<string, unknown>
+  const fields = Object.keys(parsed).sort()
+  const expectedFields = [
+    'alternatives',
+    'authorizationMode',
+    'primary',
+    'version',
+  ]
+  if (
+    fields.length !== expectedFields.length ||
+    fields.some((field, index) => field !== expectedFields[index]) ||
+    parsed.version !== TINFOIL_GENERIC_KEY_ENVELOPE_VERSION ||
+    (parsed.authorizationMode !== 'validated' &&
+      parsed.authorizationMode !== 'explicit_start_fresh') ||
+    typeof parsed.primary !== 'string' ||
+    !Array.isArray(parsed.alternatives) ||
+    parsed.alternatives.length >
+      TINFOIL_GENERIC_KEY_ENVELOPE_MAX_ALTERNATIVES ||
+    parsed.alternatives.some((record) => typeof record !== 'string')
+  ) {
+    throw new Error('Invalid Tinfoil generic key envelope')
+  }
+  decodeCanonicalWrappedKeyRecord(parsed.primary)
+  for (const record of parsed.alternatives as string[]) {
+    decodeCanonicalWrappedKeyRecord(record)
+  }
+  return parsed as unknown as TinfoilGenericKeyEnvelope
+}
+
+export async function wrapTinfoilKeyBundle(
+  primary: WrappedKey,
+  keys: KeyBundle,
+  prfResult?: PRFResult,
+): Promise<TinfoilWrappedKeyBundle | null> {
+  const keyBytes = validateKeyBundle(keys)
+  const alternatives: WrappedKey[] = []
+  for (const alternative of keyBytes.alternatives) {
+    const wrappedKey = prfResult
+      ? await passkeyKeyManager.wrapKeyWithPRFResult({
+          keyMaterial: alternative,
+          credentialId: primary.credentialId,
+          prfResult,
+        })
+      : await passkeyKeyManager.rewrapKeyFromCache({ key: alternative })
+    if (!wrappedKey || wrappedKey.credentialId !== primary.credentialId) {
+      return null
+    }
+    alternatives.push(wrappedKey)
+  }
+  return { primary, alternatives }
 }
 
 // --- Wire reshape ----------------------------------------------------------
@@ -368,8 +539,8 @@ export async function getPasskeyDeviceState(
 }
 
 /**
- * Wrap the user's KeyBundle under a passkey-derived KEK and ship the
- * bundle to the enclave. Behavior mirrors the legacy contract the
+ * Persist the user's passkey-wrapped generic key envelope in the enclave.
+ * Behavior mirrors the legacy contract the
  * hook expects:
  *
  *  - No remote key yet → register-key with initial_bundle.
@@ -385,26 +556,16 @@ export async function getPasskeyDeviceState(
  * enclave reports for the freshly written bundle.
  */
 export async function storeEncryptedKeys(
-  credentialId: string,
-  kek: CryptoKey,
+  wrappedKeys: TinfoilWrappedKeyBundle,
   keys: KeyBundle,
   options: StoreEncryptedKeysOptions = {},
 ): Promise<{ syncVersion: number; bundleVersion: number } | null> {
   try {
+    const credentialId = wrappedKeys.primary.credentialId
+    const primaryBytes = validateKeyBundle(keys).primary
+    const enclaveBundle = tinfoilWrappedKeyBundleToEnclave(wrappedKeys, keys)
+    const localKeyId = await deriveTinfoilKeyIdHex(primaryBytes)
     const current = await enclaveKeyCurrent()
-    const primaryBytes = encryptionService.getAlternativeKeyBytes(keys.primary)
-    if (!primaryBytes) {
-      throw new Error('passkey-key-storage: primary key is not decodable')
-    }
-    const localKeyId = await deriveKeyIdHex(primaryBytes)
-    // Bundle the raw CEK bytes — same wire shape iOS and every other
-    // v2 client uses. The legacy `{primary, alternatives, ...}` JSON
-    // envelope is no longer written by anyone.
-    const wrapped = await wrapCekForCredential({
-      credentialId,
-      kek,
-      cek: primaryBytes,
-    })
 
     if (!current.key_id) {
       try {
@@ -427,8 +588,8 @@ export async function storeEncryptedKeys(
           idempotencyKey: newIdempotencyKey(),
           initialBundle: {
             credentialId,
-            kekIvHex: wrapped.kekIvHex,
-            encryptedKeysHex: wrapped.wrappedKeyHex,
+            kekIvHex: enclaveBundle.kekIvHex,
+            encryptedKeysHex: enclaveBundle.encryptedKeysHex,
           },
         })
       } catch (err) {
@@ -468,8 +629,8 @@ export async function storeEncryptedKeys(
           idempotencyKey: newIdempotencyKey(),
           initialBundle: {
             credentialId,
-            kekIvHex: wrapped.kekIvHex,
-            encryptedKeysHex: wrapped.wrappedKeyHex,
+            kekIvHex: enclaveBundle.kekIvHex,
+            encryptedKeysHex: enclaveBundle.encryptedKeysHex,
           },
         })
         const created = await enclaveKeyCurrent()
@@ -495,8 +656,8 @@ export async function storeEncryptedKeys(
       keyId: current.key_id,
       keyB64: bytesToBase64(primaryBytes),
       credentialId,
-      kekIvHex: wrapped.kekIvHex,
-      encryptedKeysHex: wrapped.wrappedKeyHex,
+      kekIvHex: enclaveBundle.kekIvHex,
+      encryptedKeysHex: enclaveBundle.encryptedKeysHex,
       idempotencyKey: newIdempotencyKey(),
     })
 
@@ -522,139 +683,337 @@ export async function storeEncryptedKeys(
   }
 }
 
-export async function retrieveEncryptedKeys(
-  credentialId: string,
-  kek: CryptoKey,
-): Promise<KeyBundle | null> {
-  try {
-    const lookup = await tryRetrieveFromEnclave(credentialId, kek)
-    if (lookup.bundle) return lookup.bundle
-    if (!lookup.currentKeyId) {
-      // No registered key at all — safe to revive any legacy bundle for
-      // this credential, since there is no current key_id to mismatch.
-      return await tryRetrieveFromLegacy(credentialId, kek)
+export interface RecoveredPasskeyKeyBundle {
+  keyBundle: KeyBundle
+  credentialId: string
+  syncVersion: number | null
+  bundleVersion: number
+  source?: 'enclave' | 'legacy'
+  prfResult?: PRFResult
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
+    '',
+  )
+}
+
+type RecoveryCandidate =
+  | {
+      kind: 'envelope'
+      entry: PasskeyCredentialEntry
+      envelope: TinfoilGenericKeyEnvelope
+      wrappedKeys: TinfoilWrappedKeyBundle
     }
-    // A key is registered (even an orphan key with no bundles of its
-    // own). Revive the legacy bundle only when it wraps the SAME current
-    // CEK — i.e. a v1 user with the same passkey on another platform that
-    // hasn't been enrolled yet. A legacy bundle deriving a different
-    // key_id is a rotated-away CEK (e.g. left behind by a start_fresh)
-    // and must never be adopted as primary.
-    return await tryRetrieveFromLegacyIfCurrent(
-      credentialId,
-      kek,
-      lookup.currentKeyId,
-    )
-  } catch (err) {
-    logError('Failed to retrieve encrypted keys', err, {
-      component: 'PasskeyKeyStorage',
-      action: 'retrieveEncryptedKeys',
-    })
+  | {
+      kind: 'raw'
+      entry: PasskeyCredentialEntry
+      wrappedKey: WrappedKey
+    }
+  | { kind: 'legacy'; entry: PasskeyCredentialEntry }
+
+function parseRecoveryCandidate(
+  entry: PasskeyCredentialEntry,
+): RecoveryCandidate | null {
+  try {
+    const iv = base64ToUint8Array(entry.iv)
+    const encrypted = base64ToUint8Array(entry.encrypted_keys)
+    if (iv.length !== AES_GCM_IV_BYTES) return null
+
+    const envelope = parseGenericKeyEnvelope(encrypted)
+    if (envelope) {
+      const primary = decodeCanonicalWrappedKeyRecord(envelope.primary)
+      const alternatives = envelope.alternatives.map(
+        decodeCanonicalWrappedKeyRecord,
+      )
+      const records = [primary, ...alternatives]
+      if (
+        records.some((wrappedKey) => wrappedKey.credentialId !== entry.id) ||
+        new Set(records.map((wrappedKey) => wrappedKey.kekIvHex)).size !==
+          records.length ||
+        new Set(envelope.alternatives).size !== envelope.alternatives.length ||
+        envelope.alternatives.includes(envelope.primary)
+      ) {
+        return null
+      }
+      return {
+        kind: 'envelope',
+        entry,
+        envelope,
+        wrappedKeys: { primary, alternatives },
+      }
+    }
+
+    if (encrypted.length === TINFOIL_RAW_WRAPPED_KEY_CIPHERTEXT_BYTES) {
+      return {
+        kind: 'raw',
+        entry,
+        wrappedKey: tinfoilWrappedKeyFromEnclaveBundle({
+          credentialId: entry.id,
+          kekIvHex: bytesToHex(iv),
+          wrappedKeyHex: bytesToHex(encrypted),
+        }),
+      }
+    }
+    if (encrypted.length >= AES_GCM_TAG_BYTES) return { kind: 'legacy', entry }
+    return null
+  } catch {
     return null
   }
 }
 
-interface EnclaveBundleLookup {
-  bundle: KeyBundle | null
-  currentKeyId: string | null
-}
-
-async function tryRetrieveFromEnclave(
-  credentialId: string,
-  kek: CryptoKey,
-): Promise<EnclaveBundleLookup> {
+async function unwrapGenericEnvelope(
+  candidate: Extract<RecoveryCandidate, { kind: 'envelope' }>,
+  prfResult: PRFResult,
+): Promise<KeyBundle | null> {
   try {
-    const resp = await enclaveKeyCurrent()
-    if (!resp.key_id) {
-      return { bundle: null, currentKeyId: null }
+    const primary = await passkeyKeyManager.unwrapKeyWithPRFResult({
+      wrappedKey: candidate.wrappedKeys.primary,
+      prfResult,
+    })
+    const alternatives = await Promise.all(
+      candidate.wrappedKeys.alternatives.map((wrappedKey) =>
+        passkeyKeyManager.unwrapKeyWithPRFResult({ wrappedKey, prfResult }),
+      ),
+    )
+    const keyBundle: KeyBundle = {
+      primary: encryptionService.encodeKeyFromBytes(primary),
+      alternatives: alternatives.map((key) =>
+        encryptionService.encodeKeyFromBytes(key),
+      ),
+      authorizationMode: candidate.envelope.authorizationMode,
     }
-    const bundle = resp.bundles[credentialId]
-    if (!bundle) {
-      // This credential has no enclave bundle under the current key
-      // (including the orphan-key case where the key has no bundles at
-      // all). The caller verifies any legacy bundle still wraps the
-      // current key_id before reviving it, so a rotated-away CEK is
-      // never adopted.
-      return {
-        bundle: null,
-        currentKeyId: resp.key_id,
-      }
-    }
-    // Try the v2 raw-CEK shape first — what iOS and the modern
-    // webapp flow write. If that succeeds we synthesize the legacy
-    // {primary, alternatives:[]} envelope the hook still consumes.
-    try {
-      const cekBytes = await unwrapCekFromBundle(kek, {
-        kekIvHex: bundle.kek_iv,
-        wrappedKeyHex: bundle.encrypted_keys,
-      } as Parameters<typeof unwrapCekFromBundle>[1])
-      return {
-        bundle: {
-          primary: encryptionService.encodeKeyFromBytes(cekBytes),
-          alternatives: [],
-        },
-        currentKeyId: resp.key_id,
-      }
-    } catch {
-      // Pre-v2 webapp wrapped a JSON envelope. Keep the legacy decode
-      // as a fallback so users who registered on the old wire still
-      // unlock without re-enrolling.
-      const decrypted = await decryptKeyBundle(kek, {
-        iv: hexToB64(bundle.kek_iv),
-        data: hexToB64(bundle.encrypted_keys),
-      })
-      return {
-        bundle: decrypted,
-        currentKeyId: resp.key_id,
-      }
-    }
-  } catch (err) {
-    if (err instanceof SyncEnclaveError && err.status === 404) {
-      return { bundle: null, currentKeyId: null }
-    }
-    throw err
+    validateKeyBundle(keyBundle)
+    return keyBundle
+  } catch {
+    return null
   }
 }
 
-async function tryRetrieveFromLegacy(
-  credentialId: string,
-  kek: CryptoKey,
+async function deriveLegacyKek(prfOutput: Uint8Array): Promise<CryptoKey> {
+  const input = await crypto.subtle.importKey(
+    'raw',
+    prfOutput as BufferSource,
+    'HKDF',
+    false,
+    ['deriveKey'],
+  )
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(),
+      info: TINFOIL_PASSKEY_PROFILE.hkdfInfo as BufferSource,
+    },
+    input,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+async function recoverLegacyEntry(
+  entry: PasskeyCredentialEntry,
+  evaluatedPrfOutput?: Uint8Array,
 ): Promise<KeyBundle | null> {
-  const legacy = await fetchLegacyPasskeyCredentials()
-  const entry = legacy.find((e) => e.id === credentialId)
-  if (!entry) return null
-  return await decryptKeyBundle(kek, {
-    iv: entry.iv,
-    data: entry.encrypted_keys,
+  const prfOutput = evaluatedPrfOutput ?? getCachedPrfOutputForLegacyBundle()
+  if (!prfOutput) return null
+  try {
+    return await decryptKeyBundle(await deriveLegacyKek(prfOutput), {
+      iv: entry.iv,
+      data: entry.encrypted_keys,
+    })
+  } catch {
+    return null
+  }
+}
+
+async function acceptLegacyBundleForCurrentKey(
+  entry: PasskeyCredentialEntry,
+  bundle: KeyBundle,
+): Promise<boolean> {
+  if (entry.source !== 'legacy') return true
+  let currentKeyId: string | null = null
+  try {
+    currentKeyId = (await enclaveKeyCurrent()).key_id
+  } catch (error) {
+    if (!(error instanceof SyncEnclaveError) || error.status !== 404)
+      return false
+  }
+  if (!currentKeyId) return true
+  const primaryBytes = encryptionService.getAlternativeKeyBytes(bundle.primary)
+  if (!primaryBytes) return false
+  const legacyKeyId = await deriveTinfoilKeyIdHex(primaryBytes)
+  if (legacyKeyId === currentKeyId) return true
+  logInfo('skipping legacy passkey bundle for a rotated-away key', {
+    component: 'PasskeyKeyStorage',
+    action: 'recoverPasskeyKeyBundle',
+    metadata: { credentialId: entry.id, legacyKeyId, currentKeyId },
+  })
+  return false
+}
+
+export async function recoverPasskeyKeyBundle(
+  entries: PasskeyCredentialEntry[],
+  options: { cachedOnly?: boolean } = {},
+): Promise<RecoveredPasskeyKeyBundle | null> {
+  if (entries.length === 0) return null
+  const candidates = entries
+    .map(parseRecoveryCandidate)
+    .filter((candidate): candidate is RecoveryCandidate => candidate !== null)
+  if (candidates.length === 0) return null
+
+  let credentialId: string | null
+  let prfResult: PRFResult | undefined
+
+  if (options.cachedOnly) {
+    credentialId = getCachedCredentialId()
+    const output = getCachedPrfOutputForLegacyBundle()
+    if (output) prfResult = { output }
+  } else {
+    const evaluated = await evaluateTinfoilCredential(
+      candidates.map((candidate) => candidate.entry.id),
+    )
+    if (!evaluated) return null
+    credentialId = evaluated.credentialId
+    prfResult = evaluated.prfResult
+  }
+
+  if (!credentialId || !prfResult) return null
+  const candidate = candidates.find((item) => item.entry.id === credentialId)
+  if (!candidate) return null
+
+  let keyBundle: KeyBundle | null
+  if (candidate.kind === 'envelope') {
+    keyBundle = await unwrapGenericEnvelope(candidate, prfResult)
+  } else if (candidate.kind === 'raw') {
+    try {
+      const key = await passkeyKeyManager.unwrapKeyWithPRFResult({
+        wrappedKey: candidate.wrappedKey,
+        prfResult,
+      })
+      keyBundle = {
+        primary: encryptionService.encodeKeyFromBytes(key),
+        alternatives: [],
+      }
+    } catch {
+      keyBundle = null
+    }
+  } else {
+    keyBundle = await recoverLegacyEntry(candidate.entry, prfResult.output)
+  }
+  if (
+    !keyBundle ||
+    !(await acceptLegacyBundleForCurrentKey(candidate.entry, keyBundle))
+  ) {
+    return null
+  }
+  return {
+    keyBundle,
+    credentialId,
+    syncVersion: candidate.entry.sync_version ?? null,
+    bundleVersion: candidate.entry.bundle_version ?? 0,
+    source: candidate.entry.source,
+    prfResult: options.cachedOnly ? undefined : prfResult,
+  }
+}
+
+export async function addWrappedKeyForCurrentKey(input: {
+  wrappedKeys: TinfoilWrappedKeyBundle
+  keyBundle: KeyBundle
+  cek: Uint8Array
+  keyIdHex: string
+}): Promise<void> {
+  const envelope = tinfoilWrappedKeyBundleToEnclave(
+    input.wrappedKeys,
+    input.keyBundle,
+  )
+  await enclaveAddBundle({
+    keyId: input.keyIdHex,
+    keyB64: bytesToBase64(input.cek),
+    credentialId: envelope.credentialId,
+    kekIvHex: envelope.kekIvHex,
+    encryptedKeysHex: envelope.encryptedKeysHex,
+    idempotencyKey: newIdempotencyKey(),
   })
 }
 
-/**
- * Revive a legacy bundle for a credential that has no enclave bundle,
- * but only when the CEK it unwraps matches the enclave's current
- * key_id. This is the multi-platform case: a v1 user with the same
- * passkey on another device, where the legacy bundle wraps the very
- * CEK already registered. A mismatch means the legacy bundle is a
- * rotated-away key and must not be adopted.
- */
-async function tryRetrieveFromLegacyIfCurrent(
-  credentialId: string,
-  kek: CryptoKey,
-  currentKeyId: string | null,
-): Promise<KeyBundle | null> {
-  if (!currentKeyId) return null
-  const bundle = await tryRetrieveFromLegacy(credentialId, kek)
-  if (!bundle) return null
-  const primaryBytes = encryptionService.getAlternativeKeyBytes(bundle.primary)
-  if (!primaryBytes) return null
-  const legacyKeyId = await deriveKeyIdHex(primaryBytes)
-  if (legacyKeyId !== currentKeyId) {
-    logInfo('skipping legacy passkey bundle for a rotated-away key', {
-      component: 'PasskeyKeyStorage',
-      action: 'retrieveEncryptedKeys',
-      metadata: { credentialId, legacyKeyId, currentKeyId },
+export async function promoteRecoveredCekToEnclave(input: {
+  cek: Uint8Array
+  keyBundle: KeyBundle
+  credentialId: string
+  prfResult: PRFResult
+}): Promise<boolean> {
+  let wrappedKeys: TinfoilWrappedKeyBundle | null
+  let keyIdHex: string
+  try {
+    const primary = await passkeyKeyManager.wrapKeyWithPRFResult({
+      keyMaterial: input.cek,
+      credentialId: input.credentialId,
+      prfResult: input.prfResult,
     })
-    return null
+    wrappedKeys = await wrapTinfoilKeyBundle(
+      primary,
+      input.keyBundle,
+      input.prfResult,
+    )
+    if (!wrappedKeys) return false
+    keyIdHex = await deriveTinfoilKeyIdHex(input.cek)
+  } catch (error) {
+    logError('Failed to prepare recovered passkey bundle', error, {
+      component: 'PasskeyKeyStorage',
+      action: 'promoteRecoveredCekToEnclave',
+    })
+    return false
   }
-  return bundle
+  let current: Awaited<ReturnType<typeof enclaveKeyCurrent>> | null = null
+  try {
+    current = await enclaveKeyCurrent()
+  } catch (error) {
+    if (!(error instanceof SyncEnclaveError) || error.status !== 404)
+      return false
+  }
+  if (current?.key_id) {
+    if (current.key_id !== keyIdHex) return false
+    if (current.bundles[input.credentialId]) return true
+    try {
+      await addWrappedKeyForCurrentKey({
+        wrappedKeys,
+        keyBundle: input.keyBundle,
+        cek: input.cek,
+        keyIdHex,
+      })
+      return true
+    } catch (error) {
+      logError('Failed to add recovered passkey bundle', error, {
+        component: 'PasskeyKeyStorage',
+        action: 'promoteRecoveredCekToEnclave',
+      })
+      return false
+    }
+  }
+  try {
+    const envelope = tinfoilWrappedKeyBundleToEnclave(
+      wrappedKeys,
+      input.keyBundle,
+    )
+    await enclaveRegisterKey({
+      keyB64: bytesToBase64(input.cek),
+      ifMatch: IF_MATCH_SENTINELS.AnyKey,
+      createdVia: 'recovery',
+      idempotencyKey: newIdempotencyKey(),
+      initialBundle: {
+        credentialId: envelope.credentialId,
+        kekIvHex: envelope.kekIvHex,
+        encryptedKeysHex: envelope.encryptedKeysHex,
+      },
+    })
+    return true
+  } catch (error) {
+    logError('Failed to register recovered passkey bundle', error, {
+      component: 'PasskeyKeyStorage',
+      action: 'promoteRecoveredCekToEnclave',
+    })
+    return false
+  }
 }

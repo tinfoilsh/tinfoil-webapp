@@ -1,9 +1,17 @@
 export {
+  PasskeyTimeoutError,
+  PrfNotSupportedError,
+  clearCachedPrfResult,
+  createAndWrapTinfoilKey,
+  passkeyKeyManager,
+} from './kit'
+export {
   getLocalPasskeyCredentialId,
   setLocalPasskeyCredentialId,
 } from './local-passkey-credential'
 export {
   PasskeyCredentialConflictError,
+  addWrappedKeyForCurrentKey,
   decryptKeyBundle,
   deletePasskeyCredential,
   encryptKeyBundle,
@@ -12,9 +20,12 @@ export {
   hasPasskeyCredentials,
   loadPasskeyCredentials,
   loadRecoveryCandidates,
-  retrieveEncryptedKeys,
+  promoteRecoveredCekToEnclave,
+  recoverPasskeyKeyBundle,
   savePasskeyCredentials,
   storeEncryptedKeys,
+  tinfoilWrappedKeyBundleToEnclave,
+  wrapTinfoilKeyBundle,
 } from './passkey-key-storage'
 export type {
   KeyBundle,
@@ -22,15 +33,6 @@ export type {
   PasskeyCredentialState,
   PasskeyDeviceState,
   StoreEncryptedKeysOptions,
+  TinfoilWrappedKeyBundle,
 } from './passkey-key-storage'
-export {
-  PasskeyTimeoutError,
-  PrfNotSupportedError,
-  authenticatePrfPasskey,
-  clearCachedPrfResult,
-  createPrfPasskey,
-  deriveKeyEncryptionKey,
-  getCachedPrfResult,
-} from './passkey-service'
-export type { PrfPasskeyResult } from './passkey-service'
 export { isPrfSupported, resetPrfSupportCache } from './prf-support'

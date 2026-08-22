@@ -61,8 +61,8 @@ import {
   registerStartFreshKeyIfNeeded,
 } from '@/services/cloud/cloud-key-authorization'
 import { CloudKeySetupError } from '@/services/cloud/cloud-key-preflight'
-import { deriveKeyIdHex } from '@/services/sync-enclave/key-bundle'
 import { base64ToBytes } from '@/services/sync-enclave/sync-api'
+import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
 
 const USER_ID = 'user-abc'
 
@@ -270,7 +270,7 @@ describe('cloud-key-authorization', () => {
 
   describe('registerStartFreshKeyIfNeeded', () => {
     it('does not register when the registered key is already this CEK', async () => {
-      const localKid = await deriveKeyIdHex(base64ToBytes(TEST_KEY_B64))
+      const localKid = await deriveTinfoilKeyIdHex(base64ToBytes(TEST_KEY_B64))
       mockKeyCurrent.mockResolvedValue({
         key_id: localKid,
         etag: 'etag-7',

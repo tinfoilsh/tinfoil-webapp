@@ -43,7 +43,7 @@ import {
   inspectRemoteEncryptedState,
   validateCurrentPrimaryKey,
 } from '@/services/cloud/cloud-key-preflight'
-import { deriveKeyIdHex } from '@/services/sync-enclave/key-bundle'
+import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
 
 function makeDeterministicCek(offset = 1): { cek: Uint8Array; b64: string } {
   const cek = new Uint8Array(32)
@@ -156,7 +156,7 @@ describe('cloud-key-preflight', () => {
 
     it('allows writes when local KeyID matches enclave KeyID', async () => {
       const { cek, b64 } = makeDeterministicCek()
-      const expectedKid = await deriveKeyIdHex(cek)
+      const expectedKid = await deriveTinfoilKeyIdHex(cek)
       mockCurrentKey.mockReturnValue(b64)
       mockPersistedKey.mockReturnValue(b64)
       mockKeyCurrent.mockResolvedValue({

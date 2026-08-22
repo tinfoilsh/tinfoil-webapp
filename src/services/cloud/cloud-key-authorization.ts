@@ -26,7 +26,6 @@ import {
 } from '@/constants/storage-keys'
 import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
-import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import {
   base64ToBytes,
   keyCurrent,
@@ -34,6 +33,7 @@ import {
   registerKey,
   type KeyCurrentResponse,
 } from '../sync-enclave/sync-api'
+import { deriveTinfoilKeyIdHex } from '../sync-enclave/tinfoil-key-id'
 import { IF_MATCH_SENTINELS } from '../sync-enclave/wire-contract'
 import { persistedPrimaryKeyB64, requirePrimaryKeyB64 } from './cek-encoding'
 import {
@@ -245,7 +245,7 @@ export async function registerStartFreshKeyIfNeeded(): Promise<void> {
   }
   if (current.key_id) {
     try {
-      const localKeyId = await deriveKeyIdHex(base64ToBytes(keyB64))
+      const localKeyId = await deriveTinfoilKeyIdHex(base64ToBytes(keyB64))
       if (localKeyId === current.key_id) return
     } catch {
       // Underivable local key bytes: fall through and let the

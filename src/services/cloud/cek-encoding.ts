@@ -8,8 +8,8 @@
  */
 
 import { encryptionService } from '../encryption/encryption-service'
-import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import { bytesToBase64, type PullKey } from '../sync-enclave/sync-api'
+import { deriveTinfoilKeyIdHex } from '../sync-enclave/tinfoil-key-id'
 
 /**
  * Encode the current primary CEK as base64. Throws when no key is
@@ -70,7 +70,7 @@ export function hasPrimaryKey(): boolean {
 export async function primaryKeyIdHexOrNull(): Promise<string | null> {
   if (encryptionService.getKey() == null) return null
   try {
-    return await deriveKeyIdHex(encryptionService.getKeyBytesOrThrow())
+    return await deriveTinfoilKeyIdHex(encryptionService.getKeyBytesOrThrow())
   } catch {
     // A malformed persisted key cannot be the registered current key;
     // report "no derivable key id" instead of aborting the caller.
@@ -145,7 +145,7 @@ export async function migrationKeySetFingerprint(): Promise<string | null> {
   if (!primaryBytes) return null
   let primaryId: string
   try {
-    primaryId = await deriveKeyIdHex(primaryBytes)
+    primaryId = await deriveTinfoilKeyIdHex(primaryBytes)
   } catch {
     return null
   }
@@ -156,7 +156,7 @@ export async function migrationKeySetFingerprint(): Promise<string | null> {
     const bytes = encryptionService.getAlternativeKeyBytes(alt)
     if (!bytes) continue
     try {
-      ids.push(await deriveKeyIdHex(bytes))
+      ids.push(await deriveTinfoilKeyIdHex(bytes))
     } catch {
       // Skip an unreadable alternative rather than abort the fingerprint.
     }

@@ -6,9 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('prf-support', () => {
   const originalPublicKeyCredential = globalThis.PublicKeyCredential
+  const originalCredentials = navigator.credentials
 
   beforeEach(() => {
     resetPrfSupportCache()
+    Object.defineProperty(navigator, 'credentials', {
+      value: { create: vi.fn(), get: vi.fn() },
+      writable: true,
+      configurable: true,
+    })
   })
 
   afterEach(() => {
@@ -16,6 +22,11 @@ describe('prf-support', () => {
     // otherwise a test that defines PublicKeyCredential will leak it.
     Object.defineProperty(globalThis, 'PublicKeyCredential', {
       value: originalPublicKeyCredential,
+      writable: true,
+      configurable: true,
+    })
+    Object.defineProperty(navigator, 'credentials', {
+      value: originalCredentials,
       writable: true,
       configurable: true,
     })
@@ -64,14 +75,15 @@ describe('prf-support', () => {
   })
 
   it('should return true when getClientCapabilities reports PRF support', async () => {
+    const getClientCapabilities = vi
+      .fn()
+      .mockResolvedValue({ 'extension:prf': true })
     Object.defineProperty(window, 'PublicKeyCredential', {
       value: {
         isUserVerifyingPlatformAuthenticatorAvailable: vi
           .fn()
           .mockResolvedValue(true),
-        getClientCapabilities: vi
-          .fn()
-          .mockResolvedValue({ 'extension-prf': true }),
+        getClientCapabilities,
       },
       writable: true,
       configurable: true,
@@ -79,9 +91,46 @@ describe('prf-support', () => {
 
     const result = await isPrfSupported()
     expect(result).toBe(true)
+    expect(getClientCapabilities).toHaveBeenCalledOnce()
   })
 
-  it('should cache the result after first call', async () => {
+  it('should return false when client capabilities report no PRF support', async () => {
+    const getClientCapabilities = vi
+      .fn()
+      .mockResolvedValue({ 'extension:prf': false })
+    Object.defineProperty(window, 'PublicKeyCredential', {
+      value: {
+        isUserVerifyingPlatformAuthenticatorAvailable: vi
+          .fn()
+          .mockResolvedValue(true),
+        getClientCapabilities,
+      },
+      writable: true,
+      configurable: true,
+    })
+
+    await expect(isPrfSupported()).resolves.toBe(false)
+    expect(getClientCapabilities).toHaveBeenCalledOnce()
+  })
+
+  it('should remain optimistic when the PRF capability is omitted', async () => {
+    const getClientCapabilities = vi.fn().mockResolvedValue({})
+    Object.defineProperty(window, 'PublicKeyCredential', {
+      value: {
+        isUserVerifyingPlatformAuthenticatorAvailable: vi
+          .fn()
+          .mockResolvedValue(true),
+        getClientCapabilities,
+      },
+      writable: true,
+      configurable: true,
+    })
+
+    await expect(isPrfSupported()).resolves.toBe(true)
+    expect(getClientCapabilities).toHaveBeenCalledOnce()
+  })
+
+  it('should share one in-flight capability request', async () => {
     const mockAvailable = vi.fn().mockResolvedValue(true)
     Object.defineProperty(window, 'PublicKeyCredential', {
       value: {
@@ -91,8 +140,10 @@ describe('prf-support', () => {
       configurable: true,
     })
 
-    const result1 = await isPrfSupported()
-    const result2 = await isPrfSupported()
+    const [result1, result2] = await Promise.all([
+      isPrfSupported(),
+      isPrfSupported(),
+    ])
 
     expect(result1).toBe(true)
     expect(result2).toBe(true)

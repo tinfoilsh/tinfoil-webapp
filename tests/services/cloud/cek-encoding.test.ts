@@ -17,8 +17,8 @@ vi.mock('@/services/encryption/encryption-service', () => ({
 // Map each candidate CEK to a deterministic id by its fill byte so the
 // fingerprint test exercises the helper's sorting/dedup/join logic
 // without depending on the crypto-backed key-id derivation.
-vi.mock('@/services/sync-enclave/key-bundle', () => ({
-  deriveKeyIdHex: async (cek: Uint8Array) =>
+vi.mock('@/services/sync-enclave/tinfoil-key-id', () => ({
+  deriveTinfoilKeyIdHex: async (cek: Uint8Array) =>
     `id_${cek[0].toString(16).padStart(2, '0')}`,
 }))
 

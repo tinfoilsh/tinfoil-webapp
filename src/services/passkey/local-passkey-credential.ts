@@ -1,9 +1,9 @@
-import { passkeyKit } from './kit'
+import { getLocalCredentialId, setLocalCredentialId } from './kit'
 
 export function setLocalPasskeyCredentialId(credentialId: string): void {
-  passkeyKit.setLocalCredentialId(credentialId)
+  setLocalCredentialId(credentialId)
 }
 
 export function getLocalPasskeyCredentialId(): string | null {
-  return passkeyKit.getLocalCredentialId()
+  return getLocalCredentialId()
 }

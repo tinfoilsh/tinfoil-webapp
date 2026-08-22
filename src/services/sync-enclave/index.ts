@@ -7,24 +7,7 @@ export {
   resetSyncEnclaveClient,
 } from './sync-enclave-client'
 
-export {
-  cekBytesToHex,
-  cekHexToBytes,
-  deriveKeyIdHex,
-  unwrapCekFromBundle,
-  wrapCekForCredential,
-  wrapPrimaryCekForCredential,
-} from './key-bundle'
-export type { BundleBody, RemoteBundle } from './key-bundle'
-
-export * as passkeyKeyFlow from './passkey-key-flow'
-export type {
-  PasskeyFlowError,
-  PasskeyFlowFailure,
-  PasskeyFlowResult,
-  PasskeyFlowSuccess,
-  PasskeyUserInfo,
-} from './passkey-key-flow'
+export { deriveTinfoilKeyIdHex } from './tinfoil-key-id'
 
 export { classifyEnclaveError } from './enclave-error-classification'
 export type {

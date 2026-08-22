@@ -14,11 +14,11 @@
  * the same API. The internals route through `enclaveKeyCurrent`.
  */
 
-import { deriveKeyIdHex } from '../sync-enclave/key-bundle'
 import {
   base64ToBytes,
   keyCurrent as enclaveKeyCurrent,
 } from '../sync-enclave/sync-api'
+import { deriveTinfoilKeyIdHex } from '../sync-enclave/tinfoil-key-id'
 import { requirePrimaryKeyB64 } from './cek-encoding'
 
 export type CloudRemoteState = 'empty' | 'exists' | 'unknown'
@@ -131,7 +131,7 @@ export async function validateCurrentPrimaryKey(): Promise<CloudKeyValidationRes
 
   let localKeyId: string
   try {
-    localKeyId = await deriveKeyIdHex(base64ToBytes(primaryKeyB64))
+    localKeyId = await deriveTinfoilKeyIdHex(base64ToBytes(primaryKeyB64))
   } catch {
     return blockedResult('none')
   }

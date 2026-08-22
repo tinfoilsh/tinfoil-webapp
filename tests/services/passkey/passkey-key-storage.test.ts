@@ -1,9 +1,9 @@
+import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
 import {
   decryptKeyBundle,
   encryptKeyBundle,
   type KeyBundle,
 } from '@/services/passkey/passkey-key-storage'
-import { deriveKeyEncryptionKey } from '@/services/passkey/passkey-service'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 /**
@@ -12,6 +12,26 @@ import { beforeEach, describe, expect, it } from 'vitest'
  */
 function generateTestPrfOutput(): ArrayBuffer {
   return crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
+}
+
+async function deriveKeyEncryptionKey(
+  prfOutput: ArrayBuffer,
+): Promise<CryptoKey> {
+  const input = await crypto.subtle.importKey('raw', prfOutput, 'HKDF', false, [
+    'deriveKey',
+  ])
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new Uint8Array(),
+      info: TINFOIL_PASSKEY_PROFILE.hkdfInfo as BufferSource,
+    },
+    input,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
 }
 
 describe('passkey-key-storage', () => {

@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockRegisterKey = vi.fn()
-const mockGetCachedPrf = vi.fn<() => unknown>()
 const mockEmit = vi.fn()
 
 const TEST_KEY_B64 = vi.hoisted(() => {
@@ -36,17 +35,12 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
   }
 })
 
-vi.mock('@/services/passkey/passkey-service', () => ({
-  getCachedPrfResult: () => mockGetCachedPrf(),
-  deriveKeyEncryptionKey: vi.fn(),
+vi.mock('@/services/passkey/kit', () => ({
+  passkeyKeyManager: { rewrapKeyFromCache: vi.fn(async () => null) },
 }))
 
 vi.mock('@/services/passkey/passkey-key-storage', () => ({
   loadPasskeyCredentials: vi.fn(async () => []),
-}))
-
-vi.mock('@/services/sync-enclave/key-bundle', () => ({
-  wrapCekForCredential: vi.fn(),
 }))
 
 vi.mock('@/services/sync-enclave/passkey-events', () => ({
@@ -58,8 +52,6 @@ import { adoptLocalKeyForMigration } from '@/services/cloud/ensure-current-key'
 describe('ensure-current-key adoptLocalKeyForMigration', () => {
   beforeEach(() => {
     mockRegisterKey.mockReset()
-    mockGetCachedPrf.mockReset()
-    mockGetCachedPrf.mockReturnValue(null)
     mockEmit.mockReset()
     mockRequirePrimaryKeyB64.mockReset()
     mockRequirePrimaryKeyB64.mockReturnValue(TEST_KEY_B64)

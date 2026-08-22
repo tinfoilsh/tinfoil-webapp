@@ -1,4 +1,4 @@
-import { deriveKeyIdHex } from '@/services/sync-enclave/key-bundle'
+import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
 import {
   RECOVERY_ENVELOPE_EXPIRY_MS,
   type SyncedRecoveryEnvelope,
@@ -204,7 +204,7 @@ async function resolveKeyId(
   cek: Uint8Array,
   suppliedKeyId?: string,
 ): Promise<string> {
-  const derivedKeyId = await deriveKeyIdHex(cek)
+  const derivedKeyId = await deriveTinfoilKeyIdHex(cek)
   if (suppliedKeyId !== undefined) {
     requireRecoveryLowercaseHex(suppliedKeyId, KEY_ID_HEX_LENGTH, 'keyId')
     if (suppliedKeyId !== derivedKeyId) {
