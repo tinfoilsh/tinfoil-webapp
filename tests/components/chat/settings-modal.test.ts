@@ -1,4 +1,5 @@
 import {
+  describeOffDeviceImportKickoff,
   getDeleteAllChatsSuccessDescription,
   getDeleteAllChatsSuccessTitle,
 } from '@/components/chat/settings-modal'
@@ -31,5 +32,56 @@ describe('settings chat deletion confirmation', () => {
     expect(getDeleteAllChatsSuccessDescription(false, false)).toBe(
       'Removed all chats from this browser session.',
     )
+  })
+})
+
+describe('off-device import kickoff', () => {
+  it('announces a running job and promises an email', () => {
+    const result = describeOffDeviceImportKickoff(
+      { status: 'running', imported: 0, failed: 0, total: 0 },
+      'Claude',
+    )
+    expect(result).toMatchObject({
+      success: true,
+      pending: true,
+      failed: false,
+    })
+    expect(result.message).toMatch(/Claude export is being imported/)
+    expect(result.message).toMatch(/email you/)
+  })
+
+  it('reports a job that already failed instead of announcing a start', () => {
+    const result = describeOffDeviceImportKickoff(
+      {
+        status: 'failed',
+        imported: 0,
+        failed: 0,
+        total: 0,
+        errors: ['import key is not the current key'],
+        failure_reason: 'key_mismatch',
+      },
+      'Claude',
+    )
+    expect(result).toMatchObject({
+      success: false,
+      pending: false,
+      failed: true,
+      errors: ['import key is not the current key'],
+    })
+    expect(result.message).toMatch(/encryption key/i)
+    expect(result.message).not.toMatch(/being imported/)
+  })
+
+  it('treats a job that completed synchronously as done', () => {
+    const result = describeOffDeviceImportKickoff(
+      { status: 'completed', imported: 2, failed: 0, total: 2 },
+      'ChatGPT',
+    )
+    expect(result).toMatchObject({
+      success: true,
+      pending: false,
+      failed: false,
+      chatsImported: 2,
+    })
   })
 })
