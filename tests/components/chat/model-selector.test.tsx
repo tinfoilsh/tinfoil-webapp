@@ -2,6 +2,7 @@ import { ModelSelector } from '@/components/chat/model-selector'
 import { ModelSelectorTriggerLabel } from '@/components/chat/model-selector-trigger-label'
 import { AUTO_MODEL_ID, type BaseModel } from '@/config/models'
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -20,11 +21,19 @@ const MODEL: BaseModel = {
   chat: true,
 }
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 describe('model lifecycle tags', () => {
   it.each([
     { flags: {}, experimental: false, deprecated: false },
+    {
+      flags: { deprecationdate: '2026-10-01' },
+      experimental: false,
+      deprecated: false,
+    },
     {
       flags: { experimental: false, deprecated: false },
       experimental: false,
@@ -38,7 +47,7 @@ describe('model lifecycle tags', () => {
       deprecated: true,
     },
   ])(
-    'renders the flags $flags in the menu and trigger',
+    'renders the flags $flags only in the menu',
     ({ flags, experimental, deprecated }) => {
       const model = { ...MODEL, ...flags }
       const onSelect = vi.fn()
@@ -62,15 +71,17 @@ describe('model lifecycle tags', () => {
       )
 
       const row = screen.getByRole('menuitemradio', { name: /GPT-OSS 120B/ })
-      for (const element of [row, screen.getByTestId('trigger')]) {
-        expect(within(element).queryByText('Experimental') !== null).toBe(
-          experimental,
-        )
-        expect(within(element).queryByText('Deprecated') !== null).toBe(
-          deprecated,
-        )
-        expect(within(element).getByText(model.name)).toBeVisible()
-      }
+      const trigger = screen.getByTestId('trigger')
+      expect(
+        within(trigger).queryByText('Experimental'),
+      ).not.toBeInTheDocument()
+      expect(within(trigger).queryByText('Deprecated')).not.toBeInTheDocument()
+      expect(within(trigger).getByText(model.name)).toBeVisible()
+      expect(within(row).queryByText('Experimental') !== null).toBe(
+        experimental,
+      )
+      expect(within(row).queryByText('Deprecated') !== null).toBe(deprecated)
+      expect(within(row).getByText(model.name)).toBeVisible()
       expect(row).toHaveAttribute('aria-checked', 'true')
       fireEvent.click(row)
       expect(onSelect).toHaveBeenCalledExactlyOnceWith(model.modelName)
@@ -108,6 +119,13 @@ describe('model lifecycle tags', () => {
     const row = screen.getByRole('menuitemradio', { name: /GPT-OSS 120B/ })
     expect(within(row).getByText('Experimental')).toBeVisible()
     expect(within(row).getByText('Deprecated')).toBeVisible()
+    const name = within(row).getByText(taggedModel.name)
+    const badgeRow = within(row).getByText('Experimental').parentElement
+    expect(name.nextElementSibling).toBe(badgeRow)
+    expect(badgeRow?.nextElementSibling).toHaveTextContent(
+      'Best for quick reasoning tasks',
+    )
+    expect(name.parentElement).toHaveClass('flex-col')
     expect(
       within(row).getByText('Best for quick reasoning tasks'),
     ).toBeVisible()
@@ -129,6 +147,65 @@ describe('model lifecycle tags', () => {
     expect(screen.queryByText('Experimental')).not.toBeInTheDocument()
     expect(screen.queryByText('Deprecated')).not.toBeInTheDocument()
   })
+
+  it.each([
+    {
+      flags: { experimental: true },
+      label: 'Experimental',
+      tooltip:
+        'Support and availability are not guaranteed. This model can be deprecated at any time.',
+    },
+    {
+      flags: { deprecated: true },
+      label: 'Deprecated',
+      tooltip:
+        'This model is deprecated. An offline date has not been announced.',
+    },
+    {
+      flags: {
+        experimental: true,
+        deprecated: true,
+        deprecationdate: '2026-10-01',
+      },
+      label: 'Deprecated',
+      tooltip: 'This model will be taken offline on 2026-10-01.',
+    },
+  ])(
+    'shows the $label explanation on hover without selecting the model',
+    async ({ flags, label, tooltip }) => {
+      vi.useFakeTimers()
+      const onSelect = vi.fn()
+      render(
+        <ModelSelector
+          selectedModel={AUTO_MODEL_ID}
+          models={[{ ...MODEL, ...flags }]}
+          onSelect={onSelect}
+          isDarkMode={false}
+        />,
+      )
+      const row = screen.getByRole('menuitemradio', { name: /GPT-OSS 120B/ })
+      const badge = within(row).getByText(label)
+      expect(badge.tagName).toBe('SPAN')
+      expect(badge).not.toHaveAttribute('tabindex')
+      expect(row.querySelector('button')).toBeNull()
+      expect(within(badge).getByText(`: ${tooltip}`)).toHaveClass('sr-only')
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+      await act(async () => {
+        fireEvent.pointerMove(badge, { pointerType: 'mouse' })
+        await vi.runOnlyPendingTimersAsync()
+      })
+      const content = screen.getByRole('tooltip')
+      expect(content).toHaveTextContent(tooltip)
+      expect(row.contains(content)).toBe(false)
+      expect(onSelect).not.toHaveBeenCalled()
+
+      fireEvent.keyDown(badge, { key: 'Escape' })
+      expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+      fireEvent.click(badge)
+      expect(onSelect).toHaveBeenCalledExactlyOnceWith(MODEL.modelName)
+    },
+  )
 
   it('renders no trigger label for an unavailable model', () => {
     const { container } = render(

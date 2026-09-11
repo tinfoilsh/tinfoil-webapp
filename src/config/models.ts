@@ -172,6 +172,7 @@ export type BaseModel = {
   toolCalling?: boolean
   experimental?: boolean
   deprecated?: boolean
+  deprecationdate?: string
   chatConfig?: ChatConfig
   /** True for the synthetic Auto picker entry; never a real backend model. */
   isAuto?: boolean

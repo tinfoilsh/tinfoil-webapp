@@ -451,10 +451,8 @@ export function ModelSelector({
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-            <span className="font-medium">{model.name}</span>
-            {!model.isAuto && <ModelLifecycleBadges model={model} />}
-          </span>
+          <span className="font-medium">{model.name}</span>
+          {!model.isAuto && <ModelLifecycleBadges model={model} />}
           {!model.isAuto && model.chatConfig?.descriptionShort && (
             <span className="text-xs text-content-muted">
               {model.chatConfig.descriptionShort}
