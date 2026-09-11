@@ -1,7 +1,12 @@
 import { SteppedSlider } from '@/components/ui/stepped-slider'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { Window } from 'happy-dom'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import postcss from 'postcss'
 import { useState } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import tailwindcss from 'tailwindcss'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const STEPS = [
   { id: 'low', label: 'Low' },
@@ -102,5 +107,52 @@ describe('SteppedSlider', () => {
     fireEvent.keyDown(thumb, { key: 'ArrowLeft' })
     expect(thumb).toHaveAttribute('aria-valuetext', 'Medium')
     expect(container.querySelector('.stepped-slider-max-fill')).toBeNull()
+  })
+
+  describe('computed fill animation', () => {
+    let css: string
+
+    beforeAll(async () => {
+      const stylesheetPath = resolve('src/styles/tailwind.css')
+      const configPath = resolve('tailwind.config.js')
+      const result = await postcss([tailwindcss(configPath)]).process(
+        await readFile(stylesheetPath, 'utf8'),
+        { from: stylesheetPath },
+      )
+      css = result.css
+    })
+
+    it.each(['no-preference', 'reduce'])(
+      'respects the %s motion preference at Max and after stepping down',
+      async (prefersReducedMotion) => {
+        const browserWindow = new Window({
+          settings: { device: { prefersReducedMotion } },
+        })
+        try {
+          const style = browserWindow.document.createElement('style')
+          style.textContent = css
+          browserWindow.document.head.append(style)
+          const { container } = render(<ControlledSlider />)
+          const thumb = screen.getByRole('slider', { name: 'Intelligence' })
+
+          for (const key of ['End', 'ArrowLeft']) {
+            fireEvent.keyDown(thumb, { key })
+            browserWindow.document.body.innerHTML = container.innerHTML
+            const fill = browserWindow.document.querySelector(
+              '.bg-brand-accent-light',
+            )!
+            const computed = browserWindow.getComputedStyle(fill)
+
+            expect(computed.animation).toBe(
+              key === 'End' && prefersReducedMotion === 'no-preference'
+                ? 'slider-max-flow 8s linear infinite'
+                : '',
+            )
+          }
+        } finally {
+          await browserWindow.happyDOM.close()
+        }
+      },
+    )
   })
 })
