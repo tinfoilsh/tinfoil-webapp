@@ -88,7 +88,7 @@ describe('SteppedSlider', () => {
     expect(onValueChange).not.toHaveBeenCalled()
   })
 
-  it('uses the multicolor fill only at the maximum and removes it when stepping down', () => {
+  it('uses the patterned fill only at the maximum and removes it when stepping down', () => {
     const { container } = render(<ControlledSlider />)
     const thumb = screen.getByRole('slider', { name: 'Intelligence' })
 
