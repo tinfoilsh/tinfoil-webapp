@@ -638,8 +638,23 @@ describe('sync-api (enclave JSON-RPC)', () => {
     )
     const status = await api.importStatus('job-1')
     expect(status.errors).toEqual([])
+    expect(status.failure_reason).toBeUndefined()
     expect(lastRequest()[0]).toBe('/v1/import/status')
     expect(lastBody()).toEqual({ job_id: 'job-1' })
+
+    mockFetch.mockResolvedValueOnce(
+      ok({
+        status: 'failed',
+        imported: 1,
+        failed: 0,
+        total: 2,
+        errors: ['import timed out'],
+        failure_reason: 'timeout',
+      }),
+    )
+    const failed = await api.importStatus('job-1')
+    expect(failed.failure_reason).toBe('timeout')
+    expect(failed.errors).toEqual(['import timed out'])
   })
 
   it('searchQuery posts /v1/search/query and normalizes null results', async () => {

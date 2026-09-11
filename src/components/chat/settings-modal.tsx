@@ -27,6 +27,7 @@ import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import { buildChatExport } from '@/services/chat-export/export-archive'
+import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 import {
   parseLocalTinfoilExportForAccess,
   PremiumProjectImportRequiredError,
@@ -55,7 +56,10 @@ import { clearDeletedProjectsForAccount } from '@/services/project/project-delet
 import { chatStorage } from '@/services/storage/chat-storage'
 import { projectCache } from '@/services/storage/project-cache'
 import { sessionChatStorage } from '@/services/storage/session-storage'
-import { attachmentGet } from '@/services/sync-enclave/sync-api'
+import {
+  attachmentGet,
+  type ImportStatusResponse,
+} from '@/services/sync-enclave/sync-api'
 import { TINFOIL_COLORS } from '@/theme/colors'
 import {
   clearExplicitSignoutIntent,
@@ -140,6 +144,51 @@ const DASHBOARD_URL = 'https://dash.tinfoil.sh'
 
 const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
+
+interface ImportResult {
+  success: boolean
+  chatsImported: number
+  projectsImported: number
+  errors: string[]
+  pending?: boolean
+  /** The enclave job ended without completing (distinct from per-chat errors). */
+  failed?: boolean
+  message?: string
+}
+
+/**
+ * Turns the enclave's kickoff snapshot into the panel state and toast
+ * copy. The job normally reports staging/running here and finishes off
+ * device, but a job that has already failed must not be announced as
+ * started.
+ */
+export function describeOffDeviceImportKickoff(
+  status: ImportStatusResponse,
+  sourceLabel: string,
+): ImportResult {
+  const pending = status.status === 'staging' || status.status === 'running'
+  const failed = status.status === 'failed'
+  return {
+    success: !failed,
+    chatsImported: status.imported,
+    projectsImported: 0,
+    errors: status.errors ?? [],
+    pending,
+    failed,
+    message: failed
+      ? describeImportFailure(status.failure_reason)
+      : pending
+        ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
+        : undefined,
+  }
+}
+
+export function importResultTitle(result: ImportResult): string {
+  if (result.pending) return 'Import in progress'
+  if (result.success) return 'Import complete'
+  if (result.failed) return 'Import failed'
+  return 'Import completed with errors'
+}
 
 export function getDeleteAllChatsSuccessTitle(
   isSignedIn: boolean,
@@ -542,14 +591,7 @@ export function SettingsModal({
     total: number
     type: 'chats' | 'projects'
   } | null>(null)
-  const [importResult, setImportResult] = useState<{
-    success: boolean
-    chatsImported: number
-    projectsImported: number
-    errors: string[]
-    pending?: boolean
-    message?: string
-  } | null>(null)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
@@ -1312,23 +1354,18 @@ export function SettingsModal({
     setImportResult(null)
     try {
       const { status } = await runOffDeviceImport(source, file)
-      const errors = status.errors ?? []
-      const pending = status.status === 'staging' || status.status === 'running'
-      setImportResult({
-        success: status.status !== 'failed',
-        chatsImported: status.imported,
-        projectsImported: 0,
-        errors,
-        pending,
-        message: pending
-          ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
-          : undefined,
-      })
-      toast({
-        title: 'Import started',
-        description: `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`,
-      })
-      if (!pending && onChatsUpdated) {
+      const result = describeOffDeviceImportKickoff(status, sourceLabel)
+      setImportResult(result)
+      if (result.failed) {
+        toast({
+          title: 'Import failed',
+          description: result.message,
+          variant: 'destructive',
+        })
+      } else if (result.pending) {
+        toast({ title: 'Import started', description: result.message })
+      }
+      if (!result.pending && onChatsUpdated) {
         onChatsUpdated()
       }
     } catch (err) {
@@ -3920,11 +3957,7 @@ ${encryptionKey.replace('key_', '')}
                                   : 'text-red-500',
                               )}
                             >
-                              {importResult.pending
-                                ? 'Import in progress'
-                                : importResult.success
-                                  ? 'Import complete'
-                                  : 'Import completed with errors'}
+                              {importResultTitle(importResult)}
                             </div>
                             {importResult.message && (
                               <div className="font-aeonik-fono text-xs text-content-muted">

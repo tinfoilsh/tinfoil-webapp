@@ -1,8 +1,9 @@
 import type { Chat } from '@/components/chat/types'
 import { runOffDeviceImport } from '@/services/chat-import/off-device-import'
 import { chatStorage } from '@/services/storage/chat-storage'
+import { SyncEnclaveError } from '@/services/sync-enclave'
 // prettier-ignore
-import { importStatus,type ImportStatusResponse } from '@/services/sync-enclave/sync-api'
+import { importStatus,type ImportFailureReason,type ImportStatusResponse } from '@/services/sync-enclave/sync-api'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
@@ -21,8 +22,13 @@ export const NATIVE_RESTORE_KINDS = ['projects', 'project_documents', 'cloud_cha
 export type NativeRestoreKind = (typeof NATIVE_RESTORE_KINDS)[number]
 // prettier-ignore
 export type NativeRestoreCount = { imported: number; skipped: number; failed: number; blocked: number; warnings: string[]; errors: string[] }
+/**
+ * 'interrupted' means the enclave no longer knows the job (it restarted
+ * or reaped it) while we were still polling, so the outcome is unknown
+ * to the browser; the completion or failure email is the only signal.
+ */
 // prettier-ignore
-export type NativeRestoreResult = { state: 'completed' | 'partial' | 'failed' | 'pending'; jobId?: string; report: Record<NativeRestoreKind, NativeRestoreCount> }
+export type NativeRestoreResult = { state: 'completed' | 'partial' | 'failed' | 'pending' | 'interrupted'; jobId?: string; failureReason?: ImportFailureReason; report: Record<NativeRestoreKind, NativeRestoreCount> }
 // prettier-ignore
 type Dependencies = { validate: typeof validateAndPackageNativeBackup; upload: typeof runOffDeviceImport; status: typeof importStatus; forEachImage: typeof forEachNativeBackupLocalImage; getChat(id: string): Promise<Chat | null>; saveChat(chat: Chat, skipCloudSync?: boolean): Promise<Chat | null>; wait(ms: number, signal: AbortSignal): Promise<void> }
 // prettier-ignore
@@ -51,6 +57,12 @@ const defaults: Dependencies = {
       signal.addEventListener('abort', abort, { once: true })
     })
   },
+}
+
+// A job we were just polling has vanished from the enclave, which only
+// happens when the enclave restarted or reaped it.
+function isImportJobGone(cause: unknown): boolean {
+  return cause instanceof SyncEnclaveError && cause.status === 404
 }
 
 function emptyReport(): NativeRestoreResult['report'] {
@@ -321,7 +333,13 @@ export async function restoreNativeBackup(
         attempt++
       ) {
         await dependencies.wait(POLL_INTERVAL_MS, signal)
-        status = await dependencies.status(jobId, signal)
+        try {
+          status = await dependencies.status(jobId, signal)
+        } catch (cause) {
+          if (isImportJobGone(cause))
+            return { state: 'interrupted', jobId, report }
+          throw cause
+        }
         events.onPhase?.(status.phase)
       }
     } finally {
@@ -336,7 +354,9 @@ export async function restoreNativeBackup(
     })
     if (status!.status !== 'completed' && status!.status !== 'failed')
       return { state: 'pending', jobId, report }
-    if (status!.status === 'failed') return { state: 'failed', jobId, report }
+    if (status!.status === 'failed')
+      // prettier-ignore
+      return { state: 'failed', jobId, failureReason: status!.failure_reason, report }
   }
   await restoreLocalChats(
     validated,

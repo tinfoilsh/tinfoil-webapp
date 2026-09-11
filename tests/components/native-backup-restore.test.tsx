@@ -235,13 +235,29 @@ describe('NativeBackupRestore', () => {
     selectArchive(view.container)
     fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
 
-    finish({ state: 'failed', report })
+    finish({ state: 'failed', failureReason: 'timeout', report })
 
-    expect(
-      await screen.findByText(
-        'The cloud restore failed. No local chats were restored.',
-      ),
-    ).toBeVisible()
+    const message = await screen.findByRole('status')
+    expect(message).toHaveTextContent(/^The cloud restore failed\./)
+    expect(message).toHaveTextContent(/ran out of time/i)
+    expect(message).toHaveTextContent(/No local chats were restored\.$/)
+  })
+
+  it('explains an interrupted restore without a report table', async () => {
+    mocks.restore.mockResolvedValue({
+      state: 'interrupted',
+      jobId: 'job-1',
+      report,
+    })
+    const { container } = render(
+      <NativeBackupRestore available ownerId="owner" />,
+    )
+    selectArchive(container)
+
+    const message = await screen.findByRole('status')
+    expect(message).toHaveTextContent(/interrupted/i)
+    expect(message).toHaveTextContent("We'll email you")
+    expect(screen.queryByRole('list')).not.toBeInTheDocument()
   })
 
   it('replaces the dismissed progress message after completion', async () => {

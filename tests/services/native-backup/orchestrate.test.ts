@@ -1,5 +1,6 @@
 import { restoreNativeBackup } from '@/services/native-backup/orchestrate'
 import type { ValidatedNativeRestore } from '@/services/native-backup/restore'
+import { SyncEnclaveError } from '@/services/sync-enclave'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sourceFile = new File(['plaintext'], 'backup.zip')
@@ -455,6 +456,75 @@ describe('restoreNativeBackup', () => {
       expect(saveChat).not.toHaveBeenCalled()
     },
   )
+
+  it('carries the enclave failure reason on a failed cloud job', async () => {
+    dependencies.upload.mockResolvedValue({
+      jobId: 'job-1',
+      status: { status: 'running', imported: 0, failed: 0, total: 1 },
+    })
+    dependencies.status.mockResolvedValue({
+      status: 'failed',
+      imported: 0,
+      failed: 0,
+      total: 1,
+      errors: ['import timed out'],
+      failure_reason: 'timeout',
+    })
+
+    const result = await restoreNativeBackup(
+      sourceFile,
+      'owner-a',
+      new AbortController().signal,
+      {},
+      dependencies,
+    )
+
+    expect(result).toMatchObject({ state: 'failed', failureReason: 'timeout' })
+    expect(result.report.cloud_chats.errors).toEqual(['import timed out'])
+    expect(saveChat).not.toHaveBeenCalled()
+  })
+
+  it('reports an interrupted restore when the enclave forgets the job mid-poll', async () => {
+    dependencies.upload.mockResolvedValue({
+      jobId: 'job-1',
+      status: { status: 'running', imported: 0, failed: 0, total: 1 },
+    })
+    dependencies.status.mockRejectedValue(
+      new SyncEnclaveError('import job not found', 404, 'NOT_FOUND'),
+    )
+
+    const result = await restoreNativeBackup(
+      sourceFile,
+      'owner-a',
+      new AbortController().signal,
+      {},
+      dependencies,
+    )
+
+    expect(result).toMatchObject({ state: 'interrupted', jobId: 'job-1' })
+    expect(dependencies.status).toHaveBeenCalledOnce()
+    expect(saveChat).not.toHaveBeenCalled()
+  })
+
+  it('rethrows status poll failures other than a missing job', async () => {
+    dependencies.upload.mockResolvedValue({
+      jobId: 'job-1',
+      status: { status: 'running', imported: 0, failed: 0, total: 1 },
+    })
+    dependencies.status.mockRejectedValue(
+      new SyncEnclaveError('sync enclave request failed: 503', 503, 'HTTP_503'),
+    )
+
+    await expect(
+      restoreNativeBackup(
+        sourceFile,
+        'owner-a',
+        new AbortController().signal,
+        {},
+        dependencies,
+      ),
+    ).rejects.toMatchObject({ status: 503 })
+  })
 
   it('detaches chats from failed projects and treats warnings as partial', async () => {
     dependencies.upload.mockResolvedValue({

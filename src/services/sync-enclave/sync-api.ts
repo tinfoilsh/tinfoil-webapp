@@ -454,6 +454,14 @@ export type ImportSource = 'chatgpt' | 'claude' | 'tinfoil' | 'tinfoil_backup'
 export type ImportJobStatus =
   'idle' | 'staging' | 'running' | 'completed' | 'failed'
 
+/**
+ * Why a job ended with status 'failed'. The enclave classifies the
+ * underlying error into one of these so the UI can explain what to do
+ * next without seeing raw error text.
+ */
+export type ImportFailureReason =
+  'timeout' | 'invalid_archive' | 'limit_exceeded' | 'key_mismatch' | 'internal'
+
 export interface ImportCreateRequest {
   source: ImportSource
   /** Total size of the raw archive in bytes. */
@@ -498,6 +506,8 @@ export interface ImportStatusResponse {
   errors?: string[]
   project_mappings?: Record<string, string>
   job_id?: string
+  /** Set only when status is 'failed'. */
+  failure_reason?: ImportFailureReason
 }
 
 /**
@@ -548,7 +558,7 @@ export async function importUploadChunk(
 /**
  * Kick off the detached import job. The enclave validates the staged
  * archive, parses it, seals every chat + attachment under the supplied
- * CEK, and emails the user on completion.
+ * CEK, and emails the user when the job completes or fails.
  */
 export async function importStart(
   req: ImportStartRequest,
