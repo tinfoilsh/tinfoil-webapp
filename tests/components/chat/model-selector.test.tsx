@@ -120,11 +120,10 @@ describe('model lifecycle tags', () => {
     expect(within(row).getByText('Experimental')).toBeVisible()
     expect(within(row).getByText('Deprecated')).toBeVisible()
     const name = within(row).getByText(taggedModel.name)
+    const description = within(row).getByText('Best for quick reasoning tasks')
     const badgeRow = within(row).getByText('Experimental').parentElement
-    expect(name.nextElementSibling).toBe(badgeRow)
-    expect(badgeRow?.nextElementSibling).toHaveTextContent(
-      'Best for quick reasoning tasks',
-    )
+    expect(name.nextElementSibling).toBe(description)
+    expect(description.nextElementSibling).toBe(badgeRow)
     expect(name.parentElement).toHaveClass('flex-col')
     expect(
       within(row).getByText('Best for quick reasoning tasks'),

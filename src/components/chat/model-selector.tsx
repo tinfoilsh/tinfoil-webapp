@@ -422,7 +422,7 @@ export function ModelSelector({
         key={model.modelName}
         role="menuitemradio"
         aria-checked={isSelected}
-        className={`relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
+        className={`relative flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
         {...menuItemHandlers(() => {
           onSelect(model.modelName as AIModel)
           focusTrigger()
@@ -452,16 +452,16 @@ export function ModelSelector({
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           <span className="font-medium">{model.name}</span>
-          {!model.isAuto && <ModelLifecycleBadges model={model} />}
           {!model.isAuto && model.chatConfig?.descriptionShort && (
             <span className="text-xs text-content-muted">
               {model.chatConfig.descriptionShort}
             </span>
           )}
+          {!model.isAuto && <ModelLifecycleBadges model={model} />}
         </div>
         {isSelected && (
           <CheckIcon
-            className="h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
+            className="mt-0.5 h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
             aria-hidden="true"
           />
         )}
