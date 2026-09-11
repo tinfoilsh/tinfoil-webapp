@@ -69,7 +69,7 @@ export function NativeBackupRestore({
               : next.state === 'interrupted'
                 ? "The cloud restore was interrupted before we could confirm the result. We'll email you whether it finished or failed. No local chats were restored; reselect this archive afterward to restore them."
                 : next.state === 'failed'
-                  ? `The cloud restore failed. ${describeImportFailure(next.failureReason)} No local chats were restored.`
+                  ? `The cloud restore failed. ${describeImportFailure(next.failureReason, 'backup_restore')} No local chats were restored.`
                   : next.state === 'partial'
                     ? 'Backup restored with warnings.'
                     : 'Backup restored successfully.',
