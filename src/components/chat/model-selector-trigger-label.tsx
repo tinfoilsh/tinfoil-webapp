@@ -1,11 +1,13 @@
 import {
   AUTO_INTELLIGENCE_LEVELS,
+  findSelectableModel,
   getAutoDisplayName,
   getSelectedModelLabel,
   isAutoModelId,
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
+import { ModelLifecycleBadges } from './model-lifecycle-badges'
 
 type ModelSelectorTriggerLabelProps = {
   selectedModel: string
@@ -27,6 +29,7 @@ export function ModelSelectorTriggerLabel({
   isOpen,
 }: ModelSelectorTriggerLabelProps) {
   const label = getSelectedModelLabel(selectedModel, models, autoIntelligence)
+  const model = findSelectableModel(selectedModel, models)
   if (!label) return null
 
   return (
@@ -47,7 +50,10 @@ export function ModelSelectorTriggerLabel({
           })}
         </span>
       ) : (
-        <span className="whitespace-nowrap text-xs font-medium">{label}</span>
+        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs font-medium">
+          <span className="whitespace-nowrap">{label}</span>
+          {model && <ModelLifecycleBadges model={model} />}
+        </span>
       )}
       <svg
         className={`h-3 w-3 transition-transform ${isOpen ? 'rotate-180' : ''}`}

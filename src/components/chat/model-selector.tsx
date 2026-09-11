@@ -28,6 +28,7 @@ import {
   supportsThinkingToggle,
   type ReasoningEffort,
 } from './hooks/use-reasoning-effort'
+import { ModelLifecycleBadges } from './model-lifecycle-badges'
 import type { AIModel } from './types'
 
 const EFFORT_OPTIONS: {
@@ -449,16 +450,17 @@ export function ModelSelector({
             </>
           )}
         </div>
-        {!model.isAuto && model.chatConfig?.descriptionShort ? (
-          <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
             <span className="font-medium">{model.name}</span>
+            {!model.isAuto && <ModelLifecycleBadges model={model} />}
+          </span>
+          {!model.isAuto && model.chatConfig?.descriptionShort && (
             <span className="text-xs text-content-muted">
               {model.chatConfig.descriptionShort}
             </span>
-          </div>
-        ) : (
-          <span className="flex-1 font-medium">{model.name}</span>
-        )}
+          )}
+        </div>
         {isSelected && (
           <CheckIcon
             className="h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"

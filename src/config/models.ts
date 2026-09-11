@@ -170,6 +170,8 @@ export type BaseModel = {
   paid?: boolean
   multimodal?: boolean
   toolCalling?: boolean
+  experimental?: boolean
+  deprecated?: boolean
   chatConfig?: ChatConfig
   /** True for the synthetic Auto picker entry; never a real backend model. */
   isAuto?: boolean
