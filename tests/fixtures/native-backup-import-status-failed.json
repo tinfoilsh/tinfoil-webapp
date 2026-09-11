@@ -1,0 +1,15 @@
+{
+  "status": "failed",
+  "phase": "chats",
+  "imported": 2,
+  "failed": 0,
+  "total": 5,
+  "counts": {
+    "project": { "imported": 1, "skipped": 0, "failed": 0, "blocked": 0 },
+    "document": { "imported": 0, "skipped": 0, "failed": 0, "blocked": 0 },
+    "chat": { "imported": 1, "skipped": 0, "failed": 0, "blocked": 0 }
+  },
+  "errors": ["import timed out"],
+  "job_id": "job-1",
+  "failure_reason": "timeout"
+}
