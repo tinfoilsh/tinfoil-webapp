@@ -6,10 +6,8 @@ import {
 } from '@/components/ui/tooltip'
 import type { BaseModel } from '@/config/models'
 
-// Matches the "Default" chip in the effort menu so the labels read as quiet
-// metadata rather than alerts.
 const BADGE_CLASS_NAME =
-  'inline-flex shrink-0 cursor-help items-center whitespace-nowrap rounded bg-surface-card px-1.5 py-0.5 text-xs font-normal'
+  'inline-flex shrink-0 cursor-help items-center whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-normal'
 
 const EXPERIMENTAL_TOOLTIP =
   'Support and availability are not guaranteed. This model can be deprecated at any time.'
@@ -29,7 +27,8 @@ export function ModelLifecycleBadges({
           {
             label: 'Experimental',
             tooltip: EXPERIMENTAL_TOOLTIP,
-            className: 'text-content-muted',
+            className:
+              'bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
           },
         ]
       : []),
@@ -40,7 +39,8 @@ export function ModelLifecycleBadges({
             tooltip: model.deprecationdate
               ? `This model will be taken offline on ${model.deprecationdate}.`
               : DEPRECATION_TOOLTIP,
-            className: 'text-amber-700 dark:text-amber-400',
+            className:
+              'bg-amber-500/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
           },
         ]
       : []),
