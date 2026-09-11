@@ -51,7 +51,10 @@ export function SteppedSlider<T extends string>({
     >
       <SliderPrimitive.Track className="relative h-full w-full grow overflow-hidden rounded-full bg-content-muted/20">
         <SliderPrimitive.Range
-          className="absolute h-full rounded-full bg-brand-accent-light"
+          className={cn(
+            'absolute h-full rounded-full bg-brand-accent-light',
+            index === lastIndex && 'stepped-slider-max-fill',
+          )}
           style={{
             marginInlineEnd: `calc(var(--slider-size) * -${fillExtension})`,
           }}

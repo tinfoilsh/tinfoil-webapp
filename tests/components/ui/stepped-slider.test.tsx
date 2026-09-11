@@ -87,4 +87,20 @@ describe('SteppedSlider', () => {
     expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'High')
     expect(onValueChange).not.toHaveBeenCalled()
   })
+
+  it('uses the multicolor fill only at the maximum and removes it when stepping down', () => {
+    const { container } = render(<ControlledSlider />)
+    const thumb = screen.getByRole('slider', { name: 'Intelligence' })
+
+    expect(container.querySelector('.stepped-slider-max-fill')).toBeNull()
+
+    fireEvent.keyDown(thumb, { key: 'End' })
+    expect(
+      container.querySelector('.stepped-slider-max-fill'),
+    ).toBeInTheDocument()
+
+    fireEvent.keyDown(thumb, { key: 'ArrowLeft' })
+    expect(thumb).toHaveAttribute('aria-valuetext', 'Medium')
+    expect(container.querySelector('.stepped-slider-max-fill')).toBeNull()
+  })
 })

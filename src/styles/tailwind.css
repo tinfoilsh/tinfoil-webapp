@@ -164,6 +164,37 @@
 }
 
 @layer utilities {
+  .stepped-slider-max-fill {
+    --slider-max-cycle: 6s;
+    background-image: linear-gradient(
+      110deg,
+      hsl(var(--color-accent-light)),
+      theme('colors.sky.400'),
+      theme('colors.violet.400'),
+      theme('colors.pink.400'),
+      theme('colors.amber.300'),
+      hsl(var(--color-accent-light))
+    );
+    background-size: 200% 100%;
+    background-position: 50% 50%;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .stepped-slider-max-fill {
+      animation: slider-max-flow var(--slider-max-cycle) ease-in-out infinite
+        alternate;
+    }
+  }
+
+  @keyframes slider-max-flow {
+    from {
+      background-position: 0% 50%;
+    }
+    to {
+      background-position: 100% 50%;
+    }
+  }
+
   .redacted-text-block {
     display: none;
   }
