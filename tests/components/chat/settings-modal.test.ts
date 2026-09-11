@@ -2,6 +2,7 @@ import {
   describeOffDeviceImportKickoff,
   getDeleteAllChatsSuccessDescription,
   getDeleteAllChatsSuccessTitle,
+  importResultTitle,
 } from '@/components/chat/settings-modal'
 import { describe, expect, it } from 'vitest'
 
@@ -83,5 +84,22 @@ describe('off-device import kickoff', () => {
       failed: false,
       chatsImported: 2,
     })
+    expect(result.message).toBeUndefined()
+  })
+
+  it('titles the result by its outcome', () => {
+    const base = { chatsImported: 0, projectsImported: 0, errors: [] }
+    expect(importResultTitle({ ...base, success: true, pending: true })).toBe(
+      'Import in progress',
+    )
+    expect(importResultTitle({ ...base, success: true })).toBe(
+      'Import complete',
+    )
+    expect(importResultTitle({ ...base, success: false, failed: true })).toBe(
+      'Import failed',
+    )
+    expect(importResultTitle({ ...base, success: false })).toBe(
+      'Import completed with errors',
+    )
   })
 })

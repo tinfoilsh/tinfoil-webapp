@@ -165,7 +165,7 @@ interface ImportResult {
 export function describeOffDeviceImportKickoff(
   status: ImportStatusResponse,
   sourceLabel: string,
-): ImportResult & { message: string } {
+): ImportResult {
   const pending = status.status === 'staging' || status.status === 'running'
   const failed = status.status === 'failed'
   return {
@@ -177,8 +177,17 @@ export function describeOffDeviceImportKickoff(
     failed,
     message: failed
       ? describeImportFailure(status.failure_reason)
-      : `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`,
+      : pending
+        ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
+        : undefined,
   }
+}
+
+export function importResultTitle(result: ImportResult): string {
+  if (result.pending) return 'Import in progress'
+  if (result.success) return 'Import complete'
+  if (result.failed) return 'Import failed'
+  return 'Import completed with errors'
 }
 
 export function getDeleteAllChatsSuccessTitle(
@@ -1347,15 +1356,15 @@ export function SettingsModal({
       const { status } = await runOffDeviceImport(source, file)
       const result = describeOffDeviceImportKickoff(status, sourceLabel)
       setImportResult(result)
-      toast(
-        result.failed
-          ? {
-              title: 'Import failed',
-              description: result.message,
-              variant: 'destructive',
-            }
-          : { title: 'Import started', description: result.message },
-      )
+      if (result.failed) {
+        toast({
+          title: 'Import failed',
+          description: result.message,
+          variant: 'destructive',
+        })
+      } else if (result.pending) {
+        toast({ title: 'Import started', description: result.message })
+      }
       if (!result.pending && onChatsUpdated) {
         onChatsUpdated()
       }
@@ -3948,13 +3957,7 @@ ${encryptionKey.replace('key_', '')}
                                   : 'text-red-500',
                               )}
                             >
-                              {importResult.pending
-                                ? 'Import in progress'
-                                : importResult.success
-                                  ? 'Import complete'
-                                  : importResult.failed
-                                    ? 'Import failed'
-                                    : 'Import completed with errors'}
+                              {importResultTitle(importResult)}
                             </div>
                             {importResult.message && (
                               <div className="font-aeonik-fono text-xs text-content-muted">
