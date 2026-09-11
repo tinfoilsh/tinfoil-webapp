@@ -47,7 +47,7 @@ export function ModelLifecycleBadges({
   ]
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={0}>
       <span className="mt-1.5 flex flex-wrap items-center gap-1">
         {badges.map(({ label, tooltip, className }) => (
           <Tooltip key={label}>

@@ -170,7 +170,7 @@ describe('model lifecycle tags', () => {
       tooltip: 'This model will be taken offline on 2026-10-01.',
     },
   ])(
-    'shows the $label explanation on hover without selecting the model',
+    'shows the $label explanation immediately on hover without selecting the model',
     async ({ flags, label, tooltip }) => {
       vi.useFakeTimers()
       const onSelect = vi.fn()
@@ -190,9 +190,11 @@ describe('model lifecycle tags', () => {
       expect(within(badge).getByText(`: ${tooltip}`)).toHaveClass('sr-only')
       expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
 
+      // Advancing by 0ms flushes Radix's zero-delay open timer but would leave a
+      // real hover delay pending, so this fails if one is reintroduced.
       await act(async () => {
         fireEvent.pointerMove(badge, { pointerType: 'mouse' })
-        await vi.runOnlyPendingTimersAsync()
+        await vi.advanceTimersByTimeAsync(0)
       })
       const content = screen.getByRole('tooltip')
       expect(content).toHaveTextContent(tooltip)
