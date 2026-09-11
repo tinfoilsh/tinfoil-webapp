@@ -1,3 +1,4 @@
+import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 // prettier-ignore
 import { NATIVE_RESTORE_KINDS,restoreNativeBackup,type NativeRestoreResult } from '@/services/native-backup/orchestrate'
 import { useEffect, useRef, useState } from 'react'
@@ -65,11 +66,13 @@ export function NativeBackupRestore({
               : 'Backup restored successfully, but chats could not be refreshed. Reload to see restored chats.'
             : next.state === 'pending'
               ? "The cloud restore is still running. We'll email you when it finishes. No local chats were restored; reselect this archive afterward to restore them."
-              : next.state === 'failed'
-                ? 'The cloud restore failed. No local chats were restored.'
-                : next.state === 'partial'
-                  ? 'Backup restored with warnings.'
-                  : 'Backup restored successfully.',
+              : next.state === 'interrupted'
+                ? "The cloud restore was interrupted before we could confirm the result. We'll email you whether it finished or failed. No local chats were restored; reselect this archive afterward to restore them."
+                : next.state === 'failed'
+                  ? `The cloud restore failed. ${describeImportFailure(next.failureReason)} No local chats were restored.`
+                  : next.state === 'partial'
+                    ? 'Backup restored with warnings.'
+                    : 'Backup restored successfully.',
         )
     } catch (cause) {
       if (!current.signal.aborted)
@@ -129,24 +132,26 @@ export function NativeBackupRestore({
           {message}
         </p>
       )}
-      {result && result.state !== 'pending' && (
-        <ul className="mt-2 space-y-1 text-xs text-content-muted">
-          {NATIVE_RESTORE_KINDS.map((kind) => {
-            const value = result.report[kind]
-            return (
-              <li key={kind}>
-                {kind.replaceAll('_', ' ')}: {value.imported} imported,{' '}
-                {value.skipped} skipped, {value.failed} failed, {value.blocked}{' '}
-                blocked
-                {value.warnings.length > 0 &&
-                  `, warnings: ${value.warnings.join('; ')}`}
-                {value.errors.length > 0 &&
-                  `, errors: ${value.errors.join('; ')}`}
-              </li>
-            )
-          })}
-        </ul>
-      )}
+      {result &&
+        result.state !== 'pending' &&
+        result.state !== 'interrupted' && (
+          <ul className="mt-2 space-y-1 text-xs text-content-muted">
+            {NATIVE_RESTORE_KINDS.map((kind) => {
+              const value = result.report[kind]
+              return (
+                <li key={kind}>
+                  {kind.replaceAll('_', ' ')}: {value.imported} imported,{' '}
+                  {value.skipped} skipped, {value.failed} failed,{' '}
+                  {value.blocked} blocked
+                  {value.warnings.length > 0 &&
+                    `, warnings: ${value.warnings.join('; ')}`}
+                  {value.errors.length > 0 &&
+                    `, errors: ${value.errors.join('; ')}`}
+                </li>
+              )
+            })}
+          </ul>
+        )}
     </div>
   )
 }
