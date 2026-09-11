@@ -49,7 +49,7 @@ export function SteppedSlider<T extends string>({
       }}
     >
       <SliderPrimitive.Track className="relative h-8 w-full grow overflow-hidden rounded-full bg-content-muted/25">
-        <SliderPrimitive.Range className="absolute h-full rounded-full bg-brand-accent-light" />
+        <SliderPrimitive.Range className="absolute h-full bg-brand-accent-light" />
         <div
           className="pointer-events-none absolute inset-y-0 flex items-center justify-between"
           style={{ left: '1rem', right: '1rem' }}
