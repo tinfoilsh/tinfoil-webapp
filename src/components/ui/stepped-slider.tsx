@@ -16,8 +16,8 @@ type SteppedSliderProps<T extends string> = {
 }
 
 /**
- * A discrete slider with one stop per step. The slim rail meets a green-edged
- * thumb; inset dots follow the thumb's center from the first stop to the last.
+ * A discrete slider with one stop per step. The pill-shaped fill wraps around
+ * an inset white thumb; dots follow its center from the first stop to the last.
  */
 export function SteppedSlider<T extends string>({
   steps,
@@ -31,11 +31,13 @@ export function SteppedSlider<T extends string>({
     steps.findIndex((step) => step.id === value),
   )
   const lastIndex = steps.length - 1
+  // Include the thumb's width and Radix's in-bounds offset in the fill.
+  const fillExtension = 1 - index / Math.max(lastIndex, 1)
 
   return (
     <SliderPrimitive.Root
       className={cn(
-        'relative flex h-8 w-full cursor-pointer touch-none select-none items-center',
+        'relative flex h-[var(--slider-size)] w-full cursor-pointer touch-none select-none items-center [--slider-size:2rem]',
         className,
       )}
       min={0}
@@ -47,10 +49,15 @@ export function SteppedSlider<T extends string>({
         if (step && step.id !== value) onValueChange(step.id)
       }}
     >
-      <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-content-muted/20">
-        <SliderPrimitive.Range className="absolute h-full rounded-full bg-brand-accent-light" />
+      <SliderPrimitive.Track className="relative h-full w-full grow overflow-hidden rounded-full bg-content-muted/20">
+        <SliderPrimitive.Range
+          className="absolute h-full rounded-full bg-brand-accent-light"
+          style={{
+            marginInlineEnd: `calc(var(--slider-size) * -${fillExtension})`,
+          }}
+        />
         <div
-          className="pointer-events-none absolute inset-x-2.5 inset-y-0 flex items-center justify-between"
+          className="pointer-events-none absolute inset-x-3.5 inset-y-0 flex items-center justify-between"
           aria-hidden="true"
         >
           {steps.map((step, i) => (
@@ -65,7 +72,7 @@ export function SteppedSlider<T extends string>({
         </div>
       </SliderPrimitive.Track>
       <SliderPrimitive.Thumb
-        className="block h-6 w-6 cursor-grab rounded-full border-[3px] border-brand-accent-light bg-white shadow-sm ring-offset-surface-chat transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent-light focus-visible:ring-offset-2 active:cursor-grabbing"
+        className="block size-[var(--slider-size)] cursor-grab rounded-full border-4 border-transparent bg-white bg-clip-padding ring-offset-surface-chat drop-shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent-light focus-visible:ring-offset-2 active:cursor-grabbing"
         aria-label={ariaLabel}
         aria-valuetext={steps[index]?.label}
       />
