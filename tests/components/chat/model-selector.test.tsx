@@ -30,7 +30,7 @@ describe('model lifecycle tags', () => {
   it.each([
     { flags: {}, experimental: false, deprecated: false },
     {
-      flags: { deprecationdate: '2026-10-01' },
+      flags: { deprecationDate: '2026-10-01' },
       experimental: false,
       deprecated: false,
     },
@@ -164,7 +164,7 @@ describe('model lifecycle tags', () => {
       flags: {
         experimental: true,
         deprecated: true,
-        deprecationdate: '2026-10-01',
+        deprecationDate: '2026-10-01',
       },
       label: 'Deprecated',
       tooltip: 'This model will be taken offline on 2026-10-01.',
