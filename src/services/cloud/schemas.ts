@@ -152,6 +152,7 @@ export const ProfileDataSchema = z
     webSearchAvailable: z.boolean().optional(),
     codeExecutionEnabled: z.boolean().optional(),
     pixelateSidebarChatTitlesEnabled: z.boolean().optional(),
+    browserTabChatTitleEnabled: z.boolean().optional(),
     piiCheckEnabled: z.boolean().optional(),
     enterToNewlineEnabled: z.boolean().optional(),
     genUIEnabled: z.boolean().optional(),

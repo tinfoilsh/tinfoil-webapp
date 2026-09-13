@@ -48,6 +48,10 @@ export const SETTINGS_CODE_EXECUTION_ENABLED =
   'tinfoil-settings-code-execution-enabled'
 export const SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED =
   'tinfoil-settings-pixelate-sidebar-chat-titles-enabled'
+// When disabled, the browser tab shows only the base app title instead of
+// the active chat's title.
+export const SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED =
+  'tinfoil-settings-browser-tab-chat-title-enabled'
 export const SETTINGS_PII_CHECK_ENABLED = 'tinfoil-settings-pii-check-enabled'
 // When enabled, pressing Enter in the chat input inserts a newline instead
 // of submitting the message; submit via Cmd/Ctrl+Enter or the send button.

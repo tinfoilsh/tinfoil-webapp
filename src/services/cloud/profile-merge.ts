@@ -31,6 +31,7 @@ export const PROFILE_MERGE_FIELDS = [
   'webSearchAvailable',
   'codeExecutionEnabled',
   'pixelateSidebarChatTitlesEnabled',
+  'browserTabChatTitleEnabled',
   'piiCheckEnabled',
   'enterToNewlineEnabled',
   'genUIEnabled',
@@ -42,6 +43,7 @@ const PRESERVE_LOCAL_WHEN_REMOTE_OMITS = new Set<
   (typeof PROFILE_MERGE_FIELDS)[number]
 >([
   'pixelateSidebarChatTitlesEnabled',
+  'browserTabChatTitleEnabled',
   'pinnedChatIds',
   'enterToNewlineEnabled',
 ])

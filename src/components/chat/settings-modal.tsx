@@ -3,10 +3,12 @@ import { cn } from '@/components/ui/utils'
 import { UserAvatar } from '@/components/user-avatar'
 import { API_BASE_URL } from '@/config'
 import {
+  BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
   ENTER_TO_NEWLINE_CHANGED_EVENT,
   PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
 } from '@/constants/settings-events'
 import {
+  SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
   SETTINGS_CHAT_FONT,
   SETTINGS_ENTER_TO_NEWLINE_ENABLED,
   SETTINGS_GENUI_ENABLED,
@@ -126,6 +128,7 @@ import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
 import { CloudSyncHealthCard } from './cloud-sync-health-card'
+import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { MfaSettingsCard } from './mfa-settings-card'
 import { NativeBackupExport } from './native-backup-export'
@@ -534,6 +537,7 @@ export function SettingsModal({
 
   const [pixelateSidebarChatTitles, setPixelateSidebarChatTitles] =
     useState<boolean>(true)
+  const [browserTabChatTitle, setBrowserTabChatTitle] = useState<boolean>(true)
 
   const [webSearchAvailable, setWebSearchAvailable] = useState<boolean>(true)
 
@@ -717,6 +721,15 @@ export function SettingsModal({
         : savedPixelateSidebarChatTitles === 'true',
     )
 
+    const savedBrowserTabChatTitle = localStorage.getItem(
+      SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
+    )
+    setBrowserTabChatTitle(
+      savedBrowserTabChatTitle === null
+        ? true
+        : savedBrowserTabChatTitle === 'true',
+    )
+
     const savedWebSearchAvailable = localStorage.getItem(
       SETTINGS_WEB_SEARCH_AVAILABLE,
     )
@@ -758,6 +771,11 @@ export function SettingsModal({
     ) => {
       setPixelateSidebarChatTitles(event.detail.enabled)
     }
+    const handleBrowserTabChatTitleUpdate = (
+      event: CustomEvent<{ enabled: boolean }>,
+    ) => {
+      setBrowserTabChatTitle(event.detail.enabled)
+    }
     const handleEnterToNewlineUpdate = (
       event: CustomEvent<{ enabled: boolean }>,
     ) => {
@@ -783,6 +801,10 @@ export function SettingsModal({
     window.addEventListener(
       PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
       handlePixelateSidebarChatTitlesUpdate as EventListener,
+    )
+    window.addEventListener(
+      BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
+      handleBrowserTabChatTitleUpdate as EventListener,
     )
     window.addEventListener(
       ENTER_TO_NEWLINE_CHANGED_EVENT,
@@ -811,6 +833,10 @@ export function SettingsModal({
       window.removeEventListener(
         PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
         handlePixelateSidebarChatTitlesUpdate as EventListener,
+      )
+      window.removeEventListener(
+        BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
+        handleBrowserTabChatTitleUpdate as EventListener,
       )
       window.removeEventListener(
         ENTER_TO_NEWLINE_CHANGED_EVENT,
@@ -2408,6 +2434,51 @@ ${encryptionKey.replace('key_', '')}
                                 window.dispatchEvent(
                                   new CustomEvent(
                                     PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
+                                    {
+                                      detail: { enabled: newValue },
+                                    },
+                                  ),
+                                )
+                              }
+                            }}
+                            className="peer sr-only"
+                          />
+                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong" />
+                        </label>
+                      </div>
+                    </div>
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="mr-3 flex-1">
+                          <div className="font-aeonik text-sm font-medium text-content-primary">
+                            Show chat title in browser tab
+                          </div>
+                          <div className="font-aeonik-fono text-xs text-content-muted">
+                            When off, the tab shows only &ldquo;
+                            {CONSTANTS.BASE_DOCUMENT_TITLE}&rdquo;.
+                          </div>
+                        </div>
+                        <label className="relative inline-flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            aria-label="Show chat title in browser tab"
+                            checked={browserTabChatTitle}
+                            onChange={(e) => {
+                              const newValue = e.target.checked
+                              setBrowserTabChatTitle(newValue)
+                              if (isClient) {
+                                localStorage.setItem(
+                                  SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
+                                  newValue.toString(),
+                                )
+                                window.dispatchEvent(
+                                  new CustomEvent(
+                                    BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
                                     {
                                       detail: { enabled: newValue },
                                     },

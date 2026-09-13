@@ -158,6 +158,7 @@ import {
   upsertChatById,
 } from './hooks/chat-operations'
 import { useAutoIntelligence } from './hooks/use-auto-intelligence'
+import { useBrowserTabChatTitle } from './hooks/use-browser-tab-chat-title'
 import { useChatState } from './hooks/use-chat-state'
 import { useCustomSystemPrompt } from './hooks/use-custom-system-prompt'
 import { useMessageQueue } from './hooks/use-message-queue'
@@ -1502,17 +1503,25 @@ export function ChatInterface({
   const chatTitleState = currentChat?.titleState
   const chatIsBlank = currentChat?.isBlankChat
   const chatIsTemporary = currentChat?.isTemporary
+  const showChatTitleInTab = useBrowserTabChatTitle()
   const documentTitle = useMemo(() => {
     const base = CONSTANTS.BASE_DOCUMENT_TITLE
     const trimmed = chatTitle?.trim()
     const hasMeaningfulTitle =
+      showChatTitleInTab &&
       !chatIsBlank &&
       !chatIsTemporary &&
       chatTitleState !== 'placeholder' &&
       !!trimmed &&
       trimmed !== 'New Chat'
     return hasMeaningfulTitle ? `${trimmed} · ${base}` : base
-  }, [chatTitle, chatTitleState, chatIsBlank, chatIsTemporary])
+  }, [
+    showChatTitleInTab,
+    chatTitle,
+    chatTitleState,
+    chatIsBlank,
+    chatIsTemporary,
+  ])
 
   // Initialize tinfoil client once when page loads
   useEffect(() => {
