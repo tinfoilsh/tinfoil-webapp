@@ -11,39 +11,21 @@ const BADGE_CLASS_NAME =
 
 const EXPERIMENTAL_TOOLTIP =
   'Support and availability are not guaranteed. This model can be deprecated at any time.'
-const DEPRECATION_TOOLTIP =
-  'This model is deprecated. An offline date has not been announced.'
 
 export function ModelLifecycleBadges({
   model,
 }: {
-  model: Pick<BaseModel, 'experimental' | 'deprecated' | 'deprecationdate'>
+  model: Pick<BaseModel, 'experimental'>
 }) {
-  if (model.experimental !== true && model.deprecated !== true) return null
+  if (model.experimental !== true) return null
 
   const badges = [
-    ...(model.experimental === true
-      ? [
-          {
-            label: 'Experimental',
-            tooltip: EXPERIMENTAL_TOOLTIP,
-            className:
-              'bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
-          },
-        ]
-      : []),
-    ...(model.deprecated === true
-      ? [
-          {
-            label: 'Deprecated',
-            tooltip: model.deprecationdate
-              ? `This model will be taken offline on ${model.deprecationdate}.`
-              : DEPRECATION_TOOLTIP,
-            className:
-              'bg-amber-500/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
-          },
-        ]
-      : []),
+    {
+      label: 'Experimental',
+      tooltip: EXPERIMENTAL_TOOLTIP,
+      className:
+        'bg-blue-500/10 text-blue-600 dark:bg-blue-400/15 dark:text-blue-300',
+    },
   ]
 
   return (

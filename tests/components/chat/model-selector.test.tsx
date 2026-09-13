@@ -28,71 +28,71 @@ afterEach(() => {
 
 describe('model lifecycle tags', () => {
   it.each([
-    { flags: {}, experimental: false, deprecated: false },
-    {
-      flags: { deprecationdate: '2026-10-01' },
-      experimental: false,
-      deprecated: false,
-    },
-    {
-      flags: { experimental: false, deprecated: false },
-      experimental: false,
-      deprecated: false,
-    },
-    { flags: { experimental: true }, experimental: true, deprecated: false },
-    { flags: { deprecated: true }, experimental: false, deprecated: true },
-    {
-      flags: { experimental: true, deprecated: true },
-      experimental: true,
-      deprecated: true,
-    },
-  ])(
-    'renders the flags $flags only in the menu',
-    ({ flags, experimental, deprecated }) => {
-      const model = { ...MODEL, ...flags }
-      const onSelect = vi.fn()
-      render(
-        <>
-          <button type="button" data-testid="trigger">
-            <ModelSelectorTriggerLabel
-              selectedModel={model.modelName}
-              models={[model]}
-              autoIntelligence="high"
-              isOpen={true}
-            />
-          </button>
-          <ModelSelector
+    { flags: {}, experimental: false },
+    { flags: { experimental: false }, experimental: false },
+    { flags: { experimental: true }, experimental: true },
+  ])('renders the flags $flags only in the menu', ({ flags, experimental }) => {
+    const model = { ...MODEL, ...flags }
+    const onSelect = vi.fn()
+    render(
+      <>
+        <button type="button" data-testid="trigger">
+          <ModelSelectorTriggerLabel
             selectedModel={model.modelName}
             models={[model]}
-            onSelect={onSelect}
-            isDarkMode={false}
+            autoIntelligence="high"
+            isOpen={true}
           />
-        </>,
-      )
+        </button>
+        <ModelSelector
+          selectedModel={model.modelName}
+          models={[model]}
+          onSelect={onSelect}
+          isDarkMode={false}
+        />
+      </>,
+    )
 
-      const row = screen.getByRole('menuitemradio', { name: /GPT-OSS 120B/ })
-      const trigger = screen.getByTestId('trigger')
-      expect(
-        within(trigger).queryByText('Experimental'),
-      ).not.toBeInTheDocument()
-      expect(within(trigger).queryByText('Deprecated')).not.toBeInTheDocument()
-      expect(within(trigger).getByText(model.name)).toBeVisible()
-      expect(within(row).queryByText('Experimental') !== null).toBe(
-        experimental,
-      )
-      expect(within(row).queryByText('Deprecated') !== null).toBe(deprecated)
-      expect(within(row).getByText(model.name)).toBeVisible()
-      expect(row).toHaveAttribute('aria-checked', 'true')
-      fireEvent.click(row)
-      expect(onSelect).toHaveBeenCalledExactlyOnceWith(model.modelName)
-    },
-  )
+    const row = screen.getByRole('menuitemradio', { name: /GPT-OSS 120B/ })
+    const trigger = screen.getByTestId('trigger')
+    expect(within(trigger).queryByText('Experimental')).not.toBeInTheDocument()
+    expect(within(trigger).getByText(model.name)).toBeVisible()
+    expect(within(row).queryByText('Experimental') !== null).toBe(experimental)
+    expect(within(row).getByText(model.name)).toBeVisible()
+    expect(row).toHaveAttribute('aria-checked', 'true')
+    fireEvent.click(row)
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(model.modelName)
+  })
+
+  it('hides deprecated models from the menu', () => {
+    const models: BaseModel[] = [
+      { ...MODEL, modelName: 'old-top', name: 'Old top', deprecated: true },
+      ...Array.from({ length: 20 }, (_, index) => ({
+        ...MODEL,
+        modelName: `chat-${index}`,
+        name: `Chat ${index}`,
+      })),
+      { ...MODEL, modelName: 'old-other', name: 'Old other', deprecated: true },
+    ]
+    render(
+      <ModelSelector
+        selectedModel={AUTO_MODEL_ID}
+        models={models}
+        onSelect={vi.fn()}
+        isDarkMode={false}
+      />,
+    )
+    expect(screen.getByText('Chat 0')).toBeVisible()
+    expect(screen.queryByText('Old top')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Other models' }))
+    expect(screen.getByText('Chat 19')).toBeVisible()
+    expect(screen.queryByText('Old other')).not.toBeInTheDocument()
+  })
 
   it('shows tags with a description under Other models without exposing API-only models', () => {
     const taggedModel: BaseModel = {
       ...MODEL,
       experimental: true,
-      deprecated: true,
       chatConfig: { descriptionShort: 'Best for quick reasoning tasks' },
     }
     const models: BaseModel[] = [
@@ -118,7 +118,6 @@ describe('model lifecycle tags', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Other models' }))
     const row = screen.getByRole('menuitemradio', { name: /GPT-OSS 120B/ })
     expect(within(row).getByText('Experimental')).toBeVisible()
-    expect(within(row).getByText('Deprecated')).toBeVisible()
     const name = within(row).getByText(taggedModel.name)
     const description = within(row).getByText('Best for quick reasoning tasks')
     const badgeRow = within(row).getByText('Experimental').parentElement
@@ -137,14 +136,13 @@ describe('model lifecycle tags', () => {
     render(
       <ModelSelectorTriggerLabel
         selectedModel={AUTO_MODEL_ID}
-        models={[{ ...MODEL, experimental: true, deprecated: true }]}
+        models={[{ ...MODEL, experimental: true }]}
         autoIntelligence="high"
         isOpen={false}
       />,
     )
     expect(screen.getByText('Auto · High')).toBeVisible()
     expect(screen.queryByText('Experimental')).not.toBeInTheDocument()
-    expect(screen.queryByText('Deprecated')).not.toBeInTheDocument()
   })
 
   it.each([
@@ -153,21 +151,6 @@ describe('model lifecycle tags', () => {
       label: 'Experimental',
       tooltip:
         'Support and availability are not guaranteed. This model can be deprecated at any time.',
-    },
-    {
-      flags: { deprecated: true },
-      label: 'Deprecated',
-      tooltip:
-        'This model is deprecated. An offline date has not been announced.',
-    },
-    {
-      flags: {
-        experimental: true,
-        deprecated: true,
-        deprecationdate: '2026-10-01',
-      },
-      label: 'Deprecated',
-      tooltip: 'This model will be taken offline on 2026-10-01.',
     },
   ])(
     'shows the $label explanation immediately on hover without selecting the model',
