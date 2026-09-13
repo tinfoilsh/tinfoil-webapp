@@ -17,7 +17,7 @@ const DEPRECATION_TOOLTIP =
 export function ModelLifecycleBadges({
   model,
 }: {
-  model: Pick<BaseModel, 'experimental' | 'deprecated' | 'deprecationdate'>
+  model: Pick<BaseModel, 'experimental' | 'deprecated' | 'deprecationDate'>
 }) {
   if (model.experimental !== true && model.deprecated !== true) return null
 
@@ -36,8 +36,8 @@ export function ModelLifecycleBadges({
       ? [
           {
             label: 'Deprecated',
-            tooltip: model.deprecationdate
-              ? `This model will be taken offline on ${model.deprecationdate}.`
+            tooltip: model.deprecationDate
+              ? `This model will be taken offline on ${model.deprecationDate}.`
               : DEPRECATION_TOOLTIP,
             className:
               'bg-amber-500/10 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
