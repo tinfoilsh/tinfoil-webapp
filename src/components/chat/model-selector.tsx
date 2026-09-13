@@ -316,11 +316,13 @@ export function ModelSelector({
   const currentEffort =
     EFFORT_OPTIONS.find((o) => o.value === reasoningEffort) ?? EFFORT_OPTIONS[1]
 
+  // A deprecated model stays visible while it is the active selection so the
+  // menu agrees with the trigger label for chats that already use it.
   const displayModels = models.filter(
     (model) =>
       (model.type === 'chat' || model.type === 'code') &&
       model.chat === true &&
-      model.deprecated !== true,
+      (model.deprecated !== true || model.modelName === selectedModel),
   )
 
   const availableHeight = Number.parseInt(dynamicStyles.maxHeight, 10) || 0
