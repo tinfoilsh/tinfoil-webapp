@@ -88,6 +88,55 @@ describe('model lifecycle tags', () => {
     },
   )
 
+  it('hides deprecated models unless one is the current selection', () => {
+    const selectedDeprecated: BaseModel = {
+      ...MODEL,
+      modelName: 'old-selected',
+      name: 'Old selected',
+      deprecated: true,
+    }
+    const models: BaseModel[] = [
+      { ...MODEL, modelName: 'old-top', name: 'Old top', deprecated: true },
+      ...Array.from({ length: 20 }, (_, index) => ({
+        ...MODEL,
+        modelName: `chat-${index}`,
+        name: `Chat ${index}`,
+      })),
+      selectedDeprecated,
+      { ...MODEL, modelName: 'old-other', name: 'Old other', deprecated: true },
+    ]
+    render(
+      <>
+        <button type="button" data-testid="trigger">
+          <ModelSelectorTriggerLabel
+            selectedModel={selectedDeprecated.modelName}
+            models={models}
+            autoIntelligence="high"
+            isOpen={true}
+          />
+        </button>
+        <ModelSelector
+          selectedModel={selectedDeprecated.modelName}
+          models={models}
+          onSelect={vi.fn()}
+          isDarkMode={false}
+        />
+      </>,
+    )
+    expect(
+      within(screen.getByTestId('trigger')).getByText('Old selected'),
+    ).toBeVisible()
+    expect(screen.getByText('Chat 0')).toBeVisible()
+    expect(screen.queryByText('Old top')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Other models' }))
+    expect(screen.getByText('Chat 19')).toBeVisible()
+    expect(screen.queryByText('Old top')).not.toBeInTheDocument()
+    expect(screen.queryByText('Old other')).not.toBeInTheDocument()
+    const row = screen.getByRole('menuitemradio', { name: /Old selected/ })
+    expect(row).toHaveAttribute('aria-checked', 'true')
+    expect(within(row).getByText('Deprecated')).toBeVisible()
+  })
+
   it('shows tags with a description under Other models without exposing API-only models', () => {
     const taggedModel: BaseModel = {
       ...MODEL,
@@ -107,7 +156,7 @@ describe('model lifecycle tags', () => {
     const onSelect = vi.fn()
     render(
       <ModelSelector
-        selectedModel={AUTO_MODEL_ID}
+        selectedModel={taggedModel.modelName}
         models={models}
         onSelect={onSelect}
         isDarkMode={true}
@@ -176,7 +225,7 @@ describe('model lifecycle tags', () => {
       const onSelect = vi.fn()
       render(
         <ModelSelector
-          selectedModel={AUTO_MODEL_ID}
+          selectedModel={MODEL.modelName}
           models={[{ ...MODEL, ...flags }]}
           onSelect={onSelect}
           isDarkMode={false}
