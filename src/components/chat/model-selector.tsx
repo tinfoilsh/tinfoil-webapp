@@ -318,7 +318,9 @@ export function ModelSelector({
 
   const displayModels = models.filter(
     (model) =>
-      (model.type === 'chat' || model.type === 'code') && model.chat === true,
+      (model.type === 'chat' || model.type === 'code') &&
+      model.chat === true &&
+      model.deprecated !== true,
   )
 
   const availableHeight = Number.parseInt(dynamicStyles.maxHeight, 10) || 0
