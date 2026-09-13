@@ -309,6 +309,22 @@ describe('reconcileDirtyProfileWithoutBaseline', () => {
     expect(profile?.pixelateSidebarChatTitlesEnabled).toBe(false)
   })
 
+  it('preserves a local browser tab title opt-out when the remote omits it', () => {
+    const profile = reconcileDirtyProfileWithoutBaseline({
+      remote: { nickname: 'Remote', version: 4 },
+      localBeforeFetch: {
+        nickname: 'Remote',
+        browserTabChatTitleEnabled: false,
+      },
+      localAfterFetch: {
+        nickname: 'Remote',
+        browserTabChatTitleEnabled: false,
+      },
+    })
+
+    expect(profile?.browserTabChatTitleEnabled).toBe(false)
+  })
+
   it('overlays settings changed while the remote profile was loading', () => {
     const profile = reconcileDirtyProfileWithoutBaseline({
       remote: {

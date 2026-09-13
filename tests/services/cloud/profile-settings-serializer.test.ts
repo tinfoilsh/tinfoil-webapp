@@ -1,4 +1,5 @@
 import {
+  SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
   SETTINGS_CHAT_FONT,
   SETTINGS_CODE_EXECUTION_ENABLED,
   SETTINGS_ENTER_TO_NEWLINE_ENABLED,
@@ -165,6 +166,7 @@ describe('profile-settings-serializer', () => {
     localStorage.setItem(SETTINGS_WEB_SEARCH_AVAILABLE, 'false')
     localStorage.setItem(SETTINGS_CODE_EXECUTION_ENABLED, 'true')
     localStorage.setItem(SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED, 'false')
+    localStorage.setItem(SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED, 'false')
     localStorage.setItem(SETTINGS_PII_CHECK_ENABLED, 'false')
     localStorage.setItem(SETTINGS_ENTER_TO_NEWLINE_ENABLED, 'true')
     localStorage.setItem(SETTINGS_CHAT_FONT, 'mono')
@@ -180,6 +182,7 @@ describe('profile-settings-serializer', () => {
       webSearchAvailable: false,
       codeExecutionEnabled: true,
       pixelateSidebarChatTitlesEnabled: false,
+      browserTabChatTitleEnabled: false,
       piiCheckEnabled: false,
       enterToNewlineEnabled: true,
       chatFont: 'mono',
@@ -234,6 +237,7 @@ describe('profile-settings-serializer', () => {
       webSearchAvailable: false,
       codeExecutionEnabled: false,
       pixelateSidebarChatTitlesEnabled: true,
+      browserTabChatTitleEnabled: false,
       piiCheckEnabled: true,
       enterToNewlineEnabled: true,
       chatFont: 'serif',
@@ -254,6 +258,9 @@ describe('profile-settings-serializer', () => {
     expect(
       localStorage.getItem(SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED),
     ).toBe('true')
+    expect(localStorage.getItem(SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED)).toBe(
+      'false',
+    )
     expect(localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)).toBe('true')
     expect(localStorage.getItem(SETTINGS_ENTER_TO_NEWLINE_ENABLED)).toBe('true')
     expect(localStorage.getItem(SETTINGS_CHAT_FONT)).toBe('serif')
@@ -265,5 +272,9 @@ describe('profile-settings-serializer', () => {
 
   it('omits sidebar chat title pixelation when it has not been set', () => {
     expect(loadLocalSettings().pixelateSidebarChatTitlesEnabled).toBeUndefined()
+  })
+
+  it('omits browser tab chat title visibility when it has not been set', () => {
+    expect(loadLocalSettings().browserTabChatTitleEnabled).toBeUndefined()
   })
 })

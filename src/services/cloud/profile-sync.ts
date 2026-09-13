@@ -83,6 +83,7 @@ export interface ProfileData {
   webSearchAvailable?: boolean
   codeExecutionEnabled?: boolean
   pixelateSidebarChatTitlesEnabled?: boolean
+  browserTabChatTitleEnabled?: boolean
   piiCheckEnabled?: boolean
   enterToNewlineEnabled?: boolean
   genUIEnabled?: boolean

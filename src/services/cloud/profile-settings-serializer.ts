@@ -1,9 +1,11 @@
 import {
+  BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
   ENTER_TO_NEWLINE_CHANGED_EVENT,
   PINNED_CHAT_IDS_CHANGED_EVENT,
   PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
 } from '@/constants/settings-events'
 import {
+  SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
   SETTINGS_CHAT_FONT,
   SETTINGS_CODE_EXECUTION_ENABLED,
   SETTINGS_ENTER_TO_NEWLINE_ENABLED,
@@ -109,6 +111,8 @@ export function hasProfileChanged(
     profile1.codeExecutionEnabled !== profile2.codeExecutionEnabled ||
     profile1.pixelateSidebarChatTitlesEnabled !==
       profile2.pixelateSidebarChatTitlesEnabled ||
+    profile1.browserTabChatTitleEnabled !==
+      profile2.browserTabChatTitleEnabled ||
     profile1.piiCheckEnabled !== profile2.piiCheckEnabled ||
     profile1.enterToNewlineEnabled !== profile2.enterToNewlineEnabled ||
     profile1.genUIEnabled !== profile2.genUIEnabled ||
@@ -246,6 +250,13 @@ export function loadLocalSettings(): ProfileData {
       pixelateSidebarChatTitlesEnabled === 'true'
   }
 
+  const browserTabChatTitleEnabled = localStorage.getItem(
+    SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
+  )
+  if (browserTabChatTitleEnabled !== null) {
+    settings.browserTabChatTitleEnabled = browserTabChatTitleEnabled === 'true'
+  }
+
   const piiCheckEnabled = localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)
   if (piiCheckEnabled !== null) {
     settings.piiCheckEnabled = piiCheckEnabled === 'true'
@@ -296,6 +307,7 @@ export function resetSettingsToLocalDefaults(): ProfileData {
     webSearchAvailable: true,
     codeExecutionEnabled: false,
     pixelateSidebarChatTitlesEnabled: true,
+    browserTabChatTitleEnabled: true,
     piiCheckEnabled: true,
     enterToNewlineEnabled: false,
     genUIEnabled: true,
@@ -516,6 +528,18 @@ export function applySettingsToLocal(settings: ProfileData): void {
     window.dispatchEvent(
       new CustomEvent(PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT, {
         detail: { enabled: settings.pixelateSidebarChatTitlesEnabled },
+      }),
+    )
+  }
+
+  if (settings.browserTabChatTitleEnabled !== undefined) {
+    localStorage.setItem(
+      SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
+      String(settings.browserTabChatTitleEnabled),
+    )
+    window.dispatchEvent(
+      new CustomEvent(BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT, {
+        detail: { enabled: settings.browserTabChatTitleEnabled },
       }),
     )
   }
