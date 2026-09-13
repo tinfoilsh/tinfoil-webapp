@@ -293,37 +293,21 @@ describe('reconcileDirtyProfileWithoutBaseline', () => {
     expect(profile?.pinnedChatIds).toEqual([])
   })
 
-  it('recovers another migration-safe field without local pins', () => {
-    const profile = reconcileDirtyProfileWithoutBaseline({
-      remote: { nickname: 'Remote', version: 4 },
-      localBeforeFetch: {
-        nickname: 'Remote',
-        pixelateSidebarChatTitlesEnabled: false,
-      },
-      localAfterFetch: {
-        nickname: 'Remote',
-        pixelateSidebarChatTitlesEnabled: false,
-      },
-    })
+  it.each([
+    'pixelateSidebarChatTitlesEnabled',
+    'browserTabChatTitleEnabled',
+  ] as const)(
+    'recovers migration-safe field %s when the remote omits it',
+    (field) => {
+      const profile = reconcileDirtyProfileWithoutBaseline({
+        remote: { nickname: 'Remote', version: 4 },
+        localBeforeFetch: { nickname: 'Remote', [field]: false },
+        localAfterFetch: { nickname: 'Remote', [field]: false },
+      })
 
-    expect(profile?.pixelateSidebarChatTitlesEnabled).toBe(false)
-  })
-
-  it('preserves a local browser tab title opt-out when the remote omits it', () => {
-    const profile = reconcileDirtyProfileWithoutBaseline({
-      remote: { nickname: 'Remote', version: 4 },
-      localBeforeFetch: {
-        nickname: 'Remote',
-        browserTabChatTitleEnabled: false,
-      },
-      localAfterFetch: {
-        nickname: 'Remote',
-        browserTabChatTitleEnabled: false,
-      },
-    })
-
-    expect(profile?.browserTabChatTitleEnabled).toBe(false)
-  })
+      expect(profile?.[field]).toBe(false)
+    },
+  )
 
   it('overlays settings changed while the remote profile was loading', () => {
     const profile = reconcileDirtyProfileWithoutBaseline({
