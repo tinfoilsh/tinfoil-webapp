@@ -120,7 +120,7 @@ function dispatchRateLimitUpdate(): void {
 }
 
 /**
- * Subscribes to rate limit changes. Pairs with getRateLimitInfo for
+ * Subscribes to rate limit changes. Pairs with getRateLimitSnapshot for
  * useSyncExternalStore; the returned snapshot is only reallocated when the
  * cache actually changes so React can bail out of redundant renders.
  */
@@ -176,7 +176,7 @@ function parseRateLimit(
   kind: NonNullable<RateLimitInfo['kind']>,
 ): RateLimitInfo {
   return {
-    maxRequests: body.max_requests ?? 0,
+    maxRequests: body.max_requests ?? Number.POSITIVE_INFINITY,
     remaining: body.remaining ?? Number.POSITIVE_INFINITY,
     inputTokens: parseTokenBudget(
       body.max_input_tokens,
@@ -289,6 +289,20 @@ async function fetchChatJWT(
   return null
 }
 
+async function resolveAuthBearer(signal?: AbortSignal): Promise<string | null> {
+  if (!authTokenManager.isInitialized()) return null
+  try {
+    const validToken = authTokenManager.getValidToken()
+    return await (signal ? waitForSignal(validToken, signal) : validToken)
+  } catch (error) {
+    logError('Failed to get auth token, falling back to anonymous key', error, {
+      component: 'tinfoil-client',
+      action: 'fetchSessionToken',
+    })
+    return null
+  }
+}
+
 async function fetchSessionTokenForGeneration(
   cacheGeneration: number,
   signal?: AbortSignal,
@@ -317,24 +331,7 @@ async function fetchSessionTokenForGeneration(
   // check and the actual request use the same authenticated/anonymous
   // decision.  This avoids a stale-cache loop when getValidToken()
   // intermittently fails for a signed-in user.
-  let authBearer: string | null = null
-  if (authTokenManager.isInitialized()) {
-    try {
-      const validToken = authTokenManager.getValidToken()
-      authBearer = await (signal
-        ? waitForSignal(validToken, signal)
-        : validToken)
-    } catch (error) {
-      logError(
-        'Failed to get auth token, falling back to anonymous key',
-        error,
-        {
-          component: 'tinfoil-client',
-          action: 'fetchSessionToken',
-        },
-      )
-    }
-  }
+  const authBearer = await resolveAuthBearer(signal)
   assertSessionCacheGeneration(cacheGeneration)
   const usedAuthHeader = authBearer !== null
 
@@ -495,6 +492,34 @@ export function discardRateLimitSnapshot(): void {
   remainingBeforeRequest = null
 }
 
+// Re-reads a subscriber's hourly usage without discarding the cached
+// session JWT. Every mint returns a distinct JWT, and a changed session token
+// makes ensureInitialized rebuild the OpenAI client and re-run attestation, so
+// the usage refresh must not rotate the token the way the free-tier path does.
+// Falls through to the mint path only when the JWT is already unusable.
+async function refreshHourlyUsage(cacheGeneration: number): Promise<void> {
+  const authBearer = await resolveAuthBearer()
+  assertSessionCacheGeneration(cacheGeneration)
+  if (!authBearer) {
+    cachedSessionToken = null
+    cachedSessionTokenExpiresAt = null
+    await fetchSessionTokenForGeneration(cacheGeneration)
+    return
+  }
+  const jwt = await fetchChatJWT(authBearer, cacheGeneration)
+  assertSessionCacheGeneration(cacheGeneration)
+  if (jwt === null) {
+    // The account is no longer entitled to a chat JWT (or the endpoint is
+    // unreachable); let the normal mint path re-resolve the right tier.
+    cachedSessionToken = null
+    cachedSessionTokenExpiresAt = null
+    await fetchSessionTokenForGeneration(cacheGeneration)
+    return
+  }
+  cachedRateLimit = jwt.rateLimit
+  dispatchRateLimitUpdate()
+}
+
 /**
  * Forces a fresh fetch of the session token (and rate limit info) from
  * the server, bypassing the local cache.  Called after each stream
@@ -511,9 +536,13 @@ export async function refreshRateLimit(): Promise<void> {
     const refreshGeneration = sessionCacheGeneration
     const snapshot = remainingBeforeRequest
     remainingBeforeRequest = null
-    cachedSessionToken = null
-    cachedSessionTokenExpiresAt = null
     try {
+      if (cachedRateLimit?.kind === 'hourly') {
+        await refreshHourlyUsage(refreshGeneration)
+        return
+      }
+      cachedSessionToken = null
+      cachedSessionTokenExpiresAt = null
       await fetchSessionTokenForGeneration(refreshGeneration)
       if (
         refreshGeneration === sessionCacheGeneration &&
@@ -559,12 +588,16 @@ export function resetTinfoilClient(): void {
   cachedSessionToken = null
   cachedSessionTokenExpiresAt = null
   cachedSessionTokenWasAuthenticated = false
+  const hadRateLimit = cachedRateLimit !== null
   cachedRateLimit = null
   remainingBeforeRequest = null
   refreshInFlight = null
   cachedVerificationDocument = null
   idleRecoverableTransports = []
   recoverableTransportPoolGeneration++
+  if (hadRateLimit) {
+    dispatchRateLimitUpdate()
+  }
 }
 
 export function invalidateSessionCache(): void {

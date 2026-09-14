@@ -1,5 +1,6 @@
 import {
   getRateLimitInfo,
+  getSessionToken,
   invalidateSessionCache,
   refreshRateLimit,
   resetTinfoilClient,
@@ -46,6 +47,25 @@ const chatKeyResponse = (key: string, remaining: number) =>
     { status: 200 },
   )
 
+const chatJWTResponse = (key: string, inputTokensUsed: number) =>
+  new Response(
+    JSON.stringify({
+      key,
+      expires_at: '2099-01-01T00:00:00Z',
+      is_free_tier: false,
+      rate_limit: {
+        max_input_tokens: 20_000_000,
+        input_tokens_used: inputTokensUsed,
+        input_tokens_remaining: 20_000_000 - inputTokensUsed,
+        max_output_tokens: 1_000_000,
+        output_tokens_used: 250,
+        output_tokens_remaining: 999_750,
+        resets_at: '2026-07-24T01:00:00Z',
+      },
+    }),
+    { status: 200 },
+  )
+
 describe('tinfoil-client session cache', () => {
   beforeEach(() => {
     resetTinfoilClient()
@@ -60,25 +80,10 @@ describe('tinfoil-client session cache', () => {
   it('surfaces the hourly token budget for subscribers', async () => {
     authTokenManagerMock.isInitialized.mockReturnValue(true)
     authTokenManagerMock.getValidToken.mockResolvedValue('clerk-jwt')
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          key: 'chat-jwt',
-          expires_at: '2026-07-24T00:15:00Z',
-          is_free_tier: false,
-          rate_limit: {
-            max_input_tokens: 20_000_000,
-            input_tokens_used: 1_500,
-            input_tokens_remaining: 19_998_500,
-            max_output_tokens: 1_000_000,
-            output_tokens_used: 250,
-            output_tokens_remaining: 999_750,
-            resets_at: '2026-07-24T01:00:00Z',
-          },
-        }),
-        { status: 200 },
-      ),
-    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chatJWTResponse('chat-jwt', 1_500))
+      .mockResolvedValueOnce(chatJWTResponse('chat-jwt-2', 9_000))
     vi.stubGlobal('fetch', fetchMock)
 
     await refreshRateLimit()
@@ -95,6 +100,29 @@ describe('tinfoil-client session cache', () => {
     // Subscribers have no request quota, so the hourly info must never gate
     // sending the way an exhausted free-tier count does.
     expect(limit!.remaining).toBeGreaterThan(0)
+    expect(limit!.maxRequests).toBeGreaterThan(0)
+
+    // A usage refresh must not rotate the still-valid session JWT: a new key
+    // would force the OpenAI client (and attestation) to be rebuilt.
+    await refreshRateLimit()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(getRateLimitInfo()!.inputTokens!.used).toBe(9_000)
+    expect(await getSessionToken()).toBe('chat-jwt')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('notifies subscribers when a client reset drops the rate limit', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chatKeyResponse('k', 3)))
+    await refreshRateLimit()
+    expect(getRateLimitInfo()).not.toBeNull()
+
+    const listener = vi.fn()
+    window.addEventListener('rateLimitUpdated', listener)
+    resetTinfoilClient()
+    window.removeEventListener('rateLimitUpdated', listener)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(getRateLimitInfo()).toBeNull()
   })
 
   it('does not restore stale rate limits after invalidation', async () => {
