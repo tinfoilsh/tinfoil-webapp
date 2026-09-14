@@ -22,12 +22,18 @@ import {
 import { authTokenManager } from '../auth'
 import { INFERENCE_CLIENT_INITIALIZATION_TIMEOUT_MS } from './constants'
 
+/** One dimension (input or output) of a token budget. */
+export interface TokenBudget {
+  max: number
+  used: number
+  remaining: number
+}
+
 export interface RateLimitInfo {
   maxRequests: number
   remaining: number
-  maxTokens?: number
-  tokensUsed?: number
-  tokensRemaining?: number
+  inputTokens?: TokenBudget
+  outputTokens?: TokenBudget
   resetsAt: string
   /**
    * Which limit this represents. Absent or `free_daily` is the anonymous/
@@ -116,6 +122,61 @@ type ServerErrorBody = {
   error?: string
   code?: string
   resets_at?: string
+  rate_limit?: ServerRateLimitBody
+}
+
+type ServerRateLimitBody = {
+  max_requests?: number
+  remaining?: number
+  max_input_tokens?: number
+  input_tokens_used?: number
+  input_tokens_remaining?: number
+  max_output_tokens?: number
+  output_tokens_used?: number
+  output_tokens_remaining?: number
+  resets_at?: string
+}
+
+function parseTokenBudget(
+  max: unknown,
+  used: unknown,
+  remaining: unknown,
+): TokenBudget | undefined {
+  if (
+    typeof max !== 'number' ||
+    typeof used !== 'number' ||
+    typeof remaining !== 'number' ||
+    max <= 0
+  ) {
+    return undefined
+  }
+  return { max, used, remaining }
+}
+
+// Both token-minting endpoints report budgets in the same wire shape. The
+// free-tier key carries a daily request quota; the subscriber JWT only has
+// hourly token budgets, so its request fields are absent and default to a
+// non-gating "unlimited" quota.
+function parseRateLimit(
+  body: ServerRateLimitBody,
+  kind: NonNullable<RateLimitInfo['kind']>,
+): RateLimitInfo {
+  return {
+    maxRequests: body.max_requests ?? 0,
+    remaining: body.remaining ?? Number.POSITIVE_INFINITY,
+    inputTokens: parseTokenBudget(
+      body.max_input_tokens,
+      body.input_tokens_used,
+      body.input_tokens_remaining,
+    ),
+    outputTokens: parseTokenBudget(
+      body.max_output_tokens,
+      body.output_tokens_used,
+      body.output_tokens_remaining,
+    ),
+    resetsAt: body.resets_at ?? '',
+    kind,
+  }
 }
 
 function parseErrorBody(errorText: string): ServerErrorBody | null {
@@ -137,10 +198,15 @@ function isHourlyLimit(
 // channel (so the banner renders) and throws a typed error the chat
 // classifies as a rate limit rather than a generic failure. Never returns.
 function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
+  const budget = parsedError?.rate_limit
+    ? parseRateLimit(parsedError.rate_limit, 'hourly')
+    : null
   cachedRateLimit = {
     maxRequests: 0,
     remaining: 0,
-    resetsAt: parsedError?.resets_at ?? '',
+    inputTokens: budget?.inputTokens,
+    outputTokens: budget?.outputTokens,
+    resetsAt: parsedError?.resets_at ?? budget?.resetsAt ?? '',
     kind: 'hourly',
   }
   dispatchRateLimitUpdate()
@@ -161,7 +227,11 @@ async function fetchChatJWT(
   authBearer: string,
   cacheGeneration: number,
   signal?: AbortSignal,
-): Promise<{ key: string; expiresAt: number | null } | null> {
+): Promise<{
+  key: string
+  expiresAt: number | null
+  rateLimit: RateLimitInfo | null
+} | null> {
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}/api/chat/token`, {
@@ -185,6 +255,9 @@ async function fetchChatJWT(
             expiresAtMs !== null && !Number.isNaN(expiresAtMs)
               ? expiresAtMs
               : null,
+          rateLimit: data.rate_limit
+            ? parseRateLimit(data.rate_limit, 'hourly')
+            : null,
         }
       }
     } catch {
@@ -287,7 +360,7 @@ async function fetchSessionTokenForGeneration(
       cachedSessionToken = jwt.key
       cachedSessionTokenWasAuthenticated = true
       cachedSessionTokenExpiresAt = jwt.expiresAt
-      cachedRateLimit = null
+      cachedRateLimit = jwt.rateLimit
       dispatchRateLimitUpdate()
       return jwt.key
     }
@@ -339,15 +412,7 @@ async function fetchSessionTokenForGeneration(
   }
 
   if (data.is_free_tier && data.rate_limit) {
-    cachedRateLimit = {
-      maxRequests: data.rate_limit.max_requests,
-      remaining: data.rate_limit.remaining,
-      maxTokens: data.rate_limit.max_tokens,
-      tokensUsed: data.rate_limit.tokens_used,
-      tokensRemaining: data.rate_limit.tokens_remaining,
-      resetsAt: data.rate_limit.resets_at,
-      kind: 'free_daily',
-    }
+    cachedRateLimit = parseRateLimit(data.rate_limit, 'free_daily')
   } else {
     cachedRateLimit = null
   }

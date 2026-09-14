@@ -12,12 +12,14 @@ vi.mock('@/config', () => ({
   IS_DEV: false,
 }))
 
+const authTokenManagerMock = vi.hoisted(() => ({
+  isInitialized: vi.fn(() => false),
+  waitForInit: vi.fn(),
+  getValidToken: vi.fn<() => Promise<string>>(),
+}))
+
 vi.mock('@/services/auth', () => ({
-  authTokenManager: {
-    isInitialized: () => false,
-    waitForInit: vi.fn(),
-    getValidToken: vi.fn(),
-  },
+  authTokenManager: authTokenManagerMock,
 }))
 
 vi.mock('@/utils/error-handling', () => ({
@@ -32,9 +34,12 @@ const chatKeyResponse = (key: string, remaining: number) =>
       rate_limit: {
         max_requests: 7,
         remaining,
-        max_tokens: 2_000_000,
-        tokens_used: 750_000,
-        tokens_remaining: 1_250_000,
+        max_input_tokens: 2_000_000,
+        input_tokens_used: 750_000,
+        input_tokens_remaining: 1_250_000,
+        max_output_tokens: 100_000,
+        output_tokens_used: 20_000,
+        output_tokens_remaining: 80_000,
         resets_at: '2026-07-24T00:00:00Z',
       },
     }),
@@ -45,10 +50,51 @@ describe('tinfoil-client session cache', () => {
   beforeEach(() => {
     resetTinfoilClient()
     localStorage.clear()
+    authTokenManagerMock.isInitialized.mockReturnValue(false)
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('surfaces the hourly token budget for subscribers', async () => {
+    authTokenManagerMock.isInitialized.mockReturnValue(true)
+    authTokenManagerMock.getValidToken.mockResolvedValue('clerk-jwt')
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          key: 'chat-jwt',
+          expires_at: '2026-07-24T00:15:00Z',
+          is_free_tier: false,
+          rate_limit: {
+            max_input_tokens: 20_000_000,
+            input_tokens_used: 1_500,
+            input_tokens_remaining: 19_998_500,
+            max_output_tokens: 1_000_000,
+            output_tokens_used: 250,
+            output_tokens_remaining: 999_750,
+            resets_at: '2026-07-24T01:00:00Z',
+          },
+        }),
+        { status: 200 },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await refreshRateLimit()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/chat/token')
+    const limit = getRateLimitInfo()
+    expect(limit).toMatchObject({
+      kind: 'hourly',
+      resetsAt: '2026-07-24T01:00:00Z',
+      inputTokens: { max: 20_000_000, used: 1_500, remaining: 19_998_500 },
+      outputTokens: { max: 1_000_000, used: 250, remaining: 999_750 },
+    })
+    // Subscribers have no request quota, so the hourly info must never gate
+    // sending the way an exhausted free-tier count does.
+    expect(limit!.remaining).toBeGreaterThan(0)
   })
 
   it('does not restore stale rate limits after invalidation', async () => {
@@ -81,9 +127,9 @@ describe('tinfoil-client session cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(getRateLimitInfo()).toMatchObject({
       remaining: 6,
-      maxTokens: 2_000_000,
-      tokensUsed: 750_000,
-      tokensRemaining: 1_250_000,
+      kind: 'free_daily',
+      inputTokens: { max: 2_000_000, used: 750_000, remaining: 1_250_000 },
+      outputTokens: { max: 100_000, used: 20_000, remaining: 80_000 },
     })
   })
 
