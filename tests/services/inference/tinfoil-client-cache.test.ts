@@ -1,3 +1,4 @@
+import { RATE_LIMIT_UPDATED_EVENT } from '@/constants/chat-events'
 import {
   getRateLimitInfo,
   getSessionToken,
@@ -117,9 +118,9 @@ describe('tinfoil-client session cache', () => {
     expect(getRateLimitInfo()).not.toBeNull()
 
     const listener = vi.fn()
-    window.addEventListener('rateLimitUpdated', listener)
+    window.addEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
     resetTinfoilClient()
-    window.removeEventListener('rateLimitUpdated', listener)
+    window.removeEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
 
     expect(listener).toHaveBeenCalledTimes(1)
     expect(getRateLimitInfo()).toBeNull()

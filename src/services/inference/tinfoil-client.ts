@@ -492,30 +492,20 @@ export function discardRateLimitSnapshot(): void {
   remainingBeforeRequest = null
 }
 
-// Re-reads a subscriber's hourly usage without discarding the cached
-// session JWT. Every mint returns a distinct JWT, and a changed session token
-// makes ensureInitialized rebuild the OpenAI client and re-run attestation, so
-// the usage refresh must not rotate the token the way the free-tier path does.
-// Falls through to the mint path only when the JWT is already unusable.
+// Re-reads a subscriber's hourly usage without touching the cached session
+// JWT. Every mint returns a distinct JWT, and a changed session token makes
+// ensureInitialized rebuild the OpenAI client and re-run attestation, so the
+// usage refresh must not rotate the token the way the free-tier path does.
+// If the read fails the usage simply stays stale until the next refresh; the
+// JWT remains valid until its own expiry, at which point the regular mint
+// path re-resolves the account's tier.
 async function refreshHourlyUsage(cacheGeneration: number): Promise<void> {
   const authBearer = await resolveAuthBearer()
   assertSessionCacheGeneration(cacheGeneration)
-  if (!authBearer) {
-    cachedSessionToken = null
-    cachedSessionTokenExpiresAt = null
-    await fetchSessionTokenForGeneration(cacheGeneration)
-    return
-  }
+  if (!authBearer) return
   const jwt = await fetchChatJWT(authBearer, cacheGeneration)
   assertSessionCacheGeneration(cacheGeneration)
-  if (jwt === null) {
-    // The account is no longer entitled to a chat JWT (or the endpoint is
-    // unreachable); let the normal mint path re-resolve the right tier.
-    cachedSessionToken = null
-    cachedSessionTokenExpiresAt = null
-    await fetchSessionTokenForGeneration(cacheGeneration)
-    return
-  }
+  if (jwt === null) return
   cachedRateLimit = jwt.rateLimit
   dispatchRateLimitUpdate()
 }
