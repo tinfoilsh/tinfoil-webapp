@@ -492,6 +492,56 @@ export function discardRateLimitSnapshot(): void {
   remainingBeforeRequest = null
 }
 
+export interface StreamUsage {
+  promptTokens: number
+  completionTokens: number
+}
+
+function consumeTokenBudget(
+  budget: TokenBudget | undefined,
+  tokens: number,
+): TokenBudget | undefined {
+  if (!budget || tokens <= 0) return budget
+  return {
+    max: budget.max,
+    used: budget.used + tokens,
+    remaining: Math.max(0, budget.remaining - tokens),
+  }
+}
+
+/**
+ * Tracks one in-flight stream's usage so the sidebar indicator moves while
+ * the response is still streaming. Usage chunks report running totals for
+ * the request, so each call folds only the growth since the previous chunk
+ * into the cached budget. The server's count replaces this local estimate
+ * on the next refreshRateLimit.
+ */
+export function createStreamUsageTracker(): (usage: StreamUsage) => void {
+  let applied: StreamUsage = { promptTokens: 0, completionTokens: 0 }
+  return (usage) => {
+    if (!cachedRateLimit) return
+    const promptDelta = usage.promptTokens - applied.promptTokens
+    const completionDelta = usage.completionTokens - applied.completionTokens
+    if (promptDelta <= 0 && completionDelta <= 0) return
+    applied = {
+      promptTokens: Math.max(applied.promptTokens, usage.promptTokens),
+      completionTokens: Math.max(
+        applied.completionTokens,
+        usage.completionTokens,
+      ),
+    }
+    cachedRateLimit = {
+      ...cachedRateLimit,
+      inputTokens: consumeTokenBudget(cachedRateLimit.inputTokens, promptDelta),
+      outputTokens: consumeTokenBudget(
+        cachedRateLimit.outputTokens,
+        completionDelta,
+      ),
+    }
+    dispatchRateLimitUpdate()
+  }
+}
+
 // Re-reads a subscriber's hourly usage without touching the cached session
 // JWT. Every mint returns a distinct JWT, and a changed session token makes
 // ensureInitialized rebuild the OpenAI client and re-run attestation, so the

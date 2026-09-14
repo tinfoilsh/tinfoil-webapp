@@ -489,6 +489,9 @@ export async function sendChatStream(
         model: model.modelName,
         messages,
         stream: true,
+        // The router only forwards usage chunks when the client asks for
+        // them; the sidebar usage indicator consumes them mid-stream.
+        stream_options: { include_usage: true },
       }
       if (webSearchEnabled) {
         requestBody.web_search_options = {}

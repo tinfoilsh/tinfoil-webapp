@@ -1,6 +1,7 @@
 import { IS_DEV } from '@/config'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import type { ChatChunkStream } from '@/services/inference/chat-stream'
+import { createStreamUsageTracker } from '@/services/inference/tinfoil-client'
 import {
   createStreamLogger,
   type StreamLogger,
@@ -27,6 +28,7 @@ export async function processStreamingResponse(
     resolveModelDisplayName: ctx.resolveModelDisplayName,
   })
   const publisher = new AnimationFramePublisher(ctx.onUpdate)
+  const trackUsage = createStreamUsageTracker()
   let interruptionPublished = false
   let publicationCompleted = false
 
@@ -48,6 +50,12 @@ export async function processStreamingResponse(
     for await (const chunk of stream) {
       if (ctx.signal?.aborted) break
       streamLogger?.logParsedEvent(chunk)
+      if (chunk.usage) {
+        trackUsage({
+          promptTokens: chunk.usage.prompt_tokens ?? 0,
+          completionTokens: chunk.usage.completion_tokens ?? 0,
+        })
+      }
       if (session.processChunk(chunk, streamLogger)) {
         publisher.publishLazy(() => session.snapshot(ctx.turnId))
       }

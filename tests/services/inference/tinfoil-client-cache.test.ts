@@ -1,5 +1,6 @@
 import { RATE_LIMIT_UPDATED_EVENT } from '@/constants/chat-events'
 import {
+  createStreamUsageTracker,
   getRateLimitInfo,
   getSessionToken,
   invalidateSessionCache,
@@ -124,6 +125,29 @@ describe('tinfoil-client session cache', () => {
 
     expect(listener).toHaveBeenCalledTimes(1)
     expect(getRateLimitInfo()).toBeNull()
+  })
+
+  it('folds running stream usage totals into the cached budgets', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chatKeyResponse('k', 3)))
+    await refreshRateLimit()
+    const listener = vi.fn()
+    window.addEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+
+    const track = createStreamUsageTracker()
+    // Continuous usage stats report cumulative totals for the request, so
+    // the second chunk must add only the 40 new completion tokens.
+    track({ promptTokens: 1_000, completionTokens: 10 })
+    track({ promptTokens: 1_000, completionTokens: 50 })
+    // A regression (e.g. a retried upstream turn resetting counters) must
+    // never subtract usage.
+    track({ promptTokens: 1_000, completionTokens: 20 })
+
+    window.removeEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(getRateLimitInfo()).toMatchObject({
+      inputTokens: { max: 2_000_000, used: 751_000, remaining: 1_249_000 },
+      outputTokens: { max: 100_000, used: 20_050, remaining: 79_950 },
+    })
   })
 
   it('does not restore stale rate limits after invalidation', async () => {
