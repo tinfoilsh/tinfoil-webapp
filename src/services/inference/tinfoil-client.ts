@@ -1,5 +1,6 @@
 import { ChatError } from '@/components/chat/chat-utils'
 import { API_BASE_URL, DEV_API_KEY, IS_DEV } from '@/config'
+import { RATE_LIMIT_UPDATED_EVENT } from '@/constants/chat-events'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import {
@@ -114,7 +115,20 @@ function assertSessionCacheGeneration(cacheGeneration: number): void {
 
 function dispatchRateLimitUpdate(): void {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('rateLimitUpdated'))
+    window.dispatchEvent(new CustomEvent(RATE_LIMIT_UPDATED_EVENT))
+  }
+}
+
+/**
+ * Subscribes to rate limit changes. Pairs with getRateLimitInfo for
+ * useSyncExternalStore; the returned snapshot is only reallocated when the
+ * cache actually changes so React can bail out of redundant renders.
+ */
+export function subscribeRateLimit(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {}
+  window.addEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+  return () => {
+    window.removeEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
   }
 }
 
@@ -445,6 +459,15 @@ async function fetchSessionToken(signal?: AbortSignal): Promise<string> {
 
 export function getRateLimitInfo(): RateLimitInfo | null {
   return cachedRateLimit ? { ...cachedRateLimit } : null
+}
+
+/**
+ * Referentially stable view of the cached rate limit for
+ * useSyncExternalStore. Every write replaces the cached object, so the
+ * reference only changes when the data does.
+ */
+export function getRateLimitSnapshot(): Readonly<RateLimitInfo> | null {
+  return cachedRateLimit
 }
 
 /**

@@ -29,6 +29,7 @@ import {
 } from '@/hooks/use-chat-recovery-drafts'
 import { useChatRouter } from '@/hooks/use-chat-router'
 import { useProjects } from '@/hooks/use-projects'
+import { useRateLimit } from '@/hooks/use-rate-limit'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
@@ -37,7 +38,6 @@ import {
   getRateLimitInfo,
   getSessionToken,
   invalidateSessionCache,
-  type RateLimitInfo,
 } from '@/services/inference/tinfoil-client'
 import { generateTitle, getTitleContent } from '@/services/inference/title'
 import { useAuth, useUser } from '@clerk/nextjs'
@@ -363,7 +363,7 @@ export function ChatInterface({
   const canUseCodeExecution = false
   const { user } = useUser()
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
-  const [rateLimit, setRateLimit] = useState<RateLimitInfo | null>(null)
+  const rateLimit = useRateLimit()
   const [isSubscribePromptOpen, setIsSubscribePromptOpen] = useState(false)
 
   // Onboarding state (must be defined before usePasskeyBackup so we can gate it)
@@ -1554,20 +1554,6 @@ export function ChatInterface({
     void initTinfoil()
     return () => {
       active = false
-    }
-  }, [])
-
-  // Sync rate limit info from tinfoil-client via custom events
-  useEffect(() => {
-    const handleRateLimitUpdate = () => {
-      setRateLimit(getRateLimitInfo())
-    }
-    // Sync any already-cached value (the initial fetchSessionToken may
-    // have resolved before this listener was registered).
-    handleRateLimitUpdate()
-    window.addEventListener('rateLimitUpdated', handleRateLimitUpdate)
-    return () => {
-      window.removeEventListener('rateLimitUpdated', handleRateLimitUpdate)
     }
   }, [])
 
