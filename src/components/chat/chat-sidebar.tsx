@@ -56,6 +56,7 @@ import { formatRelativeTime } from './chat-list-utils'
 import { CONSTANTS } from './constants'
 import { useDrag } from './drag-context'
 import { consumeFavoriteDrop } from './favorite-drag'
+import { RateLimitUsage } from './rate-limit-usage'
 import { SidebarSyncButton } from './sidebar-sync-button'
 import { getSidebarUpsellVariant } from './sidebar-upsell-state'
 import { useFavoriteDropTarget } from './use-favorite-drop-target'
@@ -1182,6 +1183,8 @@ export function ChatSidebar({
             hideScrollbarDuringAnimation && 'scrollbar-hide',
           )}
         >
+          <RateLimitUsage />
+
           {/* Message for non-premium users (signed in or not) */}
           {upsellVariant && (
             <div
