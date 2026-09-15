@@ -69,7 +69,53 @@ describe('replaceAssistantContent', () => {
 
     expect(edited.content).toBe('edited')
     expect(edited.timeline).toEqual([
-      { type: 'content', id: 'edited-content', content: 'edited' },
+      { type: 'content', id: 'legacy-content', content: 'edited' },
+    ])
+  })
+
+  it('adds a content block to a message that had none', () => {
+    const message: Message = {
+      role: 'assistant',
+      content: '',
+      timestamp,
+      timeline: [
+        {
+          type: 'thinking',
+          id: 'thinking-0',
+          content: 'hmm',
+          isThinking: false,
+        },
+      ],
+    }
+
+    const edited = replaceAssistantContent(message, 'edited')
+
+    expect(edited.timeline?.map((block) => block.id)).toEqual([
+      'thinking-0',
+      'edited-content',
+    ])
+  })
+
+  it('keeps legacy thoughts when editing a message without a timeline', () => {
+    const message: Message = {
+      role: 'assistant',
+      content: 'legacy',
+      thoughts: 'reasoning',
+      thinkingDuration: 2,
+      timestamp,
+    }
+
+    const edited = replaceAssistantContent(message, 'edited')
+
+    expect(edited.timeline).toEqual([
+      {
+        type: 'thinking',
+        id: 'legacy-thinking',
+        content: 'reasoning',
+        isThinking: false,
+        duration: 2,
+      },
+      { type: 'content', id: 'legacy-content', content: 'edited' },
     ])
   })
 

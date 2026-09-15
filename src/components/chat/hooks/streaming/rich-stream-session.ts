@@ -1,5 +1,6 @@
 import type { ChatChunk } from '@/services/inference/chat-stream'
 import type { StreamLogger } from '@/utils/dev-stream-logger'
+import { ensureTimeline } from '../../ensure-timeline'
 import type { Message, URLFetchState } from '../../types'
 import { createContentPreprocessor } from './content-preprocessor'
 import { createEventNormalizer } from './event-normalizer'
@@ -29,10 +30,15 @@ export class RichStreamSession {
   private thinkingStartedAt: number | null = null
 
   constructor(private readonly options: RichStreamSessionOptions = {}) {
-    this.timeline = new TimelineBuilder(options.continueFrom?.timeline)
+    // Legacy messages carry thoughts/search as flat fields only; normalize
+    // so the seed carries their blocks into the continued timeline.
+    const seed = options.continueFrom
+      ? ensureTimeline(options.continueFrom)
+      : undefined
+    this.timeline = new TimelineBuilder(seed?.timeline)
     this.assembler = new MessageAssembler(options.modelDisplayName)
-    if (options.continueFrom) {
-      this.assembler.seedFrom(options.continueFrom)
+    if (seed) {
+      this.assembler.seedFrom(seed)
     }
   }
 

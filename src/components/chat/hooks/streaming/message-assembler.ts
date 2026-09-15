@@ -36,9 +36,9 @@ export class MessageAssembler {
    */
   seedFrom(message: Message): void {
     this.timestamp = message.timestamp
-    if (message.modelDisplayName) {
-      this.modelDisplayName = message.modelDisplayName
-    }
+    // A legacy message without a persisted name must not inherit the
+    // currently selected model; a stream-provided name can still override.
+    this.modelDisplayName = message.modelDisplayName
     this.annotations = [...(message.annotations ?? [])]
     this.annotationsSnapshot = undefined
     this.sources = (message.webSearch?.sources ?? []).map((source) => ({

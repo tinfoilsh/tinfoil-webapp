@@ -1,4 +1,7 @@
+import { ensureTimeline } from './ensure-timeline'
 import type { Message, TimelineBlock } from './types'
+
+const EDITED_CONTENT_BLOCK_ID = 'edited-content'
 
 /**
  * Rewrite an assistant message's visible text. The timeline is the render
@@ -11,44 +14,34 @@ export function replaceAssistantContent(
   message: Message,
   newContent: string,
 ): Message {
-  const timeline = message.timeline
-  if (!timeline || timeline.length === 0) {
-    return {
-      ...message,
-      content: newContent,
-      timeline: newContent
-        ? [{ type: 'content', id: 'edited-content', content: newContent }]
-        : undefined,
-    }
-  }
+  // Legacy messages store thoughts/search as flat fields; synthesize their
+  // timeline first so those blocks survive the edit.
+  const timeline = ensureTimeline(message).timeline ?? []
 
   const firstContentIndex = timeline.findIndex(
     (block) => block.type === 'content',
   )
-  const nonContentBlocks = timeline.filter((block) => block.type !== 'content')
   const editedBlock: TimelineBlock = {
     type: 'content',
     id:
       firstContentIndex >= 0
         ? timeline[firstContentIndex].id
-        : 'edited-content',
+        : EDITED_CONTENT_BLOCK_ID,
     content: newContent,
   }
 
-  let newTimeline: TimelineBlock[]
-  if (!newContent) {
-    newTimeline = nonContentBlocks
-  } else if (firstContentIndex < 0) {
-    newTimeline = [...nonContentBlocks, editedBlock]
-  } else {
-    const before = timeline
-      .slice(0, firstContentIndex)
-      .filter((block) => block.type !== 'content')
-    const after = timeline
-      .slice(firstContentIndex + 1)
-      .filter((block) => block.type !== 'content')
-    newTimeline = [...before, editedBlock, ...after]
-  }
+  const before = timeline
+    .slice(0, firstContentIndex >= 0 ? firstContentIndex : timeline.length)
+    .filter((block) => block.type !== 'content')
+  const after =
+    firstContentIndex >= 0
+      ? timeline
+          .slice(firstContentIndex + 1)
+          .filter((block) => block.type !== 'content')
+      : []
+  const newTimeline = newContent
+    ? [...before, editedBlock, ...after]
+    : [...before, ...after]
 
   return {
     ...message,
