@@ -74,7 +74,7 @@ export function SidebarSyncButton({
         disabled={isDisabled}
         aria-label={`Sync cloud data. ${showSuccess ? 'Synced' : statusLabel}`}
         className={cn(
-          'relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-1.5 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary disabled:cursor-default',
+          'relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-2 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary disabled:cursor-default',
           showSpinner && 'opacity-60',
         )}
       >
