@@ -323,8 +323,22 @@ describe('TimelineBuilder', () => {
       ]
       const builder = new TimelineBuilder(seed)
       builder.appendContent(' more')
+      builder.startThinking()
+      builder.appendContent('new block')
 
-      expect(seed[0].content).toBe('seed')
+      expect(seed).toEqual([
+        { type: 'content', id: 'content-0', content: 'seed' },
+      ])
+    })
+
+    it('continues thinking ids past non-contiguous seed ids', () => {
+      const builder = new TimelineBuilder([
+        { type: 'thinking', id: 'thinking-0', content: 'a', isThinking: false },
+        { type: 'thinking', id: 'thinking-2', content: 'b', isThinking: false },
+      ])
+      builder.startThinking()
+
+      expect(builder.snapshot().at(-1)?.id).toBe('thinking-3')
     })
   })
 

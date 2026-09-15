@@ -30,9 +30,11 @@ export class TimelineBuilder {
    */
   constructor(seed: TimelineBlock[] = []) {
     this.blocks = [...seed]
-    this.thinkingCounter = seed.filter(
-      (block) => block.type === 'thinking',
-    ).length
+    this.thinkingCounter = seed.reduce((next, block) => {
+      if (block.type !== 'thinking') return next
+      const match = /^thinking-(\d+)$/.exec(block.id)
+      return match ? Math.max(next, Number(match[1]) + 1) : next
+    }, 0)
     const last = this.blocks[this.blocks.length - 1]
     if (last?.type === 'content') {
       this.currentContentIdx = this.blocks.length - 1
