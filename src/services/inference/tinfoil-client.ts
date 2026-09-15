@@ -517,9 +517,12 @@ function consumeTokenBudget(
  * on the next refreshRateLimit.
  */
 export function createStreamUsageTracker(): (usage: StreamUsage) => void {
+  const trackerGeneration = sessionCacheGeneration
   let applied: StreamUsage = { promptTokens: 0, completionTokens: 0 }
   return (usage) => {
-    if (!cachedRateLimit) return
+    // A stream that outlives a sign-out must not charge its tokens to
+    // whichever account populated the cache afterwards.
+    if (!cachedRateLimit || trackerGeneration !== sessionCacheGeneration) return
     const promptDelta = usage.promptTokens - applied.promptTokens
     const completionDelta = usage.completionTokens - applied.completionTokens
     if (promptDelta <= 0 && completionDelta <= 0) return
