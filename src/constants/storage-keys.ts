@@ -188,6 +188,7 @@ export const UI_SIDEBAR_CHAT_HISTORY_EXPANDED =
   'tinfoil-ui-sidebar-chat-history-expanded'
 export const UI_SIDEBAR_FAVORITES_EXPANDED =
   'tinfoil-ui-sidebar-favorites-expanded'
+export const UI_SIDEBAR_USAGE_EXPANDED = 'tinfoil-ui-sidebar-usage-expanded'
 export const UI_SIDEBAR_EXPAND_SECTION = 'tinfoil-ui-sidebar-expand-section'
 export const UI_EXPAND_PROJECTS_ON_MOUNT = 'tinfoil-ui-expand-projects-on-mount'
 export const UI_EXPAND_PROJECT_DOCUMENTS = 'tinfoil-ui-expand-project-documents'

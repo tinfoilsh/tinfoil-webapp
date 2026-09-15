@@ -3,11 +3,12 @@ import {
   formatResetCountdown,
   formatTokenCount,
 } from '@/components/chat/rate-limit-usage'
+import { UI_SIDEBAR_USAGE_EXPANDED } from '@/constants/storage-keys'
 import {
   refreshRateLimit,
   resetTinfoilClient,
 } from '@/services/inference/tinfoil-client'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/config', () => ({
@@ -117,8 +118,25 @@ describe('RateLimitUsage', () => {
 
     expect(screen.getByText('Daily usage')).toBeInTheDocument()
     expect(screen.getByText('Resets in 13h 45m')).toBeInTheDocument()
+
+    // Collapsed by default: a single summary bar tracks the more constrained
+    // dimension (output at 90%) and the per-dimension detail is hidden.
+    const toggle = screen.getByRole('button', { name: /Daily usage/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.getByRole('progressbar', { name: 'Daily usage summary' }),
+    ).toHaveAttribute('aria-valuenow', '90')
+    expect(screen.queryByText('500K / 2M')).not.toBeInTheDocument()
+
+    fireEvent.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(localStorage.getItem(UI_SIDEBAR_USAGE_EXPANDED)).toBe('true')
     expect(screen.getByText('500K / 2M')).toBeInTheDocument()
     expect(screen.getByText('90K / 100K')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('progressbar', { name: 'Daily usage summary' }),
+    ).not.toBeInTheDocument()
 
     const input = screen.getByRole('progressbar', { name: 'Input token usage' })
     expect(input).toHaveAttribute('aria-valuenow', '25')
@@ -126,6 +144,37 @@ describe('RateLimitUsage', () => {
       name: 'Output token usage',
     })
     expect(output).toHaveAttribute('aria-valuenow', '90')
+  })
+
+  it('restores the expanded preference on mount', async () => {
+    localStorage.setItem(UI_SIDEBAR_USAGE_EXPANDED, 'true')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        freeTierResponse({
+          max_requests: 7,
+          remaining: 5,
+          max_input_tokens: 1_000,
+          input_tokens_used: 10,
+          input_tokens_remaining: 990,
+          max_output_tokens: 1_000,
+          output_tokens_used: 10,
+          output_tokens_remaining: 990,
+          resets_at: '2026-07-25T00:00:00Z',
+        }),
+      ),
+    )
+    render(<RateLimitUsage />)
+    await act(async () => {
+      await refreshRateLimit()
+    })
+
+    expect(screen.getByRole('button', { name: /Daily usage/ })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+    expect(screen.getByText('Input')).toBeInTheDocument()
+    expect(screen.getByText('Output')).toBeInTheDocument()
   })
 
   it('advances the countdown as time passes', async () => {
@@ -192,6 +241,7 @@ describe('RateLimitUsage', () => {
 
     expect(screen.getByText('Hourly usage')).toBeInTheDocument()
     expect(screen.getByText('Resets in 45m')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Hourly usage/ }))
     expect(screen.getByText('1M / 1M')).toHaveClass('text-destructive')
     expect(
       screen.getByRole('progressbar', { name: 'Output token usage' }),
