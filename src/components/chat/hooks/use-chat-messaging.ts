@@ -65,6 +65,7 @@ import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
 import { useAuth } from '@clerk/nextjs'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { replaceAssistantContent } from '../assistant-message-edit'
 import { getMessageAttachments, getMessageImages } from '../attachment-helpers'
 import { ChatError } from '../chat-utils'
 import { CONSTANTS } from '../constants'
@@ -134,9 +135,16 @@ interface UseChatMessagingReturn {
     baseMessages?: Message[],
     quote?: string,
     onReadyForNextMessage?: () => void,
+    options?: HandleQueryOptions,
   ) => Promise<ChatDispatchResult>
   cancelGeneration: (chatId?: string) => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
+  deleteMessage: (messageIndex: number) => void
+  editAssistantMessage: (messageIndex: number, newContent: string) => void
+  continueAssistantMessage: (
+    messageIndex: number,
+    editedContent?: string,
+  ) => void
   regenerateMessage: (messageIndex: number) => void
   retryLastMessage: () => void
   resolveInputToolCall: (
@@ -160,6 +168,15 @@ type ActiveLiveGeneration = {
   turnId?: string
   latestAssistantMessage: Message | null
   initialSave?: Promise<void>
+}
+
+export interface HandleQueryOptions {
+  /**
+   * Resume the trailing assistant message in `baseMessages` instead of
+   * starting a fresh turn. The stream appends to this message and the
+   * request carries a hidden continue instruction.
+   */
+  continueFrom?: Message
 }
 
 const CHAT_RECOVERY_POLL_INTERVAL_MS = 10_000
@@ -552,18 +569,22 @@ export function useChatMessaging({
       baseMessages?: Message[],
       quote?: string,
       onReadyForNextMessage?: () => void,
+      options: HandleQueryOptions = {},
     ) => {
+      const { continueFrom } = options
       // Gate on the target chat's own status so a busy background stream
       // never blocks sending in a different chat.
       const targetChatStatus =
         statusByChatRef.current[currentChat?.id ?? ''] ?? IDLE_STREAM_STATUS
 
-      // Allow empty query if systemPromptOverride, attachments, or a quote are provided
+      // Allow empty query if systemPromptOverride, attachments, a quote, or a
+      // continuation target are provided
       if (
         (!query.trim() &&
           !systemPromptOverride &&
           !attachments?.length &&
-          !quote) ||
+          !quote &&
+          !continueFrom) ||
         models.length === 0 ||
         targetChatStatus.loadingState !== 'idle' ||
         isRecoveryActive
@@ -694,14 +715,30 @@ export function useChatMessaging({
       // Only create a user message if there's actual query content
       // When using system prompt override with empty query, skip user message
       const hasUserContent =
-        query.trim() !== '' ||
-        (attachments && attachments.length > 0) ||
-        Boolean(quote)
-      const turnId = hasUserContent ? crypto.randomUUID() : null
+        !continueFrom &&
+        (query.trim() !== '' ||
+          (attachments && attachments.length > 0) ||
+          Boolean(quote))
+      // A continuation reuses the resumed message's turn so cancellation
+      // merges the appended text back into the same bubble.
+      const continuedMessage: Message | null = continueFrom
+        ? {
+            ...continueFrom,
+            turnId: continueFrom.turnId ?? crypto.randomUUID(),
+          }
+        : null
+      const turnId = continuedMessage
+        ? (continuedMessage.turnId as string)
+        : hasUserContent
+          ? crypto.randomUUID()
+          : null
       const recoveryUserId = typeof userId === 'string' ? userId : null
+      // Recovery envelopes describe a fresh user turn, so continuations
+      // stream without it.
       const canRecoverTurn = (chat: Chat) =>
         recoveryUserId !== null &&
         turnId !== null &&
+        continuedMessage === null &&
         canUseChatRecovery({
           isSignedIn,
           userId: recoveryUserId,
@@ -970,13 +1007,22 @@ export function useChatMessaging({
 
         // Use baseMessages if provided (e.g., from editMessage), otherwise use currentChat.messages
         const existingMessages = baseMessages ?? updatedChat.messages
+        // For a continuation the stream's snapshots replace the resumed
+        // message, so the history the stream appends to must end just
+        // before it.
         updatedMessages = userMessage
           ? [...existingMessages, userMessage]
-          : [...existingMessages]
+          : continuedMessage
+            ? existingMessages.slice(0, -1)
+            : [...existingMessages]
 
         updatedChat = {
           ...updatedChat,
-          messages: updatedMessages,
+          // The resumed message stays on screen (and in storage) until the
+          // stream's first snapshot replaces it.
+          messages: continuedMessage
+            ? [...updatedMessages, continuedMessage]
+            : updatedMessages,
           model: selectedModel,
           // Backfill for chats created before this field existed.
           codeExecutionAccessToken:
@@ -1076,7 +1122,9 @@ export function useChatMessaging({
         chat: updatedChat,
         messages: updatedMessages,
         turnId: turnId ?? undefined,
-        latestAssistantMessage: null,
+        // Seeded so stopping a continuation before its first token keeps
+        // the resumed message instead of dropping it.
+        latestAssistantMessage: continuedMessage,
         initialSave: initialSavePromise,
       }
       activeLiveGenerationsRef.current.set(startingChatId, activeGeneration)
@@ -1234,7 +1282,12 @@ export function useChatMessaging({
             setLoadingStateFor('retrying')
             setRetryInfoFor({ attempt, maxRetries, error })
           },
-          updatedMessages,
+          updatedMessages: continuedMessage
+            ? [...updatedMessages, continuedMessage]
+            : updatedMessages,
+          trailingInstruction: continuedMessage
+            ? CONSTANTS.CONTINUE_RESPONSE_INSTRUCTION
+            : undefined,
           signal: controller.signal,
           reasoningEffort,
           thinkingEnabled,
@@ -1294,6 +1347,7 @@ export function useChatMessaging({
           turnId: turnId ?? undefined,
           modelDisplayName: model.name,
           resolveModelDisplayName: getKnownModelDisplayName,
+          continueFrom: continuedMessage ?? undefined,
           onInterrupted: (message) => {
             activeGeneration.latestAssistantMessage = message
           },
@@ -1729,6 +1783,80 @@ export function useChatMessaging({
     [loadingState, currentChat, handleQuery],
   )
 
+  // Replace the current chat's messages in live state and storage without
+  // starting a stream. Shared by the message-level edits below.
+  const commitMessages = useCallback(
+    (chatId: string, messages: Message[]) => {
+      const snapshot = findLiveChat(chatId)
+      if (!snapshot) return
+      updateChatWithHistoryCheck(
+        setChats,
+        snapshot,
+        setCurrentChat,
+        chatId,
+        messages,
+      )
+    },
+    [findLiveChat, updateChatWithHistoryCheck, setChats, setCurrentChat],
+  )
+
+  // Remove a single message so it no longer takes up context.
+  const deleteMessage = useCallback(
+    (messageIndex: number) => {
+      if (loadingState !== 'idle' || !currentChat) return
+      if (!currentChat.messages[messageIndex]) return
+      commitMessages(
+        currentChat.id,
+        currentChat.messages.filter((_, index) => index !== messageIndex),
+      )
+    },
+    [loadingState, currentChat, commitMessages],
+  )
+
+  // Rewrite an assistant response's text in place. Later messages are kept.
+  const editAssistantMessage = useCallback(
+    (messageIndex: number, newContent: string) => {
+      if (loadingState !== 'idle' || !currentChat) return
+      const original = currentChat.messages[messageIndex]
+      if (!original || original.role !== 'assistant') return
+      const updated = [...currentChat.messages]
+      updated[messageIndex] = replaceAssistantContent(original, newContent)
+      commitMessages(currentChat.id, updated)
+    },
+    [loadingState, currentChat, commitMessages],
+  )
+
+  // Ask the model to resume an assistant response. Everything after that
+  // response is dropped so the continuation is the conversation's tail.
+  // An optional edit is applied to the response first.
+  const continueAssistantMessage = useCallback(
+    (messageIndex: number, editedContent?: string) => {
+      if (loadingState !== 'idle' || !currentChat) return
+      const original = currentChat.messages[messageIndex]
+      if (!original || original.role !== 'assistant') return
+      const resumed =
+        editedContent === undefined
+          ? original
+          : replaceAssistantContent(original, editedContent)
+      const baseMessages = [
+        ...currentChat.messages.slice(0, messageIndex),
+        resumed,
+      ]
+      handleQuery(
+        '',
+        undefined,
+        undefined,
+        baseMessages,
+        undefined,
+        undefined,
+        {
+          continueFrom: resumed,
+        },
+      )
+    },
+    [loadingState, currentChat, handleQuery],
+  )
+
   /**
    * Resolve a pending input-surface GenUI tool call.
    *
@@ -2066,6 +2194,9 @@ export function useChatMessaging({
     handleQuery,
     cancelGeneration,
     editMessage,
+    deleteMessage,
+    editAssistantMessage,
+    continueAssistantMessage,
     regenerateMessage,
     retryLastMessage,
     resolveInputToolCall,

@@ -71,6 +71,12 @@ type ChatMessagesProps = {
   ) => void
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
+  onDeleteMessage?: (messageIndex: number) => void
+  onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+  onContinueAssistantMessage?: (
+    messageIndex: number,
+    editedContent?: string,
+  ) => void
   onRetryToolCall?: (
     messageIndex: number,
     toolCallId: string,
@@ -122,6 +128,9 @@ const ChatMessage = memo(
     hideActions = false,
     onEditMessage,
     onRegenerateMessage,
+    onDeleteMessage,
+    onEditAssistantMessage,
+    onContinueAssistantMessage,
     onRetryToolCall,
   }: {
     message: Message
@@ -134,6 +143,12 @@ const ChatMessage = memo(
     hideActions?: boolean
     onEditMessage?: (messageIndex: number, newContent: string) => void
     onRegenerateMessage?: (messageIndex: number) => void
+    onDeleteMessage?: (messageIndex: number) => void
+    onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+    onContinueAssistantMessage?: (
+      messageIndex: number,
+      editedContent?: string,
+    ) => void
     onRetryToolCall?: (
       messageIndex: number,
       toolCallId: string,
@@ -155,6 +170,9 @@ const ChatMessage = memo(
         hideActions={hideActions}
         onEditMessage={onEditMessage}
         onRegenerateMessage={onRegenerateMessage}
+        onDeleteMessage={onDeleteMessage}
+        onEditAssistantMessage={onEditAssistantMessage}
+        onContinueAssistantMessage={onContinueAssistantMessage}
         onRetryToolCall={onRetryToolCall}
       />
     )
@@ -175,6 +193,10 @@ const ChatMessage = memo(
       prevProps.hideActions === nextProps.hideActions &&
       prevProps.onEditMessage === nextProps.onEditMessage &&
       prevProps.onRegenerateMessage === nextProps.onRegenerateMessage &&
+      prevProps.onDeleteMessage === nextProps.onDeleteMessage &&
+      prevProps.onEditAssistantMessage === nextProps.onEditAssistantMessage &&
+      prevProps.onContinueAssistantMessage ===
+        nextProps.onContinueAssistantMessage &&
       prevProps.onRetryToolCall === nextProps.onRetryToolCall
     )
   },
@@ -311,6 +333,9 @@ export function ChatMessages({
   handleLabelClick,
   onEditMessage,
   onRegenerateMessage,
+  onDeleteMessage,
+  onEditAssistantMessage,
+  onContinueAssistantMessage,
   onRetryToolCall,
   showScrollButton,
   webSearchEnabled,
@@ -702,6 +727,15 @@ export function ChatMessages({
                         onRegenerateMessage={
                           recoveryDraft ? undefined : onRegenerateMessage
                         }
+                        onDeleteMessage={
+                          recoveryDraft ? undefined : onDeleteMessage
+                        }
+                        onEditAssistantMessage={
+                          recoveryDraft ? undefined : onEditAssistantMessage
+                        }
+                        onContinueAssistantMessage={
+                          recoveryDraft ? undefined : onContinueAssistantMessage
+                        }
                         onRetryToolCall={
                           recoveryDraft ? undefined : onRetryToolCall
                         }
@@ -745,6 +779,13 @@ export function ChatMessages({
                 onEditMessage={recoveryDraft ? undefined : onEditMessage}
                 onRegenerateMessage={
                   recoveryDraft ? undefined : onRegenerateMessage
+                }
+                onDeleteMessage={recoveryDraft ? undefined : onDeleteMessage}
+                onEditAssistantMessage={
+                  recoveryDraft ? undefined : onEditAssistantMessage
+                }
+                onContinueAssistantMessage={
+                  recoveryDraft ? undefined : onContinueAssistantMessage
                 }
                 onRetryToolCall={recoveryDraft ? undefined : onRetryToolCall}
               />
