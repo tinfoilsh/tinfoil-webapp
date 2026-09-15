@@ -159,7 +159,7 @@ function UsageBar({ label, budget }: UsageBarProps) {
 
 function readExpandedPreference(): boolean {
   if (typeof window === 'undefined') return false
-  return localStorage.getItem(UI_SIDEBAR_USAGE_EXPANDED) === 'true'
+  return sessionStorage.getItem(UI_SIDEBAR_USAGE_EXPANDED) === 'true'
 }
 
 export function RateLimitUsage() {
@@ -175,7 +175,7 @@ export function RateLimitUsage() {
   const toggleExpanded = () => {
     const next = !isExpanded
     setIsExpanded(next)
-    localStorage.setItem(UI_SIDEBAR_USAGE_EXPANDED, next ? 'true' : 'false')
+    sessionStorage.setItem(UI_SIDEBAR_USAGE_EXPANDED, next ? 'true' : 'false')
   }
 
   return (
@@ -186,33 +186,36 @@ export function RateLimitUsage() {
           aria-expanded={isExpanded}
           aria-controls={USAGE_PANEL_ID}
           onClick={toggleExpanded}
-          className="flex w-full flex-col gap-2 rounded-lg p-3 text-left transition-colors hover:bg-surface-chat/80"
+          className={cn(
+            'flex w-full items-center justify-between rounded-lg px-3 pt-3 text-left transition-colors hover:bg-surface-chat/80',
+            isExpanded ? 'pb-3' : 'pb-2',
+          )}
         >
-          <span className="flex w-full items-center justify-between">
-            <span className="font-aeonik text-xs font-medium text-content-primary">
-              {title}
-            </span>
-            <span className="flex items-center gap-1.5">
-              {countdown && (
-                <span className="text-[11px] text-content-muted">
-                  Resets in {countdown}
-                </span>
-              )}
-              {isExpanded ? (
-                <ChevronDownIcon className="h-3.5 w-3.5 text-content-muted" />
-              ) : (
-                <ChevronRightIcon className="h-3.5 w-3.5 text-content-muted" />
-              )}
-            </span>
+          <span className="font-aeonik text-xs font-medium text-content-primary">
+            {title}
           </span>
-          {!isExpanded && summary && (
+          <span className="flex items-center gap-1.5">
+            {countdown && (
+              <span className="text-[11px] text-content-muted">
+                Resets in {countdown}
+              </span>
+            )}
+            {isExpanded ? (
+              <ChevronDownIcon className="h-3.5 w-3.5 text-content-muted" />
+            ) : (
+              <ChevronRightIcon className="h-3.5 w-3.5 text-content-muted" />
+            )}
+          </span>
+        </button>
+        {!isExpanded && summary && (
+          <div className="px-3 pb-3">
             <Progress
               value={usagePercent(summary)}
               aria-label={`${title} summary`}
               className={cn('h-1', usageBarClassName(summary))}
             />
-          )}
-        </button>
+          </div>
+        )}
         <AnimatePresence initial={false}>
           {isExpanded && (
             <motion.div

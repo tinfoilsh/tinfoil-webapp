@@ -81,6 +81,7 @@ describe('RateLimitUsage', () => {
     vi.setSystemTime(NOW)
     resetTinfoilClient()
     localStorage.clear()
+    sessionStorage.clear()
   })
 
   afterEach(() => {
@@ -131,7 +132,7 @@ describe('RateLimitUsage', () => {
     fireEvent.click(toggle)
 
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(localStorage.getItem(UI_SIDEBAR_USAGE_EXPANDED)).toBe('true')
+    expect(sessionStorage.getItem(UI_SIDEBAR_USAGE_EXPANDED)).toBe('true')
     expect(screen.getByText('500K / 2M')).toBeInTheDocument()
     expect(screen.getByText('90K / 100K')).toBeInTheDocument()
     expect(
@@ -144,10 +145,14 @@ describe('RateLimitUsage', () => {
       name: 'Output token usage',
     })
     expect(output).toHaveAttribute('aria-valuenow', '90')
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(sessionStorage.getItem(UI_SIDEBAR_USAGE_EXPANDED)).toBe('false')
   })
 
   it('restores the expanded preference on mount', async () => {
-    localStorage.setItem(UI_SIDEBAR_USAGE_EXPANDED, 'true')
+    sessionStorage.setItem(UI_SIDEBAR_USAGE_EXPANDED, 'true')
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
