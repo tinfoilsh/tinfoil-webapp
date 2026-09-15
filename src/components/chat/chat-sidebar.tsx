@@ -1159,35 +1159,8 @@ export function ChatSidebar({
             hideScrollbarDuringAnimation && 'scrollbar-hide',
           )}
         >
-          {/* Toolbar: New chat, Settings, Sync */}
+          {/* Toolbar: Settings, Sync, New chat */}
           <div className="relative z-10 flex flex-none items-center gap-2 px-2">
-            <Link
-              href={newChatHref}
-              aria-current={isCurrentNewChat ? 'page' : undefined}
-              onClick={(e) => {
-                if (!isPlainPrimaryClick(e)) return
-                e.preventDefault()
-                if (isCurrentNewChat) return
-                createNewChat(activeTab === 'local', true)
-              }}
-              className={cn(
-                'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
-                isCurrentNewChat
-                  ? 'cursor-default border-transparent bg-transparent text-content-muted'
-                  : isDarkMode
-                    ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
-                    : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <PiNotePencilLight className="h-4 w-4" />
-                <span className="font-aeonik font-medium">New chat</span>
-              </span>
-              <span className="text-xs text-content-muted">
-                {modKey}
-                {isMac ? '⇧' : 'Shift+'}O
-              </span>
-            </Link>
             {/* Settings button */}
             <div className="group relative flex items-center">
               <button
@@ -1217,6 +1190,33 @@ export function ChatSidebar({
                 onSync={onManualSync}
               />
             )}
+            <Link
+              href={newChatHref}
+              aria-current={isCurrentNewChat ? 'page' : undefined}
+              onClick={(e) => {
+                if (!isPlainPrimaryClick(e)) return
+                e.preventDefault()
+                if (isCurrentNewChat) return
+                createNewChat(activeTab === 'local', true)
+              }}
+              className={cn(
+                'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
+                isCurrentNewChat
+                  ? 'cursor-default border-transparent bg-transparent text-content-muted'
+                  : isDarkMode
+                    ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
+                    : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <PiNotePencilLight className="h-4 w-4" />
+                <span className="font-aeonik font-medium">New chat</span>
+              </span>
+              <span className="text-xs text-content-muted">
+                {modKey}
+                {isMac ? '⇧' : 'Shift+'}O
+              </span>
+            </Link>
           </div>
 
           <RateLimitUsage />

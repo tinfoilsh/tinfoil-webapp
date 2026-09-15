@@ -189,21 +189,21 @@ export function RateLimitUsage() {
           className="flex w-full flex-col gap-2 rounded-lg p-3 text-left transition-colors hover:bg-surface-chat/80"
         >
           <span className="flex w-full items-center justify-between">
+            <span className="font-aeonik text-xs font-medium text-content-primary">
+              {title}
+            </span>
             <span className="flex items-center gap-1.5">
+              {countdown && (
+                <span className="text-[11px] text-content-muted">
+                  Resets in {countdown}
+                </span>
+              )}
               {isExpanded ? (
                 <ChevronDownIcon className="h-3.5 w-3.5 text-content-muted" />
               ) : (
                 <ChevronRightIcon className="h-3.5 w-3.5 text-content-muted" />
               )}
-              <span className="font-aeonik text-xs font-medium text-content-primary">
-                {title}
-              </span>
             </span>
-            {countdown && (
-              <span className="text-[11px] text-content-muted">
-                Resets in {countdown}
-              </span>
-            )}
           </span>
           {!isExpanded && summary && (
             <Progress
