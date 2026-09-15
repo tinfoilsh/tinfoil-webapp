@@ -1201,12 +1201,10 @@ export function ChatSidebar({
                 createNewChat(activeTab === 'local', true)
               }}
               className={cn(
-                'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
+                'flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border-subtle bg-surface-chat-background px-2 py-2 text-sm transition-all duration-200',
                 isCurrentNewChat
-                  ? 'cursor-default border-transparent bg-transparent text-content-muted'
-                  : isDarkMode
-                    ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
-                    : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
+                  ? 'cursor-default text-content-muted'
+                  : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
               )}
             >
               <span className="flex items-center gap-2">
