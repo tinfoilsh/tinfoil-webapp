@@ -4299,7 +4299,11 @@ export function ChatInterface({
                       handleLabelClick={handleLabelClick}
                       onEditMessage={editMessage}
                       onRegenerateMessage={regenerateMessage}
-                      onDeleteMessage={deleteMessage}
+                      onDeleteMessage={
+                        currentChat.messages.length > 1
+                          ? deleteMessage
+                          : undefined
+                      }
                       onEditAssistantMessage={editAssistantMessage}
                       onContinueAssistantMessage={continueAssistantMessage}
                       onRetryToolCall={retryToolCall}
