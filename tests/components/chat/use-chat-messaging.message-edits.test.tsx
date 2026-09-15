@@ -298,10 +298,8 @@ describe('useChatMessaging message edits', () => {
     sendChatStreamMock.mockResolvedValue(stream.stream)
     const { result } = renderMessaging(makeChat())
 
-    let query!: Promise<unknown>
     act(() => {
       result.current.messaging.continueAssistantMessage(3, 'Second answer,')
-      query = Promise.resolve()
     })
     await vi.waitFor(() => expect(sendChatStreamMock).toHaveBeenCalled())
 
@@ -327,13 +325,22 @@ describe('useChatMessaging message edits', () => {
     )
     stream.send({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
     stream.close()
-    await act(async () => {
-      await query
-    })
     await vi.waitFor(() =>
       expect(patchStatusMock).toHaveBeenCalledWith(
         'chat-1',
         expect.objectContaining({ loadingState: 'idle', isStreaming: false }),
+      ),
+    )
+    // The final save is the last step of the lifecycle.
+    await vi.waitFor(() =>
+      expect(sessionSaveMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          messages: expect.arrayContaining([
+            expect.objectContaining({
+              content: 'Second answer, now complete.',
+            }),
+          ]),
+        }),
       ),
     )
 
@@ -387,8 +394,27 @@ describe('useChatMessaging message edits', () => {
 
     stream.send({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
     stream.close()
-    await act(async () => {
-      await Promise.resolve()
+    await vi.waitFor(() =>
+      expect(patchStatusMock).toHaveBeenCalledWith(
+        'chat-1',
+        expect.objectContaining({ loadingState: 'idle', isStreaming: false }),
+      ),
+    )
+  })
+
+  it('refuses to delete the only remaining message', () => {
+    const { result } = renderMessaging({
+      ...makeChat(),
+      messages: [
+        { role: 'user', content: 'Only message', timestamp: new Date(1) },
+      ],
     })
+
+    act(() => {
+      result.current.messaging.deleteMessage(0)
+    })
+
+    expect(result.current.currentChat.messages).toHaveLength(1)
+    expect(sessionSaveMock).not.toHaveBeenCalled()
   })
 })

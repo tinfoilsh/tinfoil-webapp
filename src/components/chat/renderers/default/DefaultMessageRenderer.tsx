@@ -716,8 +716,11 @@ const DefaultMessageComponent = ({
                       'w-full resize-none bg-transparent font-chat text-base leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
                     )}
                     rows={Math.min(
-                      10,
-                      Math.max(3, editContent.split('\n').length),
+                      CONSTANTS.EDIT_TEXTAREA_MAX_ROWS,
+                      Math.max(
+                        CONSTANTS.EDIT_TEXTAREA_MIN_ROWS,
+                        editContent.split('\n').length,
+                      ),
                     )}
                   />
                   <div className="mt-3 flex items-center justify-between">

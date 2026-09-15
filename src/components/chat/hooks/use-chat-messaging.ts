@@ -1800,11 +1800,14 @@ export function useChatMessaging({
     [findLiveChat, updateChatWithHistoryCheck, setChats, setCurrentChat],
   )
 
-  // Remove a single message so it no longer takes up context.
+  // Remove a single message so it no longer takes up context. The final
+  // message cannot be removed: an emptied chat would be treated as blank
+  // and never persisted, so the stored copy would resurrect it on reload.
   const deleteMessage = useCallback(
     (messageIndex: number) => {
       if (loadingState !== 'idle' || !currentChat) return
       if (!currentChat.messages[messageIndex]) return
+      if (currentChat.messages.length <= 1) return
       commitMessages(
         currentChat.id,
         currentChat.messages.filter((_, index) => index !== messageIndex),
