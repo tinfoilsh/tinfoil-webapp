@@ -1,11 +1,35 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { SidebarSyncButton } from '@/components/chat/sidebar-sync-button'
+import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 describe('SidebarSyncButton', () => {
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('matches the settings icon size, view box, and stroke weight', () => {
+    const { container } = render(
+      <>
+        <Cog6ToothIcon className="h-5 w-5" data-testid="settings-icon" />
+        <SidebarSyncButton
+          isSyncing={false}
+          syncFailed={false}
+          onSync={vi.fn()}
+        />
+      </>,
+    )
+    const settingsIcon = screen.getByTestId('settings-icon')
+    const syncIcon = container.querySelector('button svg')
+
+    expect(syncIcon).toHaveClass('h-5', 'w-5')
+    for (const attribute of ['viewBox', 'stroke-width', 'stroke', 'fill']) {
+      expect(syncIcon).toHaveAttribute(
+        attribute,
+        settingsIcon.getAttribute(attribute),
+      )
+    }
   })
 
   it('shows the spinner for at least one second before success feedback', async () => {

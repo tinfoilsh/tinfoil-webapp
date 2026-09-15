@@ -90,7 +90,7 @@ describe('RateLimitUsage', () => {
   })
 
   it('renders nothing until token budgets are known', () => {
-    const { container } = render(<RateLimitUsage />)
+    const { container } = render(<RateLimitUsage isPremium />)
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -111,7 +111,7 @@ describe('RateLimitUsage', () => {
         }),
       ),
     )
-    render(<RateLimitUsage />)
+    render(<RateLimitUsage isPremium />)
 
     await act(async () => {
       await refreshRateLimit()
@@ -169,7 +169,7 @@ describe('RateLimitUsage', () => {
         }),
       ),
     )
-    render(<RateLimitUsage />)
+    render(<RateLimitUsage isPremium />)
     await act(async () => {
       await refreshRateLimit()
     })
@@ -199,7 +199,7 @@ describe('RateLimitUsage', () => {
         }),
       ),
     )
-    render(<RateLimitUsage />)
+    render(<RateLimitUsage isPremium />)
     await act(async () => {
       await refreshRateLimit()
     })
@@ -214,6 +214,40 @@ describe('RateLimitUsage', () => {
       await vi.advanceTimersByTimeAsync(4 * 60 * 1000)
     })
     expect(screen.queryByText(/Resets in/)).not.toBeInTheDocument()
+  })
+
+  it('hides known token budgets without a confirmed subscription and after it ends', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        freeTierResponse({
+          max_requests: 7,
+          remaining: 3,
+          max_input_tokens: 2_000_000,
+          input_tokens_used: 0,
+          input_tokens_remaining: 2_000_000,
+          max_output_tokens: 100_000,
+          output_tokens_used: 0,
+          output_tokens_remaining: 100_000,
+          resets_at: '2026-07-25T00:00:00Z',
+        }),
+      ),
+    )
+    sessionStorage.setItem(UI_SIDEBAR_USAGE_EXPANDED, 'true')
+    const { container, rerender } = render(<RateLimitUsage isPremium={false} />)
+
+    await act(async () => {
+      await refreshRateLimit()
+    })
+
+    expect(container).toBeEmptyDOMElement()
+
+    rerender(<RateLimitUsage isPremium />)
+    expect(screen.getByText('Daily usage')).toBeInTheDocument()
+    expect(screen.getByText('0 / 2M')).toBeInTheDocument()
+
+    rerender(<RateLimitUsage isPremium={false} />)
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('labels the subscriber hourly budget and flags an exhausted dimension', async () => {
@@ -239,7 +273,7 @@ describe('RateLimitUsage', () => {
         ),
       ),
     )
-    render(<RateLimitUsage />)
+    render(<RateLimitUsage isPremium />)
     await act(async () => {
       await refreshRateLimit()
     })

@@ -1218,7 +1218,11 @@ export function ChatSidebar({
             </Link>
           </div>
 
-          <RateLimitUsage />
+          <RateLimitUsage
+            isPremium={Boolean(
+              isAuthLoaded && isSignedIn && !isSubscriptionLoading && isPremium,
+            )}
+          />
 
           {/* Message for non-premium users (signed in or not) */}
           {upsellVariant && (
