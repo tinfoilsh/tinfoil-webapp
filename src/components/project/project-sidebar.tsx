@@ -27,7 +27,10 @@ import {
   UI_EXPAND_PROJECT_DOCUMENTS,
   UI_SIDEBAR_FAVORITES_EXPANDED,
 } from '@/constants/storage-keys'
-import { useSyncHealth, useSyncHealthAttention } from '@/hooks/use-sync-health'
+import {
+  useSyncHealthAttention,
+  useSyncHealthFailed,
+} from '@/hooks/use-sync-health'
 import { toast } from '@/hooks/use-toast'
 import { isResolvedFavoriteChat } from '@/services/storage/pinned-chats'
 import type { Fact } from '@/types/memory'
@@ -324,11 +327,8 @@ export function ProjectSidebar({
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
   const syncNeedsAttention = useSyncHealthAttention()
-  const syncHealth = useSyncHealth()
-  const syncFailed =
-    lastSyncFailed ||
-    syncHealth.gate.kind !== 'ok' ||
-    Object.keys(syncHealth.failedChats).length > 0
+  const syncHealthFailed = useSyncHealthFailed()
+  const syncFailed = lastSyncFailed || syncHealthFailed
   const {
     draggingChatId,
     draggingChatSource,
@@ -937,9 +937,7 @@ export function ProjectSidebar({
             (like the expanded Project Settings panel) can never clip
             content such as the Save button out of reach. */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-          {/* Toolbar: Settings, Sync, New chat */}
           <div className="relative z-20 flex flex-none items-center gap-2 px-2 py-2">
-            {/* Settings button */}
             <div className="group relative flex items-center">
               <button
                 type="button"

@@ -9,7 +9,10 @@ import {
   USER_PREFS_NATIVE_APP_DISMISSED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
-import { useSyncHealth, useSyncHealthAttention } from '@/hooks/use-sync-health'
+import {
+  useSyncHealthAttention,
+  useSyncHealthFailed,
+} from '@/hooks/use-sync-health'
 import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -234,7 +237,7 @@ export function ChatSidebar({
   const router = useRouter()
   const authRedirectUrl = encodeURIComponent(router.asPath)
   const syncNeedsAttention = useSyncHealthAttention()
-  const syncHealth = useSyncHealth()
+  const syncHealthFailed = useSyncHealthFailed()
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -355,9 +358,6 @@ export function ChatSidebar({
     currentChat?.isBlankChat &&
     !currentChat.isTemporary &&
     Boolean(currentChat.isLocalOnly) === (activeTab === 'local')
-  const syncHealthFailed =
-    syncHealth.gate.kind !== 'ok' ||
-    Object.keys(syncHealth.failedChats).length > 0
   const syncFailed = lastSyncFailed || syncHealthFailed
 
   const {

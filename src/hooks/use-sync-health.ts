@@ -54,3 +54,12 @@ export function useSyncHealthAttention(): boolean {
 
   return syncHealthNeedsAttention(health)
 }
+
+/**
+ * Whether the sync control should show its failure state: the gate is not
+ * fully open, or any chat failed to sync.
+ */
+export function useSyncHealthFailed(): boolean {
+  const health = useSyncHealth()
+  return health.gate.kind !== 'ok' || Object.keys(health.failedChats).length > 0
+}
