@@ -38,11 +38,9 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState('')
   useEffect(() => {
     if (!isLoaded) return
-    const url = process.env.NEXT_PUBLIC_HARNESS_ENCLAVE_URL
-    if (!url) {
-      setError('Configure NEXT_PUBLIC_HARNESS_ENCLAVE_URL to connect to chat.')
-      return
-    }
+    const url =
+      process.env.NEXT_PUBLIC_HARNESS_ENCLAVE_URL ||
+      'https://chat-api.tinfoil.sh'
     let release: (() => void) | undefined
     try {
       const getter = async (options?: { skipCache?: boolean }) => {

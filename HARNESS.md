@@ -1,6 +1,6 @@
 # Webapp harness integration
 
-All chat routes use the existing chat UI and `src/services/harness/`. `/harness` is an alias for the main page. Set `NEXT_PUBLIC_HARNESS_ENCLAVE_URL` to the deployed harness's HTTPS origin. `HarnessClient` uses the Tinfoil SDK to verify `tinfoilsh/confidential-tinfoil-harness` for JSON, multipart uploads, binary downloads, and SSE. There is no direct model or sync connection and no development attestation bypass.
+All chat routes use the existing chat UI and `src/services/harness/`. `/harness` is an alias for the main page. The harness origin defaults to `https://chat-api.tinfoil.sh`; set `NEXT_PUBLIC_HARNESS_ENCLAVE_URL` to use another deployed harness's HTTPS origin. `HarnessClient` uses the Tinfoil SDK to verify `tinfoilsh/confidential-tinfoil-harness` for JSON, multipart uploads, binary downloads, and SSE. There is no direct model or sync connection and no development attestation bypass.
 
 The browser owns rendering, navigation, microphone recording, passkey ceremonies, and custody of the content encryption key. The harness owns prompts, model routing, tools, the turn queue, token budgeting, transcripts, projects, memory, settings, search, sharing, archive conversion, and persistence. Built-in prompt text comes from the session catalog for viewing and copying in the prompt library.
 
