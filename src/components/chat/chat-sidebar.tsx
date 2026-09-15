@@ -7,7 +7,6 @@ import {
   UI_SIDEBAR_PROJECTS_EXPANDED,
   USER_PREFS_NATIVE_APP_DISMISSED,
 } from '@/constants/storage-keys'
-import { useProjects } from '@/hooks/use-projects'
 import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
 import { useAuth, useUser } from '@clerk/nextjs'
@@ -57,6 +56,8 @@ import {
   projectColorTintLayer,
 } from '@/constants/project-colors'
 import { useHarness } from '@/services/harness/provider'
+import type { HarnessAPI } from '@/services/harness/runtime'
+import type { Project } from '@/types/project'
 
 import { useChatSearch } from '@/hooks/use-chat-search'
 import { logError } from '@/utils/error-handling'
@@ -65,12 +66,23 @@ import {
   getNewChatPath,
   isPlainPrimaryClick,
 } from '@/utils/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { Link } from '../link'
 import { Logo } from '../logo'
 import type { Chat } from './types'
 
 const FAVORITES_PANEL_ID = 'sidebar-favorites-panel'
+const historyPositions = new WeakMap<
+  HarnessAPI,
+  { visible: number; scrollTop: number }
+>()
 const SIDEBAR_CTA_CLASS_NAME =
   'block w-full rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90'
 
@@ -83,6 +95,8 @@ function isIOSDevice() {
 // Pagination state is managed by useCloudPagination
 
 type ChatSidebarProps = {
+  projects: Project[]
+  projectsLoading: boolean
   hasMore?: boolean
   onLoadMore?: () => Promise<void>
   isOpen: boolean
@@ -172,6 +186,8 @@ function usePreventZoom() {
 }
 
 export function ChatSidebar({
+  projects,
+  projectsLoading,
   hasMore: hasMoreRemote = false,
   onLoadMore,
   isOpen,
@@ -284,7 +300,15 @@ export function ChatSidebar({
     upgradeLoading,
     upgradeError,
   } = useUpgradeToPro()
-  const { keyReady: cloudSyncEnabled } = useHarness()
+  const { api, keyReady: cloudSyncEnabled } = useHarness()
+  const historyPosition = useMemo(() => {
+    let position = historyPositions.get(api)
+    if (!position) {
+      position = { visible: PAGINATION.CHATS_PER_PAGE, scrollTop: 0 }
+      historyPositions.set(api, position)
+    }
+    return position
+  }, [api])
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const upsellVariant = getSidebarUpsellVariant({
     isAuthLoaded,
@@ -325,12 +349,6 @@ export function ChatSidebar({
     !currentChat.isTemporary &&
     Boolean(currentChat.isLocalOnly) === false
 
-  const {
-    projects,
-    loading: projectsLoading,
-    refresh: refreshProjects,
-  } = useProjects({ autoLoad: isSignedIn && cloudSyncEnabled && isPremium })
-
   const { deleteProject, activeProject } = useProject()
 
   const sidebarTintColor = getProjectColor(activeProject?.color)
@@ -355,8 +373,12 @@ export function ChatSidebar({
   const [isLoadingMore, setIsLoadingMore] = useState(false)
 
   const [visibleCloudChatCount, setVisibleCloudChatCount] = useState<number>(
-    PAGINATION.CHATS_PER_PAGE,
+    () => historyPosition.visible,
   )
+  useLayoutEffect(() => {
+    if (sidebarScrollRef.current)
+      sidebarScrollRef.current.scrollTop = historyPosition.scrollTop
+  }, [historyPosition, chats.length])
 
   // Token getter should be set by parent component that has access to getApiKey
   // The parent (ChatInterface) already sets this up through useCloudSync
@@ -439,7 +461,6 @@ export function ChatSidebar({
         setIsProjectsExpanded(true)
         setIsChatHistoryExpanded(false)
         setIsFavoritesExpanded(false)
-        refreshProjects()
       } else if (expandSection === 'chats') {
         setIsProjectsExpanded(false)
         setIsChatHistoryExpanded(true)
@@ -447,7 +468,7 @@ export function ChatSidebar({
       }
       sessionStorage.removeItem(UI_SIDEBAR_EXPAND_SECTION)
     }
-  }, [isOpen, refreshProjects])
+  }, [isOpen])
 
   // Track if we're waiting for newly loaded chats to render (prevents scroll jump)
   const [pendingChatsRender] = useState(false)
@@ -511,10 +532,7 @@ export function ChatSidebar({
     setIsChatHistoryExpanded(false)
     setIsFavoritesExpanded(false)
     sidebarScrollRef.current?.scrollTo({ top: 0 })
-    if (projects.length === 0) {
-      refreshProjects()
-    }
-  }, [projects.length, refreshProjects, hideScrollbarWhileSectionsAnimate])
+  }, [hideScrollbarWhileSectionsAnimate])
 
   const expandChatsSection = useCallback(() => {
     hideScrollbarWhileSectionsAnimate()
@@ -573,19 +591,24 @@ export function ChatSidebar({
     paginatesCloudChats && (hasMoreLoadedChats || canLoadRemoteChats)
 
   useEffect(() => {
-    setVisibleCloudChatCount(PAGINATION.CHATS_PER_PAGE)
-  }, [user?.id, isInitialChatPageReady])
+    setVisibleCloudChatCount(historyPosition.visible)
+  }, [historyPosition])
+
+  const revealMoreChats = () => {
+    historyPosition.visible += PAGINATION.CHATS_PER_PAGE
+    setVisibleCloudChatCount(historyPosition.visible)
+  }
 
   const loadMoreChats = async () => {
     if (isLoadingMore) return
     if (hasMoreLoadedChats) {
-      setVisibleCloudChatCount((count) => count + PAGINATION.CHATS_PER_PAGE)
+      revealMoreChats()
       return
     }
     setIsLoadingMore(true)
     try {
       await onLoadMore?.()
-      setVisibleCloudChatCount((count) => count + PAGINATION.CHATS_PER_PAGE)
+      revealMoreChats()
     } catch (cause) {
       logError('Unable to load more chats', cause, { component: 'ChatSidebar' })
     } finally {
@@ -936,6 +959,9 @@ export function ChatSidebar({
             banner) stay pinned below. */}
         <div
           ref={sidebarScrollRef}
+          onScroll={(event) => {
+            historyPosition.scrollTop = event.currentTarget.scrollTop
+          }}
           className={cn(
             'relative flex min-h-0 flex-1 flex-col overflow-y-auto',
             hideScrollbarDuringAnimation && 'scrollbar-hide',
@@ -1453,7 +1479,6 @@ export function ChatSidebar({
                                           setDeletingProjectId(project.id)
                                           try {
                                             await deleteProject(project.id)
-                                            await refreshProjects()
                                           } catch (error) {
                                             toast({
                                               title: 'Failed to delete project',

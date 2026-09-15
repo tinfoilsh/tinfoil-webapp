@@ -1,4 +1,4 @@
-import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
+import { AuthProvider } from '@/components/auth-provider'
 import { useChatFontSync } from '@/components/chat/hooks/use-chat-font'
 import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
 import { Toaster } from '@/components/ui/toaster'
@@ -6,7 +6,6 @@ import { HarnessProvider } from '@/services/harness/provider'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { migrateStorageKeys } from '@/utils/storage-migration'
-import { ClerkProvider } from '@clerk/nextjs'
 import type { AppProps } from 'next/app'
 import localFont from 'next/font/local'
 import Head from 'next/head'
@@ -190,17 +189,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
       <div
         className={`${aeonikFono.variable} ${aeonik.variable} ${openDyslexic.variable} ${lora.variable}`}
       >
-        <ClerkProvider
-          telemetry={false}
-          afterSignOutUrl="/"
-          signInUrl="/signin"
-          appearance={{
-            elements: {
-              modalBackdrop: 'bg-black/50',
-            },
-          }}
-        >
-          <AuthCleanupHandler />
+        <AuthProvider>
           <SignoutProgressOverlay />
           {['/signin', '/signup', '/sso-callback', '/404', '/_error'].includes(
             router.pathname,
@@ -212,7 +201,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
             </HarnessProvider>
           )}
           <Toaster />
-        </ClerkProvider>
+        </AuthProvider>
       </div>
     </>
   )

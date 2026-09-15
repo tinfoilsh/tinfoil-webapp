@@ -1,12 +1,59 @@
 import { GENUI_WIDGETS } from '@/components/chat/genui/registry'
 import type { Chat } from '@/components/chat/types'
 import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type SetStateAction,
+} from 'react'
+import { OptimisticStore } from './optimistic-store'
 import { useHarness } from './provider'
-import { initialChat, reduceEvent } from './reducer'
+import { initialChat, reduceEvent, type ChatState } from './reducer'
+import { reportHarnessError, type HarnessAPI } from './runtime'
 import { HarnessError } from './sse'
 import type { Thread, ThreadSummary, Turn } from './types'
 import { messageView, threadView } from './view-model'
+
+const emptyData = () => ({
+  state: initialChat(),
+  threads: [] as ThreadSummary[],
+  cursor: null as string | null,
+  historyLoaded: false,
+})
+type ThreadData = ReturnType<typeof emptyData>
+const histories = new WeakMap<
+  HarnessAPI,
+  Map<string, { data: OptimisticStore<ThreadData>; signal: AbortSignal }>
+>()
+function historyFor(api: HarnessAPI, projectId?: string | null) {
+  let scopes = histories.get(api)
+  if (!scopes) {
+    scopes = new Map()
+    histories.set(api, scopes)
+  }
+  const scope = projectId ?? ''
+  const cached = scopes.get(scope)
+  if (cached && !cached.signal.aborted) return cached.data
+  const data = new OptimisticStore(emptyData())
+  const signal = api.signal()
+  signal.addEventListener('abort', () => data.reset(emptyData()), {
+    once: true,
+  })
+  scopes.set(scope, { data, signal })
+  return data
+}
+function invalidateOtherHistories(
+  api: HarnessAPI,
+  current: OptimisticStore<ThreadData>,
+) {
+  for (const cached of histories.get(api)?.values() ?? []) {
+    if (cached.data !== current) cached.data.hasLoaded = false
+  }
+}
 
 export function useThread(
   initialId?: string | null,
@@ -14,23 +61,47 @@ export function useThread(
   initiallyTemporary = false,
 ) {
   const { api, session, profile, keyReady } = useHarness()
-  const [state, setState] = useState(initialChat)
+  const data = useMemo(
+    () => historyFor(api, projectId),
+    // Reconnect to the new cache after a key change invalidates the old one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api, projectId, keyReady],
+  )
+  const { state, threads, cursor, historyLoaded } = useSyncExternalStore(
+    data.subscribe,
+    data.getSnapshot,
+    data.getSnapshot,
+  )
+  const setState = useCallback(
+    (update: SetStateAction<ChatState>) =>
+      data.set((value) => ({
+        ...value,
+        state: typeof update === 'function' ? update(value.state) : update,
+      })),
+    [data],
+  )
   const current = useRef(state)
-  current.current = state
+  current.current = data.getConfirmed().state
   const [id, setId] = useState<string | null>(null)
   const idRef = useRef(id)
   idRef.current = id
   const [temporary, setTemporary] = useState(initiallyTemporary || !api.userId)
   const [model, setModel] = useState('')
   const [presetId, setPresetId] = useState<string | null>(null)
-  const [threads, setThreads] = useState<ThreadSummary[]>([])
-  const [cursor, setCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const followers = useRef(new Set<AbortController>())
   const generation = useRef(0)
+  const historyGeneration = useRef(0)
   const starting = useRef(false)
   const pending = useRef<Turn | null>(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const storageKey = `harness-run:${api.userId ?? 'anonymous'}`
   const contentKey = () => api.key()
   const report = useCallback(
@@ -40,11 +111,14 @@ export function useThread(
         (cause instanceof DOMException && cause.name === 'AbortError')
       )
         return
+      if (!mounted.current) {
+        reportHarnessError(cause)
+        return
+      }
       if (cause instanceof HarnessError) {
         const next = {
           ...current.current,
           error: cause.detail,
-          status: 'error' as const,
         }
         current.current = next
         setState(next)
@@ -55,30 +129,46 @@ export function useThread(
           : 'The connection failed. Reconnect to continue.',
       )
     },
-    [api],
+    [api, setState],
   )
   const refresh = useCallback(
     async (next?: string) => {
       if (!api.userId || !keyReady) return
-      const version = generation.current
-      const result = await api.post<{
-        threads: ThreadSummary[]
-        nextCursor: string | null
-      }>('/v1/threads/list', { cursor: next, projectId, limit: 100 })
-      if (version !== generation.current) return
-      setThreads((previous) =>
-        next
-          ? [
-              ...previous,
-              ...result.threads.filter(
-                (t) => !previous.some((p) => p.id === t.id),
-              ),
-            ]
-          : result.threads,
+      const version = ++historyGeneration.current
+      await data.read(
+        async () => {
+          const result = await api.post<{
+            threads: ThreadSummary[]
+            nextCursor: string | null
+          }>('/v1/threads/list', { cursor: next, projectId, limit: 100 })
+          if (version !== historyGeneration.current)
+            throw new DOMException('History changed', 'AbortError')
+          const previous = data.getConfirmed()
+          return {
+            ...previous,
+            threads: next
+              ? [
+                  ...previous.threads,
+                  ...result.threads.filter(
+                    (t) => !previous.threads.some((p) => p.id === t.id),
+                  ),
+                ]
+              : result.threads,
+            cursor: result.nextCursor,
+            historyLoaded: true,
+          }
+        },
+        api.signal(),
+        (current, incoming) => {
+          if (version !== historyGeneration.current)
+            throw new DOMException('History changed', 'AbortError')
+          data.hasLoaded = true
+          return { ...incoming, state: current.state }
+        },
       )
-      setCursor(result.nextCursor)
+      invalidateOtherHistories(api, data)
     },
-    [api, keyReady, projectId],
+    [api, data, keyReady, projectId],
   )
   const reset = useCallback(() => {
     generation.current++
@@ -91,17 +181,19 @@ export function useThread(
     setError('')
     starting.current = false
     pending.current = null
-  }, [])
+  }, [setState])
   async function stream(
     path: '/v1/threads/turn' | '/v1/threads/follow',
     input: Turn | { key?: string; threadId: string; runId: string },
     lastEventId?: number,
+    previousMessages?: ChatState['messages'],
   ) {
     const controller = new AbortController()
     followers.current.add(controller)
     const version = generation.current
     let runId = 'runId' in input ? input.runId : undefined
     let succeeded = false
+    let receivedMessages = false
     try {
       for await (const frame of api.client.events(
         path,
@@ -112,11 +204,20 @@ export function useThread(
         if (version !== generation.current) break
         runId = frame.event.runId ?? runId
         const next = reduceEvent(current.current, frame, runId)
+        if (frame.event.type === 'MESSAGES_SNAPSHOT') receivedMessages = true
+        if (
+          frame.event.type === 'RUN_ERROR' &&
+          previousMessages &&
+          !receivedMessages
+        )
+          next.messages = previousMessages
         current.current = next
         setState(next)
         if (frame.event.type === 'RUN_FINISHED')
           succeeded = frame.event.metadata?.cancelled !== true
         if (frame.event.type === 'RUN_STARTED') {
+          data.hasLoaded = false
+          invalidateOtherHistories(api, data)
           pending.current = null
           starting.current = false
           initial.current = frame.event.threadId!
@@ -142,8 +243,18 @@ export function useThread(
           void (api.userId ? refresh() : api.refresh()).catch(report)
       }
     } catch (cause) {
-      if (!controller.signal.aborted && version === generation.current)
+      if (!controller.signal.aborted && version === generation.current) {
+        current.current = {
+          ...current.current,
+          status: 'error',
+          messages:
+            previousMessages && !receivedMessages
+              ? previousMessages
+              : current.current.messages,
+        }
+        setState(current.current)
         report(cause)
+      }
     } finally {
       followers.current.delete(controller)
     }
@@ -152,6 +263,14 @@ export function useThread(
   async function open(threadId: string) {
     reset()
     const version = generation.current
+    const cached = threads.find((thread) => thread.id === threadId)
+    setId(threadId)
+    idRef.current = threadId
+    setTemporary(false)
+    if (cached) {
+      setState(initialChat({ ...cached, messages: [], hasOlder: false }))
+      setModel(cached.model)
+    }
     setLoading(true)
     try {
       const thread = await api.post<Thread>('/v1/threads/get', { id: threadId })
@@ -180,8 +299,17 @@ export function useThread(
       setModel(profile.selectedModel || session.defaultModel)
   }, [session, profile.selectedModel, model])
   useEffect(() => {
-    void refresh().catch(report)
-  }, [refresh, report])
+    const history = historyGeneration
+    if (
+      !historyLoaded ||
+      !data.hasLoaded ||
+      data.getSnapshot().threads.some((thread) => thread.activeRun)
+    )
+      void refresh().catch(report)
+    return () => {
+      history.current++
+    }
+  }, [data, historyLoaded, refresh, report])
   useEffect(() => {
     if (
       !initialId ||
@@ -198,7 +326,8 @@ export function useThread(
   useEffect(() => {
     const clear = () => {
       reset()
-      setThreads([])
+      historyGeneration.current++
+      data.reset(emptyData())
       initial.current = null
       try {
         sessionStorage.removeItem(storageKey)
@@ -211,7 +340,7 @@ export function useThread(
       window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, clear)
       reset()
     }
-  }, [reset, storageKey])
+  }, [data, reset, storageKey])
   useEffect(() => {
     if (initialId || !session || (api.userId && !keyReady)) return
     try {
@@ -255,28 +384,122 @@ export function useThread(
       },
       ...fields,
     }
+    const previousMessages =
+      input.kind === 'edit' || input.kind === 'regenerate'
+        ? current.current.messages
+        : undefined
     pending.current = { ...input, key: undefined }
     if (!idRef.current) starting.current = true
-    return stream('/v1/threads/turn', input)
+    if (
+      current.current.status !== 'streaming' &&
+      current.current.status !== 'queued'
+    ) {
+      let messages = current.current.messages
+      if (input.kind === 'send') {
+        messages = [
+          ...messages,
+          {
+            id: `pending_${input.clientRequestId}`,
+            role: 'user',
+            content: input.content,
+            quote: input.quote,
+            createdAt: new Date().toISOString(),
+          },
+        ]
+      } else if (input.kind === 'edit' || input.kind === 'regenerate') {
+        const index = messages.findIndex(
+          (message) => message.id === input.messageId,
+        )
+        if (index >= 0)
+          messages =
+            input.kind === 'edit'
+              ? [
+                  ...messages.slice(0, index),
+                  { ...messages[index], content: input.content },
+                ]
+              : messages.slice(0, index)
+      }
+      current.current = {
+        ...current.current,
+        messages,
+        status: 'streaming',
+        error: undefined,
+      }
+      setState(current.current)
+    }
+    return stream('/v1/threads/turn', input, undefined, previousMessages)
   }
   async function update(threadId: string, patch: Record<string, unknown>) {
-    const summary = await api.post<ThreadSummary>('/v1/threads/update', {
-      id: threadId,
-      ...patch,
+    const change = (
+      value: ReturnType<typeof data.getSnapshot>,
+      fields: Record<string, unknown>,
+    ) => ({
+      ...value,
+      threads: value.threads.map((thread) =>
+        thread.id === threadId ? { ...thread, ...fields } : thread,
+      ),
+      state:
+        value.state.snapshot.thread?.id === threadId
+          ? {
+              ...value.state,
+              snapshot: {
+                ...value.state.snapshot,
+                thread: { ...value.state.snapshot.thread, ...fields },
+              },
+            }
+          : value.state,
     })
-    setThreads((previous) =>
-      previous.map((t) => (t.id === summary.id ? summary : t)),
+    const optimistic: Record<string, unknown> = {
+      ...patch,
+      ...(typeof patch.title === 'string' ? { titleState: 'manual' } : {}),
+    }
+    await data.mutate(
+      (value) => change(value, optimistic),
+      () =>
+        api.post<ThreadSummary>('/v1/threads/update', {
+          id: threadId,
+          ...patch,
+        }),
+      api.signal(),
+      (value, saved) =>
+        change(
+          value,
+          Object.fromEntries(
+            Object.keys(optimistic).map((key) => [
+              key,
+              (saved as unknown as Record<string, unknown>)[key] ??
+                optimistic[key],
+            ]),
+          ),
+        ),
     )
-    if (idRef.current === threadId)
-      setState((previous) => ({
-        ...previous,
-        snapshot: { ...previous.snapshot, thread: summary },
-      }))
+    invalidateOtherHistories(api, data)
   }
   async function remove(threadId: string) {
-    await api.post('/v1/threads/delete', { id: threadId })
-    setThreads((previous) => previous.filter((t) => t.id !== threadId))
-    if (idRef.current === threadId) reset()
+    const signal = api.signal()
+    const previous = current.current
+    const selected = idRef.current === threadId
+    if (selected) reset()
+    const version = generation.current
+    try {
+      await data.mutate(
+        (value) => ({
+          ...value,
+          threads: value.threads.filter((thread) => thread.id !== threadId),
+        }),
+        () => api.post('/v1/threads/delete', { id: threadId }),
+        signal,
+      )
+      invalidateOtherHistories(api, data)
+    } catch (cause) {
+      if (selected && version === generation.current && !signal.aborted) {
+        current.current = previous
+        setState(previous)
+        setId(threadId)
+        idRef.current = threadId
+      }
+      throw cause
+    }
   }
   async function reconnect() {
     setError('')
@@ -314,6 +537,23 @@ export function useThread(
         hasOlder: thread.hasOlder,
       }))
   }
+  function queueAction(
+    path: string,
+    input: Record<string, unknown>,
+    apply: (state: ChatState) => ChatState,
+  ) {
+    const version = generation.current
+    const signal = api.signal()
+    const body = { key: contentKey(), threadId: idRef.current, ...input }
+    return data.mutate(
+      (value) =>
+        version === generation.current
+          ? { ...value, state: apply(value.state) }
+          : value,
+      () => api.post(path, body, signal, false),
+      signal,
+    )
+  }
   const running = state.status === 'streaming' || state.status === 'queued'
   const messages = state.messages.map((m, index) =>
     messageView(m, running && index === state.messages.length - 1),
@@ -340,11 +580,18 @@ export function useThread(
     api,
     state,
     chat,
-    threads,
-    chats: threads.map((t) => threadView(t)),
-    model,
+    threads: projectId
+      ? threads.filter((thread) => thread.projectId === projectId)
+      : threads,
+    chats: threads
+      .filter((thread) => !projectId || thread.projectId === projectId)
+      .map((t) => threadView(t)),
+    model: state.snapshot.thread?.model ?? model,
     setModel,
-    presetId,
+    presetId:
+      state.snapshot.thread && Object.hasOwn(state.snapshot.thread, 'presetId')
+        ? ((state.snapshot.thread as Thread).presetId ?? null)
+        : presetId,
     setPresetId,
     temporary,
     setTemporary,
@@ -371,32 +618,35 @@ export function useThread(
       }
     },
     cancel: () =>
-      api.post(
+      queueAction(
         '/v1/threads/cancel',
         {
-          key: contentKey(),
-          threadId: id,
           runId:
             current.current.snapshot.thread?.activeRun?.runId ??
             current.current.runId,
         },
-        undefined,
-        false,
+        (state) => ({ ...state, status: 'idle' }),
       ),
     sendQueued: (queueId: string) =>
-      api.post(
-        '/v1/threads/queue/send',
-        { key: contentKey(), threadId: id, queueId },
-        undefined,
-        false,
-      ),
+      queueAction('/v1/threads/queue/send', { queueId }, (state) => ({
+        ...state,
+        snapshot: {
+          ...state.snapshot,
+          queue: state.snapshot.queue.filter(
+            (item) => item.queueId !== queueId,
+          ),
+        },
+      })),
     removeQueued: (queueId: string) =>
-      api.post(
-        '/v1/threads/queue/remove',
-        { key: contentKey(), threadId: id, queueId },
-        undefined,
-        false,
-      ),
+      queueAction('/v1/threads/queue/remove', { queueId }, (state) => ({
+        ...state,
+        snapshot: {
+          ...state.snapshot,
+          queue: state.snapshot.queue.filter(
+            (item) => item.queueId !== queueId,
+          ),
+        },
+      })),
     dismissError: () => {
       setError('')
       setState((previous) => ({ ...previous, error: undefined }))

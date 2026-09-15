@@ -142,6 +142,14 @@ export function ChatInterface({
   const { isSignedIn } = useAuth()
   const { user } = useUser()
   const { toast } = useToast()
+  useEffect(() => {
+    if (sessionError)
+      toast({
+        title: 'Could not complete the action',
+        description: sessionError,
+        variant: 'destructive',
+      })
+  }, [sessionError, toast])
   const router = useRouter()
   const {
     isClient,
@@ -162,7 +170,9 @@ export function ChatInterface({
     createProject,
     uploadDocument,
   } = useProject()
-  const { projects } = useProjects({ autoLoad: !!isSignedIn })
+  const { projects, loading: projectsLoading } = useProjects({
+    autoLoad: !!isSignedIn,
+  })
   const thread = useThread(
     initialChatId,
     activeProject?.id ?? initialProjectId,
@@ -176,7 +186,12 @@ export function ChatInterface({
     model: selectedModel,
     presetId: activePresetId,
   } = thread
+  const routeChatId = useRef(initialChatId)
   useEffect(() => {
+    if (routeChatId.current !== initialChatId) {
+      routeChatId.current = initialChatId
+      return
+    }
     if (
       !currentChat.id ||
       currentChat.isTemporary ||
@@ -326,20 +341,18 @@ export function ChatInterface({
   const handleChatSelect = (id: string) => {
     setProcessedDocuments([])
     setQuote(null)
-    void thread
-      .open(id)
-      .then(() =>
-        router.push(
-          activeProject
-            ? `/project/${activeProject.id}/chat/${id}`
-            : `/chat/${id}`,
-          undefined,
-          { shallow: true },
-        ),
+    void router
+      .push(
+        activeProject
+          ? `/project/${activeProject.id}/chat/${id}`
+          : `/chat/${id}`,
+        undefined,
+        { shallow: true },
       )
       .catch(thread.report)
   }
-  const loadChatById = (id: string, _local?: boolean) => thread.open(id)
+  const loadChatById = async (id: string, _local?: boolean) =>
+    handleChatSelect(id)
   const deleteChat = (id: string) => {
     void thread.remove(id).catch(thread.report)
   }
@@ -403,9 +416,11 @@ export function ChatInterface({
     })
   }
   const regenerateMessage = (index: number) => {
+    const message = currentChat.messages[index]
+    if (message?.role !== 'assistant' || !message.id) return
     void handleQuery('', {
       kind: 'regenerate',
-      messageId: currentChat.messages[index]?.id,
+      messageId: message.id,
     })
   }
   const resolveInputToolCall = (
@@ -447,12 +462,14 @@ export function ChatInterface({
     void thread.update(id, { pinned: false }).catch(thread.report)
   }
   const handleToggleFavorite = (chat: { id: string }) =>
-    thread.update(chat.id, { pinned: !pinnedChatIds.includes(chat.id) })
+    thread
+      .update(chat.id, { pinned: !pinnedChatIds.includes(chat.id) })
+      .catch(thread.report)
   const handleOpenFavorite = (chat: { id: string }) => handleChatSelect(chat.id)
   const handleMoveChatToProject = (id: string, projectId: string) =>
-    thread.update(id, { projectId }).then(reloadChats)
+    thread.update(id, { projectId }).catch(thread.report)
   const handleRemoveChatFromProject = (id: string) =>
-    thread.update(id, { projectId: null }).then(reloadChats)
+    thread.update(id, { projectId: null }).catch(thread.report)
   const handleDeleteProjectChats = async () => {
     if (!activeProject) return
     await api.post('/v1/threads/delete-all', { projectId: activeProject.id })
@@ -605,10 +622,6 @@ export function ChatInterface({
     if (!initialProjectId || !keyReady) return
     void enterProjectMode(initialProjectId).catch(thread.report)
   }, [initialProjectId, keyReady, enterProjectMode, thread.report])
-  useEffect(() => {
-    if (!suppressIntroModals && session && isSignedIn && !keyReady)
-      setShowCloudSyncSetupModal(true)
-  }, [suppressIntroModals, session, isSignedIn, keyReady])
   const {
     passkeyActive,
     passkeyRecoveryNeeded,
@@ -639,6 +652,24 @@ export function ChatInterface({
       [api, thread.report],
     ),
   })
+  useEffect(() => {
+    // Profile loading does not mean the saved key is missing. Wait for the
+    // backup check to identify whether this device needs setup or recovery.
+    if (
+      !suppressIntroModals &&
+      isSignedIn &&
+      (passkeyRecoveryNeeded ||
+        manualRecoveryNeeded ||
+        passkeyFirstTimePromptAvailable)
+    )
+      setShowCloudSyncSetupModal(true)
+  }, [
+    suppressIntroModals,
+    isSignedIn,
+    passkeyRecoveryNeeded,
+    manualRecoveryNeeded,
+    passkeyFirstTimePromptAvailable,
+  ])
   // iOS Safari keyboard fix: keep a CSS var in sync with the *visual* viewport height.
   // Without this, fixed full-screen layouts can leave an untouchable "dead zone"
   // after the keyboard is dismissed.
@@ -1189,6 +1220,8 @@ export function ChatInterface({
               className="z-40"
             >
               <ChatSidebar
+                projects={projects}
+                projectsLoading={projectsLoading}
                 isOpen={isSidebarOpen}
                 setIsOpen={setIsSidebarOpen}
                 chats={chats}

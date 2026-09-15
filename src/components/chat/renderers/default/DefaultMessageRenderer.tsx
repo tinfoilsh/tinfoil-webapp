@@ -211,9 +211,9 @@ const DefaultMessageComponent = ({
 
   const handleRegenerate = React.useCallback(() => {
     if (onRegenerateMessage) {
-      onRegenerateMessage(messageIndex)
+      onRegenerateMessage(isUser ? messageIndex + 1 : messageIndex)
     }
-  }, [messageIndex, onRegenerateMessage])
+  }, [isUser, messageIndex, onRegenerateMessage])
 
   const handleCopyUser = React.useCallback(() => {
     if (message.content) {
@@ -379,11 +379,7 @@ const DefaultMessageComponent = ({
                     isStreaming={!!isStreaming && !!isLastMessage}
                     isDarkMode={isDarkMode}
                     activeArtifactToolCallId={activeArtifactToolCallId}
-                    onRetry={
-                      onRegenerateMessage && messageIndex > 0
-                        ? () => onRegenerateMessage(messageIndex - 1)
-                        : undefined
-                    }
+                    onRetry={onRegenerateMessage ? handleRegenerate : undefined}
                     onRetryToolCall={
                       onRetryToolCall
                         ? (toolCallId) =>
@@ -674,7 +670,7 @@ const DefaultMessageComponent = ({
                     )}
                   </div>
                 )}
-                {onRegenerateMessage && (
+                {onRegenerateMessage && !isLastMessage && (
                   <div className="group/regen relative">
                     <button
                       onClick={handleRegenerate}
@@ -757,10 +753,10 @@ const DefaultMessageComponent = ({
                   isDarkMode={isDarkMode}
                 />
                 {/* Regenerate button - only on last assistant message */}
-                {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
+                {isLastMessage && onRegenerateMessage && (
                   <div className="group/regen relative">
                     <button
-                      onClick={() => onRegenerateMessage(messageIndex - 1)}
+                      onClick={handleRegenerate}
                       aria-label="Regenerate response"
                       className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
                     >

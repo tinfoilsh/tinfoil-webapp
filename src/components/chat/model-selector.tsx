@@ -15,6 +15,7 @@ import {
 } from '@heroicons/react/24/outline'
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -92,6 +93,10 @@ export function ModelSelector({
   autoIntelligence,
   onAutoIntelligenceChange,
 }: ModelSelectorProps) {
+  const [intelligenceDraft, setIntelligenceDraft] = useState(autoIntelligence)
+  useEffect(() => {
+    setIntelligenceDraft(autoIntelligence)
+  }, [autoIntelligence])
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
   const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({})
   const menuRef = useRef<HTMLDivElement>(null)
@@ -513,13 +518,18 @@ export function ModelSelector({
                 Intelligence
               </span>
               <span className="text-content-muted">
-                {getAutoIntelligenceLevel(autoIntelligence).label}
+                {
+                  getAutoIntelligenceLevel(
+                    intelligenceDraft ?? autoIntelligence,
+                  ).label
+                }
               </span>
             </div>
             <SteppedSlider
               steps={getAutoIntelligenceLevels()}
-              value={autoIntelligence}
-              onValueChange={onAutoIntelligenceChange}
+              value={intelligenceDraft ?? autoIntelligence}
+              onValueChange={setIntelligenceDraft}
+              onValueCommit={onAutoIntelligenceChange}
               aria-label="Auto intelligence"
             />
             <p className="mt-2 text-xs text-content-muted">

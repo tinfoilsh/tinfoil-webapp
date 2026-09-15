@@ -11,6 +11,7 @@ type SteppedSliderProps<T extends string> = {
   steps: readonly SteppedSliderStep<T>[]
   value: T
   onValueChange: (value: T) => void
+  onValueCommit?: (value: T) => void
   'aria-label': string
   className?: string
 }
@@ -23,6 +24,7 @@ export function SteppedSlider<T extends string>({
   steps,
   value,
   onValueChange,
+  onValueCommit,
   'aria-label': ariaLabel,
   className,
 }: SteppedSliderProps<T>) {
@@ -47,6 +49,10 @@ export function SteppedSlider<T extends string>({
       onValueChange={([next]) => {
         const step = steps[next]
         if (step && step.id !== value) onValueChange(step.id)
+      }}
+      onValueCommit={([next]) => {
+        const step = steps[next]
+        if (step) onValueCommit?.(step.id)
       }}
     >
       <SliderPrimitive.Track className="relative h-full w-full grow overflow-hidden rounded-full bg-content-muted/20">

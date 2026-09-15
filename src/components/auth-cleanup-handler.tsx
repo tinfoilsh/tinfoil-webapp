@@ -209,9 +209,10 @@ export function AuthCleanupHandler() {
         return
       }
 
-      // Same user or fresh sign-in — persist the active user ID
-      localStorage.setItem(AUTH_ACTIVE_USER_ID, user.id)
-      window.dispatchEvent(new Event(AUTH_ACTIVE_USER_CHANGED_EVENT))
+      if (storedUserId !== user.id) {
+        localStorage.setItem(AUTH_ACTIVE_USER_ID, user.id)
+        window.dispatchEvent(new Event(AUTH_ACTIVE_USER_CHANGED_EVENT))
+      }
     }
 
     // Confirm an explicit sign-out completed before clearing local account data.

@@ -26,6 +26,80 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('intelligence slider', () => {
+  const props = {
+    selectedModel: AUTO_MODEL_ID,
+    models: [
+      { ...MODEL, modelName: AUTO_MODEL_ID, name: 'Auto', isAuto: true },
+    ],
+    onSelect: vi.fn(),
+    isDarkMode: false,
+    autoIntelligence: 'high',
+  }
+
+  it('previews the drag immediately and saves only the final selection', () => {
+    const save = vi.fn()
+    const { container } = render(
+      <ModelSelector {...props} onAutoIntelligenceChange={save} />,
+    )
+    const thumb = screen.getByRole('slider', { name: 'Auto intelligence' })
+    const slider = container.querySelector<HTMLElement>(
+      '[data-orientation="horizontal"]',
+    )!
+    slider.getBoundingClientRect = () => new DOMRect(0, 0, 100, 32)
+    let captured = false
+    slider.setPointerCapture = () => {
+      captured = true
+    }
+    slider.hasPointerCapture = () => captured
+    slider.releasePointerCapture = () => {
+      captured = false
+    }
+
+    fireEvent.pointerDown(slider, { pointerId: 1, clientX: 20 })
+    expect(thumb).toHaveAttribute('aria-valuetext', 'Low')
+    for (const clientX of [40, 60, 80, 100]) {
+      fireEvent.pointerMove(slider, { pointerId: 1, clientX })
+    }
+    expect(thumb).toHaveAttribute('aria-valuetext', 'Max')
+    expect(screen.getByText('Max')).toBeVisible()
+    expect(save).not.toHaveBeenCalled()
+
+    fireEvent.pointerUp(slider, { pointerId: 1, clientX: 100 })
+    expect(save).toHaveBeenCalledExactlyOnceWith('max')
+    expect(thumb).toHaveAttribute('aria-valuetext', 'Max')
+  })
+
+  it('saves keyboard selections', () => {
+    const save = vi.fn()
+    render(<ModelSelector {...props} onAutoIntelligenceChange={save} />)
+    const thumb = screen.getByRole('slider', { name: 'Auto intelligence' })
+
+    fireEvent.keyDown(thumb, { key: 'ArrowLeft' })
+
+    expect(thumb).toHaveAttribute('aria-valuetext', 'Medium')
+    expect(save).toHaveBeenCalledExactlyOnceWith('medium')
+  })
+
+  it('follows profile changes without writing them back', () => {
+    const save = vi.fn()
+    const { rerender } = render(
+      <ModelSelector {...props} onAutoIntelligenceChange={save} />,
+    )
+
+    rerender(
+      <ModelSelector
+        {...props}
+        autoIntelligence="low"
+        onAutoIntelligenceChange={save}
+      />,
+    )
+
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'Low')
+    expect(save).not.toHaveBeenCalled()
+  })
+})
+
 describe('model lifecycle tags', () => {
   it.each([
     { flags: {}, experimental: false, deprecated: false },

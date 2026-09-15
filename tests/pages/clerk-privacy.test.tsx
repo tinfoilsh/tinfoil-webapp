@@ -7,7 +7,12 @@ import { describe, expect, it, vi } from 'vitest'
 
 const clerkProvider = vi.hoisted(() => vi.fn((_props: unknown) => null))
 
-vi.mock('@clerk/nextjs', () => ({ ClerkProvider: clerkProvider }))
+vi.mock('@clerk/nextjs', () => ({
+  ClerkProvider: clerkProvider,
+  ClerkLoading: () => null,
+  ClerkLoaded: () => null,
+  ClerkFailed: () => null,
+}))
 vi.mock('@/components/auth-cleanup-handler', () => ({
   AuthCleanupHandler: () => null,
 }))

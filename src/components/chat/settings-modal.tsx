@@ -6,7 +6,7 @@ import { TextureGrid } from '@/components/texture-grid'
 import { cn } from '@/components/ui/utils'
 import { UserAvatar } from '@/components/user-avatar'
 import { API_BASE_URL } from '@/config'
-import { useProjects } from '@/hooks/use-projects'
+import { PROJECTS_CHANGED } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
@@ -428,7 +428,6 @@ export function SettingsModal({
   const { toast } = useToast()
   const { api, profile, keyReady } = useHarness()
 
-  const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
   const [isCopied, setIsCopied] = useState(false)
   const [isQRCodeExpanded, setIsQRCodeExpanded] = useState(false)
@@ -912,7 +911,7 @@ export function SettingsModal({
       setImportResult(describeOffDeviceImportKickoff(status, source))
       if (status.status === 'completed' || status.status === 'partial') {
         await onChatsUpdated?.()
-        await refreshProjects()
+        window.dispatchEvent(new Event(PROJECTS_CHANGED))
       }
     } catch (cause) {
       if (!controller.signal.aborted)
@@ -992,7 +991,7 @@ export function SettingsModal({
     try {
       await api.post('/v1/projects/delete-all')
       onAllProjectsDeleted?.()
-      await refreshProjects()
+      window.dispatchEvent(new Event(PROJECTS_CHANGED))
       await onChatsUpdated?.()
       setShowDeleteAllProjectsConfirm(false)
       setDeleteAllProjectsConfirmText('')

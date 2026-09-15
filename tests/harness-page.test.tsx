@@ -52,7 +52,159 @@ const finished: Frame = {
   id: 2,
   event: { type: 'RUN_FINISHED', threadId: thread.id, runId: 'run-1' },
 }
+function signedInHistory(post: ReturnType<typeof vi.fn>) {
+  const api = new HarnessAPI(
+    { post } as unknown as HarnessClient,
+    'history-user',
+  )
+  vi.spyOn(api, 'key').mockReturnValue('test-key')
+  activateAPI(api)
+  publish({ session: testSession, keyReady: true })
+  return api
+}
+
+it('loads history when opening a chat route before the list response arrives', async () => {
+  let resolve!: (value: unknown) => void
+  const post = vi.fn().mockImplementation((path: string) =>
+    path === '/v1/threads/list'
+      ? new Promise((done) => {
+          resolve = done
+        })
+      : Promise.resolve(thread),
+  )
+  signedInHistory(post)
+  const { result } = renderHook(() => useThread(thread.id))
+  await waitFor(() => expect(result.current.chat.id).toBe(thread.id))
+  await act(async () => resolve({ threads: [thread], nextCursor: 'older' }))
+  expect(result.current.chats.map((chat) => chat.id)).toEqual([thread.id])
+  expect(result.current.cursor).toBe('older')
+  expect(
+    post.mock.calls.filter(([path]) => path === '/v1/threads/list'),
+  ).toHaveLength(1)
+})
+
+it('keeps pending history when starting a new chat', async () => {
+  let resolve!: (value: unknown) => void
+  signedInHistory(
+    vi.fn().mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    ),
+  )
+  const { result } = renderHook(() => useThread())
+  act(() => result.current.newChat())
+  await act(async () => resolve({ threads: [thread], nextCursor: null }))
+  expect(result.current.chats.map((chat) => chat.id)).toEqual([thread.id])
+})
+
+it('ignores history from a project that is no longer selected', async () => {
+  let resolve!: (value: unknown) => void
+  signedInHistory(
+    vi.fn().mockImplementation((_path, input) =>
+      input.projectId === 'old-project'
+        ? new Promise((done) => {
+            resolve = done
+          })
+        : Promise.resolve({
+            threads: [
+              { ...thread, id: 'new-project-chat', projectId: 'new-project' },
+            ],
+            nextCursor: null,
+          }),
+    ),
+  )
+  const { result, rerender } = renderHook(
+    ({ projectId }) => useThread(null, projectId),
+    { initialProps: { projectId: 'old-project' } },
+  )
+  rerender({ projectId: 'new-project' })
+  await waitFor(() =>
+    expect(result.current.chats[0]?.id).toBe('new-project-chat'),
+  )
+  await act(async () => resolve({ threads: [thread], nextCursor: 'stale' }))
+  expect(result.current.chats.map((chat) => chat.id)).toEqual([
+    'new-project-chat',
+  ])
+  expect(result.current.cursor).toBeNull()
+})
+
+it('discards pending history when the encryption key is invalidated', async () => {
+  let resolve!: (value: unknown) => void
+  const api = signedInHistory(
+    vi.fn().mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    ),
+  )
+  const { result } = renderHook(() => useThread())
+  act(() => api.invalidateKey())
+  await act(async () => resolve({ threads: [thread], nextCursor: 'stale' }))
+  expect(result.current.chats).toEqual([])
+  expect(result.current.cursor).toBeNull()
+  expect(result.current.error).toBe('')
+})
+
 let events: ReturnType<typeof vi.fn>
+
+it('preserves loaded history pages and the cursor when navigation remounts the chat page', async () => {
+  const second = { ...thread, id: 'thread-2', title: 'Older chat' }
+  const post = vi.fn().mockImplementation(async (path, input) => {
+    if (path === '/v1/threads/get')
+      return input.id === second.id ? second : thread
+    return {
+      threads: input.cursor ? [second] : [thread],
+      nextCursor: input.cursor ? 'page-3' : 'page-2',
+    }
+  })
+  signedInHistory(post)
+  const firstPage = renderHook(() => useThread())
+  await waitFor(() => expect(firstPage.result.current.threads).toHaveLength(1))
+  await act(() => firstPage.result.current.refresh('page-2'))
+  expect(firstPage.result.current.threads).toHaveLength(2)
+  firstPage.unmount()
+
+  const chatPage = renderHook(() => useThread(thread.id))
+  expect(chatPage.result.current.threads.map((item) => item.id)).toEqual([
+    thread.id,
+    second.id,
+  ])
+  expect(chatPage.result.current.cursor).toBe('page-3')
+  await waitFor(() =>
+    expect(chatPage.result.current.chat.title).toBe(thread.title),
+  )
+  expect(
+    post.mock.calls.filter(([path]) => path === '/v1/threads/list'),
+  ).toHaveLength(2)
+  chatPage.unmount()
+
+  const otherChat = renderHook(() => useThread(second.id))
+  expect(otherChat.result.current.threads).toHaveLength(2)
+  await waitFor(() =>
+    expect(otherChat.result.current.chat.title).toBe(second.title),
+  )
+  expect(
+    post.mock.calls.filter(([path]) => path === '/v1/threads/list'),
+  ).toHaveLength(2)
+})
+
+it('clears cached history when the key changes, including after navigating back to another page', async () => {
+  const post = vi
+    .fn()
+    .mockResolvedValue({ threads: [thread], nextCursor: null })
+  const api = signedInHistory(post)
+  const page = renderHook(() => useThread())
+  await waitFor(() => expect(page.result.current.threads).toHaveLength(1))
+  page.unmount()
+  act(() => api.invalidateKey())
+  const next = renderHook(() => useThread())
+  expect(next.result.current.threads).toEqual([])
+  expect(next.result.current.cursor).toBeNull()
+})
+
 beforeEach(() => {
   sessionStorage.clear()
   events = vi.fn()
@@ -147,7 +299,7 @@ it('ignores a late stream after navigating to a new chat', async () => {
     yield finished
   })
   const { result } = renderHook(() => useThread())
-  let sending!: Promise<void> | undefined
+  let sending: ReturnType<typeof result.current.send>
   act(() => {
     sending = result.current.send({ content: 'private question' })
   })

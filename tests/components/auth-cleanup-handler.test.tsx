@@ -1,6 +1,7 @@
 import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
 import {
   ACCOUNT_RESET_FAILED_EVENT,
+  AUTH_ACTIVE_USER_CHANGED_EVENT,
   AUTH_SIGNOUT_CLEARED_EVENT,
   AUTH_SIGNOUT_REQUESTED_EVENT,
 } from '@/constants/auth-events'
@@ -78,6 +79,25 @@ describe('AuthCleanupHandler', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.useRealTimers()
+  })
+
+  it('announces a fresh account once and preserves it across remounts', () => {
+    authState = { isSignedIn: true, isLoaded: true }
+    userState = { user: { id: 'user_123' } }
+    const changed = vi.fn()
+    window.addEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, changed)
+    try {
+      const view = render(createElement(AuthCleanupHandler))
+      expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
+      expect(changed).toHaveBeenCalledTimes(1)
+
+      view.unmount()
+      render(createElement(AuthCleanupHandler))
+      expect(changed).toHaveBeenCalledTimes(1)
+      expect(mockPerformUserSwitchCleanup).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, changed)
+    }
   })
 
   it('does not clear data for a transient signed-out state', async () => {

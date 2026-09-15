@@ -331,7 +331,6 @@ export function ProjectSidebar({
     updateProject,
     updateProjectMemory,
     deleteProject,
-    refreshDocuments,
     loading: contextLoading,
     uploadingFiles: contextUploadingFiles,
     addUploadingFile,
@@ -412,10 +411,6 @@ export function ProjectSidebar({
       skipNextAnimationRef.current = false
     }
   }, [project])
-
-  useEffect(() => {
-    refreshDocuments()
-  }, [refreshDocuments])
 
   // Expand documents section when signal is set (from file upload to project context)
   useEffect(() => {
@@ -525,11 +520,12 @@ export function ProjectSidebar({
       const newName = editingProjectName.trim()
       // Skip animation when the project prop updates after save
       skipNextAnimationRef.current = true
+      setEditedName(newName)
+      setIsEditingProjectName(false)
       try {
         await updateProject(project.id, {
           name: newName,
         })
-        setEditedName(newName)
       } catch {
         // Reset the skip flag on failure since no update will occur
         skipNextAnimationRef.current = false

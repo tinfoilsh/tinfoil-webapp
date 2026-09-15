@@ -22,7 +22,7 @@ export function attachmentView(a: WireAttachment): Attachment {
   }
 }
 export function messageView(message: WireMessage, streaming = false): Message {
-  const timeline: TimelineBlock[] = (message.timeline ?? []).map((block) => {
+  const blocks: TimelineBlock[] = (message.timeline ?? []).map((block) => {
     if (block.type === 'thinking')
       return {
         ...block,
@@ -45,6 +45,24 @@ export function messageView(message: WireMessage, streaming = false): Message {
       resolution: block.resolution ?? undefined,
     }
   })
+  const timeline: TimelineBlock[] = []
+  let thinking: Extract<TimelineBlock, { type: 'thinking' }> | undefined
+  for (const block of blocks) {
+    if (block.type === 'thinking') {
+      if (thinking) {
+        thinking.content += block.content
+        thinking.isThinking ||= block.isThinking
+      } else {
+        thinking = block
+        timeline.unshift(thinking)
+      }
+    } else {
+      const previous = timeline.at(-1)
+      if (block.type === 'content' && previous?.type === 'content')
+        previous.content += block.content
+      else timeline.push(block)
+    }
+  }
   return {
     id: message.id,
     role: message.role,

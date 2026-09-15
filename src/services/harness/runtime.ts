@@ -1,6 +1,8 @@
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import type { Project } from '@/types/project'
 import { HarnessClient } from './client'
+import { OptimisticStore } from './optimistic-store'
 import { HarnessError } from './sse'
 import type { Session } from './types'
 
@@ -32,11 +34,16 @@ export class HarnessAPI {
   readonly lifetime = new AbortController()
   private contentLifetime = new AbortController()
   private profileVersion = 0
-  private profileWrites: Promise<unknown> = Promise.resolve()
+  private profileState = new OptimisticStore<Profile>({}, (profile) =>
+    publish({ profile }),
+  )
+  readonly projects = new OptimisticStore<Project[]>([])
   invalidateKey() {
     this.contentLifetime.abort()
     this.contentLifetime = new AbortController()
     this.profileVersion++
+    this.profileState.reset({})
+    this.projects.reset([])
     publish({ profile: {}, keyReady: false })
   }
   constructor(
@@ -141,9 +148,12 @@ export class HarnessAPI {
       return
     }
     try {
-      const profile = await this.post<Profile>('/v1/profile/get')
+      await this.profileState.read(
+        () => this.post<Profile>('/v1/profile/get'),
+        this.signal(),
+      )
       if (version === this.profileVersion)
-        publish({ profile, keyReady: true, error: undefined })
+        publish({ keyReady: true, error: undefined })
     } catch (cause) {
       this.lifetime.signal.throwIfAborted()
       if (version !== this.profileVersion) return
@@ -161,22 +171,24 @@ export class HarnessAPI {
     change: Profile | ((current: Profile) => Profile),
   ): Promise<Profile> {
     const signal = this.signal()
-    const update = this.profileWrites
-      .catch(() => {})
-      .then(async () => {
-        signal.throwIfAborted()
-        const version = ++this.profileVersion
-        const patch =
-          typeof change === 'function' ? change(view.profile) : change
-        const profile = this.userId
-          ? await this.post<Profile>('/v1/profile/update', { patch }, signal)
-          : { ...view.profile, ...patch }
-        signal.throwIfAborted()
-        if (version === this.profileVersion) publish({ profile })
-        return profile
-      })
-    this.profileWrites = update
-    return update
+    if (signal.aborted) return Promise.reject(signal.reason)
+    if (this.profileState.getSnapshot() !== view.profile)
+      this.profileState.set(() => view.profile)
+    const patch = (profile: Profile) =>
+      typeof change === 'function' ? change(profile) : change
+    return this.profileState.mutate(
+      (profile) => ({ ...profile, ...patch(profile) }),
+      (profile) =>
+        this.userId
+          ? this.post<Profile>(
+              '/v1/profile/update',
+              { patch: patch(profile) },
+              signal,
+            )
+          : Promise.resolve({ ...profile, ...patch(profile) }),
+      signal,
+      (_profile, saved) => saved,
+    )
   }
 }
 export function activateAPI(api: HarnessAPI) {

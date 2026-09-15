@@ -1,11 +1,19 @@
-import { PROJECTS_CHANGED } from '@/hooks/use-projects'
+import { OptimisticStore } from '@/services/harness/optimistic-store'
 import { useHarness } from '@/services/harness/provider'
 import type {
   Project,
   ProjectContextUsage,
   ProjectDocument,
 } from '@/types/project'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
 import {
   ProjectContext,
   type LoadingProject,
@@ -28,9 +36,24 @@ export function ProjectProvider({
   initialProjectId?: string | null
 }) {
   const { api, keyReady } = useHarness()
-  const [activeProject, setActiveProject] = useState<Project | null>(null)
-  const [projectDocuments, setProjectDocuments] = useState<ProjectDocument[]>(
-    [],
+  const [activeProjectId, setActiveProjectId] = useState<string | null>(null)
+  const projects = useSyncExternalStore(
+    api.projects.subscribe,
+    api.projects.getSnapshot,
+    api.projects.getSnapshot,
+  )
+  const activeProject =
+    projects.find((project) => project.id === activeProjectId) ?? null
+  const documents = useMemo(
+    () => new OptimisticStore<ProjectDocument[]>([]),
+    // Keep documents and pending edits scoped to this account.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api],
+  )
+  const projectDocuments = useSyncExternalStore(
+    documents.subscribe,
+    documents.getSnapshot,
+    documents.getSnapshot,
   )
   const [usage, setUsage] = useState(emptyUsage)
   const [loadingProject, setLoadingProject] = useState<LoadingProject | null>(
@@ -39,22 +62,46 @@ export function ProjectProvider({
   const [error, setError] = useState<string | null>(null)
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
   const generation = useRef(0)
-  const changed = () => window.dispatchEvent(new Event(PROJECTS_CHANGED))
+  const select = useRef<string | null>(null)
+  const readProject = useCallback(
+    async (id: string, isCurrent: () => boolean) => {
+      let loaded!: Project & {
+        documents: ProjectDocument[]
+        contextUsage: ProjectContextUsage
+      }
+      await api.projects.read(
+        async () => {
+          loaded = await api.post('/v1/projects/get', { id })
+          if (!isCurrent())
+            throw new DOMException('Project changed', 'AbortError')
+          return [loaded]
+        },
+        api.signal(),
+        (all, [project]) =>
+          all.some((item) => item.id === id)
+            ? all.map((item) => (item.id === id ? project : item))
+            : [...all, project],
+      )
+      return loaded
+    },
+    [api],
+  )
   const enterProjectMode = useCallback<ProjectContextValue['enterProjectMode']>(
     async (id, name, options) => {
       const version = ++generation.current
+      select.current = id
+      setActiveProjectId(id)
+      documents.reset([])
       setLoadingProject({ id, name: name ?? 'Loading…' })
       try {
-        const project = await api.post<
-          Project & {
-            documents: ProjectDocument[]
-            contextUsage: ProjectContextUsage
-          }
-        >('/v1/projects/get', { id })
+        const project = await readProject(
+          id,
+          () =>
+            version === generation.current && options?.isCurrent?.() !== false,
+        )
         if (version !== generation.current || options?.isCurrent?.() === false)
           return false
-        setActiveProject(project)
-        setProjectDocuments(project.documents)
+        documents.set(() => project.documents)
         setUsage(project.contextUsage)
         setError(null)
         return true
@@ -68,16 +115,17 @@ export function ProjectProvider({
         if (version === generation.current) setLoadingProject(null)
       }
     },
-    [api],
+    [documents, readProject],
   )
   const exitProjectMode = useCallback(() => {
     generation.current++
-    setActiveProject(null)
-    setProjectDocuments([])
+    select.current = null
+    setActiveProjectId(null)
+    documents.reset([])
     setLoadingProject(null)
     setUploadingFiles([])
     setUsage(emptyUsage)
-  }, [])
+  }, [documents])
   useEffect(() => {
     if (initialProjectId && keyReady) void enterProjectMode(initialProjectId)
   }, [initialProjectId, keyReady, enterProjectMode])
@@ -89,8 +137,37 @@ export function ProjectProvider({
     }
   }, [keyReady, exitProjectMode])
   const refreshDocuments = async () => {
-    if (activeProject) await enterProjectMode(activeProject.id)
+    if (!activeProject) return
+    const id = activeProject.id
+    const version = generation.current
+    await documents.read(async () => {
+      const project = await readProject(
+        id,
+        () => version === generation.current && select.current === id,
+      )
+      if (version !== generation.current || select.current !== id)
+        throw new DOMException('Project changed', 'AbortError')
+      setUsage(project.contextUsage)
+      return project.documents
+    }, api.signal())
   }
+  const saveMemory = (id: string, facts: Project['memory']) =>
+    api.projects.mutate(
+      (all) =>
+        all.map((project) =>
+          project.id === id ? { ...project, memory: facts } : project,
+        ),
+      () =>
+        api.post<{ facts: Project['memory'] }>('/v1/projects/memory/update', {
+          projectId: id,
+          facts,
+        }),
+      api.signal(),
+      (all, saved) =>
+        all.map((project) =>
+          project.id === id ? { ...project, memory: saved.facts } : project,
+        ),
+    )
   const value: ProjectContextValue = {
     activeProject,
     isProjectMode: !!activeProject,
@@ -102,28 +179,49 @@ export function ProjectProvider({
     enterProjectMode,
     exitProjectMode,
     createProject: async (data) => {
-      const project = await api.post<Project>(
-        '/v1/projects/create',
-        data as unknown as Record<string, unknown>,
-      )
-      changed()
-      return project
+      setLoadingProject({ id: '', name: data.name })
+      const version = generation.current
+      try {
+        return await api.projects.mutate(
+          (all) => all,
+          () =>
+            api.post<Project>(
+              '/v1/projects/create',
+              data as unknown as Record<string, unknown>,
+            ),
+          api.signal(),
+          (all, project) => [
+            project,
+            ...all.filter((item) => item.id !== project.id),
+          ],
+        )
+      } finally {
+        if (version === generation.current) setLoadingProject(null)
+      }
     },
     updateProject: async (id, data) => {
       const { memory, ...patch } = data
-      await api.post('/v1/projects/update', { id, ...patch })
-      if (memory)
-        await api.post('/v1/projects/memory/update', {
-          projectId: id,
-          facts: memory,
-        })
-      if (id === activeProject?.id) await enterProjectMode(id)
-      changed()
+      const saving = api.projects.mutate(
+        (all) =>
+          all.map((project) =>
+            project.id === id ? { ...project, ...patch } : project,
+          ),
+        () => api.post<Project>('/v1/projects/update', { id, ...patch }),
+        api.signal(),
+        (all, saved) =>
+          all.map((project) =>
+            project.id === id ? { ...project, ...saved } : project,
+          ),
+      )
+      await Promise.all([saving, memory ? saveMemory(id, memory) : undefined])
     },
     deleteProject: async (id) => {
-      await api.post('/v1/projects/delete', { id })
-      if (activeProject?.id === id) exitProjectMode()
-      changed()
+      await api.projects.mutate(
+        (all) => all.filter((project) => project.id !== id),
+        () => api.post('/v1/projects/delete', { id }),
+        api.signal(),
+      )
+      if (select.current === id) exitProjectMode()
     },
     uploadDocument: async (file) => {
       if (!activeProject) throw new Error('Select a project first.')
@@ -137,20 +235,21 @@ export function ProjectProvider({
     },
     removeDocument: async (documentId) => {
       if (!activeProject) return
-      await api.post('/v1/projects/documents/delete', {
-        projectId: activeProject.id,
-        documentId,
-      })
+      await documents.mutate(
+        (all) => all.filter((document) => document.id !== documentId),
+        () =>
+          api.post('/v1/projects/documents/delete', {
+            projectId: activeProject.id,
+            documentId,
+          }),
+        api.signal(),
+      )
       await refreshDocuments()
     },
     refreshDocuments,
     updateProjectMemory: async (facts) => {
       if (!activeProject) return
-      const result = await api.post<{ facts: Project['memory'] }>(
-        '/v1/projects/memory/update',
-        { projectId: activeProject.id, facts },
-      )
-      setActiveProject({ ...activeProject, memory: result.facts })
+      await saveMemory(activeProject.id, facts)
     },
     addUploadingFile: (file) =>
       setUploadingFiles((previous) => [...previous, file]),
