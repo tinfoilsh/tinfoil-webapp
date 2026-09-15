@@ -1041,8 +1041,13 @@ export function useChatMessaging({
         )
         optimisticTurnApplied = userMessage !== null
 
-        // Scroll after state update and DOM renders
-        if (scrollToBottom && viewedChatIdRef.current === targetChatId) {
+        // Scroll after state update and DOM renders. A continuation adds no
+        // new turn, so leave the viewport where the user is reading.
+        if (
+          scrollToBottom &&
+          !continuedMessage &&
+          viewedChatIdRef.current === targetChatId
+        ) {
           setTimeout(() => scrollToBottom(), 50)
         }
 
