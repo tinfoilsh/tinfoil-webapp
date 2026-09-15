@@ -27,6 +27,20 @@ export interface OffDeviceImportResult {
   status: ImportStatusResponse
 }
 
+export type OffDeviceImportPhase = 'hashing' | 'uploading' | 'starting'
+
+export interface OffDeviceImportProgress {
+  phase: OffDeviceImportPhase
+  /** Bytes processed so far within the current phase. */
+  processedBytes: number
+  totalBytes: number
+}
+
+export interface OffDeviceImportOptions {
+  signal?: AbortSignal
+  onProgress?: (progress: OffDeviceImportProgress) => void
+}
+
 function bytesToHex(bytes: Uint8Array): string {
   let out = ''
   for (let i = 0; i < bytes.length; i++) {
@@ -43,7 +57,7 @@ async function readChunk(file: File, index: number): Promise<Uint8Array> {
 
 async function hashFileByChunk(
   file: File,
-  signal?: AbortSignal,
+  options: OffDeviceImportOptions,
 ): Promise<{
   archiveSha256: string
   chunkSha256s: string[]
@@ -52,11 +66,21 @@ async function hashFileByChunk(
   const archiveHash = sha256.create()
   const chunkSha256s: string[] = []
 
+  options.onProgress?.({
+    phase: 'hashing',
+    processedBytes: 0,
+    totalBytes: file.size,
+  })
   for (let index = 0; index < totalChunks; index++) {
-    signal?.throwIfAborted()
+    options.signal?.throwIfAborted()
     const chunk = await readChunk(file, index)
     archiveHash.update(chunk)
     chunkSha256s.push(bytesToHex(sha256(chunk)))
+    options.onProgress?.({
+      phase: 'hashing',
+      processedBytes: Math.min((index + 1) * IMPORT_CHUNK_BYTES, file.size),
+      totalBytes: file.size,
+    })
   }
 
   return {
@@ -68,7 +92,7 @@ async function hashFileByChunk(
 export async function runOffDeviceImport(
   source: ImportSource,
   file: File,
-  options: { signal?: AbortSignal } = {},
+  options: OffDeviceImportOptions = {},
 ): Promise<OffDeviceImportResult> {
   if (file.size === 0) {
     throw new Error('The export file is empty')
@@ -78,16 +102,18 @@ export async function runOffDeviceImport(
   }
 
   const totalChunks = Math.ceil(file.size / IMPORT_CHUNK_BYTES)
-  const { archiveSha256, chunkSha256s } = await hashFileByChunk(
-    file,
-    options.signal,
-  )
+  const { archiveSha256, chunkSha256s } = await hashFileByChunk(file, options)
 
   const { job_id, upload_id } = await importCreate(
     { source, totalBytes: file.size, totalChunks, archiveSha256 },
     options.signal,
   )
 
+  options.onProgress?.({
+    phase: 'uploading',
+    processedBytes: 0,
+    totalBytes: file.size,
+  })
   for (let index = 0; index < totalChunks; index++) {
     options.signal?.throwIfAborted()
     const chunk = await readChunk(file, index)
@@ -100,9 +126,19 @@ export async function runOffDeviceImport(
       },
       options.signal,
     )
+    options.onProgress?.({
+      phase: 'uploading',
+      processedBytes: Math.min((index + 1) * IMPORT_CHUNK_BYTES, file.size),
+      totalBytes: file.size,
+    })
   }
 
   options.signal?.throwIfAborted()
+  options.onProgress?.({
+    phase: 'starting',
+    processedBytes: file.size,
+    totalBytes: file.size,
+  })
   const status = await importStart(
     { jobId: job_id, keyB64: requirePrimaryKeyB64() },
     options.signal,
