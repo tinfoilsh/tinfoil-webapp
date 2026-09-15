@@ -3892,6 +3892,9 @@ export function ChatInterface({
                   onOpenFavorite={handleOpenFavorite}
                   cloudSyncEnabled={cloudSyncSettingEnabled}
                   windowWidth={windowWidth}
+                  onManualSync={handleManualSync}
+                  isSyncing={syncing}
+                  lastSyncFailed={lastSyncFailed}
                 />
               ) : (
                 <ProjectSidebar
@@ -3936,6 +3939,9 @@ export function ChatInterface({
                   onOpenFavorite={handleOpenFavorite}
                   cloudSyncEnabled={cloudSyncSettingEnabled}
                   windowWidth={windowWidth}
+                  onManualSync={handleManualSync}
+                  isSyncing={syncing}
+                  lastSyncFailed={lastSyncFailed}
                 />
               )}
             </motion.div>

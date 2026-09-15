@@ -6,6 +6,7 @@ import { getDocumentTextContent } from '@/components/chat/document-content'
 import { useDocumentUploader } from '@/components/chat/document-uploader'
 import { useDrag } from '@/components/chat/drag-context'
 import { consumeFavoriteDrop } from '@/components/chat/favorite-drag'
+import { SidebarSyncButton } from '@/components/chat/sidebar-sync-button'
 import { TypingAnimation } from '@/components/chat/typing-animation'
 import { useFavoriteDropTarget } from '@/components/chat/use-favorite-drop-target'
 import { PiSpinnerThin } from '@/components/icons/lazy-icons'
@@ -26,6 +27,7 @@ import {
   UI_EXPAND_PROJECT_DOCUMENTS,
   UI_SIDEBAR_FAVORITES_EXPANDED,
 } from '@/constants/storage-keys'
+import { useSyncHealth, useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { toast } from '@/hooks/use-toast'
 import { isResolvedFavoriteChat } from '@/services/storage/pinned-chats'
 import type { Fact } from '@/types/memory'
@@ -137,6 +139,9 @@ interface ProjectSidebarProps {
   onOpenFavorite?: (chat: ChatItemData) => void | Promise<void>
   cloudSyncEnabled: boolean
   windowWidth: number
+  onManualSync?: () => Promise<boolean>
+  isSyncing?: boolean
+  lastSyncFailed?: boolean
 }
 
 function formatFileSize(bytes: number): string {
@@ -313,8 +318,17 @@ export function ProjectSidebar({
   onOpenFavorite,
   cloudSyncEnabled,
   windowWidth,
+  onManualSync,
+  isSyncing = false,
+  lastSyncFailed = false,
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
+  const syncNeedsAttention = useSyncHealthAttention()
+  const syncHealth = useSyncHealth()
+  const syncFailed =
+    lastSyncFailed ||
+    syncHealth.gate.kind !== 'ok' ||
+    Object.keys(syncHealth.failedChats).length > 0
   const {
     draggingChatId,
     draggingChatSource,
@@ -899,25 +913,9 @@ export function ProjectSidebar({
         <SidebarPatternEdge isDarkMode={isDarkMode} />
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between border-b border-border-subtle p-4">
-          <div className="flex items-center gap-3">
-            <Link href="/" title="Home" className="-ml-1 flex items-center">
-              <Logo className="h-6 w-auto" dark={isDarkMode} />
-            </Link>
-            {/* Settings button */}
-            <div className="group relative flex items-center">
-              <button
-                type="button"
-                onClick={onSettingsClick}
-                aria-label="Settings"
-                className="rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
-              >
-                <Cog6ToothIcon className="h-5 w-5" />
-              </button>
-              <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                Settings
-              </span>
-            </div>
-          </div>
+          <Link href="/" title="Home" className="-ml-1 flex items-center">
+            <Logo className="h-6 w-auto" dark={isDarkMode} />
+          </Link>
           {/* Close sidebar button */}
           <div className="group relative flex items-center">
             <button
@@ -1069,8 +1067,36 @@ export function ProjectSidebar({
             </div>
           </div>
 
-          {/* New Chat button */}
-          <div className="relative z-10 mt-3 flex-none px-2 py-2">
+          {/* Toolbar: Settings, Sync, New chat */}
+          <div className="relative z-20 mt-3 flex flex-none items-center gap-2 px-2 py-2">
+            {/* Settings button */}
+            <div className="group relative flex items-center">
+              <button
+                type="button"
+                onClick={onSettingsClick}
+                aria-label="Settings"
+                className="relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-2 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
+              >
+                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
+                {syncNeedsAttention && (
+                  <span
+                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+              <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                Settings
+              </span>
+            </div>
+            {isSignedIn && cloudSyncEnabled && onManualSync && (
+              <SidebarSyncButton
+                isSyncing={isSyncing}
+                syncFailed={syncFailed}
+                onSync={onManualSync}
+              />
+            )}
             <Link
               href={newChatHref}
               aria-current={!currentChatId ? 'page' : undefined}
@@ -1081,12 +1107,10 @@ export function ProjectSidebar({
                 handleNewChat()
               }}
               className={cn(
-                'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
+                'flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border-subtle bg-surface-chat-background px-2 py-2 text-sm transition-all duration-200',
                 !currentChatId
-                  ? 'cursor-default border-transparent bg-transparent text-content-muted'
-                  : isDarkMode
-                    ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
-                    : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
+                  ? 'cursor-default text-content-muted'
+                  : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
               )}
             >
               <span className="flex items-center gap-2">
