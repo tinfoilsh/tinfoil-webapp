@@ -1139,7 +1139,7 @@ export function ChatSidebar({
                 type="button"
                 onClick={onSettingsClick}
                 aria-label="Settings"
-                className="relative rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
+                className="relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-1.5 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
               >
                 <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
                 {syncNeedsAttention && (
@@ -1154,6 +1154,13 @@ export function ChatSidebar({
                 Settings
               </span>
             </div>
+            {isSignedIn && cloudSyncEnabled && onManualSync && (
+              <SidebarSyncButton
+                isSyncing={isSyncing}
+                syncFailed={syncFailed}
+                onSync={onManualSync}
+              />
+            )}
           </div>
           {/* Close sidebar button */}
           <div className="group relative flex items-center">
@@ -1331,15 +1338,6 @@ export function ChatSidebar({
                 )}
               </div>
             </div>
-          )}
-
-          {isSignedIn && cloudSyncEnabled && onManualSync && (
-            <SidebarSyncButton
-              isDarkMode={isDarkMode}
-              isSyncing={isSyncing}
-              syncFailed={syncFailed}
-              onSync={onManualSync}
-            />
           )}
 
           {/* New Chat button */}

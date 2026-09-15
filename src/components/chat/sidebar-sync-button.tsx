@@ -1,4 +1,5 @@
 import { cn } from '@/components/ui/utils'
+import { CheckIcon } from '@heroicons/react/24/outline'
 import { motion } from 'framer-motion'
 import { useState } from 'react'
 import { GoSync } from 'react-icons/go'
@@ -8,7 +9,6 @@ import { CONSTANTS } from './constants'
 type SyncFeedback = 'idle' | 'syncing' | 'success'
 
 interface SidebarSyncButtonProps {
-  isDarkMode: boolean
   isSyncing: boolean
   syncFailed: boolean
   onSync: () => Promise<boolean>
@@ -19,7 +19,6 @@ function wait(durationMs: number): Promise<void> {
 }
 
 export function SidebarSyncButton({
-  isDarkMode,
   isSyncing,
   syncFailed,
   onSync,
@@ -68,29 +67,18 @@ export function SidebarSyncButton({
   }
 
   return (
-    <div className="relative z-10 flex-none px-2 pt-2">
+    <div className="group relative flex items-center">
       <button
         type="button"
         onClick={() => void handleSync()}
         disabled={isDisabled}
-        aria-label={`Sync cloud data. ${feedback === 'success' ? 'Synced' : statusLabel}`}
+        aria-label={`Sync cloud data. ${showSuccess ? 'Synced' : statusLabel}`}
         className={cn(
-          'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors disabled:cursor-default',
+          'relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-1.5 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary disabled:cursor-default',
           showSpinner && 'opacity-60',
-          isDarkMode
-            ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
-            : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
         )}
       >
-        <span className="flex items-center gap-2">
-          {showSpinner ? (
-            <PiSpinner className="h-4 w-4 animate-spin" />
-          ) : (
-            <GoSync className="h-4 w-4" />
-          )}
-          <span className="font-aeonik font-medium">Sync</span>
-        </span>
-        <span className="relative h-5 w-16 shrink-0">
+        <span className="relative h-5 w-5">
           <motion.span
             initial={false}
             animate={{
@@ -109,36 +97,29 @@ export function SidebarSyncButton({
                     ease: 'easeOut',
                   }
             }
-            className="absolute inset-0 flex items-center justify-end"
+            className="absolute inset-0 flex items-center justify-center"
             aria-hidden="true"
           >
-            <motion.span
-              initial={false}
-              animate={{ scale: showSuccess ? 0.7 : 1 }}
-              transition={
-                showSuccess
-                  ? {
-                      duration: CONSTANTS.SIDEBAR_SYNC_FEEDBACK_EXIT_S,
-                      ease: 'easeOut',
-                    }
-                  : {
-                      duration: CONSTANTS.SIDEBAR_SYNC_FEEDBACK_ENTER_S,
-                      delay: CONSTANTS.SIDEBAR_SYNC_FEEDBACK_ENTER_DELAY_S,
-                      ease: 'easeOut',
-                    }
-              }
-              className={cn(
-                'h-2 w-2 rounded-full',
-                hasSyncFailure ? 'bg-orange-500' : 'bg-green-500',
-              )}
-              title={statusLabel}
-            />
+            {showSpinner ? (
+              <PiSpinner className="h-5 w-5 animate-spin" />
+            ) : (
+              <GoSync className="h-5 w-5" />
+            )}
+            {!showSpinner && (
+              <span
+                className={cn(
+                  'absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-surface-chat-background',
+                  hasSyncFailure ? 'bg-orange-500' : 'bg-green-500',
+                )}
+                title={statusLabel}
+              />
+            )}
           </motion.span>
           <motion.span
             initial={false}
             animate={{
               opacity: showSuccess ? 1 : 0,
-              y: showSuccess ? 0 : 3,
+              scale: showSuccess ? 1 : 0.7,
               filter: showSuccess ? 'blur(0px)' : 'blur(2px)',
             }}
             transition={
@@ -153,13 +134,16 @@ export function SidebarSyncButton({
                     ease: 'easeOut',
                   }
             }
-            className="pointer-events-none absolute inset-0 flex items-center justify-end whitespace-nowrap text-xs font-medium text-green-600 dark:text-green-400"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center text-green-600 dark:text-green-400"
             aria-hidden={!showSuccess}
           >
-            Synced!
+            <CheckIcon className="h-5 w-5" strokeWidth={2.5} />
           </motion.span>
         </span>
       </button>
+      <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+        {showSuccess ? 'Synced' : statusLabel}
+      </span>
     </div>
   )
 }

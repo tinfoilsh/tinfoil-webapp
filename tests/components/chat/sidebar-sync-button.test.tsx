@@ -13,7 +13,6 @@ describe('SidebarSyncButton', () => {
     const onSync = vi.fn().mockResolvedValue(true)
     render(
       <SidebarSyncButton
-        isDarkMode={false}
         isSyncing={false}
         syncFailed={false}
         onSync={onSync}
@@ -40,7 +39,7 @@ describe('SidebarSyncButton', () => {
     expect(screen.getByRole('button')).toHaveAccessibleName(
       'Sync cloud data. Synced',
     )
-    expect(screen.getByText('Synced!')).toHaveAttribute('aria-hidden', 'false')
+    expect(screen.getByText('Synced')).toBeInTheDocument()
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(
@@ -57,7 +56,6 @@ describe('SidebarSyncButton', () => {
     const onSync = vi.fn().mockResolvedValue(false)
     render(
       <SidebarSyncButton
-        isDarkMode={false}
         isSyncing={false}
         syncFailed={false}
         onSync={onSync}
@@ -73,6 +71,6 @@ describe('SidebarSyncButton', () => {
     expect(screen.getByRole('button')).toHaveAccessibleName(
       'Sync cloud data. Sync failed',
     )
-    expect(screen.getByText('Synced!')).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByText('Sync failed')).toBeInTheDocument()
   })
 })
