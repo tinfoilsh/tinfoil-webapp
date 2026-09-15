@@ -162,12 +162,12 @@ function readExpandedPreference(): boolean {
   return sessionStorage.getItem(UI_SIDEBAR_USAGE_EXPANDED) === 'true'
 }
 
-export function RateLimitUsage() {
+export function RateLimitUsage({ isPremium }: { isPremium: boolean }) {
   const rateLimit = useRateLimit()
   const countdown = useResetCountdown(rateLimit?.resetsAt ?? '')
   const [isExpanded, setIsExpanded] = useState(readExpandedPreference)
 
-  if (!hasTokenUsage(rateLimit)) return null
+  if (!isPremium || !hasTokenUsage(rateLimit)) return null
 
   const title = rateLimit.kind === 'hourly' ? 'Hourly usage' : 'Daily usage'
   const summary = mostConstrainedBudget(rateLimit)

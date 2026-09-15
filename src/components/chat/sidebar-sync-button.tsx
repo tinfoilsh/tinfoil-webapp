@@ -1,8 +1,7 @@
 import { cn } from '@/components/ui/utils'
-import { CheckIcon } from '@heroicons/react/24/outline'
+import { ArrowPathIcon, CheckIcon } from '@heroicons/react/24/outline'
 import { motion } from 'framer-motion'
 import { useState } from 'react'
-import { GoSync } from 'react-icons/go'
 import { PiSpinner } from 'react-icons/pi'
 import { CONSTANTS } from './constants'
 
@@ -103,7 +102,7 @@ export function SidebarSyncButton({
             {showSpinner ? (
               <PiSpinner className="h-5 w-5 animate-spin" />
             ) : (
-              <GoSync className="h-5 w-5" />
+              <ArrowPathIcon className="h-5 w-5" />
             )}
             {hasSyncFailure && (
               <span
