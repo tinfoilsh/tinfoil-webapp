@@ -194,6 +194,11 @@ export type ImportProgress =
   | { type: 'chats' | 'projects'; current: number; total: number }
   | { type: 'upload'; progress: OffDeviceImportProgress }
 
+// Hashing is local and fast while uploading is network-bound, so the
+// combined bar gives hashing a small slice and never runs backward when
+// the phase changes.
+const UPLOAD_PROGRESS_HASHING_SHARE = 0.15
+
 export function describeImportProgress(progress: ImportProgress): {
   title: string
   detail: string
@@ -215,10 +220,16 @@ export function describeImportProgress(progress: ImportProgress): {
       percent: 100,
     }
   }
+  const phaseFraction = totalBytes > 0 ? processedBytes / totalBytes : 0
+  const overallFraction =
+    phase === 'hashing'
+      ? phaseFraction * UPLOAD_PROGRESS_HASHING_SHARE
+      : UPLOAD_PROGRESS_HASHING_SHARE +
+        phaseFraction * (1 - UPLOAD_PROGRESS_HASHING_SHARE)
   return {
     title: phase === 'hashing' ? 'Preparing export...' : 'Uploading export...',
     detail: `${formatFileSize(processedBytes)} of ${formatFileSize(totalBytes)}`,
-    percent: totalBytes > 0 ? (processedBytes / totalBytes) * 100 : 0,
+    percent: overallFraction * 100,
   }
 }
 
