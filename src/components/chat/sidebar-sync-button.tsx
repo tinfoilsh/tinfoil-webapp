@@ -38,7 +38,6 @@ export function SidebarSyncButton({
   const handleSync = async () => {
     const startedAt = Date.now()
     setFeedback('syncing')
-    setManualSyncFailed(false)
 
     let succeeded = false
     try {
@@ -61,6 +60,7 @@ export function SidebarSyncButton({
       return
     }
 
+    setManualSyncFailed(false)
     setFeedback('success')
     await wait(CONSTANTS.SIDEBAR_SYNC_SUCCESS_FEEDBACK_MS)
     setFeedback('idle')
