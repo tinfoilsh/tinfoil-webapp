@@ -937,8 +937,65 @@ export function ProjectSidebar({
             (like the expanded Project Settings panel) can never clip
             content such as the Save button out of reach. */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
+          {/* Toolbar: Settings, Sync, New chat */}
+          <div className="relative z-20 flex flex-none items-center gap-2 px-2 py-2">
+            {/* Settings button */}
+            <div className="group relative flex items-center">
+              <button
+                type="button"
+                onClick={onSettingsClick}
+                aria-label="Settings"
+                className="relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-2 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
+              >
+                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
+                {syncNeedsAttention && (
+                  <span
+                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+              <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                Settings
+              </span>
+            </div>
+            {isSignedIn && cloudSyncEnabled && onManualSync && (
+              <SidebarSyncButton
+                isSyncing={isSyncing}
+                syncFailed={syncFailed}
+                onSync={onManualSync}
+              />
+            )}
+            <Link
+              href={newChatHref}
+              aria-current={!currentChatId ? 'page' : undefined}
+              onClick={(e) => {
+                if (!isPlainPrimaryClick(e)) return
+                e.preventDefault()
+                if (!currentChatId) return
+                handleNewChat()
+              }}
+              className={cn(
+                'flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border-subtle bg-surface-chat-background px-2 py-2 text-sm transition-all duration-200',
+                !currentChatId
+                  ? 'cursor-default text-content-muted'
+                  : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <PiNotePencilLight className="h-4 w-4" />
+                <span className="font-aeonik font-medium">New chat</span>
+              </span>
+              <span className="text-xs text-content-muted">
+                {modKey}
+                {isMac ? '⇧' : 'Shift+'}O
+              </span>
+            </Link>
+          </div>
+
           {/* Project header with exit button and editable title */}
-          <div className="relative z-10 flex-none p-3">
+          <div className="relative z-10 flex-none border-t border-border-subtle p-3">
             <button
               onClick={onExitProject}
               onDragEnter={(e) => {
@@ -1065,63 +1122,6 @@ export function ProjectSidebar({
                 </>
               ) : null}
             </div>
-          </div>
-
-          {/* Toolbar: Settings, Sync, New chat */}
-          <div className="relative z-20 mt-3 flex flex-none items-center gap-2 px-2 py-2">
-            {/* Settings button */}
-            <div className="group relative flex items-center">
-              <button
-                type="button"
-                onClick={onSettingsClick}
-                aria-label="Settings"
-                className="relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-2 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
-              >
-                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
-                {syncNeedsAttention && (
-                  <span
-                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-              <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                Settings
-              </span>
-            </div>
-            {isSignedIn && cloudSyncEnabled && onManualSync && (
-              <SidebarSyncButton
-                isSyncing={isSyncing}
-                syncFailed={syncFailed}
-                onSync={onManualSync}
-              />
-            )}
-            <Link
-              href={newChatHref}
-              aria-current={!currentChatId ? 'page' : undefined}
-              onClick={(e) => {
-                if (!isPlainPrimaryClick(e)) return
-                e.preventDefault()
-                if (!currentChatId) return
-                handleNewChat()
-              }}
-              className={cn(
-                'flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border-subtle bg-surface-chat-background px-2 py-2 text-sm transition-all duration-200',
-                !currentChatId
-                  ? 'cursor-default text-content-muted'
-                  : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <PiNotePencilLight className="h-4 w-4" />
-                <span className="font-aeonik font-medium">New chat</span>
-              </span>
-              <span className="text-xs text-content-muted">
-                {modKey}
-                {isMac ? '⇧' : 'Shift+'}O
-              </span>
-            </Link>
           </div>
 
           {isSignedIn && cloudSyncEnabled && (
