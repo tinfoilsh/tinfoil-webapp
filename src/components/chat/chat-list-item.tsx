@@ -560,7 +560,7 @@ export function ChatListItem({
 
       {!isEditing && (
         <div className="flex flex-shrink-0 items-center gap-1.5">
-          <div className="pointer-events-none hidden items-center opacity-0 transition-opacity md:flex md:group-focus-within:pointer-events-auto md:group-focus-within:opacity-100 md:group-hover:pointer-events-auto md:group-hover:opacity-100">
+          <div className="pointer-events-none hidden items-center opacity-0 transition-opacity md:flex md:w-0 md:overflow-hidden md:group-focus-within:pointer-events-auto md:group-focus-within:w-auto md:group-focus-within:opacity-100 md:group-hover:pointer-events-auto md:group-hover:w-auto md:group-hover:opacity-100">
             {showDesktopPinAction &&
               (isPinned || canPinChat(chat)) &&
               onTogglePin && (
