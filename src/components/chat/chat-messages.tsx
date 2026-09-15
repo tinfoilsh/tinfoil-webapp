@@ -581,14 +581,12 @@ export function ChatMessages({
     return <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-24"></div>
   }
 
-  // Show loading dots only if waiting and no assistant thinking message exists yet
+  // Show loading dots only while waiting on a fresh response. When the last
+  // message is already an assistant bubble (thinking has started, or a
+  // continuation is resuming it) that bubble carries its own indicator.
   const lastMessage = liveMessages[liveMessages.length - 1]
-  const hasAssistantThinking = Boolean(
-    lastMessage &&
-    lastMessage.role === 'assistant' &&
-    (lastMessage.isThinking || (lastMessage.thoughts && !lastMessage.content)),
-  )
-  const showLoadingPlaceholder = isWaitingForResponse && !hasAssistantThinking
+  const showLoadingPlaceholder =
+    isWaitingForResponse && lastMessage?.role !== 'assistant'
   const pendingRecoveryTurnIds = new Set(
     pendingRecoveries.map((recovery) => recovery.turnId),
   )
