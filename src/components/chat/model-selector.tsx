@@ -1,6 +1,11 @@
+import { SteppedSlider } from '@/components/ui/stepped-slider'
 import {
-  getAutoModels,
-  resolveModelSelection,
+  findSelectableModel,
+  getAutoIntelligenceLevel,
+  getAutoIntelligenceLevels,
+  getAutoModel,
+  isAutoModelId,
+  type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
 import {
@@ -23,6 +28,7 @@ import {
   supportsThinkingToggle,
   type ReasoningEffort,
 } from './hooks/use-reasoning-effort'
+import { ModelLifecycleBadges } from './model-lifecycle-badges'
 import type { AIModel } from './types'
 
 const EFFORT_OPTIONS: {
@@ -37,10 +43,27 @@ const EFFORT_OPTIONS: {
 const EFFORT_EXPLAINER =
   'Higher effort means more thorough responses, but takes longer.'
 
+const INTELLIGENCE_EXPLAINER =
+  'Higher intelligence picks a more capable model and thinks longer.'
+
 const MOBILE_BREAKPOINT_PX = 768
 const EFFORT_FLYOUT_WIDTH_PX = 240
 const EFFORT_FLYOUT_GAP_PX = 8
 const VIEWPORT_MARGIN_PX = 10
+
+// The top section grows to fill the available height so tall screens see
+// more models before the "Other models" fold. Row heights are estimated from
+// the Tailwind classes below (padding plus text line heights) rather than
+// measured, so the count is known before the first paint.
+const MIN_TOP_MODEL_COUNT = 3
+const MENU_PADDING_PX = 16
+const MENU_DIVIDER_HEIGHT_PX = 9
+const AUTO_MODEL_ROW_HEIGHT_PX = 40
+const INTELLIGENCE_SLIDER_HEIGHT_PX = 84
+const MODEL_ROW_HEIGHT_PX = 56
+const EFFORT_ROW_HEIGHT_PX = 40
+const THINKING_ROW_HEIGHT_PX = 56
+const OTHER_MODELS_ROW_HEIGHT_PX = 40
 
 type ModelSelectorProps = {
   selectedModel: AIModel
@@ -52,6 +75,8 @@ type ModelSelectorProps = {
   onEffortChange?: (effort: ReasoningEffort) => void
   thinkingEnabled?: boolean
   onThinkingEnabledChange?: (enabled: boolean) => void
+  autoIntelligence?: AutoIntelligenceLevelId
+  onAutoIntelligenceChange?: (level: AutoIntelligenceLevelId) => void
 }
 
 export function ModelSelector({
@@ -64,6 +89,8 @@ export function ModelSelector({
   onEffortChange,
   thinkingEnabled,
   onThinkingEnabledChange,
+  autoIntelligence,
+  onAutoIntelligenceChange,
 }: ModelSelectorProps) {
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({})
   const [loadedImages, setLoadedImages] = useState<Record<string, boolean>>({})
@@ -262,13 +289,21 @@ export function ModelSelector({
     }
   }, [showEffortOptions, isMobileLayout, recalcEffortFlyout])
 
-  const autoModels = getAutoModels(models)
+  const autoModel = getAutoModel(models)
+  const isAutoSelected = isAutoModelId(selectedModel)
+  const showIntelligenceSlider =
+    isAutoSelected &&
+    autoModel !== undefined &&
+    autoIntelligence !== undefined &&
+    onAutoIntelligenceChange !== undefined
 
   // Reasoning controls live at the bottom of the menu and reflect the
-  // currently selected model (for Auto entries, the representative model the
-  // selection resolves to). They only render when the parent wires the
-  // reasoning props and the model exposes the matching capability.
-  const resolvedModel = resolveModelSelection(selectedModel, models).model
+  // currently selected model. They only render when the parent wires the
+  // reasoning props and the model exposes the matching capability. Auto hides
+  // them: the router chooses the effort from the intelligence level.
+  const resolvedModel = isAutoSelected
+    ? undefined
+    : findSelectableModel(selectedModel, models)
   const showEffort =
     supportsReasoningEffort(resolvedModel) &&
     reasoningEffort !== undefined &&
@@ -281,14 +316,31 @@ export function ModelSelector({
   const currentEffort =
     EFFORT_OPTIONS.find((o) => o.value === reasoningEffort) ?? EFFORT_OPTIONS[1]
 
+  // A deprecated model stays visible while it is the active selection so the
+  // menu agrees with the trigger label for chats that already use it.
   const displayModels = models.filter(
     (model) =>
-      (model.type === 'chat' || model.type === 'code') && model.chat === true,
+      (model.type === 'chat' || model.type === 'code') &&
+      model.chat === true &&
+      (model.deprecated !== true || model.modelName === selectedModel),
   )
 
-  const TOP_MODEL_COUNT = 3
-  const topModels = displayModels.slice(0, TOP_MODEL_COUNT)
-  const otherModels = displayModels.slice(TOP_MODEL_COUNT)
+  const availableHeight = Number.parseInt(dynamicStyles.maxHeight, 10) || 0
+  const fixedHeight =
+    MENU_PADDING_PX +
+    (autoModel ? AUTO_MODEL_ROW_HEIGHT_PX + MENU_DIVIDER_HEIGHT_PX : 0) +
+    (showIntelligenceSlider ? INTELLIGENCE_SLIDER_HEIGHT_PX : 0) +
+    (showEffort || showThinkingToggle ? MENU_DIVIDER_HEIGHT_PX : 0) +
+    (showEffort ? EFFORT_ROW_HEIGHT_PX : 0) +
+    (showThinkingToggle ? THINKING_ROW_HEIGHT_PX : 0) +
+    MENU_DIVIDER_HEIGHT_PX +
+    OTHER_MODELS_ROW_HEIGHT_PX
+  const topModelCount = Math.max(
+    MIN_TOP_MODEL_COUNT,
+    Math.floor((availableHeight - fixedHeight) / MODEL_ROW_HEIGHT_PX),
+  )
+  const topModels = displayModels.slice(0, topModelCount)
+  const otherModels = displayModels.slice(topModelCount)
 
   const getModelIcon = (model: BaseModel) => {
     if (failedImages[model.modelName]) return '/icon.png'
@@ -301,7 +353,9 @@ export function ModelSelector({
 
   const focusTrigger = () => {
     requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>('[data-model-selector]')?.focus()
+      menuRef.current?.parentElement
+        ?.querySelector<HTMLElement>('[data-model-selector]')
+        ?.focus()
     })
   }
 
@@ -363,14 +417,16 @@ export function ModelSelector({
   )
 
   const renderModelItem = (model: BaseModel) => {
-    const isSelected = model.modelName === selectedModel
+    const isSelected = model.isAuto
+      ? isAutoSelected
+      : model.modelName === selectedModel
     return (
       <button
         type="button"
         key={model.modelName}
         role="menuitemradio"
         aria-checked={isSelected}
-        className={`relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
+        className={`relative flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${isSelected ? 'text-content-primary' : 'cursor-pointer text-content-secondary hover:bg-surface-card/70'}`}
         {...menuItemHandlers(() => {
           onSelect(model.modelName as AIModel)
           focusTrigger()
@@ -398,19 +454,18 @@ export function ModelSelector({
             </>
           )}
         </div>
-        {!model.isAuto && model.descriptionShort ? (
-          <div className="flex min-w-0 flex-1 flex-col">
-            <span className="font-medium">{model.name}</span>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <span className="font-medium">{model.name}</span>
+          {!model.isAuto && model.chatConfig?.descriptionShort && (
             <span className="text-xs text-content-muted">
-              {model.descriptionShort}
+              {model.chatConfig.descriptionShort}
             </span>
-          </div>
-        ) : (
-          <span className="flex-1 font-medium">{model.name}</span>
-        )}
+          )}
+          {!model.isAuto && <ModelLifecycleBadges model={model} />}
+        </div>
         {isSelected && (
           <CheckIcon
-            className="h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
+            className="mt-0.5 h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
             aria-hidden="true"
           />
         )}
@@ -449,9 +504,31 @@ export function ModelSelector({
           if (showEffortOptions && !isMobileLayout) recalcEffortFlyout()
         }}
       >
-        {autoModels.map((model) => renderModelItem(model))}
+        {autoModel && renderModelItem(autoModel)}
 
-        {autoModels.length > 0 && (
+        {showIntelligenceSlider && (
+          <div className="px-3 pb-2 pt-1">
+            <div className="mb-2 flex items-center justify-between text-xs">
+              <span className="font-medium text-content-secondary">
+                Intelligence
+              </span>
+              <span className="text-content-muted">
+                {getAutoIntelligenceLevel(autoIntelligence).label}
+              </span>
+            </div>
+            <SteppedSlider
+              steps={getAutoIntelligenceLevels()}
+              value={autoIntelligence}
+              onValueChange={onAutoIntelligenceChange}
+              aria-label="Auto intelligence"
+            />
+            <p className="mt-2 text-xs text-content-muted">
+              {INTELLIGENCE_EXPLAINER}
+            </p>
+          </div>
+        )}
+
+        {autoModel && (
           <div className="mx-3 my-1 border-t border-border-subtle" />
         )}
 

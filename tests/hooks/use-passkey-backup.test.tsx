@@ -1,5 +1,9 @@
-import { SETTINGS_MANUAL_RECOVERY_DISMISSED } from '@/constants/storage-keys'
+import {
+  SECRET_PASSKEY_BACKED_UP,
+  SETTINGS_MANUAL_RECOVERY_DISMISSED,
+} from '@/constants/storage-keys'
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
+import { PrfNotSupportedError } from '@/services/passkey'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -38,12 +42,12 @@ const mocks = vi.hoisted(() => ({
   logInfo: vi.fn(),
 }))
 
-vi.mock('@/services/cloud/cloud-key-preflight', () => ({
+vi.mock('@/services/keys/cloud-key-preflight', () => ({
   inspectRemoteEncryptedState: mocks.inspectRemoteEncryptedState,
   validateCurrentPrimaryKey: mocks.validateCurrentPrimaryKey,
 }))
 
-vi.mock('@/services/cloud/cloud-key-authorization', () => ({
+vi.mock('@/services/keys/cloud-key-authorization', () => ({
   authorizeCurrentPrimaryKeyOrThrow: mocks.authorizeCurrentPrimaryKeyOrThrow,
   getCurrentCloudKeyAuthorizationMode:
     mocks.getCurrentCloudKeyAuthorizationMode,
@@ -106,19 +110,15 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   },
 }))
 
-vi.mock('@/services/sync-enclave/passkey-events', () => ({
+vi.mock('@/services/keys/passkey-events', () => ({
   passkeyEvents: {
     on: mocks.passkeyEventsOn,
     emit: mocks.passkeyEventsEmit,
   },
 }))
 
-vi.mock('@/services/sync-enclave/sync-api', () => ({
+vi.mock('@/services/harness/keys', () => ({
   keyCurrent: mocks.keyCurrent,
-}))
-
-vi.mock('@/utils/cloud-sync-settings', () => ({
-  setCloudSyncEnabled: mocks.setCloudSyncEnabled,
 }))
 
 vi.mock('@/utils/error-handling', () => ({
@@ -182,6 +182,23 @@ describe('usePasskeyBackup', () => {
 
     expect(prompted).toBe(false)
     expect(result.current.manualRecoveryNeeded).toBe(false)
+    expect(result.current.passkeySetupFailed).toBe(true)
+    expect(result.current.passkeyRetryAvailable).toBe(true)
+  })
+
+  it('surfaces unsupported passkey providers during first-time setup', async () => {
+    const error = new PrfNotSupportedError('PRF is not supported')
+    mocks.generateKey.mockResolvedValue('key_generated')
+    mocks.getAlternativeKeyBytes.mockReturnValue(new Uint8Array(32))
+    mocks.createAndWrapTinfoilKey.mockRejectedValue(error)
+    const { result } = renderHook(() =>
+      usePasskeyBackup({ ...baseOptions, initialized: false }),
+    )
+
+    await act(async () => {
+      await expect(result.current.setupFirstTimePasskey()).rejects.toBe(error)
+    })
+
     expect(result.current.passkeySetupFailed).toBe(true)
     expect(result.current.passkeyRetryAvailable).toBe(true)
   })
@@ -334,6 +351,246 @@ describe('usePasskeyBackup', () => {
     expect(mocks.storeEncryptedKeys).not.toHaveBeenCalled()
   })
 
+  it('clears stale recovery state when no passkey bundles remain', async () => {
+    localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getPasskeyDeviceState
+      .mockResolvedValueOnce('this-device')
+      .mockResolvedValueOnce('empty')
+    const { result } = renderHook(() =>
+      usePasskeyBackup({
+        ...baseOptions,
+        initialized: false,
+        encryptionKey: 'key_current',
+      }),
+    )
+
+    await act(async () => {
+      await result.current.refreshBundleState()
+      await result.current.refreshBundleState()
+    })
+
+    expect(localStorage.getItem(SECRET_PASSKEY_BACKED_UP)).toBeNull()
+    expect(result.current.passkeyActive).toBe(false)
+    expect(result.current.passkeySetupAvailable).toBe(true)
+  })
+
+  it('updates empty refresh state when marker removal throws', async () => {
+    localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getPasskeyDeviceState
+      .mockResolvedValueOnce('this-device')
+      .mockResolvedValueOnce('empty')
+    const { result } = renderHook(() =>
+      usePasskeyBackup({
+        ...baseOptions,
+        initialized: false,
+        encryptionKey: 'key_current',
+      }),
+    )
+
+    await act(async () => {
+      await result.current.refreshBundleState()
+    })
+    const removeItem = vi
+      .spyOn(Storage.prototype, 'removeItem')
+      .mockImplementationOnce(() => {
+        throw new Error('storage unavailable')
+      })
+
+    await act(async () => {
+      await result.current.refreshBundleState()
+    })
+    removeItem.mockRestore()
+
+    expect(result.current.passkeyActive).toBe(false)
+    expect(result.current.passkeySetupAvailable).toBe(true)
+  })
+
+  it('waits for a key change before initializing a switched user', async () => {
+    let resolveOldState!: (state: 'empty') => void
+    const oldState = new Promise<'empty'>((resolve) => {
+      resolveOldState = resolve
+    })
+    localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getPasskeyDeviceState
+      .mockReturnValueOnce(oldState)
+      .mockResolvedValueOnce('this-device')
+    const { result, rerender } = renderHook(
+      ({ userId, encryptionKey }) =>
+        usePasskeyBackup({
+          ...baseOptions,
+          user: { id: userId } as any,
+          encryptionKey,
+        }),
+      {
+        initialProps: { userId: 'user_1', encryptionKey: 'key_1' },
+      },
+    )
+
+    await waitFor(() => expect(mocks.getPasskeyDeviceState).toHaveBeenCalled())
+    rerender({ userId: 'user_2', encryptionKey: 'key_1' })
+
+    await act(async () => {
+      resolveOldState('empty')
+      await oldState
+    })
+
+    expect(mocks.getPasskeyDeviceState).toHaveBeenCalledTimes(1)
+    expect(mocks.isPrfSupported).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem(SECRET_PASSKEY_BACKED_UP)).toBe('true')
+    expect(result.current.passkeyActive).toBe(false)
+    expect(result.current.passkeySetupAvailable).toBe(false)
+
+    rerender({ userId: 'user_2', encryptionKey: 'key_2' })
+    await waitFor(() => expect(result.current.passkeyActive).toBe(true))
+
+    expect(mocks.getPasskeyDeviceState).toHaveBeenCalledTimes(2)
+    expect(mocks.isPrfSupported).toHaveBeenCalledTimes(2)
+    expect(result.current.passkeySetupAvailable).toBe(false)
+  })
+
+  it('initializes once when the signed-in user finishes hydrating', async () => {
+    mocks.getPasskeyDeviceState.mockResolvedValue('this-device')
+    const { result, rerender } = renderHook(
+      ({ userId }) =>
+        usePasskeyBackup({
+          ...baseOptions,
+          user: userId ? ({ id: userId } as any) : null,
+          encryptionKey: 'key_current',
+        }),
+      { initialProps: { userId: null as string | null } },
+    )
+
+    expect(mocks.getPasskeyDeviceState).not.toHaveBeenCalled()
+    rerender({ userId: 'user_1' })
+    await waitFor(() => expect(result.current.passkeyActive).toBe(true))
+
+    expect(mocks.isPrfSupported).toHaveBeenCalledTimes(1)
+    expect(mocks.validateCurrentPrimaryKey).toHaveBeenCalledTimes(1)
+    expect(mocks.getPasskeyDeviceState).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores stale empty initialization after encryption key rotation', async () => {
+    let resolveOldState!: (state: 'empty') => void
+    const oldState = new Promise<'empty'>((resolve) => {
+      resolveOldState = resolve
+    })
+    localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getPasskeyDeviceState
+      .mockReturnValueOnce(oldState)
+      .mockResolvedValueOnce('this-device')
+    const { result, rerender } = renderHook(
+      ({ encryptionKey }) =>
+        usePasskeyBackup({
+          ...baseOptions,
+          encryptionKey,
+        }),
+      { initialProps: { encryptionKey: 'key_1' } },
+    )
+
+    await waitFor(() => expect(mocks.getPasskeyDeviceState).toHaveBeenCalled())
+    rerender({ encryptionKey: 'key_2' })
+    await waitFor(() => expect(result.current.passkeyActive).toBe(true))
+
+    await act(async () => {
+      resolveOldState('empty')
+      await oldState
+    })
+
+    expect(localStorage.getItem(SECRET_PASSKEY_BACKED_UP)).toBe('true')
+    expect(result.current.passkeyActive).toBe(true)
+    expect(result.current.passkeySetupAvailable).toBe(false)
+  })
+
+  it('applies final-empty initialization for the current account and key', async () => {
+    localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+    const { result } = renderHook(() =>
+      usePasskeyBackup({ ...baseOptions, encryptionKey: 'key_current' }),
+    )
+
+    await waitFor(() => expect(result.current.passkeySetupAvailable).toBe(true))
+
+    expect(localStorage.getItem(SECRET_PASSKEY_BACKED_UP)).toBeNull()
+    expect(result.current.passkeyActive).toBe(false)
+  })
+
+  it('does not initialize twice for equivalent rerenders', async () => {
+    mocks.getPasskeyDeviceState.mockResolvedValue('this-device')
+    const { rerender } = renderHook(
+      ({ user }) =>
+        usePasskeyBackup({
+          ...baseOptions,
+          user,
+          encryptionKey: 'key_current',
+        }),
+      { initialProps: { user: { id: 'user_1' } as any } },
+    )
+
+    await waitFor(() =>
+      expect(mocks.getPasskeyDeviceState).toHaveBeenCalledTimes(1),
+    )
+    rerender({ user: { id: 'user_1' } as any })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(mocks.isPrfSupported).toHaveBeenCalledTimes(1)
+    expect(mocks.validateCurrentPrimaryKey).toHaveBeenCalledTimes(1)
+    expect(mocks.getPasskeyDeviceState).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    {
+      name: 'signed-in user changes',
+      initial: { userId: 'user_1', encryptionKey: 'key_1' },
+      next: { userId: 'user_2', encryptionKey: 'key_1' },
+    },
+    {
+      name: 'encryption key rotates',
+      initial: { userId: 'user_1', encryptionKey: 'key_1' },
+      next: { userId: 'user_1', encryptionKey: 'key_2' },
+    },
+  ])('ignores an old empty refresh when $name', async ({ initial, next }) => {
+    let resolveOldState!: (state: 'empty') => void
+    const oldState = new Promise<'empty'>((resolve) => {
+      resolveOldState = resolve
+    })
+    mocks.getLocalPasskeyCredentialId.mockReturnValue('cred-local')
+    mocks.getPasskeyDeviceState
+      .mockReturnValueOnce(oldState)
+      .mockResolvedValueOnce('this-device')
+    const { result, rerender } = renderHook(
+      ({ userId, encryptionKey }) =>
+        usePasskeyBackup({
+          ...baseOptions,
+          initialized: false,
+          user: { id: userId } as any,
+          encryptionKey,
+        }),
+      { initialProps: initial },
+    )
+
+    let staleRefresh!: Promise<void>
+    await act(async () => {
+      staleRefresh = result.current.refreshBundleState()
+      await Promise.resolve()
+    })
+    rerender(next)
+    localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
+    await act(async () => {
+      await result.current.refreshBundleState()
+      resolveOldState('empty')
+      await staleRefresh
+    })
+
+    expect(localStorage.getItem(SECRET_PASSKEY_BACKED_UP)).toBe('true')
+    expect(result.current.passkeyActive).toBe(true)
+    expect(result.current.passkeySetupAvailable).toBe(false)
+  })
+
   describe('addPasskeyToThisDevice legacy promotion', () => {
     beforeEach(() => {
       mocks.getAllKeys.mockReturnValue({ primary: 'key_x', alternatives: [] })
@@ -469,7 +726,6 @@ describe('usePasskeyBackup', () => {
       )
       expect(mocks.addWrappedKeyForCurrentKey).toHaveBeenCalledWith({
         wrappedKeys,
-        keyBundle,
         cek: new Uint8Array(32),
         keyIdHex: 'kid-current',
       })

@@ -1,7 +1,7 @@
 import {
   CloudKeySetupError,
   inspectRemoteEncryptedState,
-} from '@/services/cloud/cloud-key-preflight'
+} from '@/services/keys/cloud-key-preflight'
 
 export type CloudKeySetupMode = 'recoverExisting' | 'explicitStartFresh'
 
@@ -13,13 +13,10 @@ export type CloudKeySetupMode = 'recoverExisting' | 'explicitStartFresh'
  * correct; `invalid_key` covers malformed input or unexpected errors.
  */
 export type CloudKeySetupFailureReason =
-  | 'key_mismatch'
-  | 'verification_unavailable'
-  | 'invalid_key'
+  'key_mismatch' | 'verification_unavailable' | 'invalid_key'
 
 export type CloudKeySetupResult =
-  | { ok: true }
-  | { ok: false; reason: CloudKeySetupFailureReason }
+  { ok: true } | { ok: false; reason: CloudKeySetupFailureReason }
 
 export function classifyCloudKeySetupError(
   error: unknown,

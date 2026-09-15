@@ -1,0 +1,213 @@
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import { encryptionService } from '@/services/encryption/encryption-service'
+import { HarnessClient } from './client'
+import { HarnessError } from './sse'
+import type { Session } from './types'
+
+export type Profile = Record<string, any>
+type View = {
+  session?: Session
+  profile: Profile
+  error?: string
+  keyReady: boolean
+}
+const empty: View = { profile: {}, keyReady: false }
+let view: View = empty
+const listeners = new Set<() => void>()
+let active: HarnessAPI | undefined
+export const subscribe = (listener: () => void) => {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+export const getView = () => view
+export const getServerView = () => empty
+export function publish(patch: Partial<View>) {
+  view = { ...view, ...patch }
+  for (const listener of listeners) listener()
+}
+
+export class HarnessAPI {
+  readonly lifetime = new AbortController()
+  private contentLifetime = new AbortController()
+  private profileVersion = 0
+  private profileWrites: Promise<unknown> = Promise.resolve()
+  invalidateKey() {
+    this.contentLifetime.abort()
+    this.contentLifetime = new AbortController()
+    this.profileVersion++
+    publish({ profile: {}, keyReady: false })
+  }
+  constructor(
+    readonly client: HarnessClient,
+    readonly userId: string | null,
+  ) {}
+  key() {
+    this.lifetime.signal.throwIfAborted()
+    if (!this.userId) return undefined
+    if (localStorage.getItem(AUTH_ACTIVE_USER_ID) !== this.userId)
+      throw new HarnessError({
+        code: 'KEY_REQUIRED',
+        message: 'Wait for your account to finish unlocking.',
+      })
+    const bytes = encryptionService.getCurrentKeyBytes()
+    if (!bytes)
+      throw new HarnessError({
+        code: 'KEY_REQUIRED',
+        message: 'Unlock your encryption key in Settings to continue.',
+      })
+    try {
+      return btoa(String.fromCharCode(...bytes))
+    } finally {
+      bytes.fill(0)
+    }
+  }
+  async post<T = any>(
+    path: string,
+    input: Record<string, unknown> = {},
+    signal?: AbortSignal,
+    withKey = true,
+  ): Promise<T> {
+    const requestSignal = this.signal(signal, withKey)
+    const result = await this.client.post<T>(
+      path,
+      { ...(withKey ? { key: this.key() } : {}), ...input },
+      requestSignal,
+    )
+    requestSignal.throwIfAborted()
+    return result
+  }
+  signal(signal?: AbortSignal, withKey = true) {
+    return AbortSignal.any([
+      this.lifetime.signal,
+      ...(withKey ? [this.contentLifetime.signal] : []),
+      ...(signal ? [signal] : []),
+    ])
+  }
+  async upload<T = any>(
+    path: string,
+    file: File,
+    fields: Record<string, string> = {},
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const key = this.key()
+    const requestSignal = this.signal(signal)
+    const result = await this.client.upload<T>(
+      path,
+      file,
+      { ...(key ? { key } : {}), ...fields },
+      requestSignal,
+    )
+    requestSignal.throwIfAborted()
+    return result
+  }
+  async download(
+    path: string,
+    input: Record<string, unknown> = {},
+    signal?: AbortSignal,
+  ) {
+    const requestSignal = this.signal(signal)
+    const result = await this.client.download(
+      path,
+      { key: this.key(), ...input },
+      requestSignal,
+    )
+    requestSignal.throwIfAborted()
+    return result
+  }
+
+  async refresh() {
+    const session = await this.post<Session>(
+      '/v1/session',
+      {},
+      undefined,
+      false,
+    )
+    publish({ session, error: undefined })
+    await this.refreshProfile()
+    return session
+  }
+  async refreshProfile() {
+    const version = ++this.profileVersion
+    if (!this.userId) {
+      publish({ keyReady: true })
+      return
+    }
+    try {
+      const profile = await this.post<Profile>('/v1/profile/get')
+      if (version === this.profileVersion)
+        publish({ profile, keyReady: true, error: undefined })
+    } catch (cause) {
+      this.lifetime.signal.throwIfAborted()
+      if (version !== this.profileVersion) return
+      publish({
+        profile: {},
+        keyReady: false,
+        error:
+          cause instanceof Error
+            ? cause.message
+            : 'Unable to unlock your chats.',
+      })
+    }
+  }
+  updateProfile(
+    change: Profile | ((current: Profile) => Profile),
+  ): Promise<Profile> {
+    const signal = this.signal()
+    const update = this.profileWrites
+      .catch(() => {})
+      .then(async () => {
+        signal.throwIfAborted()
+        const version = ++this.profileVersion
+        const patch =
+          typeof change === 'function' ? change(view.profile) : change
+        const profile = this.userId
+          ? await this.post<Profile>('/v1/profile/update', { patch }, signal)
+          : { ...view.profile, ...patch }
+        signal.throwIfAborted()
+        if (version === this.profileVersion) publish({ profile })
+        return profile
+      })
+    this.profileWrites = update
+    return update
+  }
+}
+export function activateAPI(api: HarnessAPI) {
+  active?.lifetime.abort()
+  active = api
+  view = empty
+  publish({})
+  return () => {
+    api.lifetime.abort()
+    if (active === api) {
+      active = undefined
+      view = empty
+      publish({})
+    }
+  }
+}
+export function harnessAPI(): HarnessAPI {
+  if (!active)
+    throw new HarnessError({
+      code: 'UNAUTHENTICATED',
+      message: 'Wait for your session to load.',
+    })
+  return active
+}
+export function reportHarnessError(error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') return
+  publish({
+    error:
+      error instanceof Error
+        ? error.message
+        : 'The chat service could not complete the request.',
+  })
+}
+
+export function resetHarnessAPI() {
+  active?.lifetime.abort()
+  active = undefined
+  view = empty
+  publish({})
+}

@@ -1,5 +1,6 @@
 import { SECRET_PASSKEY_PRF_OUTPUT } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { hexToB64 } from '@/services/harness/keys'
 import {
   passkeyKeyManager,
   TINFOIL_PASSKEY_PROFILE,
@@ -8,12 +9,10 @@ import {
   encryptKeyBundle,
   promoteRecoveredCekToEnclave,
   recoverPasskeyKeyBundle,
-  tinfoilWrappedKeyBundleToEnclave,
   wrapTinfoilKeyBundle,
   type KeyBundle,
   type PasskeyCredentialEntry,
 } from '@/services/passkey/passkey-key-storage'
-import { hexToB64 } from '@/services/sync-enclave/sync-api'
 import {
   decodeWrappedKeyRecord,
   encodeWrappedKeyRecord,
@@ -29,10 +28,10 @@ const mockKeyCurrent = vi.fn()
 const mockAddBundle = vi.fn()
 const mockRegisterKey = vi.fn()
 
-vi.mock('@/services/sync-enclave/sync-api', async () => {
+vi.mock('@/services/harness/keys', async () => {
   const actual = await vi.importActual<
-    typeof import('@/services/sync-enclave/sync-api')
-  >('@/services/sync-enclave/sync-api')
+    typeof import('@/services/harness/keys')
+  >('@/services/harness/keys')
   return {
     ...actual,
     addBundle: (...args: unknown[]) => mockAddBundle(...args),
@@ -63,11 +62,20 @@ async function genericEnvelopeEntry(
     output: PRF_OUTPUT,
   })
   if (!wrappedKeys) throw new Error('failed to create generic envelope fixture')
-  const transport = tinfoilWrappedKeyBundleToEnclave(wrappedKeys, keyBundle)
+  const envelope = JSON.stringify({
+    version: 1,
+    authorizationMode: keyBundle.authorizationMode ?? 'validated',
+    primary: encodeWrappedKeyRecord(wrappedKeys.primary),
+    alternatives: wrappedKeys.alternatives.map(encodeWrappedKeyRecord),
+  })
+  const encryptedKeysHex = Array.from(
+    new TextEncoder().encode(envelope),
+    (byte) => byte.toString(16).padStart(2, '0'),
+  ).join('')
   return entry({
     id: credentialId,
-    iv: hexToB64(transport.kekIvHex),
-    encrypted_keys: hexToB64(transport.encryptedKeysHex),
+    iv: hexToB64(wrappedKeys.primary.kekIvHex),
+    encrypted_keys: hexToB64(encryptedKeysHex),
     source: 'enclave',
   })
 }
@@ -446,7 +454,7 @@ describe('recoverPasskeyKeyBundle', () => {
     expect(get.mock.calls[0][0].publicKey.allowCredentials).toHaveLength(3)
   })
 
-  it('persists all alternatives when promoting a recovered legacy bundle', async () => {
+  it('persists the primary CEK when promoting a recovered legacy bundle', async () => {
     const cek = new Uint8Array(32).fill(0x81)
     const keyBundle = {
       primary: encryptionService.encodeKeyFromBytes(cek),
@@ -470,6 +478,7 @@ describe('recoverPasskeyKeyBundle', () => {
     ).resolves.toBe(true)
     expect(mockRegisterKey).toHaveBeenCalledOnce()
     const initialBundle = mockRegisterKey.mock.calls[0][0].initialBundle
+    expect(initialBundle.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
     const recovered = await recoverPasskeyKeyBundle(
       [
         entry({
@@ -481,8 +490,8 @@ describe('recoverPasskeyKeyBundle', () => {
       { cachedOnly: true },
     )
     expect(recovered?.keyBundle).toEqual({
-      ...keyBundle,
-      authorizationMode: 'validated',
+      primary: keyBundle.primary,
+      alternatives: [],
     })
   })
 
@@ -518,7 +527,7 @@ describe('recoverPasskeyKeyBundle', () => {
     }
     localStorage.clear()
     const { deriveTinfoilKeyIdHex } =
-      await import('@/services/sync-enclave/tinfoil-key-id')
+      await import('@/services/keys/tinfoil-key-id')
     mockKeyCurrent.mockResolvedValue({
       key_id: await deriveTinfoilKeyIdHex(cek),
       bundles: {},

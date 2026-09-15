@@ -1,579 +1,95 @@
-import { setGenUIConfig } from '@/components/chat/genui/config'
-import { API_BASE_URL, IS_DEV } from '@/config'
-import {
-  CONFIG_CACHED_MODELS,
-  CONFIG_CACHED_SYSTEM_PROMPT,
-} from '@/constants/storage-keys'
-import { DEV_SIMULATOR_MODEL } from '@/utils/dev-simulator'
-import { logError } from '@/utils/error-handling'
-import {
-  getStrongerReasoningHistoryPolicy,
-  normalizeReasoningHistoryPolicy,
-  REASONING_HISTORY_POLICIES,
-  type ReasoningHistoryPolicy,
-} from '@/utils/reasoning-history'
-import {
-  getSmallestContextWindowTokens,
-  resolveContextWindowTokens,
-} from '@/utils/token-estimation'
+import { getView } from '@/services/harness/runtime'
+import type { Session } from '@/services/harness/types'
 
-const DEV_MODELS: BaseModel[] = [
-  {
-    modelName: 'gemma4-31b',
-    image: 'google.webp',
-    name: 'Gemma 4 31B',
-    nameShort: 'Gemma 4',
-    description: 'Google Gemma 4 31B',
-    descriptionShort: 'Best for everyday tasks with images',
-    type: 'chat',
-    chat: true,
-    multimodal: true,
-    reasoningConfig: {
-      supportsToggle: true,
-      defaultEnabled: true,
-      params: {
-        '/v1/chat/completions': {
-          enable: { chat_template_kwargs: { enable_thinking: true } },
-          disable: { chat_template_kwargs: { enable_thinking: false } },
-        },
-        '/v1/responses': {
-          enable: { chat_template_kwargs: { enable_thinking: true } },
-          disable: { chat_template_kwargs: { enable_thinking: false } },
-        },
-      },
-    },
-  },
-  {
-    modelName: 'kimi-k2-6',
-    image: 'moonshot.png',
-    name: 'Kimi K2.6',
-    nameShort: 'Kimi K2.6',
-    description: 'Moonshot Kimi K2.6',
-    descriptionShort: 'Best for coding and visual tasks',
-    type: 'chat',
-    chat: true,
-    multimodal: true,
-  },
-  {
-    modelName: 'gpt-oss-120b',
-    image: 'openai.png',
-    name: 'GPT-OSS 120B',
-    nameShort: 'GPT-OSS',
-    description: 'OpenAI GPT-OSS 120B',
-    descriptionShort: 'Best for quick reasoning tasks',
-    type: 'chat',
-    chat: true,
-  },
-]
-
-const modelDisplayNames = new Map<string, string>()
-
-const rememberModelDisplayNames = (models: BaseModel[]): BaseModel[] => {
-  for (const model of [...models, ...getAutoModels(models)]) {
-    modelDisplayNames.set(model.modelName, model.name)
-  }
-  return models
-}
-
-export const getKnownModelDisplayName = (
-  modelName: string,
-): string | undefined => modelDisplayNames.get(modelName)
-
-/**
- * Per-endpoint enable/disable parameter blocks for thinking mode.
- * Keyed by full endpoint path (e.g. "/v1/chat/completions", "/v1/responses").
- * Each block is shallow-merged into the request body when the toggle is in
- * the corresponding state.
- */
-export type ReasoningEndpointParams = {
-  enable?: Record<string, unknown>
-  disable?: Record<string, unknown>
-}
-
-/**
- * Reasoning capability descriptor returned by the controlplane.
- *
- * - `supportsEffort: true` — model accepts a `reasoning_effort` (chat
- *   completions) or `reasoning.effort` (responses) parameter with low/medium/high.
- * - `supportsToggle: true` — thinking mode can be turned on or off per request
- *   via `params[endpoint].enable` / `params[endpoint].disable`.
- * - `defaultEnabled` — initial state of the toggle when `supportsToggle` is true.
- * - `reasoningHistoryPolicy` — controls whether prior assistant reasoning is
- *   returned for every assistant message, tool-call messages only, or never.
- *
- * The presence of a `reasoningConfig` object is itself the capability flag
- * — there is no separate boolean.
- */
-export type ReasoningConfig = {
-  supportsEffort?: boolean
-  supportsToggle?: boolean
-  defaultEnabled?: boolean
-  /**
-   * Optional translation table from the UI's effort vocabulary
-   * (low | medium | high) to the model's actual accepted values. Used when
-   * a model's chat template only accepts a non-standard set, e.g. DeepSeek V4
-   * which accepts only "high" and "max". When unset, the UI value is
-   * substituted verbatim (correct for OpenAI-style models like GPT-OSS).
-   */
-  effortMap?: Record<string, string>
-  params?: Record<string, ReasoningEndpointParams>
-  reasoningHistoryPolicy?: ReasoningHistoryPolicy
-}
-
-export type AutoTier = 'smart' | 'fast'
-
-// Base model type with all possible properties
+// Display fields only. The harness selects models and builds inference parameters.
 export type BaseModel = {
   modelName: string
-  image: string
   name: string
   nameShort: string
   description: string
-  /** Short "Best for x" blurb shown under the name in the model picker. */
-  descriptionShort?: string
-  details?: string
-  parameters?: string
-  contextWindow?: string
-  contextWindowTokens?: number
-  recommendedUse?: string
-  supportedLanguages?: string
-  type: 'chat' | 'code' | 'embedding' | 'audio' | 'tts' | 'document' | 'title'
-  chat?: boolean
-  paid?: boolean
+  image: string
+  type: 'chat'
+  chat: boolean
   multimodal?: boolean
-  toolCalling?: boolean
-  /** Open set of model tags, including Auto routing tiers ("smart", "fast"). */
-  attributes?: string[]
-  /** True for the synthetic Auto picker entries; never a real backend model. */
+  paid?: boolean
+  deprecated?: boolean
+  experimental?: boolean
+  deprecationDate?: string
   isAuto?: boolean
-  /** Routing tier an Auto entry resolves; only set when isAuto is true. */
-  tier?: AutoTier
-  reasoningConfig?: ReasoningConfig
-  endpoint?: string
-  /** Extra fields merged into the chat completion request body */
-  requestParams?: Record<string, unknown>
+  chatConfig?: {
+    attributes?: string[]
+    descriptionShort?: string
+    reasoningConfig?: {
+      supportsEffort?: boolean
+      supportsToggle?: boolean
+      defaultEnabled?: boolean
+    }
+  }
 }
-
-/** Selectable picker ids for the two Auto routing options. */
-export const AUTO_SMART_ID = 'auto-smart'
-export const AUTO_FAST_ID = 'auto-fast'
-
-/**
- * Wire value placed in the request `model` field when an Auto option is
- * selected. The router treats this as a sentinel and reads the candidate list
- * from the `auto_model_options` body blob.
- */
-export const AUTO_REQUEST_MODEL = 'auto'
-
-/** Router-only body field carrying the ordered Auto candidate list. */
-export const AUTO_MODEL_OPTIONS_FIELD = 'auto_model_options'
-
-const isAutoId = (modelName: string): boolean =>
-  modelName === AUTO_SMART_ID || modelName === AUTO_FAST_ID
-
-const isChatModel = (m: BaseModel): boolean =>
-  (m.type === 'chat' || m.type === 'code') && m.chat === true
-
-/** Real chat models belonging to the given Auto tier, in priority order. */
-const tierModels = (models: BaseModel[], tier: AutoTier): BaseModel[] =>
-  models.filter(
-    (m) =>
-      isChatModel(m) &&
-      Array.isArray(m.attributes) &&
-      m.attributes.includes(tier),
-  )
-
-/**
- * Builds the synthetic Auto picker entries, one per tier that has at least one
- * member. These are display-only and are never sent to a backend; selection is
- * resolved to a concrete model list via resolveModelSelection.
- */
-export const getAutoModels = (models: BaseModel[]): BaseModel[] => {
-  const entries: BaseModel[] = []
-  const add = (tier: AutoTier, modelName: string, name: string): void => {
-    const members = tierModels(models, tier)
-    if (members.length === 0) return
-    const smallestMember = members.reduce((smallest, member) =>
-      resolveContextWindowTokens(member) < resolveContextWindowTokens(smallest)
-        ? member
-        : smallest,
-    )
-    entries.push({
-      modelName,
+export type AutoIntelligenceLevelId = string
+export type AutoIntelligenceLevel = { id: string; label: string; value: number }
+export const AUTO_MODEL_ID = 'auto'
+export const isAutoModelId = (id: string) => id === AUTO_MODEL_ID
+export const getAutoIntelligenceLevels = (): AutoIntelligenceLevel[] =>
+  (getView().session?.auto?.levels ?? []).map((level, value) => ({
+    ...level,
+    value,
+  }))
+export const getAutoIntelligenceLevel = (id: string) =>
+  getAutoIntelligenceLevels().find((level) => level.id === id) ?? {
+    id,
+    label: id,
+    value: 0,
+  }
+export const getAutoDisplayName = (id: string) =>
+  `Auto · ${getAutoIntelligenceLevel(id).label}`
+export function displayModels(session?: Session): BaseModel[] {
+  if (!session) return []
+  const models: BaseModel[] = session.models.map((m) => ({
+    ...m,
+    modelName: m.id,
+    nameShort: m.nameShort ?? m.name,
+    description: m.description ?? '',
+    image: m.image ?? '',
+    type: 'chat',
+    chat: true,
+    chatConfig: {
+      attributes: m.attributes ?? [],
+      descriptionShort: m.descriptionShort ?? '',
+      reasoningConfig: m.reasoning
+        ? {
+            supportsEffort: m.reasoning.effort,
+            supportsToggle: m.reasoning.toggle,
+            defaultEnabled: m.reasoning.defaultEnabled,
+          }
+        : undefined,
+    },
+  }))
+  if (session.auto)
+    models.unshift({
+      modelName: 'auto',
+      name: 'Auto',
+      nameShort: 'Auto',
       image: '',
-      name,
-      nameShort: name,
-      description:
-        tier === 'smart'
-          ? 'Automatically routes to the best available high-capability model'
-          : 'Automatically routes to the best available fast model',
+      description: '',
       type: 'chat',
       chat: true,
       isAuto: true,
-      tier,
-      multimodal: members.some((m) => m.multimodal === true),
-      contextWindow: smallestMember.contextWindow,
-      contextWindowTokens: resolveContextWindowTokens(smallestMember),
+      multimodal: session.auto.multimodal,
     })
-  }
-  add('smart', AUTO_SMART_ID, 'Auto · Smart')
-  add('fast', AUTO_FAST_ID, 'Auto · Fast')
-  return entries
+  return models
 }
-
-/**
- * Default picker selection: Auto · Fast when its tier has members, otherwise
- * the first chat-capable model (e.g. local dev where models carry no tier
- * attributes). The model list also contains non-chat types (embedding, audio,
- * title, ...) which must never become the chat default. Empty string when no
- * chat models are available.
- */
-export const getDefaultModelId = (models: BaseModel[]): string => {
-  if (tierModels(models, 'fast').length > 0) return AUTO_FAST_ID
-  return models.find(isChatModel)?.modelName ?? ''
-}
-
-export const isModelNameAvailable = (
-  modelName: string,
+export const getAutoModel = (models: BaseModel[]) =>
+  models.find((m) => m.isAuto)
+export const findSelectableModel = (id: string, models: BaseModel[]) =>
+  models.find((m) => m.modelName === id)
+export const getSelectedModelLabel = (
+  id: string,
   models: BaseModel[],
-): boolean => {
-  if (isAutoId(modelName)) {
-    const tier: AutoTier = modelName === AUTO_SMART_ID ? 'smart' : 'fast'
-    return tierModels(models, tier).length > 0
-  }
-  return models.some((m) => m.modelName === modelName)
-}
-
-/**
- * Resolves a selected picker id to a concrete model for display: the matching
- * Auto entry when an Auto id is selected, otherwise the real model.
- */
-export const findSelectableModel = (
-  modelName: string,
-  models: BaseModel[],
-): BaseModel | undefined => {
-  if (isAutoId(modelName)) {
-    return getAutoModels(models).find((m) => m.modelName === modelName)
-  }
-  return models.find((m) => m.modelName === modelName)
-}
-
-export type ResolvedModelSelection = {
-  /** Representative model used to build the request body and the UI. */
-  model: BaseModel | undefined
-  /**
-   * Ordered Auto candidates (only set when an Auto option is selected). The
-   * first entry is the representative model.
-   */
-  autoCandidates?: BaseModel[]
-}
-
-const getResolvedCandidates = (
-  selection: ResolvedModelSelection,
-): BaseModel[] =>
-  selection.autoCandidates ?? (selection.model ? [selection.model] : [])
-
-export const getReasoningHistoryPolicy = (
-  selection: ResolvedModelSelection,
-): ReasoningHistoryPolicy => {
-  return getResolvedCandidates(selection).reduce<ReasoningHistoryPolicy>(
-    (strongest, candidate) =>
-      getStrongerReasoningHistoryPolicy(
-        strongest,
-        normalizeReasoningHistoryPolicy(
-          candidate.reasoningConfig?.reasoningHistoryPolicy,
-        ),
-      ),
-    REASONING_HISTORY_POLICIES.none,
-  )
-}
-
-export const getResolvedModelContextWindowTokens = (
-  selection: ResolvedModelSelection,
-): number | undefined => {
-  return getSmallestContextWindowTokens(getResolvedCandidates(selection))
-}
-
-/**
- * Resolves the selected picker id (real model or Auto sentinel) into the model
- * used to build the request plus, for Auto, the ordered candidate list. For
- * Auto each preferred capability (multimodal / tool calling) narrows the tier
- * pool only when at least one member satisfies it, so a satisfied preference is
- * never silently dropped. When no tier member supports a preference at all the
- * incapable models are kept, which keeps the request routable (degraded)
- * rather than mis-routing past a capable candidate.
- */
-export const resolveModelSelection = (
-  selectedModel: string,
-  models: BaseModel[],
-  opts?: { preferMultimodal?: boolean; preferToolCalling?: boolean },
-): ResolvedModelSelection => {
-  if (!isAutoId(selectedModel)) {
-    return { model: models.find((m) => m.modelName === selectedModel) }
-  }
-
-  const tier: AutoTier = selectedModel === AUTO_SMART_ID ? 'smart' : 'fast'
-  let candidates = tierModels(models, tier)
-
-  if (opts?.preferMultimodal) {
-    const capable = candidates.filter((m) => m.multimodal === true)
-    if (capable.length > 0) candidates = capable
-  }
-  if (opts?.preferToolCalling) {
-    const capable = candidates.filter((m) => m.toolCalling === true)
-    if (capable.length > 0) candidates = capable
-  }
-
-  return { model: candidates[0], autoCandidates: candidates }
-}
-
-const isLocalDevelopment = (): boolean => {
-  return (
-    typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1' ||
-      window.location.hostname.startsWith('192.168.') ||
-      window.location.hostname.startsWith('10.'))
-  )
-}
-
-const CONFIG_CACHE_VERSION = 1
-const CONFIG_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
-const CONFIG_REQUEST_TIMEOUT_MS = 10_000
-
-type CachedConfig<T> = {
-  version: number
-  cachedAt: number
-  value: T
-}
-
-type SystemPromptAndRules = {
-  systemPrompt: string
-  rules: string
-}
-
-type CachedSystemPromptAndRules = SystemPromptAndRules & {
-  genUI?: unknown
-}
-
-function readCachedConfig<T>(
-  key: string,
-  validate: (value: unknown) => value is T,
-): T | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const parsed = JSON.parse(localStorage.getItem(key) ?? '') as Partial<
-      CachedConfig<unknown>
-    >
-    if (
-      parsed.version !== CONFIG_CACHE_VERSION ||
-      typeof parsed.cachedAt !== 'number' ||
-      Date.now() - parsed.cachedAt < 0 ||
-      Date.now() - parsed.cachedAt > CONFIG_CACHE_MAX_AGE_MS ||
-      !validate(parsed.value)
-    ) {
-      return null
-    }
-    return parsed.value
-  } catch {
-    return null
-  }
-}
-
-function writeCachedConfig<T>(key: string, value: T): void {
-  try {
-    localStorage.setItem(
-      key,
-      JSON.stringify({
-        version: CONFIG_CACHE_VERSION,
-        cachedAt: Date.now(),
-        value,
-      } satisfies CachedConfig<T>),
-    )
-  } catch {
-    // best-effort
-  }
-}
-
-function isBaseModelArray(value: unknown): value is BaseModel[] {
-  return (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every(
-      (model) =>
-        typeof model === 'object' &&
-        model !== null &&
-        typeof model.modelName === 'string' &&
-        typeof model.name === 'string' &&
-        typeof model.type === 'string',
-    )
-  )
-}
-
-function isSystemPromptAndRules(
-  value: unknown,
-): value is CachedSystemPromptAndRules {
-  const candidate = value as Record<string, unknown> | null
-  return (
-    typeof candidate === 'object' &&
-    candidate !== null &&
-    typeof candidate.systemPrompt === 'string' &&
-    typeof candidate.rules === 'string'
-  )
-}
-
-async function fetchConfig(url: string): Promise<Response> {
-  const controller = new AbortController()
-  const timeout = setTimeout(
-    () => controller.abort(),
-    CONFIG_REQUEST_TIMEOUT_MS,
-  )
-  try {
-    return await fetch(url, { signal: controller.signal })
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-export function getCachedAIModels(): BaseModel[] | null {
-  const models = readCachedConfig(CONFIG_CACHED_MODELS, isBaseModelArray)
-  return models ? rememberModelDisplayNames(models) : null
-}
-
-export function getCachedSystemPromptAndRules(): SystemPromptAndRules | null {
-  const cached = readCachedConfig(
-    CONFIG_CACHED_SYSTEM_PROMPT,
-    isSystemPromptAndRules,
-  )
-  if (!cached) return null
-  applyGenUIConfigFromResponse(cached.genUI)
-  return {
-    systemPrompt: cached.systemPrompt,
-    rules: cached.rules,
-  }
-}
-
-// Fetch models from the API
-export const getAIModels = async (): Promise<BaseModel[]> => {
-  const isLocalDev = isLocalDevelopment()
-  const cachedModels = getCachedAIModels()
-
-  // In dev mode on localhost, return hardcoded models instead of fetching
-  if (IS_DEV && isLocalDev) {
-    return rememberModelDisplayNames([...DEV_MODELS, DEV_SIMULATOR_MODEL])
-  }
-
-  try {
-    const response = await fetchConfig(`${API_BASE_URL}/api/config/models`)
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch models: ${response.status}`)
-    }
-
-    const allModels: BaseModel[] = await response.json()
-
-    // Remove free chat models — they are handled server-side via
-    // free-tier API keys and should never appear in the UI.
-    const models = allModels.filter(
-      (m) => !(m.paid === false && m.chat === true),
-    )
-
-    // Add Dev Simulator model when running locally
-    if (isLocalDev) {
-      models.unshift(DEV_SIMULATOR_MODEL)
-    }
-
-    const rememberedModels = rememberModelDisplayNames(models)
-    writeCachedConfig(CONFIG_CACHED_MODELS, rememberedModels)
-    return rememberedModels
-  } catch (error) {
-    logError('Failed to fetch AI models', error, {
-      component: 'getAIModels',
-    })
-    return cachedModels ?? []
-  }
-}
-
-// Fetch system prompt and rules from the API
-export const getSystemPromptAndRules =
-  async (): Promise<SystemPromptAndRules> => {
-    const cachedPrompt = getCachedSystemPromptAndRules()
-    try {
-      const url = `${API_BASE_URL}/api/config/system-prompt`
-      const response = await fetchConfig(url)
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch system prompt: ${response.status}`)
-      }
-
-      const data = await response.json()
-      const result: CachedSystemPromptAndRules = {
-        systemPrompt: data.systemPrompt,
-        rules: data.rules,
-        genUI: data?.genUI,
-      }
-      if (!isSystemPromptAndRules(result)) {
-        throw new Error('System prompt response is malformed')
-      }
-      applyGenUIConfigFromResponse(result.genUI)
-      writeCachedConfig(CONFIG_CACHED_SYSTEM_PROMPT, result)
-      return result
-    } catch (error) {
-      logError('Failed to fetch system prompt', error, {
-        component: 'getSystemPromptAndRules',
-      })
-      if (!cachedPrompt) {
-        setGenUIConfig(null)
-      }
-      return (
-        cachedPrompt ?? {
-          systemPrompt:
-            'You are an intelligent and helpful assistant named Tin.',
-          rules: '',
-        }
-      )
-    }
-  }
-
-/**
- * Validates the optional `genUI` block from the system-prompt response and
- * pushes it into the runtime config used by the GenUI prompt and tool
- * builders. Malformed or missing payloads clear the runtime config so the
- * bundled defaults take over, rather than leaving stale config from an
- * earlier successful fetch active.
- */
-export function applyGenUIConfigFromResponse(raw: unknown): void {
-  if (!raw || typeof raw !== 'object') {
-    setGenUIConfig(null)
-    return
-  }
-  const obj = raw as Record<string, unknown>
-  if (typeof obj.header !== 'string' || !Array.isArray(obj.enabledWidgets)) {
-    setGenUIConfig(null)
-    return
-  }
-  const enabledWidgets = obj.enabledWidgets.filter(
-    (w): w is string => typeof w === 'string',
-  )
-  setGenUIConfig({ header: obj.header, enabledWidgets })
-}
-
-// Fetch memory prompt from the API
-export const getMemoryPrompt = async (): Promise<string> => {
-  try {
-    const url = `${API_BASE_URL}/api/config/memory-prompt`
-    const response = await fetch(url)
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch memory prompt: ${response.status}`)
-    }
-
-    const data = await response.json()
-    return data.memoryPrompt
-  } catch (error) {
-    logError('Failed to fetch memory prompt', error, {
-      component: 'getMemoryPrompt',
-    })
-    return ''
-  }
-}
+  level: string,
+) =>
+  isAutoModelId(id)
+    ? getAutoDisplayName(level)
+    : findSelectableModel(id, models)?.name
+export const getKnownModelDisplayName = (id: string) =>
+  findSelectableModel(id, displayModels(getView().session))?.name

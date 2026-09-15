@@ -6,100 +6,83 @@ interface CodeExecProcessProps {
   calls: ToolCallState[]
 }
 
-/**
- * How to say what each harness tool did. This renderer is the only layer that
- * knows a `bash` call is a command and a `view` call is a file, so the phrasing
- * lives here and an unlisted tool falls through to its own name.
- *
- * `failed` reads as a fragment for every tool but `bash`, whose failure copy is
- * a whole sentence -- hence its own bare form for a call that carried no
- * argument to name.
- */
-const TOOL_COPY: Record<
-  string,
-  {
-    running: string
-    done: string
-    failed: string
-    failedBare?: string
-    arg: string
-    noun: string
-    /** A command can run to any length; a path's tail is the useful part. */
-    elide?: boolean
-  }
-> = {
-  bash: {
-    running: 'Running',
-    done: 'Ran',
-    failed: 'Command failed:',
-    failedBare: 'Command failed',
-    arg: 'command',
-    noun: 'command',
-    elide: true,
-  },
-  view: {
-    running: 'Reading',
-    done: 'Read',
-    failed: 'Failed to read',
-    arg: 'path',
-    noun: 'file',
-  },
-  create: {
-    running: 'Creating',
-    done: 'Created',
-    failed: 'Failed to create',
-    arg: 'path',
-    noun: 'file',
-  },
-  str_replace: {
-    running: 'Editing',
-    done: 'Edited',
-    failed: 'Failed to edit',
-    arg: 'path',
-    noun: 'file',
-  },
-  insert: {
-    running: 'Inserting into',
-    done: 'Inserted into',
-    failed: 'Failed to insert into',
-    arg: 'path',
-    noun: 'file',
-  },
-  present: {
-    running: 'Presenting',
-    done: 'Presented',
-    failed: 'Failed to present',
-    arg: 'path',
-    noun: 'file',
-  },
-}
-
 function getToolLabel(call: ToolCallState): string {
-  const copy = Object.hasOwn(TOOL_COPY, call.toolName)
-    ? TOOL_COPY[call.toolName]
-    : undefined
-  if (!copy) {
-    if (call.status === 'failed') return `${call.toolName} failed`
-    return call.status === 'running'
-      ? `Running ${call.toolName}`
-      : `Ran ${call.toolName}`
-  }
+  const name = call.toolName
+  const path =
+    typeof call.arguments?.path === 'string'
+      ? (call.arguments.path as string)
+      : null
+  const failed = call.status === 'failed'
 
-  const verb =
-    call.status === 'failed'
-      ? copy.failed
-      : call.status === 'running'
-        ? copy.running
-        : copy.done
-  const subject = call.arguments?.[copy.arg]
-  if (typeof subject !== 'string' || !subject) {
-    return call.status === 'failed' && copy.failedBare
-      ? copy.failedBare
-      : `${verb} ${copy.noun}`
+  switch (name) {
+    case 'bash': {
+      const cmd = call.arguments?.command
+      if (typeof cmd === 'string') {
+        const short = cmd.length > 60 ? cmd.slice(0, 57) + '...' : cmd
+        if (failed) return `Command failed: \`${short}\``
+        return call.status === 'running'
+          ? `Running \`${short}\``
+          : `Ran \`${short}\``
+      }
+      if (failed) return 'Command failed'
+      return call.status === 'running' ? 'Running command' : 'Ran command'
+    }
+    case 'view': {
+      if (path) {
+        if (failed) return `Failed to read \`${path}\``
+        return call.status === 'running'
+          ? `Reading \`${path}\``
+          : `Read \`${path}\``
+      }
+      if (failed) return 'Failed to read file'
+      return call.status === 'running' ? 'Reading file' : 'Read file'
+    }
+    case 'present': {
+      if (path) {
+        if (failed) return `Failed to present \`${path}\``
+        return call.status === 'running'
+          ? `Presenting \`${path}\``
+          : `Presented \`${path}\``
+      }
+      if (failed) return 'Failed to present file'
+      return call.status === 'running' ? 'Presenting file' : 'Presented file'
+    }
+    case 'str_replace': {
+      if (path) {
+        if (failed) return `Failed to edit \`${path}\``
+        return call.status === 'running'
+          ? `Editing \`${path}\``
+          : `Edited \`${path}\``
+      }
+      if (failed) return 'Failed to edit file'
+      return call.status === 'running' ? 'Editing file' : 'Edited file'
+    }
+    case 'create': {
+      if (path) {
+        if (failed) return `Failed to create \`${path}\``
+        return call.status === 'running'
+          ? `Creating \`${path}\``
+          : `Created \`${path}\``
+      }
+      if (failed) return 'Failed to create file'
+      return call.status === 'running' ? 'Creating file' : 'Created file'
+    }
+    case 'insert': {
+      if (path) {
+        if (failed) return `Failed to insert into \`${path}\``
+        return call.status === 'running'
+          ? `Inserting into \`${path}\``
+          : `Inserted into \`${path}\``
+      }
+      if (failed) return 'Failed to insert into file'
+      return call.status === 'running'
+        ? 'Inserting into file'
+        : 'Inserted into file'
+    }
+    default:
+      if (failed) return `${name} failed`
+      return call.status === 'running' ? `Running ${name}` : `Ran ${name}`
   }
-  const shown =
-    copy.elide && subject.length > 60 ? `${subject.slice(0, 57)}...` : subject
-  return `${verb} \`${shown}\``
 }
 
 function getHeaderLabel(calls: ToolCallState[]): string {
@@ -122,10 +105,15 @@ function getHeaderLabel(calls: ToolCallState[]): string {
 }
 
 function getDisplayContent(call: ToolCallState): string | null {
-  // A failed file operation never touched the file, so echoing the arguments
-  // it was given -- `file_text` above all -- would describe an edit that did
-  // not happen. Every such tool is the one that names a `path`.
-  if (call.status === 'failed' && TOOL_COPY[call.toolName]?.arg === 'path') {
+  // Failed editor tools: file_text would be misleading (action didn't happen).
+  if (
+    call.status === 'failed' &&
+    (call.toolName === 'create' ||
+      call.toolName === 'str_replace' ||
+      call.toolName === 'insert' ||
+      call.toolName === 'view' ||
+      call.toolName === 'present')
+  ) {
     return null
   }
   switch (call.toolName) {

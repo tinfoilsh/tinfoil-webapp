@@ -16,6 +16,8 @@ vi.mock('@/utils/error-handling', () => ({
   logError: mocks.logError,
 }))
 
+vi.mock('framer-motion', () => import('../mocks/motion'))
+
 describe('OnboardingView', () => {
   beforeEach(() => {
     vi.clearAllMocks()

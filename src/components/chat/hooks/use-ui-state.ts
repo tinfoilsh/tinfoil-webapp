@@ -3,6 +3,8 @@ import {
   SETTINGS_THEME_MODE,
   UI_SIDEBAR_OPEN,
 } from '@/constants/storage-keys'
+import { useHarness } from '@/services/harness/provider'
+import { reportHarnessError } from '@/services/harness/runtime'
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
@@ -24,6 +26,7 @@ const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
 export function useUIState(): UseUIStateReturn {
+  const { profile, api } = useHarness()
   const [isClient, setIsClient] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -37,49 +40,19 @@ export function useUIState(): UseUIStateReturn {
     typeof window !== 'undefined' ? window.innerWidth : 0,
   )
 
-  // Client-side initialization
   useEffect(() => {
     setIsClient(true)
-
-    // Check localStorage for theme mode
-    const savedThemeMode = localStorage.getItem(
-      SETTINGS_THEME_MODE,
-    ) as ThemeMode | null
-    if (
-      savedThemeMode &&
-      ['light', 'dark', 'system'].includes(savedThemeMode)
-    ) {
-      setThemeModeState(savedThemeMode)
-      if (savedThemeMode === 'system') {
-        const prefersDark = window.matchMedia(
-          '(prefers-color-scheme: dark)',
-        ).matches
-        setIsDarkMode(prefersDark)
-      } else {
-        setIsDarkMode(savedThemeMode === 'dark')
-      }
-      return
-    }
-
-    // Legacy: check old 'theme' key for backwards compatibility
-    const savedTheme =
-      localStorage.getItem(SETTINGS_THEME) ?? localStorage.getItem('theme')
-    if (savedTheme !== null) {
-      const mode = savedTheme === 'dark' ? 'dark' : 'light'
-      setThemeModeState(mode)
-      setIsDarkMode(savedTheme === 'dark')
-      // Migrate to new key
-      localStorage.setItem(SETTINGS_THEME_MODE, mode)
-      return
-    }
-
-    // Default to system preference for new users
-    setThemeModeState('system')
-    const prefersDark = window.matchMedia(
-      '(prefers-color-scheme: dark)',
-    ).matches
-    setIsDarkMode(prefersDark)
   }, [])
+  useEffect(() => {
+    const mode: ThemeMode = profile.themeMode ?? 'system'
+    setThemeModeState(mode)
+    setIsDarkMode(
+      mode === 'system'
+        ? window.matchMedia('(prefers-color-scheme: dark)').matches
+        : mode === 'dark',
+    )
+    localStorage.setItem(SETTINGS_THEME_MODE, mode)
+  }, [profile.themeMode])
 
   // Add effect to handle window resizing
   useEffect(() => {
@@ -158,29 +131,27 @@ export function useUIState(): UseUIStateReturn {
   }, [isSidebarOpen])
 
   // Set theme mode (light, dark, or system)
-  const setThemeMode = useCallback((mode: ThemeMode) => {
-    setThemeModeState(mode)
-    localStorage.setItem(SETTINGS_THEME_MODE, mode)
+  const setThemeMode = useCallback(
+    (mode: ThemeMode) => {
+      setThemeModeState(mode)
+      localStorage.setItem(SETTINGS_THEME_MODE, mode)
 
-    if (mode === 'system') {
-      const prefersDark = window.matchMedia(
-        '(prefers-color-scheme: dark)',
-      ).matches
-      setIsDarkMode(prefersDark)
-      // Also update legacy key for backwards compatibility
-      localStorage.setItem(SETTINGS_THEME, prefersDark ? 'dark' : 'light')
-    } else {
-      setIsDarkMode(mode === 'dark')
-      localStorage.setItem(SETTINGS_THEME, mode)
-    }
+      if (mode === 'system') {
+        const prefersDark = window.matchMedia(
+          '(prefers-color-scheme: dark)',
+        ).matches
+        setIsDarkMode(prefersDark)
+        // Also update legacy key for backwards compatibility
+        localStorage.setItem(SETTINGS_THEME, prefersDark ? 'dark' : 'light')
+      } else {
+        setIsDarkMode(mode === 'dark')
+        localStorage.setItem(SETTINGS_THEME, mode)
+      }
 
-    // Trigger theme change event for profile sync
-    window.dispatchEvent(
-      new CustomEvent('themeChanged', {
-        detail: mode,
-      }),
-    )
-  }, [])
+      void api.updateProfile({ themeMode: mode }).catch(reportHarnessError)
+    },
+    [api],
+  )
 
   // Toggle dark mode (legacy, toggles between light and dark)
   const toggleTheme = useCallback(() => {

@@ -11,11 +11,9 @@
  * `key-current` / `register-key` / `add-bundle` / `remove-bundle`
  * wire.
  *
- * `KeyBundle.alternatives` is preserved end-to-end. The enclave treats
- * the bundle ciphertext as an opaque blob, so any legacy decryption
- * history the caller hands in survives unchanged. Alternatives are
- * dropped from the local model only after the client-side migration
- * loop has re-sealed every legacy row under the current primary CEK.
+ * New enclave bundles use the raw wrapped-CEK wire shape shared with
+ * iOS. `KeyBundle.alternatives` remains supported when reading legacy
+ * generic envelopes so existing recovery history is not lost.
  *
  * The legacy decoder primitives (`encryptKeyBundle`,
  * `decryptKeyBundle`) are pure client-side AES-256-GCM. Optimistic
@@ -35,8 +33,6 @@ import {
   type PRFResult,
   type WrappedKey,
 } from '@tinfoilsh/passkey-kit'
-import { requirePrimaryKeyB64 } from '../cloud/cek-encoding'
-import type { CloudKeyAuthorizationMode } from '../cloud/cloud-key-authorization'
 import { encryptionService } from '../encryption/encryption-service'
 import {
   bytesToBase64,
@@ -46,10 +42,12 @@ import {
   removeBundle as enclaveRemoveBundle,
   hexToB64,
   newIdempotencyKey,
-} from '../sync-enclave/sync-api'
-import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
-import { deriveTinfoilKeyIdHex } from '../sync-enclave/tinfoil-key-id'
-import { IF_MATCH_SENTINELS, WIRE_CODES } from '../sync-enclave/wire-contract'
+} from '../harness/keys'
+import { HarnessError as SyncEnclaveError } from '../harness/sse'
+import { requirePrimaryKeyB64 } from '../keys/cek-encoding'
+import type { CloudKeyAuthorizationMode } from '../keys/cloud-key-authorization'
+import { deriveTinfoilKeyIdHex } from '../keys/tinfoil-key-id'
+import { IF_MATCH_SENTINELS, WIRE_CODES } from '../keys/wire-contract'
 import {
   evaluateTinfoilCredential,
   getCachedCredentialId,
@@ -76,10 +74,9 @@ export interface KeyBundle {
   primary: string
   /**
    * Decryption-only history retained for legacy v0/v1 rows. New
-   * bundles persist whatever the caller hands in (the enclave is a
-   * blob store at the bundle layer). Removed in Layer C of the
-   * sync-enclave refactor once the client-side migration loop has
-   * re-sealed every legacy row under `primary`.
+   * enclave bundles wrap only the current primary CEK. Removed in
+   * Layer C of the sync-enclave refactor once the client-side migration
+   * loop has re-sealed every legacy row under `primary`.
    */
   alternatives: string[]
   authorizationMode?: CloudKeyAuthorizationMode
@@ -255,41 +252,8 @@ function usesTinfoilPasskeyProfile(wrappedKey: WrappedKey): boolean {
   )
 }
 
-function encodeGenericKeyEnvelope(
-  wrappedKeys: TinfoilWrappedKeyBundle,
-  keys: KeyBundle,
-): Uint8Array {
-  validateKeyBundle(keys)
-  if (wrappedKeys.alternatives.length !== keys.alternatives.length) {
-    throw new Error('Wrapped alternative key count does not match key bundle')
-  }
-  const credentialId = wrappedKeys.primary.credentialId
-  if (
-    wrappedKeys.alternatives.some(
-      (wrappedKey) => wrappedKey.credentialId !== credentialId,
-    )
-  ) {
-    throw new Error('Wrapped keys must use one credential')
-  }
-  const envelope: TinfoilGenericKeyEnvelope = {
-    version: TINFOIL_GENERIC_KEY_ENVELOPE_VERSION,
-    authorizationMode:
-      keys.authorizationMode === 'explicit_start_fresh'
-        ? 'explicit_start_fresh'
-        : 'validated',
-    primary: encodeWrappedKeyRecord(wrappedKeys.primary),
-    alternatives: wrappedKeys.alternatives.map(encodeWrappedKeyRecord),
-  }
-  const bytes = new TextEncoder().encode(JSON.stringify(envelope))
-  if (bytes.length > TINFOIL_GENERIC_KEY_ENVELOPE_MAX_BYTES) {
-    throw new Error('Passkey key envelope is too large')
-  }
-  return bytes
-}
-
 export function tinfoilWrappedKeyBundleToEnclave(
   wrappedKeys: TinfoilWrappedKeyBundle,
-  keys: KeyBundle,
 ): {
   credentialId: string
   kekIvHex: string
@@ -298,7 +262,7 @@ export function tinfoilWrappedKeyBundleToEnclave(
   return {
     credentialId: wrappedKeys.primary.credentialId,
     kekIvHex: wrappedKeys.primary.kekIvHex,
-    encryptedKeysHex: bytesToHex(encodeGenericKeyEnvelope(wrappedKeys, keys)),
+    encryptedKeysHex: wrappedKeys.primary.wrappedKeyHex,
   }
 }
 
@@ -583,7 +547,7 @@ export async function storeEncryptedKeys(
   try {
     const credentialId = wrappedKeys.primary.credentialId
     const primaryBytes = validateKeyBundle(keys).primary
-    const enclaveBundle = tinfoilWrappedKeyBundleToEnclave(wrappedKeys, keys)
+    const enclaveBundle = tinfoilWrappedKeyBundleToEnclave(wrappedKeys)
     const localKeyId = await deriveTinfoilKeyIdHex(primaryBytes)
     const current = await enclaveKeyCurrent()
 
@@ -1029,14 +993,10 @@ export async function recoverPasskeyKeyBundle(
 
 export async function addWrappedKeyForCurrentKey(input: {
   wrappedKeys: TinfoilWrappedKeyBundle
-  keyBundle: KeyBundle
   cek: Uint8Array
   keyIdHex: string
 }): Promise<void> {
-  const envelope = tinfoilWrappedKeyBundleToEnclave(
-    input.wrappedKeys,
-    input.keyBundle,
-  )
+  const envelope = tinfoilWrappedKeyBundleToEnclave(input.wrappedKeys)
   await enclaveAddBundle({
     keyId: input.keyIdHex,
     keyB64: bytesToBase64(input.cek),
@@ -1088,7 +1048,6 @@ export async function promoteRecoveredCekToEnclave(input: {
     try {
       await addWrappedKeyForCurrentKey({
         wrappedKeys,
-        keyBundle: input.keyBundle,
         cek: input.cek,
         keyIdHex,
       })
@@ -1102,10 +1061,7 @@ export async function promoteRecoveredCekToEnclave(input: {
     }
   }
   try {
-    const envelope = tinfoilWrappedKeyBundleToEnclave(
-      wrappedKeys,
-      input.keyBundle,
-    )
+    const envelope = tinfoilWrappedKeyBundleToEnclave(wrappedKeys)
     await enclaveRegisterKey({
       keyB64: bytesToBase64(input.cek),
       ifMatch: IF_MATCH_SENTINELS.AnyKey,

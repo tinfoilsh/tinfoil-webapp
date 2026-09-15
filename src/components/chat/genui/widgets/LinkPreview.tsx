@@ -1,19 +1,13 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Favicon } from '@/components/ui/favicon'
-import { fetchLinkMetadata } from '@/services/inference/metadata-client'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { ExternalLink } from 'lucide-react'
-import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
 
 const schema = z.object({
-  url: z.string().describe('Full URL of the resource'),
-  title: z
-    .string()
-    .describe(
-      'Best guess at the page or resource title. Used as a fallback if the metadata fetch fails.',
-    ),
+  url: z.string(),
+  title: z.string(),
 })
 
 type Props = z.infer<typeof schema>
@@ -33,42 +27,11 @@ function getDomain(url: string): string {
   }
 }
 
-/**
- * Fetches OpenGraph metadata from the `opengraph-metadata.tinfoil.sh`
- * enclave. Falls back silently to the model-provided title if the fetch
- * fails — the metadata is a UX nicety, not a security claim, so a
- * failure just means we render a leaner card.
- */
-function useEnclaveMetadata(url: string): ResolvedMetadata | null {
-  const [metadata, setMetadata] = useState<ResolvedMetadata | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setMetadata(null)
-    fetchLinkMetadata(url)
-      .then((data) => {
-        if (cancelled) return
-        setMetadata({
-          title: data.title,
-          description: data.description,
-          image: data.image,
-          siteName: data.siteName,
-        })
-      })
-      .catch(() => {
-        /* keep model-provided title; render a leaner card */
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [url])
-
-  return metadata
-}
-
-function LinkPreview({ url, title }: Props) {
-  const metadata = useEnclaveMetadata(url)
-
+function LinkPreview({
+  url,
+  title,
+  metadata,
+}: Props & { metadata?: ResolvedMetadata }) {
   const resolvedTitle = metadata?.title ?? title
   const resolvedDescription = metadata?.description
   const resolvedImage = metadata?.image
@@ -123,9 +86,11 @@ function LinkPreview({ url, title }: Props) {
 
 export const widget = defineGenUIWidget({
   name: 'render_link_preview',
-  description:
-    'Display a rich preview card for a single web link. Use when linking to an article, page, or resource and you want to surface title, description, and favicon. The card fetches metadata (title, description, site name, image, favicon) from the opengraph-metadata.tinfoil.sh enclave. Provide only the URL and a fallback title — every other field is resolved server-side.',
   schema,
-  promptHint: 'rich preview card for a single web link',
-  render: (args) => <LinkPreview {...args} />,
+  render: (args, ctx) => (
+    <LinkPreview
+      {...args}
+      metadata={ctx.result as ResolvedMetadata | undefined}
+    />
+  ),
 })

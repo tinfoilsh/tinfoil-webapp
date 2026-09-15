@@ -638,9 +638,6 @@ function buildPrintableRecipeHtml(args: PrintableRecipeArgs): string {
 
 export const widget = defineGenUIWidget({
   name: 'render_recipe_card',
-  description:
-    'Display a cookable recipe card with ingredients and step-by-step instructions. Use when presenting a recipe, cooking procedure, or multi-step preparation with ingredients.',
   schema,
-  promptHint: 'a cookable recipe card with ingredients and steps',
   render: (args) => <Recipe {...args} />,
 })

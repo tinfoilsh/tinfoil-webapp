@@ -9,6 +9,8 @@
  * conflict) rather than version counters.
  */
 
+import { HarnessError } from '@/services/harness/sse'
+import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
 import {
   PasskeyCredentialConflictError,
@@ -16,9 +18,6 @@ import {
   type KeyBundle,
   type TinfoilWrappedKeyBundle,
 } from '@/services/passkey/passkey-key-storage'
-import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
-import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
-import { encodeWrappedKeyRecord } from '@tinfoilsh/passkey-kit'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
@@ -30,10 +29,10 @@ const mockRegisterKey = vi.fn()
 const mockAddBundle = vi.fn()
 const mockKeyCurrent = vi.fn()
 
-vi.mock('@/services/sync-enclave/sync-api', async () => {
-  const real = await vi.importActual<
-    typeof import('@/services/sync-enclave/sync-api')
-  >('@/services/sync-enclave/sync-api')
+vi.mock('@/services/harness/keys', async () => {
+  const real = await vi.importActual<typeof import('@/services/harness/keys')>(
+    '@/services/harness/keys',
+  )
   return {
     ...real,
     registerKey: (...args: unknown[]) => mockRegisterKey(...args),
@@ -58,22 +57,11 @@ const KEY_BUNDLE: KeyBundle = {
   authorizationMode: 'validated',
 }
 
-function expectedEnvelope(
-  wrappedKeys: TinfoilWrappedKeyBundle,
-  authorizationMode: 'validated' | 'explicit_start_fresh' = 'validated',
-) {
-  const json = JSON.stringify({
-    version: 1,
-    authorizationMode,
-    primary: encodeWrappedKeyRecord(wrappedKeys.primary),
-    alternatives: wrappedKeys.alternatives.map(encodeWrappedKeyRecord),
-  })
+function expectedBundle(wrappedKeys: TinfoilWrappedKeyBundle) {
   return {
     credentialId: wrappedKeys.primary.credentialId,
     kekIvHex: wrappedKeys.primary.kekIvHex,
-    encryptedKeysHex: Array.from(new TextEncoder().encode(json), (byte) =>
-      byte.toString(16).padStart(2, '0'),
-    ).join(''),
+    encryptedKeysHex: wrappedKeys.primary.wrappedKeyHex,
   }
 }
 
@@ -132,7 +120,8 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     const arg = mockRegisterKey.mock.calls[0][0]
     expect(arg.createdVia).toBe('passkey')
     expect(arg.initialBundle.credentialId).toBe('AQID')
-    expect(arg.initialBundle).toEqual(expectedEnvelope(bundle))
+    expect(arg.initialBundle).toEqual(expectedBundle(bundle))
+    expect(arg.initialBundle.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
   })
 
   it('uses created_via=start_fresh when the bundle is marked explicit_start_fresh', async () => {
@@ -150,7 +139,7 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     })
     expect(mockRegisterKey.mock.calls[0][0].createdVia).toBe('start_fresh')
     expect(mockRegisterKey.mock.calls[0][0].initialBundle).toEqual(
-      expectedEnvelope(bundle, 'explicit_start_fresh'),
+      expectedBundle(bundle),
     )
   })
 
@@ -175,7 +164,10 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
   it('maps EXISTING_DATA_UNDER_OTHER_KEY from register-key to a credential conflict', async () => {
     mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
     mockRegisterKey.mockRejectedValue(
-      new SyncEnclaveError('exists', 409, 'EXISTING_DATA_UNDER_OTHER_KEY'),
+      new HarnessError(
+        { message: 'exists', code: 'EXISTING_DATA_UNDER_OTHER_KEY' },
+        409,
+      ),
     )
     await expect(
       storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE),
@@ -199,9 +191,10 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     const arg = mockAddBundle.mock.calls[0][0]
     expect(arg.keyId).toBe(expectedKeyId)
     expect(arg.credentialId).toBe('BAUG')
-    const expectedBundle = expectedEnvelope(bundle)
-    expect(arg.kekIvHex).toBe(expectedBundle.kekIvHex)
-    expect(arg.encryptedKeysHex).toBe(expectedBundle.encryptedKeysHex)
+    const expected = expectedBundle(bundle)
+    expect(arg.kekIvHex).toBe(expected.kekIvHex)
+    expect(arg.encryptedKeysHex).toBe(expected.encryptedKeysHex)
+    expect(arg.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
     expect(typeof arg.idempotencyKey).toBe('string')
   })
 

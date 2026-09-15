@@ -7,7 +7,9 @@ const auth = vi.hoisted(() => {
     id: undefined as string | undefined,
     status: 'needs_identifier',
     supportedSecondFactors: [] as Array<{ strategy: string }>,
+    supportedFirstFactors: [] as Array<{ strategy: string }>,
     create: vi.fn(),
+    password: vi.fn(),
     emailCode: {
       sendCode: vi.fn(),
       verifyCode: vi.fn(),
@@ -16,17 +18,31 @@ const auth = vi.hoisted(() => {
       sendEmailCode: vi.fn(),
       verifyEmailCode: vi.fn(),
       verifyTOTP: vi.fn(),
+      verifyBackupCode: vi.fn(),
     },
     sso: vi.fn(),
+    resetPasswordEmailCode: {
+      sendCode: vi.fn(),
+      verifyCode: vi.fn(),
+      submitPassword: vi.fn(),
+    },
     finalize: vi.fn(),
     reset: vi.fn(),
   }
   const signUp = {
+    id: undefined as string | undefined,
     status: 'missing_requirements',
     missingFields: [] as string[],
-    create: vi.fn(),
+    unverifiedFields: [] as string[],
     update: vi.fn(),
+    password: vi.fn(),
+    sso: vi.fn(),
+    verifications: {
+      sendEmailCode: vi.fn(),
+      verifyEmailCode: vi.fn(),
+    },
     finalize: vi.fn(),
+    reset: vi.fn(),
   }
 
   const router = {
@@ -43,6 +59,8 @@ const auth = vi.hoisted(() => {
     router,
     routerPush: vi.fn(),
     routerReplace: vi.fn(),
+    signInErrors: {} as Record<string, unknown>,
+    signUpErrors: {} as Record<string, unknown>,
   }
 })
 
@@ -54,12 +72,12 @@ vi.mock('@clerk/nextjs', () => ({
   useClerk: () => ({ loaded: auth.clerkLoaded }),
   useSignIn: () => ({
     signIn: auth.signIn,
-    errors: { fields: {} },
+    errors: { fields: auth.signInErrors },
     fetchStatus: 'idle',
   }),
   useSignUp: () => ({
     signUp: auth.signUp,
-    errors: { fields: {} },
+    errors: { fields: auth.signUpErrors },
     fetchStatus: 'idle',
   }),
 }))
@@ -72,6 +90,17 @@ vi.mock('next/router', () => ({
   }),
 }))
 
+function renderAndSubmitPasswordSignIn(password = 'account password') {
+  render(<SignInPage />)
+  fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
+    target: { value: 'person@example.com' },
+  })
+  fireEvent.change(screen.getByLabelText('Password'), {
+    target: { value: password },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+}
+
 describe('SignInPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -83,18 +112,40 @@ describe('SignInPage', () => {
     auth.signIn.id = undefined
     auth.signIn.status = 'needs_identifier'
     auth.signIn.supportedSecondFactors = []
+    auth.signIn.supportedFirstFactors = []
     auth.signUp.status = 'missing_requirements'
+    auth.signUp.id = undefined
     auth.signUp.missingFields = []
+    auth.signUp.unverifiedFields = []
+    auth.signInErrors = {}
+    auth.signUpErrors = {}
     auth.signIn.create.mockResolvedValue({ error: null })
+    auth.signIn.password.mockResolvedValue({ error: null })
     auth.signIn.emailCode.sendCode.mockResolvedValue({ error: null })
     auth.signIn.emailCode.verifyCode.mockResolvedValue({ error: null })
     auth.signIn.mfa.sendEmailCode.mockResolvedValue({ error: null })
     auth.signIn.mfa.verifyEmailCode.mockResolvedValue({ error: null })
     auth.signIn.mfa.verifyTOTP.mockResolvedValue({ error: null })
+    auth.signIn.mfa.verifyBackupCode.mockResolvedValue({ error: null })
     auth.signIn.sso.mockResolvedValue({ error: null })
+    auth.signIn.resetPasswordEmailCode.sendCode.mockResolvedValue({
+      error: null,
+    })
+    auth.signIn.resetPasswordEmailCode.verifyCode.mockResolvedValue({
+      error: null,
+    })
+    auth.signIn.resetPasswordEmailCode.submitPassword.mockResolvedValue({
+      error: null,
+    })
+    auth.signIn.finalize.mockResolvedValue({ error: null })
     auth.signIn.reset.mockResolvedValue({ error: null })
-    auth.signUp.create.mockResolvedValue({ error: null })
     auth.signUp.update.mockResolvedValue({ error: null })
+    auth.signUp.password.mockResolvedValue({ error: null })
+    auth.signUp.sso.mockResolvedValue({ error: null })
+    auth.signUp.verifications.sendEmailCode.mockResolvedValue({ error: null })
+    auth.signUp.verifications.verifyEmailCode.mockResolvedValue({ error: null })
+    auth.signUp.finalize.mockResolvedValue({ error: null })
+    auth.signUp.reset.mockResolvedValue({ error: null })
   })
 
   afterEach(() => {
@@ -167,51 +218,27 @@ describe('SignInPage', () => {
     expect(auth.signIn.reset).not.toHaveBeenCalled()
   })
 
-  it('sends a privacy-preserving email code for sign-in or sign-up', async () => {
-    render(<SignInPage />)
+  it('clears an abandoned sign-up attempt on a fresh signup landing', async () => {
+    auth.signUp.id = 'stale_sign_up'
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
-      target: { value: 'person@example.com' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    render(<SignInPage initialMode="signup" />)
 
     await waitFor(() => {
-      expect(auth.signIn.create).toHaveBeenCalledWith({
-        identifier: 'person@example.com',
-        signUpIfMissing: true,
-      })
-      expect(auth.signIn.emailCode.sendCode).toHaveBeenCalledTimes(1)
+      expect(auth.signUp.reset).toHaveBeenCalledTimes(1)
     })
-
-    expect(
-      screen.getByRole('heading', { name: 'Check your email' }),
-    ).toBeInTheDocument()
-    expect(screen.getByText(/person@example\.com/)).toBeInTheDocument()
-    expect(
-      screen.getByRole('textbox', { name: 'Verification code' }),
-    ).toHaveAttribute('autocomplete', 'one-time-code')
   })
 
-  it('finalizes an existing account after code verification', async () => {
-    auth.signIn.emailCode.verifyCode.mockImplementation(async () => {
+  it('signs in an existing account with its password', async () => {
+    auth.signIn.password.mockImplementation(async () => {
       auth.signIn.status = 'complete'
       return { error: null }
     })
-    render(<SignInPage />)
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
-      target: { value: 'person@example.com' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    const codeInput = await screen.findByRole('textbox', {
-      name: 'Verification code',
-    })
-    fireEvent.change(codeInput, { target: { value: '123456' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+    renderAndSubmitPasswordSignIn('correct horse battery staple')
 
     await waitFor(() => {
-      expect(auth.signIn.emailCode.verifyCode).toHaveBeenCalledWith({
-        code: '123456',
+      expect(auth.signIn.password).toHaveBeenCalledWith({
+        identifier: 'person@example.com',
+        password: 'correct horse battery staple',
       })
       expect(auth.signIn.finalize).toHaveBeenCalledWith({
         navigate: expect.any(Function),
@@ -219,30 +246,56 @@ describe('SignInPage', () => {
     })
   })
 
-  it('transfers a verified email to sign-up when the account is new', async () => {
-    auth.signIn.emailCode.verifyCode.mockResolvedValue({
-      error: { code: 'sign_up_if_missing_transfer' },
-    })
-    auth.signUp.create.mockImplementation(async () => {
-      auth.signUp.status = 'complete'
+  it('creates a password account and verifies its email code', async () => {
+    auth.signUp.password.mockImplementation(async () => {
+      auth.signUp.status = 'missing_requirements'
+      auth.signUp.unverifiedFields = ['email_address']
       return { error: null }
     })
-    render(<SignInPage />)
+    render(<SignInPage initialMode="signup" />)
 
+    fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
+      target: { value: 'New' },
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Last name' }), {
+      target: { value: 'Person' },
+    })
     fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
       target: { value: 'new@example.com' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'new account password' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+
+    await waitFor(() => {
+      expect(auth.signUp.password).toHaveBeenCalledWith({
+        emailAddress: 'new@example.com',
+        password: 'new account password',
+        firstName: 'New',
+        lastName: 'Person',
+      })
+      expect(auth.signUp.verifications.sendEmailCode).toHaveBeenCalledTimes(1)
+    })
+
+    expect(
+      screen.getByRole('heading', { name: 'Verify your email' }),
+    ).toBeInTheDocument()
     fireEvent.change(
       await screen.findByRole('textbox', { name: 'Verification code' }),
-      {
-        target: { value: '654321' },
-      },
+      { target: { value: '654321' } },
     )
+    auth.signUp.verifications.verifyEmailCode.mockImplementation(async () => {
+      auth.signUp.status = 'complete'
+      auth.signUp.unverifiedFields = []
+      return { error: null }
+    })
     fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
 
     await waitFor(() => {
-      expect(auth.signUp.create).toHaveBeenCalledWith({ transfer: true })
+      expect(auth.signUp.verifications.verifyEmailCode).toHaveBeenCalledWith({
+        code: '654321',
+      })
       expect(auth.signUp.finalize).toHaveBeenCalledWith({
         navigate: expect.any(Function),
       })
@@ -250,7 +303,7 @@ describe('SignInPage', () => {
   })
 
   it('verifies an authenticator app code when TOTP is the second factor', async () => {
-    auth.signIn.emailCode.verifyCode.mockImplementation(async () => {
+    auth.signIn.password.mockImplementation(async () => {
       auth.signIn.status = 'needs_second_factor'
       auth.signIn.supportedSecondFactors = [{ strategy: 'totp' }]
       return { error: null }
@@ -259,17 +312,7 @@ describe('SignInPage', () => {
       auth.signIn.status = 'complete'
       return { error: null }
     })
-    render(<SignInPage />)
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
-      target: { value: 'person@example.com' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.change(
-      await screen.findByRole('textbox', { name: 'Verification code' }),
-      { target: { value: '123456' } },
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+    renderAndSubmitPasswordSignIn()
 
     expect(
       await screen.findByRole('heading', { name: 'Two-step verification' }),
@@ -292,8 +335,89 @@ describe('SignInPage', () => {
     })
   })
 
+  it('resets a forgotten password with an email code', async () => {
+    auth.signIn.resetPasswordEmailCode.verifyCode.mockImplementation(
+      async () => {
+        auth.signIn.status = 'needs_new_password'
+        return { error: null }
+      },
+    )
+    auth.signIn.resetPasswordEmailCode.submitPassword.mockImplementation(
+      async () => {
+        auth.signIn.status = 'complete'
+        return { error: null }
+      },
+    )
+    render(<SignInPage />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
+      target: { value: 'person@example.com' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Send reset code' }))
+
+    await waitFor(() => {
+      expect(auth.signIn.create).toHaveBeenCalledWith({
+        identifier: 'person@example.com',
+      })
+      expect(auth.signIn.resetPasswordEmailCode.sendCode).toHaveBeenCalled()
+    })
+
+    fireEvent.change(
+      await screen.findByRole('textbox', { name: 'Verification code' }),
+      { target: { value: '123456' } },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+    fireEvent.change(await screen.findByLabelText('New password'), {
+      target: { value: 'replacement password' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Reset password' }))
+
+    await waitFor(() => {
+      expect(
+        auth.signIn.resetPasswordEmailCode.submitPassword,
+      ).toHaveBeenCalledWith({
+        password: 'replacement password',
+        signOutOfOtherSessions: true,
+      })
+      expect(auth.signIn.finalize).toHaveBeenCalled()
+    })
+  })
+
+  it('shows password sign-in errors in a centered alert box', async () => {
+    auth.signIn.password.mockResolvedValue({
+      error: { longMessage: 'The password is incorrect.' },
+    })
+    renderAndSubmitPasswordSignIn('incorrect password')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('The password is incorrect.')
+    expect(alert).toHaveClass(
+      'mx-auto',
+      'rounded-lg',
+      'border',
+      'bg-red-500/10',
+      'text-center',
+    )
+  })
+
+  it('shows an error returned while activating the session', async () => {
+    auth.signIn.password.mockImplementation(async () => {
+      auth.signIn.status = 'complete'
+      return { error: null }
+    })
+    auth.signIn.finalize.mockResolvedValue({
+      error: { longMessage: 'The session could not be activated.' },
+    })
+    renderAndSubmitPasswordSignIn()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The session could not be activated.',
+    )
+  })
+
   it('lets the user fall back to an email MFA code from the TOTP prompt', async () => {
-    auth.signIn.emailCode.verifyCode.mockImplementation(async () => {
+    auth.signIn.password.mockImplementation(async () => {
       auth.signIn.status = 'needs_second_factor'
       auth.signIn.supportedSecondFactors = [
         { strategy: 'totp' },
@@ -301,17 +425,7 @@ describe('SignInPage', () => {
       ]
       return { error: null }
     })
-    render(<SignInPage />)
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
-      target: { value: 'person@example.com' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.change(
-      await screen.findByRole('textbox', { name: 'Verification code' }),
-      { target: { value: '123456' } },
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+    renderAndSubmitPasswordSignIn()
 
     fireEvent.click(
       await screen.findByRole('button', { name: 'Email me a code instead' }),
@@ -342,6 +456,36 @@ describe('SignInPage', () => {
     })
   })
 
+  it('lets the user authenticate with a recovery code', async () => {
+    auth.signIn.password.mockImplementation(async () => {
+      auth.signIn.status = 'needs_second_factor'
+      auth.signIn.supportedSecondFactors = [
+        { strategy: 'totp' },
+        { strategy: 'backup_code' },
+      ]
+      return { error: null }
+    })
+    auth.signIn.mfa.verifyBackupCode.mockImplementation(async () => {
+      auth.signIn.status = 'complete'
+      return { error: null }
+    })
+    renderAndSubmitPasswordSignIn()
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Use a recovery code' }),
+    )
+    fireEvent.change(screen.getByRole('textbox', { name: 'Recovery code' }), {
+      target: { value: 'recovery-code' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+
+    await waitFor(() => {
+      expect(auth.signIn.mfa.verifyBackupCode).toHaveBeenCalledWith({
+        code: 'recovery-code',
+      })
+      expect(auth.signIn.finalize).toHaveBeenCalled()
+    })
+  })
+
   it.each([
     ['Google', 'oauth_google'],
     ['Apple', 'oauth_apple'],
@@ -365,6 +509,23 @@ describe('SignInPage', () => {
       })
     },
   )
+
+  it('starts social sign-up from the create-account page', async () => {
+    render(<SignInPage initialMode="signup" />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Continue with Google' }),
+    )
+
+    await waitFor(() => {
+      expect(auth.signUp.sso).toHaveBeenCalledWith({
+        strategy: 'oauth_google',
+        redirectCallbackUrl: '/sso-callback',
+        redirectUrl: '/',
+      })
+      expect(auth.signIn.sso).not.toHaveBeenCalled()
+    })
+  })
 
   it('shows the Clerk error when social sign-in cannot start', async () => {
     auth.signIn.sso.mockResolvedValue({

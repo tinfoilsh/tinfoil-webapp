@@ -39,63 +39,57 @@ const TIMER_ACCENT = '#f6b34b'
 
 const alarmModeSchema = z.enum(['sound', 'flash'])
 
-const schema = z
-  .object({
-    mode: z
-      .enum(['clock', 'timer'])
-      .optional()
-      .describe(
-        'What to display. "clock" shows the current time as an analog face. "timer" counts down from a duration or to a target time. Defaults to "clock".',
-      ),
-    label: z
-      .string()
-      .optional()
-      .describe(
-        'Short label, e.g. "New York" for a clock or "Tea" for a timer.',
-      ),
-    title: z.string().optional().describe('Main title (timer mode)'),
-    description: z.string().optional().describe('Optional description'),
-    timeZone: z
-      .string()
-      .optional()
-      .describe(
-        'Clock mode only. IANA time zone, e.g. "America/New_York". Defaults to local.',
-      ),
-    showSeconds: z
-      .boolean()
-      .optional()
-      .describe('Clock mode: include the second hand (default true).'),
-    showDate: z
-      .boolean()
-      .optional()
-      .describe('Clock mode: include date line (default true).'),
-    durationSeconds: z
-      .number()
-      .positive()
-      .max(MAX_TIMER_SECONDS)
-      .optional()
-      .describe(
-        'Timer mode. Duration in seconds. Prefer this for requests like "set a 5 minute timer".',
-      ),
-    target: z
-      .string()
-      .optional()
-      .describe(
-        'Timer mode. ISO date-time when the timer should end, e.g. "2026-12-31T23:59:59Z". Use when an exact end time is known.',
-      ),
-    completedMessage: z
-      .string()
-      .optional()
-      .describe('Timer mode. Message shown when the timer finishes.'),
-    alarmMode: alarmModeSchema
-      .optional()
-      .describe(
-        'Timer mode. Alarm behavior when done. "sound" beeps; "flash" stays silent and flashes visually. Defaults to sound.',
-      ),
-  })
-  .describe(
-    'Display either a live analog clock or an interactive countdown timer.',
-  )
+const schema = z.object({
+  mode: z
+    .enum(['clock', 'timer'])
+    .optional()
+    .describe(
+      'What to display. "clock" shows the current time as an analog face. "timer" counts down from a duration or to a target time. Defaults to "clock".',
+    ),
+  label: z
+    .string()
+    .optional()
+    .describe('Short label, e.g. "New York" for a clock or "Tea" for a timer.'),
+  title: z.string().optional().describe('Main title (timer mode)'),
+  description: z.string().optional().describe('Optional description'),
+  timeZone: z
+    .string()
+    .optional()
+    .describe(
+      'Clock mode only. IANA time zone, e.g. "America/New_York". Defaults to local.',
+    ),
+  showSeconds: z
+    .boolean()
+    .optional()
+    .describe('Clock mode: include the second hand (default true).'),
+  showDate: z
+    .boolean()
+    .optional()
+    .describe('Clock mode: include date line (default true).'),
+  durationSeconds: z
+    .number()
+    .positive()
+    .max(MAX_TIMER_SECONDS)
+    .optional()
+    .describe(
+      'Timer mode. Duration in seconds. Prefer this for requests like "set a 5 minute timer".',
+    ),
+  target: z
+    .string()
+    .optional()
+    .describe(
+      'Timer mode. ISO date-time when the timer should end, e.g. "2026-12-31T23:59:59Z". Use when an exact end time is known.',
+    ),
+  completedMessage: z
+    .string()
+    .optional()
+    .describe('Timer mode. Message shown when the timer finishes.'),
+  alarmMode: alarmModeSchema
+    .optional()
+    .describe(
+      'Timer mode. Alarm behavior when done. "sound" beeps; "flash" stays silent and flashes visually. Defaults to sound.',
+    ),
+})
 
 type ClockArgs = z.infer<typeof schema>
 type TimerAlarmMode = z.infer<typeof alarmModeSchema>
@@ -765,11 +759,7 @@ function resolveMode(args: ClockArgs): 'clock' | 'timer' {
 
 export const widget = defineGenUIWidget({
   name: 'render_clock',
-  description:
-    'Display either a live analog clock (mode "clock") or an interactive countdown timer (mode "timer"). Use "clock" for the current time in a time zone. Use "timer" for "set a 5 minute timer", reminders, breaks, workouts, cooking, etc.',
   schema,
-  promptHint:
-    'a live analog clock OR a countdown timer — pass mode "clock" with optional timeZone for time display, or mode "timer" with durationSeconds (or target ISO date) for countdowns',
   render: (args: ClockArgs) => {
     const resolved = resolveMode(args)
     if (resolved === 'timer') {

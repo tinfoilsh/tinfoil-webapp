@@ -1,9 +1,5 @@
-import { IS_DEV } from '@/config'
-import {
-  getCachedHarnessVerificationDocument,
-  getHarnessVerificationDocument,
-} from '@/services/inference/agui/client'
-import { logError, logInfo } from '@/utils/error-handling'
+import { harnessAPI } from '@/services/harness/runtime'
+import { logError } from '@/utils/error-handling'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CONSTANTS } from './chat/constants'
@@ -11,23 +7,10 @@ import { CONSTANTS } from './chat/constants'
 const VERIFICATION_CENTER_BASE_URL = 'https://verification-center.tinfoil.sh'
 const VERIFICATION_CENTER_ORIGIN = new URL(VERIFICATION_CENTER_BASE_URL).origin
 
-function isOnline(): boolean {
-  return typeof navigator !== 'undefined' ? navigator.onLine : true
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-// 'pending' also covers "attestation ran but reached no verdict yet"; dev
-// attests nothing at all, which is 'unverified' rather than a failure.
-export type VerificationStatus =
-  'pending' | 'verified' | 'failed' | 'unverified'
-
 type VerifierSidebarProps = {
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
-  onVerificationComplete: (status: VerificationStatus) => void
+  onVerificationComplete: (success: boolean) => void
   onVerificationUpdate?: (state: any) => void
   isDarkMode: boolean
   isClient: boolean
@@ -45,8 +28,6 @@ export function VerifierSidebar({
   const [isReady, setIsReady] = useState(false)
   const [hasOpenedPanel, setHasOpenedPanel] = useState(false)
   const [verificationDocument, setVerificationDocument] = useState<any>(null)
-  const retryCountRef = useRef(0)
-  const isRetryingRef = useRef(false)
 
   // Keep the latest callbacks in refs so `fetchVerificationDocument` can stay
   // referentially stable. The parent passes these as inline functions, so
@@ -58,100 +39,18 @@ export function VerifierSidebar({
   onVerificationCompleteRef.current = onVerificationComplete
 
   const fetchVerificationDocument = useCallback(async () => {
-    // Dev routes chat through a local proxy and attests nothing, so the
-    // document is null by construction — resolve instead of retrying for it.
-    if (IS_DEV) {
-      onVerificationCompleteRef.current('unverified')
-      return
-    }
-    if (isRetryingRef.current) return
-    isRetryingRef.current = true
-    retryCountRef.current = 0
-
-    const attemptFetch = async (): Promise<boolean> => {
-      if (!isOnline()) {
-        logInfo('No internet connection, waiting to retry verification', {
-          component: 'VerifierSidebar',
-          action: 'fetchVerificationDocument',
-          metadata: { attempt: retryCountRef.current + 1 },
-        })
-        return false
-      }
-
-      try {
-        const doc = await getHarnessVerificationDocument()
-        if (doc) {
-          setVerificationDocument(doc)
-          if (onVerificationUpdateRef.current) {
-            onVerificationUpdateRef.current(doc)
-          }
-          if (doc.securityVerified !== undefined) {
-            onVerificationCompleteRef.current(
-              doc.securityVerified ? 'verified' : 'failed',
-            )
-            return true
-          }
-        }
-        return false
-      } catch (error) {
-        logError('Failed to fetch verification document', error, {
-          component: 'VerifierSidebar',
-          action: 'fetchVerificationDocument',
-          metadata: { attempt: retryCountRef.current + 1 },
-        })
-        return false
-      }
-    }
-
-    let success = false
     try {
-      const cachedDoc = getCachedHarnessVerificationDocument()
-      if (cachedDoc?.securityVerified === true) {
-        setVerificationDocument(cachedDoc)
-        onVerificationUpdateRef.current?.(cachedDoc)
-        onVerificationCompleteRef.current('verified')
-        return
-      }
-
-      success = await attemptFetch()
-
-      while (
-        !success &&
-        retryCountRef.current < CONSTANTS.VERIFICATION_MAX_RETRIES
-      ) {
-        retryCountRef.current++
-        const backoffDelay =
-          CONSTANTS.VERIFICATION_RETRY_DELAY_MS *
-          Math.pow(1.5, retryCountRef.current - 1)
-
-        logInfo('Retrying verification fetch', {
-          component: 'VerifierSidebar',
-          action: 'fetchVerificationDocument',
-          metadata: {
-            attempt: retryCountRef.current,
-            maxRetries: CONSTANTS.VERIFICATION_MAX_RETRIES,
-            delayMs: backoffDelay,
-          },
-        })
-
-        await delay(backoffDelay)
-        success = await attemptFetch()
-      }
-      if (success) return
-
-      // Retries exhausted. A previously successful attestation may still be
-      // cached (e.g. the panel was opened while offline after startup
-      // verification succeeded), so don't downgrade that to a failure.
-      const terminalCachedDoc = getCachedHarnessVerificationDocument()
-      if (terminalCachedDoc?.securityVerified === true) {
-        setVerificationDocument(terminalCachedDoc)
-        onVerificationUpdateRef.current?.(terminalCachedDoc)
-        onVerificationCompleteRef.current('verified')
-        return
-      }
-      onVerificationCompleteRef.current('failed')
-    } finally {
-      isRetryingRef.current = false
+      const api = harnessAPI()
+      await api.client.ready()
+      const doc = await api.client.verification
+      setVerificationDocument(doc)
+      onVerificationUpdateRef.current?.(doc)
+      onVerificationCompleteRef.current(true)
+    } catch (cause) {
+      onVerificationCompleteRef.current(false)
+      logError('Unable to verify chat service', cause, {
+        component: 'VerifierSidebar',
+      })
     }
   }, [])
 

@@ -1,7 +1,6 @@
 import { cn } from '@/components/ui/utils'
 import { Squares2X2Icon } from '@heroicons/react/24/outline'
 import { usePromptLibrary } from '../hooks/use-prompt-library'
-import { BUILT_IN_PROMPT_PRESETS } from '../prompts/built-in-presets'
 import type { PromptPreset } from '../prompts/types'
 
 const SUGGESTION_COUNT = 3
@@ -17,12 +16,12 @@ export function PromptPresetSuggestions({
   onSetActive,
   onOpenLibrary,
 }: PromptPresetSuggestionsProps) {
-  const { favoritePresets } = usePromptLibrary()
+  const { favoritePresets, builtInPresets } = usePromptLibrary()
   // Lead with the user's pinned favorites, then backfill the remaining slots
   // with default built-ins so the home screen always offers a full set.
   const suggested: PromptPreset[] = [...favoritePresets]
   const pinnedIds = new Set(favoritePresets.map((preset) => preset.id))
-  for (const preset of BUILT_IN_PROMPT_PRESETS) {
+  for (const preset of builtInPresets) {
     if (suggested.length >= SUGGESTION_COUNT) break
     if (!pinnedIds.has(preset.id)) suggested.push(preset)
   }

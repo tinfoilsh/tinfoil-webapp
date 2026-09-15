@@ -1,16 +1,11 @@
-'use client'
+import { displayModels } from '@/config/models'
+import { useHarness } from '@/services/harness/provider'
+import type { SharedThread } from '@/services/harness/types'
+;('use client')
 
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
-import { getAIModels, type BaseModel } from '@/config/models'
-import { fetchSharedChat } from '@/services/share-api'
-import { shareOpen as enclaveShareOpen } from '@/services/sync-enclave/sync-api'
-import { decryptAndDecompress } from '@/utils/binary-codec'
-import {
-  validateShareableChatData,
-  type ShareableChatData,
-} from '@/utils/compression'
-import { decryptShare, importKeyFromBase64url } from '@/utils/share-encryption'
+import { type BaseModel } from '@/config/models'
 import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
@@ -20,13 +15,18 @@ const SHARE_PREVIEW_TITLE = 'Shared Chat \u2022 Tinfoil'
 const SHARE_PREVIEW_DESCRIPTION =
   'Open this link to view a privately shared AI conversation on Tinfoil.'
 
-type LoadingState = 'loading' | 'error' | 'success'
+type LoadingState = 'loading' | 'unsupported' | 'error' | 'success'
+
+const V2_SHARE_FRAGMENT = /^v2:([0-9a-f]{64})$/
+const UNSUPPORTED_SHARE_LINK_MESSAGE =
+  'This share link uses an unsupported format. Ask the sender to create a new link.'
 
 export default function SharePage() {
   const router = useRouter()
+  const { api, session } = useHarness()
   const [loadingState, setLoadingState] = useState<LoadingState>('loading')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [chatData, setChatData] = useState<ShareableChatData | null>(null)
+  const [chatData, setChatData] = useState<SharedThread | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [model, setModel] = useState<BaseModel | null>(null)
 
@@ -78,91 +78,48 @@ export default function SharePage() {
         return
       }
 
-      const rawHash = window.location.hash.slice(1)
-      if (!rawHash) {
-        setErrorMessage('Missing decryption key')
-        setLoadingState('error')
+      const fragmentMatch = V2_SHARE_FRAGMENT.exec(
+        window.location.hash.slice(1),
+      )
+      if (!fragmentMatch) {
+        setErrorMessage(UNSUPPORTED_SHARE_LINK_MESSAGE)
+        setLoadingState('unsupported')
         return
       }
 
-      const isV2Share = rawHash.startsWith('v2:')
-      const keyBase64url = isV2Share ? '' : rawHash
-      const shareKeyHex = isV2Share ? rawHash.slice(3) : ''
+      const shareKeyHex = fragmentMatch[1]
 
       try {
-        const fetched = await fetchSharedChat(chatId)
-        let decrypted: object | null
-        if (isV2Share) {
-          // v2 shares are sealed by the sync enclave and opened by it
-          // again here. The binary fetched from controlplane is the
-          // [IV || AES-GCM ciphertext] envelope the enclave produced.
-          if (fetched.formatVersion !== 1) {
-            setErrorMessage('Share link / payload format mismatch')
-            setLoadingState('error')
-            return
-          }
-          const plaintext = await enclaveShareOpen({
-            shareKeyHex,
-            ciphertext: new Uint8Array(fetched.binary),
-          })
-          try {
-            decrypted = JSON.parse(
-              new TextDecoder().decode(plaintext),
-            ) as object
-          } catch {
-            decrypted = null
-          }
-        } else if (fetched.formatVersion === 1) {
-          const key = await importKeyFromBase64url(keyBase64url)
-          decrypted = (await decryptAndDecompress(
-            new Uint8Array(fetched.binary),
-            key,
-          )) as object | null
-        } else {
-          decrypted = await decryptShare(fetched.data, keyBase64url)
+        const parsed = await api.post<SharedThread>(
+          '/v1/shares/open',
+          { shareId: chatId, fragment: `v2:${shareKeyHex}` },
+          undefined,
+          false,
+        )
+        const chatModel = displayModels(session)[0] ?? {
+          modelName: '',
+          name: 'Shared chat',
+          nameShort: 'Shared chat',
+          description: '',
+          image: '',
+          type: 'chat' as const,
+          chat: true,
         }
-
-        if (!decrypted) {
-          setErrorMessage('Failed to decrypt chat data')
-          setLoadingState('error')
-          return
-        }
-
-        const parsed = validateShareableChatData(decrypted)
-        if (!parsed) {
-          setErrorMessage('Invalid chat data format')
-          setLoadingState('error')
-          return
-        }
-
-        const models = await getAIModels()
-        const chatModel = models.find((m) => m.type === 'chat') || models[0]
-        if (!chatModel) {
-          setErrorMessage('Failed to load model configuration')
-          setLoadingState('error')
-          return
-        }
-
         setChatData(parsed)
         setModel(chatModel)
         setLoadingState('success')
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message === 'Shared chat not found'
-        ) {
-          setErrorMessage('This shared chat does not exist or has been deleted')
-        } else {
-          setErrorMessage('Failed to load shared chat')
-        }
+        setErrorMessage(
+          error instanceof Error ? error.message : 'Failed to load shared chat',
+        )
         setLoadingState('error')
       }
     }
 
     loadData()
-  }, [router.isReady, router.query.slug])
+  }, [api, session, router.isReady, router.query.slug])
 
-  const formatDate = (timestamp: number) => {
+  const formatDate = (timestamp: string) => {
     return new Date(timestamp).toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'long',
@@ -209,14 +166,21 @@ export default function SharePage() {
     )
   }
 
-  if (loadingState === 'error' || !chatData || !model) {
+  if (
+    loadingState === 'error' ||
+    loadingState === 'unsupported' ||
+    !chatData ||
+    !model
+  ) {
     return (
       <>
         {sharePreviewHead}
         <div className="flex min-h-screen items-center justify-center bg-surface-chat-background font-aeonik">
           <div className="text-center">
             <h1 className="text-2xl font-bold text-content-primary">
-              Invalid Share Link
+              {loadingState === 'unsupported'
+                ? 'Unsupported Share Link'
+                : 'Invalid Share Link'}
             </h1>
             <p className="mt-2 text-content-secondary">
               {errorMessage ||

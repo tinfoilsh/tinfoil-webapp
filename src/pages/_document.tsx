@@ -42,7 +42,7 @@ export default function Document() {
   const chatFontScript = `
     (function() {
       try {
-        var font = localStorage.getItem('tinfoil-settings-chat-font')
+        var font = 'system'
           || localStorage.getItem('chatFont');
         if (font === 'serif' || font === 'mono' || font === 'dyslexic') {
           document.documentElement.setAttribute('data-chat-font', font);

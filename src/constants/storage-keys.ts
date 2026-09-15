@@ -38,6 +38,7 @@ export const SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED =
 export const SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL =
   'tinfoil-settings-has-seen-cloud-sync-modal'
 export const SETTINGS_SELECTED_MODEL = 'tinfoil-settings-selected-model'
+export const SETTINGS_AUTO_INTELLIGENCE = 'tinfoil-settings-auto-intelligence'
 export const SETTINGS_REASONING_EFFORT = 'tinfoil-settings-reasoning-effort'
 export const SETTINGS_THINKING_ENABLED = 'tinfoil-settings-thinking-enabled'
 export const SETTINGS_WEB_SEARCH_ENABLED = 'tinfoil-settings-web-search-enabled'
@@ -47,7 +48,15 @@ export const SETTINGS_CODE_EXECUTION_ENABLED =
   'tinfoil-settings-code-execution-enabled'
 export const SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED =
   'tinfoil-settings-pixelate-sidebar-chat-titles-enabled'
+// When disabled, the browser tab shows only the base app title instead of
+// the active chat's title.
+export const SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED =
+  'tinfoil-settings-browser-tab-chat-title-enabled'
 export const SETTINGS_PII_CHECK_ENABLED = 'tinfoil-settings-pii-check-enabled'
+// When enabled, pressing Enter in the chat input inserts a newline instead
+// of submitting the message; submit via Cmd/Ctrl+Enter or the send button.
+export const SETTINGS_ENTER_TO_NEWLINE_ENABLED =
+  'tinfoil-settings-enter-to-newline-enabled'
 export const SETTINGS_GENUI_ENABLED = 'tinfoil-settings-genui-enabled'
 export const SETTINGS_THEME_MODE = 'tinfoil-settings-theme-mode'
 export const SETTINGS_THEME = 'tinfoil-settings-theme'

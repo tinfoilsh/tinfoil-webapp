@@ -3,7 +3,7 @@ import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
-import { inferenceRequest } from '@/services/inference/tinfoil-client'
+import { harnessAPI } from '@/services/harness/runtime'
 import { logError } from '@/utils/error-handling'
 import {
   FolderIcon,
@@ -35,6 +35,8 @@ import {
 } from './components/context-usage-indicator'
 import { MacFileIcon } from './components/mac-file-icon'
 import { CONSTANTS } from './constants'
+import { useEnterToNewline } from './hooks/use-enter-to-newline'
+import { isImeComposition } from './keyboard-utils'
 import type { PromptPreset } from './prompts/types'
 import type { ProcessedDocument } from './renderers/types'
 import type { LoadingState } from './types'
@@ -135,6 +137,7 @@ export function ChatInput({
   const documentsScrollRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
   const { isProjectMode, activeProject } = useProject()
+  const enterToNewline = useEnterToNewline()
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
   const shouldRemountOnClearRef = useRef(false)
@@ -361,20 +364,6 @@ export function ChatInput({
     }
   }
 
-  // Random placeholder - use first one initially to avoid SSR hydration mismatch,
-  // then randomize after mount
-  const [placeholder, setPlaceholder] = useState<string>(
-    CONSTANTS.INPUT_PLACEHOLDERS[0],
-  )
-
-  useEffect(() => {
-    setPlaceholder(
-      CONSTANTS.INPUT_PLACEHOLDERS[
-        Math.floor(Math.random() * CONSTANTS.INPUT_PLACEHOLDERS.length)
-      ],
-    )
-  }, [])
-
   // Scroll to the end when new documents are added
   useEffect(() => {
     if (documentsScrollRef.current && processedDocuments?.length) {
@@ -501,27 +490,16 @@ export function ChatInput({
       try {
         setIsTranscribing(true)
 
-        if (!audioModel) {
-          throw new Error('No audio model available for transcription')
-        }
-
-        const transcription = new FormData()
-        transcription.append(
-          'file',
-          new File([blob], 'audio.webm', { type: 'audio/webm' }),
+        const file = new File([blob], 'audio.webm', { type: 'audio/webm' })
+        const transcription = await harnessAPI().upload<{ text: string }>(
+          '/v1/transcriptions',
+          file,
         )
-        transcription.append('model', audioModel)
-        transcription.append('response_format', 'text')
-        const response = await inferenceRequest(
-          '/audio/transcriptions',
-          transcription,
-        )
-        if (!response.ok) {
-          throw new Error(`Transcription failed: ${response.status}`)
-        }
 
-        // `response_format: 'text'` means the body is the transcript itself.
-        const text = await response.text()
+        const text =
+          typeof transcription === 'string'
+            ? transcription
+            : (transcription as any).text
 
         if (text) {
           const currentInput = input.trim()
@@ -555,7 +533,7 @@ export function ChatInput({
         setIsTranscribing(false)
       }
     },
-    [setInput, toast, input, audioModel, resizeTextarea],
+    [setInput, toast, input, resizeTextarea],
   )
 
   const isWebMAudioSupported = () => {
@@ -714,14 +692,25 @@ export function ChatInput({
     [handleDocumentUpload],
   )
 
+  // Once a conversation is underway the composer collapses into a single row
+  // with the controls flanking the textarea; the welcome screen keeps the
+  // taller two-row layout.
+  const isCompact = Boolean(hasMessages)
+
   return (
     <div className="flex flex-col gap-2">
+      {hasMessages && modelSelectorButton && (
+        <div className="flex items-center self-end px-3 md:hidden">
+          {modelSelectorButton}
+        </div>
+      )}
       <div className="relative">
         {mobileHeader}
         <div
           className={cn(
             // relative anchors the folder-style tabs below to the card itself.
             'relative rounded-3xl border bg-white px-3 py-3 shadow-md transition-colors dark:bg-surface-chat md:rounded-4xl md:px-6 md:py-4',
+            isCompact && 'md:px-4 md:py-3',
             isTemporaryMode
               ? 'border-dashed border-content-muted'
               : 'border-border-subtle',
@@ -942,466 +931,531 @@ export function ChatInput({
             </div>
           )}
 
-          <textarea
-            id="chat-input"
-            aria-label="Message"
-            ref={attachTextareaRef}
-            key={textareaResetNonce}
-            value={input}
-            onFocus={handleInputFocus}
-            onChange={(e) => {
-              // Resize is driven by the layout effect on the resulting value
-              // change; avoid an extra synchronous reflow here.
-              setInput(e.target.value)
-            }}
-            onInput={(e) => {
-              // Some mobile Safari builds update `scrollHeight` more reliably on
-              // `input`; schedule a coalesced resize rather than reflowing now.
-              scheduleResize(e.currentTarget as HTMLTextAreaElement)
-            }}
-            onPaste={handlePaste}
-            onKeyDown={(e) => {
-              if (e.key === 'Tab') {
-                const textarea = e.currentTarget
-                const cursorPosition = textarea.selectionStart
-                const textBeforeCursor = input.slice(0, cursorPosition)
-                const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
-                const currentLine = textBeforeCursor.slice(lastLineStart)
+          {/* In compact mode the toolbar below uses display: contents so its
+              button groups become flex siblings of the textarea and can be
+              ordered around it. */}
+          <div className={cn(isCompact && 'flex items-end gap-2')}>
+            {/* The button groups are sized to the send button so a one-line
+                textarea centers against them; when it grows they stay pinned
+                to the bottom via items-end. */}
+            <textarea
+              id="chat-input"
+              aria-label="Message"
+              ref={attachTextareaRef}
+              key={textareaResetNonce}
+              value={input}
+              onFocus={handleInputFocus}
+              onChange={(e) => {
+                // Resize is driven by the layout effect on the resulting value
+                // change; avoid an extra synchronous reflow here.
+                setInput(e.target.value)
+              }}
+              onInput={(e) => {
+                // Some mobile Safari builds update `scrollHeight` more reliably on
+                // `input`; schedule a coalesced resize rather than reflowing now.
+                scheduleResize(e.currentTarget as HTMLTextAreaElement)
+              }}
+              onPaste={handlePaste}
+              onKeyDown={(e) => {
+                // Enter during IME composition only confirms the conversion;
+                // it must not send the message or edit the list structure.
+                if (e.key === 'Enter' && isImeComposition(e)) {
+                  return
+                }
+                if (e.key === 'Tab') {
+                  const textarea = e.currentTarget
+                  const cursorPosition = textarea.selectionStart
+                  const textBeforeCursor = input.slice(0, cursorPosition)
+                  const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
+                  const currentLine = textBeforeCursor.slice(lastLineStart)
 
-                // Check if we're on a list line
-                const listMatch = currentLine.match(
-                  /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+(?!\[[ x]\])/,
-                )
+                  // Check if we're on a list line
+                  const listMatch = currentLine.match(
+                    /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+(?!\[[ x]\])/,
+                  )
 
-                if (listMatch) {
-                  e.preventDefault()
-                  const textAfterCursor = input.slice(cursorPosition)
+                  if (listMatch) {
+                    e.preventDefault()
+                    const textAfterCursor = input.slice(cursorPosition)
 
-                  if (e.shiftKey) {
-                    // Shift+Tab: decrease indent (remove 4 spaces or exit list)
-                    const dedentMatch = currentLine.match(/^    /)
-                    if (dedentMatch) {
-                      // Has 4+ spaces, remove 4 spaces
-                      const newText =
-                        input.slice(0, lastLineStart) +
-                        currentLine.slice(4) +
-                        textAfterCursor
-
-                      setInput(newText)
-
-                      setTimeout(() => {
-                        textarea.selectionStart = textarea.selectionEnd =
-                          Math.max(lastLineStart, cursorPosition - 4)
-                      }, 0)
-                    } else {
-                      // Single indent level - remove the bullet/marker entirely
-                      const contentMatch = currentLine.match(
-                        /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+(.*)$/,
-                      )
-                      if (contentMatch) {
-                        const [, , , content] = contentMatch
+                    if (e.shiftKey) {
+                      // Shift+Tab: decrease indent (remove 4 spaces or exit list)
+                      const dedentMatch = currentLine.match(/^    /)
+                      if (dedentMatch) {
+                        // Has 4+ spaces, remove 4 spaces
                         const newText =
                           input.slice(0, lastLineStart) +
-                          content +
+                          currentLine.slice(4) +
                           textAfterCursor
 
                         setInput(newText)
 
                         setTimeout(() => {
                           textarea.selectionStart = textarea.selectionEnd =
-                            lastLineStart + content.length
+                            Math.max(lastLineStart, cursorPosition - 4)
                         }, 0)
+                      } else {
+                        // Single indent level - remove the bullet/marker entirely
+                        const contentMatch = currentLine.match(
+                          /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+(.*)$/,
+                        )
+                        if (contentMatch) {
+                          const [, , , content] = contentMatch
+                          const newText =
+                            input.slice(0, lastLineStart) +
+                            content +
+                            textAfterCursor
+
+                          setInput(newText)
+
+                          setTimeout(() => {
+                            textarea.selectionStart = textarea.selectionEnd =
+                              lastLineStart + content.length
+                          }, 0)
+                        }
                       }
+                    } else {
+                      // Tab: increase indent (add 4 spaces)
+                      const newText =
+                        input.slice(0, lastLineStart) +
+                        '    ' +
+                        currentLine +
+                        textAfterCursor
+
+                      setInput(newText)
+
+                      setTimeout(() => {
+                        textarea.selectionStart = textarea.selectionEnd =
+                          cursorPosition + 4
+                      }, 0)
                     }
-                  } else {
-                    // Tab: increase indent (add 4 spaces)
-                    const newText =
-                      input.slice(0, lastLineStart) +
-                      '    ' +
-                      currentLine +
-                      textAfterCursor
-
-                    setInput(newText)
-
-                    setTimeout(() => {
-                      textarea.selectionStart = textarea.selectionEnd =
-                        cursorPosition + 4
-                    }, 0)
                   }
-                }
-              } else if (e.key === ' ') {
-                const textarea = e.currentTarget
-                const cursorPosition = textarea.selectionStart
-                const textBeforeCursor = input.slice(0, cursorPosition)
-                const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
-                const currentLine = textBeforeCursor.slice(lastLineStart)
+                } else if (e.key === ' ') {
+                  const textarea = e.currentTarget
+                  const cursorPosition = textarea.selectionStart
+                  const textBeforeCursor = input.slice(0, cursorPosition)
+                  const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
+                  const currentLine = textBeforeCursor.slice(lastLineStart)
 
-                // Check if the line starts with * or - or + (for bullets)
-                const bulletMatch = currentLine.match(/^(\s*)([-*+])$/)
+                  // Check if the line starts with * or - or + (for bullets)
+                  const bulletMatch = currentLine.match(/^(\s*)([-*+])$/)
 
-                if (bulletMatch) {
-                  e.preventDefault()
-                  const [, indent] = bulletMatch
-                  const textAfterCursor = input.slice(cursorPosition)
-
-                  // Replace the marker with a bullet point and add space with indentation
-                  // Extra space after bullet to align with numbered lists
-                  const newText =
-                    input.slice(0, lastLineStart) +
-                    indent +
-                    '  \u2022  ' +
-                    textAfterCursor
-
-                  setInput(newText)
-
-                  setTimeout(() => {
-                    textarea.selectionStart = textarea.selectionEnd =
-                      lastLineStart + indent.length + 5
-                  }, 0)
-                } else {
-                  // Check if the line starts with a number (for numbered lists)
-                  const numberMatch = currentLine.match(/^(\s*)(\d+\.)$/)
-
-                  if (numberMatch) {
+                  if (bulletMatch) {
                     e.preventDefault()
-                    const [, indent, marker] = numberMatch
+                    const [, indent] = bulletMatch
                     const textAfterCursor = input.slice(cursorPosition)
 
-                    // Just add a space after the number marker (no extra indentation)
+                    // Replace the marker with a bullet point and add space with indentation
+                    // Extra space after bullet to align with numbered lists
                     const newText =
                       input.slice(0, lastLineStart) +
                       indent +
-                      marker +
-                      ' ' +
+                      '  \u2022  ' +
                       textAfterCursor
 
                     setInput(newText)
 
                     setTimeout(() => {
                       textarea.selectionStart = textarea.selectionEnd =
-                        lastLineStart + indent.length + marker.length + 1
-                    }, 0)
-                  }
-                }
-              } else if (e.key === 'Enter' && !e.shiftKey) {
-                // On mobile, Enter should insert a newline, not submit
-                const isMobile = /iPhone|iPad|iPod|Android/i.test(
-                  navigator.userAgent,
-                )
-                if (isMobile) {
-                  return
-                }
-                e.preventDefault()
-                const hasDocuments =
-                  processedDocuments &&
-                  processedDocuments.some((doc) => isDocumentSubmittable(doc))
-                const hasInput = input.trim().length > 0
-                const hasQuote = Boolean(quote)
-                if (!isTranscribing && (hasInput || hasDocuments || hasQuote)) {
-                  shouldRemountOnClearRef.current = true
-                  handleSubmit(e)
-                }
-              } else if (e.key === 'Enter' && e.shiftKey) {
-                const textarea = e.currentTarget
-                const cursorPosition = textarea.selectionStart
-                const textBeforeCursor = input.slice(0, cursorPosition)
-                const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
-                const currentLine = textBeforeCursor.slice(lastLineStart)
-
-                // Match list markers: •, -, *, +, 1.
-                const listMarkerMatch = currentLine.match(
-                  /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+/,
-                )
-
-                if (!listMarkerMatch) {
-                  setTimeout(() => {
-                    resizeTextarea(textarea)
-                    textarea.scrollTop = textarea.scrollHeight
-                  }, 0)
-                } else {
-                  e.preventDefault()
-                  const [fullMatch, indent, marker] = listMarkerMatch
-
-                  const contentAfterMarker = currentLine
-                    .slice(fullMatch.length)
-                    .trim()
-
-                  if (!contentAfterMarker) {
-                    // Empty list item - exit the list
-                    const textAfterCursor = input.slice(cursorPosition)
-                    const newText =
-                      input.slice(0, lastLineStart) + indent + textAfterCursor
-
-                    setInput(newText)
-
-                    setTimeout(() => {
-                      textarea.selectionStart = textarea.selectionEnd =
-                        lastLineStart + indent.length
+                        lastLineStart + indent.length + 5
                     }, 0)
                   } else {
-                    // Continue the list
-                    const textAfterCursor = input.slice(cursorPosition)
-                    let newMarker = marker
+                    // Check if the line starts with a number (for numbered lists)
+                    const numberMatch = currentLine.match(/^(\s*)(\d+\.)$/)
 
-                    // Increment numbered lists (handle with or without leading spaces)
-                    const numberMatch = marker.match(/^(\s*)(\d+\.)$/)
                     if (numberMatch) {
-                      const [, markerIndent, number] = numberMatch
-                      const currentNumber = parseInt(number)
-                      newMarker = `${markerIndent}${currentNumber + 1}.`
+                      e.preventDefault()
+                      const [, indent, marker] = numberMatch
+                      const textAfterCursor = input.slice(cursorPosition)
+
+                      // Just add a space after the number marker (no extra indentation)
+                      const newText =
+                        input.slice(0, lastLineStart) +
+                        indent +
+                        marker +
+                        ' ' +
+                        textAfterCursor
+
+                      setInput(newText)
+
+                      setTimeout(() => {
+                        textarea.selectionStart = textarea.selectionEnd =
+                          lastLineStart + indent.length + marker.length + 1
+                      }, 0)
                     }
+                  }
+                } else if (
+                  e.key === 'Enter' &&
+                  !e.shiftKey &&
+                  (!enterToNewline || e.metaKey || e.ctrlKey)
+                ) {
+                  // On mobile, Enter should insert a newline, not submit
+                  const isMobile = /iPhone|iPad|iPod|Android/i.test(
+                    navigator.userAgent,
+                  )
+                  if (isMobile && !e.metaKey && !e.ctrlKey) {
+                    return
+                  }
+                  e.preventDefault()
+                  const hasDocuments =
+                    processedDocuments &&
+                    processedDocuments.some((doc) => isDocumentSubmittable(doc))
+                  const hasInput = input.trim().length > 0
+                  const hasQuote = Boolean(quote)
+                  if (
+                    !isTranscribing &&
+                    (hasInput || hasDocuments || hasQuote)
+                  ) {
+                    shouldRemountOnClearRef.current = true
+                    handleSubmit(e)
+                  }
+                } else if (e.key === 'Enter') {
+                  const textarea = e.currentTarget
+                  const cursorPosition = textarea.selectionStart
+                  const textBeforeCursor = input.slice(0, cursorPosition)
+                  const lastLineStart = textBeforeCursor.lastIndexOf('\n') + 1
+                  const currentLine = textBeforeCursor.slice(lastLineStart)
 
-                    const newText =
-                      textBeforeCursor +
-                      '\n' +
-                      indent +
-                      newMarker +
-                      ' ' +
-                      textAfterCursor
+                  // Match list markers: •, -, *, +, 1.
+                  const listMarkerMatch = currentLine.match(
+                    /^(\s*)(\s*\u2022\s+|[-*+]|\s*\d+\.)\s+/,
+                  )
 
-                    setInput(newText)
-
-                    const newCursorPos =
-                      cursorPosition + 1 + indent.length + newMarker.length + 1
-
+                  if (!listMarkerMatch) {
                     setTimeout(() => {
                       resizeTextarea(textarea)
-                      textarea.selectionStart = textarea.selectionEnd =
-                        newCursorPos
                       textarea.scrollTop = textarea.scrollHeight
                     }, 0)
-                  }
-                }
-              } else if (e.key === 'Escape' && loadingState === 'loading') {
-                e.preventDefault()
-                cancelGeneration()
-              }
-            }}
-            placeholder={hasMessages ? 'Reply to Tin...' : placeholder}
-            rows={1}
-            className={cn(
-              'w-full resize-none bg-transparent font-chat text-lg leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
-            )}
-            style={{
-              minHeight: inputMinHeight,
-              maxHeight: `${CONSTANTS.INPUT_MAX_HEIGHT_PX}px`,
-            }}
-          />
+                  } else {
+                    e.preventDefault()
+                    const [fullMatch, indent, marker] = listMarkerMatch
 
-          <div className="mt-3 flex items-center justify-between">
-            <span className="sr-only" role="status" aria-live="polite">
-              {audioStatus}
-            </span>
-            <div className="flex items-center gap-1">
-              {/* Unified + button opening the input options menu */}
-              <div className="relative">
-                <button
-                  id="input-options-button"
-                  ref={inputMenuTriggerRef}
-                  type="button"
-                  onClick={() => setIsInputMenuOpen(!isInputMenuOpen)}
-                  aria-label="Input options"
-                  aria-expanded={isInputMenuOpen}
-                  aria-haspopup="menu"
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
-                >
-                  <PiPlusLight className="h-5 w-5" />
-                </button>
-                {isInputMenuOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => closeInputMenu(false)}
-                    />
-                    <div
-                      ref={inputMenuRef}
-                      role="menu"
-                      aria-label="Input options"
-                      onKeyDown={handleInputMenuKeyDown}
-                      className="absolute bottom-full left-0 z-20 mb-2 min-w-[220px] rounded-xl border border-border-subtle bg-surface-chat py-1.5 shadow-lg"
-                    >
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          triggerFileInput()
-                          closeInputMenu(true)
-                        }}
-                        className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                    const contentAfterMarker = currentLine
+                      .slice(fullMatch.length)
+                      .trim()
+
+                    if (!contentAfterMarker) {
+                      // Empty list item - exit the list
+                      const textAfterCursor = input.slice(cursorPosition)
+                      const newText =
+                        input.slice(0, lastLineStart) + indent + textAfterCursor
+
+                      setInput(newText)
+
+                      setTimeout(() => {
+                        textarea.selectionStart = textarea.selectionEnd =
+                          lastLineStart + indent.length
+                      }, 0)
+                    } else {
+                      // Continue the list
+                      const textAfterCursor = input.slice(cursorPosition)
+                      let newMarker = marker
+
+                      // Increment numbered lists (handle with or without leading spaces)
+                      const numberMatch = marker.match(/^(\s*)(\d+\.)$/)
+                      if (numberMatch) {
+                        const [, markerIndent, number] = numberMatch
+                        const currentNumber = parseInt(number)
+                        newMarker = `${markerIndent}${currentNumber + 1}.`
+                      }
+
+                      const newText =
+                        textBeforeCursor +
+                        '\n' +
+                        indent +
+                        newMarker +
+                        ' ' +
+                        textAfterCursor
+
+                      setInput(newText)
+
+                      const newCursorPos =
+                        cursorPosition +
+                        1 +
+                        indent.length +
+                        newMarker.length +
+                        1
+
+                      setTimeout(() => {
+                        resizeTextarea(textarea)
+                        textarea.selectionStart = textarea.selectionEnd =
+                          newCursorPos
+                        textarea.scrollTop = textarea.scrollHeight
+                      }, 0)
+                    }
+                  }
+                } else if (e.key === 'Escape' && loadingState === 'loading') {
+                  e.preventDefault()
+                  cancelGeneration()
+                }
+              }}
+              placeholder={
+                hasMessages
+                  ? CONSTANTS.REPLY_PLACEHOLDER
+                  : CONSTANTS.INPUT_PLACEHOLDER
+              }
+              rows={1}
+              className={cn(
+                'w-full resize-none bg-transparent font-chat text-lg leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
+                isCompact && 'min-w-0 flex-1 self-center',
+              )}
+              style={{
+                minHeight: inputMinHeight,
+                maxHeight: `${CONSTANTS.INPUT_MAX_HEIGHT_PX}px`,
+              }}
+            />
+
+            <div
+              className={cn(
+                isCompact
+                  ? 'contents'
+                  : 'mt-3 flex items-center justify-between',
+              )}
+            >
+              <span className="sr-only" role="status" aria-live="polite">
+                {audioStatus}
+              </span>
+              <div
+                className={cn(
+                  'flex items-center gap-1',
+                  isCompact && 'order-first h-10 md:h-8',
+                )}
+              >
+                {/* Unified + button opening the input options menu */}
+                <div className="relative">
+                  <button
+                    id="input-options-button"
+                    ref={inputMenuTriggerRef}
+                    type="button"
+                    onClick={() => setIsInputMenuOpen(!isInputMenuOpen)}
+                    aria-label="Input options"
+                    aria-expanded={isInputMenuOpen}
+                    aria-haspopup="menu"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+                  >
+                    <PiPlusLight className="h-5 w-5" />
+                  </button>
+                  {isInputMenuOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => closeInputMenu(false)}
+                      />
+                      <div
+                        ref={inputMenuRef}
+                        role="menu"
+                        aria-label="Input options"
+                        onKeyDown={handleInputMenuKeyDown}
+                        className="absolute bottom-full left-0 z-20 mb-2 min-w-[220px] rounded-xl border border-border-subtle bg-surface-chat py-1.5 shadow-lg"
                       >
-                        <PiPaperclipLight className="h-5 w-5 text-content-secondary" />
-                        Add files or photos
-                      </button>
-                      {onOpenPromptLibrary && (
                         <button
                           type="button"
                           role="menuitem"
                           onClick={() => {
-                            onOpenPromptLibrary()
+                            triggerFileInput()
                             closeInputMenu(true)
                           }}
                           className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                         >
-                          <Squares2X2Icon className="h-5 w-5 text-content-secondary" />
-                          Change system prompt
+                          <PiPaperclipLight className="h-5 w-5 text-content-secondary" />
+                          Add files or photos
                         </button>
-                      )}
-                      {(onWebSearchToggle || onCodeExecutionToggle) && (
-                        <div className="my-1.5 border-t border-border-subtle" />
-                      )}
-                      {onWebSearchToggle && (
-                        <button
-                          type="button"
-                          role="menuitemcheckbox"
-                          aria-checked={webSearchEnabled}
-                          onClick={() => {
-                            onWebSearchToggle()
-                            closeInputMenu(true)
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
-                        >
-                          {webSearchEnabled ? (
-                            <PiGlobe className="h-5 w-5 text-content-secondary" />
-                          ) : (
-                            <PiGlobeX className="h-5 w-5 text-content-secondary" />
-                          )}
-                          <span className="flex-1">Web search</span>
-                          {webSearchEnabled && (
-                            <MenuCheckmark className="h-4 w-4 text-brand-accent-light" />
-                          )}
-                        </button>
-                      )}
-                      {onCodeExecutionToggle && (
-                        <button
-                          type="button"
-                          role="menuitemcheckbox"
-                          aria-checked={codeExecutionEnabled}
-                          onClick={() => {
-                            onCodeExecutionToggle()
-                            closeInputMenu(true)
-                          }}
-                          className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
-                        >
-                          <PiTerminalWindow className="h-5 w-5 text-content-secondary" />
-                          <span className="flex-1">Code execution</span>
-                          {codeExecutionEnabled && (
-                            <MenuCheckmark className="h-4 w-4 text-brand-accent-light" />
-                          )}
-                        </button>
-                      )}
-                      {contextUsage && (
-                        <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden">
-                          <span className="flex-1">Context</span>
-                          <ContextUsageIndicator usage={contextUsage} />
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
+                        {onOpenPromptLibrary && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              onOpenPromptLibrary()
+                              closeInputMenu(true)
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                          >
+                            <Squares2X2Icon className="h-5 w-5 text-content-secondary" />
+                            Change system prompt
+                          </button>
+                        )}
+                        {(onWebSearchToggle || onCodeExecutionToggle) && (
+                          <div className="my-1.5 border-t border-border-subtle" />
+                        )}
+                        {onWebSearchToggle && (
+                          <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            aria-checked={webSearchEnabled}
+                            onClick={() => {
+                              onWebSearchToggle()
+                              closeInputMenu(true)
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                          >
+                            {webSearchEnabled ? (
+                              <PiGlobe className="h-5 w-5 text-content-secondary" />
+                            ) : (
+                              <PiGlobeX className="h-5 w-5 text-content-secondary" />
+                            )}
+                            <span className="flex-1">Web search</span>
+                            {webSearchEnabled && (
+                              <MenuCheckmark className="h-4 w-4 text-brand-accent-light" />
+                            )}
+                          </button>
+                        )}
+                        {onCodeExecutionToggle && (
+                          <button
+                            type="button"
+                            role="menuitemcheckbox"
+                            aria-checked={codeExecutionEnabled}
+                            onClick={() => {
+                              onCodeExecutionToggle()
+                              closeInputMenu(true)
+                            }}
+                            className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
+                          >
+                            <PiTerminalWindow className="h-5 w-5 text-content-secondary" />
+                            <span className="flex-1">Code execution</span>
+                            {codeExecutionEnabled && (
+                              <MenuCheckmark className="h-4 w-4 text-brand-accent-light" />
+                            )}
+                          </button>
+                        )}
+                        {contextUsage && (
+                          <div className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary md:hidden">
+                            <span className="flex-1">Context</span>
+                            <ContextUsageIndicator usage={contextUsage} />
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2">
-              {contextUsage && (
-                <ContextUsageIndicator
-                  usage={contextUsage}
-                  className="hidden md:flex"
-                />
-              )}
-              {modelSelectorButton && <div>{modelSelectorButton}</div>}
-              {isPremium && audioModel && (
-                <button
-                  type="button"
-                  onClick={isRecording ? stopRecording : startRecording}
-                  className={cn(
-                    'disabled:opacity-50',
-                    isRecording
-                      ? 'flex h-10 w-10 animate-pulse items-center justify-center rounded-full bg-red-500 text-white md:h-8 md:w-8'
-                      : 'rounded-lg bg-transparent p-2.5 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary md:p-1.5',
-                  )}
-                  style={{ WebkitTapHighlightColor: 'transparent' }}
-                  title={recordingButtonLabel}
-                  aria-label={recordingButtonLabel}
-                  disabled={isTranscribing}
-                >
-                  {isRecording ? (
-                    <StopIcon
-                      className="h-6 w-6 md:h-5 md:w-5"
-                      aria-hidden="true"
-                    />
-                  ) : isTranscribing ? (
-                    <PiSpinner
-                      className="h-6 w-6 animate-spin text-current md:h-5 md:w-5"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <MicrophoneIcon
-                      className="h-6 w-6 md:h-5 md:w-5"
-                      aria-hidden="true"
-                    />
-                  )}
-                </button>
-              )}
-              {(() => {
-                const isBusy = loadingState !== 'idle'
-                const hasCompletedDocuments = Boolean(
-                  processedDocuments &&
-                  processedDocuments.some((doc) => isDocumentSubmittable(doc)),
-                )
-                const hasSubmittableContent =
-                  Boolean(input.trim()) ||
-                  Boolean(quote) ||
-                  hasCompletedDocuments
-                const showStopAction = isBusy && !hasSubmittableContent
-
-                return (
+              <div
+                className={cn(
+                  'flex items-center gap-2',
+                  isCompact && 'h-10 md:h-8',
+                )}
+              >
+                {/* Once a conversation is underway these move to the footer
+                  below the card so the card itself stays focused on composing. */}
+                {!hasMessages && contextUsage && (
+                  <ContextUsageIndicator
+                    usage={contextUsage}
+                    className="hidden md:flex"
+                  />
+                )}
+                {!hasMessages && modelSelectorButton && (
+                  <div>{modelSelectorButton}</div>
+                )}
+                {isPremium && audioModel && (
                   <button
-                    id="send-button"
                     type="button"
-                    onClick={(e) => {
-                      if (showStopAction) {
-                        e.preventDefault()
-                        cancelGeneration()
-                      } else {
-                        shouldRemountOnClearRef.current = true
-                        handleSubmit(e)
-                        // On iOS Safari, forcing blur here can lead to a "dead" touch region
-                        // after the keyboard dismisses. Keep focus on mobile; desktop can blur.
-                        const isMobile =
-                          typeof navigator !== 'undefined' &&
-                          /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
-                        if (!isMobile) {
-                          ownTextareaRef.current?.blur()
-                        }
-                      }
-                    }}
-                    className="group ml-2 flex h-10 w-10 items-center justify-center rounded-site-control bg-button-send-background text-button-send-foreground transition-colors hover:bg-button-send-background/80 disabled:opacity-50 md:h-8 md:w-8"
+                    onClick={isRecording ? stopRecording : startRecording}
+                    className={cn(
+                      'disabled:opacity-50',
+                      isRecording
+                        ? 'flex h-10 w-10 animate-pulse items-center justify-center rounded-full bg-red-500 text-white md:h-8 md:w-8'
+                        : 'rounded-lg bg-transparent p-2.5 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary md:p-1.5',
+                    )}
                     style={{ WebkitTapHighlightColor: 'transparent' }}
-                    disabled={
-                      showStopAction
-                        ? false
-                        : isTranscribing || !hasSubmittableContent
-                    }
-                    aria-label={showStopAction ? 'Stop generation' : 'Send'}
+                    title={recordingButtonLabel}
+                    aria-label={recordingButtonLabel}
+                    disabled={isTranscribing}
                   >
-                    {showStopAction ? (
-                      <div className="h-3.5 w-3.5 bg-button-send-foreground/80 transition-colors md:h-3 md:w-3" />
+                    {isRecording ? (
+                      <StopIcon
+                        className="h-6 w-6 md:h-5 md:w-5"
+                        aria-hidden="true"
+                      />
+                    ) : isTranscribing ? (
+                      <PiSpinner
+                        className="h-6 w-6 animate-spin text-current md:h-5 md:w-5"
+                        aria-hidden="true"
+                      />
                     ) : (
-                      <FiArrowUp className="h-6 w-6 text-button-send-foreground transition-colors md:h-5 md:w-5" />
+                      <MicrophoneIcon
+                        className="h-6 w-6 md:h-5 md:w-5"
+                        aria-hidden="true"
+                      />
                     )}
                   </button>
-                )
-              })()}
+                )}
+                {(() => {
+                  const isBusy = loadingState !== 'idle'
+                  const hasCompletedDocuments = Boolean(
+                    processedDocuments &&
+                    processedDocuments.some((doc) =>
+                      isDocumentSubmittable(doc),
+                    ),
+                  )
+                  const hasSubmittableContent =
+                    Boolean(input.trim()) ||
+                    Boolean(quote) ||
+                    hasCompletedDocuments
+                  const showStopAction = isBusy && !hasSubmittableContent
+
+                  return (
+                    <button
+                      id="send-button"
+                      type="button"
+                      onClick={(e) => {
+                        if (showStopAction) {
+                          e.preventDefault()
+                          cancelGeneration()
+                        } else {
+                          shouldRemountOnClearRef.current = true
+                          handleSubmit(e)
+                          // On iOS Safari, forcing blur here can lead to a "dead" touch region
+                          // after the keyboard dismisses. Keep focus on mobile; desktop can blur.
+                          const isMobile =
+                            typeof navigator !== 'undefined' &&
+                            /iPhone|iPad|iPod|Android/i.test(
+                              navigator.userAgent,
+                            )
+                          if (!isMobile) {
+                            ownTextareaRef.current?.blur()
+                          }
+                        }
+                      }}
+                      className={cn(
+                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-button-send-background text-button-send-foreground transition-colors hover:bg-button-send-background/80 disabled:opacity-50 md:h-8 md:w-8',
+                        !isCompact && 'ml-2',
+                      )}
+                      style={{ WebkitTapHighlightColor: 'transparent' }}
+                      disabled={
+                        showStopAction
+                          ? false
+                          : isTranscribing || !hasSubmittableContent
+                      }
+                      aria-label={showStopAction ? 'Stop generation' : 'Send'}
+                    >
+                      {showStopAction ? (
+                        <div className="h-3.5 w-3.5 bg-button-send-foreground/80 transition-colors md:h-3 md:w-3" />
+                      ) : (
+                        <FiArrowUp className="h-6 w-6 text-button-send-foreground transition-colors md:h-5 md:w-5" />
+                      )}
+                    </button>
+                  )
+                })()}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {hasMessages && (
-        <div className="text-center">
+        <div className="flex items-center justify-between gap-4 px-3 md:px-6">
           <p className="text-xs text-content-muted">
             AI can make mistakes. Verify important information.
           </p>
+          <div className="hidden items-center gap-2 md:flex">
+            {contextUsage && (
+              <ContextUsageIndicator
+                usage={contextUsage}
+                className="hidden md:flex"
+              />
+            )}
+            {modelSelectorButton}
+          </div>
         </div>
       )}
     </div>

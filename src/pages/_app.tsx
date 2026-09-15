@@ -2,6 +2,7 @@ import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
 import { useChatFontSync } from '@/components/chat/hooks/use-chat-font'
 import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
 import { Toaster } from '@/components/ui/toaster'
+import { HarnessProvider } from '@/services/harness/provider'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { migrateStorageKeys } from '@/utils/storage-migration'
@@ -12,6 +13,7 @@ import Head from 'next/head'
 import Script from 'next/script'
 
 const ANALYTICS_EXCLUDED_ROUTES = new Set([
+  '/harness',
   '/share/[[...slug]]',
   '/chat/[[...slug]]',
   '/chat/[chatId]',
@@ -200,7 +202,15 @@ export default function App({ Component, pageProps, router }: AppProps) {
         >
           <AuthCleanupHandler />
           <SignoutProgressOverlay />
-          <Component {...pageProps} />
+          {['/signin', '/signup', '/sso-callback', '/404', '/_error'].includes(
+            router.pathname,
+          ) ? (
+            <Component {...pageProps} />
+          ) : (
+            <HarnessProvider>
+              <Component {...pageProps} />
+            </HarnessProvider>
+          )}
           <Toaster />
         </ClerkProvider>
       </div>

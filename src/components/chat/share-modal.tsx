@@ -1,8 +1,6 @@
 import { TextureGrid } from '@/components/texture-grid'
 import { useToast } from '@/hooks/use-toast'
-import { uploadSharedChat } from '@/services/share-api'
-import { shareSeal as enclaveShareSeal } from '@/services/sync-enclave/sync-api'
-import type { ShareableChatData } from '@/utils/compression'
+import { harnessAPI } from '@/services/harness/runtime'
 import {
   CheckIcon,
   DocumentDuplicateIcon,
@@ -211,83 +209,10 @@ export function ShareModal({
 
     setIsUploading(true)
     try {
-      const shareableData: ShareableChatData = {
-        v: 1,
-        title: chatTitle || 'Shared Chat',
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          modelDisplayName: m.modelDisplayName,
-          documentContent:
-            m.documentContent ??
-            (m.attachments
-              ?.filter((a) => a.type === 'document' && a.textContent)
-              .map(
-                (a) =>
-                  `Document title: ${a.fileName}\nDocument contents:\n${a.textContent}`,
-              )
-              .join('\n\n') ||
-              undefined),
-          documents:
-            m.documents ??
-            (m.attachments?.map((a) => ({ name: a.fileName })) || undefined),
-          timestamp:
-            m.timestamp instanceof Date
-              ? m.timestamp.getTime()
-              : typeof m.timestamp === 'string'
-                ? Date.parse(m.timestamp)
-                : m.timestamp,
-          thoughts: m.thoughts,
-          thinkingDuration: m.thinkingDuration,
-          isError: m.isError,
-          attachments: m.attachments?.length
-            ? m.attachments.map((a) => ({
-                id: a.id,
-                type: a.type,
-                fileName: a.fileName,
-                mimeType: a.mimeType,
-                thumbnailBase64: a.thumbnailBase64,
-                encryptionKey: a.encryptionKey,
-                textContent: a.textContent,
-                description: a.description,
-              }))
-            : undefined,
-          timeline: m.timeline,
-          annotations: m.annotations,
-          webSearch: m.webSearch,
-          webSearchBeforeThinking: m.webSearchBeforeThinking,
-          urlFetches: m.urlFetches,
-        })),
-        createdAt: chatCreatedAt ? chatCreatedAt.getTime() : Date.now(),
-      }
-
-      // Seal through the sync enclave: the enclave generates a fresh
-      // share key, gzips, AES-GCM-seals, and returns key + ciphertext.
-      // The owner uploads ciphertext to controlplane and embeds the
-      // key in the URL fragment with a `v2:` prefix so the recipient
-      // can tell which decryption path to use.
-      const plaintext = new TextEncoder().encode(JSON.stringify(shareableData))
-      let sealed: { share_key: string; ciphertext: string }
-      try {
-        sealed = await enclaveShareSeal({ plaintext })
-      } catch (e) {
-        throw new Error(
-          `Share seal failed: ${e instanceof Error ? e.message : String(e)}`,
-        )
-      }
-
-      try {
-        const bin = Uint8Array.from(atob(sealed.ciphertext), (c) =>
-          c.charCodeAt(0),
-        )
-        await uploadSharedChat(chatId, bin)
-      } catch (e) {
-        throw new Error(
-          `Upload failed: ${e instanceof Error ? e.message : String(e)}`,
-        )
-      }
-
-      const url = `${window.location.origin}/share/${chatId}#v2:${sealed.share_key}`
+      const { url } = await harnessAPI().post<{ url: string }>(
+        '/v1/threads/share',
+        { threadId: chatId },
+      )
       setShareUrl(url)
     } catch (error) {
       const errorMessage =

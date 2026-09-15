@@ -1,8 +1,6 @@
 import { PAGINATION } from '@/config'
 import {
-  SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   UI_EXPAND_PROJECTS_ON_MOUNT,
-  UI_SIDEBAR_ACTIVE_TAB,
   UI_SIDEBAR_CHAT_HISTORY_EXPANDED,
   UI_SIDEBAR_EXPAND_SECTION,
   UI_SIDEBAR_FAVORITES_EXPANDED,
@@ -10,21 +8,8 @@ import {
   USER_PREFS_NATIVE_APP_DISMISSED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
-import { useSyncHealth, useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
-import { encryptionService } from '@/services/encryption/encryption-service'
-import { chatStorage } from '@/services/storage/chat-storage'
-import { isResolvedFavoriteChat } from '@/services/storage/pinned-chats'
-import {
-  CLOUD_SYNC_SETTING_CHANGED_EVENT,
-  hasUserSetLocalOnlyPreference,
-  isCloudSyncEnabled,
-  isLocalOnlyModeEnabled,
-  setCloudSyncEnabled as setCloudSyncEnabledSetting,
-  setLocalOnlyModeEnabled as setLocalOnlyModeSetting,
-} from '@/utils/cloud-sync-settings'
-import { logInfo } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/nextjs'
 import {
   ChevronDownIcon,
@@ -39,7 +24,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
-import { CiFloppyDisk } from 'react-icons/ci'
+import { useRouter } from 'next/router'
 import { FaLock } from 'react-icons/fa6'
 import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
 import { IoChatbubblesOutline } from 'react-icons/io5'
@@ -56,7 +41,8 @@ import { formatRelativeTime } from './chat-list-utils'
 import { CONSTANTS } from './constants'
 import { useDrag } from './drag-context'
 import { consumeFavoriteDrop } from './favorite-drag'
-import { SidebarSyncButton } from './sidebar-sync-button'
+import { isResolvedFavoriteChat } from './favorite-view'
+import { getSidebarUpsellVariant } from './sidebar-upsell-state'
 import { useFavoriteDropTarget } from './use-favorite-drop-target'
 
 import { useProject } from '@/components/project/project-context'
@@ -70,7 +56,7 @@ import {
   PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
   projectColorTintLayer,
 } from '@/constants/project-colors'
-import { useCloudPagination } from '@/hooks/use-cloud-pagination'
+import { useHarness } from '@/services/harness/provider'
 
 import { useChatSearch } from '@/hooks/use-chat-search'
 import { logError } from '@/utils/error-handling'
@@ -85,6 +71,8 @@ import { Logo } from '../logo'
 import type { Chat } from './types'
 
 const FAVORITES_PANEL_ID = 'sidebar-favorites-panel'
+const SIDEBAR_CTA_CLASS_NAME =
+  'block w-full rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90'
 
 // Utility function to detect iOS devices
 function isIOSDevice() {
@@ -95,6 +83,8 @@ function isIOSDevice() {
 // Pagination state is managed by useCloudPagination
 
 type ChatSidebarProps = {
+  hasMore?: boolean
+  onLoadMore?: () => Promise<void>
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
   chats: Chat[]
@@ -112,6 +102,7 @@ type ChatSidebarProps = {
   deleteChat: (chatId: string) => void
   isClient: boolean
   isPremium?: boolean
+  isSubscriptionLoading?: boolean
   onEncryptionKeyClick?: () => void
   onCloudSyncSetupClick?: () => void
   onSetupPasskey?: () => Promise<boolean>
@@ -127,9 +118,8 @@ type ChatSidebarProps = {
   backupWarningNeedsRecovery?: boolean
   onDismissBackupWarning?: () => void
   onChatsUpdated?: () => void | Promise<void>
-  initialChatPageToken?: string
   isInitialChatPageReady?: boolean
-  /** Triggers a deep (all-pages) cloud sync from the sidebar "Sync" button. */
+  /** Triggers an account revision sync from the sidebar "Sync" button. */
   onManualSync?: () => Promise<boolean>
   /** True while a cloud sync is in progress; drives the Sync button spinner. */
   isSyncing?: boolean
@@ -182,6 +172,8 @@ function usePreventZoom() {
 }
 
 export function ChatSidebar({
+  hasMore: hasMoreRemote = false,
+  onLoadMore,
   isOpen,
   setIsOpen,
   chats,
@@ -195,6 +187,7 @@ export function ChatSidebar({
   deleteChat,
   isClient,
   isPremium = true,
+  isSubscriptionLoading = false,
   onEncryptionKeyClick,
   onCloudSyncSetupClick,
   onSetupPasskey,
@@ -205,7 +198,6 @@ export function ChatSidebar({
   backupWarningNeedsRecovery = false,
   onDismissBackupWarning,
   onChatsUpdated,
-  initialChatPageToken,
   isInitialChatPageReady = false,
   onManualSync,
   isSyncing = false,
@@ -226,8 +218,9 @@ export function ChatSidebar({
   windowWidth,
   chatDecryptionProgress,
 }: ChatSidebarProps) {
-  const syncNeedsAttention = useSyncHealthAttention()
-  const syncHealth = useSyncHealth()
+  const router = useRouter()
+  const authRedirectUrl = encodeURIComponent(router.asPath)
+  const syncNeedsAttention = false
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -291,23 +284,14 @@ export function ChatSidebar({
     upgradeLoading,
     upgradeError,
   } = useUpgradeToPro()
-  const [activeTab, setActiveTab] = useState<'cloud' | 'local'>(() => {
-    if (currentChat?.isBlankChat && currentChat.isLocalOnly) {
-      return 'local'
-    }
-    if (typeof window !== 'undefined') {
-      const stored = sessionStorage.getItem(UI_SIDEBAR_ACTIVE_TAB)
-      if (stored === 'local' && isLocalOnlyModeEnabled()) {
-        return 'local'
-      }
-    }
-    return 'cloud'
-  })
-  const [cloudSyncEnabled, setCloudSyncEnabled] = useState(isCloudSyncEnabled())
-  const [localOnlyModeEnabled, setLocalOnlyModeEnabled] = useState(
-    isLocalOnlyModeEnabled(),
-  )
+  const { keyReady: cloudSyncEnabled } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
+  const upsellVariant = getSidebarUpsellVariant({
+    isAuthLoaded,
+    isSignedIn,
+    isSubscriptionLoading,
+    isPremium,
+  })
   const favoritesAvailable = Boolean(isSignedIn && cloudSyncEnabled)
   const { user } = useUser()
 
@@ -316,11 +300,9 @@ export function ChatSidebar({
     draggingChatFromProjectId,
     draggingChatSource,
     dropTargetProjectId,
-    dropTargetTab,
     isDropTargetChatHistory,
     setDraggingChat,
     setDropTargetProject,
-    setDropTargetTab,
     setDropTargetChatHistory,
     clearDragState,
   } = useDrag()
@@ -337,15 +319,11 @@ export function ChatSidebar({
     setIsMac(/Mac|iPod|iPhone|iPad/.test(navigator.platform))
   }, [])
   const modKey = isMac ? '⌘' : 'Ctrl+'
-  const newChatHref = getNewChatPath({ isLocalOnly: activeTab === 'local' })
+  const newChatHref = getNewChatPath({ isLocalOnly: false })
   const isCurrentNewChat =
     currentChat?.isBlankChat &&
     !currentChat.isTemporary &&
-    Boolean(currentChat.isLocalOnly) === (activeTab === 'local')
-  const syncHealthFailed =
-    syncHealth.gate.kind !== 'ok' ||
-    Object.keys(syncHealth.failedChats).length > 0
-  const syncFailed = lastSyncFailed || syncHealthFailed
+    Boolean(currentChat.isLocalOnly) === false
 
   const {
     projects,
@@ -374,18 +352,8 @@ export function ChatSidebar({
   )
 
   // Cloud pagination state via hook
-  const {
-    hasMore: hasMoreRemote,
-    isLoading: isLoadingMore,
-    hasAttempted: hasAttemptedLoadMore,
-    isInitialized: isPaginationInitialized,
-    loadMore: loadMorePage,
-  } = useCloudPagination({
-    isSignedIn: !!isSignedIn,
-    userId: user?.id,
-    initialToken: initialChatPageToken,
-    isInitialPageReady: isInitialChatPageReady,
-  })
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+
   const [visibleCloudChatCount, setVisibleCloudChatCount] = useState<number>(
     PAGINATION.CHATS_PER_PAGE,
   )
@@ -395,11 +363,6 @@ export function ChatSidebar({
 
   // Apply zoom prevention for mobile
   usePreventZoom()
-
-  // Persist active tab selection to sessionStorage
-  useEffect(() => {
-    sessionStorage.setItem(UI_SIDEBAR_ACTIVE_TAB, activeTab)
-  }, [activeTab])
 
   // Persist projects expanded state to sessionStorage
   useEffect(() => {
@@ -449,95 +412,6 @@ export function ChatSidebar({
     isProjectsExpanded,
   ])
 
-  // Listen for cloud sync setting changes
-  useEffect(() => {
-    const handleCloudSyncChange = () => {
-      setCloudSyncEnabled(isCloudSyncEnabled())
-    }
-
-    // Listen for both storage events and custom events
-    window.addEventListener('storage', handleCloudSyncChange)
-    window.addEventListener(
-      CLOUD_SYNC_SETTING_CHANGED_EVENT,
-      handleCloudSyncChange,
-    )
-
-    return () => {
-      window.removeEventListener('storage', handleCloudSyncChange)
-      window.removeEventListener(
-        CLOUD_SYNC_SETTING_CHANGED_EVENT,
-        handleCloudSyncChange,
-      )
-    }
-  }, [])
-
-  // Listen for local-only mode setting changes
-  useEffect(() => {
-    const handleLocalOnlyModeChange = () => {
-      const enabled = isLocalOnlyModeEnabled()
-      setLocalOnlyModeEnabled(enabled)
-      if (!enabled && activeTab === 'local') {
-        setActiveTab('cloud')
-      }
-    }
-
-    // Listen for both storage events (cross-tab) and custom events (same-tab)
-    window.addEventListener('storage', handleLocalOnlyModeChange)
-    window.addEventListener('localOnlyModeChanged', handleLocalOnlyModeChange)
-    return () => {
-      window.removeEventListener('storage', handleLocalOnlyModeChange)
-      window.removeEventListener(
-        'localOnlyModeChanged',
-        handleLocalOnlyModeChange,
-      )
-    }
-  }, [activeTab])
-
-  // Auto-enable local-only mode if user has existing local chats and hasn't
-  // explicitly set the preference (matches iOS ChatViewModel behavior)
-  useEffect(() => {
-    if (!isSignedIn || !cloudSyncEnabled || hasUserSetLocalOnlyPreference()) {
-      return
-    }
-    const hasLocalChats = chats.some(
-      (chat) => chat.isLocalOnly && !chat.isBlankChat,
-    )
-    if (hasLocalChats) {
-      setLocalOnlyModeSetting(true)
-      setLocalOnlyModeEnabled(true)
-    }
-  }, [isSignedIn, cloudSyncEnabled, chats])
-
-  // Update blank chat's isLocalOnly when active tab changes
-  useEffect(() => {
-    if (!isSignedIn || !cloudSyncEnabled || !localOnlyModeEnabled) return
-
-    const shouldBeLocal = activeTab === 'local'
-
-    // Only switch to blank chat if we're already on a blank chat
-    // This ensures we don't interrupt the user when they've selected a real chat.
-    // Temporary chats are also blank but must not be replaced here — doing so
-    // would silently exit temporary-chat mode whenever the active tab and the
-    // temp chat's isLocalOnly disagree (which is always, since temp chats
-    // leave isLocalOnly undefined).
-    if (
-      currentChat?.isBlankChat &&
-      !currentChat.isTemporary &&
-      currentChat.isLocalOnly !== shouldBeLocal
-    ) {
-      createNewChat(shouldBeLocal, false)
-    }
-  }, [
-    activeTab,
-    isSignedIn,
-    cloudSyncEnabled,
-    localOnlyModeEnabled,
-    createNewChat,
-    currentChat?.isBlankChat,
-    currentChat?.isLocalOnly,
-    currentChat?.isTemporary,
-  ])
-
   // Detect iOS device
   useEffect(() => {
     if (isClient) {
@@ -576,7 +450,7 @@ export function ChatSidebar({
   }, [isOpen, refreshProjects])
 
   // Track if we're waiting for newly loaded chats to render (prevents scroll jump)
-  const [pendingChatsRender, setPendingChatsRender] = useState(false)
+  const [pendingChatsRender] = useState(false)
 
   // Instead of trying to detect Safari, let's use CSS custom properties
   // that will apply the padding only when needed
@@ -657,35 +531,23 @@ export function ChatSidebar({
     setIsChatHistoryExpanded(false)
   }, [hideScrollbarWhileSectionsAnimate])
 
-  const filteredChats = useMemo(() => {
-    // The incoming `chats` array is already sorted by `sortChats`
-    // (blank-first, then most-recently-updated). We only filter
-    // here; the display order matches the server's pagination so
-    // newly-loaded pages slot in at the bottom without reshuffling.
-    if (isSignedIn && cloudSyncEnabled) {
-      if (localOnlyModeEnabled && activeTab === 'local') {
-        return chats.filter(
-          (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
-        )
-      }
-      return chats.filter(
-        (chat) => !chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
-      )
-    }
-    return chats.filter(
-      (chat) =>
-        (chat as any).isLocalOnly && !chat.projectId && !chat.isBlankChat,
-    )
-  }, [chats, activeTab, isSignedIn, cloudSyncEnabled, localOnlyModeEnabled])
+  const filteredChats = useMemo(
+    () => chats.filter((chat) => !chat.projectId && !chat.isBlankChat),
+    [chats],
+  )
 
   const favoriteChats = useMemo(() => {
     const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
     return pinnedChatIds
       .map((chatId) => chatsById.get(chatId))
       .filter((chat): chat is Chat =>
-        Boolean(chat && isResolvedFavoriteChat(chat)),
+        Boolean(
+          chat &&
+          isResolvedFavoriteChat(chat) &&
+          (isPremium || !chat.projectId),
+        ),
       )
-  }, [chats, pinnedChatIds])
+  }, [chats, isPremium, pinnedChatIds])
 
   const { isFavoriteDropTarget, favoriteDropTargetProps } =
     useFavoriteDropTarget({
@@ -697,10 +559,7 @@ export function ChatSidebar({
       clearDragState,
     })
 
-  const paginatesCloudChats =
-    isSignedIn &&
-    cloudSyncEnabled &&
-    (!localOnlyModeEnabled || activeTab === 'cloud')
+  const paginatesCloudChats = isSignedIn && cloudSyncEnabled && true
   const sortedChats = useMemo(
     () =>
       paginatesCloudChats
@@ -709,8 +568,7 @@ export function ChatSidebar({
     [filteredChats, paginatesCloudChats, visibleCloudChatCount],
   )
   const hasMoreLoadedChats = filteredChats.length > visibleCloudChatCount
-  const canLoadRemoteChats =
-    isInitialChatPageReady && isPaginationInitialized && hasMoreRemote
+  const canLoadRemoteChats = hasMoreRemote
   const shouldShowLoadMore =
     paginatesCloudChats && (hasMoreLoadedChats || canLoadRemoteChats)
 
@@ -718,39 +576,22 @@ export function ChatSidebar({
     setVisibleCloudChatCount(PAGINATION.CHATS_PER_PAGE)
   }, [user?.id, isInitialChatPageReady])
 
-  const loadMoreChats = useCallback(async (): Promise<void> => {
-    if (isLoadingMore || !isSignedIn) return
-
-    if (!hasMoreRemote) {
+  const loadMoreChats = async () => {
+    if (isLoadingMore) return
+    if (hasMoreLoadedChats) {
       setVisibleCloudChatCount((count) => count + PAGINATION.CHATS_PER_PAGE)
       return
     }
-
+    setIsLoadingMore(true)
     try {
-      const result = await loadMorePage()
-      if (!result) return
-
-      setPendingChatsRender(true)
-      try {
-        await onChatsUpdated?.()
-      } catch (error) {
-        logError('Failed to reload chats after pagination', error, {
-          component: 'ChatSidebar',
-          action: 'loadMoreChats',
-        })
-      } finally {
-        setVisibleCloudChatCount((count) => count + PAGINATION.CHATS_PER_PAGE)
-        setPendingChatsRender(false)
-      }
-    } catch (error) {
-      setPendingChatsRender(false)
-      logError('Failed to load more chats', error, {
-        component: 'ChatSidebar',
-        action: 'loadMoreChats',
-      })
+      await onLoadMore?.()
+      setVisibleCloudChatCount((count) => count + PAGINATION.CHATS_PER_PAGE)
+    } catch (cause) {
+      logError('Unable to load more chats', cause, { component: 'ChatSidebar' })
+    } finally {
+      setIsLoadingMore(false)
     }
-  }, [hasMoreRemote, isLoadingMore, isSignedIn, loadMorePage, onChatsUpdated])
-
+  }
   // Prefer backing up the existing key with a passkey (PRF-capable devices
   // must stay in the passkey-only flow); fall back to the manual cloud-sync
   // setup modal only when passkey setup is unavailable or fails.
@@ -778,11 +619,8 @@ export function ChatSidebar({
   // the cloud tab: local-only chats never reach the enclave, so the
   // index cannot know about them.
   const [chatSearchTerm, setChatSearchTerm] = useState('')
-  const searchEnabled =
-    !!isSignedIn &&
-    cloudSyncEnabled &&
-    !(localOnlyModeEnabled && activeTab === 'local')
-  const chatSearch = useChatSearch(chatSearchTerm, searchEnabled)
+  const searchEnabled = !!isSignedIn && cloudSyncEnabled && !false
+  const chatSearch = useChatSearch(chatSearchTerm, searchEnabled, isPremium)
   const isSearchActive = searchEnabled && chatSearchTerm.trim().length > 0
 
   const searchResultChats = useMemo((): ChatItemData[] => {
@@ -801,6 +639,7 @@ export function ChatSidebar({
       title: r.title,
       updatedAt: r.updatedAt,
       messageCount: r.messageCount,
+      projectId: r.projectId ?? undefined,
     }))
   }, [
     isSearchActive,
@@ -829,66 +668,6 @@ export function ChatSidebar({
     },
     [chats, handleChatSelect, onOpenChatById],
   )
-
-  const handleCloudSyncToggle = async (enabled: boolean) => {
-    if (enabled) {
-      // Check if encryption key exists
-      if (!encryptionService.getKey()) {
-        if (await trySetupPasskeyFirst()) return
-
-        // Turn on the toggle visually (but don't persist yet)
-        setCloudSyncEnabled(true)
-
-        // Show the cloud sync setup modal
-        if (onCloudSyncSetupClick) {
-          onCloudSyncSetupClick()
-        }
-        return
-      }
-
-      // If key exists, proceed with enabling
-      setCloudSyncEnabled(true)
-      setCloudSyncEnabledSetting(true)
-
-      // Clear the explicit disable flag when re-enabling
-      localStorage.removeItem(SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED)
-    } else {
-      // Disabling cloud sync
-      setCloudSyncEnabled(false)
-      setCloudSyncEnabledSetting(false)
-
-      // Mark that user explicitly disabled cloud sync (to prevent auto-enable)
-      localStorage.setItem(SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED, 'true')
-
-      try {
-        const deletedCount = await chatStorage.deleteAllNonLocalChats()
-        logInfo(
-          `Deleted ${deletedCount} synced chats when disabling cloud sync`,
-          {
-            component: 'ChatSidebar',
-            action: 'handleCloudSyncToggle',
-          },
-        )
-        if (deletedCount > 0 && onChatsUpdated) {
-          onChatsUpdated()
-        }
-      } catch (error) {
-        logInfo('Failed to delete synced chats', {
-          component: 'ChatSidebar',
-          action: 'handleCloudSyncToggle',
-          metadata: { error },
-        })
-      }
-    }
-
-    if (isClient) {
-      window.dispatchEvent(
-        new CustomEvent(CLOUD_SYNC_SETTING_CHANGED_EVENT, {
-          detail: { enabled },
-        }),
-      )
-    }
-  }
 
   // Check if mobile
   const isMobile = windowWidth < MOBILE_BREAKPOINT
@@ -945,7 +724,7 @@ export function ChatSidebar({
                   onClick={(e) => {
                     if (!isPlainPrimaryClick(e)) return
                     e.preventDefault()
-                    createNewChat(activeTab === 'local', true)
+                    createNewChat(false, true)
                   }}
                   className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
@@ -1163,7 +942,7 @@ export function ChatSidebar({
           )}
         >
           {/* Message for non-premium users (signed in or not) */}
-          {!isPremium && (
+          {upsellVariant && (
             <div
               className={cn(
                 'relative z-10 m-2 flex-none rounded-lg border border-border-subtle bg-surface-chat p-4 transition-all duration-300',
@@ -1173,24 +952,43 @@ export function ChatSidebar({
                 <h4 className="mb-3 text-sm font-semibold text-content-primary">
                   Get more out of Tinfoil Chat
                 </h4>
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-3 text-xs text-content-secondary">
-                    <PiMicrophone className="h-4 w-4 flex-shrink-0 text-content-muted" />
-                    <span>Speech-to-text voice input</span>
-                  </div>
+                {upsellVariant === 'premium' ? (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-3 text-xs text-content-secondary">
+                      <PiMicrophone className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <span>Speech-to-text voice input</span>
+                    </div>
 
-                  <div className="flex items-center gap-3 text-xs text-content-secondary">
-                    <PiSparkle className="h-4 w-4 flex-shrink-0 text-content-muted" />
-                    <span>No daily request limits</span>
-                  </div>
+                    <div className="flex items-center gap-3 text-xs text-content-secondary">
+                      <PiSparkle className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <span>No daily request limits</span>
+                    </div>
 
-                  <div className="flex items-center gap-3 text-xs text-content-secondary">
-                    <PiFolder className="h-4 w-4 flex-shrink-0 text-content-muted" />
-                    <span>Create projects to chat with files</span>
+                    <div className="flex items-center gap-3 text-xs text-content-secondary">
+                      <PiFolder className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <span>Create projects to chat with files</span>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-3 text-xs text-content-secondary">
+                      <IoChatbubblesOutline className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <span>Keep your chat history</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs text-content-secondary">
+                      <CloudIcon className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <span>Encrypted sync across devices</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-xs text-content-secondary">
+                      <PiPushPin className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <span>Save your favorite chats</span>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4">
-                  {isSignedIn ? (
+                  {upsellVariant === 'premium' ? (
                     <>
                       <button
                         type="button"
@@ -1198,30 +996,14 @@ export function ChatSidebar({
                           void handleUpgradeToPro()
                         }}
                         disabled={upgradeLoading}
-                        className={`inline-flex items-center gap-1 text-sm font-medium transition-colors ${
-                          isDarkMode
-                            ? 'text-brand-accent-light hover:text-brand-accent-light/80'
-                            : 'text-brand-accent-dark hover:text-brand-accent-dark/80'
-                        } ${upgradeLoading ? 'cursor-not-allowed opacity-70' : ''}`}
+                        className={cn(
+                          SIDEBAR_CTA_CLASS_NAME,
+                          upgradeLoading && 'cursor-not-allowed opacity-70',
+                        )}
                       >
                         {upgradeLoading
                           ? 'Redirecting…'
                           : 'Subscribe to Premium'}
-                        {!upgradeLoading && (
-                          <svg
-                            className="h-3 w-3"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M9 5l7 7-7 7"
-                            />
-                          </svg>
-                        )}
                       </button>
                       {upgradeError && (
                         <p className="mt-2 text-xs text-destructive">
@@ -1232,15 +1014,18 @@ export function ChatSidebar({
                   ) : (
                     <div className="space-y-2">
                       <Link
-                        href="/signin"
-                        className="relative block w-full cursor-pointer rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90"
+                        href={`/signup?redirect_url=${authRedirectUrl}`}
+                        className={cn(
+                          SIDEBAR_CTA_CLASS_NAME,
+                          'relative cursor-pointer',
+                        )}
                       >
-                        Subscribe to Premium
+                        Create account
                       </Link>
                       <p className="text-center text-xs text-content-secondary">
-                        Already subscribed?{' '}
+                        Already signed up?{' '}
                         <Link
-                          href="/signin"
+                          href={`/signin?redirect_url=${authRedirectUrl}`}
                           className="cursor-pointer underline hover:text-content-primary"
                         >
                           Log in
@@ -1254,7 +1039,7 @@ export function ChatSidebar({
           )}
 
           {/* Divider after boxes */}
-          {!isPremium && (
+          {upsellVariant && (
             <div className="relative z-10 border-b border-border-subtle" />
           )}
 
@@ -1304,15 +1089,6 @@ export function ChatSidebar({
             </div>
           )}
 
-          {isSignedIn && cloudSyncEnabled && onManualSync && (
-            <SidebarSyncButton
-              isDarkMode={isDarkMode}
-              isSyncing={isSyncing}
-              syncFailed={syncFailed}
-              onSync={onManualSync}
-            />
-          )}
-
           {/* New Chat button */}
           <div className="relative z-10 flex-none px-2 py-2">
             <Link
@@ -1322,7 +1098,7 @@ export function ChatSidebar({
                 if (!isPlainPrimaryClick(e)) return
                 e.preventDefault()
                 if (isCurrentNewChat) return
-                createNewChat(activeTab === 'local', true)
+                createNewChat(false, true)
               }}
               className={cn(
                 'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
@@ -1816,16 +1592,6 @@ export function ChatSidebar({
                                       onMoveChatToProject &&
                                       !project.decryptionFailed
                                     ) {
-                                      // Convert local chat to cloud first if needed
-                                      const chat = chats.find(
-                                        (c) => c.id === chatId,
-                                      )
-                                      if (
-                                        chat?.isLocalOnly &&
-                                        onConvertChatToCloud
-                                      ) {
-                                        await onConvertChatToCloud(chatId)
-                                      }
                                       await onMoveChatToProject(
                                         chatId,
                                         project.id,
@@ -1996,197 +1762,12 @@ export function ChatSidebar({
                   className={cn('overflow-hidden', expandedPanelClass)}
                 >
                   {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
-                  {isSignedIn && cloudSyncEnabled && localOnlyModeEnabled && (
-                    <div
-                      className="relative mx-4 mt-2 flex rounded-lg bg-surface-chat p-1"
-                      role="tablist"
-                      aria-label="Chat storage"
-                    >
-                      {/* Sliding background indicator */}
-                      <div
-                        aria-hidden="true"
-                        className={cn(
-                          'absolute inset-y-1 w-[calc(50%-4px)] rounded-md shadow-sm transition-all duration-200 ease-in-out',
-                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          activeTab === 'cloud'
-                            ? 'translate-x-0'
-                            : 'translate-x-full',
-                        )}
-                        style={{ left: '4px' }}
-                      />
-
-                      <button
-                        id="chat-cloud-tab"
-                        role="tab"
-                        aria-selected={activeTab === 'cloud'}
-                        aria-controls="chat-storage-panel"
-                        onClick={() => setActiveTab('cloud')}
-                        onDragOver={(e) => {
-                          if (
-                            e.dataTransfer.types.includes(
-                              'application/x-chat-id',
-                            ) &&
-                            onConvertChatToCloud
-                          ) {
-                            e.preventDefault()
-                            if (draggingChatSource !== 'favorites') {
-                              e.dataTransfer.dropEffect = 'move'
-                              setDropTargetTab('cloud')
-                            }
-                          }
-                        }}
-                        onDragEnter={(e) => {
-                          if (
-                            e.dataTransfer.types.includes(
-                              'application/x-chat-id',
-                            ) &&
-                            onConvertChatToCloud
-                          ) {
-                            e.preventDefault()
-                            if (draggingChatSource !== 'favorites') {
-                              setDropTargetTab('cloud')
-                              setActiveTab('cloud')
-                            }
-                          }
-                        }}
-                        onDragLeave={() => {
-                          if (dropTargetTab === 'cloud') {
-                            setDropTargetTab(null)
-                          }
-                        }}
-                        onDrop={async (e) => {
-                          e.preventDefault()
-                          const chatId = e.dataTransfer.getData(
-                            'application/x-chat-id',
-                          )
-                          if (chatId) {
-                            const favoriteDropConsumed = consumeFavoriteDrop({
-                              source: draggingChatSource,
-                              chatId,
-                              pinnedChatIds,
-                              onRemoveFavorite,
-                            })
-                            if (
-                              !favoriteDropConsumed &&
-                              draggingChatFromProjectId &&
-                              onRemoveChatFromProject
-                            ) {
-                              // Chat from project is already cloud, just remove from project
-                              await onRemoveChatFromProject(chatId)
-                            } else if (
-                              !favoriteDropConsumed &&
-                              onConvertChatToCloud
-                            ) {
-                              // Only convert if dragging from local (not from project)
-                              await onConvertChatToCloud(chatId)
-                            }
-                          }
-                          clearDragState()
-                        }}
-                        className={cn(
-                          'relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                          dropTargetTab === 'cloud'
-                            ? isDarkMode
-                              ? 'bg-white/10'
-                              : 'bg-gray-200/30'
-                            : activeTab === 'cloud'
-                              ? isDarkMode
-                                ? 'text-white'
-                                : 'text-content-primary'
-                              : 'text-content-muted hover:text-content-secondary',
-                        )}
-                      >
-                        <CloudIcon className="h-3.5 w-3.5" />
-                        Cloud
-                      </button>
-                      <button
-                        id="chat-local-tab"
-                        role="tab"
-                        aria-selected={activeTab === 'local'}
-                        aria-controls="chat-storage-panel"
-                        onClick={() => setActiveTab('local')}
-                        onDragOver={(e) => {
-                          if (
-                            e.dataTransfer.types.includes(
-                              'application/x-chat-id',
-                            ) &&
-                            onConvertChatToLocal
-                          ) {
-                            e.preventDefault()
-                            if (draggingChatSource !== 'favorites') {
-                              e.dataTransfer.dropEffect = 'move'
-                              setDropTargetTab('local')
-                            }
-                          }
-                        }}
-                        onDragEnter={(e) => {
-                          if (
-                            e.dataTransfer.types.includes(
-                              'application/x-chat-id',
-                            ) &&
-                            onConvertChatToLocal
-                          ) {
-                            e.preventDefault()
-                            if (draggingChatSource !== 'favorites') {
-                              setActiveTab('local')
-                              setDropTargetTab('local')
-                            }
-                          }
-                        }}
-                        onDragLeave={() => {
-                          if (dropTargetTab === 'local') {
-                            setDropTargetTab(null)
-                          }
-                        }}
-                        onDrop={async (e) => {
-                          e.preventDefault()
-                          const chatId = e.dataTransfer.getData(
-                            'application/x-chat-id',
-                          )
-                          const favoriteDropConsumed = chatId
-                            ? consumeFavoriteDrop({
-                                source: draggingChatSource,
-                                chatId,
-                                pinnedChatIds,
-                                onRemoveFavorite,
-                              })
-                            : false
-                          if (
-                            !favoriteDropConsumed &&
-                            chatId &&
-                            onConvertChatToLocal
-                          ) {
-                            // convertChatToLocal also clears projectId
-                            await onConvertChatToLocal(chatId)
-                          }
-                          clearDragState()
-                        }}
-                        className={cn(
-                          'relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                          dropTargetTab === 'local'
-                            ? isDarkMode
-                              ? 'bg-white/10'
-                              : 'bg-gray-200/30'
-                            : activeTab === 'local'
-                              ? isDarkMode
-                                ? 'text-white'
-                                : 'text-content-primary'
-                              : 'text-content-muted hover:text-content-secondary',
-                        )}
-                      >
-                        <CiFloppyDisk className="h-3.5 w-3.5" />
-                        Local
-                      </button>
-                    </div>
-                  )}
 
                   {/* Description text - show when NOT displaying the cloud sync box */}
                   {(!isSignedIn || cloudSyncEnabled) && (
                     <div className="font-base mx-4 mt-1 min-h-[52px] pb-3 font-aeonik-fono text-xs text-content-muted">
                       {!isSignedIn ? (
                         'Your chats are stored temporarily in this browser tab. Create an account for persistent storage.'
-                      ) : localOnlyModeEnabled && activeTab === 'local' ? (
-                        "Local chats are stored only on this device and won't sync across devices."
                       ) : (
                         <>
                           Your chats are encrypted and synced to the cloud. The
@@ -2265,11 +1846,7 @@ export function ChatSidebar({
                   <div
                     id="chat-storage-panel"
                     role="tabpanel"
-                    aria-labelledby={
-                      activeTab === 'cloud'
-                        ? 'chat-cloud-tab'
-                        : 'chat-local-tab'
-                    }
+                    aria-labelledby={'chat-cloud-tab'}
                     onDragOver={(e) => {
                       if (
                         e.dataTransfer.types.includes('application/x-chat-id')
@@ -2311,25 +1888,17 @@ export function ChatSidebar({
                           draggingChatFromProjectId
                         ) {
                           // Dragging from project - remove from project
-                          if (activeTab === 'local' && onConvertChatToLocal) {
-                            await onConvertChatToLocal(chatId)
-                          } else if (onRemoveChatFromProject) {
+                          if (onRemoveChatFromProject) {
                             await onRemoveChatFromProject(chatId)
                           }
                         } else if (
                           chat?.isLocalOnly &&
-                          activeTab === 'cloud' &&
+                          true &&
                           onConvertChatToCloud
                         ) {
                           // Local chat dropped on cloud tab area - convert to cloud
                           await onConvertChatToCloud(chatId)
-                        } else if (
-                          !chat?.isLocalOnly &&
-                          activeTab === 'local' &&
-                          onConvertChatToLocal
-                        ) {
-                          // Cloud chat dropped on local tab area - convert to local
-                          await onConvertChatToLocal(chatId)
+                        } else {
                         }
                       }
                       setIsDropTargetChatList(false)
@@ -2407,11 +1976,6 @@ export function ChatSidebar({
                         onMoveToProject={
                           onMoveChatToProject
                             ? async (chatId, projectId) => {
-                                // Convert local chat to cloud first if needed
-                                const chat = chats.find((c) => c.id === chatId)
-                                if (chat?.isLocalOnly && onConvertChatToCloud) {
-                                  await onConvertChatToCloud(chatId)
-                                }
                                 await onMoveChatToProject(chatId, projectId)
                               }
                             : undefined
@@ -2441,7 +2005,16 @@ export function ChatSidebar({
                         pinnedChatIds={pinnedChatIds}
                         onTogglePin={onToggleFavorite}
                         emptyState={
-                          isSearchActive ? (
+                          isSearchActive && chatSearch.failed ? (
+                            <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
+                              <p className="text-sm text-content-muted">
+                                Search is unavailable right now
+                              </p>
+                              <p className="mt-1 text-balance text-xs text-content-muted">
+                                Please try again in a moment
+                              </p>
+                            </div>
+                          ) : isSearchActive ? (
                             <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
                               <p className="text-sm text-content-muted">
                                 No matching chats
@@ -2452,16 +2025,6 @@ export function ChatSidebar({
                                   will fill in shortly
                                 </p>
                               )}
-                            </div>
-                          ) : activeTab === 'local' ? (
-                            <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
-                              <p className="text-sm text-content-muted">
-                                No local chats yet
-                              </p>
-                              <p className="mt-1 text-xs text-content-muted">
-                                Disable cloud sync in settings to create
-                                local-only chats
-                              </p>
                             </div>
                           ) : undefined
                         }
@@ -2517,8 +2080,7 @@ export function ChatSidebar({
                               )}
                               {isSignedIn &&
                                 !shouldShowLoadMore &&
-                                !hasMoreRemote &&
-                                hasAttemptedLoadMore && (
+                                !hasMoreRemote && (
                                   <div className="px-3 py-2 text-center text-xs text-content-muted">
                                     No more chats
                                   </div>

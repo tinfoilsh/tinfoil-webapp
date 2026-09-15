@@ -8,16 +8,18 @@ import {
   SETTINGS_PASSKEY_RECOVERY_DISMISSED,
   SETTINGS_PASSKEY_SETUP_WARNING_DISMISSED,
 } from '@/constants/storage-keys'
-import type { CloudKeyAuthorizationMode } from '@/services/cloud/cloud-key-authorization'
+import { encryptionService } from '@/services/encryption/encryption-service'
+import { keyCurrent as enclaveKeyCurrent } from '@/services/harness/keys'
+import type { CloudKeyAuthorizationMode } from '@/services/keys/cloud-key-authorization'
 import {
   authorizeCurrentPrimaryKeyOrThrow,
   getCurrentCloudKeyAuthorizationMode,
-} from '@/services/cloud/cloud-key-authorization'
+} from '@/services/keys/cloud-key-authorization'
 import {
   inspectRemoteEncryptedState,
   validateCurrentPrimaryKey,
-} from '@/services/cloud/cloud-key-preflight'
-import { encryptionService } from '@/services/encryption/encryption-service'
+} from '@/services/keys/cloud-key-preflight'
+import { passkeyEvents } from '@/services/keys/passkey-events'
 import {
   addWrappedKeyForCurrentKey,
   createAndWrapTinfoilKey,
@@ -37,9 +39,6 @@ import {
   wrapTinfoilKeyBundle,
 } from '@/services/passkey'
 import { isPrfSupported } from '@/services/passkey/prf-support'
-import { passkeyEvents } from '@/services/sync-enclave/passkey-events'
-import { keyCurrent as enclaveKeyCurrent } from '@/services/sync-enclave/sync-api'
-import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import type { useUser } from '@clerk/nextjs'
 import type { PRFResult } from '@tinfoilsh/passkey-kit'
@@ -101,6 +100,11 @@ type StoredPasskeyBackup = {
 type GeneratedPasskeyKey = {
   key: string
   credentialId: string
+}
+
+type PasskeyInitializationSnapshot = {
+  userId: string
+  encryptionKey: string | null
 }
 
 type ApplyRecoveredKeyBundleResult =
@@ -237,6 +241,11 @@ const backupWarningDismissedFlag = createStorageFlag(
   SETTINGS_BACKUP_WARNING_DISMISSED,
 )
 
+const passkeyBackedUpFlag = createStorageFlag(
+  () => localStorage,
+  SECRET_PASSKEY_BACKED_UP,
+)
+
 export function usePasskeyBackup({
   encryptionKey,
   initialized,
@@ -260,9 +269,12 @@ export function usePasskeyBackup({
   const passkeyFlowInProgressRef = useRef(false)
   const userRef = useRef(user)
   userRef.current = user
+  const encryptionKeyRef = useRef(encryptionKey)
+  encryptionKeyRef.current = encryptionKey
   const onEncryptionKeyRecoveredRef = useRef(onEncryptionKeyRecovered)
   onEncryptionKeyRecoveredRef.current = onEncryptionKeyRecovered
-  const hasInitializedPasskeyRef = useRef(false)
+  const initializedPasskeySnapshotRef =
+    useRef<PasskeyInitializationSnapshot | null>(null)
   const previousUserIdRef = useRef<string | null | undefined>(undefined)
 
   // Cleanup on unmount
@@ -291,7 +303,6 @@ export function usePasskeyBackup({
       return
     }
     if (currentUserId !== null && currentUserId !== previousUserIdRef.current) {
-      hasInitializedPasskeyRef.current = false
       passkeyRecoveryDismissedFlag.clear()
       firstTimePromptDismissedFlag.clear()
       setupWarningDismissedFlag.clear()
@@ -335,7 +346,7 @@ export function usePasskeyBackup({
   /**
    * Create a PRF passkey and encrypt the given key bundle to the backend.
    * Returns true if the passkey was created and keys stored, false if the user
-   * cancelled or PRF wasn't supported, throws on unexpected errors.
+   * cancelled, and throws when setup cannot proceed or fails unexpectedly.
    */
   const createAndStorePasskeyBackup = async (
     userInfo: { userId: string; userName: string; displayName: string },
@@ -465,7 +476,6 @@ export function usePasskeyBackup({
     syncVersion: number | null
     bundleVersion: number
   }): void => {
-    setCloudSyncEnabled(true)
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
     if (recovery.syncVersion !== null) {
       setLocalSyncVersion(recovery.credentialId, recovery.syncVersion)
@@ -536,7 +546,6 @@ export function usePasskeyBackup({
    * setupFirstTimePasskeyUser (init effect) and setupNewKeySplit (UI-triggered).
    */
   const applyNewPasskeyKey = (): void => {
-    setCloudSyncEnabled(true)
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
 
     if (isMountedRef.current) {
@@ -959,13 +968,34 @@ export function usePasskeyBackup({
 
   // --- Passkey initialization (runs once after cloud sync init completes) ---
   useEffect(() => {
-    if (!initialized || !isSignedIn || hasInitializedPasskeyRef.current) return
-    hasInitializedPasskeyRef.current = true
+    const initializationUserId = user?.id
+    const initializationEncryptionKey = encryptionKey
+    if (!initialized || !isSignedIn || !initializationUserId) {
+      return
+    }
+    const initializedSnapshot = initializedPasskeySnapshotRef.current
+    // The same key was either initialized for this user or is still awaiting
+    // account-scoped cleanup from the previous user.
+    if (initializedSnapshot?.encryptionKey === initializationEncryptionKey) {
+      return
+    }
+    const initializationSnapshot: PasskeyInitializationSnapshot = {
+      userId: initializationUserId,
+      encryptionKey: initializationEncryptionKey,
+    }
+    initializedPasskeySnapshotRef.current = initializationSnapshot
+
+    const isCurrentInitialization = () =>
+      isMountedRef.current &&
+      initializedPasskeySnapshotRef.current === initializationSnapshot &&
+      userRef.current?.id === initializationSnapshot.userId &&
+      encryptionKeyRef.current === initializationSnapshot.encryptionKey
 
     const initializePasskey = async () => {
       const prfSupported = await isPrfSupported()
+      if (!isCurrentInitialization()) return
 
-      if (encryptionKey) {
+      if (initializationEncryptionKey) {
         // A local key that derives a different key id than the
         // enclave's registered one can never write or migrate — this
         // device is stale and needs to converge onto the registered
@@ -974,6 +1004,7 @@ export function usePasskeyBackup({
         // key entry when it was adopted bundleless (e.g. by the
         // migration path on another device).
         const validation = await validateCurrentPrimaryKey()
+        if (!isCurrentInitialization()) return
         if (!validation.canWrite && validation.remoteState === 'exists') {
           let hasRemoteBundles = false
           try {
@@ -983,7 +1014,7 @@ export function usePasskeyBackup({
             // Transient enclave failure: fall through to the manual
             // prompt, which is dismissible and retried next visit.
           }
-          if (!isMountedRef.current) return
+          if (!isCurrentInitialization()) return
           if (hasRemoteBundles && prfSupported) {
             if (!passkeyRecoveryDismissedFlag.isSet()) {
               setState((prev) => ({
@@ -1003,7 +1034,7 @@ export function usePasskeyBackup({
           }
           return
         }
-        if (!isMountedRef.current) return
+        if (!isCurrentInitialization()) return
       }
 
       if (!prfSupported) {
@@ -1013,9 +1044,9 @@ export function usePasskeyBackup({
         // offer the manual-backup fallback. If remote data exists, they need
         // the manual recovery flow to decrypt it. Users who already have a
         // local key stay silent — local storage works fine even without PRF.
-        if (!encryptionKey) {
+        if (!initializationEncryptionKey) {
           const remoteState = await inspectRemoteEncryptedState()
-          if (!isMountedRef.current) return
+          if (!isCurrentInitialization()) return
           if (remoteState === 'empty') {
             if (!backupWarningDismissedFlag.isSet()) {
               setState((prev) => ({
@@ -1057,10 +1088,11 @@ export function usePasskeyBackup({
         return
       }
 
-      if (encryptionKey) {
+      if (initializationEncryptionKey) {
         // User has local keys — check for existing backup
         const localCredentialId = getLocalPasskeyCredentialId()
         const deviceState = await getPasskeyDeviceState(localCredentialId)
+        if (!isCurrentInitialization()) return
 
         if (deviceState === 'this-device') {
           // This device already has its own bundle — show green badge,
@@ -1095,13 +1127,13 @@ export function usePasskeyBackup({
           deviceState === 'empty' &&
           !passkeyFlowInProgressRef.current
         ) {
-          if (isMountedRef.current) {
-            setState((prev) => ({
-              ...prev,
-              passkeySetupAvailable: true,
-              passkeyAddDeviceAvailable: false,
-            }))
-          }
+          passkeyBackedUpFlag.clear()
+          setState((prev) => ({
+            ...prev,
+            passkeySetupAvailable: true,
+            passkeyAddDeviceAvailable: false,
+            passkeyActive: false,
+          }))
         }
       } else {
         // No localStorage keys — check backend state but do not auto-prompt
@@ -1109,6 +1141,7 @@ export function usePasskeyBackup({
         // UI state flag instead and let the user trigger the WebAuthn call
         // explicitly from a confirmation or recovery modal.
         const credentialState = await getPasskeyCredentialState()
+        if (!isCurrentInitialization()) return
 
         if (credentialState === 'exists') {
           // If the user explicitly dismissed the recovery prompt on a
@@ -1125,6 +1158,7 @@ export function usePasskeyBackup({
           }
         } else if (credentialState === 'empty') {
           const remoteState = await inspectRemoteEncryptedState()
+          if (!isCurrentInitialization()) return
 
           if (remoteState === 'empty') {
             if (isMountedRef.current && !firstTimePromptDismissedFlag.isSet()) {
@@ -1183,7 +1217,7 @@ export function usePasskeyBackup({
     }
 
     initializePasskey()
-  }, [initialized, isSignedIn, encryptionKey])
+  }, [initialized, isSignedIn, encryptionKey, user?.id])
 
   // Clear the persistent "recovery dismissed" flag and the session
   // first-time-prompt flag once the user has a key again (via passkey
@@ -1366,7 +1400,8 @@ export function usePasskeyBackup({
    * generate a key in memory, create a passkey to back it up, and persist the
    * key only after passkey creation succeeds. Invoked from the first-time
    * confirmation modal — we intentionally do not auto-trigger the native
-   * passkey dialog on page load.
+   * passkey dialog on page load. Expected provider and timeout errors are
+   * rethrown so the modal can explain how the user can recover.
    */
   const setupFirstTimePasskey = useCallback(async (): Promise<boolean> => {
     setupWarningDismissedFlag.clear()
@@ -1481,6 +1516,12 @@ export function usePasskeyBackup({
         })
       }
       markFailedAndClosePrompt()
+      if (
+        error instanceof PrfNotSupportedError ||
+        error instanceof PasskeyTimeoutError
+      ) {
+        throw error
+      }
       return false
     }
   }, [applyRecoveredKeyBundle, generateKeyWithPasskeyBackup])
@@ -1634,9 +1675,18 @@ export function usePasskeyBackup({
   const refreshBundleState = useCallback(async (): Promise<void> => {
     if (!encryptionKey) return
     if (passkeyFlowInProgressRef.current) return
+    const refreshUserId = userRef.current?.id
+    const refreshEncryptionKey = encryptionKey
+    if (!refreshUserId) return
     const localCredentialId = getLocalPasskeyCredentialId()
     const deviceState = await getPasskeyDeviceState(localCredentialId)
-    if (!isMountedRef.current) return
+    if (
+      !isMountedRef.current ||
+      userRef.current?.id !== refreshUserId ||
+      encryptionKeyRef.current !== refreshEncryptionKey
+    ) {
+      return
+    }
 
     if (deviceState === 'this-device') {
       localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
@@ -1655,10 +1705,12 @@ export function usePasskeyBackup({
         passkeyActive: false,
       }))
     } else if (deviceState === 'empty') {
+      passkeyBackedUpFlag.clear()
       setState((prev) => ({
         ...prev,
         passkeySetupAvailable: true,
         passkeyAddDeviceAvailable: false,
+        passkeyActive: false,
       }))
     }
   }, [encryptionKey])
@@ -1781,7 +1833,6 @@ export function usePasskeyBackup({
         if (!wrappedKeys) return false
         await addWrappedKeyForCurrentKey({
           wrappedKeys,
-          keyBundle,
           cek: cekBytes,
           keyIdHex,
         })

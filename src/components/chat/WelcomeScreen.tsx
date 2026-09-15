@@ -1,6 +1,10 @@
 import { Favicon } from '@/components/ui/favicon'
 import { Modal, ModalTitle } from '@/components/ui/modal'
-import { findSelectableModel, type BaseModel } from '@/config/models'
+import {
+  getSelectedModelLabel,
+  type AutoIntelligenceLevelId,
+  type BaseModel,
+} from '@/config/models'
 import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
 import { useUser } from '@clerk/nextjs'
 import { motion } from 'framer-motion'
@@ -8,10 +12,10 @@ import React, { memo, useEffect, useRef, useState } from 'react'
 import { BiSolidLock } from 'react-icons/bi'
 import { ChatInput } from './chat-input'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
-import { CONSTANTS } from './constants'
 import { DataFlowDiagram } from './DataFlowDiagram'
 import { type ReasoningEffort } from './hooks/use-reasoning-effort'
 import { ModelSelector } from './model-selector'
+import { ModelSelectorTriggerLabel } from './model-selector-trigger-label'
 import type { PromptPreset } from './prompts/types'
 import type { ProcessedDocument } from './renderers/types'
 import type { LabelType, LoadingState } from './types'
@@ -205,6 +209,8 @@ interface WelcomeScreenProps {
   setReasoningEffort?: (effort: ReasoningEffort) => void
   thinkingEnabled?: boolean
   setThinkingEnabled?: (enabled: boolean) => void
+  autoIntelligence: AutoIntelligenceLevelId
+  setAutoIntelligence: (level: AutoIntelligenceLevelId) => void
   codeExecutionEnabled?: boolean
   onCodeExecutionToggle?: () => void
   isTemporaryMode?: boolean
@@ -240,6 +246,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   setReasoningEffort,
   thinkingEnabled,
   setThinkingEnabled,
+  autoIntelligence,
+  setAutoIntelligence,
   codeExecutionEnabled,
   onCodeExecutionToggle,
   isTemporaryMode,
@@ -321,7 +329,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
       <div className="flex w-full justify-center">
         <div className="w-full max-w-2xl">
           <motion.h1
-            className="flex items-center justify-center gap-3 text-2xl font-medium tracking-tight text-content-primary md:justify-start md:text-3xl"
+            className="flex items-center justify-center gap-3 text-2xl font-medium tracking-tight text-content-primary md:text-3xl"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{
@@ -335,7 +343,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
 
           {/* Privacy explainer */}
           <motion.div
-            className="mt-3"
+            className="mt-4 flex justify-center"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{
@@ -347,7 +355,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
             <button
               type="button"
               onClick={() => setIsPrivacyOpen(true)}
-              className="group flex w-full items-center justify-center gap-1.5 py-1.5 text-sm text-content-secondary transition-colors hover:text-content-primary sm:gap-2 sm:text-base md:justify-start"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
             >
               <BiSolidLock
                 className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
@@ -401,7 +409,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
             {/* Centered Chat Input - Desktop only */}
             {onSubmit && input !== undefined && setInput && (
               <motion.div
-                className="mt-8 hidden md:block"
+                className="hidden md:block"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{
@@ -425,13 +433,6 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   removeDocument={removeDocument}
                   isPremium={isPremium}
                   hasMessages={false}
-                  audioModel={
-                    (
-                      models?.find(
-                        (m) => m.modelName === CONSTANTS.DEFAULT_AUDIO_MODEL,
-                      ) || models?.find((m) => m.type === 'audio')
-                    )?.modelName
-                  }
                   modelSelectorButton={
                     models &&
                     selectedModel &&
@@ -443,7 +444,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                           data-model-selector
                           aria-haspopup="menu"
                           aria-expanded={expandedLabel === 'model'}
-                          aria-label={`Current model ${findSelectableModel(selectedModel, models)?.name ?? ''}`}
+                          aria-label={`Current model ${getSelectedModelLabel(selectedModel, models, autoIntelligence) ?? ''}`}
                           onClick={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
@@ -453,34 +454,12 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                           }}
                           className="flex items-center gap-1 py-1.5 text-content-secondary transition-colors hover:text-content-primary"
                         >
-                          {(() => {
-                            const model = findSelectableModel(
-                              selectedModel,
-                              models,
-                            )
-                            if (!model) return null
-                            return (
-                              <>
-                                <span className="text-xs font-medium">
-                                  {model.name}
-                                </span>
-                                <svg
-                                  className={`h-3 w-3 transition-transform ${expandedLabel === 'model' ? 'rotate-180' : ''}`}
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                  aria-hidden="true"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M19 9l-7 7-7-7"
-                                  />
-                                </svg>
-                              </>
-                            )
-                          })()}
+                          <ModelSelectorTriggerLabel
+                            selectedModel={selectedModel}
+                            models={models}
+                            autoIntelligence={autoIntelligence}
+                            isOpen={expandedLabel === 'model'}
+                          />
                         </button>
 
                         {expandedLabel === 'model' && handleModelSelect && (
@@ -494,6 +473,8 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                             onEffortChange={setReasoningEffort}
                             thinkingEnabled={thinkingEnabled}
                             onThinkingEnabledChange={setThinkingEnabled}
+                            autoIntelligence={autoIntelligence}
+                            onAutoIntelligenceChange={setAutoIntelligence}
                           />
                         )}
                       </div>
@@ -523,7 +504,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                 transition={{
                   duration: 0.5,
                   ease: 'easeOut',
-                  delay: 0.45,
+                  delay: 0.4,
                 }}
               >
                 <PromptPresetSuggestions

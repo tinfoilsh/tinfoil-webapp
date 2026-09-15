@@ -1,7 +1,6 @@
 'use client'
 
-import { ChatInterface } from '@/components/chat'
-import { ProjectProvider } from '@/components/project'
+import { PremiumProjectRoute } from '@/components/project/premium-project-route'
 import { useRouter } from 'next/router'
 
 export default function ProjectPage() {
@@ -11,9 +10,7 @@ export default function ProjectPage() {
 
   return (
     <div className="h-screen font-aeonik">
-      <ProjectProvider initialProjectId={projectId}>
-        <ChatInterface initialProjectId={projectId} />
-      </ProjectProvider>
+      <PremiumProjectRoute projectId={projectId} />
     </div>
   )
 }

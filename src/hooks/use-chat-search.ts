@@ -1,98 +1,57 @@
-import {
-  resolveSearchResultChats,
-  searchSyncedChats,
-  type ReindexSettleResult,
-  type SearchResultChat,
-} from '@/services/cloud/chat-search'
-import { logError } from '@/utils/error-handling'
+import { useHarness } from '@/services/harness/provider'
+import type { ThreadSummary } from '@/services/harness/types'
 import { useEffect, useState } from 'react'
-
-const SEARCH_DEBOUNCE_MS = 300
-const SEARCH_RESULT_LIMIT = 20
-
-export interface ChatSearchState {
-  /** Ranked, title-resolved hits for the current term. */
-  results: SearchResultChat[]
-  /** True from the first keystroke until the current term's results land. */
-  isSearching: boolean
-  /** True while the enclave rebuilds the index; results may be partial. */
-  isIndexing: boolean
-  /**
-   * False when server-side search cannot run (no key loaded, enclave
-   * without a search backend). Callers should fall back to filtering
-   * locally loaded chats by title.
-   */
-  available: boolean
-}
-
-/**
- * Debounced encrypted search over synced chats. When the enclave
- * reports it is rebuilding the index, the hook waits for the job to
- * settle and re-runs the current term so results fill in without any
- * user action.
- */
-export function useChatSearch(term: string, enabled: boolean): ChatSearchState {
-  const trimmed = term.trim()
-  const active = enabled && trimmed.length > 0
-
-  const [results, setResults] = useState<SearchResultChat[]>([])
+export function useChatSearch(
+  term: string,
+  enabled: boolean,
+  includeProjectChats = true,
+) {
+  const { api, keyReady } = useHarness()
+  const [results, setResults] = useState<
+    (ThreadSummary & { score?: number })[]
+  >([])
   const [isSearching, setIsSearching] = useState(false)
+  const [failed, setFailed] = useState(false)
   const [isIndexing, setIsIndexing] = useState(false)
-  const [available, setAvailable] = useState(true)
-  const [refreshNonce, setRefreshNonce] = useState(0)
-
+  const available = !!api.userId && keyReady
   useEffect(() => {
-    if (!active) {
-      setResults([])
+    const controller = new AbortController()
+    setResults([])
+    setFailed(false)
+    if (!term.trim() || !enabled || !available) {
       setIsSearching(false)
-      setIsIndexing(false)
       return
     }
-    // Set on cleanup so completions from a superseded term (or an
-    // unmounted component) know they lost the race and must not set
-    // state or schedule a refresh.
-    let cancelled = false
     setIsSearching(true)
-    const run = async () => {
-      try {
-        const outcome = await searchSyncedChats(trimmed, SEARCH_RESULT_LIMIT)
-        if (cancelled) return
-        setAvailable(outcome.available)
-        setIsIndexing(outcome.indexing)
-        const chats = await resolveSearchResultChats(outcome.results)
-        if (cancelled) return
-        setResults(chats)
-        setIsSearching(false)
-        if (outcome.reindexSettled) {
-          // Re-query only after a successful rebuild. Refreshing on a
-          // failed or skipped settle would report needs_reindex again
-          // and kick another full rebuild, looping a persistent
-          // failure at full embedding cost.
-          outcome.reindexSettled.then((settled: ReindexSettleResult) => {
-            if (cancelled) return
-            if (settled === 'completed') {
-              setRefreshNonce((n) => n + 1)
-            } else {
-              setIsIndexing(false)
-            }
-          })
-        }
-      } catch (err) {
-        if (cancelled) return
-        logError('chat search failed', err, {
-          component: 'useChatSearch',
-          action: 'search',
+    const timer = setTimeout(() => {
+      void api
+        .post<{
+          results: (ThreadSummary & { score?: number })[]
+          indexing: boolean
+        }>(
+          '/v1/threads/search',
+          { query: term.trim(), limit: 20 },
+          controller.signal,
+        )
+        .then((page) => {
+          if (!controller.signal.aborted) {
+            setIsIndexing(page.indexing)
+            setResults(
+              page.results.filter((t) => includeProjectChats || !t.projectId),
+            )
+          }
         })
-        setResults([])
-        setIsSearching(false)
-      }
-    }
-    const timer = setTimeout(() => void run(), SEARCH_DEBOUNCE_MS)
+        .catch(() => {
+          if (!controller.signal.aborted) setFailed(true)
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setIsSearching(false)
+        })
+    }, 250)
     return () => {
-      cancelled = true
       clearTimeout(timer)
+      controller.abort()
     }
-  }, [trimmed, active, refreshNonce])
-
-  return { results, isSearching, isIndexing, available }
+  }, [api, available, enabled, includeProjectChats, term])
+  return { results, isSearching, failed, available, isIndexing }
 }

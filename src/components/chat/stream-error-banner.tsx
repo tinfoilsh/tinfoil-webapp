@@ -1,6 +1,6 @@
 'use client'
 
-import type { StreamErrorInfo } from '@/components/chat/hooks/use-chat-streams'
+type StreamErrorInfo = { message: string; code?: string; timestamp?: number }
 import { cn } from '@/components/ui/utils'
 import {
   ArrowPathIcon,
@@ -59,7 +59,7 @@ const CLASSIFICATIONS: Record<
     kind: 'connection',
     title: 'Connection problem',
     suggestion:
-      'Check your internet connection, then resend your message. Your message was not lost.',
+      'Check your internet connection, then reconnect to the conversation.',
   },
   'rate-limit': {
     kind: 'rate-limit',
@@ -92,73 +92,14 @@ const CLASSIFICATIONS: Record<
 // classification, and both the copy and the retry affordance derive from
 // the same result so they can never disagree. The raw message stays
 // available in the expandable details section.
-function classifyError({
-  message,
-  code,
-}: StreamErrorInfo): ErrorClassification {
-  if (code === 'FETCH_ERROR') return CLASSIFICATIONS.connection
-  if (code === 'RATE_LIMIT' || code === 'HOURLY_LIMIT') {
-    return CLASSIFICATIONS['rate-limit']
-  }
-  if (code === 'SERVER_ERROR') return CLASSIFICATIONS.server
-
-  const lower = message.toLowerCase()
-
-  if (
-    lower.includes('context deadline exceeded') ||
-    lower.includes('client.timeout') ||
-    lower.includes('timed out') ||
-    lower.includes('timeout') ||
-    lower.includes('etimedout')
-  ) {
-    return CLASSIFICATIONS.timeout
-  }
-
-  if (
-    lower.includes('context length') ||
-    lower.includes('context window') ||
-    lower.includes('maximum context') ||
-    lower.includes('too many tokens') ||
-    lower.includes('token limit') ||
-    lower.includes('input is too long')
-  ) {
-    return CLASSIFICATIONS['context-length']
-  }
-
-  if (
-    lower.includes('overloaded') ||
-    lower.includes('capacity') ||
-    lower.includes('service unavailable') ||
-    lower.includes('bad gateway') ||
-    lower.includes('internal server error') ||
-    /\b5\d\d\b/.test(lower)
-  ) {
+function classifyError({ code }: StreamErrorInfo): ErrorClassification {
+  if (code === 'RATE_LIMIT') return CLASSIFICATIONS['rate-limit']
+  if (code === 'CONTEXT_LIMIT') return CLASSIFICATIONS['context-length']
+  if (code === 'UPSTREAM_REFUSED' || code === 'MODEL_UNAVAILABLE')
     return CLASSIFICATIONS.server
-  }
-
-  if (
-    lower.includes('network') ||
-    lower.includes('failed to fetch') ||
-    lower.includes('fetch failed') ||
-    lower.includes('connection') ||
-    lower.includes('econnreset') ||
-    lower.includes('offline')
-  ) {
-    return CLASSIFICATIONS.connection
-  }
-
-  return {
-    kind: 'unknown',
-    title: 'Something went wrong',
-    suggestion: 'Please try again. If the problem persists, contact support.',
-  }
+  return CLASSIFICATIONS.connection
 }
 
-/**
- * Inline error notice rendered directly above the chat input. Shows a
- * friendly summary with a retry action; the raw error is available in an
- * expandable details section. Stays visible until dismissed or retried.
- */
 export function StreamErrorBanner({
   error,
   onDismiss,

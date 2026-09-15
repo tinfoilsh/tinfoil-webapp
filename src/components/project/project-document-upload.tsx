@@ -1,7 +1,5 @@
 'use client'
 
-import { getDocumentTextContent } from '@/components/chat/document-content'
-import { useDocumentUploader } from '@/components/chat/document-uploader'
 import { cn } from '@/components/ui/utils'
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import { useCallback, useRef, useState } from 'react'
@@ -26,7 +24,6 @@ export function ProjectDocumentUpload({
   isDarkMode,
 }: ProjectDocumentUploadProps) {
   const { uploadDocument, loading: projectLoading } = useProject()
-  const { handleDocumentUpload, isDocumentUploading } = useDocumentUploader()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [uploadStatus, setUploadStatus] = useState<string | null>(null)
@@ -41,45 +38,28 @@ export function ProjectDocumentUpload({
 
       const file = files[0]
 
-      handleDocumentUpload(
-        file,
-        async (content, _documentId, _imageData, _hasDescription, pages) => {
-          try {
-            const projectContent = getDocumentTextContent(content, pages)
-            if (!projectContent) {
-              throw new Error('No readable content was found in this document.')
-            }
-            setUploadStatus('Uploading...')
-            await uploadDocument(file, projectContent)
-            setUploadStatus(null)
-          } catch (err) {
-            setError(
-              err instanceof Error ? err.message : 'Failed to upload document',
-            )
-            setUploadStatus(null)
-          }
-        },
-        (err, _documentId) => {
-          setError(err.message)
-          setUploadStatus(null)
-        },
-        undefined,
-        { requireTextContent: true },
-      )
+      try {
+        await uploadDocument(file, '')
+        setUploadStatus(null)
+      } catch (cause) {
+        setError(
+          cause instanceof Error ? cause.message : 'Unable to upload document.',
+        )
+        setUploadStatus(null)
+      }
 
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
     },
-    [handleDocumentUpload, uploadDocument],
+    [uploadDocument],
   )
 
   const handleClick = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
 
-  const isUploading =
-    isDocumentUploading || projectLoading || uploadStatus !== null
+  const isUploading = projectLoading || uploadStatus !== null
 
   return (
     <div className="space-y-2">

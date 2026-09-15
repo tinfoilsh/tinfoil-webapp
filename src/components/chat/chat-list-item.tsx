@@ -1,7 +1,7 @@
 'use client'
 
+import { canRequestChatPin } from '@/components/chat/favorite-view'
 import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
-import { canRequestChatPin } from '@/services/storage/pinned-chats'
 import { isPlainPrimaryClick } from '@/utils/navigation'
 import {
   CheckIcon,
@@ -29,6 +29,7 @@ import { TypingAnimation } from './typing-animation'
 const INITIAL_TURN_MESSAGE_COUNT = 2
 
 export interface ChatItemData {
+  activeRun?: { runId: string; lastEventId: number } | null
   id: string
   title: string
   isBlankChat?: boolean

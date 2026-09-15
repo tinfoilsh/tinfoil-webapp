@@ -9,11 +9,14 @@
  */
 import {
   IF_MATCH_SENTINELS,
+  MAX_PULL_IDS,
+  PULL_ITEM_CODE_UNSPECIFIED,
+  PULL_ITEM_CODES,
   RESTORE_DELETED_HEADERS,
   SYNC_HEADERS,
   SYNC_PROTOCOL_VERSION,
   WIRE_CODES,
-} from '@/services/sync-enclave/wire-contract'
+} from '@/services/keys/wire-contract'
 
 describe('wire-contract', () => {
   it('pins the sync protocol version', () => {
@@ -61,5 +64,17 @@ describe('wire-contract', () => {
       SyncConflict: 'SYNC_CONFLICT',
       ProfileSyncUpgradeRequired: 'PROFILE_SYNC_UPGRADE_REQUIRED',
     })
+  })
+
+  it('pull contract matches confidential-sync internal/server', () => {
+    expect(MAX_PULL_IDS).toBe(100)
+    expect(PULL_ITEM_CODES).toEqual({
+      NotFound: 'NOT_FOUND',
+      UnknownKey: 'UNKNOWN_KEY',
+      Network: 'NETWORK',
+      BadRequest: 'BAD_REQUEST',
+      LegacyBlobNotMigrated: 'LEGACY_BLOB_NOT_MIGRATED',
+    })
+    expect(PULL_ITEM_CODE_UNSPECIFIED).toBe('UNSPECIFIED')
   })
 })

@@ -19,17 +19,10 @@ const standingSchema = z.object({
 })
 
 const schema = z.object({
-  sport: z.string().optional().describe('e.g. "NBA", "Premier League"'),
-  kind: z
-    .enum(['fixture', 'standings'])
-    .describe(
-      '`fixture` for a single game (scoreline), `standings` for a league table',
-    ),
+  sport: z.string().optional(),
+  kind: z.enum(['fixture', 'standings']),
   title: z.string().optional(),
-  status: z
-    .string()
-    .optional()
-    .describe('e.g. "Final", "Live — 3rd quarter", "Scheduled"'),
+  status: z.string().optional(),
   venue: z.string().optional(),
   startTime: z.string().optional(),
   home: teamSchema.optional(),
@@ -274,10 +267,7 @@ function FixtureView({
 
 export const widget = defineGenUIWidget({
   name: 'render_sports_data',
-  description:
-    'Display a sports fixture (game scoreline) or a league standings table. Use when the user asks about a game score, match result, or league table.',
   schema,
-  promptHint: 'a sports fixture scoreline or a league standings table',
   render: ({
     sport,
     kind,

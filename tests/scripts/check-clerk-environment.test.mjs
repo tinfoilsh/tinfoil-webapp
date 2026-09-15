@@ -2,13 +2,33 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   checkClerkEnvironment,
+  getClerkAuthDrift,
   getClerkPrivacyDrift,
 } from '../../scripts/check-clerk-environment.mjs'
 
-function environment({ captchaEnabled = false, captchaProvider = null } = {}) {
+function environment({
+  captchaEnabled = false,
+  captchaProvider = null,
+  passwordEnabled = true,
+  passwordRequired = true,
+  signUpMode = 'public',
+  emailEnabled = true,
+  verifyEmailAtSignUp = true,
+  emailVerifications = ['email_code'],
+} = {}) {
   return {
     display_config: { captcha_provider: captchaProvider },
-    user_settings: { sign_up: { captcha_enabled: captchaEnabled } },
+    user_settings: {
+      sign_up: { captcha_enabled: captchaEnabled, mode: signUpMode },
+      attributes: {
+        password: { enabled: passwordEnabled, required: passwordRequired },
+        email_address: {
+          enabled: emailEnabled,
+          verify_at_sign_up: verifyEmailAtSignUp,
+          verifications: emailVerifications,
+        },
+      },
+    },
   }
 }
 
@@ -30,6 +50,36 @@ describe('Clerk environment privacy check', () => {
 
   it('fails closed when expected configuration fields are absent', () => {
     expect(getClerkPrivacyDrift({})).toHaveLength(2)
+  })
+
+  it('accepts password signup with email-code verification', () => {
+    expect(getClerkAuthDrift(environment())).toEqual([])
+  })
+
+  it('reports authentication settings incompatible with the custom flow', () => {
+    expect(
+      getClerkAuthDrift(
+        environment({
+          passwordEnabled: false,
+          passwordRequired: false,
+          signUpMode: 'restricted',
+          emailEnabled: false,
+          verifyEmailAtSignUp: false,
+          emailVerifications: [],
+        }),
+      ),
+    ).toEqual([
+      'user_settings.sign_up.mode must be public',
+      'user_settings.attributes.password.enabled must be true',
+      'user_settings.attributes.password.required must be true',
+      'user_settings.attributes.email_address.enabled must be true',
+      'user_settings.attributes.email_address.verify_at_sign_up must be true',
+      'user_settings.attributes.email_address.verifications must include email_code',
+    ])
+  })
+
+  it('fails closed when authentication configuration is absent', () => {
+    expect(getClerkAuthDrift({})).toHaveLength(6)
   })
 
   it('checks the fetched production response', async () => {
@@ -102,6 +152,6 @@ describe('Clerk environment privacy check', () => {
 
     await expect(
       checkClerkEnvironment({ fetchImplementation }),
-    ).rejects.toThrow('Clerk privacy configuration drifted')
+    ).rejects.toThrow('Clerk configuration drifted')
   })
 })

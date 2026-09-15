@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Message } from './types'
 
-const RESPONDING_ANNOUNCEMENT = 'Tin is responding'
+const RESPONDING_ANNOUNCEMENT = 'Al is responding'
 
 type ChatAnnouncerProps = {
   messages: Message[]

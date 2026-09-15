@@ -1,37 +1,24 @@
+import {
+  formatClaudeProjectExportCounts,
+  type ClaudeProjectExportCounts,
+} from '@/components/chat/export-counts'
 import { TextureGrid } from '@/components/texture-grid'
 import { cn } from '@/components/ui/utils'
 import { UserAvatar } from '@/components/user-avatar'
 import { API_BASE_URL } from '@/config'
-import { PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT } from '@/constants/settings-events'
-import {
-  SETTINGS_CHAT_FONT,
-  SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
-  SETTINGS_GENUI_ENABLED,
-  SETTINGS_PII_CHECK_ENABLED,
-  SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-  SETTINGS_WEB_SEARCH_AVAILABLE,
-  USER_PREFS_ADDITIONAL_CONTEXT,
-  USER_PREFS_CUSTOM_PROMPT_ENABLED,
-  USER_PREFS_CUSTOM_SYSTEM_PROMPT,
-  USER_PREFS_LANGUAGE,
-  USER_PREFS_NICKNAME,
-  USER_PREFS_PERSONALIZATION_ENABLED,
-  USER_PREFS_PROFESSION,
-  USER_PREFS_TRAITS,
-} from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
-import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
-import { buildChatExport } from '@/services/chat-export/export-archive'
-import { parseLocalTinfoilExport } from '@/services/chat-import/local-tinfoil-import'
-import { runOffDeviceImport } from '@/services/chat-import/off-device-import'
-import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
-import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
-import { cloudStorage } from '@/services/cloud/cloud-storage'
-import { cloudSync } from '@/services/cloud/cloud-sync'
-import { projectStorage } from '@/services/cloud/project-storage'
-import { encryptionService } from '@/services/encryption/encryption-service'
+import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
+import {
+  exportArchive,
+  importStatus,
+  startImport,
+  type ImportStatusResponse,
+} from '@/services/harness/archives'
+import { useHarness } from '@/services/harness/provider'
+import { reportHarnessError } from '@/services/harness/runtime'
+import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
 import {
   deletePasskeyCredential,
   getLocalPasskeyCredentialId,
@@ -39,37 +26,17 @@ import {
   PrfNotSupportedError,
   type PasskeyCredentialEntry,
 } from '@/services/passkey'
-import {
-  buildClaudeProjectExport,
-  ClaudeProjectExportSizeError,
-  formatClaudeProjectExportCounts,
-  type ClaudeProjectExportCounts,
-} from '@/services/project-export/claude-project-export'
-import { clearDeletedProjectsForAccount } from '@/services/project/project-deletion'
-import { chatStorage } from '@/services/storage/chat-storage'
-import { projectCache } from '@/services/storage/project-cache'
-import { sessionChatStorage } from '@/services/storage/session-storage'
-import { attachmentGet } from '@/services/sync-enclave/sync-api'
 import { TINFOIL_COLORS } from '@/theme/colors'
 import {
   clearExplicitSignoutIntent,
   requestExplicitSignout,
 } from '@/utils/auth-signout-intent'
-import { base64ToUint8Array } from '@/utils/binary-codec'
+import { logError } from '@/utils/error-handling'
+import { clearPersonalizationDetails } from '@/utils/personalization-settings'
 import {
-  parseChatGPTConversations,
-  parseClaudeConversations,
-  parseClaudeProjects,
-} from '@/utils/chat-import-parsers'
-import {
-  CLOUD_SYNC_SETTING_CHANGED_EVENT,
-  isCloudSyncEnabled,
-  isLocalOnlyModeEnabled,
-  setCloudSyncEnabled,
-  setLocalOnlyModeEnabled,
-} from '@/utils/cloud-sync-settings'
-import { logError, logInfo, logWarning } from '@/utils/error-handling'
-import { generateReverseId } from '@/utils/reverse-id'
+  RESPONSE_LANGUAGES,
+  SYSTEM_RESPONSE_LANGUAGE,
+} from '@/utils/response-language'
 import {
   hideSignoutProgress,
   showSignoutProgress,
@@ -83,16 +50,14 @@ import {
   ChatBubbleLeftRightIcon,
   CheckCircleIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   ComputerDesktopIcon,
   CreditCardIcon,
   EyeIcon,
   EyeSlashIcon,
   MoonIcon,
-  PencilSquareIcon,
-  PlusIcon,
   Squares2X2Icon,
   SunIcon,
-  TrashIcon,
   UserCircleIcon,
   UserIcon,
   XMarkIcon,
@@ -108,20 +73,16 @@ import { IoShieldCheckmark } from 'react-icons/io5'
 import { PiSignIn, PiSpinner } from 'react-icons/pi'
 import { RiLightbulbFill, RiShieldKeyholeFill } from 'react-icons/ri'
 import QRCode from 'react-qr-code'
-import { CloudSyncHealthCard } from './cloud-sync-health-card'
-import { ConfirmDialog } from './components/confirm-dialog'
+import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
-import { usePromptLibrary } from './hooks/use-prompt-library'
 import { MfaSettingsCard } from './mfa-settings-card'
 import { NativeBackupExport } from './native-backup-export'
 import { NativeBackupRestore } from './native-backup-restore'
 import {
-  EMPTY_PRESET_EDITOR_STATE,
-  PresetEditor,
-  type PresetEditorState,
-} from './prompts/preset-editor'
-import type { PromptPreset } from './prompts/types'
-import type { Attachment, Chat } from './types'
+  canDeleteAllProjects,
+  canTransferProjectData,
+} from './settings-project-policy'
+import type { Chat } from './types'
 
 const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
 
@@ -129,6 +90,74 @@ const DASHBOARD_URL = 'https://dash.tinfoil.sh'
 
 const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
+
+interface ImportResult {
+  jobId?: string
+  success: boolean
+  chatsImported: number
+  projectsImported: number
+  errors: string[]
+  pending?: boolean
+  /** The enclave job ended without completing (distinct from per-chat errors). */
+  failed?: boolean
+  message?: string
+}
+
+/**
+ * Turns the enclave's kickoff snapshot into the panel state and toast
+ * copy. The job normally reports staging/running here and finishes off
+ * device, but a job that has already failed must not be announced as
+ * started.
+ */
+export function describeOffDeviceImportKickoff(
+  status: ImportStatusResponse,
+  sourceLabel: string,
+): ImportResult {
+  const pending = status.status === 'staging' || status.status === 'running'
+  const failed = status.status === 'failed'
+  return {
+    jobId: status.jobId,
+    success: !failed,
+    chatsImported: status.imported,
+    projectsImported: 0,
+    errors: status.errors ?? [],
+    pending,
+    failed,
+    message: failed
+      ? describeImportFailure(status.failure_reason)
+      : pending
+        ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
+        : undefined,
+  }
+}
+
+export function importResultTitle(result: ImportResult): string {
+  if (result.pending) return 'Import in progress'
+  if (result.success) return 'Import complete'
+  if (result.failed) return 'Import failed'
+  return 'Import completed with errors'
+}
+
+export function getDeleteAllChatsSuccessTitle(
+  isSignedIn: boolean,
+  cloudDeletionCompleted: boolean,
+): string {
+  return isSignedIn && !cloudDeletionCompleted
+    ? 'Chats deleted from this device'
+    : 'All chats deleted'
+}
+
+export function getDeleteAllChatsSuccessDescription(
+  isSignedIn: boolean,
+  cloudDeletionCompleted: boolean,
+): string {
+  if (cloudDeletionCompleted) {
+    return 'Removed all chats from this device and encrypted cloud storage.'
+  }
+  return isSignedIn
+    ? 'Removed all chats from this device. Encrypted cloud storage was not cleared.'
+    : 'Removed all chats from this browser session.'
+}
 
 const ScrambleText = ({
   text,
@@ -337,8 +366,11 @@ type SettingsModalProps = {
   setThemeMode: (mode: ThemeMode) => void
   isClient: boolean
   defaultSystemPrompt?: string
+  onOpenPromptLibrary: () => void
   onCloudSyncSetupClick?: () => void
   onChatsUpdated?: () => void | Promise<void>
+  onAllChatsDeleted?: () => void
+  onAllProjectsDeleted?: () => void
   isSignedIn?: boolean
   isPremium?: boolean
   encryptionKey: string | null
@@ -374,8 +406,11 @@ export function SettingsModal({
   setThemeMode,
   isClient,
   defaultSystemPrompt = '',
+  onOpenPromptLibrary,
   onCloudSyncSetupClick,
   onChatsUpdated,
+  onAllChatsDeleted,
+  onAllProjectsDeleted,
   isSignedIn,
   isPremium,
   encryptionKey,
@@ -391,6 +426,7 @@ export function SettingsModal({
   const { getToken, signOut } = useAuth()
   const { user } = useUser()
   const { toast } = useToast()
+  const { api, profile, keyReady } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
@@ -427,9 +463,11 @@ export function SettingsModal({
     traits: string[]
     additionalContext: string
   }>({ nickname: '', profession: '', traits: [], additionalContext: '' })
+  const [showClearPersonalizationConfirm, setShowClearPersonalizationConfirm] =
+    useState(false)
 
   // Language setting (separate from personalization)
-  const [language, setLanguage] = useState<string>('')
+  const [language, setLanguage] = useState<string>(SYSTEM_RESPONSE_LANGUAGE)
 
   // Custom system prompt settings
   const [isUsingCustomPrompt, setIsUsingCustomPrompt] = useState<boolean>(false)
@@ -437,14 +475,17 @@ export function SettingsModal({
 
   // Cloud sync setting
   const [cloudSyncEnabled, setCloudSyncEnabledState] = useState<boolean>(false)
-  const [localOnlyModeEnabledState, setLocalOnlyModeEnabledState] =
-    useState<boolean>(false)
 
   // Web Search PII check setting (defaults to on)
   const [piiCheckEnabled, setPiiCheckEnabled] = useState<boolean>(true)
 
+  // Enter inserts newline instead of sending (defaults to off)
+  const [enterToNewlineEnabled, setEnterToNewlineEnabled] =
+    useState<boolean>(false)
+
   const [pixelateSidebarChatTitles, setPixelateSidebarChatTitles] =
     useState<boolean>(true)
+  const [browserTabChatTitle, setBrowserTabChatTitle] = useState<boolean>(true)
 
   const [webSearchAvailable, setWebSearchAvailable] = useState<boolean>(true)
 
@@ -456,26 +497,11 @@ export function SettingsModal({
 
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
 
-  // Prompt library management state
-  const {
-    builtInPresets,
-    userPresets,
-    createUserPreset,
-    updateUserPreset,
-    deleteUserPreset,
-    duplicatePreset,
-  } = usePromptLibrary()
-  const [promptEditor, setPromptEditor] = useState<PresetEditorState | null>(
-    null,
-  )
-  const [presetPendingDelete, setPresetPendingDelete] =
-    useState<PromptPreset | null>(null)
-
   // Active tab state
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     initialTab ?? 'account',
   )
-  const syncNeedsAttention = useSyncHealthAttention()
+  const syncNeedsAttention = false
 
   // Update active tab when initialTab prop changes (e.g., opening to a specific tab)
   useEffect(() => {
@@ -508,23 +534,16 @@ export function SettingsModal({
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
 
   // Import state
-  const [importSource, setImportSource] = useState<
-    'chatgpt' | 'claude' | 'tinfoil' | null
-  >(null)
+  const [, setImportSource] = useState<'chatgpt' | 'claude' | 'tinfoil' | null>(
+    null,
+  )
   const [isImporting, setIsImporting] = useState(false)
-  const [importProgress, setImportProgress] = useState<{
+  const [importProgress] = useState<{
     current: number
     total: number
     type: 'chats' | 'projects'
   } | null>(null)
-  const [importResult, setImportResult] = useState<{
-    success: boolean
-    chatsImported: number
-    projectsImported: number
-    errors: string[]
-    pending?: boolean
-    message?: string
-  } | null>(null)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
@@ -535,7 +554,7 @@ export function SettingsModal({
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
-  const [isPreparingExport, setIsPreparingExport] = useState(false)
+  const [isPreparingExport] = useState(false)
   const [exportType, setExportType] = useState<'chats' | 'projects' | null>(
     null,
   )
@@ -574,201 +593,33 @@ export function SettingsModal({
     'optimistic',
   ]
 
-  // Available languages for dropdown
-  const availableLanguages = [
-    'English',
-    'Spanish',
-    'French',
-    'German',
-    'Italian',
-    'Portuguese',
-    'Russian',
-    'Japanese',
-    'Korean',
-    'Chinese (Simplified)',
-    'Chinese (Traditional)',
-    'Arabic',
-    'Hindi',
-    'Dutch',
-    'Swedish',
-    'Norwegian',
-    'Danish',
-    'Finnish',
-    'Polish',
-    'Turkish',
-  ]
-
-  // Shared function to load settings from localStorage
-  const loadSettingsFromStorage = useCallback(() => {
-    // Load personalization settings
-    const savedNickname = localStorage.getItem(USER_PREFS_NICKNAME)
-    const savedProfession = localStorage.getItem(USER_PREFS_PROFESSION)
-    const savedTraits = localStorage.getItem(USER_PREFS_TRAITS)
-    const savedContext = localStorage.getItem(USER_PREFS_ADDITIONAL_CONTEXT)
-    const savedUsingPersonalization = localStorage.getItem(
-      USER_PREFS_PERSONALIZATION_ENABLED,
-    )
-
-    let parsedTraits: string[] = []
-    if (savedTraits) {
-      try {
-        parsedTraits = JSON.parse(savedTraits)
-      } catch {
-        parsedTraits = []
-      }
-    }
-    setNickname(savedNickname ?? '')
-    setProfession(savedProfession ?? '')
-    setSelectedTraits(parsedTraits)
-    setAdditionalContext(savedContext ?? '')
+  useEffect(() => {
+    if (!isOpen) return
+    setNickname(profile.nickname ?? '')
+    setProfession(profile.profession ?? '')
+    setSelectedTraits(profile.traits ?? [])
+    setAdditionalContext(profile.additionalContext ?? '')
     setSavedPersonalization({
-      nickname: savedNickname ?? '',
-      profession: savedProfession ?? '',
-      traits: parsedTraits,
-      additionalContext: savedContext ?? '',
+      nickname: profile.nickname ?? '',
+      profession: profile.profession ?? '',
+      traits: profile.traits ?? [],
+      additionalContext: profile.additionalContext ?? '',
     })
-    if (savedUsingPersonalization !== null) {
-      setIsUsingPersonalization(savedUsingPersonalization === 'true')
-    }
-
-    // Load language setting
-    const savedLanguage = localStorage.getItem(USER_PREFS_LANGUAGE)
-    if (savedLanguage) {
-      setLanguage(savedLanguage)
-    }
-
-    // Load custom system prompt settings
-    const savedUsingCustomPrompt = localStorage.getItem(
-      USER_PREFS_CUSTOM_PROMPT_ENABLED,
-    )
-    const savedCustomPrompt = localStorage.getItem(
-      USER_PREFS_CUSTOM_SYSTEM_PROMPT,
-    )
-    if (savedUsingCustomPrompt !== null) {
-      setIsUsingCustomPrompt(savedUsingCustomPrompt === 'true')
-    }
-    if (savedCustomPrompt !== null) {
-      setCustomSystemPrompt(savedCustomPrompt)
-    } else if (defaultSystemPrompt) {
-      setCustomSystemPrompt(defaultSystemPrompt)
-    }
-
-    // Load cloud sync setting
-    setCloudSyncEnabledState(isCloudSyncEnabled())
-    setLocalOnlyModeEnabledState(isLocalOnlyModeEnabled())
-
-    // Load PII check setting (defaults to true if not set)
-    const savedPiiCheck = localStorage.getItem(SETTINGS_PII_CHECK_ENABLED)
-    setPiiCheckEnabled(savedPiiCheck === null ? true : savedPiiCheck === 'true')
-
-    const savedPixelateSidebarChatTitles = localStorage.getItem(
-      SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-    )
+    setIsUsingPersonalization(profile.isUsingPersonalization ?? true)
+    setLanguage(profile.language ?? SYSTEM_RESPONSE_LANGUAGE)
+    setIsUsingCustomPrompt(profile.isUsingCustomPrompt ?? false)
+    setCustomSystemPrompt(profile.customSystemPrompt ?? '')
+    setCloudSyncEnabledState(!!isSignedIn)
+    setPiiCheckEnabled(profile.piiCheckEnabled ?? true)
+    setEnterToNewlineEnabled(profile.enterToNewlineEnabled ?? false)
     setPixelateSidebarChatTitles(
-      savedPixelateSidebarChatTitles === null
-        ? true
-        : savedPixelateSidebarChatTitles === 'true',
+      profile.pixelateSidebarChatTitlesEnabled ?? true,
     )
-
-    const savedWebSearchAvailable = localStorage.getItem(
-      SETTINGS_WEB_SEARCH_AVAILABLE,
-    )
-    setWebSearchAvailable(
-      savedWebSearchAvailable === null
-        ? true
-        : savedWebSearchAvailable === 'true',
-    )
-
-    // Load Generative UI setting (defaults to true if not set)
-    const savedGenUI = localStorage.getItem(SETTINGS_GENUI_ENABLED)
-    setGenUIEnabled(savedGenUI === null ? true : savedGenUI === 'true')
-
-    // Load chat font setting
-    const savedChatFont = localStorage.getItem(SETTINGS_CHAT_FONT)
-    setChatFont(normalizeChatFont(savedChatFont))
-  }, [defaultSystemPrompt])
-
-  // Initial load settings from localStorage
-  useEffect(() => {
-    if (isClient) {
-      loadSettingsFromStorage()
-
-      // Set default language if not already set
-      const savedLanguage = localStorage.getItem(USER_PREFS_LANGUAGE)
-      if (!savedLanguage) {
-        setLanguage('English')
-        localStorage.setItem(USER_PREFS_LANGUAGE, 'English')
-      }
-    }
-  }, [isClient, loadSettingsFromStorage])
-
-  // Listen for profile sync updates
-  useEffect(() => {
-    if (!isClient) return
-
-    // Listen for storage events (from other tabs or sync)
-    window.addEventListener('storage', loadSettingsFromStorage)
-
-    // Also listen for our custom events that fire after profile sync
-    const handleProfileSyncUpdate = () => {
-      loadSettingsFromStorage()
-    }
-    const handlePixelateSidebarChatTitlesUpdate = (
-      event: CustomEvent<{ enabled: boolean }>,
-    ) => {
-      setPixelateSidebarChatTitles(event.detail.enabled)
-    }
-
-    // Listen for cloud sync setting changes (e.g., from modal or other sources)
-    const handleCloudSyncUpdate = () => {
-      setCloudSyncEnabledState(isCloudSyncEnabled())
-    }
-
-    // These events are fired by the profile sync when it updates localStorage
-    window.addEventListener('personalizationChanged', handleProfileSyncUpdate)
-    window.addEventListener('languageChanged', handleProfileSyncUpdate)
-    window.addEventListener(
-      'customSystemPromptChanged',
-      handleProfileSyncUpdate,
-    )
-    window.addEventListener(
-      'webSearchAvailableChanged',
-      handleProfileSyncUpdate,
-    )
-    window.addEventListener(
-      PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
-      handlePixelateSidebarChatTitlesUpdate as EventListener,
-    )
-    window.addEventListener(
-      CLOUD_SYNC_SETTING_CHANGED_EVENT,
-      handleCloudSyncUpdate,
-    )
-
-    return () => {
-      window.removeEventListener('storage', loadSettingsFromStorage)
-      window.removeEventListener(
-        'personalizationChanged',
-        handleProfileSyncUpdate,
-      )
-      window.removeEventListener('languageChanged', handleProfileSyncUpdate)
-      window.removeEventListener(
-        'customSystemPromptChanged',
-        handleProfileSyncUpdate,
-      )
-      window.removeEventListener(
-        'webSearchAvailableChanged',
-        handleProfileSyncUpdate,
-      )
-      window.removeEventListener(
-        PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
-        handlePixelateSidebarChatTitlesUpdate as EventListener,
-      )
-      window.removeEventListener(
-        CLOUD_SYNC_SETTING_CHANGED_EVENT,
-        handleCloudSyncUpdate,
-      )
-    }
-  }, [isClient, loadSettingsFromStorage])
+    setBrowserTabChatTitle(profile.browserTabChatTitleEnabled ?? true)
+    setWebSearchAvailable(profile.webSearchEnabled ?? true)
+    setGenUIEnabled(profile.genUIEnabled ?? true)
+    setChatFont(normalizeChatFont(profile.chatFont))
+  }, [isOpen, profile, isSignedIn])
 
   const refreshPasskeyBundles = useCallback(async () => {
     // Latest-wins sequencing: overlapping refreshes (panel-open effect
@@ -831,56 +682,19 @@ export function SettingsModal({
     additionalContext?: string
     isEnabled?: boolean
   }) => {
-    if (isClient) {
-      const currentNickname = values?.nickname ?? nickname
-      const currentProfession = values?.profession ?? profession
-      const currentTraits = values?.traits ?? selectedTraits
-      const currentContext = values?.additionalContext ?? additionalContext
-      const currentEnabled = values?.isEnabled ?? isUsingPersonalization
-
-      localStorage.setItem(USER_PREFS_NICKNAME, currentNickname)
-      localStorage.setItem(USER_PREFS_PROFESSION, currentProfession)
-      localStorage.setItem(USER_PREFS_TRAITS, JSON.stringify(currentTraits))
-      localStorage.setItem(USER_PREFS_ADDITIONAL_CONTEXT, currentContext)
-      localStorage.setItem(
-        USER_PREFS_PERSONALIZATION_ENABLED,
-        currentEnabled.toString(),
-      )
-
-      // Trigger event to notify other components
-      window.dispatchEvent(
-        new CustomEvent('personalizationChanged', {
-          detail: {
-            nickname: currentNickname,
-            profession: currentProfession,
-            traits: currentTraits,
-            additionalContext: currentContext,
-            language,
-            isEnabled: currentEnabled,
-            defaultSystemPrompt,
-          },
-        }),
-      )
-    }
+    void api
+      .updateProfile({
+        nickname: values?.nickname ?? nickname,
+        profession: values?.profession ?? profession,
+        traits: values?.traits ?? selectedTraits,
+        additionalContext: values?.additionalContext ?? additionalContext,
+        isUsingPersonalization: values?.isEnabled ?? isUsingPersonalization,
+      })
+      .catch(reportHarnessError)
   }
-
-  // Save language setting separately
-  const saveLanguageSetting = (newLanguage: string) => {
-    if (isClient) {
-      localStorage.setItem(USER_PREFS_LANGUAGE, newLanguage)
-
-      // Trigger event to notify other components about language change
-      window.dispatchEvent(
-        new CustomEvent('languageChanged', {
-          detail: {
-            language: newLanguage,
-            defaultSystemPrompt,
-          },
-        }),
-      )
-    }
+  const saveLanguageSetting = (language: string) => {
+    void api.updateProfile({ language }).catch(reportHarnessError)
   }
-
   // Handle individual field changes. Edits are buffered locally and only
   // persisted when the user hits Save.
   const handleNicknameChange = (value: string) => {
@@ -937,268 +751,57 @@ export function SettingsModal({
     }
   }
 
-  const handleResetPersonalization = () => {
-    setNickname('')
-    setProfession('')
-    setSelectedTraits([])
-    setAdditionalContext('')
-    setLanguage('English')
+  const handleClearPersonalization = () => {
+    const cleared = clearPersonalizationDetails({
+      nickname,
+      profession,
+      traits: selectedTraits,
+      additionalContext,
+      language,
+      isEnabled: isUsingPersonalization,
+    })
+    setNickname(cleared.nickname)
+    setProfession(cleared.profession)
+    setSelectedTraits(cleared.traits)
+    setAdditionalContext(cleared.additionalContext)
     setSavedPersonalization({
-      nickname: '',
-      profession: '',
-      traits: [],
-      additionalContext: '',
+      nickname: cleared.nickname,
+      profession: cleared.profession,
+      traits: cleared.traits,
+      additionalContext: cleared.additionalContext,
     })
+    setShowClearPersonalizationConfirm(false)
 
     if (isClient) {
-      localStorage.removeItem(USER_PREFS_NICKNAME)
-      localStorage.removeItem(USER_PREFS_PROFESSION)
-      localStorage.removeItem(USER_PREFS_TRAITS)
-      localStorage.removeItem(USER_PREFS_ADDITIONAL_CONTEXT)
-      localStorage.setItem(USER_PREFS_LANGUAGE, 'English')
-      saveLanguageSetting('English')
       savePersonalizationSettings({
-        nickname: '',
-        profession: '',
-        traits: [],
-        additionalContext: '',
-        isEnabled: isUsingPersonalization,
+        nickname: cleared.nickname,
+        profession: cleared.profession,
+        traits: cleared.traits,
+        additionalContext: cleared.additionalContext,
+        isEnabled: cleared.isEnabled,
       })
     }
   }
 
-  const handleChatFontChange = (font: ChatFont) => {
-    setChatFont(font)
-    if (isClient) {
-      localStorage.setItem(SETTINGS_CHAT_FONT, font)
-      window.dispatchEvent(
-        new CustomEvent('chatFontChanged', {
-          detail: font,
-        }),
-      )
-    }
+  const handleChatFontChange = (chatFont: ChatFont) => {
+    setChatFont(chatFont)
+    void api.updateProfile({ chatFont }).catch(reportHarnessError)
   }
-
-  // Helper to strip <system> tags for display
-  const stripSystemTags = (prompt: string): string => {
-    return prompt
-      .replace(/^<system>\s*\n?/, '')
-      .replace(/\n?<\/system>\s*$/, '')
+  const stripSystemTags = (prompt: string) => prompt
+  const handleToggleCustomPrompt = (isUsingCustomPrompt: boolean) => {
+    setIsUsingCustomPrompt(isUsingCustomPrompt)
+    void api.updateProfile({ isUsingCustomPrompt }).catch(reportHarnessError)
   }
-
-  // Helper to add <system> tags if not present
-  const ensureSystemTags = (prompt: string): string => {
-    const trimmed = prompt.trim()
-    if (!trimmed) return ''
-    if (!trimmed.startsWith('<system>')) {
-      return `<system>\n${trimmed}\n</system>`
-    }
-    return trimmed
-  }
-
-  // Handle custom system prompt changes
-  const handleToggleCustomPrompt = (enabled: boolean) => {
-    setIsUsingCustomPrompt(enabled)
-    if (isClient) {
-      localStorage.setItem(USER_PREFS_CUSTOM_PROMPT_ENABLED, enabled.toString())
-      // Only dispatch event when toggling the feature
-      const promptWithTags = ensureSystemTags(customSystemPrompt)
-      window.dispatchEvent(
-        new CustomEvent('customSystemPromptChanged', {
-          detail: {
-            isEnabled: enabled,
-            customPrompt: promptWithTags,
-          },
-        }),
-      )
-    }
-  }
-
-  const handleCustomPromptChange = (value: string) => {
-    setCustomSystemPrompt(value)
-  }
-
+  const handleCustomPromptChange = setCustomSystemPrompt
   const handleCustomPromptBlur = () => {
-    if (isClient) {
-      // Store with system tags
-      const promptWithTags = ensureSystemTags(customSystemPrompt)
-      localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, promptWithTags)
-      // Only dispatch if currently enabled
-      if (isUsingCustomPrompt) {
-        window.dispatchEvent(
-          new CustomEvent('customSystemPromptChanged', {
-            detail: {
-              isEnabled: true,
-              customPrompt: promptWithTags,
-            },
-          }),
-        )
-      }
-    }
+    void api.updateProfile({ customSystemPrompt }).catch(reportHarnessError)
   }
-
-  const startCreatePreset = () => {
-    setPromptEditor({ ...EMPTY_PRESET_EDITOR_STATE })
-  }
-
-  const startEditPreset = (preset: PromptPreset) => {
-    setPromptEditor({
-      mode: 'edit',
-      presetId: preset.id,
-      name: preset.name,
-      description: preset.description,
-      systemPrompt: stripSystemTags(preset.systemPrompt),
-    })
-  }
-
-  const handleDuplicatePreset = (preset: PromptPreset) => {
-    const copy = duplicatePreset(preset.id)
-    if (!copy) return
-    setPromptEditor({
-      mode: 'edit',
-      presetId: copy.id,
-      name: copy.name,
-      description: copy.description,
-      systemPrompt: stripSystemTags(copy.systemPrompt),
-    })
-  }
-
-  const handleDeletePreset = (preset: PromptPreset) => {
-    if (preset.isBuiltIn) return
-    setPresetPendingDelete(preset)
-  }
-
-  const handleConfirmDeletePreset = () => {
-    const preset = presetPendingDelete
-    if (!preset) return
-    deleteUserPreset(preset.id)
-    setPresetPendingDelete(null)
-  }
-
-  const handleSavePromptEditor = () => {
-    if (!promptEditor) return
-    const name = promptEditor.name.trim()
-    if (!name) return
-    const trimmed = promptEditor.systemPrompt.trim()
-    if (!trimmed) return
-    const promptWithTags = ensureSystemTags(trimmed)
-
-    if (promptEditor.mode === 'create') {
-      createUserPreset({
-        name,
-        description: promptEditor.description.trim(),
-        systemPrompt: promptWithTags,
-      })
-    } else if (promptEditor.presetId) {
-      updateUserPreset(promptEditor.presetId, {
-        name,
-        description: promptEditor.description.trim(),
-        systemPrompt: promptWithTags,
-      })
-    }
-    setPromptEditor(null)
-  }
-
-  // Restore default system prompt and persist immediately
   const handleRestoreDefaultPrompt = () => {
-    const restoredWithoutTags = stripSystemTags(defaultSystemPrompt)
-    setCustomSystemPrompt(restoredWithoutTags)
-    if (isClient) {
-      const promptWithTags = ensureSystemTags(restoredWithoutTags)
-      localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, promptWithTags)
-      if (isUsingCustomPrompt) {
-        window.dispatchEvent(
-          new CustomEvent('customSystemPromptChanged', {
-            detail: {
-              isEnabled: true,
-              customPrompt: promptWithTags,
-            },
-          }),
-        )
-      }
-    }
-  }
-
-  const handleCloudSyncToggle = async (enabled: boolean) => {
-    if (enabled) {
-      // Check if encryption key exists
-      if (!encryptionService.getKey()) {
-        // Prefer passkey setup when available
-        if (passkeySetupAvailable && onSetupPasskey) {
-          setIsOpen(false)
-          try {
-            const success = await onSetupPasskey()
-            if (success) return
-          } catch (error) {
-            toast({
-              title:
-                error instanceof PrfNotSupportedError
-                  ? 'Passkey provider not supported'
-                  : 'Passkey setup failed',
-              description:
-                error instanceof PrfNotSupportedError
-                  ? error.message
-                  : 'Could not create passkey backup. You can try again later.',
-              variant: 'destructive',
-            })
-          }
-          // Passkey setup didn't succeed — fall through to manual key setup
-          if (onCloudSyncSetupClick) {
-            onCloudSyncSetupClick()
-          }
-          return
-        }
-
-        // Close settings modal and show the cloud sync setup modal
-        setIsOpen(false)
-        if (onCloudSyncSetupClick) {
-          onCloudSyncSetupClick()
-        }
-        return
-      }
-
-      // If key exists, proceed with enabling
-      setCloudSyncEnabledState(true)
-      setCloudSyncEnabled(true)
-
-      // Clear the explicit disable flag when re-enabling
-      localStorage.removeItem(SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED)
-    } else {
-      // Disabling cloud sync
-      setCloudSyncEnabledState(false)
-      setCloudSyncEnabled(false)
-
-      // Mark that user explicitly disabled cloud sync (to prevent auto-enable)
-      localStorage.setItem(SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED, 'true')
-
-      try {
-        const deletedCount = await chatStorage.deleteAllNonLocalChats()
-        logInfo(
-          `Deleted ${deletedCount} synced chats when disabling cloud sync`,
-          {
-            component: 'SettingsModal',
-            action: 'handleCloudSyncToggle',
-          },
-        )
-        if (deletedCount > 0 && onChatsUpdated) {
-          onChatsUpdated()
-        }
-      } catch (error) {
-        logInfo('Failed to delete synced chats', {
-          component: 'SettingsModal',
-          action: 'handleCloudSyncToggle',
-          metadata: { error },
-        })
-      }
-    }
-
-    if (isClient) {
-      window.dispatchEvent(
-        new CustomEvent(CLOUD_SYNC_SETTING_CHANGED_EVENT, {
-          detail: { enabled },
-        }),
-      )
-    }
+    setCustomSystemPrompt('')
+    setIsUsingCustomPrompt(false)
+    void api
+      .updateProfile({ customSystemPrompt: '', isUsingCustomPrompt: false })
+      .catch(reportHarnessError)
   }
 
   const handleUpgradeToPro = useCallback(async () => {
@@ -1292,496 +895,61 @@ export function SettingsModal({
     }
   }, [signOut])
 
-  // Import handlers
-  const generateChatId = (createdAt?: Date) => {
-    const timestampMs = createdAt?.getTime() || Date.now()
-    return generateReverseId(timestampMs).id
-  }
-
-  const getParseOptions = () => ({
-    generateChatId,
-    isCloudSyncEnabled: isCloudSyncEnabled(),
-  })
-
-  const saveImportedChats = async (
-    chats: Chat[],
-  ): Promise<{ imported: number; errors: string[] }> => {
-    setImportProgress({ current: 0, total: chats.length, type: 'chats' })
-
-    let imported = 0
-    const errors: string[] = []
-
-    // Save all chats to IndexedDB first (skip cloud sync on individual saves)
-    for (let i = 0; i < chats.length; i++) {
-      try {
-        await chatStorage.saveChat(chats[i], true) // skipCloudSync = true
-        imported++
-      } catch {
-        errors.push(`Failed to save "${chats[i].title}" locally`)
-      }
-      setImportProgress({
-        current: i + 1,
-        total: chats.length,
-        type: 'chats',
-      })
-    }
-
-    // Bulk upload to cloud if sync is enabled
-    if (isCloudSyncEnabled() && (await cloudStorage.isAuthenticated())) {
-      const CHUNK_SIZE = 100
-      const chatsToUpload = chats.filter((c) => !c.isLocalOnly)
-      let cloudUploadFailed = false
-
-      for (let i = 0; i < chatsToUpload.length; i += CHUNK_SIZE) {
-        const chunk = chatsToUpload.slice(i, i + CHUNK_SIZE)
-        try {
-          const result = await cloudStorage.bulkUploadChats(chunk)
-          if (result.failed > 0) {
-            result.results
-              .filter((r) => !r.success)
-              .forEach((r) =>
-                errors.push(
-                  `Cloud upload failed: ${r.error || r.conversationId}`,
-                ),
-              )
-          }
-        } catch (err) {
-          if (!cloudUploadFailed) {
-            errors.push(
-              `Cloud sync failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
-            )
-            cloudUploadFailed = true
-          }
-        }
-      }
-    }
-
-    return { imported, errors }
-  }
-
-  // Cloud-sync users import off-device: the raw export is uploaded to
-  // the enclave, which parses, seals, and stores everything without the
-  // plaintext touching app servers, then emails the user on completion.
-  const shouldImportOffDevice = () =>
-    Boolean(isSignedIn) && isCloudSyncEnabled() && hasPrimaryKey()
-
-  const importOffDevice = async (
+  const importFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
     source: 'chatgpt' | 'claude' | 'tinfoil',
-    file: File,
-    sourceLabel: string,
   ) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    setIsImporting(true)
     setImportSource(source)
-    setIsImporting(true)
     setImportResult(null)
+    const controller = new AbortController()
+    localTinfoilImportAbortControllerRef.current = controller
     try {
-      const { status } = await runOffDeviceImport(source, file)
-      const errors = status.errors ?? []
-      const pending = status.status === 'staging' || status.status === 'running'
-      setImportResult({
-        success: status.status !== 'failed',
-        chatsImported: status.imported,
-        projectsImported: 0,
-        errors,
-        pending,
-        message: pending
-          ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
-          : undefined,
-      })
-      toast({
-        title: 'Import started',
-        description: `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`,
-      })
-      if (!pending && onChatsUpdated) {
-        onChatsUpdated()
+      const status = await startImport(file, source, controller.signal)
+      setImportResult(describeOffDeviceImportKickoff(status, source))
+      if (status.status === 'completed' || status.status === 'partial') {
+        await onChatsUpdated?.()
+        await refreshProjects()
       }
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to start import'
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [message],
-      })
-      toast({
-        title: 'Import failed',
-        description: `Could not start the ${sourceLabel} import`,
-        variant: 'destructive',
-      })
-    } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-    }
-  }
-
-  const handleImportChatGPT = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (shouldImportOffDevice()) {
-      await importOffDevice('chatgpt', file, 'ChatGPT')
-      e.target.value = ''
-      return
-    }
-
-    setImportSource('chatgpt')
-    setIsImporting(true)
-    setImportResult(null)
-
-    try {
-      const content = await file.text()
-      const data = JSON.parse(content)
-
-      if (!Array.isArray(data)) {
-        throw new Error('Invalid ChatGPT export format')
-      }
-
-      const chats = parseChatGPTConversations(data, getParseOptions())
-      const { imported, errors } = await saveImportedChats(chats)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from ChatGPT`,
-      })
-    } catch (err) {
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the ChatGPT export file',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-      e.target.value = ''
-    }
-  }
-
-  const handleImportTinfoil = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (shouldImportOffDevice()) {
-      await importOffDevice('tinfoil', file, 'Tinfoil')
-      e.target.value = ''
-      return
-    }
-
-    setImportSource('tinfoil')
-    setIsImporting(true)
-    setImportResult(null)
-    localTinfoilImportAbortControllerRef.current?.abort()
-    const abortController = new AbortController()
-    localTinfoilImportAbortControllerRef.current = abortController
-
-    try {
-      const chats = await parseLocalTinfoilExport(file, {
-        ...getParseOptions(),
-        signal: abortController.signal,
-      })
-      const { imported, errors } = await saveImportedChats(chats)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Tinfoil`,
-      })
-    } catch (err) {
-      if (abortController.signal.aborted) return
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the Tinfoil export file',
-        variant: 'destructive',
-      })
-    } finally {
-      if (localTinfoilImportAbortControllerRef.current === abortController) {
-        localTinfoilImportAbortControllerRef.current = null
-        setIsImporting(false)
-        setImportProgress(null)
-        e.target.value = ''
-      }
-    }
-  }
-
-  const handleImportClaudeConversations = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (shouldImportOffDevice()) {
-      await importOffDevice('claude', file, 'Claude')
-      e.target.value = ''
-      return
-    }
-
-    setImportSource('claude')
-    setIsImporting(true)
-    setImportResult(null)
-
-    try {
-      const content = await file.text()
-      const data = JSON.parse(content)
-
-      if (!Array.isArray(data)) {
-        throw new Error('Invalid Claude export format')
-      }
-
-      const chats = parseClaudeConversations(data, getParseOptions())
-      const { imported, errors } = await saveImportedChats(chats)
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: imported,
-        projectsImported: 0,
-        errors,
-      })
-
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} chat${imported !== 1 ? 's' : ''} from Claude`,
-      })
-    } catch (err) {
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the Claude export file',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-      e.target.value = ''
-    }
-  }
-
-  const handleImportClaudeProjects = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    if (!isPremium) {
-      toast({
-        title: 'Premium required',
-        description: 'Project import is only available for premium users',
-        variant: 'destructive',
-      })
-      e.target.value = ''
-      return
-    }
-
-    setImportSource('claude')
-    setIsImporting(true)
-    setImportResult(null)
-
-    try {
-      const content = await file.text()
-      const data = JSON.parse(content)
-
-      if (!Array.isArray(data)) {
-        throw new Error('Invalid Claude projects export format')
-      }
-
-      const parsedProjects = parseClaudeProjects(data)
-      setImportProgress({
-        current: 0,
-        total: parsedProjects.length,
-        type: 'projects',
-      })
-
-      let imported = 0
-      const errors: string[] = []
-      const projectCacheGeneration = projectCache.captureGeneration()
-
-      // Dynamically import project storage to avoid circular dependencies
-      const { projectStorage } =
-        await import('@/services/cloud/project-storage')
-
-      for (let i = 0; i < parsedProjects.length; i++) {
-        const project = parsedProjects[i]
-        try {
-          const createdProject = await projectStorage.createProject({
-            name: project.name,
-            description: project.description,
-            systemInstructions: project.systemInstructions,
-          })
-
-          for (const doc of project.docs) {
-            try {
-              await projectStorage.uploadDocument(
-                createdProject.id,
-                doc.filename,
-                'text/markdown',
-                doc.content,
-              )
-            } catch {
-              errors.push(
-                `Failed to import document "${doc.filename}" for project "${project.name}"`,
-              )
-            }
-          }
-
-          imported++
-        } catch (err) {
-          errors.push(`Failed to import project "${project.name}"`)
-        }
-        setImportProgress({
-          current: i + 1,
-          total: parsedProjects.length,
-          type: 'projects',
+    } catch (cause) {
+      if (!controller.signal.aborted)
+        setImportResult({
+          success: false,
+          chatsImported: 0,
+          projectsImported: 0,
+          errors: [
+            cause instanceof Error
+              ? cause.message
+              : 'Unable to import archive.',
+          ],
         })
-      }
-
-      if (imported > 0) {
-        projectCache.commitMutation(projectCacheGeneration)
-      }
-
-      await refreshProjects()
-
-      setImportResult({
-        success: errors.length === 0,
-        chatsImported: 0,
-        projectsImported: imported,
-        errors,
-      })
-
-      toast({
-        title: 'Import complete',
-        description: `Imported ${imported} project${imported !== 1 ? 's' : ''} from Claude`,
-      })
-    } catch (err) {
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [err instanceof Error ? err.message : 'Failed to parse file'],
-      })
-      toast({
-        title: 'Import failed',
-        description: 'Could not parse the Claude projects file',
-        variant: 'destructive',
-      })
     } finally {
-      setIsImporting(false)
-      setImportProgress(null)
-      e.target.value = ''
+      if (!controller.signal.aborted) setIsImporting(false)
     }
   }
-
-  // Export chats as conversations.json
-  const downloadChats = async (chatsToExport: Chat[]) => {
-    if (chatsToExport.length === 0) {
-      toast({
-        title: 'No chats to export',
-        description: 'You have no chats to export yet.',
-        variant: 'destructive',
-      })
-      return
-    }
-
+  const handleImportChatGPT = (event: React.ChangeEvent<HTMLInputElement>) =>
+    importFile(event, 'chatgpt')
+  const handleImportTinfoil = (event: React.ChangeEvent<HTMLInputElement>) =>
+    importFile(event, 'tinfoil')
+  const handleImportClaudeConversations = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => importFile(event, 'claude')
+  const handleImportClaudeProjects = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => importFile(event, 'claude')
+  const handleExportAllChats = async () => {
     setIsExporting(true)
     setExportType('chats')
-
     try {
-      // Fetch one binary attachment at a time so the browser never
-      // holds every attachment's bytes in memory at once.
-      const fetchAttachmentBytes = async (
-        att: Attachment,
-      ): Promise<Uint8Array | null> => {
-        try {
-          if (att.base64) {
-            return base64ToUint8Array(att.base64)
-          }
-          if (att.encryptionKey) {
-            return await attachmentGet({
-              id: att.id,
-              attKeyB64: att.encryptionKey,
-            })
-          }
-        } catch {
-          logWarning('Failed to fetch attachment for export', {
-            component: 'SettingsModal',
-            action: 'downloadChats',
-            metadata: { attachmentId: att.id },
-          })
-        }
-        return null
-      }
-
-      const archive = await buildChatExport(chatsToExport, fetchAttachmentBytes)
-      const blob =
-        typeof archive.data === 'string'
-          ? new Blob([archive.data], { type: archive.mimeType })
-          : new Blob([new Uint8Array(archive.data)], {
-              type: archive.mimeType,
-            })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = archive.filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
-
-      toast({
-        title: 'Export complete',
-        description: `Exported ${chatsToExport.length} conversation${chatsToExport.length !== 1 ? 's' : ''} successfully.`,
-      })
-    } catch (error) {
-      logError('Failed to create conversations export', error, {
-        component: 'SettingsModal',
-        action: 'downloadChats',
-      })
+      await exportArchive('tinfoil-backup')
+    } catch (cause) {
       toast({
         title: 'Export failed',
-        description: 'Failed to download conversations. Please try again.',
+        description:
+          cause instanceof Error ? cause.message : 'Unable to export chats.',
         variant: 'destructive',
       })
     } finally {
@@ -1789,230 +957,67 @@ export function SettingsModal({
       setExportType(null)
     }
   }
-
-  // Fetch all chats (including cloud) and export them
-  const handleExportAllChats = async () => {
-    setIsPreparingExport(true)
-    setExportType('chats')
-
-    try {
-      const chatsById = new Map<string, Chat>()
-      const addChat = (chat: Chat) => {
-        if (!chat.id || chatsById.has(chat.id)) return
-        chatsById.set(chat.id, chat)
-      }
-
-      const indexedDbChats = await chatStorage.getAllChats()
-      indexedDbChats.forEach(addChat)
-      if (!isSignedIn) {
-        sessionChatStorage.getAllChats().forEach(addChat)
-      }
-
-      // If cloud sync is enabled, fetch all chats with pagination
-      if (isCloudSyncEnabled() && isSignedIn) {
-        let hasMore = true
-        let continuationToken: string | undefined
-
-        while (hasMore) {
-          const result = await cloudSync.loadChatsWithPagination({
-            limit: 50,
-            continuationToken,
-            loadLocal: !continuationToken, // Only load local on first page to avoid duplicates
-          })
-
-          // Convert StoredChat to Chat
-          for (const storedChat of result.chats) {
-            addChat({
-              id: storedChat.id,
-              title: storedChat.title,
-              messages: storedChat.messages,
-              createdAt: new Date(storedChat.createdAt),
-              updatedAt: storedChat.updatedAt,
-              isLocalOnly: storedChat.isLocalOnly,
-              isBlankChat: storedChat.isBlankChat,
-              syncedAt: storedChat.syncedAt,
-              projectId: storedChat.projectId,
-            })
-          }
-
-          hasMore = result.hasMore
-          continuationToken = result.nextToken
-        }
-      }
-
-      // Filter out blank chats and chats that failed decryption
-      const exportableChats = Array.from(chatsById.values()).filter(
-        (chat) =>
-          !chat.isBlankChat &&
-          (chat.messageCount ?? chat.messages?.length ?? 0) > 0,
-      )
-
-      setIsPreparingExport(false)
-      await downloadChats(exportableChats)
-    } catch (error) {
-      logError('Failed to prepare chats for export', error, {
-        component: 'SettingsModal',
-        action: 'handleExportAllChats',
-      })
-      toast({
-        title: 'Export failed',
-        description: 'Failed to prepare chats for export. Please try again.',
-        variant: 'destructive',
-      })
-      setIsPreparingExport(false)
-      setExportType(null)
-    }
-  }
-
-  // Delete every chat the user owns (local IndexedDB + cloud + session).
-  // Defense in depth: re-check the typed confirmation phrase here in addition
-  // to gating the submit button on it, so the destructive action cannot be
-  // triggered accidentally even if the UI layer is bypassed.
   const handleDeleteAllChats = async () => {
     if (
       deleteAllChatsConfirmText.trim().toLowerCase() !==
       DELETE_ALL_CHATS_CONFIRM_PHRASE
-    ) {
+    )
       return
-    }
-
     setIsDeletingAllChats(true)
     try {
-      if (isSignedIn) {
-        const result = await chatStorage.deleteAllChats()
-        toast({
-          title: 'All chats deleted',
-          description: result.notificationSent
-            ? 'We will email you a confirmation.'
-            : 'Email confirmation could not be sent.',
-        })
-      } else {
-        sessionChatStorage.clearAll()
-        toast({
-          title: 'All chats deleted',
-          description: 'Removed all chats from this browser session.',
-        })
-      }
-
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-    } catch (error) {
-      logError('Failed to delete all chats', error, {
-        component: 'SettingsModal',
-        action: 'handleDeleteAllChats',
-      })
+      await api.post('/v1/threads/delete-all')
+      onAllChatsDeleted?.()
+      await onChatsUpdated?.()
+      setShowDeleteAllChatsConfirm(false)
+      setDeleteAllChatsConfirmText('')
+      toast({ title: 'All chats deleted' })
+    } catch (cause) {
       toast({
         title: 'Delete failed',
-        description: 'Failed to delete all chats. Please try again.',
+        description:
+          cause instanceof Error ? cause.message : 'Unable to delete chats.',
         variant: 'destructive',
       })
     } finally {
       setIsDeletingAllChats(false)
-      setShowDeleteAllChatsConfirm(false)
-      setDeleteAllChatsConfirmText('')
     }
   }
-
-  // Delete every project the user owns. Same defense-in-depth confirmation
-  // gate as handleDeleteAllChats.
   const handleDeleteAllProjects = async () => {
     if (
       deleteAllProjectsConfirmText.trim().toLowerCase() !==
       DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-    ) {
+    )
       return
-    }
-
     setIsDeletingAllProjects(true)
-    const guard = cloudSync.createAccountOperationGuard()
     try {
-      const deleted = await projectStorage.deleteAllProjects(guard)
-      await clearDeletedProjectsForAccount(guard, (cacheError) => {
-        logError('Failed to clear cached projects', cacheError, {
-          component: 'SettingsModal',
-          action: 'handleDeleteAllProjects.clearCache',
-        })
-      })
-      setProjectExportResult(null)
-      toast({
-        title: 'All projects deleted',
-        description: `Deleted ${deleted} ${deleted === 1 ? 'project' : 'projects'}.`,
-      })
-
-      // Project deletion detaches chats from projects on the server, so the
-      // chat list in the sidebar may need to refresh too.
-      if (onChatsUpdated) {
-        onChatsUpdated()
-      }
-    } catch (error) {
-      logError('Failed to delete all projects', error, {
-        component: 'SettingsModal',
-        action: 'handleDeleteAllProjects',
-      })
+      await api.post('/v1/projects/delete-all')
+      onAllProjectsDeleted?.()
+      await refreshProjects()
+      await onChatsUpdated?.()
+      setShowDeleteAllProjectsConfirm(false)
+      setDeleteAllProjectsConfirmText('')
+      toast({ title: 'All projects deleted' })
+    } catch (cause) {
       toast({
         title: 'Delete failed',
-        description: 'Failed to delete all projects. Please try again.',
+        description:
+          cause instanceof Error ? cause.message : 'Unable to delete projects.',
         variant: 'destructive',
       })
     } finally {
       setIsDeletingAllProjects(false)
-      setShowDeleteAllProjectsConfirm(false)
-      setDeleteAllProjectsConfirmText('')
     }
   }
-
   const downloadProjectsForClaude = async () => {
     setIsExporting(true)
     setExportType('projects')
-    setProjectExportResult(null)
-
     try {
-      const result = await buildClaudeProjectExport(projectStorage)
-      setProjectExportResult({
-        counts: result.counts,
-        warnings: result.warnings,
-      })
-
-      if (result.counts.exportedProjects === 0) {
-        toast({
-          title: 'No projects exported',
-          description:
-            result.counts.skippedProjects > 0
-              ? 'The available projects could not be read.'
-              : 'You have no projects to export yet.',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      const blob = new Blob([result.json], { type: 'application/json' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'projects.json'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
-
-      toast({
-        title: 'Export complete',
-        description: `Exported ${result.counts.exportedProjects} project${result.counts.exportedProjects !== 1 ? 's' : ''} for Claude.`,
-      })
-    } catch (error) {
-      logError('Failed to create projects export', error, {
-        component: 'SettingsModal',
-        action: 'downloadProjectsForClaude',
-      })
-      const message =
-        error instanceof ClaudeProjectExportSizeError
-          ? error.message
-          : 'The Claude-compatible project export could not be created.'
-      setProjectExportResult({ warnings: [], error: message })
+      await exportArchive('claude-projects')
+    } catch (cause) {
       toast({
         title: 'Export failed',
-        description: message,
+        description:
+          cause instanceof Error ? cause.message : 'Unable to export projects.',
         variant: 'destructive',
       })
     } finally {
@@ -2121,7 +1126,7 @@ ${encryptionKey.replace('key_', '')}
       ? [
           {
             id: 'cloud-sync' as const,
-            label: 'Cloud Sync',
+            label: 'Encryption & Backups',
             icon: AiOutlineCloudSync,
           },
         ]
@@ -2373,18 +1378,49 @@ ${encryptionKey.replace('key_', '')}
                               const newValue = e.target.checked
                               setPixelateSidebarChatTitles(newValue)
                               if (isClient) {
-                                localStorage.setItem(
-                                  SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-                                  newValue.toString(),
-                                )
-                                window.dispatchEvent(
-                                  new CustomEvent(
-                                    PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
-                                    {
-                                      detail: { enabled: newValue },
-                                    },
-                                  ),
-                                )
+                                void api
+                                  .updateProfile({
+                                    pixelateSidebarChatTitlesEnabled: newValue,
+                                  })
+                                  .catch(reportHarnessError)
+                              }
+                            }}
+                            className="peer sr-only"
+                          />
+                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong" />
+                        </label>
+                      </div>
+                    </div>
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="mr-3 flex-1">
+                          <div className="font-aeonik text-sm font-medium text-content-primary">
+                            Show chat title in browser tab
+                          </div>
+                          <div className="font-aeonik-fono text-xs text-content-muted">
+                            When off, the tab shows only &ldquo;
+                            {CONSTANTS.BASE_DOCUMENT_TITLE}&rdquo;.
+                          </div>
+                        </div>
+                        <label className="relative inline-flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            aria-label="Show chat title in browser tab"
+                            checked={browserTabChatTitle}
+                            onChange={(e) => {
+                              const newValue = e.target.checked
+                              setBrowserTabChatTitle(newValue)
+                              if (isClient) {
+                                void api
+                                  .updateProfile({
+                                    browserTabChatTitleEnabled: newValue,
+                                  })
+                                  .catch(reportHarnessError)
                               }
                             }}
                             className="peer sr-only"
@@ -2496,12 +1532,55 @@ ${encryptionKey.replace('key_', '')}
                               : 'border-border-subtle bg-surface-sidebar text-content-primary',
                           )}
                         >
-                          {availableLanguages.map((lang) => (
+                          {!RESPONSE_LANGUAGES.some(
+                            (option) => option === language,
+                          ) && <option value={language}>{language}</option>}
+                          {RESPONSE_LANGUAGES.map((lang) => (
                             <option key={lang} value={lang}>
                               {lang}
                             </option>
                           ))}
                         </select>
+                      </div>
+                    </div>
+                    {/* Enter inserts newline */}
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="mr-3 flex-1">
+                          <div className="font-aeonik text-sm font-medium text-content-primary">
+                            Press Enter for new line
+                          </div>
+                          <div className="font-aeonik-fono text-xs text-content-muted">
+                            Enter inserts a new line instead of sending your
+                            message. Send with Cmd/Ctrl+Enter or the send
+                            button.
+                          </div>
+                        </div>
+                        <label className="relative inline-flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            aria-label="Press Enter for new line"
+                            checked={enterToNewlineEnabled}
+                            onChange={(e) => {
+                              const newValue = e.target.checked
+                              setEnterToNewlineEnabled(newValue)
+                              if (isClient) {
+                                void api
+                                  .updateProfile({
+                                    enterToNewlineEnabled: newValue,
+                                  })
+                                  .catch(reportHarnessError)
+                              }
+                            }}
+                            className="peer sr-only"
+                          />
+                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong" />
+                        </label>
                       </div>
                     </div>
                   </div>
@@ -2536,10 +1615,11 @@ ${encryptionKey.replace('key_', '')}
                                 const newValue = e.target.checked
                                 setWebSearchAvailable(newValue)
                                 if (isClient) {
-                                  localStorage.setItem(
-                                    SETTINGS_WEB_SEARCH_AVAILABLE,
-                                    newValue.toString(),
-                                  )
+                                  void api
+                                    .updateProfile({
+                                      webSearchEnabled: newValue,
+                                    })
+                                    .catch(reportHarnessError)
                                   window.dispatchEvent(
                                     new CustomEvent(
                                       'webSearchAvailableChanged',
@@ -2582,10 +1662,11 @@ ${encryptionKey.replace('key_', '')}
                                 const newValue = e.target.checked
                                 setPiiCheckEnabled(newValue)
                                 if (isClient) {
-                                  localStorage.setItem(
-                                    SETTINGS_PII_CHECK_ENABLED,
-                                    newValue.toString(),
-                                  )
+                                  void api
+                                    .updateProfile({
+                                      piiCheckEnabled: newValue,
+                                    })
+                                    .catch(reportHarnessError)
                                   window.dispatchEvent(
                                     new CustomEvent('piiCheckEnabledChanged', {
                                       detail: { enabled: newValue },
@@ -2613,7 +1694,7 @@ ${encryptionKey.replace('key_', '')}
                               Generative UI
                             </div>
                             <div className="font-aeonik-fono text-xs text-content-muted">
-                              Let Tin render interactive widgets like charts and
+                              Let Al render interactive widgets like charts and
                               timelines. When off, no tool capabilities are sent
                               to the model.
                             </div>
@@ -2626,10 +1707,9 @@ ${encryptionKey.replace('key_', '')}
                                 const newValue = e.target.checked
                                 setGenUIEnabled(newValue)
                                 if (isClient) {
-                                  localStorage.setItem(
-                                    SETTINGS_GENUI_ENABLED,
-                                    newValue.toString(),
-                                  )
+                                  void api
+                                    .updateProfile({ genUIEnabled: newValue })
+                                    .catch(reportHarnessError)
                                   window.dispatchEvent(
                                     new CustomEvent('genUIEnabledChanged', {
                                       detail: { enabled: newValue },
@@ -2771,8 +1851,8 @@ ${encryptionKey.replace('key_', '')}
                         </div>
                       </div>
 
-                      {/* Delete all projects (signed-in premium users only) */}
-                      {isSignedIn && isPremium && (
+                      {/* Delete all projects remains available for account data control. */}
+                      {canDeleteAllProjects(Boolean(isSignedIn)) && (
                         <div
                           className={cn(
                             'rounded-lg border border-border-subtle p-4',
@@ -2912,8 +1992,8 @@ ${encryptionKey.replace('key_', '')}
                           Personalize responses
                         </div>
                         <div className="font-aeonik-fono text-xs text-content-muted">
-                          Tailor Tin&apos;s replies using the details below.
-                          When off, none of these are sent to the model.
+                          Tailor Al&apos;s replies using the details below. When
+                          off, none of these are sent to the model.
                         </div>
                       </div>
                       <label className="relative inline-flex cursor-pointer items-center">
@@ -2945,7 +2025,7 @@ ${encryptionKey.replace('key_', '')}
                               Name
                             </div>
                             <div className="font-aeonik-fono text-xs text-content-muted">
-                              How should Tin call you?
+                              How should Al call you?
                             </div>
                           </div>
                           <input
@@ -3011,7 +2091,7 @@ ${encryptionKey.replace('key_', '')}
                               Conversational Traits
                             </div>
                             <div className="font-aeonik-fono text-xs text-content-muted">
-                              What traits should Tin have?
+                              What traits should Al have?
                             </div>
                           </div>
                           <div className="flex flex-wrap gap-1.5">
@@ -3049,7 +2129,7 @@ ${encryptionKey.replace('key_', '')}
                               Additional Context
                             </div>
                             <div className="font-aeonik-fono text-xs text-content-muted">
-                              Anything else Tin should know about you?
+                              Anything else Al should know about you?
                             </div>
                           </div>
                           <textarea
@@ -3057,7 +2137,7 @@ ${encryptionKey.replace('key_', '')}
                             onChange={(e) =>
                               handleContextChange(e.target.value)
                             }
-                            placeholder="Interests and other preferences you'd like Tin to know about you."
+                            placeholder="Interests and other preferences you'd like Al to know about you."
                             rows={3}
                             className={cn(
                               'w-full resize-none rounded-md border px-3 py-2 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
@@ -3069,18 +2149,50 @@ ${encryptionKey.replace('key_', '')}
                         </div>
                       </div>
 
-                      {/* Reset Button */}
-                      <button
-                        onClick={handleResetPersonalization}
-                        className={cn(
-                          'w-full rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
-                          isDarkMode
-                            ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
-                            : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
-                        )}
-                      >
-                        Reset all fields
-                      </button>
+                      {!showClearPersonalizationConfirm ? (
+                        <button
+                          onClick={() =>
+                            setShowClearPersonalizationConfirm(true)
+                          }
+                          className={cn(
+                            'w-full rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors',
+                            isDarkMode
+                              ? 'border-red-500/30 bg-red-950/20 text-red-400 hover:bg-red-950/40'
+                              : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100',
+                          )}
+                        >
+                          Clear details
+                        </button>
+                      ) : (
+                        <div className="space-y-2 rounded-lg border border-border-subtle p-3">
+                          <p className="font-aeonik-fono text-xs text-content-muted">
+                            Clear your name, occupation, traits, and additional
+                            context? Your personalization setting and response
+                            language will not change.
+                          </p>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleClearPersonalization}
+                              className={cn(
+                                'flex-1 rounded-md px-3 py-1.5 text-sm font-medium text-white',
+                                isDarkMode
+                                  ? 'bg-red-600 hover:bg-red-500'
+                                  : 'bg-red-600 hover:bg-red-700',
+                              )}
+                            >
+                              Clear details
+                            </button>
+                            <button
+                              onClick={() =>
+                                setShowClearPersonalizationConfirm(false)
+                              }
+                              className="flex-1 rounded-md border border-border-subtle px-3 py-1.5 text-sm font-medium text-content-secondary"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                 </>
@@ -3089,175 +2201,126 @@ ${encryptionKey.replace('key_', '')}
               {/* Prompts Tab */}
               {activeTab === 'prompts' && (
                 <>
-                  {promptEditor ? (
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Default System Prompt
+                    </h3>
                     <div
                       className={cn(
-                        'overflow-hidden rounded-lg border border-border-subtle',
+                        'rounded-lg border border-border-subtle p-4',
                         isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                       )}
                     >
-                      <PresetEditor
-                        editor={promptEditor}
-                        onChange={setPromptEditor}
-                        onCancel={() => setPromptEditor(null)}
-                        onSave={handleSavePromptEditor}
-                      />
-                    </div>
-                  ) : (
-                    <>
-                      {/* Default System Prompt */}
-                      <div className="space-y-3">
-                        <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                          Default System Prompt
-                        </h3>
-                        <div
-                          className={cn(
-                            'rounded-lg border border-border-subtle p-4',
-                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          )}
-                        >
-                          <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                              <div className="mr-3 flex-1">
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  Custom default prompt
-                                </div>
-                                <div className="font-aeonik-fono text-xs text-content-muted">
-                                  Override the system prompt for chats that
-                                  don&apos;t have a preset selected.
-                                </div>
-                              </div>
-                              <label className="relative inline-flex cursor-pointer items-center">
-                                <input
-                                  type="checkbox"
-                                  checked={isUsingCustomPrompt}
-                                  onChange={(e) =>
-                                    handleToggleCustomPrompt(e.target.checked)
-                                  }
-                                  className="peer sr-only"
-                                />
-                                <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
-                              </label>
-                            </div>
-                            {isUsingCustomPrompt && (
-                              <>
-                                <textarea
-                                  value={stripSystemTags(customSystemPrompt)}
-                                  onChange={(e) =>
-                                    handleCustomPromptChange(e.target.value)
-                                  }
-                                  onBlur={handleCustomPromptBlur}
-                                  placeholder="Enter your custom system prompt..."
-                                  rows={6}
-                                  className={cn(
-                                    'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
-                                    isDarkMode
-                                      ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                      : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-                                  )}
-                                />
-                                <div className="rounded-lg border border-border-subtle bg-surface-chat p-3">
-                                  <div className="font-aeonik-fono text-xs text-content-muted">
-                                    <span
-                                      className={cn(
-                                        'font-aeonik font-medium',
-                                        isDarkMode
-                                          ? 'text-brand-accent-light'
-                                          : 'text-brand-accent-dark',
-                                      )}
-                                    >
-                                      Tip:
-                                    </span>{' '}
-                                    Use placeholders like {'{USER_PREFERENCES}'}
-                                    , {'{LANGUAGE}'}, and {'{TIMEZONE}'} to tell
-                                    the model about your preferences and
-                                    timezone. The current time and date are
-                                    always provided to the model automatically.
-                                  </div>
-                                </div>
-                                <div className="flex justify-center">
-                                  <button
-                                    onClick={handleRestoreDefaultPrompt}
-                                    className={cn(
-                                      'rounded-md px-3 py-1.5 text-xs transition-all hover:underline',
-                                      isDarkMode
-                                        ? 'text-red-400 hover:text-red-300'
-                                        : 'text-red-600 hover:text-red-500',
-                                    )}
-                                  >
-                                    Restore default prompt
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Built-in Prompts */}
-                      <div className="space-y-3">
-                        <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                          Built-in Prompts
-                        </h3>
-                        <p className="font-aeonik-fono text-xs text-content-muted">
-                          Bundled with Tinfoil. Duplicate one to customize it.
-                        </p>
-                        <div className="space-y-2">
-                          {builtInPresets.map((preset) => (
-                            <PresetRow
-                              key={preset.id}
-                              preset={preset}
-                              isDarkMode={isDarkMode}
-                              onDuplicate={() => handleDuplicatePreset(preset)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Your Prompts */}
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                            Your Prompts
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={startCreatePreset}
-                            className="flex items-center gap-1 rounded-md bg-brand-accent-dark px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
-                          >
-                            <PlusIcon className="h-3.5 w-3.5" />
-                            New
-                          </button>
+                          <div className="mr-3 flex-1">
+                            <div className="font-aeonik text-sm font-medium text-content-primary">
+                              Custom default prompt
+                            </div>
+                            <div className="font-aeonik-fono text-xs text-content-muted">
+                              Override the system prompt for chats that
+                              don&apos;t have a preset selected.
+                            </div>
+                          </div>
+                          <label className="relative inline-flex cursor-pointer items-center">
+                            <input
+                              type="checkbox"
+                              checked={isUsingCustomPrompt}
+                              onChange={(e) =>
+                                handleToggleCustomPrompt(e.target.checked)
+                              }
+                              className="peer sr-only"
+                            />
+                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                          </label>
                         </div>
-                        {userPresets.length === 0 ? (
-                          <div
-                            className={cn(
-                              'rounded-lg border border-dashed border-border-subtle p-4 text-center text-xs text-content-muted',
-                              isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                            )}
-                          >
-                            No custom prompts yet. Click &quot;New&quot; above
-                            or duplicate a built-in prompt to start.
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            {userPresets.map((preset) => (
-                              <PresetRow
-                                key={preset.id}
-                                preset={preset}
-                                isDarkMode={isDarkMode}
-                                onEdit={() => startEditPreset(preset)}
-                                onDuplicate={() =>
-                                  handleDuplicatePreset(preset)
-                                }
-                                onDelete={() => handleDeletePreset(preset)}
-                              />
-                            ))}
-                          </div>
+                        {isUsingCustomPrompt && (
+                          <>
+                            <textarea
+                              value={stripSystemTags(customSystemPrompt)}
+                              onChange={(e) =>
+                                handleCustomPromptChange(e.target.value)
+                              }
+                              onBlur={handleCustomPromptBlur}
+                              placeholder="Enter your custom system prompt..."
+                              rows={6}
+                              className={cn(
+                                'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
+                                isDarkMode
+                                  ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                  : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
+                              )}
+                            />
+                            <div className="rounded-lg border border-border-subtle bg-surface-chat p-3">
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                <span
+                                  className={cn(
+                                    'font-aeonik font-medium',
+                                    isDarkMode
+                                      ? 'text-brand-accent-light'
+                                      : 'text-brand-accent-dark',
+                                  )}
+                                >
+                                  Tip:
+                                </span>{' '}
+                                Use placeholders like {'{USER_PREFERENCES}'},{' '}
+                                {'{LANGUAGE}'}, and {'{TIMEZONE}'} to tell the
+                                model about your preferences and timezone. The
+                                current time and date are always provided to the
+                                model automatically.
+                              </div>
+                            </div>
+                            <div className="flex justify-center">
+                              <button
+                                onClick={handleRestoreDefaultPrompt}
+                                className={cn(
+                                  'rounded-md px-3 py-1.5 text-xs transition-all hover:underline',
+                                  isDarkMode
+                                    ? 'text-red-400 hover:text-red-300'
+                                    : 'text-red-600 hover:text-red-500',
+                                )}
+                              >
+                                Restore default prompt
+                              </button>
+                            </div>
+                          </>
                         )}
                       </div>
-                    </>
-                  )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Prompt Library
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsOpen(false)
+                        onOpenPromptLibrary()
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-lg border border-border-subtle p-4 text-left transition-colors hover:bg-surface-chat',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg bg-surface-chat text-content-secondary">
+                        <Squares2X2Icon className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-aeonik text-sm font-medium text-content-primary">
+                          Open prompt library
+                        </span>
+                        <span className="mt-0.5 block font-aeonik-fono text-xs text-content-muted">
+                          Browse built-in prompts and create or manage your own.
+                        </span>
+                      </span>
+                      <ChevronRightIcon
+                        className="h-4 w-4 flex-none text-content-muted"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </div>
                 </>
               )}
 
@@ -3320,7 +2383,7 @@ ${encryptionKey.replace('key_', '')}
                   {/* Cloud Sync */}
                   <div className="space-y-3">
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Cloud Sync
+                      Encryption and backups
                     </h3>
                     <div
                       className={cn(
@@ -3331,47 +2394,39 @@ ${encryptionKey.replace('key_', '')}
                       <div className="flex items-start justify-between">
                         <div>
                           <div className="font-aeonik text-sm font-medium text-content-primary">
-                            Encrypted Cloud Sync
+                            Encrypted chats
                           </div>
                           <div className="font-aeonik-fono text-xs text-content-muted">
-                            {cloudSyncEnabled
+                            {keyReady
                               ? 'End-to-end encrypted. Only you can access your chats and data.'
-                              : 'Turn on Cloud Sync to back up and access your data across devices.'}
+                              : 'Unlock your encryption key to access your saved chats.'}
                           </div>
                         </div>
-                        <label className="relative inline-flex cursor-pointer items-center">
-                          <input
-                            type="checkbox"
-                            checked={cloudSyncEnabled}
-                            onChange={(e) =>
-                              handleCloudSyncToggle(e.target.checked)
-                            }
-                            className="peer sr-only"
-                          />
-                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
-                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsOpen(false)
+                            onCloudSyncSetupClick?.()
+                          }}
+                          className="rounded-lg border border-border-subtle px-3 py-1 text-sm text-content-primary"
+                        >
+                          {keyReady ? 'Manage key' : 'Unlock'}
+                        </button>
                       </div>
                     </div>
-                    {cloudSyncEnabled && (
-                      <CloudSyncHealthCard
-                        isDarkMode={isDarkMode}
-                        chats={chats}
-                        onRecoverClick={
-                          onCloudSyncSetupClick
-                            ? () => {
-                                setIsOpen(false)
-                                onCloudSyncSetupClick()
-                              }
-                            : undefined
-                        }
-                      />
-                    )}
                     <NativeBackupExport
-                      available={Boolean(isSignedIn && encryptionKey)}
+                      available={Boolean(
+                        isSignedIn &&
+                        canTransferProjectData(Boolean(isPremium)) &&
+                        encryptionKey,
+                      )}
                     />
                     <NativeBackupRestore
                       available={Boolean(
-                        isSignedIn && user?.id && encryptionKey,
+                        isSignedIn &&
+                        canTransferProjectData(Boolean(isPremium)) &&
+                        user?.id &&
+                        encryptionKey,
                       )}
                       ownerId={user?.id}
                       onChatsUpdated={onChatsUpdated}
@@ -3630,9 +2685,9 @@ ${encryptionKey.replace('key_', '')}
                                   await deletePasskeyCredential(credentialId)
                                 if (ok) {
                                   toast({
-                                    title: 'Passkey removed',
+                                    title: 'Passkey recovery removed',
                                     description:
-                                      'That platform can no longer unlock your chats with this passkey.',
+                                      'That platform can no longer recover your cloud encryption key with this bundle.',
                                   })
                                   await refreshPasskeyBundles()
                                   if (onRefreshBundleState) {
@@ -3781,56 +2836,6 @@ ${encryptionKey.replace('key_', '')}
                       </div>
                     )}
 
-                  {/* Local Chats Section */}
-                  {cloudSyncEnabled && (
-                    <div className="space-y-3">
-                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                        Local Chats
-                      </h3>
-                      <div
-                        className={cn(
-                          'rounded-lg border border-border-subtle p-4',
-                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                        )}
-                      >
-                        <div className="space-y-3">
-                          <div className="flex items-start justify-between">
-                            <div className="mr-3 flex-1">
-                              <div className="font-aeonik text-sm font-medium text-content-primary">
-                                Enable local chats
-                              </div>
-                              <div className="font-aeonik-fono text-xs text-content-muted">
-                                Enable to create chats that stay only on this
-                                device and are never synced to the cloud.
-                              </div>
-                            </div>
-                            <label className="relative inline-flex cursor-pointer items-center">
-                              <input
-                                type="checkbox"
-                                checked={localOnlyModeEnabledState}
-                                onChange={(e) => {
-                                  const newValue = e.target.checked
-                                  setLocalOnlyModeEnabledState(newValue)
-                                  setLocalOnlyModeEnabled(newValue)
-                                }}
-                                className="peer sr-only"
-                              />
-                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
-                            </label>
-                          </div>
-                          {localOnlyModeEnabledState && (
-                            <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2">
-                              <p className="text-xs font-medium text-orange-500">
-                                Local chats will be permanently erased when you
-                                sign out. Treat local chats as temporary.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* Import Progress */}
                   {isImporting && importProgress && (
                     <div className="space-y-3">
@@ -3863,6 +2868,28 @@ ${encryptionKey.replace('key_', '')}
                     </div>
                   )}
 
+                  {importResult?.pending && importResult.jobId && (
+                    <button
+                      type="button"
+                      className="text-sm text-content-primary hover:underline"
+                      onClick={() => {
+                        void importStatus(importResult.jobId!)
+                          .then((status) => {
+                            setImportResult(
+                              describeOffDeviceImportKickoff(status, 'Archive'),
+                            )
+                            if (
+                              status.status === 'completed' ||
+                              status.status === 'partial'
+                            )
+                              onChatsUpdated?.()
+                          })
+                          .catch(reportHarnessError)
+                      }}
+                    >
+                      Check import progress
+                    </button>
+                  )}
                   {/* Import Result */}
                   {importResult && !isImporting && (
                     <div className="space-y-3">
@@ -3889,11 +2916,7 @@ ${encryptionKey.replace('key_', '')}
                                   : 'text-red-500',
                               )}
                             >
-                              {importResult.pending
-                                ? 'Import in progress'
-                                : importResult.success
-                                  ? 'Import complete'
-                                  : 'Import completed with errors'}
+                              {importResultTitle(importResult)}
                             </div>
                             {importResult.message && (
                               <div className="font-aeonik-fono text-xs text-content-muted">
@@ -3997,9 +3020,7 @@ ${encryptionKey.replace('key_', '')}
                           3
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          {shouldImportOffDevice()
-                            ? 'Download the ZIP file you receive by email.'
-                            : 'Download and unzip the file you receive by email.'}
+                          {'Download the ZIP file you receive by email.'}
                         </div>
                       </div>
                       <div className="flex items-start gap-3">
@@ -4014,7 +3035,7 @@ ${encryptionKey.replace('key_', '')}
                           4
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          {shouldImportOffDevice() ? (
+                          {
                             <>
                               Select the ZIP export to include attachments, or{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
@@ -4022,23 +3043,13 @@ ${encryptionKey.replace('key_', '')}
                               </code>{' '}
                               for chat text only.
                             </>
-                          ) : (
-                            <>
-                              Select{' '}
-                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations.json
-                              </code>{' '}
-                              from the unzipped folder.
-                            </>
-                          )}
+                          }
                         </div>
                       </div>
                       <input
                         ref={chatGptFileInputRef}
                         type="file"
-                        accept={
-                          shouldImportOffDevice() ? '.json,.zip' : '.json'
-                        }
+                        accept={'.json,.zip'}
                         onChange={handleImportChatGPT}
                         className="hidden"
                         disabled={isImporting}
@@ -4129,7 +3140,7 @@ ${encryptionKey.replace('key_', '')}
                           3
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          {shouldImportOffDevice()
+                          {isPremium
                             ? 'Download the ZIP file you receive by email.'
                             : 'Download and unzip the file you receive by email.'}
                         </div>
@@ -4146,7 +3157,7 @@ ${encryptionKey.replace('key_', '')}
                           4
                         </div>
                         <div className="font-aeonik-fono text-sm text-content-muted">
-                          {shouldImportOffDevice() ? (
+                          {isPremium ? (
                             <>
                               Select the ZIP export with the Conversations
                               button to include attachments. Use{' '}
@@ -4155,7 +3166,7 @@ ${encryptionKey.replace('key_', '')}
                               </code>{' '}
                               only for project imports.
                             </>
-                          ) : (
+                          ) : isPremium ? (
                             <>
                               Select{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
@@ -4167,27 +3178,35 @@ ${encryptionKey.replace('key_', '')}
                               </code>{' '}
                               from the unzipped folder.
                             </>
+                          ) : (
+                            <>
+                              Select{' '}
+                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                conversations.json
+                              </code>{' '}
+                              from the unzipped folder.
+                            </>
                           )}
                         </div>
                       </div>
                       <input
                         ref={claudeConversationsFileInputRef}
                         type="file"
-                        accept={
-                          shouldImportOffDevice() ? '.json,.zip' : '.json'
-                        }
+                        accept={isPremium ? '.json,.zip' : '.json'}
                         onChange={handleImportClaudeConversations}
                         className="hidden"
                         disabled={isImporting}
                       />
-                      <input
-                        ref={claudeProjectsFileInputRef}
-                        type="file"
-                        accept=".json"
-                        onChange={handleImportClaudeProjects}
-                        className="hidden"
-                        disabled={isImporting || !isPremium}
-                      />
+                      {isPremium && (
+                        <input
+                          ref={claudeProjectsFileInputRef}
+                          type="file"
+                          accept=".json"
+                          onChange={handleImportClaudeProjects}
+                          className="hidden"
+                          disabled={isImporting}
+                        />
+                      )}
                       <div className="mt-2 flex gap-2">
                         <button
                           onClick={() =>
@@ -4207,29 +3226,26 @@ ${encryptionKey.replace('key_', '')}
                           <ArrowUpTrayIcon className="h-4 w-4" />
                           Conversations
                         </button>
-                        <button
-                          onClick={() =>
-                            claudeProjectsFileInputRef.current?.click()
-                          }
-                          disabled={isImporting || !isPremium}
-                          className={cn(
-                            'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                            isImporting || !isPremium
-                              ? 'cursor-not-allowed opacity-50'
-                              : 'hover:bg-surface-chat',
-                            isDarkMode
-                              ? 'bg-surface-chat text-content-primary'
-                              : 'bg-surface-sidebar text-content-primary',
-                          )}
-                        >
-                          <ArrowUpTrayIcon className="h-4 w-4" />
-                          Projects
-                          {!isPremium && (
-                            <span className="ml-1 rounded-full bg-brand-accent-light/20 px-1.5 py-px text-[10px] font-medium text-brand-accent-light">
-                              Premium
-                            </span>
-                          )}
-                        </button>
+                        {isPremium && (
+                          <button
+                            onClick={() =>
+                              claudeProjectsFileInputRef.current?.click()
+                            }
+                            disabled={isImporting}
+                            className={cn(
+                              'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                              isImporting
+                                ? 'cursor-not-allowed opacity-50'
+                                : 'hover:bg-surface-chat',
+                              isDarkMode
+                                ? 'bg-surface-chat text-content-primary'
+                                : 'bg-surface-sidebar text-content-primary',
+                            )}
+                          >
+                            <ArrowUpTrayIcon className="h-4 w-4" />
+                            Projects
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -4415,9 +3431,7 @@ ${encryptionKey.replace('key_', '')}
                           </div>
                           <button
                             onClick={() => {
-                              if (isLocalOnlyModeEnabled()) {
-                                setShowSignOutConfirm(true)
-                              } else {
+                              {
                                 void handleSignOut()
                               }
                             }}
@@ -4654,90 +3668,6 @@ ${encryptionKey.replace('key_', '')}
           </div>
         </div>
       )}
-
-      <ConfirmDialog
-        isOpen={presetPendingDelete !== null}
-        title="Delete prompt?"
-        description={
-          presetPendingDelete
-            ? `"${presetPendingDelete.name}" will be permanently removed. This cannot be undone.`
-            : undefined
-        }
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleConfirmDeletePreset}
-        onCancel={() => setPresetPendingDelete(null)}
-      />
-    </div>
-  )
-}
-
-type PresetRowProps = {
-  preset: PromptPreset
-  isDarkMode: boolean
-  onEdit?: () => void
-  onDuplicate: () => void
-  onDelete?: () => void
-}
-
-function PresetRow({
-  preset,
-  isDarkMode,
-  onEdit,
-  onDuplicate,
-  onDelete,
-}: PresetRowProps) {
-  const Icon = preset.Icon
-  return (
-    <div
-      className={cn(
-        'flex items-start gap-3 rounded-lg border border-border-subtle p-3',
-        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-      )}
-    >
-      <span className="mt-0.5 flex h-7 w-7 flex-none items-center justify-center rounded-md bg-surface-chat text-content-secondary">
-        <Icon className="h-4 w-4" />
-      </span>
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-sm font-medium text-content-primary">
-          {preset.name}
-        </span>
-        {preset.description && (
-          <span className="mt-0.5 line-clamp-2 text-xs text-content-secondary">
-            {preset.description}
-          </span>
-        )}
-      </div>
-      <div className="flex flex-none items-center gap-1">
-        {onEdit && (
-          <button
-            type="button"
-            onClick={onEdit}
-            aria-label={`Edit ${preset.name}`}
-            className="rounded-md p-1.5 text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
-          >
-            <PencilSquareIcon className="h-4 w-4" />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onDuplicate}
-          aria-label={`Duplicate ${preset.name}`}
-          className="rounded-md p-1.5 text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
-        >
-          <PlusIcon className="h-4 w-4" />
-        </button>
-        {onDelete && (
-          <button
-            type="button"
-            onClick={onDelete}
-            aria-label={`Delete ${preset.name}`}
-            className="rounded-md p-1.5 text-red-500 transition-colors hover:bg-red-500/10"
-          >
-            <TrashIcon className="h-4 w-4" />
-          </button>
-        )}
-      </div>
     </div>
   )
 }

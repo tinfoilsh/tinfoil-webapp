@@ -1,11 +1,11 @@
-'use client'
+import { logError } from '@/utils/error-handling'
+;('use client')
 
 import { ChatList, type ChatItemData } from '@/components/chat/chat-list'
 import { formatRelativeTime } from '@/components/chat/chat-list-utils'
-import { getDocumentTextContent } from '@/components/chat/document-content'
-import { useDocumentUploader } from '@/components/chat/document-uploader'
 import { useDrag } from '@/components/chat/drag-context'
 import { consumeFavoriteDrop } from '@/components/chat/favorite-drag'
+import { isResolvedFavoriteChat } from '@/components/chat/favorite-view'
 import { TypingAnimation } from '@/components/chat/typing-animation'
 import { useFavoriteDropTarget } from '@/components/chat/use-favorite-drop-target'
 import { PiSpinnerThin } from '@/components/icons/lazy-icons'
@@ -27,7 +27,6 @@ import {
   UI_SIDEBAR_FAVORITES_EXPANDED,
 } from '@/constants/storage-keys'
 import { toast } from '@/hooks/use-toast'
-import { isResolvedFavoriteChat } from '@/services/storage/pinned-chats'
 import type { Fact } from '@/types/memory'
 import type { Project } from '@/types/project'
 import {
@@ -106,6 +105,8 @@ interface ProjectOption {
 }
 
 interface ProjectSidebarProps {
+  hasMore?: boolean
+  onLoadMore?: () => Promise<void>
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
   project: Project | null
@@ -306,6 +307,8 @@ export function ProjectSidebar({
   onMoveChatToProject,
   projects = [],
   onSettingsClick,
+  hasMore,
+  onLoadMore,
   favoriteChats = [],
   pinnedChatIds = [],
   onToggleFavorite,
@@ -334,8 +337,6 @@ export function ProjectSidebar({
     addUploadingFile,
     removeUploadingFile,
   } = useProject()
-  const { handleDocumentUpload: processDocument, isDocumentUploading } =
-    useDocumentUploader()
   const [settingsExpanded, setSettingsExpanded] = useState(false)
   const [isFavoritesExpanded, setIsFavoritesExpanded] = useState(false)
   const hasLoadedFavoritesExpandedRef = useRef(false)
@@ -378,6 +379,7 @@ export function ProjectSidebar({
   const favoritesSectionRef = useRef<HTMLElement>(null)
   const exitHoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [isExitButtonDragHover, setIsExitButtonDragHover] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [isDropTargetChatList, setIsDropTargetChatList] = useState(false)
 
   const [isMac, setIsMac] = useState(false)
@@ -607,58 +609,26 @@ export function ProjectSidebar({
       })
 
       await Promise.all(
-        fileArray.map(async (file, i) => {
-          return new Promise<void>((resolve) => {
-            processDocument(
-              file,
-              async (
-                content,
-                _documentId,
-                _imageData,
-                _hasDescription,
-                pages,
-              ) => {
-                try {
-                  const projectContent = getDocumentTextContent(content, pages)
-                  if (!projectContent) {
-                    throw new Error(
-                      'No readable content was found in this document.',
-                    )
-                  }
-                  await uploadDocument(file, projectContent)
-                } catch (error) {
-                  toast({
-                    title: 'Upload failed',
-                    description:
-                      error instanceof Error
-                        ? error.message
-                        : 'Failed to upload the document. Please try again.',
-                    variant: 'destructive',
-                  })
-                } finally {
-                  removeUploadingFile(uploadIds[i])
-                  resolve()
-                }
-              },
-              (error) => {
-                toast({
-                  title: 'Upload failed',
-                  description: error.message,
-                  variant: 'destructive',
-                })
-                removeUploadingFile(uploadIds[i])
-                resolve()
-              },
-              undefined,
-              { requireTextContent: true },
-            )
-          })
+        fileArray.map(async (file, index) => {
+          try {
+            await uploadDocument(file, '')
+          } catch (cause) {
+            toast({
+              title: 'Upload failed',
+              description:
+                cause instanceof Error
+                  ? cause.message
+                  : 'Unable to upload document.',
+              variant: 'destructive',
+            })
+          } finally {
+            removeUploadingFile(uploadIds[index])
+          }
         }),
       )
-
       e.target.value = ''
     },
-    [uploadDocument, processDocument, addUploadingFile, removeUploadingFile],
+    [uploadDocument, addUploadingFile, removeUploadingFile],
   )
 
   const handleChatSelect = useCallback(
@@ -1662,6 +1632,23 @@ export function ProjectSidebar({
               pinnedChatIds={pinnedChatIds}
               onTogglePin={onToggleFavorite}
             />
+            {hasMore && (
+              <button
+                type="button"
+                disabled={loadingMore}
+                className="w-full px-4 py-3 text-xs text-content-secondary hover:text-content-primary disabled:opacity-50"
+                onClick={() => {
+                  setLoadingMore(true)
+                  void onLoadMore?.()
+                    .catch((error) => {
+                      logError('Failed to load project chats', error)
+                    })
+                    .finally(() => setLoadingMore(false))
+                }}
+              >
+                {loadingMore ? 'Loading…' : 'Load older chats'}
+              </button>
+            )}
           </div>
         </div>
 

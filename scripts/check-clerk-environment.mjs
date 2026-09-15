@@ -22,6 +22,41 @@ export function getClerkPrivacyDrift(environment) {
   return drift
 }
 
+export function getClerkAuthDrift(environment) {
+  const drift = []
+  const attributes = environment?.user_settings?.attributes
+
+  if (environment?.user_settings?.sign_up?.mode !== 'public') {
+    drift.push('user_settings.sign_up.mode must be public')
+  }
+
+  if (attributes?.password?.enabled !== true) {
+    drift.push('user_settings.attributes.password.enabled must be true')
+  }
+
+  if (attributes?.password?.required !== true) {
+    drift.push('user_settings.attributes.password.required must be true')
+  }
+
+  if (attributes?.email_address?.enabled !== true) {
+    drift.push('user_settings.attributes.email_address.enabled must be true')
+  }
+
+  if (attributes?.email_address?.verify_at_sign_up !== true) {
+    drift.push(
+      'user_settings.attributes.email_address.verify_at_sign_up must be true',
+    )
+  }
+
+  if (!attributes?.email_address?.verifications?.includes('email_code')) {
+    drift.push(
+      'user_settings.attributes.email_address.verifications must include email_code',
+    )
+  }
+
+  return drift
+}
+
 export async function checkClerkEnvironment({
   fetchImplementation = fetch,
   url = CLERK_ENVIRONMENT_URL,
@@ -58,19 +93,20 @@ export async function checkClerkEnvironment({
     )
   }
 
-  const drift = getClerkPrivacyDrift(environment)
+  const drift = [
+    ...getClerkPrivacyDrift(environment),
+    ...getClerkAuthDrift(environment),
+  ]
 
   if (drift.length > 0) {
-    throw new Error(
-      `Clerk privacy configuration drifted:\n- ${drift.join('\n- ')}`,
-    )
+    throw new Error(`Clerk configuration drifted:\n- ${drift.join('\n- ')}`)
   }
 }
 
 async function main() {
   try {
     await checkClerkEnvironment()
-    process.stdout.write('Clerk privacy configuration is valid.\n')
+    process.stdout.write('Clerk configuration is valid.\n')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     process.stderr.write(`${message}\n`)

@@ -1,7 +1,6 @@
 'use client'
 
-import { ChatInterface } from '@/components/chat'
-import { ProjectProvider } from '@/components/project'
+import { PremiumProjectRoute } from '@/components/project/premium-project-route'
 import { useRouter } from 'next/router'
 
 export default function ProjectCatchAllPage() {
@@ -16,14 +15,10 @@ export default function ProjectCatchAllPage() {
 
   return (
     <div className="h-screen font-aeonik">
-      <ProjectProvider
-        initialProjectId={typeof projectId === 'string' ? projectId : null}
-      >
-        <ChatInterface
-          initialProjectId={typeof projectId === 'string' ? projectId : null}
-          initialChatId={typeof chatId === 'string' ? chatId : null}
-        />
-      </ProjectProvider>
+      <PremiumProjectRoute
+        projectId={typeof projectId === 'string' ? projectId : null}
+        chatId={typeof chatId === 'string' ? chatId : null}
+      />
     </div>
   )
 }

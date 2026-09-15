@@ -12,8 +12,7 @@ import { cn } from '@/components/ui/utils'
 import { SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL } from '@/constants/storage-keys'
 import { useToast } from '@/hooks/use-toast'
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { PrfNotSupportedError } from '@/services/passkey'
-import { setCloudSyncEnabled as persistCloudSyncEnabled } from '@/utils/cloud-sync-settings'
+import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
   ArrowDownTrayIcon,
@@ -42,6 +41,28 @@ const BUTTON_COLUMN_CLASS_NAME =
 
 const ILLUSTRATION_ICON_CLASS_NAME =
   'mx-auto h-20 w-20 text-content-secondary opacity-70'
+
+const PASSKEY_SETUP_FAILED_DESCRIPTION =
+  'Could not create passkey backup. You can try again later.'
+
+function getPasskeySetupFailure(error: unknown): {
+  title: string
+  description: string
+} | null {
+  if (error instanceof PrfNotSupportedError) {
+    return {
+      title: 'Passkey Provider Not Supported',
+      description: error.message,
+    }
+  }
+  if (error instanceof PasskeyTimeoutError) {
+    return {
+      title: 'Passkey Setup Timed Out',
+      description: error.message,
+    }
+  }
+  return null
+}
 
 interface CloudSyncSetupModalBaseProps {
   isOpen: boolean
@@ -121,6 +142,7 @@ export function CloudSyncSetupModal({
   const [isDragging, setIsDragging] = useState(false)
   const [isStartingFresh, setIsStartingFresh] = useState(false)
   const [keyAlreadyActivated, setKeyAlreadyActivated] = useState(false)
+  const [setupErrorTitle, setSetupErrorTitle] = useState('Setup Failed')
   const [setupError, setSetupError] = useState('')
   const [setupFailedOrigin, setSetupFailedOrigin] = useState<
     'passkey' | 'manual'
@@ -152,7 +174,11 @@ export function CloudSyncSetupModal({
     )
   }, [passkeyRecoveryNeeded])
 
-  const enterSetupFailed = (origin: 'passkey' | 'manual' = 'manual') => {
+  const enterSetupFailed = (
+    origin: 'passkey' | 'manual' = 'manual',
+    title = 'Setup Failed',
+  ) => {
+    setSetupErrorTitle(title)
     setSetupFailedOrigin(origin)
     setCurrentStep('setup-failed')
   }
@@ -169,20 +195,22 @@ export function CloudSyncSetupModal({
         if (success) {
           setCurrentStep('restore-success')
         } else {
-          setSetupError(
-            'Could not create passkey backup. You can try again later.',
-          )
+          setSetupError(PASSKEY_SETUP_FAILED_DESCRIPTION)
           enterSetupFailed('passkey')
         }
       } catch (error) {
-        logError('Could not start passkey setup', error, {
-          component: 'CloudSyncSetupModal',
-          action: 'handleContinue',
-        })
-        setSetupError(
-          'Could not create passkey backup. You can try again later.',
-        )
-        enterSetupFailed('passkey')
+        const failure = getPasskeySetupFailure(error)
+        if (failure) {
+          setSetupError(failure.description)
+          enterSetupFailed('passkey', failure.title)
+        } else {
+          logError('Could not start passkey setup', error, {
+            component: 'CloudSyncSetupModal',
+            action: 'handleContinue',
+          })
+          setSetupError(PASSKEY_SETUP_FAILED_DESCRIPTION)
+          enterSetupFailed('passkey')
+        }
       }
       return
     }
@@ -240,7 +268,6 @@ export function CloudSyncSetupModal({
     if (prfSupported && !manualRecoveryNeeded) {
       const result = await onSetupComplete(newKey, keySetupMode)
       if (result.ok) {
-        persistCloudSyncEnabled(true)
         setKeyAlreadyActivated(true)
         setCurrentStep('key-display')
         return
@@ -271,7 +298,6 @@ export function CloudSyncSetupModal({
         return
       }
 
-      persistCloudSyncEnabled(true)
       localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
 
       logInfo('Restored encryption key for cloud sync', {
@@ -422,7 +448,6 @@ ${generatedKey.replace('key_', '')}
 
     if (keyAlreadyActivated) {
       localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
-      persistCloudSyncEnabled(true)
       onClose()
       return
     }
@@ -438,7 +463,6 @@ ${generatedKey.replace('key_', '')}
         }
 
         localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
-        persistCloudSyncEnabled(true)
         onClose()
       })
       .catch((error) => {
@@ -804,7 +828,7 @@ ${generatedKey.replace('key_', '')}
           as="h2"
           className="text-balance text-center text-xl font-bold leading-7"
         >
-          Setup Failed
+          {setupErrorTitle}
         </ModalTitle>
 
         <p className="text-balance text-center text-sm text-content-secondary">
@@ -881,9 +905,10 @@ ${generatedKey.replace('key_', '')}
         enterSetupFailed()
       }
     } catch (error) {
-      if (error instanceof PrfNotSupportedError) {
-        setSetupError(error.message)
-        enterSetupFailed()
+      const failure = getPasskeySetupFailure(error)
+      if (failure) {
+        setSetupError(failure.description)
+        enterSetupFailed('manual', failure.title)
       } else {
         logError('Start fresh failed', error, {
           component: 'CloudSyncSetupModal',

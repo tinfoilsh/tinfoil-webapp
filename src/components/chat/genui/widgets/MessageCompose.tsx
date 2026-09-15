@@ -30,29 +30,16 @@ function useCopyToClipboard(): {
 }
 
 const variantSchema = z.object({
-  label: z
-    .string()
-    .describe('Short variant label, e.g. "Formal", "Concise", "Apologetic"'),
+  label: z.string(),
   subject: z.string().optional(),
   body: z.string(),
 })
 
 const schema = z.object({
-  channel: z
-    .enum(['email', 'message'])
-    .optional()
-    .describe('email (shows subject + "Open in Mail") or message (body only)'),
-  to: z.string().optional().describe('Recipient — used for mailto:'),
-  title: z
-    .string()
-    .optional()
-    .describe('Card title, e.g. "Draft reply to Alice"'),
-  variants: z
-    .array(variantSchema)
-    .min(1)
-    .describe(
-      'One or more message drafts to offer. First variant is selected by default.',
-    ),
+  channel: z.enum(['email', 'message']).optional(),
+  to: z.string().optional(),
+  title: z.string().optional(),
+  variants: z.array(variantSchema).min(1),
 })
 
 type Variant = z.infer<typeof variantSchema>
@@ -247,10 +234,6 @@ function MessageComposeCard(props: Props) {
 
 export const widget = defineGenUIWidget({
   name: 'render_message_compose',
-  description:
-    'Draft a message or email with one or more tone variants. Includes Copy and (for email) Open in Mail. Use when proposing a reply, message, or email draft to send.',
   schema,
-  promptHint:
-    'a draft message or email with optional tone variants and Copy / Open in Mail',
   render: (args) => <MessageComposeCard {...args} />,
 })

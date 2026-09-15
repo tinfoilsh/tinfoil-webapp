@@ -4,7 +4,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -74,37 +76,89 @@ export function useImageGallery() {
 export function ImageGalleryProvider({
   messages,
   children,
+  loadImage,
 }: {
+  loadImage?: (attachment: Attachment, signal: AbortSignal) => Promise<Blob>
   messages: Message[]
   children: ReactNode
 }) {
-  const images = useMemo<GalleryImage[]>(() => {
-    const collected: GalleryImage[] = []
+  const [fullImages, setFullImages] = useState<Record<string, string>>({})
+  const pending = useRef(new Set<string>())
+  const urls = useRef(new Set<string>())
+  const lifetime = useRef(new AbortController())
+  useEffect(() => {
+    const controller = new AbortController()
+    lifetime.current = controller
+    const allocated = urls.current
+    return () => {
+      controller.abort()
+      for (const url of allocated) URL.revokeObjectURL(url)
+      allocated.clear()
+    }
+  }, [])
+  const images = useMemo<
+    (GalleryImage & { attachment: Attachment; cacheKey: string })[]
+  >(() => {
+    const collected: (GalleryImage & {
+      attachment: Attachment
+      cacheKey: string
+    })[] = []
     messages.forEach((message, messageIndex) => {
       getMessageImages(message).forEach((attachment, imageIndex) => {
-        const src = attachmentToImageSrc(attachment)
+        const cacheKey = `${message.id ?? messageIndex}:${attachment.id}`
+        const src = fullImages[cacheKey] ?? attachmentToImageSrc(attachment)
         if (!src) return
         collected.push({
           key: `${messageIndex}:${imageIndex}`,
+          cacheKey,
+          attachment,
           src,
           alt: attachment.fileName || 'Image',
         })
       })
     })
     return collected
-  }, [messages])
+  }, [messages, fullImages])
 
   const [open, setOpen] = useState(false)
   const [index, setIndex] = useState(0)
 
+  const loadIndex = useCallback(
+    (target: number) => {
+      const image = images[target]
+      if (
+        !image ||
+        !loadImage ||
+        image.attachment.base64 ||
+        fullImages[image.cacheKey] ||
+        pending.current.has(image.cacheKey)
+      )
+        return
+      pending.current.add(image.cacheKey)
+      const signal = lifetime.current.signal
+      void loadImage(image.attachment, signal)
+        .then((blob) => {
+          if (signal.aborted) return
+          const url = URL.createObjectURL(blob)
+          urls.current.add(url)
+          setFullImages((previous) => ({ ...previous, [image.cacheKey]: url }))
+        })
+        .catch(() => {
+          /* The thumbnail remains available if download fails. */
+        })
+        .finally(() => pending.current.delete(image.cacheKey))
+    },
+    [images, loadImage, fullImages],
+  )
   const openByKey = useCallback(
     (key: string) => {
       const target = images.findIndex((image) => image.key === key)
       if (target === -1) return
       setIndex(target)
       setOpen(true)
+      loadIndex(target)
     },
-    [images],
+    [images, loadIndex],
   )
 
   const value = useMemo(() => ({ openByKey }), [openByKey])
@@ -117,7 +171,10 @@ export function ImageGalleryProvider({
         index={index}
         open={open}
         onClose={() => setOpen(false)}
-        onIndexChange={setIndex}
+        onIndexChange={(next) => {
+          setIndex(next)
+          loadIndex(next)
+        }}
       />
     </ImageGalleryContext.Provider>
   )

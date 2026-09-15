@@ -32,23 +32,15 @@ export const OPEN_ARTIFACT_PREVIEW_EVENT = 'openArtifactPreviewSidebar'
 const sourceSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('url'),
-    url: z.string().describe('Absolute URL rendered inside a sandboxed iframe'),
+    url: z.string(),
   }),
   z.object({
     type: z.literal('html'),
-    html: z
-      .string()
-      .describe(
-        'Raw HTML rendered in a sandboxed iframe. Use exactly {"type":"html","html":"..."}.',
-      ),
+    html: z.string(),
   }),
   z.object({
     type: z.literal('markdown'),
-    markdown: z
-      .string()
-      .describe(
-        'Markdown source. Use exactly {"type":"markdown","markdown":"..."}.',
-      ),
+    markdown: z.string(),
   }),
 ])
 
@@ -57,15 +49,8 @@ export type ArtifactSource = z.infer<typeof sourceSchema>
 const schema = z.object({
   title: z.string().optional(),
   description: z.string().optional(),
-  source: sourceSchema.describe(
-    'The artifact payload. Pick the `type` that matches your content: ' +
-      '`url` for a live site, `html` for a self-contained page, or ' +
-      '`markdown` for rich text. For SVG illustrations and Mermaid ' +
-      'diagrams, emit a fenced ```svg or ```mermaid code block in the ' +
-      'regular assistant message instead — the renderer shows the source ' +
-      'and a live preview side-by-side automatically.',
-  ),
-  footer: z.string().optional().describe('Optional small footnote text'),
+  source: sourceSchema,
+  footer: z.string().optional(),
 })
 
 export interface ArtifactPreviewSidebarDetail {
@@ -508,10 +493,7 @@ function ArtifactPreviewInlineCard({
 
 export const widget = defineGenUIWidget({
   name: 'render_artifact_preview',
-  description:
-    'Display a visual artifact in a side panel: a hosted URL, a self-contained HTML snippet, or Markdown. Use for content worth inspecting at full size — interactive demos, long-form documents, or rich HTML mockups. For SVG illustrations and Mermaid diagrams, emit a fenced `svg` or `mermaid` code block in the regular assistant message instead. The chat shows a compact summary card; clicking it opens the full artifact in the right sidebar.',
   schema,
-  promptHint: 'large artifacts (markdown/html/url) opened in a side panel',
   render: (args, { isActive, isStreaming, toolCallId }) => (
     <ArtifactPreviewInlineCard
       {...args}

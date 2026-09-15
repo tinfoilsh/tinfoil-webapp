@@ -2,6 +2,7 @@ import { GenUIToolCallRenderer } from '@/components/chat/genui/GenUIToolCallRend
 import { renderGenUIResolved } from '@/components/chat/genui/render'
 import { cn } from '@/components/ui/utils'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
+import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
 import {
   ArrowPathIcon,
   ArrowUturnLeftIcon,
@@ -15,10 +16,13 @@ import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
 import { RxCopy } from 'react-icons/rx'
 import { hasMessageAttachments } from '../../attachment-helpers'
-import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
+import { isGenUIToolName } from '../../genui/registry'
+import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
+import { isImeComposition } from '../../keyboard-utils'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
+import { ServerToolResult } from '../components/ServerToolResult'
 import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
@@ -27,6 +31,8 @@ import { ThoughtProcess } from '../components/ThoughtProcess'
 import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
+const hasVisibleAssistantMessage = (message: MessageRenderProps['message']) =>
+  !!message.content || !!message.timeline?.length
 
 const MessageMetadata = ({
   modelDisplayName,
@@ -60,6 +66,7 @@ const DefaultMessageComponent = ({
   onRetryToolCall,
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
+  const enterToNewline = useEnterToNewline()
   const [isEditing, setIsEditing] = React.useState(false)
   const [editContent, setEditContent] = React.useState(message.content || '')
   const [copiedUser, setCopiedUser] = React.useState(false)
@@ -246,7 +253,7 @@ const DefaultMessageComponent = ({
       className={`relative mx-auto flex w-full max-w-3xl flex-col ${isUser ? 'items-end' : 'items-start'} group mb-6`}
       data-message-role={message.role}
       role="article"
-      aria-label={isUser ? 'You said' : 'Tin said'}
+      aria-label={isUser ? 'You said' : 'Al said'}
       tabIndex={-1}
     >
       {/* Display the quoted reply preview above the user's message */}
@@ -316,6 +323,14 @@ const DefaultMessageComponent = ({
                 </div>
               )
             case 'tool_call': {
+              if (!isGenUIToolName(block.name))
+                return (
+                  <ServerToolResult
+                    key={block.id}
+                    block={block}
+                    isStreaming={!!isStreaming && !!isLastMessage}
+                  />
+                )
               const resolved = block.resolvedAt && block.resolution
               if (resolved) {
                 let parsed: Record<string, unknown> | null = null
@@ -358,6 +373,7 @@ const DefaultMessageComponent = ({
                         id: block.toolCallId,
                         name: block.name,
                         arguments: block.arguments,
+                        result: block.result,
                       },
                     ]}
                     isStreaming={!!isStreaming && !!isLastMessage}
@@ -488,11 +504,11 @@ const DefaultMessageComponent = ({
                       <div className="flex items-center gap-2">
                         <GoClockFill className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light" />
                         <span className="font-semibold text-brand-accent-dark dark:text-brand-accent-light">
-                          Daily limit reached
+                          Daily rate limit reached
                         </span>
                       </div>
                       <p className="text-sm text-brand-accent-dark/70 dark:text-brand-accent-light/70">
-                        You&apos;ve used all your free requests for today.
+                        {DAILY_RATE_LIMIT_MESSAGE}
                       </p>
                       <button
                         type="button"
@@ -593,7 +609,14 @@ const DefaultMessageComponent = ({
                     value={editContent}
                     onChange={(e) => setEditContent(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
+                      if (e.key === 'Enter' && isImeComposition(e)) {
+                        return
+                      }
+                      if (
+                        e.key === 'Enter' &&
+                        !e.shiftKey &&
+                        (!enterToNewline || e.metaKey || e.ctrlKey)
+                      ) {
                         e.preventDefault()
                         handleSubmitEdit()
                       } else if (e.key === 'Escape') {
