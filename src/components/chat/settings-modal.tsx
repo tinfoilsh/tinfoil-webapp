@@ -1409,6 +1409,109 @@ export function SettingsModal({
     return { imported, errors }
   }
 
+  // Rendered in place of a source's upload button so progress and the
+  // outcome appear inside the box the user is importing from.
+  const renderImportStatus = (source: 'chatgpt' | 'claude' | 'tinfoil') => {
+    if (importSource !== source) return null
+    if (isImporting && importProgress) {
+      const { title, detail, percent } = describeImportProgress(importProgress)
+      return (
+        <div
+          className={cn(
+            'rounded-lg border border-border-subtle p-4',
+            isDarkMode ? 'bg-surface-chat' : 'bg-surface-sidebar',
+          )}
+        >
+          <div className="flex items-center gap-3">
+            <ArrowPathIcon className="h-5 w-5 animate-spin text-brand-accent-light" />
+            <div className="flex-1">
+              <div className="font-aeonik text-sm font-medium text-content-primary">
+                {title}
+              </div>
+              <div className="font-aeonik-fono text-xs text-content-muted">
+                {detail}
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-sidebar">
+            <div
+              className="h-full bg-brand-accent-light transition-all"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+      )
+    }
+    if (importResult && !isImporting) {
+      return (
+        <div
+          className={cn(
+            'rounded-lg border p-4',
+            importResult.success
+              ? 'border-brand-accent-dark/30 bg-brand-accent-dark/10 dark:border-brand-accent-light/30 dark:bg-brand-accent-light/10'
+              : 'border-red-500/30 bg-red-500/10',
+          )}
+        >
+          <div className="flex items-start gap-3">
+            {importResult.success ? (
+              <CheckCircleIcon className="h-5 w-5 shrink-0 text-brand-accent-dark dark:text-brand-accent-light" />
+            ) : (
+              <XMarkIcon className="h-5 w-5 shrink-0 text-red-500" />
+            )}
+            <div className="flex-1">
+              <div
+                className={cn(
+                  'font-aeonik text-sm font-medium',
+                  importResult.success
+                    ? 'text-brand-accent-dark dark:text-brand-accent-light'
+                    : 'text-red-500',
+                )}
+              >
+                {importResultTitle(importResult)}
+              </div>
+              {importResult.message && (
+                <div className="font-aeonik-fono text-xs text-content-muted">
+                  {importResult.message}
+                </div>
+              )}
+              <div className="font-aeonik-fono text-xs text-content-muted">
+                {importResult.chatsImported > 0 &&
+                  `${importResult.chatsImported} chat${importResult.chatsImported !== 1 ? 's' : ''} imported`}
+                {importResult.chatsImported > 0 &&
+                  importResult.projectsImported > 0 &&
+                  ', '}
+                {importResult.projectsImported > 0 &&
+                  `${importResult.projectsImported} project${importResult.projectsImported !== 1 ? 's' : ''} imported`}
+              </div>
+              {importResult.errors.length > 0 && (
+                <div className="mt-2 text-xs text-red-400">
+                  {importResult.errors.slice(0, 3).map((err, i) => (
+                    <div key={i}>{err}</div>
+                  ))}
+                  {importResult.errors.length > 3 && (
+                    <div>+{importResult.errors.length - 3} more errors</div>
+                  )}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setImportResult(null)
+                setImportSource(null)
+              }}
+              aria-label="Dismiss"
+              className="shrink-0 rounded p-0.5 text-content-muted transition-colors hover:text-content-primary"
+            >
+              <XMarkIcon className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return null
+  }
+
   // Cloud-sync users import off-device: the raw export is uploaded to
   // the enclave, which parses, seals, and stores everything without the
   // plaintext touching app servers, then emails the user on completion.
@@ -4022,105 +4125,6 @@ ${encryptionKey.replace('key_', '')}
                     </div>
                   )}
 
-                  {/* Import Progress */}
-                  {isImporting &&
-                    importProgress &&
-                    (() => {
-                      const { title, detail, percent } =
-                        describeImportProgress(importProgress)
-                      return (
-                        <div className="space-y-3">
-                          <div
-                            className={cn(
-                              'rounded-lg border border-border-subtle p-4',
-                              isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                            )}
-                          >
-                            <div className="flex items-center gap-3">
-                              <ArrowPathIcon className="h-5 w-5 animate-spin text-brand-accent-light" />
-                              <div className="flex-1">
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  {title}
-                                </div>
-                                <div className="font-aeonik-fono text-xs text-content-muted">
-                                  {detail}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-chat">
-                              <div
-                                className="h-full bg-brand-accent-light transition-all"
-                                style={{ width: `${percent}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                  {/* Import Result */}
-                  {importResult && !isImporting && (
-                    <div className="space-y-3">
-                      <div
-                        className={cn(
-                          'rounded-lg border p-4',
-                          importResult.success
-                            ? 'border-brand-accent-dark/30 bg-brand-accent-dark/10 dark:border-brand-accent-light/30 dark:bg-brand-accent-light/10'
-                            : 'border-red-500/30 bg-red-500/10',
-                        )}
-                      >
-                        <div className="flex items-start gap-3">
-                          {importResult.success ? (
-                            <CheckCircleIcon className="h-5 w-5 text-brand-accent-dark dark:text-brand-accent-light" />
-                          ) : (
-                            <XMarkIcon className="h-5 w-5 text-red-500" />
-                          )}
-                          <div>
-                            <div
-                              className={cn(
-                                'font-aeonik text-sm font-medium',
-                                importResult.success
-                                  ? 'text-brand-accent-dark dark:text-brand-accent-light'
-                                  : 'text-red-500',
-                              )}
-                            >
-                              {importResultTitle(importResult)}
-                            </div>
-                            {importResult.message && (
-                              <div className="font-aeonik-fono text-xs text-content-muted">
-                                {importResult.message}
-                              </div>
-                            )}
-                            <div className="font-aeonik-fono text-xs text-content-muted">
-                              {importResult.chatsImported > 0 &&
-                                `${importResult.chatsImported} chat${importResult.chatsImported !== 1 ? 's' : ''} imported`}
-                              {importResult.chatsImported > 0 &&
-                                importResult.projectsImported > 0 &&
-                                ', '}
-                              {importResult.projectsImported > 0 &&
-                                `${importResult.projectsImported} project${importResult.projectsImported !== 1 ? 's' : ''} imported`}
-                            </div>
-                            {importResult.errors.length > 0 && (
-                              <div className="mt-2 text-xs text-red-400">
-                                {importResult.errors
-                                  .slice(0, 3)
-                                  .map((err, i) => (
-                                    <div key={i}>{err}</div>
-                                  ))}
-                                {importResult.errors.length > 3 && (
-                                  <div>
-                                    +{importResult.errors.length - 3} more
-                                    errors
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   {/* ChatGPT Import */}
                   <div className="space-y-3">
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">
@@ -4234,22 +4238,24 @@ ${encryptionKey.replace('key_', '')}
                         className="hidden"
                         disabled={isImporting}
                       />
-                      <button
-                        onClick={() => chatGptFileInputRef.current?.click()}
-                        disabled={isImporting}
-                        className={cn(
-                          'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                          isImporting
-                            ? 'cursor-not-allowed opacity-50'
-                            : 'hover:bg-surface-chat',
-                          isDarkMode
-                            ? 'bg-surface-chat text-content-primary'
-                            : 'bg-surface-sidebar text-content-primary',
-                        )}
-                      >
-                        <ArrowUpTrayIcon className="h-4 w-4" />
-                        Select File
-                      </button>
+                      {renderImportStatus('chatgpt') ?? (
+                        <button
+                          onClick={() => chatGptFileInputRef.current?.click()}
+                          disabled={isImporting}
+                          className={cn(
+                            'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                            isImporting
+                              ? 'cursor-not-allowed opacity-50'
+                              : 'hover:bg-surface-chat',
+                            isDarkMode
+                              ? 'bg-surface-chat text-content-primary'
+                              : 'bg-surface-sidebar text-content-primary',
+                          )}
+                        >
+                          <ArrowUpTrayIcon className="h-4 w-4" />
+                          Select File
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -4391,29 +4397,11 @@ ${encryptionKey.replace('key_', '')}
                           disabled={isImporting}
                         />
                       )}
-                      <div className="mt-2 flex gap-2">
-                        <button
-                          onClick={() =>
-                            claudeConversationsFileInputRef.current?.click()
-                          }
-                          disabled={isImporting}
-                          className={cn(
-                            'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                            isImporting
-                              ? 'cursor-not-allowed opacity-50'
-                              : 'hover:bg-surface-chat',
-                            isDarkMode
-                              ? 'bg-surface-chat text-content-primary'
-                              : 'bg-surface-sidebar text-content-primary',
-                          )}
-                        >
-                          <ArrowUpTrayIcon className="h-4 w-4" />
-                          Conversations
-                        </button>
-                        {isPremium && (
+                      {renderImportStatus('claude') ?? (
+                        <div className="mt-2 flex gap-2">
                           <button
                             onClick={() =>
-                              claudeProjectsFileInputRef.current?.click()
+                              claudeConversationsFileInputRef.current?.click()
                             }
                             disabled={isImporting}
                             className={cn(
@@ -4427,10 +4415,30 @@ ${encryptionKey.replace('key_', '')}
                             )}
                           >
                             <ArrowUpTrayIcon className="h-4 w-4" />
-                            Projects
+                            Conversations
                           </button>
-                        )}
-                      </div>
+                          {isPremium && (
+                            <button
+                              onClick={() =>
+                                claudeProjectsFileInputRef.current?.click()
+                              }
+                              disabled={isImporting}
+                              className={cn(
+                                'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                isImporting
+                                  ? 'cursor-not-allowed opacity-50'
+                                  : 'hover:bg-surface-chat',
+                                isDarkMode
+                                  ? 'bg-surface-chat text-content-primary'
+                                  : 'bg-surface-sidebar text-content-primary',
+                              )}
+                            >
+                              <ArrowUpTrayIcon className="h-4 w-4" />
+                              Projects
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -4457,22 +4465,24 @@ ${encryptionKey.replace('key_', '')}
                         className="hidden"
                         disabled={isImporting}
                       />
-                      <button
-                        onClick={() => tinfoilFileInputRef.current?.click()}
-                        disabled={isImporting}
-                        className={cn(
-                          'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                          isImporting
-                            ? 'cursor-not-allowed opacity-50'
-                            : 'hover:bg-surface-chat',
-                          isDarkMode
-                            ? 'bg-surface-chat text-content-primary'
-                            : 'bg-surface-sidebar text-content-primary',
-                        )}
-                      >
-                        <ArrowUpTrayIcon className="h-4 w-4" />
-                        Select Tinfoil Export
-                      </button>
+                      {renderImportStatus('tinfoil') ?? (
+                        <button
+                          onClick={() => tinfoilFileInputRef.current?.click()}
+                          disabled={isImporting}
+                          className={cn(
+                            'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                            isImporting
+                              ? 'cursor-not-allowed opacity-50'
+                              : 'hover:bg-surface-chat',
+                            isDarkMode
+                              ? 'bg-surface-chat text-content-primary'
+                              : 'bg-surface-sidebar text-content-primary',
+                          )}
+                        >
+                          <ArrowUpTrayIcon className="h-4 w-4" />
+                          Select Tinfoil Export
+                        </button>
+                      )}
                     </div>
                   </div>
 
