@@ -1433,7 +1433,12 @@ export function SettingsModal({
               </div>
             </div>
           </div>
-          <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-sidebar">
+          <div
+            className={cn(
+              'mt-3 h-2 overflow-hidden rounded-full',
+              isDarkMode ? 'bg-surface-sidebar' : 'bg-surface-chat',
+            )}
+          >
             <div
               className="h-full bg-brand-accent-light transition-all"
               style={{ width: `${percent}%` }}
@@ -1445,6 +1450,7 @@ export function SettingsModal({
     if (importResult && !isImporting) {
       return (
         <div
+          role="status"
           className={cn(
             'rounded-lg border p-4',
             importResult.success
