@@ -179,7 +179,7 @@ export function RateLimitUsage() {
   }
 
   return (
-    <div className="relative z-10 flex-none px-2 pt-2">
+    <div className="relative z-10 flex-none px-2 py-2">
       <div className="rounded-lg border border-border-subtle bg-surface-chat">
         <button
           type="button"
