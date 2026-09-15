@@ -34,7 +34,7 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
 
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Create Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
