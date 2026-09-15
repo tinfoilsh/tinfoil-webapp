@@ -35,6 +35,7 @@ import { toast } from '@/hooks/use-toast'
 import { isResolvedFavoriteChat } from '@/services/storage/pinned-chats'
 import type { Fact } from '@/types/memory'
 import type { Project } from '@/types/project'
+import { formatFileSize } from '@/utils/format-file-size'
 import {
   getChatPath,
   getNewChatPath,
@@ -145,12 +146,6 @@ interface ProjectSidebarProps {
   onManualSync?: () => Promise<boolean>
   isSyncing?: boolean
   lastSyncFailed?: boolean
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function Shimmer({ className }: { className?: string }) {
