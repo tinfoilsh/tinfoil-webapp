@@ -161,7 +161,7 @@ describe('DefaultMessageRenderer message actions', () => {
     expect(onContinueAssistantMessage).toHaveBeenCalledWith(3)
   })
 
-  it('saves an assistant edit without continuing', () => {
+  it('saves an assistant edit in place', () => {
     const onEditAssistantMessage = vi.fn()
     const onContinueAssistantMessage = vi.fn()
     render(
@@ -185,33 +185,6 @@ describe('DefaultMessageRenderer message actions', () => {
     expect(
       screen.queryByRole('textbox', { name: 'Edit response' }),
     ).not.toBeInTheDocument()
-  })
-
-  it('saves an assistant edit and continues from it', () => {
-    const onEditAssistantMessage = vi.fn()
-    const onContinueAssistantMessage = vi.fn()
-    render(
-      <Renderer
-        message={assistantMessage}
-        messageIndex={3}
-        model={model}
-        isDarkMode={false}
-        onEditAssistantMessage={onEditAssistantMessage}
-        onContinueAssistantMessage={onContinueAssistantMessage}
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Edit response' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'Edit response' }), {
-      target: { value: 'Cleaned up answer,' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Save & continue' }))
-
-    expect(onContinueAssistantMessage).toHaveBeenCalledWith(
-      3,
-      'Cleaned up answer,',
-    )
-    expect(onEditAssistantMessage).not.toHaveBeenCalled()
   })
 
   it('does not offer edit or continue on rate limit errors', () => {

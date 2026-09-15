@@ -219,13 +219,6 @@ const DefaultMessageComponent = ({
     }
   }, [editContent, messageIndex, onEditAssistantMessage])
 
-  const handleSubmitAssistantEditAndContinue = React.useCallback(() => {
-    if (editContent.trim() && onContinueAssistantMessage) {
-      onContinueAssistantMessage(messageIndex, editContent.trim())
-      setIsEditing(false)
-    }
-  }, [editContent, messageIndex, onContinueAssistantMessage])
-
   const handleContinue = React.useCallback(() => {
     onContinueAssistantMessage?.(messageIndex)
   }, [messageIndex, onContinueAssistantMessage])
@@ -520,38 +513,20 @@ const DefaultMessageComponent = ({
                 ),
               )}
             />
-            <div className="mt-3 flex items-center justify-between">
-              <div className="hidden items-center gap-2 text-sm text-content-muted sm:flex">
-                <InformationCircleIcon className="h-4 w-4 shrink-0" />
-                <span>
-                  Save keeps the rest of the chat. Save &amp; continue asks the
-                  model to pick up from your edit and replaces what follows.
-                </span>
-              </div>
-              <div className="flex flex-1 justify-end gap-2">
-                <button
-                  onClick={handleCancelEdit}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSubmitAssistantEdit}
-                  disabled={!editContent.trim()}
-                  className="rounded-lg bg-surface-chat-background px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background/80 disabled:opacity-50"
-                >
-                  Save
-                </button>
-                {onContinueAssistantMessage && (
-                  <button
-                    onClick={handleSubmitAssistantEditAndContinue}
-                    disabled={!editContent.trim()}
-                    className="rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:opacity-50"
-                  >
-                    Save &amp; continue
-                  </button>
-                )}
-              </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={handleCancelEdit}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitAssistantEdit}
+                disabled={!editContent.trim()}
+                className="rounded-lg bg-surface-chat-background px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background/80 disabled:opacity-50"
+              >
+                Save
+              </button>
             </div>
           </div>
         </div>

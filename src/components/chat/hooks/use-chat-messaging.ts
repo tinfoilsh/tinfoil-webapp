@@ -141,10 +141,7 @@ interface UseChatMessagingReturn {
   editMessage: (messageIndex: number, newContent: string) => void
   deleteMessage: (messageIndex: number) => void
   editAssistantMessage: (messageIndex: number, newContent: string) => void
-  continueAssistantMessage: (
-    messageIndex: number,
-    editedContent?: string,
-  ) => void
+  continueAssistantMessage: (messageIndex: number) => void
   regenerateMessage: (messageIndex: number) => void
   retryLastMessage: () => void
   resolveInputToolCall: (
@@ -1836,20 +1833,12 @@ export function useChatMessaging({
 
   // Ask the model to resume an assistant response. Everything after that
   // response is dropped so the continuation is the conversation's tail.
-  // An optional edit is applied to the response first.
   const continueAssistantMessage = useCallback(
-    (messageIndex: number, editedContent?: string) => {
+    (messageIndex: number) => {
       if (loadingState !== 'idle' || !currentChat) return
-      const original = currentChat.messages[messageIndex]
-      if (!original || original.role !== 'assistant') return
-      const resumed =
-        editedContent === undefined
-          ? original
-          : replaceAssistantContent(original, editedContent)
-      const baseMessages = [
-        ...currentChat.messages.slice(0, messageIndex),
-        resumed,
-      ]
+      const resumed = currentChat.messages[messageIndex]
+      if (!resumed || resumed.role !== 'assistant') return
+      const baseMessages = currentChat.messages.slice(0, messageIndex + 1)
       handleQuery(
         '',
         undefined,

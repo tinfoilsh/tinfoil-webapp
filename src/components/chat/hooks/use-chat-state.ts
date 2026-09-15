@@ -77,10 +77,7 @@ interface UseChatStateReturn {
   editMessage: (messageIndex: number, newContent: string) => void
   deleteMessage: (messageIndex: number) => void
   editAssistantMessage: (messageIndex: number, newContent: string) => void
-  continueAssistantMessage: (
-    messageIndex: number,
-    editedContent?: string,
-  ) => void
+  continueAssistantMessage: (messageIndex: number) => void
   regenerateMessage: (messageIndex: number) => void
   retryLastMessage: () => void
   resolveInputToolCall: (

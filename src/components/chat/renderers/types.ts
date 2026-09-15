@@ -33,14 +33,8 @@ export interface MessageRenderProps {
   onDeleteMessage?: (messageIndex: number) => void
   /** Rewrite an assistant response's text in place. */
   onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
-  /**
-   * Ask the model to resume an assistant response, optionally after
-   * rewriting its text first.
-   */
-  onContinueAssistantMessage?: (
-    messageIndex: number,
-    editedContent?: string,
-  ) => void
+  /** Ask the model to resume an assistant response. */
+  onContinueAssistantMessage?: (messageIndex: number) => void
   /**
    * Retry a single failed GenUI tool call in place. Resolves true when repaired
    * and preserves typed failures for the retry card.

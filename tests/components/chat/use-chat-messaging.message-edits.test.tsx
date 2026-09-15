@@ -299,7 +299,7 @@ describe('useChatMessaging message edits', () => {
     const { result } = renderMessaging(makeChat())
 
     act(() => {
-      result.current.messaging.continueAssistantMessage(3, 'Second answer,')
+      result.current.messaging.continueAssistantMessage(3)
     })
     await vi.waitFor(() => expect(sendChatStreamMock).toHaveBeenCalled())
 
@@ -311,7 +311,7 @@ describe('useChatMessaging message edits', () => {
       'First question',
       'First answer',
       'Second question',
-      'Second answer,',
+      'Second answer that got cut',
     ])
     expect(request.trailingInstruction).toBe(
       CONSTANTS.CONTINUE_RESPONSE_INSTRUCTION,
@@ -320,7 +320,7 @@ describe('useChatMessaging message edits', () => {
     stream.send({ choices: [{ delta: { content: ' now complete.' } }] })
     await vi.waitFor(() =>
       expect(result.current.currentChat.messages.at(-1)?.content).toBe(
-        'Second answer, now complete.',
+        'Second answer that got cut now complete.',
       ),
     )
     stream.send({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
@@ -337,7 +337,7 @@ describe('useChatMessaging message edits', () => {
         expect.objectContaining({
           messages: expect.arrayContaining([
             expect.objectContaining({
-              content: 'Second answer, now complete.',
+              content: 'Second answer that got cut now complete.',
             }),
           ]),
         }),
@@ -348,13 +348,13 @@ describe('useChatMessaging message edits', () => {
     expect(messages).toHaveLength(4)
     expect(messages[3]).toMatchObject({
       role: 'assistant',
-      content: 'Second answer, now complete.',
+      content: 'Second answer that got cut now complete.',
       turnId: 'turn-2',
       timeline: [
         {
           type: 'content',
           id: 'content-0',
-          content: 'Second answer, now complete.',
+          content: 'Second answer that got cut now complete.',
         },
       ],
     })
