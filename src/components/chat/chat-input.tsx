@@ -839,7 +839,7 @@ export function ChatInput({
           {processedDocuments && processedDocuments.length > 0 && (
             <div
               ref={documentsScrollRef}
-              className="-mx-3 mb-3 flex gap-2 overflow-x-auto px-3 pt-2 md:-mx-6 md:px-6"
+              className="mb-3 flex gap-2 overflow-x-auto pt-2"
             >
               {processedDocuments.map((doc) => (
                 <div

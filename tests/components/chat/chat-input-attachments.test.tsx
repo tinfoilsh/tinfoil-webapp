@@ -40,6 +40,45 @@ function renderChatInput(handleDocumentUpload: (file: File) => Promise<void>) {
 }
 
 describe('ChatInput attachments', () => {
+  it.each([false, true])(
+    'keeps many attachments in an inset scroll container (hasMessages=%s)',
+    (hasMessages) => {
+      const documents = Array.from({ length: 12 }, (_, index) => ({
+        id: `document-${index}`,
+        name: `notes-${index}.md`,
+        time: new Date(),
+      }))
+      const removeDocument = vi.fn()
+      render(
+        <ChatInput
+          input=""
+          setInput={vi.fn()}
+          handleSubmit={vi.fn()}
+          loadingState="idle"
+          cancelGeneration={vi.fn()}
+          inputRef={createRef<HTMLTextAreaElement>()}
+          handleInputFocus={vi.fn()}
+          inputMinHeight="40px"
+          isDarkMode={false}
+          hasMessages={hasMessages}
+          processedDocuments={documents}
+          removeDocument={removeDocument}
+        />,
+      )
+
+      const removeButtons = screen.getAllByRole('button', {
+        name: /^Remove notes-/,
+      })
+      expect(removeButtons).toHaveLength(documents.length)
+      const scrollContainer = removeButtons[0].parentElement!.parentElement!
+      expect(scrollContainer).toHaveClass('overflow-x-auto')
+      expect(scrollContainer.className).not.toMatch(/(?:^|:|\s)-m[xlr]-/)
+
+      fireEvent.click(removeButtons[documents.length - 1])
+      expect(removeDocument).toHaveBeenCalledWith(documents.at(-1)!.id)
+    },
+  )
+
   it('uploads pasted images as attachments', async () => {
     const handleDocumentUpload = vi.fn().mockResolvedValue(undefined)
     renderChatInput(handleDocumentUpload)
