@@ -1,7 +1,7 @@
 import { ChatInput } from '@/components/chat/chat-input'
 import { CONSTANTS } from '@/components/chat/constants'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { createRef } from 'react'
+import { createRef, type ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/project', () => ({
@@ -22,7 +22,9 @@ vi.mock('@/components/chat/hooks/use-chat-font', () => ({
   useChatFont: () => 'default',
 }))
 
-function renderChatInput(handleDocumentUpload: (file: File) => Promise<void>) {
+function renderChatInput(
+  overrides: Partial<ComponentProps<typeof ChatInput>> = {},
+) {
   return render(
     <ChatInput
       input=""
@@ -34,7 +36,7 @@ function renderChatInput(handleDocumentUpload: (file: File) => Promise<void>) {
       handleInputFocus={vi.fn()}
       inputMinHeight="40px"
       isDarkMode
-      handleDocumentUpload={handleDocumentUpload}
+      {...overrides}
     />,
   )
 }
@@ -49,22 +51,12 @@ describe('ChatInput attachments', () => {
         time: new Date(),
       }))
       const removeDocument = vi.fn()
-      render(
-        <ChatInput
-          input=""
-          setInput={vi.fn()}
-          handleSubmit={vi.fn()}
-          loadingState="idle"
-          cancelGeneration={vi.fn()}
-          inputRef={createRef<HTMLTextAreaElement>()}
-          handleInputFocus={vi.fn()}
-          inputMinHeight="40px"
-          isDarkMode={false}
-          hasMessages={hasMessages}
-          processedDocuments={documents}
-          removeDocument={removeDocument}
-        />,
-      )
+      renderChatInput({
+        isDarkMode: false,
+        hasMessages,
+        processedDocuments: documents,
+        removeDocument,
+      })
 
       const removeButtons = screen.getAllByRole('button', {
         name: /^Remove notes-/,
@@ -81,7 +73,7 @@ describe('ChatInput attachments', () => {
 
   it('uploads pasted images as attachments', async () => {
     const handleDocumentUpload = vi.fn().mockResolvedValue(undefined)
-    renderChatInput(handleDocumentUpload)
+    renderChatInput({ handleDocumentUpload })
     const image = new File(['image'], 'clipboard.png', { type: 'image/png' })
 
     fireEvent.paste(screen.getByRole('textbox'), {
@@ -103,7 +95,7 @@ describe('ChatInput attachments', () => {
 
   it('uploads long pasted text as an attachment', async () => {
     const handleDocumentUpload = vi.fn().mockResolvedValue(undefined)
-    renderChatInput(handleDocumentUpload)
+    renderChatInput({ handleDocumentUpload })
     const pastedText = 'a'.repeat(CONSTANTS.LONG_PASTE_THRESHOLD + 1)
 
     fireEvent.paste(screen.getByRole('textbox'), {
@@ -121,7 +113,7 @@ describe('ChatInput attachments', () => {
 
   it('uploads selected files through the attachment callback', async () => {
     const handleDocumentUpload = vi.fn().mockResolvedValue(undefined)
-    const { container } = renderChatInput(handleDocumentUpload)
+    const { container } = renderChatInput({ handleDocumentUpload })
     const file = new File(['content'], 'notes.txt', { type: 'text/plain' })
     const input =
       container.querySelector<HTMLInputElement>('input[type="file"]')
