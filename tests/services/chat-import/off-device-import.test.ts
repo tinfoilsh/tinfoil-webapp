@@ -81,4 +81,31 @@ describe('runOffDeviceImport', () => {
     )
     expect(result.jobId).toBe('job-1')
   })
+
+  it('reports byte progress through hashing, uploading, and kickoff', async () => {
+    const size = IMPORT_CHUNK_BYTES + 1234
+    const onProgress = vi.fn()
+
+    await runOffDeviceImport('claude', fileOf(new Uint8Array(size)), {
+      onProgress,
+    })
+
+    expect(onProgress.mock.calls.map(([p]) => p)).toEqual([
+      { phase: 'hashing', processedBytes: 0, totalBytes: size },
+      {
+        phase: 'hashing',
+        processedBytes: IMPORT_CHUNK_BYTES,
+        totalBytes: size,
+      },
+      { phase: 'hashing', processedBytes: size, totalBytes: size },
+      { phase: 'uploading', processedBytes: 0, totalBytes: size },
+      {
+        phase: 'uploading',
+        processedBytes: IMPORT_CHUNK_BYTES,
+        totalBytes: size,
+      },
+      { phase: 'uploading', processedBytes: size, totalBytes: size },
+      { phase: 'starting', processedBytes: size, totalBytes: size },
+    ])
+  })
 })
