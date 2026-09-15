@@ -44,6 +44,12 @@ export interface ChatQueryBuilderParams {
    * unaffected.
    */
   includeTimeReminder?: boolean
+  /**
+   * Request-only user instruction appended as the final message (after the
+   * time reminder). Used to ask the model to resume a partial assistant
+   * response; it is never persisted to the chat history.
+   */
+  trailingInstruction?: string
 }
 
 export class ChatQueryBuilder {
@@ -61,6 +67,7 @@ export class ChatQueryBuilder {
       autoCandidates,
       includeGenUIHint,
       includeTimeReminder,
+      trailingInstruction,
     } = params
     const reasoningHistoryPolicy = getReasoningHistoryPolicy({
       model,
@@ -164,10 +171,15 @@ export class ChatQueryBuilder {
       }
     }
 
-    if (includeTimeReminder) {
+    // Both ephemeral tail messages share one user turn: some chat templates
+    // reject consecutive same-role messages.
+    const trailingParts: string[] = []
+    if (includeTimeReminder) trailingParts.push(formatCurrentTimeReminder())
+    if (trailingInstruction) trailingParts.push(trailingInstruction)
+    if (trailingParts.length > 0) {
       result.push({
         role: 'user',
-        content: formatCurrentTimeReminder(),
+        content: trailingParts.join('\n\n'),
       } as ChatCompletionUserMessageParam)
     }
 

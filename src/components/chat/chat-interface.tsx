@@ -1006,6 +1006,9 @@ export function ChatInterface({
     updateChatTitle,
     reloadChats,
     editMessage,
+    deleteMessage,
+    editAssistantMessage,
+    continueAssistantMessage,
     regenerateMessage,
     resolveInputToolCall,
     retryToolCall,
@@ -4296,6 +4299,9 @@ export function ChatInterface({
                       handleLabelClick={handleLabelClick}
                       onEditMessage={editMessage}
                       onRegenerateMessage={regenerateMessage}
+                      onDeleteMessage={deleteMessage}
+                      onEditAssistantMessage={editAssistantMessage}
+                      onContinueAssistantMessage={continueAssistantMessage}
                       onRetryToolCall={retryToolCall}
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}

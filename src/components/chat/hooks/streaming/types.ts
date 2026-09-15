@@ -108,4 +108,6 @@ export interface StreamingContext {
   modelDisplayName?: string
   resolveModelDisplayName?: (modelName: string) => string | undefined
   onInterrupted?: (message: Message | null) => void
+  /** Existing assistant message the stream appends to. */
+  continueFrom?: Message
 }
