@@ -14,12 +14,14 @@ interface RichStreamSessionOptions {
   onThinkingChange?: (isThinking: boolean) => void
   modelDisplayName?: string
   resolveModelDisplayName?: (modelName: string) => string | undefined
+  /** Existing assistant message this stream continues. */
+  continueFrom?: Message
 }
 
 export class RichStreamSession {
   private readonly preprocessor = createContentPreprocessor()
   private readonly normalizer = createEventNormalizer()
-  private readonly timeline = new TimelineBuilder()
+  private readonly timeline: TimelineBuilder
   private readonly assembler: MessageAssembler
   private readonly webSearchBlocks = new Map<string, string>()
   private firstEventSeen = false
@@ -27,7 +29,11 @@ export class RichStreamSession {
   private thinkingStartedAt: number | null = null
 
   constructor(private readonly options: RichStreamSessionOptions = {}) {
+    this.timeline = new TimelineBuilder(options.continueFrom?.timeline)
     this.assembler = new MessageAssembler(options.modelDisplayName)
+    if (options.continueFrom) {
+      this.assembler.seedFrom(options.continueFrom)
+    }
   }
 
   processChunk(chunk: ChatChunk, streamLogger?: StreamLogger): boolean {

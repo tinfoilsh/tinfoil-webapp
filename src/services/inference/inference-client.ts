@@ -301,6 +301,11 @@ export interface SendChatStreamParams {
   /** Per-chat hex token authenticating the code-exec container. */
   codeExecutionContainerAuthToken?: string
   recovery?: ChatRecoveryCallbacks
+  /**
+   * Request-only user instruction appended after the history, used to ask
+   * the model to resume the trailing assistant message. Not persisted.
+   */
+  trailingInstruction?: string
 }
 
 export async function sendChatStream(
@@ -325,6 +330,7 @@ export async function sendChatStream(
     codeExecutionEncryptionKey,
     codeExecutionContainerAuthToken,
     recovery,
+    trailingInstruction,
   } = params
 
   const genUITools = genUIEnabled ? buildGenUIToolSchemas() : []
@@ -339,6 +345,7 @@ export async function sendChatStream(
       autoCandidates,
       includeGenUIHint: genUIEnabled,
       includeTimeReminder: true,
+      trailingInstruction,
     })
 
     // Get the last user message for retry test check
@@ -448,6 +455,7 @@ export async function sendChatStream(
     autoCandidates,
     includeGenUIHint: genUIEnabled,
     includeTimeReminder: true,
+    trailingInstruction,
   })
 
   let lastError: unknown = null

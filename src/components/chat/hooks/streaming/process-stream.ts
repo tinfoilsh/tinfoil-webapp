@@ -26,6 +26,7 @@ export async function processStreamingResponse(
     onThinkingChange: ctx.setIsThinking,
     modelDisplayName: ctx.modelDisplayName,
     resolveModelDisplayName: ctx.resolveModelDisplayName,
+    continueFrom: ctx.continueFrom,
   })
   const publisher = new AnimationFramePublisher(ctx.onUpdate)
   const trackUsage = createStreamUsageTracker()

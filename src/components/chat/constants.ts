@@ -81,4 +81,11 @@ export const CONSTANTS = {
   REPLY_PLACEHOLDER: 'Reply to Al...',
   // Base document title used when no chat title is meaningful
   BASE_DOCUMENT_TITLE: 'Tinfoil Private Chat',
+  // Row bounds for the in-place message edit textarea
+  EDIT_TEXTAREA_MIN_ROWS: 3,
+  EDIT_TEXTAREA_MAX_ROWS: 10,
+  // Request-only instruction appended after a partial assistant response so
+  // the model resumes it. Never stored or rendered.
+  CONTINUE_RESPONSE_INSTRUCTION:
+    'Continue your previous response exactly where it left off. Do not repeat, summarize, or restate anything you already wrote, and do not add any preamble.',
 } as const

@@ -30,6 +30,23 @@ export class MessageAssembler {
 
   constructor(private modelDisplayName?: string) {}
 
+  /**
+   * Carry over the flat fields of a response being continued so citations,
+   * search reasoning, and the original timestamp survive the new stream.
+   */
+  seedFrom(message: Message): void {
+    this.timestamp = message.timestamp
+    if (message.modelDisplayName) {
+      this.modelDisplayName = message.modelDisplayName
+    }
+    this.annotations = [...(message.annotations ?? [])]
+    this.annotationsSnapshot = undefined
+    this.sources = (message.webSearch?.sources ?? []).map((source) => ({
+      ...source,
+    }))
+    this.searchReasoning = message.searchReasoning ?? ''
+  }
+
   setModelDisplayName(modelDisplayName: string): void {
     if (!modelDisplayName) return
     this.modelDisplayName = modelDisplayName

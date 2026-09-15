@@ -270,6 +270,64 @@ describe('TimelineBuilder', () => {
     })
   })
 
+  describe('seeded continuation', () => {
+    it('appends new text to a trailing seed content block', () => {
+      const builder = new TimelineBuilder([
+        {
+          type: 'thinking',
+          id: 'thinking-0',
+          content: 'hmm',
+          isThinking: false,
+        },
+        { type: 'content', id: 'content-1', content: 'Half of' },
+      ])
+      builder.appendContent(' an answer')
+
+      const blocks = builder.snapshot()
+      expect(blocks).toHaveLength(2)
+      expect((blocks[1] as TimelineContentBlock).content).toBe(
+        'Half of an answer',
+      )
+    })
+
+    it('starts a fresh content block when new thinking follows the seed', () => {
+      const builder = new TimelineBuilder([
+        {
+          type: 'thinking',
+          id: 'thinking-0',
+          content: 'hmm',
+          isThinking: false,
+        },
+        { type: 'content', id: 'content-1', content: 'Half of' },
+      ])
+      builder.startThinking()
+      builder.appendThinking('more')
+      builder.endThinking()
+      builder.appendContent(' an answer')
+
+      const blocks = builder.snapshot()
+      expect(blocks.map((b) => b.type)).toEqual([
+        'thinking',
+        'content',
+        'thinking',
+        'content',
+      ])
+      expect((blocks[2] as TimelineThinkingBlock).id).toBe('thinking-1')
+      expect((blocks[1] as TimelineContentBlock).content).toBe('Half of')
+      expect((blocks[3] as TimelineContentBlock).content).toBe(' an answer')
+    })
+
+    it('does not mutate the seed array', () => {
+      const seed: TimelineContentBlock[] = [
+        { type: 'content', id: 'content-0', content: 'seed' },
+      ]
+      const builder = new TimelineBuilder(seed)
+      builder.appendContent(' more')
+
+      expect(seed[0].content).toBe('seed')
+    })
+  })
+
   describe('snapshot immutability', () => {
     it('returns a new array each time', () => {
       const builder = new TimelineBuilder()

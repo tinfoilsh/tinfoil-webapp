@@ -120,6 +120,33 @@ describe('ChatQueryBuilder', () => {
     })
   })
 
+  it('merges a trailing instruction into the time reminder turn after a partial assistant message', () => {
+    const messages = ChatQueryBuilder.buildMessages({
+      model,
+      systemPrompt: '',
+      rules: '',
+      messages: [
+        userMessage,
+        {
+          role: 'assistant',
+          content: 'Half of an answer',
+          timestamp: new Date('2026-01-01T00:00:01Z'),
+        },
+      ],
+      includeTimeReminder: true,
+      trailingInstruction: 'Continue where you left off.',
+    })
+
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      content: 'Half of an answer',
+    })
+    const last = messages[messages.length - 1]
+    expect(last.content).toMatch(/^<system-reminder>Current time: /)
+    expect(last.content).toMatch(/\n\nContinue where you left off\.$/)
+  })
+
   it('omits the time reminder by default', () => {
     const messages = ChatQueryBuilder.buildMessages({
       model,
