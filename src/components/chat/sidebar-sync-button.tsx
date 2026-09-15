@@ -105,12 +105,9 @@ export function SidebarSyncButton({
             ) : (
               <GoSync className="h-5 w-5" />
             )}
-            {!showSpinner && (
+            {!showSpinner && hasSyncFailure && (
               <span
-                className={cn(
-                  'absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-surface-chat-background',
-                  hasSyncFailure ? 'bg-orange-500' : 'bg-green-500',
-                )}
+                className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-surface-chat-background"
                 title={statusLabel}
               />
             )}
