@@ -34,7 +34,10 @@ import {
   parseLocalTinfoilExportForAccess,
   PremiumProjectImportRequiredError,
 } from '@/services/chat-import/local-tinfoil-import'
-import { runOffDeviceImport } from '@/services/chat-import/off-device-import'
+import {
+  runOffDeviceImport,
+  type OffDeviceImportProgress,
+} from '@/services/chat-import/off-device-import'
 import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
@@ -81,6 +84,7 @@ import {
   setLocalOnlyModeEnabled,
 } from '@/utils/cloud-sync-settings'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
+import { formatFileSize } from '@/utils/format-file-size'
 import {
   clearPersonalizationDetails,
   isPersonalizationEnabled,
@@ -183,6 +187,38 @@ export function describeOffDeviceImportKickoff(
       : pending
         ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
         : undefined,
+  }
+}
+
+export type ImportProgress =
+  | { type: 'chats' | 'projects'; current: number; total: number }
+  | { type: 'upload'; progress: OffDeviceImportProgress }
+
+export function describeImportProgress(progress: ImportProgress): {
+  title: string
+  detail: string
+  percent: number
+} {
+  if (progress.type !== 'upload') {
+    return {
+      title: `Importing ${progress.type}...`,
+      detail: `${progress.current} of ${progress.total}`,
+      percent:
+        progress.total > 0 ? (progress.current / progress.total) * 100 : 0,
+    }
+  }
+  const { phase, processedBytes, totalBytes } = progress.progress
+  if (phase === 'starting') {
+    return {
+      title: 'Starting import...',
+      detail: 'Handing off to the secure enclave',
+      percent: 100,
+    }
+  }
+  return {
+    title: phase === 'hashing' ? 'Preparing export...' : 'Uploading export...',
+    detail: `${formatFileSize(processedBytes)} of ${formatFileSize(totalBytes)}`,
+    percent: totalBytes > 0 ? (processedBytes / totalBytes) * 100 : 0,
   }
 }
 
@@ -590,11 +626,9 @@ export function SettingsModal({
     'chatgpt' | 'claude' | 'tinfoil' | null
   >(null)
   const [isImporting, setIsImporting] = useState(false)
-  const [importProgress, setImportProgress] = useState<{
-    current: number
-    total: number
-    type: 'chats' | 'projects'
-  } | null>(null)
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(
+    null,
+  )
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
@@ -1378,8 +1412,15 @@ export function SettingsModal({
     setImportSource(source)
     setIsImporting(true)
     setImportResult(null)
+    setImportProgress({
+      type: 'upload',
+      progress: { phase: 'hashing', processedBytes: 0, totalBytes: file.size },
+    })
     try {
-      const { status } = await runOffDeviceImport(source, file)
+      const { status } = await runOffDeviceImport(source, file, {
+        onProgress: (progress) =>
+          setImportProgress({ type: 'upload', progress }),
+      })
       const result = describeOffDeviceImportKickoff(status, sourceLabel)
       setImportResult(result)
       if (result.failed) {
@@ -3971,36 +4012,40 @@ ${encryptionKey.replace('key_', '')}
                   )}
 
                   {/* Import Progress */}
-                  {isImporting && importProgress && (
-                    <div className="space-y-3">
-                      <div
-                        className={cn(
-                          'rounded-lg border border-border-subtle p-4',
-                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                        )}
-                      >
-                        <div className="flex items-center gap-3">
-                          <ArrowPathIcon className="h-5 w-5 animate-spin text-brand-accent-light" />
-                          <div className="flex-1">
-                            <div className="font-aeonik text-sm font-medium text-content-primary">
-                              Importing {importProgress.type}...
+                  {isImporting &&
+                    importProgress &&
+                    (() => {
+                      const { title, detail, percent } =
+                        describeImportProgress(importProgress)
+                      return (
+                        <div className="space-y-3">
+                          <div
+                            className={cn(
+                              'rounded-lg border border-border-subtle p-4',
+                              isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <ArrowPathIcon className="h-5 w-5 animate-spin text-brand-accent-light" />
+                              <div className="flex-1">
+                                <div className="font-aeonik text-sm font-medium text-content-primary">
+                                  {title}
+                                </div>
+                                <div className="font-aeonik-fono text-xs text-content-muted">
+                                  {detail}
+                                </div>
+                              </div>
                             </div>
-                            <div className="font-aeonik-fono text-xs text-content-muted">
-                              {importProgress.current} of {importProgress.total}
+                            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-chat">
+                              <div
+                                className="h-full bg-brand-accent-light transition-all"
+                                style={{ width: `${percent}%` }}
+                              />
                             </div>
                           </div>
                         </div>
-                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-chat">
-                          <div
-                            className="h-full bg-brand-accent-light transition-all"
-                            style={{
-                              width: `${(importProgress.current / importProgress.total) * 100}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                      )
+                    })()}
 
                   {/* Import Result */}
                   {importResult && !isImporting && (
