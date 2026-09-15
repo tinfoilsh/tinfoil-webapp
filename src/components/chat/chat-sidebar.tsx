@@ -9,7 +9,10 @@ import {
   USER_PREFS_NATIVE_APP_DISMISSED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
-import { useSyncHealth, useSyncHealthAttention } from '@/hooks/use-sync-health'
+import {
+  useSyncHealthAttention,
+  useSyncHealthFailed,
+} from '@/hooks/use-sync-health'
 import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
 import { encryptionService } from '@/services/encryption/encryption-service'
@@ -56,6 +59,7 @@ import { formatRelativeTime } from './chat-list-utils'
 import { CONSTANTS } from './constants'
 import { useDrag } from './drag-context'
 import { consumeFavoriteDrop } from './favorite-drag'
+import { RateLimitUsage } from './rate-limit-usage'
 import { SidebarSyncButton } from './sidebar-sync-button'
 import { getSidebarUpsellVariant } from './sidebar-upsell-state'
 import { useFavoriteDropTarget } from './use-favorite-drop-target'
@@ -233,7 +237,7 @@ export function ChatSidebar({
   const router = useRouter()
   const authRedirectUrl = encodeURIComponent(router.asPath)
   const syncNeedsAttention = useSyncHealthAttention()
-  const syncHealth = useSyncHealth()
+  const syncHealthFailed = useSyncHealthFailed()
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -354,9 +358,6 @@ export function ChatSidebar({
     currentChat?.isBlankChat &&
     !currentChat.isTemporary &&
     Boolean(currentChat.isLocalOnly) === (activeTab === 'local')
-  const syncHealthFailed =
-    syncHealth.gate.kind !== 'ok' ||
-    Object.keys(syncHealth.failedChats).length > 0
   const syncFailed = lastSyncFailed || syncHealthFailed
 
   const {
@@ -1127,33 +1128,9 @@ export function ChatSidebar({
         <SidebarPatternEdge isDarkMode={isDarkMode} />
         {/* Header */}
         <div className="flex h-16 flex-none items-center justify-between p-4">
-          <div className="flex items-center gap-3">
-            <Link href="/" title="Home" className="-ml-1 flex items-center">
-              <Logo className="h-6 w-auto" dark={isDarkMode} />
-            </Link>
-            {/* Settings button */}
-            <div className="group relative flex items-center">
-              <button
-                id="settings-button"
-                type="button"
-                onClick={onSettingsClick}
-                aria-label="Settings"
-                className="relative rounded p-1.5 text-content-muted transition-all duration-200 hover:text-content-secondary"
-              >
-                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
-                {syncNeedsAttention && (
-                  <span
-                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-              <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                Settings
-              </span>
-            </div>
-          </div>
+          <Link href="/" title="Home" className="-ml-1 flex items-center">
+            <Logo className="h-6 w-auto" dark={isDarkMode} />
+          </Link>
           {/* Close sidebar button */}
           <div className="group relative flex items-center">
             <button
@@ -1182,6 +1159,67 @@ export function ChatSidebar({
             hideScrollbarDuringAnimation && 'scrollbar-hide',
           )}
         >
+          {/* Toolbar: Settings, Sync, New chat. Stacked above the usage
+              card below so the buttons' tooltips are not clipped by it. */}
+          <div className="relative z-20 flex flex-none items-center gap-2 px-2">
+            {/* Settings button */}
+            <div className="group relative flex items-center">
+              <button
+                id="settings-button"
+                type="button"
+                onClick={onSettingsClick}
+                aria-label="Settings"
+                className="relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-2 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
+              >
+                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
+                {syncNeedsAttention && (
+                  <span
+                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+              <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                Settings
+              </span>
+            </div>
+            {isSignedIn && cloudSyncEnabled && onManualSync && (
+              <SidebarSyncButton
+                isSyncing={isSyncing}
+                syncFailed={syncFailed}
+                onSync={onManualSync}
+              />
+            )}
+            <Link
+              href={newChatHref}
+              aria-current={isCurrentNewChat ? 'page' : undefined}
+              onClick={(e) => {
+                if (!isPlainPrimaryClick(e)) return
+                e.preventDefault()
+                if (isCurrentNewChat) return
+                createNewChat(activeTab === 'local', true)
+              }}
+              className={cn(
+                'flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border-subtle bg-surface-chat-background px-2 py-2 text-sm transition-all duration-200',
+                isCurrentNewChat
+                  ? 'cursor-default text-content-muted'
+                  : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <PiNotePencilLight className="h-4 w-4" />
+                <span className="font-aeonik font-medium">New chat</span>
+              </span>
+              <span className="text-xs text-content-muted">
+                {modKey}
+                {isMac ? '⇧' : 'Shift+'}O
+              </span>
+            </Link>
+          </div>
+
+          <RateLimitUsage />
+
           {/* Message for non-premium users (signed in or not) */}
           {upsellVariant && (
             <div
@@ -1329,46 +1367,6 @@ export function ChatSidebar({
               </div>
             </div>
           )}
-
-          {isSignedIn && cloudSyncEnabled && onManualSync && (
-            <SidebarSyncButton
-              isDarkMode={isDarkMode}
-              isSyncing={isSyncing}
-              syncFailed={syncFailed}
-              onSync={onManualSync}
-            />
-          )}
-
-          {/* New Chat button */}
-          <div className="relative z-10 flex-none px-2 py-2">
-            <Link
-              href={newChatHref}
-              aria-current={isCurrentNewChat ? 'page' : undefined}
-              onClick={(e) => {
-                if (!isPlainPrimaryClick(e)) return
-                e.preventDefault()
-                if (isCurrentNewChat) return
-                createNewChat(activeTab === 'local', true)
-              }}
-              className={cn(
-                'flex w-full items-center justify-between rounded-lg border px-2 py-2 text-sm transition-colors',
-                isCurrentNewChat
-                  ? 'cursor-default border-transparent bg-transparent text-content-muted'
-                  : isDarkMode
-                    ? 'border-border-strong bg-surface-chat text-content-primary hover:bg-surface-chat/80'
-                    : 'border-border-subtle bg-white text-content-primary hover:bg-gray-50',
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <PiNotePencilLight className="h-4 w-4" />
-                <span className="font-aeonik font-medium">New chat</span>
-              </span>
-              <span className="text-xs text-content-muted">
-                {modKey}
-                {isMac ? '⇧' : 'Shift+'}O
-              </span>
-            </Link>
-          </div>
 
           {isSignedIn && cloudSyncEnabled && (
             <section

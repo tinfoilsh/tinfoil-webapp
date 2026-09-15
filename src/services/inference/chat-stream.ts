@@ -22,6 +22,13 @@ interface ChatChunkDelta {
   [key: string]: unknown
 }
 
+export interface ChatChunkUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  [key: string]: unknown
+}
+
 export interface ChatChunk {
   choices?: Array<{
     delta?: ChatChunkDelta
@@ -29,6 +36,7 @@ export interface ChatChunk {
     finish_reason?: string | null
     [key: string]: unknown
   }>
+  usage?: ChatChunkUsage | null
   id?: string
   model?: string
   status?: string

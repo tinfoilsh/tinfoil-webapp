@@ -1,5 +1,8 @@
+import { RATE_LIMIT_UPDATED_EVENT } from '@/constants/chat-events'
 import {
+  createStreamUsageTracker,
   getRateLimitInfo,
+  getSessionToken,
   invalidateSessionCache,
   refreshRateLimit,
   resetTinfoilClient,
@@ -12,12 +15,14 @@ vi.mock('@/config', () => ({
   IS_DEV: false,
 }))
 
+const authTokenManagerMock = vi.hoisted(() => ({
+  isInitialized: vi.fn(() => false),
+  waitForInit: vi.fn(),
+  getValidToken: vi.fn<() => Promise<string>>(),
+}))
+
 vi.mock('@/services/auth', () => ({
-  authTokenManager: {
-    isInitialized: () => false,
-    waitForInit: vi.fn(),
-    getValidToken: vi.fn(),
-  },
+  authTokenManager: authTokenManagerMock,
 }))
 
 vi.mock('@/utils/error-handling', () => ({
@@ -32,10 +37,32 @@ const chatKeyResponse = (key: string, remaining: number) =>
       rate_limit: {
         max_requests: 7,
         remaining,
-        max_tokens: 2_000_000,
-        tokens_used: 750_000,
-        tokens_remaining: 1_250_000,
+        max_input_tokens: 2_000_000,
+        input_tokens_used: 750_000,
+        input_tokens_remaining: 1_250_000,
+        max_output_tokens: 100_000,
+        output_tokens_used: 20_000,
+        output_tokens_remaining: 80_000,
         resets_at: '2026-07-24T00:00:00Z',
+      },
+    }),
+    { status: 200 },
+  )
+
+const chatJWTResponse = (key: string, inputTokensUsed: number) =>
+  new Response(
+    JSON.stringify({
+      key,
+      expires_at: '2099-01-01T00:00:00Z',
+      is_free_tier: false,
+      rate_limit: {
+        max_input_tokens: 20_000_000,
+        input_tokens_used: inputTokensUsed,
+        input_tokens_remaining: 20_000_000 - inputTokensUsed,
+        max_output_tokens: 1_000_000,
+        output_tokens_used: 250,
+        output_tokens_remaining: 999_750,
+        resets_at: '2026-07-24T01:00:00Z',
       },
     }),
     { status: 200 },
@@ -45,10 +72,82 @@ describe('tinfoil-client session cache', () => {
   beforeEach(() => {
     resetTinfoilClient()
     localStorage.clear()
+    authTokenManagerMock.isInitialized.mockReturnValue(false)
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('surfaces the hourly token budget for subscribers', async () => {
+    authTokenManagerMock.isInitialized.mockReturnValue(true)
+    authTokenManagerMock.getValidToken.mockResolvedValue('clerk-jwt')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(chatJWTResponse('chat-jwt', 1_500))
+      .mockResolvedValueOnce(chatJWTResponse('chat-jwt-2', 9_000))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await refreshRateLimit()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/chat/token')
+    const limit = getRateLimitInfo()
+    expect(limit).toMatchObject({
+      kind: 'hourly',
+      resetsAt: '2026-07-24T01:00:00Z',
+      inputTokens: { max: 20_000_000, used: 1_500, remaining: 19_998_500 },
+      outputTokens: { max: 1_000_000, used: 250, remaining: 999_750 },
+    })
+    // Subscribers have no request quota, so the hourly info must never gate
+    // sending the way an exhausted free-tier count does.
+    expect(limit!.remaining).toBeGreaterThan(0)
+    expect(limit!.maxRequests).toBeGreaterThan(0)
+
+    // A usage refresh must not rotate the still-valid session JWT: a new key
+    // would force the OpenAI client (and attestation) to be rebuilt.
+    await refreshRateLimit()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(getRateLimitInfo()!.inputTokens!.used).toBe(9_000)
+    expect(await getSessionToken()).toBe('chat-jwt')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('notifies subscribers when a client reset drops the rate limit', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chatKeyResponse('k', 3)))
+    await refreshRateLimit()
+    expect(getRateLimitInfo()).not.toBeNull()
+
+    const listener = vi.fn()
+    window.addEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+    resetTinfoilClient()
+    window.removeEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+
+    expect(listener).toHaveBeenCalledTimes(1)
+    expect(getRateLimitInfo()).toBeNull()
+  })
+
+  it('folds running stream usage totals into the cached budgets', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(chatKeyResponse('k', 3)))
+    await refreshRateLimit()
+    const listener = vi.fn()
+    window.addEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+
+    const track = createStreamUsageTracker()
+    // Continuous usage stats report cumulative totals for the request, so
+    // the second chunk must add only the 40 new completion tokens.
+    track({ promptTokens: 1_000, completionTokens: 10 })
+    track({ promptTokens: 1_000, completionTokens: 50 })
+    // A regression (e.g. a retried upstream turn resetting counters) must
+    // never subtract usage.
+    track({ promptTokens: 1_000, completionTokens: 20 })
+
+    window.removeEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(getRateLimitInfo()).toMatchObject({
+      inputTokens: { max: 2_000_000, used: 751_000, remaining: 1_249_000 },
+      outputTokens: { max: 100_000, used: 20_050, remaining: 79_950 },
+    })
   })
 
   it('does not restore stale rate limits after invalidation', async () => {
@@ -81,9 +180,9 @@ describe('tinfoil-client session cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(getRateLimitInfo()).toMatchObject({
       remaining: 6,
-      maxTokens: 2_000_000,
-      tokensUsed: 750_000,
-      tokensRemaining: 1_250_000,
+      kind: 'free_daily',
+      inputTokens: { max: 2_000_000, used: 750_000, remaining: 1_250_000 },
+      outputTokens: { max: 100_000, used: 20_000, remaining: 80_000 },
     })
   })
 

@@ -156,6 +156,7 @@ vi.mock('@/services/inference/chat-recovery-sync', () => ({
 }))
 
 vi.mock('@/services/inference/tinfoil-client', () => ({
+  createStreamUsageTracker: () => () => undefined,
   getRateLimitInfo: () => null,
   isChatRecoveryAvailable: () => recoveryAvailableState.available,
   refreshRateLimit: vi.fn(),

@@ -8,16 +8,23 @@ import type {
 } from '@/services/inference/chat-stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { endStreamingMock, startStreamingMock } = vi.hoisted(() => ({
-  endStreamingMock: vi.fn(),
-  startStreamingMock: vi.fn(),
-}))
+const { endStreamingMock, startStreamingMock, trackUsageMock } = vi.hoisted(
+  () => ({
+    endStreamingMock: vi.fn(),
+    startStreamingMock: vi.fn(),
+    trackUsageMock: vi.fn(),
+  }),
+)
 
 vi.mock('@/services/cloud/streaming-tracker', () => ({
   streamingTracker: {
     endStreaming: endStreamingMock,
     startStreaming: startStreamingMock,
   },
+}))
+
+vi.mock('@/services/inference/tinfoil-client', () => ({
+  createStreamUsageTracker: () => trackUsageMock,
 }))
 
 function createStream(): ChatChunkStream {
@@ -91,6 +98,25 @@ describe('processStreamingResponse lifecycle', () => {
     expect(context.setLoadingState).toHaveBeenCalledWith('idle')
     expect(context.setIsStreaming).toHaveBeenCalledWith(false)
     expect(endStreamingMock).toHaveBeenCalledWith('chat-1')
+  })
+
+  it('feeds usage chunks to the rate limit tracker without altering the message', async () => {
+    const stream = (async function* (): ChatChunkStream {
+      yield { choices: [{ delta: { content: 'Hello' } }] }
+      yield {
+        choices: [],
+        usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 },
+      }
+      yield { choices: [{ delta: {}, finish_reason: 'stop' }] }
+    })()
+
+    const message = await processStreamingResponse(stream, createContext())
+
+    expect(trackUsageMock).toHaveBeenCalledWith({
+      promptTokens: 12,
+      completionTokens: 3,
+    })
+    expect(message?.content).toBe('Hello')
   })
 
   it('keeps the stream active when the caller has recovery to finalize', async () => {

@@ -1,5 +1,6 @@
 import { ChatError } from '@/components/chat/chat-utils'
 import { API_BASE_URL, DEV_API_KEY, IS_DEV } from '@/config'
+import { RATE_LIMIT_UPDATED_EVENT } from '@/constants/chat-events'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import {
@@ -22,12 +23,18 @@ import {
 import { authTokenManager } from '../auth'
 import { INFERENCE_CLIENT_INITIALIZATION_TIMEOUT_MS } from './constants'
 
+/** One dimension (input or output) of a token budget. */
+export interface TokenBudget {
+  max: number
+  used: number
+  remaining: number
+}
+
 export interface RateLimitInfo {
   maxRequests: number
   remaining: number
-  maxTokens?: number
-  tokensUsed?: number
-  tokensRemaining?: number
+  inputTokens?: TokenBudget
+  outputTokens?: TokenBudget
   resetsAt: string
   /**
    * Which limit this represents. Absent or `free_daily` is the anonymous/
@@ -108,7 +115,20 @@ function assertSessionCacheGeneration(cacheGeneration: number): void {
 
 function dispatchRateLimitUpdate(): void {
   if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('rateLimitUpdated'))
+    window.dispatchEvent(new CustomEvent(RATE_LIMIT_UPDATED_EVENT))
+  }
+}
+
+/**
+ * Subscribes to rate limit changes. Pairs with getRateLimitSnapshot for
+ * useSyncExternalStore; the returned snapshot is only reallocated when the
+ * cache actually changes so React can bail out of redundant renders.
+ */
+export function subscribeRateLimit(listener: () => void): () => void {
+  if (typeof window === 'undefined') return () => {}
+  window.addEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+  return () => {
+    window.removeEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
   }
 }
 
@@ -116,6 +136,61 @@ type ServerErrorBody = {
   error?: string
   code?: string
   resets_at?: string
+  rate_limit?: ServerRateLimitBody
+}
+
+type ServerRateLimitBody = {
+  max_requests?: number
+  remaining?: number
+  max_input_tokens?: number
+  input_tokens_used?: number
+  input_tokens_remaining?: number
+  max_output_tokens?: number
+  output_tokens_used?: number
+  output_tokens_remaining?: number
+  resets_at?: string
+}
+
+function parseTokenBudget(
+  max: unknown,
+  used: unknown,
+  remaining: unknown,
+): TokenBudget | undefined {
+  if (
+    typeof max !== 'number' ||
+    typeof used !== 'number' ||
+    typeof remaining !== 'number' ||
+    max <= 0
+  ) {
+    return undefined
+  }
+  return { max, used, remaining }
+}
+
+// Both token-minting endpoints report budgets in the same wire shape. The
+// free-tier key carries a daily request quota; the subscriber JWT only has
+// hourly token budgets, so its request fields are absent and default to a
+// non-gating "unlimited" quota.
+function parseRateLimit(
+  body: ServerRateLimitBody,
+  kind: NonNullable<RateLimitInfo['kind']>,
+): RateLimitInfo {
+  return {
+    maxRequests: body.max_requests ?? Number.POSITIVE_INFINITY,
+    remaining: body.remaining ?? Number.POSITIVE_INFINITY,
+    inputTokens: parseTokenBudget(
+      body.max_input_tokens,
+      body.input_tokens_used,
+      body.input_tokens_remaining,
+    ),
+    outputTokens: parseTokenBudget(
+      body.max_output_tokens,
+      body.output_tokens_used,
+      body.output_tokens_remaining,
+    ),
+    resetsAt: body.resets_at ?? '',
+    kind,
+  }
 }
 
 function parseErrorBody(errorText: string): ServerErrorBody | null {
@@ -137,10 +212,15 @@ function isHourlyLimit(
 // channel (so the banner renders) and throws a typed error the chat
 // classifies as a rate limit rather than a generic failure. Never returns.
 function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
+  const budget = parsedError?.rate_limit
+    ? parseRateLimit(parsedError.rate_limit, 'hourly')
+    : null
   cachedRateLimit = {
     maxRequests: 0,
     remaining: 0,
-    resetsAt: parsedError?.resets_at ?? '',
+    inputTokens: budget?.inputTokens,
+    outputTokens: budget?.outputTokens,
+    resetsAt: parsedError?.resets_at ?? budget?.resetsAt ?? '',
     kind: 'hourly',
   }
   dispatchRateLimitUpdate()
@@ -161,7 +241,11 @@ async function fetchChatJWT(
   authBearer: string,
   cacheGeneration: number,
   signal?: AbortSignal,
-): Promise<{ key: string; expiresAt: number | null } | null> {
+): Promise<{
+  key: string
+  expiresAt: number | null
+  rateLimit: RateLimitInfo | null
+} | null> {
   let response: Response
   try {
     response = await fetch(`${API_BASE_URL}/api/chat/token`, {
@@ -185,6 +269,9 @@ async function fetchChatJWT(
             expiresAtMs !== null && !Number.isNaN(expiresAtMs)
               ? expiresAtMs
               : null,
+          rateLimit: data.rate_limit
+            ? parseRateLimit(data.rate_limit, 'hourly')
+            : null,
         }
       }
     } catch {
@@ -200,6 +287,20 @@ async function fetchChatJWT(
     surfaceHourlyLimit(parsedError)
   }
   return null
+}
+
+async function resolveAuthBearer(signal?: AbortSignal): Promise<string | null> {
+  if (!authTokenManager.isInitialized()) return null
+  try {
+    const validToken = authTokenManager.getValidToken()
+    return await (signal ? waitForSignal(validToken, signal) : validToken)
+  } catch (error) {
+    logError('Failed to get auth token, falling back to anonymous key', error, {
+      component: 'tinfoil-client',
+      action: 'fetchSessionToken',
+    })
+    return null
+  }
 }
 
 async function fetchSessionTokenForGeneration(
@@ -230,24 +331,7 @@ async function fetchSessionTokenForGeneration(
   // check and the actual request use the same authenticated/anonymous
   // decision.  This avoids a stale-cache loop when getValidToken()
   // intermittently fails for a signed-in user.
-  let authBearer: string | null = null
-  if (authTokenManager.isInitialized()) {
-    try {
-      const validToken = authTokenManager.getValidToken()
-      authBearer = await (signal
-        ? waitForSignal(validToken, signal)
-        : validToken)
-    } catch (error) {
-      logError(
-        'Failed to get auth token, falling back to anonymous key',
-        error,
-        {
-          component: 'tinfoil-client',
-          action: 'fetchSessionToken',
-        },
-      )
-    }
-  }
+  const authBearer = await resolveAuthBearer(signal)
   assertSessionCacheGeneration(cacheGeneration)
   const usedAuthHeader = authBearer !== null
 
@@ -287,7 +371,7 @@ async function fetchSessionTokenForGeneration(
       cachedSessionToken = jwt.key
       cachedSessionTokenWasAuthenticated = true
       cachedSessionTokenExpiresAt = jwt.expiresAt
-      cachedRateLimit = null
+      cachedRateLimit = jwt.rateLimit
       dispatchRateLimitUpdate()
       return jwt.key
     }
@@ -339,15 +423,7 @@ async function fetchSessionTokenForGeneration(
   }
 
   if (data.is_free_tier && data.rate_limit) {
-    cachedRateLimit = {
-      maxRequests: data.rate_limit.max_requests,
-      remaining: data.rate_limit.remaining,
-      maxTokens: data.rate_limit.max_tokens,
-      tokensUsed: data.rate_limit.tokens_used,
-      tokensRemaining: data.rate_limit.tokens_remaining,
-      resetsAt: data.rate_limit.resets_at,
-      kind: 'free_daily',
-    }
+    cachedRateLimit = parseRateLimit(data.rate_limit, 'free_daily')
   } else {
     cachedRateLimit = null
   }
@@ -383,6 +459,15 @@ export function getRateLimitInfo(): RateLimitInfo | null {
 }
 
 /**
+ * Referentially stable view of the cached rate limit for
+ * useSyncExternalStore. Every write replaces the cached object, so the
+ * reference only changes when the data does.
+ */
+export function getRateLimitSnapshot(): Readonly<RateLimitInfo> | null {
+  return cachedRateLimit
+}
+
+/**
  * Snapshots the current remaining count and optimistically decrements it.
  * Called when a request starts so the UI updates immediately and
  * refreshRateLimit can later detect stale server responses.
@@ -407,6 +492,77 @@ export function discardRateLimitSnapshot(): void {
   remainingBeforeRequest = null
 }
 
+export interface StreamUsage {
+  promptTokens: number
+  completionTokens: number
+}
+
+function consumeTokenBudget(
+  budget: TokenBudget | undefined,
+  tokens: number,
+): TokenBudget | undefined {
+  if (!budget || tokens <= 0) return budget
+  return {
+    max: budget.max,
+    used: budget.used + tokens,
+    remaining: Math.max(0, budget.remaining - tokens),
+  }
+}
+
+/**
+ * Tracks one in-flight stream's usage so the sidebar indicator moves while
+ * the response is still streaming. Usage chunks report running totals for
+ * the request, so each call folds only the growth since the previous chunk
+ * into the cached budget. The server's count replaces this local estimate
+ * on the next refreshRateLimit.
+ */
+export function createStreamUsageTracker(): (usage: StreamUsage) => void {
+  const trackerGeneration = sessionCacheGeneration
+  let applied: StreamUsage = { promptTokens: 0, completionTokens: 0 }
+  return (usage) => {
+    // A stream that outlives a sign-out must not charge its tokens to
+    // whichever account populated the cache afterwards.
+    if (!cachedRateLimit || trackerGeneration !== sessionCacheGeneration) return
+    const promptDelta = usage.promptTokens - applied.promptTokens
+    const completionDelta = usage.completionTokens - applied.completionTokens
+    if (promptDelta <= 0 && completionDelta <= 0) return
+    applied = {
+      promptTokens: Math.max(applied.promptTokens, usage.promptTokens),
+      completionTokens: Math.max(
+        applied.completionTokens,
+        usage.completionTokens,
+      ),
+    }
+    cachedRateLimit = {
+      ...cachedRateLimit,
+      inputTokens: consumeTokenBudget(cachedRateLimit.inputTokens, promptDelta),
+      outputTokens: consumeTokenBudget(
+        cachedRateLimit.outputTokens,
+        completionDelta,
+      ),
+    }
+    dispatchRateLimitUpdate()
+  }
+}
+
+// Re-reads a subscriber's hourly usage without touching the cached session
+// JWT. Every mint returns a distinct JWT, and a changed session token makes
+// ensureInitialized rebuild the OpenAI client and re-run attestation, so the
+// usage refresh must not rotate the token the way the free-tier path does.
+// If the read fails the usage simply stays stale until the next refresh; the
+// JWT remains valid until its own expiry, at which point the regular mint
+// path re-resolves the account's tier.
+async function refreshHourlyUsage(cacheGeneration: number): Promise<void> {
+  const authBearer = await resolveAuthBearer()
+  assertSessionCacheGeneration(cacheGeneration)
+  if (!authBearer) return
+  const jwt = await fetchChatJWT(authBearer, cacheGeneration)
+  assertSessionCacheGeneration(cacheGeneration)
+  if (jwt === null) return
+  cachedRateLimit = jwt.rateLimit
+  dispatchRateLimitUpdate()
+}
+
 /**
  * Forces a fresh fetch of the session token (and rate limit info) from
  * the server, bypassing the local cache.  Called after each stream
@@ -423,9 +579,13 @@ export async function refreshRateLimit(): Promise<void> {
     const refreshGeneration = sessionCacheGeneration
     const snapshot = remainingBeforeRequest
     remainingBeforeRequest = null
-    cachedSessionToken = null
-    cachedSessionTokenExpiresAt = null
     try {
+      if (cachedRateLimit?.kind === 'hourly') {
+        await refreshHourlyUsage(refreshGeneration)
+        return
+      }
+      cachedSessionToken = null
+      cachedSessionTokenExpiresAt = null
       await fetchSessionTokenForGeneration(refreshGeneration)
       if (
         refreshGeneration === sessionCacheGeneration &&
@@ -471,12 +631,16 @@ export function resetTinfoilClient(): void {
   cachedSessionToken = null
   cachedSessionTokenExpiresAt = null
   cachedSessionTokenWasAuthenticated = false
+  const hadRateLimit = cachedRateLimit !== null
   cachedRateLimit = null
   remainingBeforeRequest = null
   refreshInFlight = null
   cachedVerificationDocument = null
   idleRecoverableTransports = []
   recoverableTransportPoolGeneration++
+  if (hadRateLimit) {
+    dispatchRateLimitUpdate()
+  }
 }
 
 export function invalidateSessionCache(): void {
