@@ -27,7 +27,11 @@ export const NativeBackupJsonSchema: z.ZodType<unknown> = z.lazy(() =>
   ]),
 )
 
-const source = strict({ title: z.string(), url: z.string() })
+const source = strict({
+  title: z.string(),
+  url: z.string(),
+  snippet: optionalString,
+})
 const search = strict({
   query: optionalString,
   status: z.enum(['searching', 'completed', 'failed', 'blocked']),
@@ -38,6 +42,7 @@ const fetchState = strict({
   id,
   url: z.string(),
   status: z.enum(['fetching', 'completed', 'failed']),
+  sources: z.array(source).optional(),
 })
 const citation = strict({
   type: z.literal('url_citation'),

@@ -138,6 +138,7 @@ export class RichStreamSession {
           ? sources.map((source) => ({
               title: source.title || source.url,
               url: source.url,
+              snippet: source.snippet,
             }))
           : current?.sources,
       }
@@ -184,7 +185,15 @@ export class RichStreamSession {
     }
     const status: URLFetchState['status'] =
       event.status === 'blocked' ? 'failed' : event.status
-    this.timeline.updateURLFetch(event.id, status)
+    this.timeline.updateURLFetch(
+      event.id,
+      status,
+      event.sources?.map((source) => ({
+        url: source.url,
+        title: source.title || source.url,
+        snippet: source.snippet,
+      })),
+    )
   }
 
   private applyCodeExec(
@@ -248,7 +257,9 @@ export class RichStreamSession {
         if (current) {
           this.timeline.updateWebSearch({
             ...current,
-            sources: [...this.assembler.collectedSources],
+            sources: current.sources?.some((source) => source.snippet)
+              ? current.sources
+              : [...this.assembler.collectedSources],
           })
         }
         break

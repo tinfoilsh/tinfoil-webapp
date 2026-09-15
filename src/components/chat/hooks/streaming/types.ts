@@ -31,7 +31,7 @@ export type WebSearchEvent = {
   id?: string
   status: 'in_progress' | 'completed' | 'failed' | 'blocked'
   query?: string
-  sources?: Array<{ url: string; title?: string }>
+  sources?: Array<{ url: string; title?: string; snippet?: string }>
   reason?: string
 }
 
@@ -40,6 +40,7 @@ export type URLFetchEvent = {
   id: string
   url: string
   status: 'in_progress' | 'completed' | 'failed' | 'blocked'
+  sources?: Array<{ url: string; title?: string; snippet?: string }>
 }
 
 export type AnnotationEvent = {

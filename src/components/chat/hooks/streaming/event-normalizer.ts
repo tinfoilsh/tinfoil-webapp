@@ -107,6 +107,7 @@ function normalizeToolEvent(
       id: event.item_id || action.url,
       url: action.url,
       status: toURLFetchStatus(event.status),
+      sources: event.sources,
     }
     logger?.logWebSearchDispatch(mapped)
     return [mapped]
