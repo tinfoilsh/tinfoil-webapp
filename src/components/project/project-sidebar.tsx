@@ -1,5 +1,4 @@
-import { logError } from '@/utils/error-handling'
-;('use client')
+'use client'
 
 import { ChatList, type ChatItemData } from '@/components/chat/chat-list'
 import { formatRelativeTime } from '@/components/chat/chat-list-utils'
@@ -29,6 +28,7 @@ import {
 import { toast } from '@/hooks/use-toast'
 import type { Fact } from '@/types/memory'
 import type { Project } from '@/types/project'
+import { logError } from '@/utils/error-handling'
 import {
   getChatPath,
   getNewChatPath,

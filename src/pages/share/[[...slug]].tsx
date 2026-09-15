@@ -1,11 +1,10 @@
-import { displayModels } from '@/config/models'
-import { useHarness } from '@/services/harness/provider'
-import type { SharedThread } from '@/services/harness/types'
-;('use client')
+'use client'
 
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
-import { type BaseModel } from '@/config/models'
+import { displayModels, type BaseModel } from '@/config/models'
+import { useHarness } from '@/services/harness/provider'
+import type { SharedThread } from '@/services/harness/types'
 import Head from 'next/head'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
