@@ -19,7 +19,9 @@ export function shouldShowRateLimitBanner(
   rateLimit: RateLimitInfo | null,
 ): rateLimit is RateLimitInfo {
   return (
-    rateLimit !== null && rateLimit.remaining <= RATE_LIMIT_WARNING_THRESHOLD
+    rateLimit !== null &&
+    rateLimit.kind !== null &&
+    rateLimit.remaining <= RATE_LIMIT_WARNING_THRESHOLD
   )
 }
 

@@ -139,7 +139,7 @@ export function useThread(
           frame.event.type === 'RUN_FINISHED' ||
           frame.event.type === 'RUN_ERROR'
         )
-          void refresh().catch(report)
+          void (api.userId ? refresh() : api.refresh()).catch(report)
       }
     } catch (cause) {
       if (!controller.signal.aborted && version === generation.current)

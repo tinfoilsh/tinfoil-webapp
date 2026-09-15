@@ -1,5 +1,5 @@
 import { AUTH_ACTIVE_USER_CHANGED_EVENT } from '@/constants/auth-events'
-import { authTokenManager } from '@/services/auth'
+import { authTokenManager, AuthTokenUnavailableError } from '@/services/auth'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
@@ -49,28 +49,29 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         const jwt = userId ? await token.current(options) : null
         if (identity.current !== userId)
           throw new DOMException('Account changed', 'AbortError')
+        if (userId && !jwt) throw new AuthTokenUnavailableError('unavailable')
         return jwt
       }
       authTokenManager.initialize(getter)
       const api = new HarnessAPI(new HarnessClient(url, getter), userId ?? null)
       release = activateAPI(api)
       setSessionAPI(api)
+      const refresh = () => {
+        const initialization = userId
+          ? encryptionService.initialize()
+          : Promise.resolve()
+        void initialization.then(() => api.refresh()).catch(reportHarnessError)
+      }
       const unlock = () => {
         api.invalidateKey()
-        void encryptionService
-          .initialize()
-          .then(() => api.refresh())
-          .catch(reportHarnessError)
+        refresh()
       }
       const keyChanged = () => {
         api.invalidateKey()
         void api.refreshProfile().catch(reportHarnessError)
       }
       window.addEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
-      void encryptionService
-        .initialize()
-        .then(() => api.refresh())
-        .catch(reportHarnessError)
+      refresh()
       window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
       setAccount(userId ?? 'anonymous')
       return () => {

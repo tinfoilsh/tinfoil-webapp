@@ -57,7 +57,13 @@ beforeEach(() => {
   sessionStorage.clear()
   events = vi.fn()
   activateAPI(
-    new HarnessAPI({ events, post: vi.fn() } as unknown as HarnessClient, null),
+    new HarnessAPI(
+      {
+        events,
+        post: vi.fn().mockResolvedValue(testSession),
+      } as unknown as HarnessClient,
+      null,
+    ),
   )
   publish({
     session: { ...testSession, widgets: ['render_chart'] },

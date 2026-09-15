@@ -124,6 +124,12 @@ export class HarnessAPI {
       undefined,
       false,
     )
+    if (
+      session.user.anonymous &&
+      !session.rateLimit.kind &&
+      this.client.anonymousRateLimit
+    )
+      session.rateLimit = this.client.anonymousRateLimit
     publish({ session, error: undefined })
     await this.refreshProfile()
     return session
@@ -175,11 +181,13 @@ export class HarnessAPI {
 }
 export function activateAPI(api: HarnessAPI) {
   active?.lifetime.abort()
+  active?.client.dispose?.()
   active = api
   view = empty
   publish({})
   return () => {
     api.lifetime.abort()
+    api.client.dispose?.()
     if (active === api) {
       active = undefined
       view = empty
@@ -207,6 +215,7 @@ export function reportHarnessError(error: unknown) {
 
 export function resetHarnessAPI() {
   active?.lifetime.abort()
+  active?.client.dispose?.()
   active = undefined
   view = empty
   publish({})

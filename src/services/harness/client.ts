@@ -1,4 +1,5 @@
 import { SecureClient } from 'tinfoil'
+import { AnonymousCredentialCache } from './anonymous-credential'
 import { HarnessError, readEvents } from './sse'
 import type { Frame, HarnessErrorBody, Session, Turn } from './types'
 
@@ -11,6 +12,15 @@ type Transport = Pick<
 
 export class HarnessClient {
   private readonly origin: string
+  private readonly anonymous = new AnonymousCredentialCache()
+
+  get anonymousRateLimit() {
+    return this.anonymous.rateLimit
+  }
+
+  dispose() {
+    this.anonymous.dispose()
+  }
 
   constructor(
     url: string,
@@ -68,6 +78,13 @@ export class HarnessClient {
     signal?.throwIfAborted()
     await this.ready()
     let token = await this.getToken()
+    const anonymous = !token
+    if (anonymous) {
+      token = await this.anonymous.get(signal)
+      // The provider's getter rejects calls after an account change.
+      if (await this.getToken())
+        throw new DOMException('Account changed', 'AbortError')
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
       signal?.throwIfAborted()
       const headers = new Headers()
@@ -87,7 +104,12 @@ export class HarnessClient {
       })
       if (response.status === 401 && token && attempt === 0) {
         await response.body?.cancel()
-        token = await this.getToken({ skipCache: true })
+        if (anonymous) {
+          this.anonymous.reject(token)
+          token = await this.anonymous.get(signal)
+          if (await this.getToken())
+            throw new DOMException('Account changed', 'AbortError')
+        } else token = await this.getToken({ skipCache: true })
         if (!token)
           throw new HarnessError(
             { code: 'UNAUTHENTICATED', message: 'Sign in again to continue.' },
@@ -113,6 +135,8 @@ export class HarnessClient {
           typeof value.error.message === 'string'
         )
           detail = value.error as HarnessErrorBody
+        if (anonymous && detail.code === 'QUOTA_EXHAUSTED')
+          this.anonymous.exhausted()
         throw new HarnessError(detail, response.status)
       }
       return response
@@ -177,6 +201,20 @@ export class HarnessClient {
         message: 'The chat service did not return an event stream.',
       })
     }
-    yield* readEvents(response.body)
+    for await (const frame of readEvents(response.body)) {
+      // Refresh issuance metadata after a run. A started run is never
+      // replayed automatically when a downstream credential expires.
+      if (
+        frame.event.type === 'RUN_ERROR' &&
+        frame.event.code === 'QUOTA_EXHAUSTED'
+      )
+        this.anonymous.exhausted()
+      if (
+        frame.event.type === 'RUN_FINISHED' ||
+        frame.event.type === 'RUN_ERROR'
+      )
+        this.anonymous.invalidate()
+      yield frame
+    }
   }
 }

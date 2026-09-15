@@ -288,7 +288,7 @@ describe('attested harness transport', () => {
     const secure = transport()
     const client = new HarnessClient(
       'https://harness.example',
-      async () => null,
+      async () => 'clerk',
       secure,
     )
     secure.fetch.mockResolvedValueOnce(new Response('{"id":"attachment"}'))

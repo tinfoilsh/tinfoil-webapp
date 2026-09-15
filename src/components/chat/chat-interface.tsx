@@ -205,8 +205,10 @@ export function ChatInterface({
   const isWaitingForResponse =
     isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
   const isTemporaryMode = thread.temporary
-  const rateLimit =
-    thread.state.snapshot.rateLimit ?? session?.rateLimit ?? null
+  const snapshotLimit = thread.state.snapshot.rateLimit
+  const rateLimit = snapshotLimit?.kind
+    ? snapshotLimit
+    : (session?.rateLimit ?? null)
   const retryInfo = null
   const streamError = thread.error
     ? {
