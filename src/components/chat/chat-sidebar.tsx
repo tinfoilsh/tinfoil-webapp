@@ -1159,8 +1159,9 @@ export function ChatSidebar({
             hideScrollbarDuringAnimation && 'scrollbar-hide',
           )}
         >
-          {/* Toolbar: Settings, Sync, New chat */}
-          <div className="relative z-10 flex flex-none items-center gap-2 px-2">
+          {/* Toolbar: Settings, Sync, New chat. Stacked above the usage
+              card below so the buttons' tooltips are not clipped by it. */}
+          <div className="relative z-20 flex flex-none items-center gap-2 px-2">
             {/* Settings button */}
             <div className="group relative flex items-center">
               <button
