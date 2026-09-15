@@ -29,6 +29,12 @@ export interface MessageRenderProps {
   hideActions?: boolean
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
+  /** Remove this message from the conversation. */
+  onDeleteMessage?: (messageIndex: number) => void
+  /** Rewrite an assistant response's text in place. */
+  onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+  /** Ask the model to resume an assistant response. */
+  onContinueAssistantMessage?: (messageIndex: number) => void
   /**
    * Retry a single failed GenUI tool call in place. Resolves true when repaired
    * and preserves typed failures for the retry card.

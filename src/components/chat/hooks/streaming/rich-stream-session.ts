@@ -1,5 +1,6 @@
 import type { ChatChunk } from '@/services/inference/chat-stream'
 import type { StreamLogger } from '@/utils/dev-stream-logger'
+import { ensureTimeline } from '../../ensure-timeline'
 import type { Message, URLFetchState } from '../../types'
 import { createContentPreprocessor } from './content-preprocessor'
 import { createEventNormalizer } from './event-normalizer'
@@ -14,12 +15,14 @@ interface RichStreamSessionOptions {
   onThinkingChange?: (isThinking: boolean) => void
   modelDisplayName?: string
   resolveModelDisplayName?: (modelName: string) => string | undefined
+  /** Existing assistant message this stream continues. */
+  continueFrom?: Message
 }
 
 export class RichStreamSession {
   private readonly preprocessor = createContentPreprocessor()
   private readonly normalizer = createEventNormalizer()
-  private readonly timeline = new TimelineBuilder()
+  private readonly timeline: TimelineBuilder
   private readonly assembler: MessageAssembler
   private readonly webSearchBlocks = new Map<string, string>()
   private firstEventSeen = false
@@ -27,7 +30,16 @@ export class RichStreamSession {
   private thinkingStartedAt: number | null = null
 
   constructor(private readonly options: RichStreamSessionOptions = {}) {
+    // Legacy messages carry thoughts/search as flat fields only; normalize
+    // so the seed carries their blocks into the continued timeline.
+    const seed = options.continueFrom
+      ? ensureTimeline(options.continueFrom)
+      : undefined
+    this.timeline = new TimelineBuilder(seed?.timeline)
     this.assembler = new MessageAssembler(options.modelDisplayName)
+    if (seed) {
+      this.assembler.seedFrom(seed)
+    }
   }
 
   processChunk(chunk: ChatChunk, streamLogger?: StreamLogger): boolean {

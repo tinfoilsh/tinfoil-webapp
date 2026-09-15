@@ -75,6 +75,9 @@ interface UseChatStateReturn {
   updateChatTitle: (chatId: string, newTitle: string) => void
   reloadChats: () => Promise<void>
   editMessage: (messageIndex: number, newContent: string) => void
+  deleteMessage: (messageIndex: number) => void
+  editAssistantMessage: (messageIndex: number, newContent: string) => void
+  continueAssistantMessage: (messageIndex: number) => void
   regenerateMessage: (messageIndex: number) => void
   retryLastMessage: () => void
   resolveInputToolCall: (
@@ -236,6 +239,9 @@ export function useChatState({
     handleQuery,
     cancelGeneration,
     editMessage,
+    deleteMessage,
+    editAssistantMessage,
+    continueAssistantMessage,
     regenerateMessage,
     retryLastMessage,
     resolveInputToolCall,
@@ -386,6 +392,9 @@ export function useChatState({
     updateChatTitle,
     reloadChats,
     editMessage,
+    deleteMessage,
+    editAssistantMessage,
+    continueAssistantMessage,
     regenerateMessage,
     retryLastMessage,
     resolveInputToolCall,

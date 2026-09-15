@@ -30,6 +30,23 @@ export class MessageAssembler {
 
   constructor(private modelDisplayName?: string) {}
 
+  /**
+   * Carry over the flat fields of a response being continued so citations,
+   * search reasoning, and the original timestamp survive the new stream.
+   */
+  seedFrom(message: Message): void {
+    this.timestamp = message.timestamp
+    // A legacy message without a persisted name must not inherit the
+    // currently selected model; a stream-provided name can still override.
+    this.modelDisplayName = message.modelDisplayName
+    this.annotations = [...(message.annotations ?? [])]
+    this.annotationsSnapshot = undefined
+    this.sources = (message.webSearch?.sources ?? []).map((source) => ({
+      ...source,
+    }))
+    this.searchReasoning = message.searchReasoning ?? ''
+  }
+
   setModelDisplayName(modelDisplayName: string): void {
     if (!modelDisplayName) return
     this.modelDisplayName = modelDisplayName

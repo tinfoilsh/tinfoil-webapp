@@ -10,12 +10,15 @@ import {
   InformationCircleIcon,
   LockClosedIcon,
   PencilSquareIcon,
+  PlayIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline'
 import React, { memo, useState, type JSX } from 'react'
 import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
 import { RxCopy } from 'react-icons/rx'
 import { hasMessageAttachments } from '../../attachment-helpers'
+import { CONSTANTS } from '../../constants'
 import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
 import { isImeComposition } from '../../keyboard-utils'
@@ -60,6 +63,9 @@ const DefaultMessageComponent = ({
   hideActions,
   onEditMessage,
   onRegenerateMessage,
+  onDeleteMessage,
+  onEditAssistantMessage,
+  onContinueAssistantMessage,
   onRetryToolCall,
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
@@ -206,6 +212,21 @@ const DefaultMessageComponent = ({
     }
   }, [editContent, messageIndex, onEditMessage])
 
+  const handleSubmitAssistantEdit = React.useCallback(() => {
+    if (editContent.trim() && onEditAssistantMessage) {
+      onEditAssistantMessage(messageIndex, editContent.trim())
+      setIsEditing(false)
+    }
+  }, [editContent, messageIndex, onEditAssistantMessage])
+
+  const handleContinue = React.useCallback(() => {
+    onContinueAssistantMessage?.(messageIndex)
+  }, [messageIndex, onContinueAssistantMessage])
+
+  const handleDelete = React.useCallback(() => {
+    onDeleteMessage?.(messageIndex)
+  }, [messageIndex, onDeleteMessage])
+
   const handleRegenerate = React.useCallback(() => {
     if (onRegenerateMessage) {
       onRegenerateMessage(messageIndex)
@@ -294,6 +315,7 @@ const DefaultMessageComponent = ({
 
       {/* Chronological timeline rendering (assistant only) */}
       {!isUser &&
+        !isEditing &&
         message.timeline?.map((block, blockIndex) => {
           switch (block.type) {
             case 'thinking':
@@ -456,11 +478,65 @@ const DefaultMessageComponent = ({
           )
         })()}
 
+      {/* Full-width edit mode for assistant responses */}
+      {!isUser && isEditing && (
+        <div className="w-full px-4 py-2">
+          <div className="rounded-xl border border-border-subtle bg-surface-chat p-4">
+            <textarea
+              ref={editTextareaRef}
+              aria-label="Edit response"
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && isImeComposition(e)) {
+                  return
+                }
+                if (
+                  e.key === 'Enter' &&
+                  !e.shiftKey &&
+                  (!enterToNewline || e.metaKey || e.ctrlKey)
+                ) {
+                  e.preventDefault()
+                  handleSubmitAssistantEdit()
+                } else if (e.key === 'Escape') {
+                  handleCancelEdit()
+                }
+              }}
+              className={cn(
+                'w-full resize-none bg-transparent font-chat text-base leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
+              )}
+              rows={Math.min(
+                CONSTANTS.EDIT_TEXTAREA_MAX_ROWS,
+                Math.max(
+                  CONSTANTS.EDIT_TEXTAREA_MIN_ROWS,
+                  editContent.split('\n').length,
+                ),
+              )}
+            />
+            <div className="mt-3 flex justify-end gap-2">
+              <button
+                onClick={handleCancelEdit}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitAssistantEdit}
+                disabled={!editContent.trim()}
+                className="rounded-lg bg-surface-chat-background px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background/80 disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* User message content (or assistant without timeline, e.g. rate limit errors) */}
       {message.content &&
         !(!isUser && message.timeline && message.timeline.length > 0) && (
           <>
-            {!(isUser && isEditing) && (
+            {!isEditing && (
               <div
                 className={`w-full ${isUser ? 'flex justify-end px-4 pb-8 pt-2' : 'px-4 py-2'}`}
               >
@@ -615,8 +691,11 @@ const DefaultMessageComponent = ({
                       'w-full resize-none bg-transparent font-chat text-base leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
                     )}
                     rows={Math.min(
-                      10,
-                      Math.max(3, editContent.split('\n').length),
+                      CONSTANTS.EDIT_TEXTAREA_MAX_ROWS,
+                      Math.max(
+                        CONSTANTS.EDIT_TEXTAREA_MIN_ROWS,
+                        editContent.split('\n').length,
+                      ),
                     )}
                   />
                   <div className="mt-3 flex items-center justify-between">
@@ -694,6 +773,20 @@ const DefaultMessageComponent = ({
                     </span>
                   </div>
                 )}
+                {onDeleteMessage && (
+                  <div className="group/delete relative">
+                    <button
+                      onClick={handleDelete}
+                      aria-label="Delete message"
+                      className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-red-500"
+                    >
+                      <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100">
+                      Delete
+                    </span>
+                  </div>
+                )}
                 <div className="group/copy relative">
                   <button
                     onClick={handleCopyUser}
@@ -733,7 +826,7 @@ const DefaultMessageComponent = ({
               showActions ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
           >
-            {!hideActions && message.content && (
+            {!hideActions && !isEditing && message.content && (
               <>
                 {message.webSearch?.sources &&
                   message.webSearch.sources.length > 0 &&
@@ -759,6 +852,52 @@ const DefaultMessageComponent = ({
                     </button>
                     <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
                       Regenerate
+                    </span>
+                  </div>
+                )}
+                {onContinueAssistantMessage && !isLimitError && (
+                  <div className="group/continue relative">
+                    <button
+                      onClick={handleContinue}
+                      aria-label="Continue response"
+                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
+                    >
+                      <PlayIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/continue:opacity-100">
+                      Continue
+                    </span>
+                  </div>
+                )}
+                {onEditAssistantMessage && !isLimitError && (
+                  <div className="group/edit relative">
+                    <button
+                      ref={editButtonRef}
+                      onClick={handleStartEdit}
+                      aria-label="Edit response"
+                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
+                    >
+                      <PencilSquareIcon
+                        className="h-3.5 w-3.5"
+                        aria-hidden="true"
+                      />
+                    </button>
+                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
+                      Edit
+                    </span>
+                  </div>
+                )}
+                {onDeleteMessage && (
+                  <div className="group/delete relative">
+                    <button
+                      onClick={handleDelete}
+                      aria-label="Delete message"
+                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-red-500"
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100">
+                      Delete
                     </span>
                   </div>
                 )}

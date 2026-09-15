@@ -71,6 +71,9 @@ type ChatMessagesProps = {
   ) => void
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
+  onDeleteMessage?: (messageIndex: number) => void
+  onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+  onContinueAssistantMessage?: (messageIndex: number) => void
   onRetryToolCall?: (
     messageIndex: number,
     toolCallId: string,
@@ -122,6 +125,9 @@ const ChatMessage = memo(
     hideActions = false,
     onEditMessage,
     onRegenerateMessage,
+    onDeleteMessage,
+    onEditAssistantMessage,
+    onContinueAssistantMessage,
     onRetryToolCall,
   }: {
     message: Message
@@ -134,6 +140,9 @@ const ChatMessage = memo(
     hideActions?: boolean
     onEditMessage?: (messageIndex: number, newContent: string) => void
     onRegenerateMessage?: (messageIndex: number) => void
+    onDeleteMessage?: (messageIndex: number) => void
+    onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+    onContinueAssistantMessage?: (messageIndex: number) => void
     onRetryToolCall?: (
       messageIndex: number,
       toolCallId: string,
@@ -155,6 +164,9 @@ const ChatMessage = memo(
         hideActions={hideActions}
         onEditMessage={onEditMessage}
         onRegenerateMessage={onRegenerateMessage}
+        onDeleteMessage={onDeleteMessage}
+        onEditAssistantMessage={onEditAssistantMessage}
+        onContinueAssistantMessage={onContinueAssistantMessage}
         onRetryToolCall={onRetryToolCall}
       />
     )
@@ -175,6 +187,10 @@ const ChatMessage = memo(
       prevProps.hideActions === nextProps.hideActions &&
       prevProps.onEditMessage === nextProps.onEditMessage &&
       prevProps.onRegenerateMessage === nextProps.onRegenerateMessage &&
+      prevProps.onDeleteMessage === nextProps.onDeleteMessage &&
+      prevProps.onEditAssistantMessage === nextProps.onEditAssistantMessage &&
+      prevProps.onContinueAssistantMessage ===
+        nextProps.onContinueAssistantMessage &&
       prevProps.onRetryToolCall === nextProps.onRetryToolCall
     )
   },
@@ -311,6 +327,9 @@ export function ChatMessages({
   handleLabelClick,
   onEditMessage,
   onRegenerateMessage,
+  onDeleteMessage,
+  onEditAssistantMessage,
+  onContinueAssistantMessage,
   onRetryToolCall,
   showScrollButton,
   webSearchEnabled,
@@ -556,14 +575,19 @@ export function ChatMessages({
     return <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-24"></div>
   }
 
-  // Show loading dots only if waiting and no assistant thinking message exists yet
+  // Show loading dots only while waiting on a fresh response. When the last
+  // message is already an assistant bubble being streamed into (thinking
+  // has started, or a continuation is resuming it) that bubble carries its
+  // own indicator.
   const lastMessage = liveMessages[liveMessages.length - 1]
-  const hasAssistantThinking = Boolean(
-    lastMessage &&
-    lastMessage.role === 'assistant' &&
-    (lastMessage.isThinking || (lastMessage.thoughts && !lastMessage.content)),
-  )
-  const showLoadingPlaceholder = isWaitingForResponse && !hasAssistantThinking
+  const showLoadingPlaceholder =
+    isWaitingForResponse &&
+    !(
+      lastMessage?.role === 'assistant' &&
+      (isStreamingResponse ||
+        lastMessage.isThinking ||
+        (lastMessage.thoughts && !lastMessage.content))
+    )
   const pendingRecoveryTurnIds = new Set(
     pendingRecoveries.map((recovery) => recovery.turnId),
   )
@@ -702,6 +726,15 @@ export function ChatMessages({
                         onRegenerateMessage={
                           recoveryDraft ? undefined : onRegenerateMessage
                         }
+                        onDeleteMessage={
+                          recoveryDraft ? undefined : onDeleteMessage
+                        }
+                        onEditAssistantMessage={
+                          recoveryDraft ? undefined : onEditAssistantMessage
+                        }
+                        onContinueAssistantMessage={
+                          recoveryDraft ? undefined : onContinueAssistantMessage
+                        }
                         onRetryToolCall={
                           recoveryDraft ? undefined : onRetryToolCall
                         }
@@ -745,6 +778,13 @@ export function ChatMessages({
                 onEditMessage={recoveryDraft ? undefined : onEditMessage}
                 onRegenerateMessage={
                   recoveryDraft ? undefined : onRegenerateMessage
+                }
+                onDeleteMessage={recoveryDraft ? undefined : onDeleteMessage}
+                onEditAssistantMessage={
+                  recoveryDraft ? undefined : onEditAssistantMessage
+                }
+                onContinueAssistantMessage={
+                  recoveryDraft ? undefined : onContinueAssistantMessage
                 }
                 onRetryToolCall={recoveryDraft ? undefined : onRetryToolCall}
               />

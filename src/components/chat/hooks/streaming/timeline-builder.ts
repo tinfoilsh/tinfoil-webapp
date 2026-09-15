@@ -23,6 +23,24 @@ export class TimelineBuilder {
   private currentContentIdx = -1
   private thinkingCounter = 0
 
+  /**
+   * Start from an existing timeline so a continuation stream appends to a
+   * prior response. The seed's blocks are treated as closed, except a
+   * trailing content block, which stays open so new text continues it.
+   */
+  constructor(seed: TimelineBlock[] = []) {
+    this.blocks = [...seed]
+    this.thinkingCounter = seed.reduce((next, block) => {
+      if (block.type !== 'thinking') return next
+      const match = /^thinking-(\d+)$/.exec(block.id)
+      return match ? Math.max(next, Number(match[1]) + 1) : next
+    }, 0)
+    const last = this.blocks[this.blocks.length - 1]
+    if (last?.type === 'content') {
+      this.currentContentIdx = this.blocks.length - 1
+    }
+  }
+
   // -- Thinking -----------------------------------------------------------
 
   startThinking(): void {
