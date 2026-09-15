@@ -94,6 +94,11 @@ describe('replaceAssistantContent', () => {
       'thinking-0',
       'edited-content',
     ])
+    expect(edited.timeline?.[1]).toEqual({
+      type: 'content',
+      id: 'edited-content',
+      content: 'edited',
+    })
   })
 
   it('keeps legacy thoughts when editing a message without a timeline', () => {

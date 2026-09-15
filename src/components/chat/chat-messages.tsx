@@ -582,11 +582,18 @@ export function ChatMessages({
   }
 
   // Show loading dots only while waiting on a fresh response. When the last
-  // message is already an assistant bubble (thinking has started, or a
-  // continuation is resuming it) that bubble carries its own indicator.
+  // message is already an assistant bubble being streamed into (thinking
+  // has started, or a continuation is resuming it) that bubble carries its
+  // own indicator.
   const lastMessage = liveMessages[liveMessages.length - 1]
   const showLoadingPlaceholder =
-    isWaitingForResponse && lastMessage?.role !== 'assistant'
+    isWaitingForResponse &&
+    !(
+      lastMessage?.role === 'assistant' &&
+      (isStreamingResponse ||
+        lastMessage.isThinking ||
+        (lastMessage.thoughts && !lastMessage.content))
+    )
   const pendingRecoveryTurnIds = new Set(
     pendingRecoveries.map((recovery) => recovery.turnId),
   )
