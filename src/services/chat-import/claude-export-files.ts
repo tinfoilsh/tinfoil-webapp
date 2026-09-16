@@ -1,0 +1,31 @@
+/**
+ * Anthropic splits large exports into several numbered JSON files
+ * (conversations-1.json, conversations-2.json, ...). Each file is a JSON
+ * array of the same record type, so the on-device importer reads them all
+ * and concatenates the records before parsing.
+ */
+export async function readClaudeExportFiles<T>(
+  files: readonly File[],
+  formatLabel: string,
+): Promise<T[]> {
+  const records: T[] = []
+  for (const file of files) {
+    let data: unknown
+    try {
+      data = JSON.parse(await file.text())
+    } catch {
+      throw new Error(`${file.name} is not valid JSON`)
+    }
+    if (!Array.isArray(data)) {
+      throw new Error(`${file.name} is not a Claude ${formatLabel} export`)
+    }
+    records.push(...(data as T[]))
+  }
+  return records
+}
+
+export function isZipFile(file: File): boolean {
+  return (
+    file.name.toLowerCase().endsWith('.zip') || file.type === 'application/zip'
+  )
+}
