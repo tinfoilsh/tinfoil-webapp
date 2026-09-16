@@ -29,6 +29,10 @@ import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import { buildChatExport } from '@/services/chat-export/export-archive'
+import {
+  isZipFile,
+  readClaudeExportFiles,
+} from '@/services/chat-import/claude-export-files'
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 import {
   parseLocalTinfoilExportForAccess,
@@ -75,6 +79,8 @@ import {
   parseChatGPTConversations,
   parseClaudeConversations,
   parseClaudeProjects,
+  type ClaudeConversation,
+  type ClaudeProject,
 } from '@/utils/chat-import-parsers'
 import {
   CLOUD_SYNC_SETTING_CHANGED_EVENT,
@@ -134,6 +140,7 @@ import QRCode from 'react-qr-code'
 import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
+import { ImportFileList } from './import-file-list'
 import { MfaSettingsCard } from './mfa-settings-card'
 import { NativeBackupExport } from './native-backup-export'
 import { NativeBackupRestore } from './native-backup-restore'
@@ -641,6 +648,12 @@ export function SettingsModal({
     null,
   )
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  // Claude exports arrive split across several files, so selections are
+  // staged for review before the import starts.
+  const [stagedClaudeImport, setStagedClaudeImport] = useState<{
+    kind: 'conversations' | 'projects'
+    files: File[]
+  } | null>(null)
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
@@ -1721,25 +1734,72 @@ export function SettingsModal({
     }
   }
 
-  const handleImportClaudeConversations = async (
+  // Claude file pickers only stage the selection; the import runs once the
+  // user confirms the set from the staged file list.
+  const stageClaudeFiles = (
+    kind: 'conversations' | 'projects',
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const selected = Array.from(e.target.files ?? [])
+    e.target.value = ''
+    if (selected.length === 0) return
 
-    if (!isPremium && file.name.toLowerCase().endsWith('.zip')) {
+    if (
+      kind === 'conversations' &&
+      !isPremium &&
+      selected.some((file) => isZipFile(file))
+    ) {
       toast({
         title: 'Premium required',
         description: 'Claude archives containing projects require Premium',
         variant: 'destructive',
       })
-      e.target.value = ''
       return
     }
 
+    setImportResult(null)
+    setStagedClaudeImport((previous) => {
+      const existing = previous?.kind === kind ? previous.files : []
+      const isDuplicate = (file: File) =>
+        existing.some(
+          (other) =>
+            other.name === file.name &&
+            other.size === file.size &&
+            other.lastModified === file.lastModified,
+        )
+      return {
+        kind,
+        files: [...existing, ...selected.filter((file) => !isDuplicate(file))],
+      }
+    })
+  }
+
+  const removeStagedClaudeFile = (index: number) => {
+    setStagedClaudeImport((previous) => {
+      if (!previous) return null
+      const files = previous.files.filter((_, i) => i !== index)
+      return files.length > 0 ? { ...previous, files } : null
+    })
+  }
+
+  const runStagedClaudeImport = async () => {
+    if (!stagedClaudeImport) return
+    const { kind, files } = stagedClaudeImport
+    setStagedClaudeImport(null)
+    if (kind === 'projects') {
+      await importClaudeProjects(files)
+    } else {
+      await importClaudeConversations(files)
+    }
+  }
+
+  const importClaudeConversations = async (files: File[]) => {
     if (shouldImportOffDevice()) {
-      await importOffDevice('claude', file, 'Claude')
-      e.target.value = ''
+      // The enclave takes one archive per job, so a split export is
+      // uploaded as a sequence of jobs.
+      for (const file of files) {
+        await importOffDevice('claude', file, 'Claude')
+      }
       return
     }
 
@@ -1748,12 +1808,10 @@ export function SettingsModal({
     setImportResult(null)
 
     try {
-      const content = await file.text()
-      const data = JSON.parse(content)
-
-      if (!Array.isArray(data)) {
-        throw new Error('Invalid Claude export format')
-      }
+      const data = await readClaudeExportFiles<ClaudeConversation>(
+        files,
+        'conversations',
+      )
 
       const chats = parseClaudeConversations(data, getParseOptions())
       const { imported, errors } = await saveImportedChats(chats)
@@ -1788,23 +1846,16 @@ export function SettingsModal({
     } finally {
       setIsImporting(false)
       setImportProgress(null)
-      e.target.value = ''
     }
   }
 
-  const handleImportClaudeProjects = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
+  const importClaudeProjects = async (files: File[]) => {
     if (!isPremium) {
       toast({
         title: 'Premium required',
         description: 'Project import is only available for premium users',
         variant: 'destructive',
       })
-      e.target.value = ''
       return
     }
 
@@ -1813,12 +1864,7 @@ export function SettingsModal({
     setImportResult(null)
 
     try {
-      const content = await file.text()
-      const data = JSON.parse(content)
-
-      if (!Array.isArray(data)) {
-        throw new Error('Invalid Claude projects export format')
-      }
+      const data = await readClaudeExportFiles<ClaudeProject>(files, 'projects')
 
       const parsedProjects = parseClaudeProjects(data)
       setImportProgress({
@@ -1902,7 +1948,6 @@ export function SettingsModal({
     } finally {
       setIsImporting(false)
       setImportProgress(null)
-      e.target.value = ''
     }
   }
 
@@ -4352,31 +4397,34 @@ ${encryptionKey.replace('key_', '')}
                           {isPremium && shouldImportOffDevice() ? (
                             <>
                               Select the ZIP export with the Conversations
-                              button to include attachments. Use{' '}
+                              button to include attachments. Use the{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                projects.json
+                                projects*.json
                               </code>{' '}
-                              only for project imports.
+                              files only for project imports. Large exports are
+                              split into several files; select them all.
                             </>
                           ) : isPremium ? (
                             <>
-                              Select{' '}
+                              Select the{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations.json
+                                conversations*.json
                               </code>{' '}
                               or{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                projects.json
+                                projects*.json
                               </code>{' '}
-                              from the unzipped folder.
+                              files from the unzipped folder. Large exports are
+                              split into several files; select them all.
                             </>
                           ) : (
                             <>
-                              Select{' '}
+                              Select the{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations.json
+                                conversations*.json
                               </code>{' '}
-                              from the unzipped folder.
+                              files from the unzipped folder. Large exports are
+                              split into several files; select them all.
                             </>
                           )}
                         </div>
@@ -4389,44 +4437,47 @@ ${encryptionKey.replace('key_', '')}
                             ? '.json,.zip'
                             : '.json'
                         }
-                        onChange={handleImportClaudeConversations}
+                        onChange={(e) => stageClaudeFiles('conversations', e)}
                         className="hidden"
                         disabled={isImporting}
+                        multiple
                       />
                       {isPremium && (
                         <input
                           ref={claudeProjectsFileInputRef}
                           type="file"
                           accept=".json"
-                          onChange={handleImportClaudeProjects}
+                          onChange={(e) => stageClaudeFiles('projects', e)}
                           className="hidden"
                           disabled={isImporting}
+                          multiple
                         />
                       )}
-                      {renderImportStatus('claude') ?? (
-                        <div className="mt-2 flex gap-2">
-                          <button
-                            onClick={() =>
-                              claudeConversationsFileInputRef.current?.click()
+                      {renderImportStatus('claude') ??
+                        (stagedClaudeImport ? (
+                          <ImportFileList
+                            files={stagedClaudeImport.files}
+                            isDarkMode={isDarkMode}
+                            onRemove={removeStagedClaudeFile}
+                            onAddMore={() =>
+                              (stagedClaudeImport.kind === 'projects'
+                                ? claudeProjectsFileInputRef
+                                : claudeConversationsFileInputRef
+                              ).current?.click()
                             }
-                            disabled={isImporting}
-                            className={cn(
-                              'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                              isImporting
-                                ? 'cursor-not-allowed opacity-50'
-                                : 'hover:bg-surface-chat',
-                              isDarkMode
-                                ? 'bg-surface-chat text-content-primary'
-                                : 'bg-surface-sidebar text-content-primary',
-                            )}
-                          >
-                            <ArrowUpTrayIcon className="h-4 w-4" />
-                            Conversations
-                          </button>
-                          {isPremium && (
+                            onImport={runStagedClaudeImport}
+                            onCancel={() => setStagedClaudeImport(null)}
+                            importLabel={
+                              stagedClaudeImport.kind === 'projects'
+                                ? 'Import projects'
+                                : 'Import conversations'
+                            }
+                          />
+                        ) : (
+                          <div className="mt-2 flex gap-2">
                             <button
                               onClick={() =>
-                                claudeProjectsFileInputRef.current?.click()
+                                claudeConversationsFileInputRef.current?.click()
                               }
                               disabled={isImporting}
                               className={cn(
@@ -4440,11 +4491,30 @@ ${encryptionKey.replace('key_', '')}
                               )}
                             >
                               <ArrowUpTrayIcon className="h-4 w-4" />
-                              Projects
+                              Conversations
                             </button>
-                          )}
-                        </div>
-                      )}
+                            {isPremium && (
+                              <button
+                                onClick={() =>
+                                  claudeProjectsFileInputRef.current?.click()
+                                }
+                                disabled={isImporting}
+                                className={cn(
+                                  'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                  isImporting
+                                    ? 'cursor-not-allowed opacity-50'
+                                    : 'hover:bg-surface-chat',
+                                  isDarkMode
+                                    ? 'bg-surface-chat text-content-primary'
+                                    : 'bg-surface-sidebar text-content-primary',
+                                )}
+                              >
+                                <ArrowUpTrayIcon className="h-4 w-4" />
+                                Projects
+                              </button>
+                            )}
+                          </div>
+                        ))}
                     </div>
                   </div>
 
