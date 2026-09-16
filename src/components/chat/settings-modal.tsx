@@ -1537,29 +1537,55 @@ export function SettingsModal({
   const shouldImportOffDevice = () =>
     Boolean(isSignedIn) && isCloudSyncEnabled() && hasPrimaryKey()
 
+  // The enclave takes one archive per job, so a split export runs as a
+  // sequence of jobs. Progress is reported against the whole set and the
+  // sequence stops at the first file that fails so the outcome is never
+  // masked by a later success.
   const importOffDevice = async (
     source: 'chatgpt' | 'claude' | 'tinfoil',
-    file: File,
+    files: readonly File[],
     sourceLabel: string,
   ) => {
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
     setImportSource(source)
     setIsImporting(true)
     setImportResult(null)
     setImportProgress({
       type: 'upload',
-      progress: { phase: 'hashing', processedBytes: 0, totalBytes: file.size },
+      progress: { phase: 'hashing', processedBytes: 0, totalBytes },
     })
+    let completedBytes = 0
+    let result: ImportResult | null = null
     try {
-      const { status } = await runOffDeviceImport(source, file, {
-        onProgress: (progress) =>
-          setImportProgress({ type: 'upload', progress }),
-      })
-      const result = describeOffDeviceImportKickoff(status, sourceLabel)
+      for (const file of files) {
+        const { status } = await runOffDeviceImport(source, file, {
+          onProgress: (progress) =>
+            setImportProgress({
+              type: 'upload',
+              progress: {
+                ...progress,
+                processedBytes: completedBytes + progress.processedBytes,
+                totalBytes,
+              },
+            }),
+        })
+        completedBytes += file.size
+        result = describeOffDeviceImportKickoff(status, sourceLabel)
+        if (result.failed) {
+          result = {
+            ...result,
+            errors: [`${file.name}: ${result.message}`],
+            message: undefined,
+          }
+          break
+        }
+      }
+      if (!result) return
       setImportResult(result)
       if (result.failed) {
         toast({
           title: 'Import failed',
-          description: result.message,
+          description: result.errors[0],
           variant: 'destructive',
         })
       } else if (result.pending) {
@@ -1595,7 +1621,7 @@ export function SettingsModal({
     if (!file) return
 
     if (shouldImportOffDevice()) {
-      await importOffDevice('chatgpt', file, 'ChatGPT')
+      await importOffDevice('chatgpt', [file], 'ChatGPT')
       e.target.value = ''
       return
     }
@@ -1656,7 +1682,7 @@ export function SettingsModal({
     if (!file) return
 
     if (isPremium && shouldImportOffDevice()) {
-      await importOffDevice('tinfoil', file, 'Tinfoil')
+      await importOffDevice('tinfoil', [file], 'Tinfoil')
       e.target.value = ''
       return
     }
@@ -1795,11 +1821,7 @@ export function SettingsModal({
 
   const importClaudeConversations = async (files: File[]) => {
     if (shouldImportOffDevice()) {
-      // The enclave takes one archive per job, so a split export is
-      // uploaded as a sequence of jobs.
-      for (const file of files) {
-        await importOffDevice('claude', file, 'Claude')
-      }
+      await importOffDevice('claude', files, 'Claude')
       return
     }
 
