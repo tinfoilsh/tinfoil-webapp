@@ -239,13 +239,28 @@ describe('saved web evidence', () => {
       timeline: [{ type: 'content', id: 'c', content: 'Answer.' }],
       urlFetches: [{ id: 'f', url, status: 'completed', sources: [source] }],
     }
-    const replay = webSearchHistoryMessages(hybrid, 0)
-    const calls = replay.filter((item) => item.role === 'assistant')
-    expect(calls).toHaveLength(2)
-    expect(calls.map((call) => call.tool_calls?.[0].function.name)).toEqual([
-      'router_fetch',
-      'router_search',
+    const replay = webSearchHistoryMessages(hybrid, 3)
+    expect(replay).toHaveLength(4)
+    expect(replay.map((item) => item.role)).toEqual([
+      'assistant',
+      'tool',
+      'assistant',
+      'tool',
     ])
+    const [fetchCall, fetchResult, searchCall, searchResult] = replay as [
+      { tool_calls: [{ id: string; function: { name: string } }] },
+      { tool_call_id: string; content: string },
+      { tool_calls: [{ id: string; function: { name: string } }] },
+      { tool_call_id: string; content: string },
+    ]
+    expect(fetchCall.tool_calls[0].function.name).toBe('router_fetch')
+    expect(fetchCall.tool_calls[0].id).toBe('saved_web_3_0')
+    expect(fetchResult.tool_call_id).toBe('saved_web_3_0')
+    expect(JSON.parse(fetchResult.content).sources[0].snippet).toBe(excerpt)
+    expect(searchCall.tool_calls[0].function.name).toBe('router_search')
+    expect(searchCall.tool_calls[0].id).toBe('saved_web_3_1')
+    expect(searchResult.tool_call_id).toBe('saved_web_3_1')
+    expect(JSON.parse(searchResult.content).sources[0].snippet).toBe(excerpt)
   })
 
   it('does not reconstruct searches from prose, annotations, failures, or old URL-only events', () => {
