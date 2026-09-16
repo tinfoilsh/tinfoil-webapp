@@ -811,6 +811,14 @@ describe('parseClaudeProjects', () => {
         name: '',
         created_at: '2024-01-15T10:00:00Z',
         updated_at: '2024-01-15T10:00:00Z',
+        docs: [
+          {
+            uuid: 'doc-1',
+            filename: 'notes.md',
+            content: 'Some notes',
+            created_at: '2024-01-15T10:00:00Z',
+          },
+        ],
       },
     ]
 
@@ -819,6 +827,44 @@ describe('parseClaudeProjects', () => {
     expect(result[0].name).toBe('Imported Project')
     expect(result[0].description).toBe('')
     expect(result[0].systemInstructions).toBe('')
+  })
+
+  it('skips the empty starter project that Claude includes in every export', () => {
+    const data: ClaudeProject[] = [
+      {
+        uuid: '019740f9-c653-7517-a8a7-df268f0c7062',
+        name: '',
+        description: '',
+        prompt_template: '',
+        created_at: '2025-06-05T16:43:20.527453+00:00',
+        updated_at: '2026-06-23T01:46:07.098892+00:00',
+        docs: [
+          {
+            uuid: '374c5c9c-a29f-4b9a-bc23-372b50851f9d',
+            filename: '',
+            content: '',
+            created_at: '2025-06-05T16:43:20.527453+00:00',
+          },
+        ],
+      },
+      {
+        uuid: '019ef151-6dd2-76d5-abf7-91e33254dff8',
+        name: 'Blog Diagrams',
+        description: '',
+        prompt_template: 'In this project you will help me make great diagrams',
+        created_at: '2026-06-22T21:51:46.133686+00:00',
+        updated_at: '2026-06-23T05:19:17.325324+00:00',
+        docs: [],
+      },
+    ]
+
+    const result = parseClaudeProjects(data)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].name).toBe('Blog Diagrams')
+    expect(result[0].systemInstructions).toBe(
+      'In this project you will help me make great diagrams',
+    )
   })
 
   it('filters out documents with missing content or filename', () => {
