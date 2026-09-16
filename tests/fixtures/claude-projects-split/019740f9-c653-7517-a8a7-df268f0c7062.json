@@ -1,0 +1,22 @@
+{
+  "uuid": "019740f9-c653-7517-a8a7-df268f0c7062",
+  "name": "",
+  "description": "",
+  "is_private": false,
+  "is_starter_project": true,
+  "prompt_template": "",
+  "created_at": "2025-06-05T16:43:20.527453+00:00",
+  "updated_at": "2026-06-23T01:46:07.098892+00:00",
+  "creator": {
+    "uuid": "a1c6198d-81b6-4f30-b0af-fd37ba205ce6",
+    "full_name": "Sacha Servan-Schreiber"
+  },
+  "docs": [
+    {
+      "uuid": "374c5c9c-a29f-4b9a-bc23-372b50851f9d",
+      "filename": "",
+      "content": "",
+      "created_at": "2025-06-05T16:43:20.527453+00:00"
+    }
+  ]
+}

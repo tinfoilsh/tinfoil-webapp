@@ -281,6 +281,12 @@ export function parseClaudeProjects(data: ClaudeProject[]): ParsedProject[] {
       }
     }
 
+    // Claude exports include an untouched starter project with no name,
+    // instructions, or documents; importing it would only add clutter.
+    if (!project.name && !project.prompt_template && docs.length === 0) {
+      continue
+    }
+
     projects.push({
       name: project.name || 'Imported Project',
       description: project.description || '',
