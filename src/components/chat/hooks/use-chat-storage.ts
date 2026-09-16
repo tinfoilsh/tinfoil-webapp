@@ -1023,17 +1023,23 @@ export function useChatStorage({
   }, [initialChatId, isSignedIn, isInitialLoad, loadChatById, isLocalChatUrl])
 
   // Lazy-load full-res images for synced chats with v1 encrypted attachments.
-  // Depends on currentChat.id (not currentChat) to avoid re-triggering on
-  // every streaming message update.
+  // Keyed on the set of attachments still missing bytes rather than on the
+  // chat object, so hydration after a metadata-only selection (same id,
+  // messages arrive later) re-triggers the fetch while streaming updates
+  // that leave the set unchanged do not.
   const currentChatId = currentChat.id
-  useEffect(() => {
-    const messages = currentChat.messages
-    const hasUnfetchedImages = messages.some((msg) =>
-      msg.attachments?.some(
-        (att) => att.type === 'image' && att.encryptionKey && !att.base64,
-      ),
+  const unfetchedImageKey = currentChat.messages
+    .flatMap(
+      (msg) =>
+        msg.attachments?.filter(
+          (att) => att.type === 'image' && att.encryptionKey && !att.base64,
+        ) ?? [],
     )
-    if (!hasUnfetchedImages) return
+    .map((att) => att.id)
+    .join('\n')
+  useEffect(() => {
+    if (!unfetchedImageKey) return
+    const messages = currentChatRef.current.messages
 
     let cancelled = false
 
@@ -1066,8 +1072,7 @@ export function useChatStorage({
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentChatId])
+  }, [currentChatId, unfetchedImageKey, setChats, setCurrentChat])
 
   // Clear the decryption failed state (called after entering correct key)
   const clearInitialChatDecryptionFailed = useCallback(() => {
