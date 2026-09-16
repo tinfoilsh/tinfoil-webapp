@@ -60,6 +60,7 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
 }))
 
 vi.mock('@/services/storage/indexed-db', () => ({
+  applyAttachmentRewritesInPlace: vi.fn(),
   indexedDBStorage: {
     getChat: (chatId: string) => getChat(chatId),
     mutateChat: (
@@ -176,6 +177,46 @@ describe('chat recovery sync mutations', () => {
     expect(uploadAttempts).toBe(2)
     expect(result.pendingRecoveries).toHaveLength(1)
     expect(localChat?.pendingRecoveries).toEqual(result.pendingRecoveries)
+  })
+
+  it('returns the persisted chat rather than the byteless wire copy', async () => {
+    const imageMessage: Message = {
+      ...message('user', 'What is this?', 'turn-1'),
+      attachments: [
+        {
+          id: 'att-1',
+          type: 'image',
+          fileName: 'photo.png',
+          mimeType: 'image/png',
+          encryptionKey: 'key',
+          thumbnailBase64: 'thumb',
+        },
+      ],
+    }
+    remoteChat.messages = [imageMessage]
+    // Storage keeps the full-resolution bytes the cloud copy lacks.
+    const hydratedLocal: StoredChat = {
+      ...structuredClone(remoteChat),
+      messages: [
+        {
+          ...imageMessage,
+          attachments: [{ ...imageMessage.attachments![0], base64: 'FULL' }],
+        },
+      ],
+    }
+    localChat = structuredClone(hydratedLocal)
+    applyRemoteChatIfFresh.mockImplementationOnce(async () => {
+      localChat = {
+        ...structuredClone(hydratedLocal),
+        pendingRecoveries: [envelope('turn-1')],
+      }
+      return { applied: true }
+    })
+
+    const result = await addPendingRecovery(remoteChat.id, envelope('turn-1'))
+
+    expect(result.messages[0].attachments?.[0].base64).toBe('FULL')
+    expect(result.pendingRecoveries).toHaveLength(1)
   })
 
   it('keeps expired recoveries for scanner cleanup', async () => {
