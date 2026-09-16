@@ -1036,6 +1036,7 @@ export function useChatStorage({
         ) ?? [],
     )
     .map((att) => att.id)
+    .sort()
     .join('\n')
   useEffect(() => {
     if (!unfetchedImageKey) return

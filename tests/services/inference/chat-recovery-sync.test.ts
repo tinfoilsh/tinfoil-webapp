@@ -1,5 +1,8 @@
 import type { Message } from '@/components/chat/types'
-import type { StoredChat } from '@/services/storage/indexed-db'
+import type {
+  AttachmentRewrite,
+  StoredChat,
+} from '@/services/storage/indexed-db'
 import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import {
   MAX_PENDING_RECOVERIES_PER_CHAT,
@@ -13,6 +16,7 @@ let uploadAttempts = 0
 let conflictOnce = false
 let applyFailures = 0
 let cloudSyncEnabled = true
+let uploadRewrites: AttachmentRewrite[] = []
 const downloadChat = vi.fn(async () => structuredClone(remoteChat))
 const uploadChat = vi.fn(async (chat: StoredChat) => {
   uploadAttempts += 1
@@ -24,7 +28,11 @@ const uploadChat = vi.fn(async (chat: StoredChat) => {
     ...structuredClone(chat),
     syncVersion: uploadAttempts + 1,
   }
-  return remoteChat
+  return {
+    syncVersion: remoteChat.syncVersion,
+    rewrites: uploadRewrites,
+    projectIntentIncluded: false,
+  }
 })
 const getChat = vi.fn(async () => structuredClone(localChat))
 const applyRemoteChatIfFresh = vi.fn(async ({ chat }: { chat: StoredChat }) => {
@@ -59,8 +67,10 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
   },
 }))
 
-vi.mock('@/services/storage/indexed-db', () => ({
-  applyAttachmentRewritesInPlace: vi.fn(),
+vi.mock('@/services/storage/indexed-db', async (importOriginal) => ({
+  applyAttachmentRewritesInPlace: (
+    await importOriginal<typeof import('@/services/storage/indexed-db')>()
+  ).applyAttachmentRewritesInPlace,
   indexedDBStorage: {
     getChat: (chatId: string) => getChat(chatId),
     mutateChat: (
@@ -152,6 +162,7 @@ describe('chat recovery sync mutations', () => {
     conflictOnce = false
     applyFailures = 0
     cloudSyncEnabled = true
+    uploadRewrites = []
     downloadChat.mockClear()
     uploadChat.mockClear()
     getChat.mockClear()
@@ -217,6 +228,35 @@ describe('chat recovery sync mutations', () => {
 
     expect(result.messages[0].attachments?.[0].base64).toBe('FULL')
     expect(result.pendingRecoveries).toHaveLength(1)
+  })
+
+  it('persists the enclave-minted attachment id and key from the upload', async () => {
+    const imageMessage: Message = {
+      ...message('user', 'What is this?', 'turn-1'),
+      attachments: [
+        {
+          id: 'client-id',
+          type: 'image',
+          fileName: 'photo.png',
+          mimeType: 'image/png',
+          base64: 'FULL',
+        },
+      ],
+    }
+    remoteChat.messages = [imageMessage]
+    localChat = structuredClone(remoteChat)
+    uploadRewrites = [
+      { clientId: 'client-id', serverId: 'server-id', encryptionKey: 'key' },
+    ]
+
+    await addPendingRecovery(remoteChat.id, envelope('turn-1'))
+
+    const persisted = applyRemoteChatIfFresh.mock.calls[0][0].chat
+    expect(persisted.messages[0].attachments?.[0]).toMatchObject({
+      id: 'server-id',
+      encryptionKey: 'key',
+      base64: 'FULL',
+    })
   })
 
   it('keeps expired recoveries for scanner cleanup', async () => {
@@ -737,14 +777,18 @@ describe('chat recovery sync mutations', () => {
     let finishFirstUpload: (() => void) | undefined
     uploadChat.mockImplementationOnce((chat: StoredChat) => {
       const uploadedChat = structuredClone(chat)
-      return new Promise<StoredChat>((resolve) => {
+      return new Promise<Awaited<ReturnType<typeof uploadChat>>>((resolve) => {
         finishFirstUpload = () => {
           uploadAttempts += 1
           remoteChat = {
             ...uploadedChat,
             syncVersion: 2,
           }
-          resolve(remoteChat)
+          resolve({
+            syncVersion: 2,
+            rewrites: [],
+            projectIntentIncluded: false,
+          })
         }
       })
     })

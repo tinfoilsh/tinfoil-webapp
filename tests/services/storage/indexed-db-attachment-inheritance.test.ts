@@ -50,6 +50,9 @@ function buildChat(attachment: Record<string, unknown>) {
 }
 
 describe('attachment payload inheritance across remote applies', () => {
+  let storage: IndexedDBStorage
+  let localUpdatedAt: string
+
   beforeEach(async () => {
     Object.defineProperty(window, 'indexedDB', {
       configurable: true,
@@ -57,67 +60,50 @@ describe('attachment payload inheritance across remote applies', () => {
     })
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
     await deleteDatabase()
-  })
 
-  it('keeps the local full-resolution image when the wire-stripped remote copy is applied', async () => {
-    const storage = new IndexedDBStorage()
+    storage = new IndexedDBStorage()
     await storage.initialize()
-
     await storage.saveChat(
       buildChat({
         base64: FULL_BASE64,
         thumbnailBase64: THUMBNAIL_BASE64,
       }) as any,
     )
-
     const local = await storage.getChat(CHAT_ID)
     expect(local?.messages[0].attachments?.[0].base64).toBe(FULL_BASE64)
+    localUpdatedAt = local!.updatedAt
+  })
 
-    // The cloud copy of a chat never carries image bytes or the local
-    // payload reference, only the thumbnail and the per-attachment key.
-    const remote = buildChat({ thumbnailBase64: THUMBNAIL_BASE64 })
+  async function applyRemote(attachment: Record<string, unknown>) {
+    const remote = buildChat(attachment)
     const applied = await storage.applyRemoteChatIfFresh({
       chat: { ...remote, updatedAt: '2026-01-01T00:00:02.000Z' } as any,
       syncVersion: 2,
-      expectedLocalUpdatedAt: local!.updatedAt,
+      expectedLocalUpdatedAt: localUpdatedAt,
       allowLocallyModified: true,
     })
     expect(applied.applied).toBe(true)
-
     const merged = await storage.getChat(CHAT_ID)
-    const attachment = merged?.messages[0].attachments?.[0]
+    return merged?.messages[0].attachments?.[0]
+  }
+
+  it('keeps the local full-resolution image when the wire-stripped remote copy is applied', async () => {
+    // The cloud copy of a chat never carries image bytes or the local
+    // payload reference, only the thumbnail and the per-attachment key.
+    const attachment = await applyRemote({ thumbnailBase64: THUMBNAIL_BASE64 })
+
     expect(attachment?.thumbnailBase64).toBe(THUMBNAIL_BASE64)
     expect(attachment?.base64).toBe(FULL_BASE64)
   })
 
   it('does not lend local bytes to a different image', async () => {
-    const storage = new IndexedDBStorage()
-    await storage.initialize()
-
-    await storage.saveChat(
-      buildChat({
-        base64: FULL_BASE64,
-        thumbnailBase64: THUMBNAIL_BASE64,
-      }) as any,
-    )
-    const local = await storage.getChat(CHAT_ID)
-
-    const remote = buildChat({
+    const attachment = await applyRemote({
       id: 'other-image',
       fileName: 'other.png',
       encryptionKey: 'b'.repeat(44),
       thumbnailBase64: 'other-thumb',
     })
-    const applied = await storage.applyRemoteChatIfFresh({
-      chat: { ...remote, updatedAt: '2026-01-01T00:00:02.000Z' } as any,
-      syncVersion: 2,
-      expectedLocalUpdatedAt: local!.updatedAt,
-      allowLocallyModified: true,
-    })
-    expect(applied.applied).toBe(true)
 
-    const merged = await storage.getChat(CHAT_ID)
-    const attachment = merged?.messages[0].attachments?.[0]
     expect(attachment?.thumbnailBase64).toBe('other-thumb')
     expect(attachment?.base64).toBeUndefined()
   })
