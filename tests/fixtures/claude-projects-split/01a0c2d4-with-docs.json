@@ -1,0 +1,25 @@
+{
+  "uuid": "01a0c2d4-0000-7000-8000-000000000001",
+  "name": "Release Notes",
+  "description": "Drafting release notes",
+  "is_private": true,
+  "is_starter_project": false,
+  "prompt_template": "Write concise release notes.",
+  "created_at": "2026-07-01T10:00:00.000000+00:00",
+  "updated_at": "2026-07-02T10:00:00.000000+00:00",
+  "creator": { "uuid": "creator-1", "full_name": "Sacha" },
+  "docs": [
+    {
+      "uuid": "doc-1",
+      "filename": "style-guide.md",
+      "content": "# Style guide\n\nUse plain English.",
+      "created_at": "2026-07-01T10:00:00.000000+00:00"
+    },
+    {
+      "uuid": "doc-2",
+      "filename": "",
+      "content": "",
+      "created_at": "2026-07-01T10:00:00.000000+00:00"
+    }
+  ]
+}

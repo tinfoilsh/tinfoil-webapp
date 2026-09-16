@@ -35,16 +35,29 @@ describe('readExportFiles', () => {
     expect(records.map((r) => r.uuid)).toEqual(['a', 'b', 'c'])
   })
 
-  it('treats a single-object file as one record', async () => {
+  it('treats a single-object file as one record when allowed', async () => {
     const records = await readExportFiles<{ uuid: string }>(
       [
         jsonFile('one.json', { uuid: 'a' }),
         jsonFile('many.json', [{ uuid: 'b' }]),
       ],
       'Claude projects',
+      { allowSingleRecord: true },
     )
 
     expect(records.map((r) => r.uuid)).toEqual(['a', 'b'])
+  })
+
+  it('rejects stray object files in a conversations export', async () => {
+    await expect(
+      readExportFiles(
+        [
+          jsonFile('conversations.json', [{ mapping: {} }]),
+          jsonFile('users.json', { id: 'user-1', email: 'a@b.c' }),
+        ],
+        'ChatGPT conversations',
+      ),
+    ).rejects.toThrow('users.json is not a ChatGPT conversations export')
   })
 
   it('names the offending file when it holds neither a record nor an array', async () => {
@@ -73,16 +86,26 @@ describe('readExportFiles', () => {
       [
         fixtureFile('019740f9-c653-7517-a8a7-df268f0c7062.json'),
         fixtureFile('019ef151-6dd2-76d5-abf7-91e33254dff8.json'),
+        fixtureFile('01a0c2d4-with-docs.json'),
       ],
       'Claude projects',
+      { allowSingleRecord: true },
     )
-    expect(records).toHaveLength(2)
+    expect(records).toHaveLength(3)
 
     const projects = parseClaudeProjects(records)
-    expect(projects).toHaveLength(1)
-    expect(projects[0].name).toBe('Blog Diagrams')
+    expect(projects.map((p) => p.name)).toEqual([
+      'Blog Diagrams',
+      'Release Notes',
+    ])
     expect(projects[0].systemInstructions).toMatch(/^In this project/)
     expect(projects[0].docs).toEqual([])
+    expect(projects[1].docs).toEqual([
+      {
+        filename: 'style-guide.md',
+        content: '# Style guide\n\nUse plain English.',
+      },
+    ])
   })
 })
 
