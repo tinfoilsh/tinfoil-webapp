@@ -11,6 +11,8 @@ interface ImportFileListProps {
   onImport: () => void
   onCancel: () => void
   importLabel: string
+  /** Another import is running; only one may run at a time. */
+  importDisabled?: boolean
 }
 
 /**
@@ -25,6 +27,7 @@ export function ImportFileList({
   onImport,
   onCancel,
   importLabel,
+  importDisabled = false,
 }: ImportFileListProps) {
   return (
     <div
@@ -86,7 +89,8 @@ export function ImportFileList({
           <button
             type="button"
             onClick={onImport}
-            className="rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+            disabled={importDisabled}
+            className="rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {importLabel}
           </button>

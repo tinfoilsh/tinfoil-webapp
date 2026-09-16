@@ -1868,6 +1868,7 @@ export function SettingsModal({
         onImport={() => runStagedImport(source)}
         onCancel={() => clearStagedImport(source)}
         importLabel={stagedImportLabel(staged.kind)}
+        importDisabled={isImporting}
       />
     )
   }
