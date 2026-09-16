@@ -200,6 +200,7 @@ export type ImportProgress =
   | { type: 'upload'; progress: OffDeviceImportProgress }
 
 type StagedImportKind = 'chatgpt' | 'claude-conversations' | 'claude-projects'
+type ImportSourceKey = 'chatgpt' | 'claude'
 
 // Hashing is local and fast while uploading is network-bound, so the
 // combined bar gives hashing a small slice and never runs backward when
@@ -649,11 +650,12 @@ export function SettingsModal({
   )
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   // ChatGPT and Claude exports arrive split across several files, so
-  // selections are staged for review before the import starts.
-  const [stagedImport, setStagedImport] = useState<{
-    kind: StagedImportKind
-    files: File[]
-  } | null>(null)
+  // selections are staged for review before the import starts. Each source
+  // box keeps its own staged set so picking files for one never discards
+  // files staged for the other.
+  const [stagedImports, setStagedImports] = useState<
+    Partial<Record<ImportSourceKey, { kind: StagedImportKind; files: File[] }>>
+  >({})
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
@@ -1775,8 +1777,10 @@ export function SettingsModal({
     }
 
     setImportResult(null)
-    setStagedImport((previous) => {
-      const existing = previous?.kind === kind ? previous.files : []
+    const source = stagedImportSource(kind)
+    setStagedImports((previous) => {
+      const current = previous[source]
+      const existing = current?.kind === kind ? current.files : []
       const isDuplicate = (file: File) =>
         existing.some(
           (other) =>
@@ -1785,24 +1789,43 @@ export function SettingsModal({
             other.lastModified === file.lastModified,
         )
       return {
-        kind,
-        files: [...existing, ...selected.filter((file) => !isDuplicate(file))],
+        ...previous,
+        [source]: {
+          kind,
+          files: [
+            ...existing,
+            ...selected.filter((file) => !isDuplicate(file)),
+          ],
+        },
       }
     })
   }
 
-  const removeStagedFile = (index: number) => {
-    setStagedImport((previous) => {
-      if (!previous) return null
-      const files = previous.files.filter((_, i) => i !== index)
-      return files.length > 0 ? { ...previous, files } : null
+  const clearStagedImport = (source: ImportSourceKey) => {
+    setStagedImports((previous) => {
+      const { [source]: _removed, ...rest } = previous
+      return rest
     })
   }
 
-  const runStagedImport = async () => {
-    if (!stagedImport) return
-    const { kind, files } = stagedImport
-    setStagedImport(null)
+  const removeStagedFile = (source: ImportSourceKey, index: number) => {
+    setStagedImports((previous) => {
+      const current = previous[source]
+      if (!current) return previous
+      const files = current.files.filter((_, i) => i !== index)
+      if (files.length === 0) {
+        const { [source]: _removed, ...rest } = previous
+        return rest
+      }
+      return { ...previous, [source]: { ...current, files } }
+    })
+  }
+
+  const runStagedImport = async (source: ImportSourceKey) => {
+    const staged = stagedImports[source]
+    if (!staged) return
+    const { kind, files } = staged
+    clearStagedImport(source)
     switch (kind) {
       case 'chatgpt':
         await importChatGPT(files)
@@ -1816,7 +1839,7 @@ export function SettingsModal({
     }
   }
 
-  const stagedImportSource = (kind: StagedImportKind) =>
+  const stagedImportSource = (kind: StagedImportKind): ImportSourceKey =>
     kind === 'chatgpt' ? 'chatgpt' : 'claude'
 
   const stagedImportInputRef = (kind: StagedImportKind) => {
@@ -1833,21 +1856,18 @@ export function SettingsModal({
   const stagedImportLabel = (kind: StagedImportKind) =>
     kind === 'claude-projects' ? 'Import projects' : 'Import conversations'
 
-  const renderStagedImport = (source: 'chatgpt' | 'claude') => {
-    if (!stagedImport || stagedImportSource(stagedImport.kind) !== source) {
-      return null
-    }
+  const renderStagedImport = (source: ImportSourceKey) => {
+    const staged = stagedImports[source]
+    if (!staged) return null
     return (
       <ImportFileList
-        files={stagedImport.files}
+        files={staged.files}
         isDarkMode={isDarkMode}
-        onRemove={removeStagedFile}
-        onAddMore={() =>
-          stagedImportInputRef(stagedImport.kind).current?.click()
-        }
-        onImport={runStagedImport}
-        onCancel={() => setStagedImport(null)}
-        importLabel={stagedImportLabel(stagedImport.kind)}
+        onRemove={(index) => removeStagedFile(source, index)}
+        onAddMore={() => stagedImportInputRef(staged.kind).current?.click()}
+        onImport={() => runStagedImport(source)}
+        onCancel={() => clearStagedImport(source)}
+        importLabel={stagedImportLabel(staged.kind)}
       />
     )
   }
@@ -1922,6 +1942,7 @@ export function SettingsModal({
       const data = await readExportFiles<ClaudeProject>(
         files,
         'Claude projects',
+        { allowSingleRecord: true },
       )
 
       const parsedProjects = parseClaudeProjects(data)
@@ -4465,7 +4486,9 @@ ${encryptionKey.replace('key_', '')}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
                                 projects
                               </code>{' '}
-                              folder.
+                              folder. Claude exports do not record which project
+                              a chat belonged to, so project chats import as
+                              regular chats.
                             </>
                           ) : isPremium ? (
                             <>
@@ -4479,7 +4502,9 @@ ${encryptionKey.replace('key_', '')}
                                 projects
                               </code>{' '}
                               folder. Large exports are split into several
-                              files; select them all.
+                              files; select them all. Claude exports do not
+                              record which project a chat belonged to, so
+                              project chats import as regular chats.
                             </>
                           ) : (
                             <>
