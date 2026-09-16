@@ -233,6 +233,21 @@ describe('saved web evidence', () => {
     )
   })
 
+  it('replays legacy fields when the timeline has no web blocks', () => {
+    const hybrid: Message = {
+      ...message(),
+      timeline: [{ type: 'content', id: 'c', content: 'Answer.' }],
+      urlFetches: [{ id: 'f', url, status: 'completed', sources: [source] }],
+    }
+    const replay = webSearchHistoryMessages(hybrid, 0)
+    const calls = replay.filter((item) => item.role === 'assistant')
+    expect(calls).toHaveLength(2)
+    expect(calls.map((call) => call.tool_calls?.[0].function.name)).toEqual([
+      'router_fetch',
+      'router_search',
+    ])
+  })
+
   it('does not reconstruct searches from prose, annotations, failures, or old URL-only events', () => {
     const original = message()
     for (const candidate of [

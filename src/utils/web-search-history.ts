@@ -31,7 +31,13 @@ function actionsFor(message: Message): Action[] {
       })
     }
   }
-  for (const block of ensureTimeline(message).timeline ?? []) {
+  const hasWebTimeline = message.timeline?.some(
+    (block) => block.type === 'web_search' || block.type === 'url_fetches',
+  )
+  const source = hasWebTimeline
+    ? message
+    : ensureTimeline({ ...message, timeline: undefined })
+  for (const block of source.timeline ?? []) {
     if (block.type === 'web_search') addSearch(block.state)
     if (block.type === 'url_fetches') block.fetches.forEach(addFetch)
   }
