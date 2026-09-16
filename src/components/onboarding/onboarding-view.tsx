@@ -4,7 +4,7 @@ import { GridTexture } from '@/components/ui/grid-texture'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/nextjs'
-import { TfLock, TfUnlockOpen } from '@tinfoilsh/tinfoil-icons'
+import { TfLock, TfShieldCheck, TfUnlockOpen } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
 
@@ -18,8 +18,9 @@ interface OnboardingViewProps {
   persistCompletion?: boolean
 }
 
-const TOTAL_PAGES = 2
-const PRIVACY_PAGE_INDEX = 1
+const TOTAL_PAGES = 3
+const SAFEGUARDS_PAGE_INDEX = 1
+const PRIVACY_PAGE_INDEX = 2
 const PRIVACY_CONFIRMATION_HOLD_S = 0.4
 const PRIVACY_CHECK_APPEAR_S = 0.18
 const PRIVACY_CONFIRMATION_SEQUENCE_S =
@@ -81,6 +82,9 @@ export function OnboardingView({
           <div className="relative flex min-h-[420px] w-full flex-col items-center justify-center">
             <AnimatePresence mode="wait">
               {currentPage === 0 && <OnboardingLetterPage key="letter" />}
+              {currentPage === SAFEGUARDS_PAGE_INDEX && (
+                <OnboardingSafeguardsPage key="safeguards" />
+              )}
               {currentPage === PRIVACY_PAGE_INDEX && (
                 <OnboardingPrivacyPage
                   key="privacy"
@@ -208,7 +212,54 @@ function OnboardingLetterPage() {
   )
 }
 
-// MARK: - Page 2: Privacy
+// MARK: - Page 2: Safeguards
+
+const SAFEGUARDS_URL = 'https://tinfoil.sh/safety-and-safeguards#safeguards'
+
+function OnboardingSafeguardsPage() {
+  return (
+    <motion.div
+      className="flex flex-col items-center px-6 py-8"
+      initial={{ opacity: 0, x: 40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+    >
+      <div className="flex w-full flex-col items-center gap-8">
+        <div className="flex h-28 items-center justify-center">
+          <TfShieldCheck className="h-24 w-24 text-content-primary" />
+        </div>
+
+        <div className="space-y-4 text-center">
+          <h2 className="font-aeonik text-3xl font-bold text-content-primary">
+            Tending the Garden
+          </h2>
+          <p className="text-balance text-base text-content-secondary">
+            We believe all thoughts are okay. We think these ought to be
+            private. However, we have a responsibility to prevent the models we
+            host from causing harm.
+          </p>
+          <p className="text-balance text-base text-content-secondary">
+            Safeguards review model outputs inside secure enclaves against a
+            short, public hard-no policy. If a model crosses one of those lines,
+            only a flag and conversation ID leave the enclave. The conversation
+            and violation category stay private.
+          </p>
+          <a
+            href={SAFEGUARDS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block text-sm font-medium text-brand-accent-dark underline underline-offset-2 hover:opacity-80 dark:text-brand-accent-light"
+          >
+            Learn about safeguards
+          </a>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// MARK: - Page 3: Privacy
 
 const TERMS_URL = 'https://tinfoil.sh/terms'
 const PRIVACY_POLICY_URL = 'https://tinfoil.sh/privacy'

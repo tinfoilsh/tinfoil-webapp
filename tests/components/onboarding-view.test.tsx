@@ -51,10 +51,25 @@ describe('OnboardingView', () => {
     )
   })
 
+  it('introduces safeguards between the founders letter and privacy', async () => {
+    render(<OnboardingView onComplete={vi.fn()} persistCompletion={false} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Tending the Garden' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Learn about safeguards' }),
+    ).toHaveAttribute('href', 'https://tinfoil.sh/safety-and-safeguards')
+  })
+
   it('enables privacy when Continue is pressed without toggling', async () => {
     const onComplete = vi.fn()
     render(<OnboardingView onComplete={onComplete} persistCompletion={false} />)
 
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByRole('heading', { name: 'Tending the Garden' })
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(
@@ -80,6 +95,8 @@ describe('OnboardingView', () => {
     render(<OnboardingView onComplete={vi.fn()} persistCompletion={false} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByRole('heading', { name: 'Tending the Garden' })
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByRole('heading', { name: 'Private, by Design.' })
 
     const privacySwitch = screen.getByRole('button', {
@@ -97,6 +114,8 @@ describe('OnboardingView', () => {
     const onComplete = vi.fn()
     render(<OnboardingView onComplete={onComplete} />)
 
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByRole('heading', { name: 'Tending the Garden' })
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
     await screen.findByRole('heading', { name: 'Private, by Design.' })
 
