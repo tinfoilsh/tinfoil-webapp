@@ -29,10 +29,7 @@ import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
 import { buildChatExport } from '@/services/chat-export/export-archive'
-import {
-  isZipFile,
-  readClaudeExportFiles,
-} from '@/services/chat-import/claude-export-files'
+import { isZipFile, readExportFiles } from '@/services/chat-import/export-files'
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 import {
   parseLocalTinfoilExportForAccess,
@@ -79,6 +76,7 @@ import {
   parseChatGPTConversations,
   parseClaudeConversations,
   parseClaudeProjects,
+  type ChatGPTConversation,
   type ClaudeConversation,
   type ClaudeProject,
 } from '@/utils/chat-import-parsers'
@@ -200,6 +198,8 @@ export function describeOffDeviceImportKickoff(
 export type ImportProgress =
   | { type: 'chats' | 'projects'; current: number; total: number }
   | { type: 'upload'; progress: OffDeviceImportProgress }
+
+type StagedImportKind = 'chatgpt' | 'claude-conversations' | 'claude-projects'
 
 // Hashing is local and fast while uploading is network-bound, so the
 // combined bar gives hashing a small slice and never runs backward when
@@ -648,10 +648,10 @@ export function SettingsModal({
     null,
   )
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
-  // Claude exports arrive split across several files, so selections are
-  // staged for review before the import starts.
-  const [stagedClaudeImport, setStagedClaudeImport] = useState<{
-    kind: 'conversations' | 'projects'
+  // ChatGPT and Claude exports arrive split across several files, so
+  // selections are staged for review before the import starts.
+  const [stagedImport, setStagedImport] = useState<{
+    kind: StagedImportKind
     files: File[]
   } | null>(null)
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
@@ -1614,15 +1614,9 @@ export function SettingsModal({
     }
   }
 
-  const handleImportChatGPT = async (
-    e: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
+  const importChatGPT = async (files: File[]) => {
     if (shouldImportOffDevice()) {
-      await importOffDevice('chatgpt', [file], 'ChatGPT')
-      e.target.value = ''
+      await importOffDevice('chatgpt', files, 'ChatGPT')
       return
     }
 
@@ -1631,12 +1625,10 @@ export function SettingsModal({
     setImportResult(null)
 
     try {
-      const content = await file.text()
-      const data = JSON.parse(content)
-
-      if (!Array.isArray(data)) {
-        throw new Error('Invalid ChatGPT export format')
-      }
+      const data = await readExportFiles<ChatGPTConversation>(
+        files,
+        'ChatGPT conversations',
+      )
 
       const chats = parseChatGPTConversations(data, getParseOptions())
       const { imported, errors } = await saveImportedChats(chats)
@@ -1671,7 +1663,6 @@ export function SettingsModal({
     } finally {
       setIsImporting(false)
       setImportProgress(null)
-      e.target.value = ''
     }
   }
 
@@ -1760,10 +1751,10 @@ export function SettingsModal({
     }
   }
 
-  // Claude file pickers only stage the selection; the import runs once the
-  // user confirms the set from the staged file list.
-  const stageClaudeFiles = (
-    kind: 'conversations' | 'projects',
+  // File pickers only stage the selection; the import runs once the user
+  // confirms the set from the staged file list.
+  const stageImportFiles = (
+    kind: StagedImportKind,
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const selected = Array.from(e.target.files ?? [])
@@ -1771,7 +1762,7 @@ export function SettingsModal({
     if (selected.length === 0) return
 
     if (
-      kind === 'conversations' &&
+      kind === 'claude-conversations' &&
       !isPremium &&
       selected.some((file) => isZipFile(file))
     ) {
@@ -1784,7 +1775,7 @@ export function SettingsModal({
     }
 
     setImportResult(null)
-    setStagedClaudeImport((previous) => {
+    setStagedImport((previous) => {
       const existing = previous?.kind === kind ? previous.files : []
       const isDuplicate = (file: File) =>
         existing.some(
@@ -1800,23 +1791,65 @@ export function SettingsModal({
     })
   }
 
-  const removeStagedClaudeFile = (index: number) => {
-    setStagedClaudeImport((previous) => {
+  const removeStagedFile = (index: number) => {
+    setStagedImport((previous) => {
       if (!previous) return null
       const files = previous.files.filter((_, i) => i !== index)
       return files.length > 0 ? { ...previous, files } : null
     })
   }
 
-  const runStagedClaudeImport = async () => {
-    if (!stagedClaudeImport) return
-    const { kind, files } = stagedClaudeImport
-    setStagedClaudeImport(null)
-    if (kind === 'projects') {
-      await importClaudeProjects(files)
-    } else {
-      await importClaudeConversations(files)
+  const runStagedImport = async () => {
+    if (!stagedImport) return
+    const { kind, files } = stagedImport
+    setStagedImport(null)
+    switch (kind) {
+      case 'chatgpt':
+        await importChatGPT(files)
+        break
+      case 'claude-projects':
+        await importClaudeProjects(files)
+        break
+      case 'claude-conversations':
+        await importClaudeConversations(files)
+        break
     }
+  }
+
+  const stagedImportSource = (kind: StagedImportKind) =>
+    kind === 'chatgpt' ? 'chatgpt' : 'claude'
+
+  const stagedImportInputRef = (kind: StagedImportKind) => {
+    switch (kind) {
+      case 'chatgpt':
+        return chatGptFileInputRef
+      case 'claude-projects':
+        return claudeProjectsFileInputRef
+      case 'claude-conversations':
+        return claudeConversationsFileInputRef
+    }
+  }
+
+  const stagedImportLabel = (kind: StagedImportKind) =>
+    kind === 'claude-projects' ? 'Import projects' : 'Import conversations'
+
+  const renderStagedImport = (source: 'chatgpt' | 'claude') => {
+    if (!stagedImport || stagedImportSource(stagedImport.kind) !== source) {
+      return null
+    }
+    return (
+      <ImportFileList
+        files={stagedImport.files}
+        isDarkMode={isDarkMode}
+        onRemove={removeStagedFile}
+        onAddMore={() =>
+          stagedImportInputRef(stagedImport.kind).current?.click()
+        }
+        onImport={runStagedImport}
+        onCancel={() => setStagedImport(null)}
+        importLabel={stagedImportLabel(stagedImport.kind)}
+      />
+    )
   }
 
   const importClaudeConversations = async (files: File[]) => {
@@ -1830,9 +1863,9 @@ export function SettingsModal({
     setImportResult(null)
 
     try {
-      const data = await readClaudeExportFiles<ClaudeConversation>(
+      const data = await readExportFiles<ClaudeConversation>(
         files,
-        'conversations',
+        'Claude conversations',
       )
 
       const chats = parseClaudeConversations(data, getParseOptions())
@@ -1886,7 +1919,10 @@ export function SettingsModal({
     setImportResult(null)
 
     try {
-      const data = await readClaudeExportFiles<ClaudeProject>(files, 'projects')
+      const data = await readExportFiles<ClaudeProject>(
+        files,
+        'Claude projects',
+      )
 
       const parsedProjects = parseClaudeProjects(data)
       setImportProgress({
@@ -4284,19 +4320,22 @@ ${encryptionKey.replace('key_', '')}
                         <div className="font-aeonik-fono text-sm text-content-muted">
                           {shouldImportOffDevice() ? (
                             <>
-                              Select the ZIP export to include attachments, or{' '}
+                              Select the ZIP export to include attachments, or
+                              the{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations.json
+                                conversations*.json
                               </code>{' '}
-                              for chat text only.
+                              files for chat text only. Large exports are split
+                              into several files; select them all.
                             </>
                           ) : (
                             <>
-                              Select{' '}
+                              Select the{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations.json
+                                conversations*.json
                               </code>{' '}
-                              from the unzipped folder.
+                              files from the unzipped folder. Large exports are
+                              split into several files; select them all.
                             </>
                           )}
                         </div>
@@ -4307,28 +4346,30 @@ ${encryptionKey.replace('key_', '')}
                         accept={
                           shouldImportOffDevice() ? '.json,.zip' : '.json'
                         }
-                        onChange={handleImportChatGPT}
+                        onChange={(e) => stageImportFiles('chatgpt', e)}
                         className="hidden"
                         disabled={isImporting}
+                        multiple
                       />
-                      {renderImportStatus('chatgpt') ?? (
-                        <button
-                          onClick={() => chatGptFileInputRef.current?.click()}
-                          disabled={isImporting}
-                          className={cn(
-                            'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                            isImporting
-                              ? 'cursor-not-allowed opacity-50'
-                              : 'hover:bg-surface-chat',
-                            isDarkMode
-                              ? 'bg-surface-chat text-content-primary'
-                              : 'bg-surface-sidebar text-content-primary',
-                          )}
-                        >
-                          <ArrowUpTrayIcon className="h-4 w-4" />
-                          Select File
-                        </button>
-                      )}
+                      {renderImportStatus('chatgpt') ??
+                        renderStagedImport('chatgpt') ?? (
+                          <button
+                            onClick={() => chatGptFileInputRef.current?.click()}
+                            disabled={isImporting}
+                            className={cn(
+                              'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                              isImporting
+                                ? 'cursor-not-allowed opacity-50'
+                                : 'hover:bg-surface-chat',
+                              isDarkMode
+                                ? 'bg-surface-chat text-content-primary'
+                                : 'bg-surface-sidebar text-content-primary',
+                            )}
+                          >
+                            <ArrowUpTrayIcon className="h-4 w-4" />
+                            Select File
+                          </button>
+                        )}
                     </div>
                   </div>
 
@@ -4459,7 +4500,9 @@ ${encryptionKey.replace('key_', '')}
                             ? '.json,.zip'
                             : '.json'
                         }
-                        onChange={(e) => stageClaudeFiles('conversations', e)}
+                        onChange={(e) =>
+                          stageImportFiles('claude-conversations', e)
+                        }
                         className="hidden"
                         disabled={isImporting}
                         multiple
@@ -4469,33 +4512,16 @@ ${encryptionKey.replace('key_', '')}
                           ref={claudeProjectsFileInputRef}
                           type="file"
                           accept=".json"
-                          onChange={(e) => stageClaudeFiles('projects', e)}
+                          onChange={(e) =>
+                            stageImportFiles('claude-projects', e)
+                          }
                           className="hidden"
                           disabled={isImporting}
                           multiple
                         />
                       )}
                       {renderImportStatus('claude') ??
-                        (stagedClaudeImport ? (
-                          <ImportFileList
-                            files={stagedClaudeImport.files}
-                            isDarkMode={isDarkMode}
-                            onRemove={removeStagedClaudeFile}
-                            onAddMore={() =>
-                              (stagedClaudeImport.kind === 'projects'
-                                ? claudeProjectsFileInputRef
-                                : claudeConversationsFileInputRef
-                              ).current?.click()
-                            }
-                            onImport={runStagedClaudeImport}
-                            onCancel={() => setStagedClaudeImport(null)}
-                            importLabel={
-                              stagedClaudeImport.kind === 'projects'
-                                ? 'Import projects'
-                                : 'Import conversations'
-                            }
-                          />
-                        ) : (
+                        renderStagedImport('claude') ?? (
                           <div className="mt-2 flex gap-2">
                             <button
                               onClick={() =>
@@ -4536,7 +4562,7 @@ ${encryptionKey.replace('key_', '')}
                               </button>
                             )}
                           </div>
-                        ))}
+                        )}
                     </div>
                   </div>
 
