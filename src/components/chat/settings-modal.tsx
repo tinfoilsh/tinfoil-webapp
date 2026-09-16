@@ -4460,12 +4460,12 @@ ${encryptionKey.replace('key_', '')}
                           {isPremium && shouldImportOffDevice() ? (
                             <>
                               Select the ZIP export with the Conversations
-                              button to include attachments. Use the{' '}
+                              button to include attachments. For projects,
+                              select every file in the unzipped{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                projects*.json
+                                projects
                               </code>{' '}
-                              files only for project imports. Large exports are
-                              split into several files; select them all.
+                              folder.
                             </>
                           ) : isPremium ? (
                             <>
@@ -4473,12 +4473,13 @@ ${encryptionKey.replace('key_', '')}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
                                 conversations*.json
                               </code>{' '}
-                              or{' '}
+                              files from the unzipped folder, or every file in
+                              its{' '}
                               <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                projects*.json
+                                projects
                               </code>{' '}
-                              files from the unzipped folder. Large exports are
-                              split into several files; select them all.
+                              folder. Large exports are split into several
+                              files; select them all.
                             </>
                           ) : (
                             <>
