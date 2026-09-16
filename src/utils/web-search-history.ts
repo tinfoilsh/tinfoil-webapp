@@ -1,3 +1,4 @@
+import { ensureTimeline } from '@/components/chat/ensure-timeline'
 import type { Message, WebSearchSource } from '@/components/chat/types'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 
@@ -30,17 +31,9 @@ function actionsFor(message: Message): Action[] {
       })
     }
   }
-  const hasWebTimeline = message.timeline?.some(
-    (block) => block.type === 'web_search' || block.type === 'url_fetches',
-  )
-  if (hasWebTimeline) {
-    for (const block of message.timeline ?? []) {
-      if (block.type === 'web_search') addSearch(block.state)
-      if (block.type === 'url_fetches') block.fetches.forEach(addFetch)
-    }
-  } else {
-    addSearch(message.webSearch)
-    message.urlFetches?.forEach(addFetch)
+  for (const block of ensureTimeline(message).timeline ?? []) {
+    if (block.type === 'web_search') addSearch(block.state)
+    if (block.type === 'url_fetches') block.fetches.forEach(addFetch)
   }
   return actions
 }

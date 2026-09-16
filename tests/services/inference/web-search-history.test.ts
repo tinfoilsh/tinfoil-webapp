@@ -29,6 +29,19 @@ const message = (): Message => ({
   webSearch: { query: 'sample size', status: 'completed', sources: [source] },
 })
 
+function backupAndRestore(current: Message): Message {
+  const backup = sanitizeNativeBackupChat({
+    id: 'chat',
+    title: 'Research',
+    createdAt: current.timestamp,
+    messages: [current],
+  })
+  return {
+    ...backup.messages[0],
+    timestamp: new Date(backup.messages[0].timestamp),
+  } as Message
+}
+
 function marker(session: RichStreamSession, event: object) {
   const text =
     '\n<tinfoil-event>' +
@@ -70,6 +83,37 @@ describe('saved web evidence', () => {
     expect(webSearchHistoryMessages(session.snapshot(), 0)).toEqual([])
   })
 
+  it('keeps excerpts while adding newly cited URLs', () => {
+    const session = new RichStreamSession()
+    const action = { type: 'search', query: 'sample size' }
+    marker(session, { item_id: 'search', status: 'in_progress', action })
+    marker(session, {
+      item_id: 'search',
+      status: 'completed',
+      action,
+      sources: [source],
+    })
+    const extra = 'https://example.com/another'
+    session.processChunk({
+      choices: [
+        {
+          delta: {
+            annotations: [
+              { type: 'url_citation', url_citation: { url, title: 'Paper' } },
+              {
+                type: 'url_citation',
+                url_citation: { url: extra, title: 'Other' },
+              },
+            ],
+          },
+        },
+      ],
+    })
+    const sources = session.snapshot().webSearch?.sources ?? []
+    expect(sources.map((item) => item.url)).toEqual([url, extra])
+    expect(sources[0].snippet).toBe(excerpt)
+  })
+
   it('survives streaming, citation updates, backup, and six user turns', () => {
     const history: Message[] = []
     const turns = 6
@@ -102,16 +146,7 @@ describe('saved web evidence', () => {
       })
       const completed = session.complete()
       expect(completed.webSearch?.sources?.[0].snippet).toBe(excerpt)
-      const backup = sanitizeNativeBackupChat({
-        id: 'chat',
-        title: 'Research',
-        createdAt: completed.timestamp,
-        messages: [completed],
-      })
-      const restored = {
-        ...backup.messages[0],
-        timestamp: new Date(backup.messages[0].timestamp),
-      } as Message
+      const restored = backupAndRestore(completed)
       history.push(
         {
           role: 'user',
@@ -307,16 +342,7 @@ describe('saved web evidence', () => {
       choices: [{ delta: { content: 'Answer.' }, finish_reason: 'stop' }],
     })
     const completed = session.complete()
-    const backup = sanitizeNativeBackupChat({
-      id: 'chat',
-      title: 'Research',
-      createdAt: completed.timestamp,
-      messages: [completed],
-    })
-    const restored = {
-      ...backup.messages[0],
-      timestamp: new Date(backup.messages[0].timestamp),
-    } as Message
+    const restored = backupAndRestore(completed)
     const request = ChatQueryBuilder.buildMessages({
       model,
       systemPrompt: '',

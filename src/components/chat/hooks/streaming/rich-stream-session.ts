@@ -255,12 +255,16 @@ export class RichStreamSession {
         this.assembler.addAnnotation(event.url, event.title)
         const current = this.timeline.getLastWebSearchState()
         if (current) {
-          this.timeline.updateWebSearch({
-            ...current,
-            sources: current.sources?.some((source) => source.snippet)
-              ? current.sources
-              : [...this.assembler.collectedSources],
-          })
+          const retained = current.sources ?? []
+          const merged = retained.some((source) => source.snippet)
+            ? [
+                ...retained,
+                ...this.assembler.collectedSources.filter(
+                  (source) => !retained.some((kept) => kept.url === source.url),
+                ),
+              ]
+            : [...this.assembler.collectedSources]
+          this.timeline.updateWebSearch({ ...current, sources: merged })
         }
         break
       }

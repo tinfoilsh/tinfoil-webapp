@@ -458,7 +458,10 @@ export function snapshotChatForStorage(chat: Chat): Chat {
         ? structuredClone(message.timeline)
         : undefined,
       toolCalls: message.toolCalls?.map((call) => ({ ...call })),
-      urlFetches: message.urlFetches?.map((urlFetch) => ({ ...urlFetch })),
+      urlFetches: message.urlFetches?.map((urlFetch) => ({
+        ...urlFetch,
+        sources: urlFetch.sources?.map((source) => ({ ...source })),
+      })),
       webSearch: message.webSearch
         ? {
             ...message.webSearch,
