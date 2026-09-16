@@ -10,11 +10,15 @@ export async function readClaudeExportFiles<T>(
 ): Promise<T[]> {
   const records: T[] = []
   for (const file of files) {
+    const text = await file.text()
     let data: unknown
     try {
-      data = JSON.parse(await file.text())
-    } catch {
-      throw new Error(`${file.name} is not valid JSON`)
+      data = JSON.parse(text)
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(`${file.name} is not valid JSON`, { cause: error })
+      }
+      throw error
     }
     if (!Array.isArray(data)) {
       throw new Error(`${file.name} is not a Claude ${formatLabel} export`)
