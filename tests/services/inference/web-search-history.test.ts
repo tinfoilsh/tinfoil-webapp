@@ -7,11 +7,7 @@ import {
   estimateMessageTokens,
   selectMessagesWithinBudget,
 } from '@/utils/token-estimation'
-import {
-  WEB_SEARCH_HISTORY_LIMIT,
-  WEB_SEARCH_HISTORY_SNIPPET_LIMIT,
-  webSearchHistoryMessages,
-} from '@/utils/web-search-history'
+import { webSearchHistoryMessages } from '@/utils/web-search-history'
 import { describe, expect, it } from 'vitest'
 
 const model: BaseModel = {
@@ -231,35 +227,49 @@ describe('saved web evidence', () => {
       expect(webSearchHistoryMessages(candidate, 0)).toEqual([])
   })
 
-  it('bounds replay, prioritizes recent evidence, and accounts for it before archiving', () => {
+  it('retains full content and source order while accounting for it before archiving', () => {
     const original = message()
-    original.timeline = Array.from({ length: 20 }, (_, index) => ({
+    const actionCount = 20
+    const sourceCount = 10
+    const repetitions = 2000
+    const fullText =
+      '  Start of source.\n' +
+      '🔎'.repeat(repetitions) +
+      '\nImportant conclusion at the end.  '
+    original.timeline = Array.from({ length: actionCount }, (_, index) => ({
       type: 'web_search',
       id: `search-${index}`,
       state: {
         query: `query-${index}`,
         status: 'completed',
-        sources: Array.from({ length: 8 }, (_, n) => ({
+        sources: Array.from({ length: sourceCount }, (_, n) => ({
           ...source,
           url: `${url}-${n}`,
-          snippet: '🔎'.repeat(2000),
+          snippet: fullText,
         })),
       },
     }))
     const replay = webSearchHistoryMessages(original, 2)
-    expect(replay.length).toBeGreaterThan(0)
-    expect(JSON.stringify(replay).length).toBeLessThanOrEqual(
-      WEB_SEARCH_HISTORY_LIMIT,
-    )
-    expect(JSON.stringify(replay)).toContain('query-19')
-    for (const result of replay.filter((item) => item.role === 'tool')) {
-      for (const retained of JSON.parse(result.content as string).sources) {
-        expect(retained.snippet.length).toBeLessThanOrEqual(
-          WEB_SEARCH_HISTORY_SNIPPET_LIMIT,
-        )
-        expect(retained.snippet).toContain('[Excerpt truncated]')
-        expect(retained.snippet).not.toContain('\uFFFD')
-      }
+    expect(replay).toHaveLength(actionCount * 2)
+    const results = replay.filter((item) => item.role === 'tool')
+    const calls = replay.filter((item) => item.role === 'assistant')
+    for (let index = 0; index < actionCount; index++) {
+      expect(calls[index]).toMatchObject({
+        tool_calls: [
+          {
+            function: {
+              arguments: JSON.stringify({ query: `query-${index}` }),
+            },
+          },
+        ],
+      })
+      expect(JSON.parse(results[index].content as string).sources).toEqual(
+        Array.from({ length: sourceCount }, (_, n) => ({
+          ...source,
+          url: `${url}-${n}`,
+          snippet: fullText,
+        })),
+      )
     }
     expect(estimateMessageTokens(original)).toBeGreaterThan(
       estimateMessageTokens({
@@ -276,5 +286,52 @@ describe('saved web evidence', () => {
     expect(selectMessagesWithinBudget([original, latest], 100)).toEqual([
       latest,
     ])
+  })
+
+  it('retains a long page through streaming and backup before the next request', () => {
+    const contentLength = 100000
+    const fullText =
+      'Page opening.\n' +
+      'x'.repeat(contentLength) +
+      '\nThe relevant result is here at the end.'
+    const session = new RichStreamSession()
+    const action = { type: 'open_page', url }
+    marker(session, { item_id: 'long-fetch', status: 'in_progress', action })
+    marker(session, {
+      item_id: 'long-fetch',
+      status: 'completed',
+      action,
+      sources: [{ ...source, snippet: fullText }],
+    })
+    session.processChunk({
+      choices: [{ delta: { content: 'Answer.' }, finish_reason: 'stop' }],
+    })
+    const completed = session.complete()
+    const backup = sanitizeNativeBackupChat({
+      id: 'chat',
+      title: 'Research',
+      createdAt: completed.timestamp,
+      messages: [completed],
+    })
+    const restored = {
+      ...backup.messages[0],
+      timestamp: new Date(backup.messages[0].timestamp),
+    } as Message
+    const request = ChatQueryBuilder.buildMessages({
+      model,
+      systemPrompt: '',
+      messages: [
+        restored,
+        {
+          role: 'user',
+          content: 'Explain the conclusion.',
+          timestamp: completed.timestamp,
+        },
+      ],
+    })
+    const result = request.find((item) => item.role === 'tool')
+    expect(JSON.parse(result!.content as string).sources[0].snippet).toBe(
+      fullText,
+    )
   })
 })
