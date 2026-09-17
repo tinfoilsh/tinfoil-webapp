@@ -4,6 +4,7 @@ import {
   shouldIncludeReasoning,
   type ReasoningHistoryPolicy,
 } from '@/utils/reasoning-history'
+import { webSearchHistoryMessages } from '@/utils/web-search-history'
 
 // Fraction of the model's context window reserved for conversation history;
 // the remainder is headroom for the system prompt and the model's response.
@@ -48,6 +49,8 @@ export function estimateMessageTokens(
   options: TokenEstimationOptions = {},
 ): number {
   let tokens = estimateTokenCount(msg.content)
+  const evidence = webSearchHistoryMessages(msg, 0)
+  if (evidence.length) tokens += estimateTokenCount(JSON.stringify(evidence))
   if (
     msg.role === 'assistant' &&
     shouldIncludeReasoning(

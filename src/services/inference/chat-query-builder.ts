@@ -12,6 +12,7 @@ import {
 import { shouldIncludeReasoning } from '@/utils/reasoning-history'
 import { formatCurrentTimeReminder } from '@/utils/time-reminder'
 import { selectMessagesWithinBudget } from '@/utils/token-estimation'
+import { webSearchHistoryMessages } from '@/utils/web-search-history'
 import type {
   ChatCompletionAssistantMessageParam,
   ChatCompletionMessageParam,
@@ -111,6 +112,7 @@ export class ChatQueryBuilder {
 
     for (let index = 0; index < recentMessages.length; index++) {
       const msg = recentMessages[index]
+      result.push(...webSearchHistoryMessages(msg, index))
       const includeReasoning = shouldIncludeReasoning(
         reasoningHistoryPolicy,
         Boolean(msg.toolCalls?.length),

@@ -195,7 +195,11 @@ export class TimelineBuilder {
     }
   }
 
-  updateURLFetch(id: string, status: URLFetchState['status']): void {
+  updateURLFetch(
+    id: string,
+    status: URLFetchState['status'],
+    sources?: URLFetchState['sources'],
+  ): void {
     for (let i = this.blocks.length - 1; i >= 0; i--) {
       const block = this.blocks[i]
       if (
@@ -205,7 +209,7 @@ export class TimelineBuilder {
         this.blocks[i] = {
           ...block,
           fetches: block.fetches.map((f) =>
-            f.id === id ? { ...f, status } : f,
+            f.id === id ? { ...f, status, ...(sources ? { sources } : {}) } : f,
           ),
         }
         break

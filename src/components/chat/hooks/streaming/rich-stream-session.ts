@@ -150,6 +150,7 @@ export class RichStreamSession {
           ? sources.map((source) => ({
               title: source.title || source.url,
               url: source.url,
+              snippet: source.snippet,
             }))
           : current?.sources,
       }
@@ -196,7 +197,15 @@ export class RichStreamSession {
     }
     const status: URLFetchState['status'] =
       event.status === 'blocked' ? 'failed' : event.status
-    this.timeline.updateURLFetch(event.id, status)
+    this.timeline.updateURLFetch(
+      event.id,
+      status,
+      event.sources?.map((source) => ({
+        url: source.url,
+        title: source.title || source.url,
+        snippet: source.snippet,
+      })),
+    )
   }
 
   private applyCodeExec(
@@ -258,10 +267,16 @@ export class RichStreamSession {
         this.assembler.addAnnotation(event.url, event.title)
         const current = this.timeline.getLastWebSearchState()
         if (current) {
-          this.timeline.updateWebSearch({
-            ...current,
-            sources: [...this.assembler.collectedSources],
-          })
+          const retained = current.sources ?? []
+          const merged = retained.some((source) => source.snippet)
+            ? [
+                ...retained,
+                ...this.assembler.collectedSources.filter(
+                  (source) => !retained.some((kept) => kept.url === source.url),
+                ),
+              ]
+            : [...this.assembler.collectedSources]
+          this.timeline.updateWebSearch({ ...current, sources: merged })
         }
         break
       }

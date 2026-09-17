@@ -21,6 +21,7 @@ export type Annotation = {
 export type WebSearchSource = {
   title: string
   url: string
+  snippet?: string
 }
 
 export type WebSearchState = {
@@ -38,6 +39,7 @@ export type URLFetchState = {
   id: string
   url: string
   status: 'fetching' | 'completed' | 'failed'
+  sources?: WebSearchSource[]
 }
 
 export type TimelineThinkingBlock = {

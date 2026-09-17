@@ -91,8 +91,12 @@ export function sanitizeNativeBackupProjectDocument(value: unknown) {
   })
 }
 
-const cleanSource = (value: unknown) => pick(row(value), keys('title url'))
-const cleanFetch = (value: unknown) => pick(row(value), keys('id url status'))
+const cleanSource = (value: unknown) =>
+  pick(row(value), keys('title url snippet'))
+const cleanFetch = (value: unknown) => ({
+  ...pick(row(value), keys('id url status')),
+  sources: list(row(value).sources, cleanSource),
+})
 const cleanCodeCall = (value: unknown) =>
   pick(row(value), keys('id toolName arguments status output'))
 const cleanSearch = (value: unknown) => {
