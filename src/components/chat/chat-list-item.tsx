@@ -14,6 +14,7 @@ import {
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
+import { FlagIcon } from '@heroicons/react/24/solid'
 import Link from 'next/link'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -97,6 +98,12 @@ interface ChatListItemProps {
    * failure is visible without blocking anything.
    */
   syncFailed?: boolean
+  /**
+   * True when the safeguards service flagged this chat for review. Shows a
+   * red flag so the user can find the chat from the Safeguards settings
+   * page.
+   */
+  isFlagged?: boolean
   enableTitleAnimation?: boolean
   isDraggable?: boolean
   showMoveToProject?: boolean
@@ -177,6 +184,7 @@ export function ChatListItem({
   showSyncStatus = false,
   isStreaming = false,
   syncFailed = false,
+  isFlagged = false,
   enableTitleAnimation = false,
   isDraggable = false,
   showMoveToProject = false,
@@ -485,6 +493,13 @@ export function ChatListItem({
                   className="h-3.5 w-3.5 flex-shrink-0 text-content-muted"
                   title="Pinned to Favorites"
                   aria-label="Pinned to Favorites"
+                />
+              )}
+              {isFlagged && (
+                <FlagIcon
+                  className="h-3.5 w-3.5 flex-shrink-0 -translate-y-px text-red-600"
+                  title="Flagged by safeguards"
+                  aria-label="Flagged by safeguards"
                 />
               )}
             </span>

@@ -1,5 +1,6 @@
 'use client'
 
+import { useFlaggedChatIds } from '@/hooks/use-safeguards'
 import { useStreamingChats } from '@/hooks/use-streaming-chats'
 import { useSyncFailedChats } from '@/hooks/use-sync-health'
 import { Fragment, useEffect, useState } from 'react'
@@ -101,6 +102,7 @@ export function ChatList({
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
   const syncFailedChats = useSyncFailedChats()
+  const flaggedChatIds = useFlaggedChatIds()
   // App-wide source of truth for which chats are streaming, so the
   // indicator covers background streams in any chat, not just the active one.
   const streamingChats = useStreamingChats()
@@ -224,6 +226,7 @@ export function ChatList({
                 showSyncStatus={showSyncStatus}
                 isStreaming={!chat.isBlankChat && streamingChats.has(chat.id)}
                 syncFailed={Boolean(syncFailedChats[chat.id])}
+                isFlagged={Boolean(flaggedChatIds[chat.id])}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id
                 }

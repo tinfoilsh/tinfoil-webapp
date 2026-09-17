@@ -30,6 +30,7 @@ import {
 import { useChatRouter } from '@/hooks/use-chat-router'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
+import { useSafeguardsLoader } from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
@@ -58,6 +59,7 @@ import {
   RateLimitBanner,
   shouldShowRateLimitBanner,
 } from '@/components/chat/rate-limit-banner'
+import { SafeguardFlagBanner } from '@/components/chat/safeguard-flag-banner'
 import { StreamErrorBanner } from '@/components/chat/stream-error-banner'
 import { classifyCloudKeySetupError } from '@/components/modals/cloud-sync-setup-mode'
 import {
@@ -563,6 +565,7 @@ export function ChatInterface({
     SettingsTab | undefined
   >(undefined)
   const syncNeedsAttention = useSyncHealthAttention()
+  useSafeguardsLoader()
 
   // State for share modal
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
@@ -2189,6 +2192,19 @@ export function ChatInterface({
     }
   }
 
+  const openSettingsModal = (initialTab: SettingsTab | undefined) => {
+    setSettingsInitialTab(initialTab)
+    setHasMountedSettingsModal(true)
+    setIsSettingsModalOpen(true)
+    handleSetVerifierSidebarOpen(false)
+    setIsAskSidebarOpen(false)
+    setIsArtifactSidebarOpen(false)
+    // If window is narrow, close left sidebar when opening settings
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
+      setIsSidebarOpen(false)
+    }
+  }
+
   // Handler for settings modal
   const handleOpenSettingsModal = () => {
     if (isSettingsModalOpen) {
@@ -2196,17 +2212,12 @@ export function ChatInterface({
       setIsSettingsModalOpen(false)
     } else {
       // Open settings and close verifier if open
-      setSettingsInitialTab(syncNeedsAttention ? 'cloud-sync' : undefined)
-      setHasMountedSettingsModal(true)
-      setIsSettingsModalOpen(true)
-      handleSetVerifierSidebarOpen(false)
-      setIsAskSidebarOpen(false)
-      setIsArtifactSidebarOpen(false)
-      // If window is narrow, close left sidebar when opening settings
-      if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
-        setIsSidebarOpen(false)
-      }
+      openSettingsModal(syncNeedsAttention ? 'cloud-sync' : undefined)
     }
+  }
+
+  const handleOpenSafeguardsSettings = () => {
+    openSettingsModal('safeguards')
   }
 
   // Handler for opening share modal
@@ -2217,13 +2228,7 @@ export function ChatInterface({
 
   // Handler for encryption key button - opens settings modal to cloud-sync tab
   const handleOpenEncryptionKeyModal = () => {
-    setSettingsInitialTab('cloud-sync')
-    setHasMountedSettingsModal(true)
-    setIsSettingsModalOpen(true)
-    handleSetVerifierSidebarOpen(false)
-    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
-      setIsSidebarOpen(false)
-    }
+    openSettingsModal('cloud-sync')
   }
 
   // Handler for cloud sync setup. When the user has no local key we first
@@ -4381,6 +4386,15 @@ export function ChatInterface({
                       background: `linear-gradient(to bottom, hsl(var(--surface-chat-background) / 0) 0%, hsl(var(--surface-chat-background)) ${CONSTANTS.CHAT_INPUT_FADE_SOLID_AT_PX}px)`,
                     }}
                   />
+                  <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8">
+                    <SafeguardFlagBanner
+                      chatId={currentChat.id}
+                      isDarkMode={isDarkMode}
+                      onOpenSettings={
+                        isSignedIn ? handleOpenSafeguardsSettings : undefined
+                      }
+                    />
+                  </div>
                   {selectPendingInputToolCallFromChat(currentChat) ? (
                     <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 md:px-8">
                       <GenUIInputAreaRenderer

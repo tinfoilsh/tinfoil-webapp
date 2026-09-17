@@ -116,6 +116,7 @@ import {
   EyeIcon,
   EyeSlashIcon,
   MoonIcon,
+  ShieldExclamationIcon,
   Squares2X2Icon,
   SunIcon,
   UserCircleIcon,
@@ -141,6 +142,7 @@ import { ImportFileList } from './import-file-list'
 import { MfaSettingsCard } from './mfa-settings-card'
 import { NativeBackupExport } from './native-backup-export'
 import { NativeBackupRestore } from './native-backup-restore'
+import { SafeguardsSettings } from './safeguards-settings'
 import {
   canDeleteAllProjects,
   canTransferProjectData,
@@ -346,7 +348,13 @@ const STEP_CIRCLE_CLASSES = cn(
 )
 
 export type SettingsTab =
-  'general' | 'chat' | 'personalization' | 'prompts' | 'cloud-sync' | 'account'
+  | 'general'
+  | 'chat'
+  | 'personalization'
+  | 'prompts'
+  | 'cloud-sync'
+  | 'safeguards'
+  | 'account'
 
 import type { ThemeMode } from './hooks/use-ui-state'
 
@@ -606,6 +614,16 @@ export function SettingsModal({
     initialTab ?? 'account',
   )
   const syncNeedsAttention = useSyncHealthAttention()
+
+  // Signed-in-only tabs disappear from the nav on sign-out; fall back to a
+  // tab that still exists so the modal is not left with blank content.
+  const signedInOnlyTab =
+    activeTab === 'cloud-sync' || activeTab === 'safeguards'
+  useEffect(() => {
+    if (!isSignedIn && signedInOnlyTab) {
+      setActiveTab('account')
+    }
+  }, [isSignedIn, signedInOnlyTab])
 
   // Update active tab when initialTab prop changes (e.g., opening to a specific tab)
   useEffect(() => {
@@ -2357,6 +2375,11 @@ ${encryptionKey.replace('key_', '')}
             label: 'Cloud Sync',
             icon: AiOutlineCloudSync,
           },
+          {
+            id: 'safeguards' as const,
+            label: 'Safeguards',
+            icon: ShieldExclamationIcon,
+          },
         ]
       : []),
   ]
@@ -2371,9 +2394,9 @@ ${encryptionKey.replace('key_', '')}
 
       {/* Settings modal */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
         transition={{
           type: 'spring',
           damping: 25,
@@ -4605,6 +4628,14 @@ ${encryptionKey.replace('key_', '')}
                     </div>
                   )}
                 </>
+              )}
+
+              {activeTab === 'safeguards' && isSignedIn && (
+                <SafeguardsSettings
+                  isDarkMode={isDarkMode}
+                  onNavigateToChat={() => setIsOpen(false)}
+                  chats={chats}
+                />
               )}
 
               {/* Account Tab */}
