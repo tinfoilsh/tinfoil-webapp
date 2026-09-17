@@ -27,6 +27,25 @@ const RESPONSE = {
   ban_threshold: 10,
 }
 
+// A fetch mock whose response the test controls, plus a `called` promise that
+// settles only when the code under test actually invokes fetch, so the test
+// can order a reset relative to the network call without guessing at awaits.
+function deferredFetch() {
+  let resolve: (response: Response) => void = () => {}
+  let markCalled: () => void = () => {}
+  const called = new Promise<void>((r) => {
+    markCalled = r
+  })
+  const response = new Promise<Response>((r) => {
+    resolve = r
+  })
+  const impl = () => {
+    markCalled()
+    return response
+  }
+  return { impl, resolve, called }
+}
+
 describe('safeguards store', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -102,16 +121,13 @@ describe('safeguards store', () => {
   })
 
   it('discards a response that arrives after a reset', async () => {
-    let resolveFetch: (response: Response) => void = () => {}
-    vi.spyOn(globalThis, 'fetch').mockReturnValue(
-      new Promise<Response>((resolve) => {
-        resolveFetch = resolve
-      }),
-    )
+    const deferred = deferredFetch()
+    vi.spyOn(globalThis, 'fetch').mockImplementation(deferred.impl)
 
     const pending = refreshSafeguards()
+    await deferred.called
     resetSafeguards()
-    resolveFetch(new Response(JSON.stringify(RESPONSE)))
+    deferred.resolve(new Response(JSON.stringify(RESPONSE)))
     await pending
 
     expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
@@ -119,19 +135,18 @@ describe('safeguards store', () => {
   })
 
   it('lets a refresh started after a reset complete normally', async () => {
-    let resolveFirst: (response: Response) => void = () => {}
+    const deferred = deferredFetch()
     vi.spyOn(globalThis, 'fetch')
-      .mockReturnValueOnce(
-        new Promise<Response>((resolve) => {
-          resolveFirst = resolve
-        }),
-      )
+      .mockImplementationOnce(deferred.impl)
       .mockResolvedValueOnce(new Response(JSON.stringify(RESPONSE)))
 
     const first = refreshSafeguards()
+    await deferred.called
     resetSafeguards()
     const second = refreshSafeguards()
-    resolveFirst(new Response(JSON.stringify({ ...RESPONSE, in_window: 9 })))
+    deferred.resolve(
+      new Response(JSON.stringify({ ...RESPONSE, in_window: 9 })),
+    )
     await Promise.all([first, second])
 
     expect(getSafeguardsSnapshot().status).toBe('ready')
