@@ -59,6 +59,7 @@ import {
   RateLimitBanner,
   shouldShowRateLimitBanner,
 } from '@/components/chat/rate-limit-banner'
+import { SafeguardFlagBanner } from '@/components/chat/safeguard-flag-banner'
 import { StreamErrorBanner } from '@/components/chat/stream-error-banner'
 import { classifyCloudKeySetupError } from '@/components/modals/cloud-sync-setup-mode'
 import {
@@ -2188,6 +2189,19 @@ export function ChatInterface({
       if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
         setIsSidebarOpen(false)
       }
+    }
+  }
+
+  const handleOpenSafeguardsSettings = () => {
+    if (!isSignedIn) return
+    setSettingsInitialTab('safeguards')
+    setHasMountedSettingsModal(true)
+    setIsSettingsModalOpen(true)
+    handleSetVerifierSidebarOpen(false)
+    setIsAskSidebarOpen(false)
+    setIsArtifactSidebarOpen(false)
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
+      setIsSidebarOpen(false)
     }
   }
 
@@ -4361,6 +4375,15 @@ export function ChatInterface({
                       background: `linear-gradient(to bottom, hsl(var(--surface-chat-background) / 0) 0%, hsl(var(--surface-chat-background)) ${CONSTANTS.CHAT_INPUT_FADE_SOLID_AT_PX}px)`,
                     }}
                   />
+                  <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8">
+                    <SafeguardFlagBanner
+                      chatId={currentChat.id}
+                      isDarkMode={isDarkMode}
+                      onOpenSettings={
+                        isSignedIn ? handleOpenSafeguardsSettings : undefined
+                      }
+                    />
+                  </div>
                   {selectPendingInputToolCallFromChat(currentChat) ? (
                     <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 md:px-8">
                       <GenUIInputAreaRenderer

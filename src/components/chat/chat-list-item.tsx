@@ -497,7 +497,7 @@ export function ChatListItem({
               )}
               {isFlagged && (
                 <FlagIcon
-                  className="h-3.5 w-3.5 flex-shrink-0 text-red-600"
+                  className="h-3.5 w-3.5 flex-shrink-0 -translate-y-px text-red-600"
                   title="Flagged by safeguards"
                   aria-label="Flagged by safeguards"
                 />
