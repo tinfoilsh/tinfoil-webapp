@@ -1,11 +1,13 @@
 import {
   canToggleTemporaryChat,
+  createBlankChat,
   createTemporaryChat,
   resolveWebSearchEnabled,
   upsertChatById,
 } from '@/components/chat/hooks/chat-operations'
 import type { Chat } from '@/components/chat/types'
-import { describe, expect, it } from 'vitest'
+import { USER_PREFS_DEFAULT_PROMPT_PRESET_ID } from '@/constants/storage-keys'
+import { beforeEach, describe, expect, it } from 'vitest'
 
 const createChat = (overrides: Partial<Chat> = {}): Chat => ({
   id: 'chat-1',
@@ -36,6 +38,22 @@ describe('canToggleTemporaryChat', () => {
         createChat({ isBlankChat: false, isTemporary: true }),
       ),
     ).toBe(true)
+  })
+})
+
+describe('createBlankChat', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('starts without a preset when no default is configured', () => {
+    expect(createBlankChat().presetId).toBeUndefined()
+  })
+
+  it('stamps the configured default preset onto the new chat', () => {
+    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'user:abc')
+    expect(createBlankChat().presetId).toBe('user:abc')
+    expect(createBlankChat(true).presetId).toBe('user:abc')
   })
 })
 

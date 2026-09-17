@@ -19,6 +19,7 @@ import {
   useState,
 } from 'react'
 import { BLANK_LOCAL_QUEUE_ID, isBlankQueueId } from '../message-queue-identity'
+import { readDefaultPresetId } from '../prompts/default-preset'
 import type { Chat, PendingRecoveryEnvelope } from '../types'
 import {
   createBlankChat,
@@ -568,11 +569,18 @@ export function useChatStorage({
         // Always switch when from user action, or when we're on a different blank chat
         if (fromUserAction || currentChat.isBlankChat) {
           // A reused blank represents a fresh chat, so drop any per-chat
-          // web search override left behind by an earlier visit.
+          // web search override left behind by an earlier visit and start
+          // from the user's current default prompt preset.
+          const defaultPresetId = readDefaultPresetId() ?? undefined
           const freshBlank =
-            blankChat.webSearchEnabled === undefined
+            blankChat.webSearchEnabled === undefined &&
+            blankChat.presetId === defaultPresetId
               ? blankChat
-              : { ...blankChat, webSearchEnabled: undefined }
+              : {
+                  ...blankChat,
+                  webSearchEnabled: undefined,
+                  presetId: defaultPresetId,
+                }
           if (freshBlank !== blankChat) {
             // Blank chats share an empty id, so match by mode to avoid
             // touching the other mode's blank entry.
