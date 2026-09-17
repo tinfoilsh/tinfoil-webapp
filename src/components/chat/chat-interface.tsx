@@ -30,6 +30,7 @@ import {
 import { useChatRouter } from '@/hooks/use-chat-router'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
+import { useSafeguardsLoader } from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
@@ -560,6 +561,7 @@ export function ChatInterface({
     SettingsTab | undefined
   >(undefined)
   const syncNeedsAttention = useSyncHealthAttention()
+  useSafeguardsLoader()
 
   // State for share modal
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
