@@ -99,9 +99,9 @@ interface ChatListItemProps {
    */
   syncFailed?: boolean
   /**
-   * True when the safeguards service flagged this chat for an acceptable
-   * use policy violation. Shows a red flag so the user can find the chat
-   * from the Safeguards settings page.
+   * True when the safeguards service flagged this chat for review. Shows a
+   * red flag so the user can find the chat from the Safeguards settings
+   * page.
    */
   isFlagged?: boolean
   enableTitleAnimation?: boolean
@@ -498,8 +498,8 @@ export function ChatListItem({
               {isFlagged && (
                 <FlagIcon
                   className="h-3.5 w-3.5 flex-shrink-0 text-red-600"
-                  title="Flagged for an acceptable use policy violation"
-                  aria-label="Flagged for an acceptable use policy violation"
+                  title="Flagged by safeguards"
+                  aria-label="Flagged by safeguards"
                 />
               )}
             </span>

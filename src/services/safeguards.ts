@@ -1,6 +1,6 @@
 /**
  * Safeguards store: the signed-in user's flagged chats as reported by the
- * controlplane, plus the thresholds that govern an account ban.
+ * controlplane, plus the thresholds that govern an account suspension.
  *
  * Fetched once per signed-in session and refreshed on demand from the
  * Safeguards settings page. Framework-free singleton with a
@@ -21,9 +21,9 @@ export interface FlaggedChat {
   createdAt: number
 }
 
-/** The ban policy as reported by the controlplane. */
+/** The suspension policy as reported by the controlplane. */
 export interface SafeguardsPolicy {
-  /** Flags inside the rolling window that count toward a ban. */
+  /** Flags inside the rolling window that count toward a suspension. */
   inWindow: number
   windowHours: number
   warnThreshold: number
@@ -40,8 +40,8 @@ export interface SafeguardsSnapshot {
   status: 'idle' | 'loading' | 'ready' | 'error'
 }
 
-const ViolationsResponseSchema = z.object({
-  violations: z.array(
+const FlagsResponseSchema = z.object({
+  flags: z.array(
     z.object({
       id: z.string(),
       conversation_id: z.string(),
@@ -54,7 +54,7 @@ const ViolationsResponseSchema = z.object({
   ban_threshold: z.number().int().positive(),
 })
 
-type ViolationsResponse = z.infer<typeof ViolationsResponseSchema>
+type FlagsResponse = z.infer<typeof FlagsResponseSchema>
 
 const EMPTY_SNAPSHOT: SafeguardsSnapshot = {
   flaggedChats: [],
@@ -65,8 +65,8 @@ const EMPTY_SNAPSHOT: SafeguardsSnapshot = {
 
 // Placeholder data so the Safeguards page can be exercised locally without
 // a flagged account. One flag is outside the counting window on purpose.
-const DEV_PLACEHOLDER_VIOLATIONS: ViolationsResponse = {
-  violations: [
+const DEV_PLACEHOLDER_FLAGS: FlagsResponse = {
+  flags: [
     {
       id: 'dev-flag-1',
       conversation_id: 'dev-flagged-chat-1',
@@ -121,10 +121,10 @@ export function getSafeguardsServerSnapshot(): SafeguardsSnapshot {
 }
 
 function toSnapshot(
-  data: ViolationsResponse,
+  data: FlagsResponse,
   status: SafeguardsSnapshot['status'],
 ): SafeguardsSnapshot {
-  const flaggedChats = data.violations.map((v) => ({
+  const flaggedChats = data.flags.map((v) => ({
     id: v.id,
     conversationId: v.conversation_id,
     createdAt: Date.parse(v.created_at),
@@ -146,14 +146,14 @@ function toSnapshot(
   }
 }
 
-async function fetchViolations(): Promise<ViolationsResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/users/me/aup-violations`, {
+async function fetchFlags(): Promise<FlagsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/users/me/safeguard-flags`, {
     headers: await authTokenManager.getAuthHeaders(),
   })
   if (!response.ok) {
     throw new Error(`Failed to load flagged chats: ${response.status}`)
   }
-  return ViolationsResponseSchema.parse(await response.json())
+  return FlagsResponseSchema.parse(await response.json())
 }
 
 /**
@@ -167,7 +167,7 @@ export function refreshSafeguards(): Promise<void> {
   publish({ ...snapshot, status: 'loading' })
   const request = (async () => {
     try {
-      const data = IS_DEV ? DEV_PLACEHOLDER_VIOLATIONS : await fetchViolations()
+      const data = IS_DEV ? DEV_PLACEHOLDER_FLAGS : await fetchFlags()
       if (requestGeneration !== generation) return
       publish(toSnapshot(data, 'ready'))
     } catch (err) {

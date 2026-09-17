@@ -102,7 +102,7 @@ export function SafeguardsSettings({
   const progress =
     banThreshold > 0 ? Math.min(100, (inWindow / banThreshold) * 100) : 0
   const remaining = Math.max(0, banThreshold - inWindow)
-  const nearBan = policy ? inWindow >= policy.warnThreshold : false
+  const nearLimit = policy ? inWindow >= policy.warnThreshold : false
   const cardClass = cn(
     'rounded-lg border border-border-subtle',
     isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
@@ -116,10 +116,11 @@ export function SafeguardsSettings({
         </h3>
         <div className={cn(cardClass, 'p-4')}>
           <p className="font-aeonik-fono text-sm text-content-secondary">
-            Tinfoil runs automated safeguards inside the enclave to detect
-            conversations that violate the acceptable use policy. Flagged chats
-            count toward an account ban for {days} days; older flags stay on
-            record but no longer count.
+            Tinfoil runs automated safeguards inside the enclave that may flag a
+            conversation for review under the acceptable use policy.
+            {days !== null
+              ? ` Flags count toward an account suspension for ${days} days; older flags stay on record but no longer count.`
+              : ' Flags count toward an account suspension for a limited period; older flags stay on record but no longer count.'}
           </p>
           <a
             href={SAFEGUARDS_INFO_URL}
@@ -179,17 +180,17 @@ export function SafeguardsSettings({
                 <span
                   className={cn(
                     'font-aeonik-fono text-xs',
-                    nearBan ? 'text-red-600' : 'text-content-muted',
+                    nearLimit ? 'text-red-600' : 'text-content-muted',
                   )}
                 >
                   {remaining === 0
-                    ? 'Ban threshold reached'
-                    : `${remaining} more before account ban`}
+                    ? 'Suspension limit reached'
+                    : `${remaining} more before account suspension`}
                 </span>
               </div>
               <Progress
                 value={progress}
-                aria-label="Flags toward account ban"
+                aria-label="Flags toward account suspension"
                 className="h-2 bg-red-900/15 dark:bg-red-900/30 [&>div]:bg-red-800"
               />
             </div>

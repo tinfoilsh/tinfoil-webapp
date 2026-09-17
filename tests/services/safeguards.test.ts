@@ -16,7 +16,7 @@ vi.mock('@/services/auth', () => ({
 vi.mock('@/config', () => ({ API_BASE_URL: 'https://api.test', IS_DEV: false }))
 
 const RESPONSE = {
-  violations: [
+  flags: [
     { id: 'v1', conversation_id: 'chat-a', created_at: '2026-09-16T12:00:00Z' },
     { id: 'v2', conversation_id: 'chat-b', created_at: '2026-09-01T12:00:00Z' },
     { id: 'v3', conversation_id: '', created_at: '2026-08-01T12:00:00Z' },
@@ -74,7 +74,7 @@ describe('safeguards store', () => {
     ])
     expect(snapshot.flaggedChatIds).toEqual({ 'chat-a': true, 'chat-b': true })
     expect(fetch).toHaveBeenCalledWith(
-      'https://api.test/api/users/me/aup-violations',
+      'https://api.test/api/users/me/safeguard-flags',
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer t' }),
       }),
@@ -109,7 +109,7 @@ describe('safeguards store', () => {
 
   it('rejects a response missing policy fields instead of publishing it', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ violations: RESPONSE.violations })),
+      new Response(JSON.stringify({ flags: RESPONSE.flags })),
     )
 
     await refreshSafeguards()
