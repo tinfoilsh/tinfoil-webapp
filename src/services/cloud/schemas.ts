@@ -128,8 +128,6 @@ export const ProfileDataSchema = z
     traits: z.array(z.string()).optional(),
     additionalContext: z.string().optional(),
     isUsingPersonalization: z.boolean().optional(),
-    isUsingCustomPrompt: z.boolean().optional(),
-    customSystemPrompt: z.string().optional(),
     customPromptPresets: z
       .array(
         z
@@ -145,6 +143,7 @@ export const ProfileDataSchema = z
       )
       .optional(),
     favoritePromptPresetIds: z.array(z.string()).optional(),
+    defaultPromptPresetId: z.string().optional(),
     pinnedChatIds: z.array(z.string()).optional().catch(undefined),
     reasoningEffort: z.enum(['low', 'medium', 'high']).optional(),
     thinkingEnabled: z.boolean().optional(),

@@ -20,10 +20,9 @@ export const PROFILE_MERGE_FIELDS = [
   'traits',
   'additionalContext',
   'isUsingPersonalization',
-  'isUsingCustomPrompt',
-  'customSystemPrompt',
   'customPromptPresets',
   'favoritePromptPresetIds',
+  'defaultPromptPresetId',
   'pinnedChatIds',
   'reasoningEffort',
   'thinkingEnabled',
@@ -46,6 +45,7 @@ const PRESERVE_LOCAL_WHEN_REMOTE_OMITS = new Set<
   'browserTabChatTitleEnabled',
   'pinnedChatIds',
   'enterToNewlineEnabled',
+  'defaultPromptPresetId',
 ])
 
 const TREAT_LOCAL_OMISSION_AS_UNEDITED = new Set<
@@ -81,8 +81,14 @@ export function changedProfileFields(
   if (!baseline) return [...PROFILE_MERGE_FIELDS]
   const changed: string[] = []
   for (const field of PROFILE_MERGE_FIELDS) {
-    const a = (local as Record<string, unknown>)[field]
-    const b = (baseline as Record<string, unknown>)[field]
+    const a = normalizeFieldValue(
+      field,
+      (local as Record<string, unknown>)[field],
+    )
+    const b = normalizeFieldValue(
+      field,
+      (baseline as Record<string, unknown>)[field],
+    )
     if (!valuesEqual(a, b)) changed.push(field)
   }
   return changed
@@ -203,7 +209,7 @@ export function isProfilePopulated(p: ProfileData | null | undefined): boolean {
     nonEmptyString(p.nickname) ||
     nonEmptyString(p.profession) ||
     nonEmptyString(p.additionalContext) ||
-    nonEmptyString(p.customSystemPrompt) ||
+    nonEmptyString(p.defaultPromptPresetId) ||
     nonEmptyArray(p.traits) ||
     nonEmptyArray(p.customPromptPresets) ||
     nonEmptyArray(p.favoritePromptPresetIds) ||
@@ -217,6 +223,23 @@ function laterTimestamp(a?: string, b?: string): string | undefined {
   if (Number.isNaN(ta)) return b
   if (Number.isNaN(tb)) return a
   return ta >= tb ? a : b
+}
+
+// The unset default preset is serialized as '' (so clears propagate) but
+// profiles from older clients omit the field entirely; both mean "Tinfoil
+// default" and must not register as a change or a conflict.
+const EMPTY_STRING_MEANS_UNSET = new Set<(typeof PROFILE_MERGE_FIELDS)[number]>(
+  ['defaultPromptPresetId'],
+)
+
+function normalizeFieldValue(field: string, value: unknown): unknown {
+  if (
+    value === '' &&
+    EMPTY_STRING_MEANS_UNSET.has(field as (typeof PROFILE_MERGE_FIELDS)[number])
+  ) {
+    return undefined
+  }
+  return value
 }
 
 function valuesEqual(a: unknown, b: unknown): boolean {
@@ -255,13 +278,17 @@ export function mergeProfilesThreeWay(args: {
   let adoptedRemote = false
 
   for (const field of PROFILE_MERGE_FIELDS) {
-    const baselineValue = (baseline as Record<string, unknown>)[field]
+    const baselineValue = normalizeFieldValue(
+      field,
+      (baseline as Record<string, unknown>)[field],
+    )
     const localHasField = Object.prototype.hasOwnProperty.call(local, field)
     const localValue =
       !localHasField && TREAT_LOCAL_OMISSION_AS_UNEDITED.has(field)
         ? baselineValue
-        : (local as Record<string, unknown>)[field]
-    const remoteValue = (remote as Record<string, unknown>)[field]
+        : normalizeFieldValue(field, (local as Record<string, unknown>)[field])
+    const rawRemoteValue = (remote as Record<string, unknown>)[field]
+    const remoteValue = normalizeFieldValue(field, rawRemoteValue)
     const lc = fieldClock(local, field, localTrusted)
     const rc = fieldClock(remote, field, remoteTrusted)
 
@@ -275,7 +302,7 @@ export function mergeProfilesThreeWay(args: {
 
     if (valuesEqual(localValue, baselineValue)) {
       if (Object.prototype.hasOwnProperty.call(remote, field)) {
-        ;(merged as Record<string, unknown>)[field] = remoteValue
+        ;(merged as Record<string, unknown>)[field] = rawRemoteValue
         if (rc) mergedClocks[field] = rc
         adoptedRemote ||= !valuesEqual(localValue, remoteValue)
       } else {
@@ -293,7 +320,7 @@ export function mergeProfilesThreeWay(args: {
           remoteClock: rc,
         })
       ) {
-        ;(merged as Record<string, unknown>)[field] = remoteValue
+        ;(merged as Record<string, unknown>)[field] = rawRemoteValue
         mergedClocks[field] = rc
         adoptedRemote = true
       } else {

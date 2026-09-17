@@ -1,3 +1,4 @@
+import { adoptLegacyCustomPrompt } from '@/components/chat/prompts/default-preset'
 import { CLOUD_SYNC } from '@/config'
 import { AUTH_ACTIVE_USER_CHANGED_EVENT } from '@/constants/auth-events'
 import {
@@ -52,8 +53,24 @@ function clocksEqual(a?: EditClock, b?: EditClock): boolean {
   return a?.v === b?.v && a?.w === b?.w
 }
 
+// Profiles written by older clients still carry the retired custom prompt
+// fields. An enabled prompt becomes the default library preset so a fresh
+// device inherits it; the fields are then dropped so they are not re-pushed.
+function migrateLegacyProfileCustomPrompt(profile: ProfileData): ProfileData {
+  const legacy = profile as Record<string, unknown>
+  if (!('isUsingCustomPrompt' in legacy) && !('customSystemPrompt' in legacy)) {
+    return profile
+  }
+  const { isUsingCustomPrompt, customSystemPrompt, ...rest } = legacy
+  adoptLegacyCustomPrompt(
+    isUsingCustomPrompt === true,
+    typeof customSystemPrompt === 'string' ? customSystemPrompt : '',
+  )
+  return rest as ProfileData
+}
+
 function normalizeRemoteBaseline(profile: ProfileData): ProfileData {
-  let normalized = profile
+  let normalized = migrateLegacyProfileCustomPrompt(profile)
   if (profile.pinnedChatIds !== undefined) {
     normalized = {
       ...normalized,
@@ -421,7 +438,6 @@ export function useProfileSync() {
       'themeChanged',
       'personalizationChanged',
       'languageChanged',
-      'customSystemPromptChanged',
       'promptLibraryChanged',
       PINNED_CHAT_IDS_CHANGED_EVENT,
       'reasoningSettingsChanged',

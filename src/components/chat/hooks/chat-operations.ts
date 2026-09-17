@@ -4,6 +4,7 @@ import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { logError } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
+import { readDefaultPresetId } from '../prompts/default-preset'
 import type { Chat, Message } from '../types'
 
 /**
@@ -12,7 +13,9 @@ import type { Chat, Message } from '../types'
  */
 
 /**
- * Creates a new blank chat object without an ID
+ * Creates a new blank chat object without an ID. The user's default prompt
+ * preset is stamped on at creation so the chat keeps it even if the default
+ * changes later, and the user can still clear it for this chat alone.
  */
 export function createBlankChat(isLocalOnly = false): Chat {
   return {
@@ -23,6 +26,7 @@ export function createBlankChat(isLocalOnly = false): Chat {
     createdAt: new Date(),
     isBlankChat: true,
     isLocalOnly,
+    presetId: readDefaultPresetId() ?? undefined,
   }
 }
 

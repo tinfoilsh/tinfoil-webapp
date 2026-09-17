@@ -16,8 +16,6 @@ import {
   SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
   SETTINGS_WEB_SEARCH_AVAILABLE,
   USER_PREFS_ADDITIONAL_CONTEXT,
-  USER_PREFS_CUSTOM_PROMPT_ENABLED,
-  USER_PREFS_CUSTOM_SYSTEM_PROMPT,
   USER_PREFS_LANGUAGE,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
@@ -138,6 +136,7 @@ import QRCode from 'react-qr-code'
 import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
+import { usePromptLibrary } from './hooks/use-prompt-library'
 import { ImportFileList } from './import-file-list'
 import { MfaSettingsCard } from './mfa-settings-card'
 import { NativeBackupExport } from './native-backup-export'
@@ -475,7 +474,6 @@ type SettingsModalProps = {
   themeMode: ThemeMode
   setThemeMode: (mode: ThemeMode) => void
   isClient: boolean
-  defaultSystemPrompt?: string
   onOpenPromptLibrary: () => void
   onCloudSyncSetupClick?: () => void
   onChatsUpdated?: () => void | Promise<void>
@@ -513,7 +511,6 @@ export function SettingsModal({
   themeMode,
   setThemeMode,
   isClient,
-  defaultSystemPrompt = '',
   onOpenPromptLibrary,
   onCloudSyncSetupClick,
   onChatsUpdated,
@@ -574,9 +571,9 @@ export function SettingsModal({
   // Language setting (separate from personalization)
   const [language, setLanguage] = useState<string>(SYSTEM_RESPONSE_LANGUAGE)
 
-  // Custom system prompt settings
-  const [isUsingCustomPrompt, setIsUsingCustomPrompt] = useState<boolean>(false)
-  const [customSystemPrompt, setCustomSystemPrompt] = useState<string>('')
+  // Default prompt preset for new chats
+  const { builtInPresets, userPresets, defaultPreset, setDefaultPreset } =
+    usePromptLibrary()
 
   // Cloud sync setting
   const [cloudSyncEnabled, setCloudSyncEnabledState] = useState<boolean>(false)
@@ -742,22 +739,6 @@ export function SettingsModal({
     const savedLanguage = localStorage.getItem(USER_PREFS_LANGUAGE)
     setLanguage(normalizeResponseLanguage(savedLanguage))
 
-    // Load custom system prompt settings
-    const savedUsingCustomPrompt = localStorage.getItem(
-      USER_PREFS_CUSTOM_PROMPT_ENABLED,
-    )
-    const savedCustomPrompt = localStorage.getItem(
-      USER_PREFS_CUSTOM_SYSTEM_PROMPT,
-    )
-    if (savedUsingCustomPrompt !== null) {
-      setIsUsingCustomPrompt(savedUsingCustomPrompt === 'true')
-    }
-    if (savedCustomPrompt !== null) {
-      setCustomSystemPrompt(savedCustomPrompt)
-    } else if (defaultSystemPrompt) {
-      setCustomSystemPrompt(defaultSystemPrompt)
-    }
-
     // Load cloud sync setting
     setCloudSyncEnabledState(isCloudSyncEnabled())
     setLocalOnlyModeEnabledState(isLocalOnlyModeEnabled())
@@ -806,7 +787,7 @@ export function SettingsModal({
     // Load chat font setting
     const savedChatFont = localStorage.getItem(SETTINGS_CHAT_FONT)
     setChatFont(normalizeChatFont(savedChatFont))
-  }, [defaultSystemPrompt])
+  }, [])
 
   // Initial load settings from localStorage
   useEffect(() => {
@@ -851,10 +832,6 @@ export function SettingsModal({
     window.addEventListener('personalizationChanged', handleProfileSyncUpdate)
     window.addEventListener('languageChanged', handleProfileSyncUpdate)
     window.addEventListener(
-      'customSystemPromptChanged',
-      handleProfileSyncUpdate,
-    )
-    window.addEventListener(
       'webSearchAvailableChanged',
       handleProfileSyncUpdate,
     )
@@ -882,10 +859,6 @@ export function SettingsModal({
         handleProfileSyncUpdate,
       )
       window.removeEventListener('languageChanged', handleProfileSyncUpdate)
-      window.removeEventListener(
-        'customSystemPromptChanged',
-        handleProfileSyncUpdate,
-      )
       window.removeEventListener(
         'webSearchAvailableChanged',
         handleProfileSyncUpdate,
@@ -996,7 +969,6 @@ export function SettingsModal({
             additionalContext: currentContext,
             language,
             isEnabled: currentEnabled,
-            defaultSystemPrompt,
           },
         }),
       )
@@ -1013,7 +985,6 @@ export function SettingsModal({
         new CustomEvent('languageChanged', {
           detail: {
             language: newLanguage,
-            defaultSystemPrompt,
           },
         }),
       )
@@ -1117,84 +1088,6 @@ export function SettingsModal({
           detail: font,
         }),
       )
-    }
-  }
-
-  // Helper to strip <system> tags for display
-  const stripSystemTags = (prompt: string): string => {
-    return prompt
-      .replace(/^<system>\s*\n?/, '')
-      .replace(/\n?<\/system>\s*$/, '')
-  }
-
-  // Helper to add <system> tags if not present
-  const ensureSystemTags = (prompt: string): string => {
-    const trimmed = prompt.trim()
-    if (!trimmed) return ''
-    if (!trimmed.startsWith('<system>')) {
-      return `<system>\n${trimmed}\n</system>`
-    }
-    return trimmed
-  }
-
-  // Handle custom system prompt changes
-  const handleToggleCustomPrompt = (enabled: boolean) => {
-    setIsUsingCustomPrompt(enabled)
-    if (isClient) {
-      localStorage.setItem(USER_PREFS_CUSTOM_PROMPT_ENABLED, enabled.toString())
-      // Only dispatch event when toggling the feature
-      const promptWithTags = ensureSystemTags(customSystemPrompt)
-      window.dispatchEvent(
-        new CustomEvent('customSystemPromptChanged', {
-          detail: {
-            isEnabled: enabled,
-            customPrompt: promptWithTags,
-          },
-        }),
-      )
-    }
-  }
-
-  const handleCustomPromptChange = (value: string) => {
-    setCustomSystemPrompt(value)
-  }
-
-  const handleCustomPromptBlur = () => {
-    if (isClient) {
-      // Store with system tags
-      const promptWithTags = ensureSystemTags(customSystemPrompt)
-      localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, promptWithTags)
-      // Only dispatch if currently enabled
-      if (isUsingCustomPrompt) {
-        window.dispatchEvent(
-          new CustomEvent('customSystemPromptChanged', {
-            detail: {
-              isEnabled: true,
-              customPrompt: promptWithTags,
-            },
-          }),
-        )
-      }
-    }
-  }
-
-  // Restore default system prompt and persist immediately
-  const handleRestoreDefaultPrompt = () => {
-    const restoredWithoutTags = stripSystemTags(defaultSystemPrompt)
-    setCustomSystemPrompt(restoredWithoutTags)
-    if (isClient) {
-      const promptWithTags = ensureSystemTags(restoredWithoutTags)
-      localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, promptWithTags)
-      if (isUsingCustomPrompt) {
-        window.dispatchEvent(
-          new CustomEvent('customSystemPromptChanged', {
-            detail: {
-              isEnabled: true,
-              customPrompt: promptWithTags,
-            },
-          }),
-        )
-      }
     }
   }
 
@@ -3558,7 +3451,7 @@ ${encryptionKey.replace('key_', '')}
                 <>
                   <div className="space-y-3">
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Default System Prompt
+                      Default Prompt
                     </h3>
                     <div
                       className={cn(
@@ -3567,79 +3460,46 @@ ${encryptionKey.replace('key_', '')}
                       )}
                     >
                       <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div className="mr-3 flex-1">
-                            <div className="font-aeonik text-sm font-medium text-content-primary">
-                              Custom default prompt
-                            </div>
-                            <div className="font-aeonik-fono text-xs text-content-muted">
-                              Override the system prompt for chats that
-                              don&apos;t have a preset selected.
-                            </div>
+                        <div>
+                          <div className="font-aeonik text-sm font-medium text-content-primary">
+                            Default prompt for new chats
                           </div>
-                          <label className="relative inline-flex cursor-pointer items-center">
-                            <input
-                              type="checkbox"
-                              checked={isUsingCustomPrompt}
-                              onChange={(e) =>
-                                handleToggleCustomPrompt(e.target.checked)
-                              }
-                              className="peer sr-only"
-                            />
-                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
-                          </label>
+                          <div className="font-aeonik-fono text-xs text-content-muted">
+                            New chats start with this prompt from your library.
+                            You can still switch prompts in any chat.
+                          </div>
                         </div>
-                        {isUsingCustomPrompt && (
-                          <>
-                            <textarea
-                              value={stripSystemTags(customSystemPrompt)}
-                              onChange={(e) =>
-                                handleCustomPromptChange(e.target.value)
-                              }
-                              onBlur={handleCustomPromptBlur}
-                              placeholder="Enter your custom system prompt..."
-                              rows={6}
-                              className={cn(
-                                'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
-                                isDarkMode
-                                  ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                  : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-                              )}
-                            />
-                            <div className="rounded-lg border border-border-subtle bg-surface-chat p-3">
-                              <div className="font-aeonik-fono text-xs text-content-muted">
-                                <span
-                                  className={cn(
-                                    'font-aeonik font-medium',
-                                    isDarkMode
-                                      ? 'text-brand-accent-light'
-                                      : 'text-brand-accent-dark',
-                                  )}
-                                >
-                                  Tip:
-                                </span>{' '}
-                                Use placeholders like {'{USER_PREFERENCES}'},{' '}
-                                {'{LANGUAGE}'}, and {'{TIMEZONE}'} to tell the
-                                model about your preferences and timezone. The
-                                current time and date are always provided to the
-                                model automatically.
-                              </div>
-                            </div>
-                            <div className="flex justify-center">
-                              <button
-                                onClick={handleRestoreDefaultPrompt}
-                                className={cn(
-                                  'rounded-md px-3 py-1.5 text-xs transition-all hover:underline',
-                                  isDarkMode
-                                    ? 'text-red-400 hover:text-red-300'
-                                    : 'text-red-600 hover:text-red-500',
-                                )}
-                              >
-                                Restore default prompt
-                              </button>
-                            </div>
-                          </>
-                        )}
+                        <select
+                          value={defaultPreset?.id ?? ''}
+                          onChange={(e) =>
+                            setDefaultPreset(e.target.value || null)
+                          }
+                          aria-label="Default prompt for new chats"
+                          className={cn(
+                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
+                            isDarkMode
+                              ? 'border-border-strong bg-surface-chat text-content-secondary'
+                              : 'border-border-subtle bg-surface-sidebar text-content-primary',
+                          )}
+                        >
+                          <option value="">Tinfoil default</option>
+                          {userPresets.length > 0 && (
+                            <optgroup label="Your prompts">
+                              {userPresets.map((preset) => (
+                                <option key={preset.id} value={preset.id}>
+                                  {preset.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          <optgroup label="Built-in">
+                            {builtInPresets.map((preset) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
                       </div>
                     </div>
                   </div>

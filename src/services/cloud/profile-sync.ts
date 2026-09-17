@@ -38,7 +38,11 @@ function isStaleBlobConflict(error: unknown): boolean {
 // iOS-only setting) and must survive our next push rather than being
 // dropped when we re-serialize only the keys we know about.
 const KNOWN_PROFILE_KEYS = new Set<string>(Object.keys(ProfileDataSchema.shape))
-const RETIRED_PROFILE_KEYS = new Set<string>(['projectUploadPreference'])
+const RETIRED_PROFILE_KEYS = new Set<string>([
+  'projectUploadPreference',
+  'isUsingCustomPrompt',
+  'customSystemPrompt',
+])
 
 function extractUnknownProfileFields(
   source: Record<string, unknown>,
@@ -67,12 +71,15 @@ export interface ProfileData {
   additionalContext?: string
   isUsingPersonalization?: boolean
 
-  // Custom system prompt settings
-  isUsingCustomPrompt?: boolean
-  customSystemPrompt?: string
+  // Prompt library
   customPromptPresets?: ProfilePromptPreset[]
   // Ordered preset ids pinned as homescreen favorites (built-in or custom)
   favoritePromptPresetIds?: string[]
+  // Preset stamped onto every new chat; empty string means the Tinfoil
+  // default. Always sent as a string (never omitted or null) so a clear on
+  // one device propagates, and so Swift's JSON encoding, which drops nil
+  // optionals, produces the same shape as the webapp.
+  defaultPromptPresetId?: string
   // Ordered durable chat ids pinned as favorites, newest first
   pinnedChatIds?: string[]
 

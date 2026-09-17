@@ -1,18 +1,24 @@
 import {
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
+  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
   USER_PREFS_FAVORITE_PROMPT_PRESETS,
 } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PiNotePencil } from 'react-icons/pi'
 import { BUILT_IN_PROMPT_PRESETS } from '../prompts/built-in-presets'
+import {
+  PROMPT_LIBRARY_CHANGED_EVENT,
+  generateUserPresetId,
+  migrateLegacyCustomPrompt,
+  readDefaultPresetId,
+  readUserPresets,
+  writeDefaultPresetId,
+  writeUserPresets,
+} from '../prompts/default-preset'
 import type { PromptPreset, UserPromptPreset } from '../prompts/types'
 
 const COMPONENT = 'usePromptLibrary'
-
-const USER_PRESET_ID_PREFIX = 'user:'
-
-const PROMPT_LIBRARY_CHANGED_EVENT = 'promptLibraryChanged'
 
 export const MAX_FAVORITE_PRESETS = 3
 
@@ -39,47 +45,9 @@ type UsePromptLibraryReturn = {
   isFavorite: (id: string) => boolean
   canAddFavorite: boolean
   toggleFavorite: (id: string) => void
-}
-
-function safeReadUserPresets(): UserPromptPreset[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_PRESETS)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter(
-      (p): p is UserPromptPreset =>
-        p &&
-        typeof p === 'object' &&
-        typeof p.id === 'string' &&
-        typeof p.name === 'string' &&
-        typeof p.description === 'string' &&
-        typeof p.systemPrompt === 'string' &&
-        typeof p.createdAt === 'number' &&
-        typeof p.updatedAt === 'number',
-    )
-  } catch (err) {
-    logError('Failed to parse user prompt presets', err, {
-      component: COMPONENT,
-    })
-    return []
-  }
-}
-
-function safeWriteUserPresets(presets: UserPromptPreset[]): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(
-      USER_PREFS_CUSTOM_PROMPT_PRESETS,
-      JSON.stringify(presets),
-    )
-    window.dispatchEvent(new CustomEvent(PROMPT_LIBRARY_CHANGED_EVENT))
-  } catch (err) {
-    logError('Failed to persist user prompt presets', err, {
-      component: COMPONENT,
-    })
-  }
+  defaultPresetId: string | null
+  defaultPreset: PromptPreset | null
+  setDefaultPreset: (id: string | null) => void
 }
 
 function safeReadFavoriteIds(): string[] {
@@ -113,11 +81,6 @@ function safeWriteFavoriteIds(ids: string[]): void {
   }
 }
 
-function generateUserPresetId(): string {
-  const random = Math.random().toString(36).slice(2, 10)
-  return `${USER_PRESET_ID_PREFIX}${Date.now().toString(36)}-${random}`
-}
-
 function toPromptPreset(stored: UserPromptPreset): PromptPreset {
   return {
     id: stored.id,
@@ -132,22 +95,27 @@ function toPromptPreset(stored: UserPromptPreset): PromptPreset {
 export function usePromptLibrary(): UsePromptLibraryReturn {
   const [userPresetsRaw, setUserPresetsRaw] = useState<UserPromptPreset[]>([])
   const [favoritePresetIds, setFavoritePresetIds] = useState<string[]>([])
+  const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null)
 
   useEffect(() => {
-    setUserPresetsRaw(safeReadUserPresets())
-    setFavoritePresetIds(safeReadFavoriteIds())
-
-    const handleChange = () => {
-      setUserPresetsRaw(safeReadUserPresets())
+    migrateLegacyCustomPrompt()
+    const refresh = () => {
+      setUserPresetsRaw(readUserPresets())
       setFavoritePresetIds(safeReadFavoriteIds())
+      setDefaultPresetId(readDefaultPresetId())
     }
+    refresh()
+
+    const handleChange = () => refresh()
     const handleStorage = (event: StorageEvent) => {
+      // A null key means localStorage.clear() in another tab.
       if (
+        event.key === null ||
         event.key === USER_PREFS_CUSTOM_PROMPT_PRESETS ||
-        event.key === USER_PREFS_FAVORITE_PROMPT_PRESETS
+        event.key === USER_PREFS_FAVORITE_PROMPT_PRESETS ||
+        event.key === USER_PREFS_DEFAULT_PROMPT_PRESET_ID
       ) {
-        setUserPresetsRaw(safeReadUserPresets())
-        setFavoritePresetIds(safeReadFavoriteIds())
+        refresh()
       }
     }
 
@@ -190,8 +158,8 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
         createdAt: now,
         updatedAt: now,
       }
-      const next = [...safeReadUserPresets(), newPreset]
-      safeWriteUserPresets(next)
+      const next = [...readUserPresets(), newPreset]
+      writeUserPresets(next)
       return toPromptPreset(newPreset)
     },
     [],
@@ -204,7 +172,7 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
         Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'>
       >,
     ) => {
-      const current = safeReadUserPresets()
+      const current = readUserPresets()
       const idx = current.findIndex((p) => p.id === id)
       if (idx === -1) return
       const updated: UserPromptPreset = {
@@ -214,17 +182,20 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
       }
       const next = [...current]
       next[idx] = updated
-      safeWriteUserPresets(next)
+      writeUserPresets(next)
     },
     [],
   )
 
   const deleteUserPreset = useCallback((id: string) => {
-    const next = safeReadUserPresets().filter((p) => p.id !== id)
-    safeWriteUserPresets(next)
+    const next = readUserPresets().filter((p) => p.id !== id)
+    writeUserPresets(next)
     const favorites = safeReadFavoriteIds()
     if (favorites.includes(id)) {
       safeWriteFavoriteIds(favorites.filter((favoriteId) => favoriteId !== id))
+    }
+    if (readDefaultPresetId() === id) {
+      writeDefaultPresetId(null)
     }
   }, [])
 
@@ -238,7 +209,7 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
           systemPrompt: builtIn.systemPrompt,
         })
       }
-      const userSource = safeReadUserPresets().find((p) => p.id === sourceId)
+      const userSource = readUserPresets().find((p) => p.id === sourceId)
       if (!userSource) return null
       return createUserPreset({
         name: `${userSource.name} (copy)`,
@@ -285,6 +256,14 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
     [allPresets],
   )
 
+  // A stale id (preset deleted elsewhere or not yet synced here) resolves to
+  // null so callers fall back to the server prompt instead of a missing one.
+  const defaultPreset = getPresetById(defaultPresetId)
+
+  const setDefaultPreset = useCallback((id: string | null) => {
+    writeDefaultPresetId(id)
+  }, [])
+
   return {
     builtInPresets: BUILT_IN_PROMPT_PRESETS,
     userPresets,
@@ -299,5 +278,8 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
     isFavorite,
     canAddFavorite,
     toggleFavorite,
+    defaultPresetId,
+    defaultPreset,
+    setDefaultPreset,
   }
 }
