@@ -115,58 +115,6 @@ export function SafeguardsSettings({
   return (
     <>
       <div className="space-y-3">
-        <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-          Safeguards
-        </h3>
-        <div className={cn(cardClass, 'space-y-4 p-4 font-aeonik')}>
-          <section className="space-y-1">
-            <h4 className="text-sm font-semibold text-content-primary">
-              Your conversations stay private
-            </h4>
-            <p className="text-sm leading-relaxed text-content-secondary">
-              Safeguards run entirely inside secure enclaves. Tinfoil cannot
-              read your conversations, and there is no human review of your
-              private chats.
-            </p>
-          </section>
-          <section className="space-y-1">
-            <h4 className="text-sm font-semibold text-content-primary">
-              Safeguards assess model responses
-            </h4>
-            <p className="text-sm leading-relaxed text-content-secondary">
-              Automated checks assess model responses in conversational
-              context—not user prompts for wrongdoing—against our narrow hard-no
-              policy on child endangerment, mass violence and terrorism, and
-              encouraging self-harm.
-            </p>
-          </section>
-          <section className="space-y-1">
-            <h4 className="text-sm font-semibold text-content-primary">
-              Only a flag leaves the enclave
-            </h4>
-            <p className="text-sm leading-relaxed text-content-secondary">
-              Only a flag linked to your account and chat ID leaves the
-              enclaves—not the conversation or flagged category. Encrypted
-              stored backups are not scanned; checks happen only at inference
-              time.
-            </p>
-          </section>
-          <a
-            href={SAFEGUARDS_INFO_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-sm text-brand-accent-dark hover:underline dark:text-brand-accent-light"
-          >
-            Learn how safeguards work
-            <ArrowTopRightOnSquareIcon
-              className="h-3.5 w-3.5"
-              aria-hidden="true"
-            />
-          </a>
-        </div>
-      </div>
-
-      <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h3 className="font-aeonik text-sm font-medium text-content-secondary">
             Flagged Chats
@@ -273,6 +221,58 @@ export function SafeguardsSettings({
               ))}
             </ul>
           )}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+          How it works
+        </h3>
+        <div className={cn(cardClass, 'space-y-4 p-4 font-aeonik')}>
+          <section className="space-y-1">
+            <h4 className="text-sm font-semibold text-content-primary">
+              Your conversations stay private
+            </h4>
+            <p className="text-sm leading-relaxed text-content-secondary">
+              Safeguards run entirely inside secure enclaves. Tinfoil cannot
+              read your conversations, and there is no human review of your
+              private chats.
+            </p>
+          </section>
+          <section className="space-y-1">
+            <h4 className="text-sm font-semibold text-content-primary">
+              Safeguards assess model responses
+            </h4>
+            <p className="text-sm leading-relaxed text-content-secondary">
+              Automated checks assess model responses in conversational
+              context—not user prompts for wrongdoing—against our narrow hard-no
+              policy on child endangerment, mass violence and terrorism, and
+              encouraging self-harm.
+            </p>
+          </section>
+          <section className="space-y-1">
+            <h4 className="text-sm font-semibold text-content-primary">
+              Only a flag leaves the enclave
+            </h4>
+            <p className="text-sm leading-relaxed text-content-secondary">
+              Only a flag linked to your account and chat ID leaves the
+              enclaves—not the conversation or flagged category. Encrypted
+              stored backups are not scanned; checks happen only at inference
+              time.
+            </p>
+          </section>
+          <a
+            href={SAFEGUARDS_INFO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm text-brand-accent-dark hover:underline dark:text-brand-accent-light"
+          >
+            Learn how safeguards work
+            <ArrowTopRightOnSquareIcon
+              className="h-3.5 w-3.5"
+              aria-hidden="true"
+            />
+          </a>
         </div>
       </div>
     </>

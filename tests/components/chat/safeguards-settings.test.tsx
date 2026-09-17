@@ -68,6 +68,12 @@ describe('SafeguardsSettings', () => {
 
     expect(
       screen
+        .getAllByRole('heading', { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toEqual(['Flagged Chats', 'How it works'])
+
+    expect(
+      screen
         .getAllByRole('heading', { level: 4 })
         .map((heading) => heading.textContent),
     ).toEqual([
