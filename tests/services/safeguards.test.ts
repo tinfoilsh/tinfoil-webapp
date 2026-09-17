@@ -42,8 +42,12 @@ describe('safeguards store', () => {
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('ready')
-    expect(snapshot.inWindow).toBe(1)
-    expect(snapshot.banThreshold).toBe(10)
+    expect(snapshot.policy).toEqual({
+      inWindow: 1,
+      windowHours: 168,
+      warnThreshold: 8,
+      banThreshold: 10,
+    })
     expect(snapshot.flaggedChats.map((f) => f.conversationId)).toEqual([
       'chat-a',
       'chat-b',
@@ -82,6 +86,56 @@ describe('safeguards store', () => {
     await Promise.all([refreshSafeguards(), refreshSafeguards()])
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a response missing policy fields instead of publishing it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ violations: RESPONSE.violations })),
+    )
+
+    await refreshSafeguards()
+
+    const snapshot = getSafeguardsSnapshot()
+    expect(snapshot.status).toBe('error')
+    expect(snapshot.policy).toBeNull()
+    expect(snapshot.flaggedChats).toEqual([])
+  })
+
+  it('discards a response that arrives after a reset', async () => {
+    let resolveFetch: (response: Response) => void = () => {}
+    vi.spyOn(globalThis, 'fetch').mockReturnValue(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve
+      }),
+    )
+
+    const pending = refreshSafeguards()
+    resetSafeguards()
+    resolveFetch(new Response(JSON.stringify(RESPONSE)))
+    await pending
+
+    expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
+    expect(getSafeguardsSnapshot().status).toBe('idle')
+  })
+
+  it('lets a refresh started after a reset complete normally', async () => {
+    let resolveFirst: (response: Response) => void = () => {}
+    vi.spyOn(globalThis, 'fetch')
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          resolveFirst = resolve
+        }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify(RESPONSE)))
+
+    const first = refreshSafeguards()
+    resetSafeguards()
+    const second = refreshSafeguards()
+    resolveFirst(new Response(JSON.stringify({ ...RESPONSE, in_window: 9 })))
+    await Promise.all([first, second])
+
+    expect(getSafeguardsSnapshot().status).toBe('ready')
+    expect(getSafeguardsSnapshot().policy?.inWindow).toBe(1)
   })
 
   it('notifies subscribers and clears on reset', async () => {

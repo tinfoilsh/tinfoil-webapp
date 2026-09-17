@@ -11,6 +11,7 @@
 import { API_BASE_URL, IS_DEV } from '@/config'
 import { AuthTokenUnavailableError, authTokenManager } from '@/services/auth'
 import { logError } from '@/utils/error-handling'
+import { z } from 'zod'
 
 export const SAFEGUARDS_INFO_URL = 'https://tinfoil.sh/safety-and-safeguards'
 
@@ -20,33 +21,45 @@ export interface FlaggedChat {
   createdAt: number
 }
 
-export interface SafeguardsSnapshot {
-  flaggedChats: readonly FlaggedChat[]
-  /** conversationId -> true, for O(1) sidebar lookups. */
-  flaggedChatIds: Readonly<Record<string, true>>
+/** The ban policy as reported by the controlplane. */
+export interface SafeguardsPolicy {
   /** Flags inside the rolling window that count toward a ban. */
   inWindow: number
   windowHours: number
   warnThreshold: number
   banThreshold: number
+}
+
+export interface SafeguardsSnapshot {
+  flaggedChats: readonly FlaggedChat[]
+  /** conversationId -> true, for O(1) sidebar lookups. */
+  flaggedChatIds: Readonly<Record<string, true>>
+  /** Null until a response has been received, so the UI never presents a
+   * guessed policy as the active one. */
+  policy: SafeguardsPolicy | null
   status: 'idle' | 'loading' | 'ready' | 'error'
 }
 
-interface ViolationsResponse {
-  violations: Array<{ id: string; conversation_id: string; created_at: string }>
-  in_window: number
-  window_hours: number
-  warn_threshold: number
-  ban_threshold: number
-}
+const ViolationsResponseSchema = z.object({
+  violations: z.array(
+    z.object({
+      id: z.string(),
+      conversation_id: z.string(),
+      created_at: z.string(),
+    }),
+  ),
+  in_window: z.number().int().nonnegative(),
+  window_hours: z.number().int().positive(),
+  warn_threshold: z.number().int().nonnegative(),
+  ban_threshold: z.number().int().positive(),
+})
+
+type ViolationsResponse = z.infer<typeof ViolationsResponseSchema>
 
 const EMPTY_SNAPSHOT: SafeguardsSnapshot = {
   flaggedChats: [],
   flaggedChatIds: {},
-  inWindow: 0,
-  windowHours: 7 * 24,
-  warnThreshold: 8,
-  banThreshold: 10,
+  policy: null,
   status: 'idle',
 }
 
@@ -81,6 +94,9 @@ type Listener = () => void
 let snapshot: SafeguardsSnapshot = EMPTY_SNAPSHOT
 const listeners = new Set<Listener>()
 let inflight: Promise<void> | null = null
+// Bumped by reset so a response from before the reset is discarded rather
+// than published for the next account.
+let generation = 0
 
 function publish(next: SafeguardsSnapshot): void {
   snapshot = next
@@ -120,10 +136,12 @@ function toSnapshot(
   return {
     flaggedChats,
     flaggedChatIds,
-    inWindow: data.in_window,
-    windowHours: data.window_hours,
-    warnThreshold: data.warn_threshold,
-    banThreshold: data.ban_threshold,
+    policy: {
+      inWindow: data.in_window,
+      windowHours: data.window_hours,
+      warnThreshold: data.warn_threshold,
+      banThreshold: data.ban_threshold,
+    },
     status,
   }
 }
@@ -135,7 +153,7 @@ async function fetchViolations(): Promise<ViolationsResponse> {
   if (!response.ok) {
     throw new Error(`Failed to load flagged chats: ${response.status}`)
   }
-  return (await response.json()) as ViolationsResponse
+  return ViolationsResponseSchema.parse(await response.json())
 }
 
 /**
@@ -145,10 +163,12 @@ async function fetchViolations(): Promise<ViolationsResponse> {
  */
 export function refreshSafeguards(): Promise<void> {
   if (inflight) return inflight
+  const requestGeneration = generation
   publish({ ...snapshot, status: 'loading' })
-  inflight = (async () => {
+  const request = (async () => {
     try {
       const data = IS_DEV ? DEV_PLACEHOLDER_VIOLATIONS : await fetchViolations()
+      if (requestGeneration !== generation) return
       publish(toSnapshot(data, 'ready'))
     } catch (err) {
       if (!(err instanceof AuthTokenUnavailableError)) {
@@ -156,15 +176,22 @@ export function refreshSafeguards(): Promise<void> {
           component: 'safeguards',
         })
       }
+      if (requestGeneration !== generation) return
       publish({ ...snapshot, status: 'error' })
     } finally {
-      inflight = null
+      // A reset may have already cleared inflight and a newer request may
+      // own it; only release it if it is still this one.
+      if (requestGeneration === generation) inflight = null
     }
   })()
-  return inflight
+  inflight = request
+  return request
 }
 
-/** Drops all loaded data, e.g. on sign-out or account switch. */
+/** Drops all loaded data, e.g. on sign-out or account switch. Any request
+ * still in flight is orphaned and its result discarded. */
 export function resetSafeguards(): void {
+  generation += 1
+  inflight = null
   publish(EMPTY_SNAPSHOT)
 }
