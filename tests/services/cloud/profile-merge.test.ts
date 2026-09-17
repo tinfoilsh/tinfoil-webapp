@@ -30,19 +30,19 @@ describe('mergeProfiles', () => {
   it('keeps each side’s field with the higher clock', () => {
     const local = trusted({
       nickname: 'local-name',
-      customSystemPrompt: 'old-prompt',
+      additionalContext: 'old-prompt',
       fieldClocks: {
         nickname: { v: 5, w: 'A' },
-        customSystemPrompt: { v: 1, w: 'A' },
+        additionalContext: { v: 1, w: 'A' },
       },
       updatedAt: '2024-01-01T00:00:00.000Z',
     })
     const remote = trusted({
       nickname: 'remote-name',
-      customSystemPrompt: 'new-prompt',
+      additionalContext: 'new-prompt',
       fieldClocks: {
         nickname: { v: 2, w: 'B' },
-        customSystemPrompt: { v: 9, w: 'B' },
+        additionalContext: { v: 9, w: 'B' },
       },
       updatedAt: '2024-01-02T00:00:00.000Z',
     })
@@ -52,7 +52,7 @@ describe('mergeProfiles', () => {
     // local nickname (clock 5) beats remote (clock 2); remote prompt
     // (clock 9) beats local (clock 1). Neither edit is lost.
     expect(merged.nickname).toBe('local-name')
-    expect(merged.customSystemPrompt).toBe('new-prompt')
+    expect(merged.additionalContext).toBe('new-prompt')
     expect(adoptedRemote).toBe(true)
   })
 
@@ -88,13 +88,13 @@ describe('mergeProfiles', () => {
     // but empty; the populated local profile must survive.
     const local: ProfileData = {
       nickname: 'real-user',
-      customSystemPrompt: 'my prompt',
+      additionalContext: 'my prompt',
       traits: ['curious'],
       updatedAt: '2024-01-01T00:00:00.000Z',
     }
     const remote: ProfileData = {
       nickname: '',
-      customSystemPrompt: '',
+      additionalContext: '',
       traits: [],
       updatedAt: '2024-01-02T00:00:00.000Z',
     }
@@ -102,7 +102,7 @@ describe('mergeProfiles', () => {
     const { merged, adoptedRemote } = mergeProfiles({ local, remote })
 
     expect(merged.nickname).toBe('real-user')
-    expect(merged.customSystemPrompt).toBe('my prompt')
+    expect(merged.additionalContext).toBe('my prompt')
     expect(adoptedRemote).toBe(false)
   })
 
@@ -167,7 +167,7 @@ describe('isProfilePopulated', () => {
   it('is true when any user content is present', () => {
     expect(isProfilePopulated({ nickname: 'x' })).toBe(true)
     expect(isProfilePopulated({ traits: ['a'] })).toBe(true)
-    expect(isProfilePopulated({ customSystemPrompt: 'hi' })).toBe(true)
+    expect(isProfilePopulated({ additionalContext: 'hi' })).toBe(true)
     expect(isProfilePopulated({ pinnedChatIds: ['chat-a'] })).toBe(true)
   })
 
@@ -234,13 +234,13 @@ describe('overlayProfileChanges', () => {
 
   it('removes a field cleared during the fetch', () => {
     const result = overlayProfileChanges(
-      { customSystemPrompt: 'Remote prompt', version: 2 },
-      { customSystemPrompt: 'Before prompt' },
+      { additionalContext: 'Remote prompt', version: 2 },
+      { additionalContext: 'Before prompt' },
       {},
     )
 
     expect(result.profile).toEqual({ version: 2 })
-    expect(result.changedFields).toEqual(['customSystemPrompt'])
+    expect(result.changedFields).toEqual(['additionalContext'])
   })
 })
 
@@ -505,17 +505,17 @@ describe('mergeProfilesThreeWay', () => {
 
   it('adopts populated remote fields when local stayed empty', () => {
     const result = mergeProfilesThreeWay({
-      baseline: { nickname: '', customSystemPrompt: '' },
-      local: { nickname: '', customSystemPrompt: '' },
+      baseline: { nickname: '', additionalContext: '' },
+      local: { nickname: '', additionalContext: '' },
       remote: {
         nickname: 'Ada',
-        customSystemPrompt: 'Be concise',
+        additionalContext: 'Be concise',
         version: 2,
       },
     })
 
     expect(result.merged.nickname).toBe('Ada')
-    expect(result.merged.customSystemPrompt).toBe('Be concise')
+    expect(result.merged.additionalContext).toBe('Be concise')
     expect(result.conflicts).toEqual([])
   })
 
@@ -582,12 +582,12 @@ describe('mergeProfilesThreeWay', () => {
 
   it('preserves an intentional local reset', () => {
     const result = mergeProfilesThreeWay({
-      baseline: { customSystemPrompt: 'Use headings' },
-      local: { customSystemPrompt: '' },
-      remote: { customSystemPrompt: 'Use headings', version: 2 },
+      baseline: { additionalContext: 'Use headings' },
+      local: { additionalContext: '' },
+      remote: { additionalContext: 'Use headings', version: 2 },
     })
 
-    expect(result.merged.customSystemPrompt).toBe('')
+    expect(result.merged.additionalContext).toBe('')
     expect(result.conflicts).toEqual([])
   })
 

@@ -421,7 +421,6 @@ export function useProfileSync() {
       'themeChanged',
       'personalizationChanged',
       'languageChanged',
-      'customSystemPromptChanged',
       'promptLibraryChanged',
       PINNED_CHAT_IDS_CHANGED_EVENT,
       'reasoningSettingsChanged',

@@ -67,12 +67,12 @@ export interface ProfileData {
   additionalContext?: string
   isUsingPersonalization?: boolean
 
-  // Custom system prompt settings
-  isUsingCustomPrompt?: boolean
-  customSystemPrompt?: string
+  // Prompt library
   customPromptPresets?: ProfilePromptPreset[]
   // Ordered preset ids pinned as homescreen favorites (built-in or custom)
   favoritePromptPresetIds?: string[]
+  // Preset stamped onto every new chat; null means the Tinfoil default
+  defaultPromptPresetId?: string | null
   // Ordered durable chat ids pinned as favorites, newest first
   pinnedChatIds?: string[]
 

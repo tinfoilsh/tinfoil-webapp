@@ -20,10 +20,9 @@ export const PROFILE_MERGE_FIELDS = [
   'traits',
   'additionalContext',
   'isUsingPersonalization',
-  'isUsingCustomPrompt',
-  'customSystemPrompt',
   'customPromptPresets',
   'favoritePromptPresetIds',
+  'defaultPromptPresetId',
   'pinnedChatIds',
   'reasoningEffort',
   'thinkingEnabled',
@@ -46,6 +45,7 @@ const PRESERVE_LOCAL_WHEN_REMOTE_OMITS = new Set<
   'browserTabChatTitleEnabled',
   'pinnedChatIds',
   'enterToNewlineEnabled',
+  'defaultPromptPresetId',
 ])
 
 const TREAT_LOCAL_OMISSION_AS_UNEDITED = new Set<
@@ -203,7 +203,7 @@ export function isProfilePopulated(p: ProfileData | null | undefined): boolean {
     nonEmptyString(p.nickname) ||
     nonEmptyString(p.profession) ||
     nonEmptyString(p.additionalContext) ||
-    nonEmptyString(p.customSystemPrompt) ||
+    nonEmptyString(p.defaultPromptPresetId) ||
     nonEmptyArray(p.traits) ||
     nonEmptyArray(p.customPromptPresets) ||
     nonEmptyArray(p.favoritePromptPresetIds) ||

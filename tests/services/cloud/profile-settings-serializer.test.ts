@@ -12,7 +12,7 @@ import {
   SETTINGS_WEB_SEARCH_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
-  USER_PREFS_CUSTOM_SYSTEM_PROMPT,
+  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
   USER_PREFS_FAVORITE_PROMPT_PRESETS,
   USER_PREFS_LANGUAGE,
   USER_PREFS_NICKNAME,
@@ -38,7 +38,6 @@ describe('profile-settings-serializer', () => {
     localStorage.setItem(USER_PREFS_PROFESSION, '')
     localStorage.setItem(USER_PREFS_TRAITS, JSON.stringify([]))
     localStorage.setItem(USER_PREFS_ADDITIONAL_CONTEXT, '')
-    localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, '')
     localStorage.setItem(USER_PREFS_PERSONALIZATION_ENABLED, 'false')
 
     expect(loadLocalSettings()).toMatchObject({
@@ -46,9 +45,19 @@ describe('profile-settings-serializer', () => {
       profession: '',
       traits: [],
       additionalContext: '',
-      customSystemPrompt: '',
       isUsingPersonalization: false,
     })
+  })
+
+  it('always serializes the default prompt preset so clears propagate', () => {
+    expect(loadLocalSettings().defaultPromptPresetId).toBeNull()
+
+    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'user:abc')
+    expect(loadLocalSettings().defaultPromptPresetId).toBe('user:abc')
+
+    applySettingsToLocal({ defaultPromptPresetId: null })
+    expect(localStorage.getItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID)).toBeNull()
+    expect(loadLocalSettings().defaultPromptPresetId).toBeNull()
   })
 
   it('preserves absent language and personalization as unedited fields', () => {
@@ -159,6 +168,7 @@ describe('profile-settings-serializer', () => {
       USER_PREFS_FAVORITE_PROMPT_PRESETS,
       JSON.stringify(['builtin:tutor', 'user:abc']),
     )
+    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'user:abc')
     localStorage.setItem(SETTINGS_SELECTED_MODEL, 'gpt-oss-120b')
     localStorage.setItem(SETTINGS_REASONING_EFFORT, 'high')
     localStorage.setItem(SETTINGS_THINKING_ENABLED, 'false')
@@ -176,6 +186,7 @@ describe('profile-settings-serializer', () => {
     expect(loaded).toMatchObject({
       customPromptPresets: presets,
       favoritePromptPresetIds: ['builtin:tutor', 'user:abc'],
+      defaultPromptPresetId: 'user:abc',
       reasoningEffort: 'high',
       thinkingEnabled: false,
       webSearchEnabled: false,
@@ -231,6 +242,7 @@ describe('profile-settings-serializer', () => {
     applySettingsToLocal({
       customPromptPresets: presets,
       favoritePromptPresetIds: ['builtin:translator', 'user:def'],
+      defaultPromptPresetId: 'user:def',
       reasoningEffort: 'low',
       thinkingEnabled: true,
       webSearchEnabled: true,
@@ -248,6 +260,9 @@ describe('profile-settings-serializer', () => {
     )
     expect(localStorage.getItem(USER_PREFS_FAVORITE_PROMPT_PRESETS)).toBe(
       JSON.stringify(['builtin:translator', 'user:def']),
+    )
+    expect(localStorage.getItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID)).toBe(
+      'user:def',
     )
     expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBeNull()
     expect(localStorage.getItem(SETTINGS_REASONING_EFFORT)).toBe('low')

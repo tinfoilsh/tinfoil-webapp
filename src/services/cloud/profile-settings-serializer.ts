@@ -19,9 +19,8 @@ import {
   SETTINGS_WEB_SEARCH_AVAILABLE,
   SETTINGS_WEB_SEARCH_ENABLED,
   USER_PREFS_ADDITIONAL_CONTEXT,
-  USER_PREFS_CUSTOM_PROMPT_ENABLED,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
-  USER_PREFS_CUSTOM_SYSTEM_PROMPT,
+  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
   USER_PREFS_FAVORITE_PROMPT_PRESETS,
   USER_PREFS_LANGUAGE,
   USER_PREFS_NICKNAME,
@@ -96,12 +95,12 @@ export function hasProfileChanged(
     JSON.stringify(profile1.traits) !== JSON.stringify(profile2.traits) ||
     profile1.additionalContext !== profile2.additionalContext ||
     profile1.isUsingPersonalization !== profile2.isUsingPersonalization ||
-    profile1.isUsingCustomPrompt !== profile2.isUsingCustomPrompt ||
-    profile1.customSystemPrompt !== profile2.customSystemPrompt ||
     JSON.stringify(profile1.customPromptPresets) !==
       JSON.stringify(profile2.customPromptPresets) ||
     JSON.stringify(profile1.favoritePromptPresetIds) !==
       JSON.stringify(profile2.favoritePromptPresetIds) ||
+    (profile1.defaultPromptPresetId ?? null) !==
+      (profile2.defaultPromptPresetId ?? null) ||
     JSON.stringify(profile1.pinnedChatIds) !==
       JSON.stringify(profile2.pinnedChatIds) ||
     profile1.reasoningEffort !== profile2.reasoningEffort ||
@@ -173,21 +172,7 @@ export function loadLocalSettings(): ProfileData {
     )
   }
 
-  // Custom system prompt settings
-  const isUsingCustomPrompt = localStorage.getItem(
-    USER_PREFS_CUSTOM_PROMPT_ENABLED,
-  )
-  if (isUsingCustomPrompt) {
-    settings.isUsingCustomPrompt = isUsingCustomPrompt === 'true'
-  }
-
-  const customSystemPrompt = localStorage.getItem(
-    USER_PREFS_CUSTOM_SYSTEM_PROMPT,
-  )
-  if (customSystemPrompt !== null) {
-    settings.customSystemPrompt = customSystemPrompt
-  }
-
+  // Prompt library
   const customPromptPresets = localStorage.getItem(
     USER_PREFS_CUSTOM_PROMPT_PRESETS,
   )
@@ -203,6 +188,16 @@ export function loadLocalSettings(): ProfileData {
       favoritePromptPresetIds,
     )
   }
+
+  // Always present so clearing the default on one device propagates as an
+  // explicit null instead of being indistinguishable from "not synced yet".
+  const defaultPromptPresetId = localStorage.getItem(
+    USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
+  )
+  settings.defaultPromptPresetId =
+    defaultPromptPresetId && defaultPromptPresetId.trim().length > 0
+      ? defaultPromptPresetId
+      : null
 
   const pinnedChatIds = localStorage.getItem(USER_PREFS_PINNED_CHAT_IDS)
   if (pinnedChatIds !== null) {
@@ -296,10 +291,9 @@ export function resetSettingsToLocalDefaults(): ProfileData {
     traits: [],
     additionalContext: '',
     isUsingPersonalization: true,
-    isUsingCustomPrompt: false,
-    customSystemPrompt: '',
     customPromptPresets: [],
     favoritePromptPresetIds: [],
+    defaultPromptPresetId: null,
     pinnedChatIds: [],
     reasoningEffort: 'medium',
     thinkingEnabled: true,
@@ -408,21 +402,6 @@ export function applySettingsToLocal(settings: ProfileData): void {
     )
   }
 
-  // Custom system prompt settings
-  if (settings.isUsingCustomPrompt !== undefined) {
-    localStorage.setItem(
-      USER_PREFS_CUSTOM_PROMPT_ENABLED,
-      settings.isUsingCustomPrompt.toString(),
-    )
-  }
-
-  if (settings.customSystemPrompt !== undefined) {
-    localStorage.setItem(
-      USER_PREFS_CUSTOM_SYSTEM_PROMPT,
-      settings.customSystemPrompt,
-    )
-  }
-
   if (settings.customPromptPresets !== undefined) {
     localStorage.setItem(
       USER_PREFS_CUSTOM_PROMPT_PRESETS,
@@ -436,6 +415,18 @@ export function applySettingsToLocal(settings: ProfileData): void {
       USER_PREFS_FAVORITE_PROMPT_PRESETS,
       JSON.stringify(settings.favoritePromptPresetIds),
     )
+    window.dispatchEvent(new CustomEvent('promptLibraryChanged'))
+  }
+
+  if (settings.defaultPromptPresetId !== undefined) {
+    if (settings.defaultPromptPresetId) {
+      localStorage.setItem(
+        USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
+        settings.defaultPromptPresetId,
+      )
+    } else {
+      localStorage.removeItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID)
+    }
     window.dispatchEvent(new CustomEvent('promptLibraryChanged'))
   }
 
@@ -582,26 +573,6 @@ export function applySettingsToLocal(settings: ProfileData): void {
     window.dispatchEvent(
       new CustomEvent('chatFontChanged', {
         detail: settings.chatFont,
-      }),
-    )
-  }
-
-  // Trigger custom system prompt change event
-  if (
-    settings.isUsingCustomPrompt !== undefined ||
-    settings.customSystemPrompt !== undefined
-  ) {
-    window.dispatchEvent(
-      new CustomEvent('customSystemPromptChanged', {
-        detail: {
-          isEnabled:
-            settings.isUsingCustomPrompt ??
-            localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_ENABLED) === 'true',
-          customPrompt:
-            settings.customSystemPrompt ||
-            localStorage.getItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT) ||
-            '',
-        },
       }),
     )
   }
