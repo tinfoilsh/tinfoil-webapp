@@ -13,6 +13,10 @@ export const PROMPT_LIBRARY_CHANGED_EVENT = 'promptLibraryChanged'
 
 export const USER_PRESET_ID_PREFIX = 'user:'
 
+// Fixed id shared with the iOS app so a user who migrates on both platforms
+// ends up with one preset rather than two.
+export const MIGRATED_CUSTOM_PROMPT_PRESET_ID = `${USER_PRESET_ID_PREFIX}migrated-custom-prompt`
+
 const MIGRATED_CUSTOM_PROMPT_PRESET_NAME = 'My default prompt'
 const MIGRATED_CUSTOM_PROMPT_PRESET_DESCRIPTION =
   'Migrated from the custom default prompt setting'
@@ -122,17 +126,20 @@ export function migrateLegacyCustomPrompt(): void {
       hasSystemPromptContent(prompt) &&
       readDefaultPresetId() === null
     ) {
-      const now = Date.now()
-      const migrated: UserPromptPreset = {
-        id: generateUserPresetId(),
-        name: MIGRATED_CUSTOM_PROMPT_PRESET_NAME,
-        description: MIGRATED_CUSTOM_PROMPT_PRESET_DESCRIPTION,
-        systemPrompt: prompt,
-        createdAt: now,
-        updatedAt: now,
+      const existing = readUserPresets()
+      if (!existing.some((p) => p.id === MIGRATED_CUSTOM_PROMPT_PRESET_ID)) {
+        const now = Date.now()
+        const migrated: UserPromptPreset = {
+          id: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
+          name: MIGRATED_CUSTOM_PROMPT_PRESET_NAME,
+          description: MIGRATED_CUSTOM_PROMPT_PRESET_DESCRIPTION,
+          systemPrompt: prompt,
+          createdAt: now,
+          updatedAt: now,
+        }
+        writeUserPresets([...existing, migrated])
       }
-      writeUserPresets([...readUserPresets(), migrated])
-      writeDefaultPresetId(migrated.id)
+      writeDefaultPresetId(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
     }
 
     localStorage.removeItem(USER_PREFS_CUSTOM_PROMPT_ENABLED)

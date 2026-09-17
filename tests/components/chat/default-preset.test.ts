@@ -1,4 +1,5 @@
 import {
+  MIGRATED_CUSTOM_PROMPT_PRESET_ID,
   migrateLegacyCustomPrompt,
   readDefaultPresetId,
   readUserPresets,
@@ -33,8 +34,8 @@ describe('migrateLegacyCustomPrompt', () => {
     const presets = readUserPresets()
     expect(presets).toHaveLength(1)
     expect(presets[0].systemPrompt).toBe(LEGACY_PROMPT)
-    expect(presets[0].id.startsWith('user:')).toBe(true)
-    expect(readDefaultPresetId()).toBe(presets[0].id)
+    expect(presets[0].id).toBe(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
+    expect(readDefaultPresetId()).toBe(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
     expect(localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_ENABLED)).toBeNull()
     expect(localStorage.getItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT)).toBeNull()
   })
@@ -61,6 +62,28 @@ describe('migrateLegacyCustomPrompt', () => {
 
     expect(readUserPresets()).toEqual([])
     expect(readDefaultPresetId()).toBeNull()
+  })
+
+  it('reuses a migrated preset that already synced from another device', () => {
+    const synced = {
+      id: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
+      name: 'My default prompt',
+      description: '',
+      systemPrompt: LEGACY_PROMPT,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    localStorage.setItem(
+      USER_PREFS_CUSTOM_PROMPT_PRESETS,
+      JSON.stringify([synced]),
+    )
+    localStorage.setItem(USER_PREFS_CUSTOM_PROMPT_ENABLED, 'true')
+    localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, LEGACY_PROMPT)
+
+    migrateLegacyCustomPrompt()
+
+    expect(readUserPresets()).toEqual([synced])
+    expect(readDefaultPresetId()).toBe(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
   })
 
   it('keeps an existing default and appends to existing presets', () => {
