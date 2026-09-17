@@ -2,6 +2,7 @@ import { cn } from '@/components/ui/utils'
 import { acquireInteractionLock } from '@/utils/interaction-lock'
 import {
   ArrowLeftIcon,
+  BookmarkIcon,
   CheckIcon,
   PencilSquareIcon,
   PlusIcon,
@@ -11,7 +12,10 @@ import {
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
-import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
+import {
+  BookmarkIcon as BookmarkIconSolid,
+  StarIcon as StarIconSolid,
+} from '@heroicons/react/24/solid'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
@@ -57,6 +61,8 @@ export function PromptLibraryModal({
     isFavorite,
     canAddFavorite,
     toggleFavorite,
+    defaultPresetId,
+    setDefaultPreset,
   } = usePromptLibrary()
 
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -201,6 +207,7 @@ export function PromptLibraryModal({
     const isSelected = selectedId === preset.id
     const isActive = activePresetId === preset.id
     const isPinned = isFavorite(preset.id)
+    const isDefault = defaultPresetId === preset.id
     const Icon = preset.Icon
     return (
       <button
@@ -232,8 +239,14 @@ export function PromptLibraryModal({
             </span>
           )}
         </span>
-        {(isPinned || isActive) && (
+        {(isPinned || isActive || isDefault) && (
           <span className="absolute right-2 top-2 flex items-center gap-1">
+            {isDefault && (
+              <BookmarkIconSolid
+                className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
+                aria-label="Default for new chats"
+              />
+            )}
             {isPinned && (
               <StarIconSolid
                 className="h-3.5 w-3.5 text-yellow-500"
@@ -384,6 +397,14 @@ export function PromptLibraryModal({
                       isFavorite={isFavorite(selectedPreset.id)}
                       canAddFavorite={canAddFavorite}
                       onToggleFavorite={() => toggleFavorite(selectedPreset.id)}
+                      isDefault={defaultPresetId === selectedPreset.id}
+                      onToggleDefault={() =>
+                        setDefaultPreset(
+                          defaultPresetId === selectedPreset.id
+                            ? null
+                            : selectedPreset.id,
+                        )
+                      }
                       onUseThis={handleUseThis}
                       onClearActive={handleClearActive}
                       onEdit={() => startEdit(selectedPreset)}
@@ -428,6 +449,8 @@ type PresetDetailProps = {
   isFavorite: boolean
   canAddFavorite: boolean
   onToggleFavorite: () => void
+  isDefault: boolean
+  onToggleDefault: () => void
   onUseThis: () => void
   onClearActive: () => void
   onEdit: () => void
@@ -442,6 +465,8 @@ function PresetDetail({
   isFavorite,
   canAddFavorite,
   onToggleFavorite,
+  isDefault,
+  onToggleDefault,
   onUseThis,
   onClearActive,
   onEdit,
@@ -590,6 +615,29 @@ function PresetDetail({
             <StarIcon className="h-3.5 w-3.5" />
           )}
           {isFavorite ? 'Favorited' : 'Favorite'}
+        </button>
+        <button
+          type="button"
+          onClick={onToggleDefault}
+          aria-pressed={isDefault}
+          title={
+            isDefault
+              ? 'New chats start with this prompt'
+              : 'Use this prompt for every new chat'
+          }
+          className={cn(
+            'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+            isDefault
+              ? 'text-brand-accent-dark hover:bg-brand-accent-dark/10 dark:text-brand-accent-light dark:hover:bg-brand-accent-light/10'
+              : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+          )}
+        >
+          {isDefault ? (
+            <BookmarkIconSolid className="h-3.5 w-3.5" />
+          ) : (
+            <BookmarkIcon className="h-3.5 w-3.5" />
+          )}
+          {isDefault ? 'Default for new chats' : 'Set as default'}
         </button>
         {!preset.isBuiltIn && (
           <button
