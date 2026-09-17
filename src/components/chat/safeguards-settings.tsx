@@ -89,23 +89,20 @@ export function SafeguardsSettings({
   isDarkMode,
   onNavigateToChat,
 }: SafeguardsSettingsProps) {
-  const {
-    flaggedChats,
-    inWindow,
-    windowHours,
-    banThreshold,
-    warnThreshold,
-    status,
-  } = useSafeguards()
+  const { flaggedChats, policy, status } = useSafeguards()
 
   useEffect(() => {
     void refreshSafeguards()
   }, [])
 
-  const days = windowDays(windowHours)
-  const windowStart = Date.now() - windowHours * MS_PER_HOUR
-  const progress = banThreshold > 0 ? (inWindow / banThreshold) * 100 : 0
-  const nearBan = inWindow >= warnThreshold
+  const days = policy ? windowDays(policy.windowHours) : null
+  const windowStart = policy ? Date.now() - policy.windowHours * MS_PER_HOUR : 0
+  const inWindow = policy?.inWindow ?? 0
+  const banThreshold = policy?.banThreshold ?? 0
+  const progress =
+    banThreshold > 0 ? Math.min(100, (inWindow / banThreshold) * 100) : 0
+  const remaining = Math.max(0, banThreshold - inWindow)
+  const nearBan = policy ? inWindow >= policy.warnThreshold : false
   const cardClass = cn(
     'rounded-lg border border-border-subtle',
     isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
@@ -167,7 +164,7 @@ export function SafeguardsSettings({
         ) : flaggedChats.length === 0 ? (
           <div className={cn(cardClass, 'p-4')}>
             <p className="font-aeonik-fono text-sm text-content-muted">
-              {status === 'loading'
+              {status === 'loading' || days === null
                 ? 'Loading flagged chats...'
                 : `No flagged chats in the last ${days} days.`}
             </p>
@@ -185,7 +182,9 @@ export function SafeguardsSettings({
                     nearBan ? 'text-red-600' : 'text-content-muted',
                   )}
                 >
-                  {banThreshold - inWindow} more before account ban
+                  {remaining === 0
+                    ? 'Ban threshold reached'
+                    : `${remaining} more before account ban`}
                 </span>
               </div>
               <Progress
