@@ -17,7 +17,13 @@ import {
   type BaseModel,
 } from '@/config/models'
 import { CONVERSATION_ID_HEADER } from '@/constants/chat'
-import { shouldRetryTestFail } from '@/utils/dev-simulator'
+import {
+  DEV_SAFEGUARD_FLAG_COMMAND,
+  DEV_SAFEGUARD_FLAG_RESPONSE,
+  DEV_SIMULATOR_ENABLED,
+} from '@/constants/dev-simulator'
+import { simulateSafeguardFlag } from '@/services/safeguards'
+import { shouldRetryTestFail, simulateStream } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
   PERFORMANCE_METRICS,
@@ -32,7 +38,7 @@ import {
 import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions'
 import type { SessionRecoveryToken } from 'tinfoil'
 import { ChatQueryBuilder } from './chat-query-builder'
-import { chatChunkStreamFromSSE, type ChatChunkStream } from './chat-stream'
+import type { ChatChunkStream } from './chat-stream'
 import {
   acquireRecoverableTinfoilTransport,
   createRecoverableTinfoilClient,
@@ -343,23 +349,41 @@ export async function sendChatStream(
   const genUITools = genUIEnabled ? buildGenUIToolSchemas() : []
 
   if (model.modelName === 'dev-simulator') {
-    const simulatorUrl = '/api/dev/simulator'
-    const messages = ChatQueryBuilder.buildMessages({
-      model,
-      systemPrompt,
-      rules,
-      messages: updatedMessages,
-      autoCandidates,
-      includeGenUIHint: genUIEnabled,
-      includeTimeReminder: true,
-      trailingInstruction,
-    })
+    if (!DEV_SIMULATOR_ENABLED) {
+      throw new ChatError(
+        'Dev simulator is only available in local development.',
+        'FETCH_ERROR',
+      )
+    }
 
     // Get the last user message for retry test check
     const lastUserMessage = updatedMessages
       .filter((m) => m.role === 'user')
       .pop()
     const queryText = lastUserMessage?.content || ''
+
+    if (queryText.trim().toLowerCase() === DEV_SAFEGUARD_FLAG_COMMAND) {
+      if (!conversationId?.trim()) {
+        throw new ChatError(
+          'A chat ID is required for the safeguard preview.',
+          'FETCH_ERROR',
+        )
+      }
+      return {
+        async *[Symbol.asyncIterator]() {
+          if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+          simulateSafeguardFlag(conversationId)
+          yield {
+            choices: [
+              {
+                delta: { content: DEV_SAFEGUARD_FLAG_RESPONSE },
+                finish_reason: 'stop',
+              },
+            ],
+          }
+        },
+      }
+    }
 
     let lastError: unknown = null
     const maxRetries = CONSTANTS.MESSAGE_SEND_MAX_RETRIES
@@ -377,31 +401,7 @@ export async function sendChatStream(
           throw new TypeError('Simulated network error for retry testing')
         }
 
-        const response = await fetch(simulatorUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: model.modelName,
-            messages,
-            stream: true,
-          }),
-          signal,
-        })
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new ChatError(
-              'Dev simulator is only available in development environment',
-              'FETCH_ERROR',
-            )
-          }
-          throw new ChatError(
-            `Server returned ${response.status}: ${response.statusText}`,
-            'FETCH_ERROR',
-          )
-        }
-
-        return chatChunkStreamFromSSE(response)
+        return simulateStream(queryText, undefined, undefined, signal)
       } catch (err: unknown) {
         lastError = err
         const anyErr = err as any

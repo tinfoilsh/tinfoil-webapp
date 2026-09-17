@@ -9,6 +9,10 @@
  */
 
 import { API_BASE_URL, IS_DEV } from '@/config'
+import {
+  DEV_SAFEGUARD_FLAG_ID_PREFIX,
+  DEV_SIMULATOR_ENABLED,
+} from '@/constants/dev-simulator'
 import { AuthTokenUnavailableError, authTokenManager } from '@/services/auth'
 import { logError } from '@/utils/error-handling'
 import { z } from 'zod'
@@ -31,6 +35,7 @@ export interface SafeguardsPolicy {
 }
 
 export interface SafeguardsSnapshot {
+  isPreview: boolean
   flaggedChats: readonly FlaggedChat[]
   /** conversationId -> true, for O(1) sidebar lookups. */
   flaggedChatIds: Readonly<Record<string, true>>
@@ -57,6 +62,7 @@ const FlagsResponseSchema = z.object({
 type FlagsResponse = z.infer<typeof FlagsResponseSchema>
 
 const EMPTY_SNAPSHOT: SafeguardsSnapshot = {
+  isPreview: false,
   flaggedChats: [],
   flaggedChatIds: {},
   policy: null,
@@ -94,6 +100,7 @@ type Listener = () => void
 let snapshot: SafeguardsSnapshot = EMPTY_SNAPSHOT
 const listeners = new Set<Listener>()
 let inflight: Promise<void> | null = null
+let simulatedFlags: FlaggedChat[] | null = null
 // Bumped by reset so a response from before the reset is discarded rather
 // than published for the next account.
 let generation = 0
@@ -134,6 +141,7 @@ function toSnapshot(
     if (chat.conversationId) flaggedChatIds[chat.conversationId] = true
   }
   return {
+    isPreview: false,
     flaggedChats,
     flaggedChatIds,
     policy: {
@@ -144,6 +152,48 @@ function toSnapshot(
     },
     status,
   }
+}
+
+function getPreviewSnapshot(): SafeguardsSnapshot {
+  const preview = toSnapshot(DEV_PLACEHOLDER_FLAGS, 'ready')
+  if (simulatedFlags === null) return { ...preview, isPreview: true }
+  const windowStart =
+    Date.now() - DEV_PLACEHOLDER_FLAGS.window_hours * MS_PER_HOUR
+  return {
+    ...preview,
+    isPreview: true,
+    flaggedChats: simulatedFlags,
+    flaggedChatIds: Object.fromEntries(
+      simulatedFlags.map((flag) => [flag.conversationId, true as const]),
+    ),
+    policy: {
+      inWindow: simulatedFlags.filter((flag) => flag.createdAt >= windowStart)
+        .length,
+      windowHours: DEV_PLACEHOLDER_FLAGS.window_hours,
+      warnThreshold: DEV_PLACEHOLDER_FLAGS.warn_threshold,
+      banThreshold: DEV_PLACEHOLDER_FLAGS.ban_threshold,
+    },
+  }
+}
+
+const MS_PER_HOUR = 60 * 60 * 1000
+
+export function simulateSafeguardFlag(conversationId: string): boolean {
+  if (!DEV_SIMULATOR_ENABLED || !conversationId.trim()) return false
+  if (simulatedFlags?.some((flag) => flag.conversationId === conversationId))
+    return true
+  simulatedFlags = [
+    {
+      id: `${DEV_SAFEGUARD_FLAG_ID_PREFIX}${conversationId}`,
+      conversationId,
+      createdAt: Date.now(),
+    },
+    ...(simulatedFlags ?? []),
+  ]
+  generation += 1
+  inflight = null
+  publish(getPreviewSnapshot())
+  return true
 }
 
 async function fetchFlags(): Promise<FlagsResponse> {
@@ -162,12 +212,16 @@ async function fetchFlags(): Promise<FlagsResponse> {
  * thrown, since callers only render from the snapshot.
  */
 export function refreshSafeguards(): Promise<void> {
+  if (IS_DEV || (DEV_SIMULATOR_ENABLED && simulatedFlags !== null)) {
+    publish(getPreviewSnapshot())
+    return Promise.resolve()
+  }
   if (inflight) return inflight
   const requestGeneration = generation
   publish({ ...snapshot, status: 'loading' })
   const request = (async () => {
     try {
-      const data = IS_DEV ? DEV_PLACEHOLDER_FLAGS : await fetchFlags()
+      const data = await fetchFlags()
       if (requestGeneration !== generation) return
       publish(toSnapshot(data, 'ready'))
     } catch (err) {
@@ -193,5 +247,6 @@ export function refreshSafeguards(): Promise<void> {
 export function resetSafeguards(): void {
   generation += 1
   inflight = null
+  simulatedFlags = null
   publish(EMPTY_SNAPSHOT)
 }

@@ -44,5 +44,6 @@ export function useSafeguardsLoader(): void {
       return
     }
     void refreshSafeguards()
+    return resetSafeguards
   }, [isSignedIn, userId])
 }

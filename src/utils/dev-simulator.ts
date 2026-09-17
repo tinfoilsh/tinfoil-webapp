@@ -1,4 +1,10 @@
 import type { BaseModel } from '@/config/models'
+import {
+  DEV_SAFEGUARD_FLAG_COMMAND,
+  DEV_SIMULATOR_HELP_COMMAND,
+  DEV_SIMULATOR_HELP_STREAM,
+} from '@/constants/dev-simulator'
+import type { ChatChunk } from '@/services/inference/chat-stream'
 
 // Dev simulator model configuration
 export const DEV_SIMULATOR_MODEL: BaseModel = {
@@ -7,14 +13,12 @@ export const DEV_SIMULATOR_MODEL: BaseModel = {
   name: 'Dev Simulator',
   nameShort: 'Dev',
   description: 'Development model for testing streaming and thinking behaviors',
-  details:
-    'Simulates various streaming patterns including thinking, content generation, and edge cases',
+  details: `Simulates various streaming patterns including thinking, content generation, and edge cases. Send "${DEV_SAFEGUARD_FLAG_COMMAND}" to preview a flagged chat locally.`,
   parameters: 'Configurable via query patterns',
   recommendedUse: 'Testing and development only',
   type: 'chat',
   chat: true,
   multimodal: false,
-  endpoint: '/api/dev/simulator',
   chatConfig: {
     contextWindowTokens: 32000,
     descriptionShort: 'Best for testing streaming behaviors',
@@ -443,7 +447,25 @@ The simulator is working correctly and streaming this response with:
 
 // Get pattern based on query
 export function getSimulatorPattern(query: string): SimulatorPattern {
-  const lowerQuery = query.toLowerCase()
+  const lowerQuery = query.trim().toLowerCase()
+
+  if (lowerQuery === DEV_SIMULATOR_HELP_COMMAND) {
+    return {
+      ...DEV_SIMULATOR_HELP_STREAM,
+      content: `## Available Dev Simulator commands
+
+- \`${DEV_SIMULATOR_HELP_COMMAND}\` — Show this command list.
+- \`${DEV_SAFEGUARD_FLAG_COMMAND}\` — Flag this chat locally to preview its sidebar badge and Settings → Safeguards (when signed in). Nothing is reported to your account.
+
+### Streaming demos
+
+${Object.keys(SIMULATOR_PATTERNS)
+  .map((command) => `- \`${command}\``)
+  .join('\n')}
+
+Other messages receive a default demo response. All responses are simulated locally; no model API or simulator server is needed. Reload the page to clear simulated safeguard flags.`,
+    }
+  }
 
   // Check for exact matches first
   for (const [key, pattern] of Object.entries(SIMULATOR_PATTERNS)) {
@@ -501,10 +523,11 @@ export async function* simulateStream(
   query: string,
   onThinkingStart?: () => void,
   onThinkingEnd?: () => void,
-): AsyncGenerator<string, void, unknown> {
+  signal?: AbortSignal,
+): AsyncGenerator<ChatChunk, void, unknown> {
   const pattern = getSimulatorPattern(query)
 
-  await delay(1000)
+  await delay(1000, 0, signal)
 
   if (pattern.thoughts) {
     if (onThinkingStart) {
@@ -514,13 +537,13 @@ export async function* simulateStream(
     // Stream thoughts in chunks
     const thoughtChunks = chunkText(pattern.thoughts, pattern.chunkSize || 5)
     for (const chunk of thoughtChunks) {
-      yield `data: {"choices":[{"delta":{"reasoning_content":"${escapeJson(chunk)}"}}]}\n\n`
-      await delay(pattern.streamDelayMs || 40)
+      yield { choices: [{ delta: { reasoning_content: chunk } }] }
+      await delay(pattern.streamDelayMs || 40, 0, signal)
     }
 
     // Simulate thinking duration
     if (pattern.thinkingDurationMs) {
-      await delay(pattern.thinkingDurationMs)
+      await delay(pattern.thinkingDurationMs, 0, signal)
     }
 
     if (onThinkingEnd) {
@@ -531,15 +554,14 @@ export async function* simulateStream(
   // Stream main content in chunks
   const contentChunks = chunkText(pattern.content, pattern.chunkSize || 7)
   for (const chunk of contentChunks) {
-    yield `data: {"choices":[{"delta":{"content":"${escapeJson(chunk)}"}}]}\n\n`
+    yield { choices: [{ delta: { content: chunk } }] }
     // Add variance for 'test real stream' to simulate network jitter
     const variance = pattern.chunkSize === 1 ? pattern.streamDelayMs || 0 : 0
-    await delay(pattern.streamDelayMs || 40, variance)
+    await delay(pattern.streamDelayMs || 40, variance, signal)
   }
 
   // Send done signal
-  yield 'data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n'
-  yield 'data: [DONE]\n\n'
+  yield { choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] }
 }
 
 function chunkText(text: string, chunkSize: number): string[] {
@@ -550,20 +572,32 @@ function chunkText(text: string, chunkSize: number): string[] {
   return chunks
 }
 
-function escapeJson(str: string): string {
-  return str
-    .replace(/\\/g, '\\\\')
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, '\\n')
-    .replace(/\r/g, '\\r')
-    .replace(/\t/g, '\\t')
-}
-
 // Helper for delays with optional variance to simulate network jitter
-function delay(ms: number, variance: number = 0): Promise<void> {
+function delay(
+  ms: number,
+  variance: number = 0,
+  signal?: AbortSignal,
+): Promise<void> {
   const actualDelay =
     variance > 0
       ? ms + (Math.random() - 0.5) * 2 * variance // ±variance ms
       : ms
-  return new Promise((resolve) => setTimeout(resolve, Math.max(1, actualDelay)))
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'))
+      return
+    }
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+    const timer = setTimeout(
+      () => {
+        signal?.removeEventListener('abort', onAbort)
+        resolve()
+      },
+      Math.max(1, actualDelay),
+    )
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
 }

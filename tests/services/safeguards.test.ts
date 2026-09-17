@@ -2,6 +2,7 @@ import {
   getSafeguardsSnapshot,
   refreshSafeguards,
   resetSafeguards,
+  simulateSafeguardFlag,
   subscribeSafeguards,
 } from '@/services/safeguards'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -50,6 +51,12 @@ describe('safeguards store', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     resetSafeguards()
+  })
+
+  it('does not allow a simulated flag outside local dev mode', () => {
+    expect(simulateSafeguardFlag('chat-a')).toBe(false)
+    expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
+    expect(getSafeguardsSnapshot().isPreview).toBe(false)
   })
 
   it('loads flagged chats and indexes them by conversation id', async () => {

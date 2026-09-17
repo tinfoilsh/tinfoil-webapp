@@ -1,6 +1,7 @@
 'use client'
 
 import { IS_DEV } from '@/config'
+import { DEV_SAFEGUARD_FLAG_COMMAND } from '@/constants/dev-simulator'
 import Head from 'next/head'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
@@ -13,6 +14,11 @@ import { useEffect, useState } from 'react'
  */
 
 const DEV_PAGES = [
+  {
+    href: '/',
+    title: 'Flagged Chat Preview',
+    description: `Select Dev Simulator in chat and send "${DEV_SAFEGUARD_FLAG_COMMAND}" to preview the sidebar flag and Safeguards settings. Nothing is reported to your account.`,
+  },
   {
     href: '/dev/onboarding-flow',
     title: 'Onboarding Flow Simulator',

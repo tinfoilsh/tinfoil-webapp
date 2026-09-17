@@ -93,7 +93,7 @@ export function SafeguardsSettings({
   isDarkMode,
   onNavigateToChat,
 }: SafeguardsSettingsProps) {
-  const { flaggedChats, policy, status } = useSafeguards()
+  const { flaggedChats, policy, status, isPreview } = useSafeguards()
 
   useEffect(() => {
     void refreshSafeguards()
@@ -184,6 +184,12 @@ export function SafeguardsSettings({
             />
           </button>
         </div>
+
+        {isPreview && (
+          <p className="font-aeonik text-sm text-content-muted">
+            Local preview only. These flags do not affect your account.
+          </p>
+        )}
 
         <div className={cn(cardClass, 'font-aeonik')}>
           <div className="space-y-2 border-b border-border-subtle p-4">

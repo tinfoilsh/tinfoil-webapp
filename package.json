@@ -2,7 +2,7 @@
   "name": "tinfoil-chat",
   "version": "1.0.5",
   "scripts": {
-    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev": "npm run dev:frontend",
     "dev:frontend": "next dev",
     "dev:backend": "node scripts/dev-simulator.mjs",
     "build": "next build",
