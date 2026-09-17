@@ -1,6 +1,9 @@
 import type { Chat } from '@/components/chat/types'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import { chatStorage } from '@/services/storage/chat-storage'
+import {
+  ChatImagesUnavailableError,
+  chatStorage,
+} from '@/services/storage/chat-storage'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -35,6 +38,8 @@ const {
   hasPendingUploadSpy,
   isDeletedSpy,
   markAsDeletedSpy,
+  mutateChatSpy,
+  loadChatImagesSpy,
 } = vi.hoisted(() => ({
   saveChatSpy: vi.fn(async (chat: unknown) => ({
     saved: true,
@@ -71,6 +76,13 @@ const {
   hasPendingUploadSpy: vi.fn(() => false),
   isDeletedSpy: vi.fn((_id: unknown) => false),
   markAsDeletedSpy: vi.fn(),
+  mutateChatSpy: vi.fn(
+    async (
+      _chatId: string,
+      _mutation: (chat: unknown) => { chat: unknown; changed: boolean },
+    ) => null as unknown,
+  ),
+  loadChatImagesSpy: vi.fn(async () => ({}) as Record<string, string>),
 }))
 
 vi.mock('@/services/storage/indexed-db', () => ({
@@ -89,6 +101,7 @@ vi.mock('@/services/storage/indexed-db', () => ({
     deleteChat: deleteLocalChatSpy,
     deleteChatsByProject: deleteChatsByProjectSpy,
     acknowledgePendingDeletes: acknowledgePendingDeletesSpy,
+    mutateChat: mutateChatSpy,
   },
 }))
 vi.mock('@/services/cloud/cloud-sync', () => ({
@@ -109,6 +122,7 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
     listChatIdsByProject: listChatIdsByProjectSpy,
     deleteAllChats: deleteAllCloudChatsSpy,
     isAuthenticated: isCloudAuthenticatedSpy,
+    loadChatImages: loadChatImagesSpy,
   },
 }))
 vi.mock('@/services/sync-enclave/sync-api', () => ({
@@ -429,17 +443,87 @@ describe('chatStorage local-only classification', () => {
   })
 })
 
-describe('chatStorage convertChatToLocal rollback', () => {
+describe('chatStorage convertChatToLocal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     isDeletedSpy.mockReturnValue(false)
+    setCloudSyncEnabled(true)
+  })
+
+  function syncedImage(id: string, base64?: string) {
+    return {
+      id,
+      type: 'image' as const,
+      fileName: `${id}.png`,
+      mimeType: 'image/png',
+      encryptionKey: 'k'.repeat(44),
+      thumbnailBase64: 'thumb',
+      ...(base64 ? { base64 } : {}),
+    }
+  }
+
+  function chatWithImages(...attachments: ReturnType<typeof syncedImage>[]) {
+    return makeChat({
+      isLocalOnly: false,
+      messages: [
+        {
+          role: 'user',
+          content: 'look',
+          timestamp: new Date('2026-06-02T09:00:00Z'),
+          attachments,
+        },
+      ],
+    })
+  }
+
+  it('keeps synced image bytes locally and drops the bucket key before deleting the cloud row', async () => {
+    const chat = chatWithImages(
+      syncedImage('att-remote'),
+      syncedImage('att-local', 'LOCAL'),
+    )
+    getChatSpy.mockResolvedValue(chat as unknown)
+    loadChatImagesSpy.mockResolvedValueOnce({ 'att-remote': 'FETCHED' })
+    mutateChatSpy.mockImplementationOnce(async (_chatId, mutation) => {
+      const result = mutation(structuredClone(chat))
+      return result.chat
+    })
+
+    await chatStorage.convertChatToLocal('rev_123_abc')
+
+    const mutation = mutateChatSpy.mock.calls[0][1]
+    const mutated = mutation(structuredClone(chat)) as {
+      chat: Chat
+      changed: boolean
+    }
+    expect(mutated.changed).toBe(true)
+    expect(mutated.chat.messages[0].attachments).toEqual([
+      expect.objectContaining({ id: 'att-remote', base64: 'FETCHED' }),
+      expect.objectContaining({ id: 'att-local', base64: 'LOCAL' }),
+    ])
+    for (const attachment of mutated.chat.messages[0].attachments!) {
+      expect(attachment).not.toHaveProperty('encryptionKey')
+    }
+    expect(mutateChatSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteFromCloudSpy.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('refuses to convert when a synced image cannot be fetched', async () => {
+    const chat = chatWithImages(syncedImage('att-remote'))
+    getChatSpy.mockResolvedValue(chat as unknown)
+    loadChatImagesSpy.mockResolvedValueOnce({})
+
+    await expect(
+      chatStorage.convertChatToLocal('rev_123_abc'),
+    ).rejects.toBeInstanceOf(ChatImagesUnavailableError)
+
+    expect(mutateChatSpy).not.toHaveBeenCalled()
+    expect(deleteFromCloudSpy).not.toHaveBeenCalled()
+    expect(updateChatLocalOnlySpy).not.toHaveBeenCalled()
   })
 
   it('restores cloud classification when the cloud delete fails', async () => {
-    setCloudSyncEnabled(true)
-    getChatSpy.mockResolvedValueOnce(
-      makeChat({ isLocalOnly: false }) as unknown,
-    )
+    getChatSpy.mockResolvedValue(makeChat({ isLocalOnly: false }) as unknown)
     deleteFromCloudSpy.mockRejectedValueOnce(new Error('network down'))
 
     await expect(chatStorage.convertChatToLocal('rev_123_abc')).rejects.toThrow(

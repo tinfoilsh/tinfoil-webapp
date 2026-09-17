@@ -87,7 +87,10 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { chatEvents } from '@/services/storage/chat-events'
-import { chatStorage } from '@/services/storage/chat-storage'
+import {
+  ChatImagesUnavailableError,
+  chatStorage,
+} from '@/services/storage/chat-storage'
 import {
   INDEXED_DB_UPGRADE_BLOCKED_EVENT,
   isIndexedDBUpgradeBlocked,
@@ -2752,7 +2755,10 @@ export function ChatInterface({
 
         toast({
           title: 'Failed to move chat to local',
-          description: 'Please try again.',
+          description:
+            error instanceof ChatImagesUnavailableError
+              ? 'Some images in this chat could not be downloaded. Check your connection and try again.'
+              : 'Please try again.',
           variant: 'destructive',
         })
       }
