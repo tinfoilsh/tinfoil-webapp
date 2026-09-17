@@ -116,11 +116,23 @@ export function SafeguardsSettings({
         </h3>
         <div className={cn(cardClass, 'p-4')}>
           <p className="font-aeonik-fono text-sm text-content-secondary">
-            Tinfoil runs automated safeguards inside the enclave that may flag a
-            conversation for review under the acceptable use policy.
-            {days !== null
-              ? ` Flags count toward an account suspension for ${days} days; older flags stay on record but no longer count.`
-              : ' Flags count toward an account suspension for a limited period; older flags stay on record but no longer count.'}
+            <strong>Your conversations stay private.</strong> Automated
+            safeguards check model responses in the context of the
+            conversation—not user prompts for wrongdoing. These checks run
+            entirely inside secure enclaves at inference time, applying our
+            narrow hard-no policy on child endangerment, mass violence and
+            terrorism, and encouraging self-harm.
+          </p>
+          <p className="mt-3 font-aeonik-fono text-sm text-content-secondary">
+            Only a flag linked to your account and the chat ID leaves the
+            enclaves. Tinfoil cannot see the conversation or the flagged
+            category, and there is no human review of your private chats.
+            Backed-up and synced chats remain end-to-end encrypted and are not
+            scanned by safeguards.
+          </p>
+          <p className="mt-3 font-aeonik-fono text-sm text-content-secondary">
+            The safeguards code and policy are public. Remote attestation lets
+            you verify the code running inside the enclaves.
           </p>
           <a
             href={SAFEGUARDS_INFO_URL}
@@ -194,6 +206,13 @@ export function SafeguardsSettings({
                 className="h-2 bg-red-900/15 dark:bg-red-900/30 [&>div]:bg-red-800"
               />
             </div>
+            <p className="px-4 py-3 font-aeonik-fono text-xs text-content-muted">
+              These flags identify chats containing model responses flagged by
+              safeguards. Repeated flags within the counting window can lead to
+              automatic account suspension.
+              {days !== null &&
+                ` Flags count for ${days} days; older flags no longer count toward suspension.`}
+            </p>
             <ul className="divide-y divide-border-subtle">
               {flaggedChats.map((flag) => (
                 <FlaggedChatRow
