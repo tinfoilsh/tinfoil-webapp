@@ -172,15 +172,15 @@ export function ModelSelector({
 
       let horizontalStyles: { left?: string; right?: string } = {}
 
-      if (isMobile) {
-        if (buttonLeft + menuWidth > viewportWidth - 10) {
-          const rightOffset = viewportWidth - buttonRight
-          const dropdownLeft = viewportWidth - rightOffset - menuWidth
-          if (dropdownLeft < 10) {
-            horizontalStyles = { left: `${-buttonLeft + 10}px` }
-          } else {
-            horizontalStyles = { right: '0' }
-          }
+      // Left-anchoring to the trigger is the default; when that would push
+      // the menu past the right edge, right-align it to the trigger instead,
+      // and if even that overflows the left edge, pin it to the viewport.
+      if (buttonLeft + menuWidth > viewportWidth - VIEWPORT_MARGIN_PX) {
+        const dropdownLeft = buttonRight - menuWidth
+        if (dropdownLeft < VIEWPORT_MARGIN_PX) {
+          horizontalStyles = { left: `${-buttonLeft + VIEWPORT_MARGIN_PX}px` }
+        } else {
+          horizontalStyles = { right: '0' }
         }
       }
 
