@@ -19,8 +19,8 @@ interface OnboardingViewProps {
 }
 
 const TOTAL_PAGES = 3
-const SAFEGUARDS_PAGE_INDEX = 1
-const PRIVACY_PAGE_INDEX = 2
+const PRIVACY_PAGE_INDEX = 1
+const SAFEGUARDS_PAGE_INDEX = 2
 const PRIVACY_CONFIRMATION_HOLD_S = 0.4
 const PRIVACY_CHECK_APPEAR_S = 0.18
 const PRIVACY_CONFIRMATION_SEQUENCE_S =
@@ -82,15 +82,15 @@ export function OnboardingView({
           <div className="relative flex min-h-[420px] w-full flex-col items-center justify-center">
             <AnimatePresence mode="wait">
               {currentPage === 0 && <OnboardingLetterPage key="letter" />}
-              {currentPage === SAFEGUARDS_PAGE_INDEX && (
-                <OnboardingSafeguardsPage key="safeguards" />
-              )}
               {currentPage === PRIVACY_PAGE_INDEX && (
                 <OnboardingPrivacyPage
                   key="privacy"
                   privacyEnabled={privacyEnabled}
                   onChange={setPrivacyEnabled}
                 />
+              )}
+              {currentPage === SAFEGUARDS_PAGE_INDEX && (
+                <OnboardingSafeguardsPage key="safeguards" />
               )}
             </AnimatePresence>
           </div>
@@ -120,9 +120,7 @@ export function OnboardingView({
               onClick={handleContinue}
               className="w-full"
             >
-              {currentPage === PRIVACY_PAGE_INDEX && privacyEnabled
-                ? 'Get Started'
-                : 'Continue'}
+              {currentPage === TOTAL_PAGES - 1 ? 'Get Started' : 'Continue'}
             </Button>
           </div>
         </div>
@@ -212,9 +210,9 @@ function OnboardingLetterPage() {
   )
 }
 
-// MARK: - Page 2: Safeguards
+// MARK: - Page 3: Safeguards
 
-const SAFEGUARDS_URL = 'https://tinfoil.sh/safety-and-safeguards#safeguards'
+const SAFEGUARDS_URL = 'https://tinfoil.sh/safety-and-safeguards'
 
 function OnboardingSafeguardsPage() {
   return (
@@ -235,15 +233,13 @@ function OnboardingSafeguardsPage() {
             Tending the Garden
           </h2>
           <p className="text-balance text-base text-content-secondary">
-            We believe all thoughts are okay. We think these ought to be
-            private. However, we have a responsibility to prevent the models we
-            host from causing harm.
-          </p>
-          <p className="text-balance text-base text-content-secondary">
-            Safeguards review model outputs inside secure enclaves against a
-            short, public hard-no policy. If a model crosses one of those lines,
-            only a flag and conversation ID leave the enclave. The conversation
-            and violation category stay private.
+            Privacy-preserving safeguards review the AI responses in this chat.
+            The safeguards run inside secure enclaves at inference time, always
+            keeping your conversations private.{' '}
+            <strong className="font-semibold text-content-primary">
+              Tinfoil cannot see the nature of the violation or conversation
+              content.
+            </strong>
           </p>
           <a
             href={SAFEGUARDS_URL}
@@ -251,7 +247,7 @@ function OnboardingSafeguardsPage() {
             rel="noopener noreferrer"
             className="inline-block text-sm font-medium text-brand-accent-dark underline underline-offset-2 hover:opacity-80 dark:text-brand-accent-light"
           >
-            Learn about safeguards
+            Learn more about safeguards
           </a>
         </div>
       </div>
@@ -259,7 +255,7 @@ function OnboardingSafeguardsPage() {
   )
 }
 
-// MARK: - Page 3: Privacy
+// MARK: - Page 2: Privacy
 
 const TERMS_URL = 'https://tinfoil.sh/terms'
 const PRIVACY_POLICY_URL = 'https://tinfoil.sh/privacy'

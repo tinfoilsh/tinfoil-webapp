@@ -80,8 +80,8 @@ export default function OnboardingFlowDevPage() {
           >
             <div className="text-sm font-semibold">Open onboarding</div>
             <div className="mt-1 text-xs text-content-secondary">
-              Two-page flow: letter from the founders, then the privacy switch.
-              Completing it just logs the result below.
+              Three-page flow: letter from the founders, the privacy switch,
+              then safeguards. Completing it just logs the result below.
             </div>
           </button>
 
