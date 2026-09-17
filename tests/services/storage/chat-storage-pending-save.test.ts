@@ -448,15 +448,32 @@ describe('chatStorage convertChatToLocal', () => {
     vi.clearAllMocks()
     isDeletedSpy.mockReturnValue(false)
     setCloudSyncEnabled(true)
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
+    createAccountOperationGuardSpy.mockImplementation(() => {
+      const userId = localStorage.getItem(AUTH_ACTIVE_USER_ID)
+      const isCurrent = () =>
+        localStorage.getItem(AUTH_ACTIVE_USER_ID) === userId
+      return {
+        userId,
+        isCurrent,
+        assertCurrent: () => {
+          if (!isCurrent()) throw new Error('Cloud account changed')
+        },
+      }
+    })
   })
 
-  function syncedImage(id: string, base64?: string) {
+  function syncedImage(
+    id: string,
+    base64?: string,
+    keyField: 'encryptionKey' | 'key' = 'encryptionKey',
+  ) {
     return {
       id,
       type: 'image' as const,
       fileName: `${id}.png`,
       mimeType: 'image/png',
-      encryptionKey: 'k'.repeat(44),
+      [keyField]: 'k'.repeat(44),
       thumbnailBase64: 'thumb',
       ...(base64 ? { base64 } : {}),
     }
@@ -508,6 +525,27 @@ describe('chatStorage convertChatToLocal', () => {
     )
   })
 
+  it('retains legacy inline images and drops their legacy key', async () => {
+    const chat = chatWithImages(syncedImage('att-legacy', undefined, 'key'))
+    getChatSpy.mockResolvedValue(chat as unknown)
+    loadChatImagesSpy.mockResolvedValueOnce({ 'att-legacy': 'FETCHED' })
+    mutateChatSpy.mockImplementationOnce(async (_chatId, mutation) => {
+      return mutation(structuredClone(chat)).chat
+    })
+
+    await chatStorage.convertChatToLocal('rev_123_abc')
+
+    const mutation = mutateChatSpy.mock.calls[0][1]
+    const mutated = mutation(structuredClone(chat)) as {
+      chat: Chat
+      changed: boolean
+    }
+    const attachment = mutated.chat.messages[0].attachments![0]
+    expect(attachment.base64).toBe('FETCHED')
+    expect(attachment).not.toHaveProperty('key')
+    expect(deleteFromCloudSpy).toHaveBeenCalled()
+  })
+
   it('refuses to convert when a synced image cannot be fetched', async () => {
     const chat = chatWithImages(syncedImage('att-remote'))
     getChatSpy.mockResolvedValue(chat as unknown)
@@ -520,6 +558,42 @@ describe('chatStorage convertChatToLocal', () => {
     expect(mutateChatSpy).not.toHaveBeenCalled()
     expect(deleteFromCloudSpy).not.toHaveBeenCalled()
     expect(updateChatLocalOnlySpy).not.toHaveBeenCalled()
+  })
+
+  it('refuses to convert when an image was added between the fetch and the write', async () => {
+    const chat = chatWithImages(syncedImage('att-remote'))
+    getChatSpy.mockResolvedValue(chat as unknown)
+    loadChatImagesSpy.mockResolvedValueOnce({ 'att-remote': 'FETCHED' })
+    const newer = chatWithImages(
+      syncedImage('att-remote'),
+      syncedImage('att-added-later'),
+    )
+    mutateChatSpy.mockImplementationOnce(async (_chatId, mutation) => {
+      return mutation(structuredClone(newer)).chat
+    })
+
+    await expect(
+      chatStorage.convertChatToLocal('rev_123_abc'),
+    ).rejects.toBeInstanceOf(ChatImagesUnavailableError)
+
+    expect(deleteFromCloudSpy).not.toHaveBeenCalled()
+    expect(updateChatLocalOnlySpy).not.toHaveBeenCalled()
+  })
+
+  it('aborts when the account changes while images are downloading', async () => {
+    const chat = chatWithImages(syncedImage('att-remote'))
+    getChatSpy.mockResolvedValue(chat as unknown)
+    loadChatImagesSpy.mockImplementationOnce(async () => {
+      localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-2')
+      return { 'att-remote': 'FETCHED' }
+    })
+
+    await expect(chatStorage.convertChatToLocal('rev_123_abc')).rejects.toThrow(
+      'Cloud account changed',
+    )
+
+    expect(mutateChatSpy).not.toHaveBeenCalled()
+    expect(deleteFromCloudSpy).not.toHaveBeenCalled()
   })
 
   it('restores cloud classification when the cloud delete fails', async () => {
