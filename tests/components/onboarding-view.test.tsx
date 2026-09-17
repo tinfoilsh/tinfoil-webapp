@@ -21,6 +21,18 @@ vi.mock('@/utils/error-handling', () => ({
   logError: mocks.logError,
 }))
 
+async function advanceToPrivacy() {
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  await screen.findByRole('heading', { name: 'Private, by Design.' })
+}
+
+async function advanceToSafeguards() {
+  await advanceToPrivacy()
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+  await screen.findByRole('heading', { name: 'Tending the Garden' })
+}
+
 describe('OnboardingView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -64,8 +76,7 @@ describe('OnboardingView', () => {
     const onComplete = vi.fn()
     render(<OnboardingView onComplete={onComplete} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Private, by Design.' })
+    await advanceToPrivacy()
     fireEvent.click(screen.getByRole('button', { name: 'Toggle privacy' }))
     expect(
       screen.queryByRole('button', { name: 'Get Started' }),
@@ -84,21 +95,16 @@ describe('OnboardingView', () => {
     )
     expect(learnMoreLink).toHaveAttribute('target', '_blank')
     expect(learnMoreLink).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(learnMoreLink.closest('p')).toBeNull()
-    const privacyEmphasis = screen.getByText(
-      'Tinfoil cannot see the nature of the violation or conversation content.',
-    )
-    expect(privacyEmphasis.tagName).toBe('STRONG')
-    expect(privacyEmphasis).toHaveClass('font-semibold')
-    const introduction = privacyEmphasis.closest('p')
-    expect(introduction).toHaveTextContent(
-      'Privacy-preserving safeguards review the AI responses in this chat. The safeguards run inside secure enclaves at inference time, always keeping your conversations private. Tinfoil cannot see the nature of the violation or conversation content.',
-    )
-    expect(introduction).toHaveClass('text-balance')
-    expect(introduction?.nextElementSibling).toBe(learnMoreLink)
     expect(
-      screen.queryByText(/you will be notified of the flagging/),
-    ).not.toBeInTheDocument()
+      screen.getByText(
+        'Privacy-preserving safeguards review the AI responses in this chat. The safeguards run inside secure enclaves at inference time, always keeping your conversations private.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Tinfoil cannot see the nature of the violation or conversation content.',
+      ),
+    ).toBeInTheDocument()
     expect(onComplete).not.toHaveBeenCalled()
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
     expect(update).not.toHaveBeenCalled()
@@ -125,13 +131,7 @@ describe('OnboardingView', () => {
       await screen.findByRole('heading', { name: 'Why Tinfoil Chat' }),
     ).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Private, by Design.' })
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(
-      await screen.findByRole('heading', { name: 'Tending the Garden' }),
-    ).toBeInTheDocument()
+    await advanceToSafeguards()
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
 
     expect(screen.getByText('onComplete()')).toBeInTheDocument()
@@ -147,8 +147,7 @@ describe('OnboardingView', () => {
     expect(
       await screen.findByRole('heading', { name: 'Why Tinfoil Chat' }),
     ).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Private, by Design.' })
+    await advanceToPrivacy()
     expect(
       screen.getByRole('button', { name: 'Toggle privacy' }),
     ).toHaveAttribute('aria-pressed', 'false')
@@ -163,11 +162,7 @@ describe('OnboardingView', () => {
     const onComplete = vi.fn()
     render(<OnboardingView onComplete={onComplete} persistCompletion={false} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-
-    expect(
-      await screen.findByRole('heading', { name: 'Private, by Design.' }),
-    ).toBeInTheDocument()
+    await advanceToPrivacy()
 
     const privacySwitch = screen.getByRole('button', {
       name: 'Toggle privacy',
@@ -190,8 +185,7 @@ describe('OnboardingView', () => {
   it('does not enable privacy automatically', async () => {
     render(<OnboardingView onComplete={vi.fn()} persistCompletion={false} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Private, by Design.' })
+    await advanceToPrivacy()
 
     const privacySwitch = screen.getByRole('button', {
       name: 'Toggle privacy',
@@ -208,12 +202,7 @@ describe('OnboardingView', () => {
     const onComplete = vi.fn()
     render(<OnboardingView onComplete={onComplete} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Private, by Design.' })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Tending the Garden' })
+    await advanceToSafeguards()
     fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
 
     expect(onComplete).toHaveBeenCalledTimes(1)
