@@ -618,6 +618,16 @@ export function SettingsModal({
   )
   const syncNeedsAttention = useSyncHealthAttention()
 
+  // Signed-in-only tabs disappear from the nav on sign-out; fall back to a
+  // tab that still exists so the modal is not left with blank content.
+  const signedInOnlyTab =
+    activeTab === 'cloud-sync' || activeTab === 'safeguards'
+  useEffect(() => {
+    if (!isSignedIn && signedInOnlyTab) {
+      setActiveTab('account')
+    }
+  }, [isSignedIn, signedInOnlyTab])
+
   // Update active tab when initialTab prop changes (e.g., opening to a specific tab)
   useEffect(() => {
     if (initialTab && isOpen) {
