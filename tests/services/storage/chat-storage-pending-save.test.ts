@@ -141,6 +141,22 @@ vi.mock('@/services/storage/deleted-chats-tracker', () => ({
   },
 }))
 
+function setupAccountGuard(userId = 'user-1') {
+  localStorage.setItem(AUTH_ACTIVE_USER_ID, userId)
+  createAccountOperationGuardSpy.mockImplementation(() => {
+    const guardedUserId = localStorage.getItem(AUTH_ACTIVE_USER_ID)
+    const isCurrent = () =>
+      localStorage.getItem(AUTH_ACTIVE_USER_ID) === guardedUserId
+    return {
+      userId: guardedUserId,
+      isCurrent,
+      assertCurrent: () => {
+        if (!isCurrent()) throw new Error('Cloud account changed')
+      },
+    }
+  })
+}
+
 function makeChat(overrides: Partial<Chat> = {}): Chat {
   return {
     id: 'rev_123_abc',
@@ -159,7 +175,7 @@ describe('chatStorage pendingSave is not persisted', () => {
     vi.clearAllMocks()
     sessionStorage.clear()
     isDeletedSpy.mockReturnValue(false)
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
+    setupAccountGuard()
     deleteChatsByProjectSpy.mockResolvedValue([])
     deleteRemoteProjectChatsSpy.mockResolvedValue({ deleted: 0 })
     acknowledgePendingDeletesSpy.mockResolvedValue(undefined)
@@ -170,18 +186,6 @@ describe('chatStorage pendingSave is not persisted', () => {
     deleteAllChatsSpy.mockResolvedValue(0)
     deleteAllCloudChatsSpy.mockResolvedValue({ deleted: 0 })
     isCloudAuthenticatedSpy.mockResolvedValue(false)
-    createAccountOperationGuardSpy.mockImplementation(() => {
-      const userId = localStorage.getItem(AUTH_ACTIVE_USER_ID)
-      const isCurrent = () =>
-        localStorage.getItem(AUTH_ACTIVE_USER_ID) === userId
-      return {
-        userId,
-        isCurrent,
-        assertCurrent: () => {
-          if (!isCurrent()) throw new Error('Cloud account changed')
-        },
-      }
-    })
   })
 
   it('strips pendingSave before writing a chat to storage', async () => {
@@ -448,19 +452,7 @@ describe('chatStorage convertChatToLocal', () => {
     vi.clearAllMocks()
     isDeletedSpy.mockReturnValue(false)
     setCloudSyncEnabled(true)
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
-    createAccountOperationGuardSpy.mockImplementation(() => {
-      const userId = localStorage.getItem(AUTH_ACTIVE_USER_ID)
-      const isCurrent = () =>
-        localStorage.getItem(AUTH_ACTIVE_USER_ID) === userId
-      return {
-        userId,
-        isCurrent,
-        assertCurrent: () => {
-          if (!isCurrent()) throw new Error('Cloud account changed')
-        },
-      }
-    })
+    setupAccountGuard()
   })
 
   function syncedImage(
