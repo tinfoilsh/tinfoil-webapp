@@ -1,7 +1,5 @@
 import {
   USER_PREFS_ADDITIONAL_CONTEXT,
-  USER_PREFS_CUSTOM_PROMPT_ENABLED,
-  USER_PREFS_CUSTOM_SYSTEM_PROMPT,
   USER_PREFS_LANGUAGE,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
@@ -25,18 +23,6 @@ type UseCustomSystemPromptReturn = {
   isUsingPersonalization: boolean
 }
 
-const stripSystemTags = (prompt: string): string =>
-  prompt
-    .replace(/^<system>\s*\n?/, '')
-    .replace(/\n?<\/system>\s*$/, '')
-    .trim()
-
-const hasSystemPromptContent = (prompt: string): boolean =>
-  stripSystemTags(prompt).length > 0
-
-const normalizeSystemPrompt = (prompt: string): string =>
-  hasSystemPromptContent(prompt) ? prompt : ''
-
 export const useCustomSystemPrompt = (
   defaultSystemPrompt: string,
   rules: string = '',
@@ -51,9 +37,6 @@ export const useCustomSystemPrompt = (
       language: normalizeResponseLanguage(null),
       isEnabled: true,
     })
-
-  const [isUsingCustomPrompt, setIsUsingCustomPrompt] = useState(false)
-  const [customPrompt, setCustomPrompt] = useState('')
 
   // Load personalization settings from localStorage
   useEffect(() => {
@@ -87,23 +70,8 @@ export const useCustomSystemPrompt = (
         language,
         isEnabled: isPersonalizationEnabled(savedEnabled),
       })
-
-      // Load custom system prompt settings
-      const savedUsingCustomPrompt = localStorage.getItem(
-        USER_PREFS_CUSTOM_PROMPT_ENABLED,
-      )
-      const savedCustomPrompt = localStorage.getItem(
-        USER_PREFS_CUSTOM_SYSTEM_PROMPT,
-      )
-
-      setIsUsingCustomPrompt(savedUsingCustomPrompt === 'true')
-      if (savedCustomPrompt !== null) {
-        setCustomPrompt(normalizeSystemPrompt(savedCustomPrompt))
-      } else {
-        setCustomPrompt(defaultSystemPrompt || '')
-      }
     }
-  }, [defaultSystemPrompt])
+  }, [])
 
   // Listen for personalization changes from settings sidebar
   useEffect(() => {
@@ -137,12 +105,6 @@ export const useCustomSystemPrompt = (
       }))
     }
 
-    const handleCustomPromptChange = (event: CustomEvent) => {
-      const { isEnabled, customPrompt } = event.detail
-      setIsUsingCustomPrompt(isEnabled || false)
-      setCustomPrompt(normalizeSystemPrompt(customPrompt ?? ''))
-    }
-
     window.addEventListener(
       'personalizationChanged',
       handlePersonalizationChange as EventListener,
@@ -150,10 +112,6 @@ export const useCustomSystemPrompt = (
     window.addEventListener(
       'languageChanged',
       handleLanguageChange as EventListener,
-    )
-    window.addEventListener(
-      'customSystemPromptChanged',
-      handleCustomPromptChange as EventListener,
     )
 
     return () => {
@@ -165,12 +123,8 @@ export const useCustomSystemPrompt = (
         'languageChanged',
         handleLanguageChange as EventListener,
       )
-      window.removeEventListener(
-        'customSystemPromptChanged',
-        handleCustomPromptChange as EventListener,
-      )
     }
-  }, [defaultSystemPrompt])
+  }, [])
 
   // Generate the user preferences XML
   const generateUserPreferencesXML = (): string => {
@@ -233,15 +187,11 @@ export const useCustomSystemPrompt = (
 
   // Generate the effective system prompt by replacing the placeholder
   const generatePersonalizedPrompt = (): string => {
-    // Precedence: per-chat preset override > custom prompt toggle > default
-    let basePrompt: string
-    if (activePresetPrompt && activePresetPrompt.trim()) {
-      basePrompt = activePresetPrompt
-    } else if (isUsingCustomPrompt) {
-      basePrompt = customPrompt
-    } else {
-      basePrompt = defaultSystemPrompt
-    }
+    // Precedence: per-chat preset > server default
+    const basePrompt =
+      activePresetPrompt && activePresetPrompt.trim()
+        ? activePresetPrompt
+        : defaultSystemPrompt
     return replacePlaceholders(basePrompt)
   }
 
@@ -250,13 +200,6 @@ export const useCustomSystemPrompt = (
   // Apply the same replacements to rules
   const processRules = (): string => {
     if (!rules) return ''
-    if (
-      isUsingCustomPrompt &&
-      !hasSystemPromptContent(customPrompt) &&
-      !(activePresetPrompt && activePresetPrompt.trim())
-    ) {
-      return ''
-    }
     return replacePlaceholders(rules)
   }
 
