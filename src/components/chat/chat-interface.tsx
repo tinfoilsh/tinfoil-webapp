@@ -713,7 +713,7 @@ export function ChatInterface({
   const [isPromptLibraryModalOpen, setIsPromptLibraryModalOpen] =
     useState(false)
   const [hasMountedPromptLibrary, setHasMountedPromptLibrary] = useState(false)
-  const { getPresetById } = usePromptLibrary()
+  const { getPresetById, defaultPreset } = usePromptLibrary()
   const activePreset = getPresetById(activePresetId)
 
   const { effectiveSystemPrompt, processedRules } = useCustomSystemPrompt(
@@ -1279,6 +1279,23 @@ export function ChatInterface({
   useEffect(() => {
     setActivePresetId(currentChat?.presetId ?? null)
   }, [currentChat?.id, currentChat?.presetId])
+
+  // Blank chats are stamped with the default preset when created, so when
+  // the default changes while a blank is already open it would otherwise
+  // start its first conversation with the old preset.
+  const defaultPresetId = defaultPreset?.id
+  const previousDefaultPresetIdRef = useRef(defaultPresetId)
+  useEffect(() => {
+    const previous = previousDefaultPresetIdRef.current
+    previousDefaultPresetIdRef.current = defaultPresetId
+    if (previous === defaultPresetId) return
+    const restamp = (chat: Chat): Chat =>
+      chat.isBlankChat && chat.presetId === previous
+        ? { ...chat, presetId: defaultPresetId }
+        : chat
+    setChats((prev) => prev.map(restamp))
+    setCurrentChat((prev) => restamp(prev))
+  }, [defaultPresetId, setChats, setCurrentChat])
 
   const handleSetActivePreset = useCallback(
     (presetId: string | null) => {
