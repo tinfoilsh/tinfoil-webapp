@@ -1,18 +1,28 @@
 import {
-  MIGRATED_CUSTOM_PROMPT_PRESET_ID,
+  adoptLegacyCustomPrompt,
   migrateLegacyCustomPrompt,
   readDefaultPresetId,
   readUserPresets,
 } from '@/components/chat/prompts/default-preset'
 import {
-  USER_PREFS_CUSTOM_PROMPT_ENABLED,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
-  USER_PREFS_CUSTOM_SYSTEM_PROMPT,
   USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
 } from '@/constants/storage-keys'
 import { beforeEach, describe, expect, it } from 'vitest'
 
+// Retired keys and the shared migrated id are pinned as literals: the
+// migration must keep reading exactly what older builds and other devices
+// wrote, even if the production constants are later renamed.
+const LEGACY_ENABLED_KEY = 'tinfoil-user-prefs-custom-prompt-enabled'
+const LEGACY_PROMPT_KEY = 'tinfoil-user-prefs-custom-system-prompt'
+const SYNCED_MIGRATED_ID = 'user:migrated-custom-prompt'
+
 const LEGACY_PROMPT = '<system>\nAlways answer in haiku.\n</system>'
+
+const expectLegacyKeysRemoved = () => {
+  expect(localStorage.getItem(LEGACY_ENABLED_KEY)).toBeNull()
+  expect(localStorage.getItem(LEGACY_PROMPT_KEY)).toBeNull()
+}
 
 describe('migrateLegacyCustomPrompt', () => {
   beforeEach(() => {
@@ -26,47 +36,44 @@ describe('migrateLegacyCustomPrompt', () => {
   })
 
   it('converts an enabled legacy prompt into the default user preset', () => {
-    localStorage.setItem(USER_PREFS_CUSTOM_PROMPT_ENABLED, 'true')
-    localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, LEGACY_PROMPT)
+    localStorage.setItem(LEGACY_ENABLED_KEY, 'true')
+    localStorage.setItem(LEGACY_PROMPT_KEY, LEGACY_PROMPT)
 
     migrateLegacyCustomPrompt()
 
     const presets = readUserPresets()
     expect(presets).toHaveLength(1)
     expect(presets[0].systemPrompt).toBe(LEGACY_PROMPT)
-    expect(presets[0].id).toBe(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
-    expect(readDefaultPresetId()).toBe(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
-    expect(localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_ENABLED)).toBeNull()
-    expect(localStorage.getItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT)).toBeNull()
+    expect(presets[0].id).toBe(SYNCED_MIGRATED_ID)
+    expect(readDefaultPresetId()).toBe(SYNCED_MIGRATED_ID)
+    expectLegacyKeysRemoved()
   })
 
   it('drops a disabled legacy prompt without creating a preset', () => {
-    localStorage.setItem(USER_PREFS_CUSTOM_PROMPT_ENABLED, 'false')
-    localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, LEGACY_PROMPT)
+    localStorage.setItem(LEGACY_ENABLED_KEY, 'false')
+    localStorage.setItem(LEGACY_PROMPT_KEY, LEGACY_PROMPT)
 
     migrateLegacyCustomPrompt()
 
     expect(readUserPresets()).toEqual([])
     expect(readDefaultPresetId()).toBeNull()
-    expect(localStorage.getItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT)).toBeNull()
+    expectLegacyKeysRemoved()
   })
 
   it('drops an enabled but empty legacy prompt', () => {
-    localStorage.setItem(USER_PREFS_CUSTOM_PROMPT_ENABLED, 'true')
-    localStorage.setItem(
-      USER_PREFS_CUSTOM_SYSTEM_PROMPT,
-      '<system>\n\n</system>',
-    )
+    localStorage.setItem(LEGACY_ENABLED_KEY, 'true')
+    localStorage.setItem(LEGACY_PROMPT_KEY, '<system>\n\n</system>')
 
     migrateLegacyCustomPrompt()
 
     expect(readUserPresets()).toEqual([])
     expect(readDefaultPresetId()).toBeNull()
+    expectLegacyKeysRemoved()
   })
 
   it('reuses a migrated preset that already synced from another device', () => {
     const synced = {
-      id: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
+      id: SYNCED_MIGRATED_ID,
       name: 'My default prompt',
       description: '',
       systemPrompt: LEGACY_PROMPT,
@@ -77,16 +84,17 @@ describe('migrateLegacyCustomPrompt', () => {
       USER_PREFS_CUSTOM_PROMPT_PRESETS,
       JSON.stringify([synced]),
     )
-    localStorage.setItem(USER_PREFS_CUSTOM_PROMPT_ENABLED, 'true')
-    localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, LEGACY_PROMPT)
+    localStorage.setItem(LEGACY_ENABLED_KEY, 'true')
+    localStorage.setItem(LEGACY_PROMPT_KEY, LEGACY_PROMPT)
 
     migrateLegacyCustomPrompt()
 
     expect(readUserPresets()).toEqual([synced])
-    expect(readDefaultPresetId()).toBe(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
+    expect(readDefaultPresetId()).toBe(SYNCED_MIGRATED_ID)
+    expectLegacyKeysRemoved()
   })
 
-  it('keeps an existing default and appends to existing presets', () => {
+  it('keeps an existing default and discards the legacy prompt', () => {
     const existing = {
       id: 'user:existing',
       name: 'Existing',
@@ -100,8 +108,8 @@ describe('migrateLegacyCustomPrompt', () => {
       JSON.stringify([existing]),
     )
     localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'builtin:tutor')
-    localStorage.setItem(USER_PREFS_CUSTOM_PROMPT_ENABLED, 'true')
-    localStorage.setItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT, LEGACY_PROMPT)
+    localStorage.setItem(LEGACY_ENABLED_KEY, 'true')
+    localStorage.setItem(LEGACY_PROMPT_KEY, LEGACY_PROMPT)
 
     migrateLegacyCustomPrompt()
 
@@ -109,6 +117,22 @@ describe('migrateLegacyCustomPrompt', () => {
     // so it is discarded rather than overriding the user's newer choice.
     expect(readUserPresets()).toEqual([existing])
     expect(readDefaultPresetId()).toBe('builtin:tutor')
-    expect(localStorage.getItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT)).toBeNull()
+    expectLegacyKeysRemoved()
+  })
+
+  it('adopts an enabled prompt carried by an older cloud profile', () => {
+    adoptLegacyCustomPrompt(true, LEGACY_PROMPT)
+
+    const presets = readUserPresets()
+    expect(presets).toHaveLength(1)
+    expect(presets[0].id).toBe(SYNCED_MIGRATED_ID)
+    expect(readDefaultPresetId()).toBe(SYNCED_MIGRATED_ID)
+  })
+
+  it('ignores a disabled prompt carried by an older cloud profile', () => {
+    adoptLegacyCustomPrompt(false, LEGACY_PROMPT)
+
+    expect(readUserPresets()).toEqual([])
+    expect(readDefaultPresetId()).toBeNull()
   })
 })
