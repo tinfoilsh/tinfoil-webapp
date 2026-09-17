@@ -130,10 +130,6 @@ export function SafeguardsSettings({
             Backed-up and synced chats remain end-to-end encrypted and are not
             scanned by safeguards.
           </p>
-          <p className="mt-3 font-aeonik-fono text-sm text-content-secondary">
-            The safeguards code and policy are public. Remote attestation lets
-            you verify the code running inside the enclaves.
-          </p>
           <a
             href={SAFEGUARDS_INFO_URL}
             target="_blank"
