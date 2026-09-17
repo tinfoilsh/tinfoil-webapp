@@ -118,6 +118,7 @@ import {
   EyeIcon,
   EyeSlashIcon,
   MoonIcon,
+  ShieldExclamationIcon,
   Squares2X2Icon,
   SunIcon,
   UserCircleIcon,
@@ -142,6 +143,7 @@ import { ImportFileList } from './import-file-list'
 import { MfaSettingsCard } from './mfa-settings-card'
 import { NativeBackupExport } from './native-backup-export'
 import { NativeBackupRestore } from './native-backup-restore'
+import { SafeguardsSettings } from './safeguards-settings'
 import {
   canDeleteAllProjects,
   canTransferProjectData,
@@ -347,7 +349,13 @@ const STEP_CIRCLE_CLASSES = cn(
 )
 
 export type SettingsTab =
-  'general' | 'chat' | 'personalization' | 'prompts' | 'cloud-sync' | 'account'
+  | 'general'
+  | 'chat'
+  | 'personalization'
+  | 'prompts'
+  | 'cloud-sync'
+  | 'safeguards'
+  | 'account'
 
 import type { ThemeMode } from './hooks/use-ui-state'
 
@@ -2463,6 +2471,11 @@ ${encryptionKey.replace('key_', '')}
             id: 'cloud-sync' as const,
             label: 'Cloud Sync',
             icon: AiOutlineCloudSync,
+          },
+          {
+            id: 'safeguards' as const,
+            label: 'Safeguards',
+            icon: ShieldExclamationIcon,
           },
         ]
       : []),
@@ -4745,6 +4758,13 @@ ${encryptionKey.replace('key_', '')}
                     </div>
                   )}
                 </>
+              )}
+
+              {activeTab === 'safeguards' && isSignedIn && (
+                <SafeguardsSettings
+                  isDarkMode={isDarkMode}
+                  onNavigateToChat={() => setIsOpen(false)}
+                />
               )}
 
               {/* Account Tab */}
