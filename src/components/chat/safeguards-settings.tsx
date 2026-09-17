@@ -6,6 +6,7 @@ import {
   refreshSafeguards,
   type FlaggedChat,
 } from '@/services/safeguards'
+import { getChatPath } from '@/utils/navigation'
 import {
   ArrowPathIcon,
   ArrowTopRightOnSquareIcon,
@@ -15,6 +16,7 @@ import Link from 'next/link'
 import { useEffect } from 'react'
 import { Progress } from '../ui/progress'
 import { cn } from '../ui/utils'
+import type { Chat } from './types'
 
 const MS_PER_HOUR = 60 * 60 * 1000
 const HOURS_PER_DAY = 24
@@ -22,6 +24,7 @@ const HOURS_PER_DAY = 24
 interface SafeguardsSettingsProps {
   isDarkMode: boolean
   onNavigateToChat: () => void
+  chats?: readonly Pick<Chat, 'id' | 'isLocalOnly' | 'projectId'>[]
 }
 
 function formatFlagDate(timestamp: number): string {
@@ -44,10 +47,12 @@ function FlaggedChatRow({
   flag,
   inWindow,
   onNavigate,
+  href,
 }: {
   flag: FlaggedChat
   inWindow: boolean
   onNavigate: () => void
+  href: string
 }) {
   const label = flag.conversationId || 'Unknown chat'
   const content = (
@@ -79,7 +84,7 @@ function FlaggedChatRow({
   return (
     <li>
       <Link
-        href={`/chat/${encodeURIComponent(flag.conversationId)}`}
+        href={href}
         onClick={onNavigate}
         className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-surface-chat"
       >
@@ -92,8 +97,20 @@ function FlaggedChatRow({
 export function SafeguardsSettings({
   isDarkMode,
   onNavigateToChat,
+  chats = [],
 }: SafeguardsSettingsProps) {
   const { flaggedChats, policy, status, isPreview } = useSafeguards()
+  const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
+
+  const getFlaggedChatPath = (chatId: string): string => {
+    const chat = chatsById.get(chatId)
+    return getChatPath(encodeURIComponent(chatId), {
+      isLocalOnly: chat?.isLocalOnly,
+      projectId: chat?.projectId
+        ? encodeURIComponent(chat.projectId)
+        : undefined,
+    })
+  }
 
   useEffect(() => {
     void refreshSafeguards()
@@ -217,6 +234,7 @@ export function SafeguardsSettings({
                   flag={flag}
                   inWindow={flag.createdAt >= windowStart}
                   onNavigate={onNavigateToChat}
+                  href={getFlaggedChatPath(flag.conversationId)}
                 />
               ))}
             </ul>

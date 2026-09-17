@@ -255,6 +255,9 @@ describe('local Dev Simulator', () => {
     })
     expect(contentOf(await collect(stream))).toBe('Normal answer')
     expect(createCompletion).toHaveBeenCalledOnce()
+    expect(createCompletion.mock.calls[0][1].headers).toMatchObject({
+      'X-Tinfoil-Conversation-Id': 'current-chat',
+    })
     expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
   })
 })

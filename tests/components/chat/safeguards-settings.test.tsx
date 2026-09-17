@@ -148,6 +148,49 @@ describe('SafeguardsSettings', () => {
     expect(onNavigate).toHaveBeenCalledOnce()
   })
 
+  it('uses local and project routes without changing the flagged conversation ID', () => {
+    setSnapshot({
+      status: 'ready',
+      policy: { ...POLICY, inWindow: 1 },
+      flaggedChats: [RECENT_FLAG],
+    })
+    const { rerender } = render(
+      <SafeguardsSettings
+        isDarkMode
+        onNavigateToChat={vi.fn()}
+        chats={[{ id: RECENT_FLAG.conversationId, isLocalOnly: true }]}
+      />,
+    )
+    expect(screen.getByRole('link', { name: /chat-1/ })).toHaveAttribute(
+      'href',
+      '/chat/local/chat-1',
+    )
+
+    rerender(
+      <SafeguardsSettings
+        isDarkMode
+        onNavigateToChat={vi.fn()}
+        chats={[{ id: RECENT_FLAG.conversationId, isLocalOnly: false }]}
+      />,
+    )
+    expect(screen.getByRole('link', { name: /chat-1/ })).toHaveAttribute(
+      'href',
+      '/chat/chat-1',
+    )
+
+    rerender(
+      <SafeguardsSettings
+        isDarkMode
+        onNavigateToChat={vi.fn()}
+        chats={[{ id: RECENT_FLAG.conversationId, projectId: 'project-1' }]}
+      />,
+    )
+    expect(screen.getByRole('link', { name: /chat-1/ })).toHaveAttribute(
+      'href',
+      '/project/project-1/chat/chat-1',
+    )
+  })
+
   it('shows zero progress and the recent empty state even when older flags remain', () => {
     setSnapshot({ status: 'ready', policy: POLICY, flaggedChats: [OLD_FLAG] })
     render(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)

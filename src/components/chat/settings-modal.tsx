@@ -4774,6 +4774,7 @@ ${encryptionKey.replace('key_', '')}
                 <SafeguardsSettings
                   isDarkMode={isDarkMode}
                   onNavigateToChat={() => setIsOpen(false)}
+                  chats={chats}
                 />
               )}
 
