@@ -126,9 +126,10 @@ export function SafeguardsSettings({
           <p className="mt-3 font-aeonik-fono text-sm text-content-secondary">
             Only a flag linked to your account and the chat ID leaves the
             enclaves. Tinfoil cannot see the conversation or the flagged
-            category, and there is no human review of your private chats.
-            Backed-up and synced chats remain end-to-end encrypted and are not
-            scanned by safeguards.
+            category, and there is no human review of your private chats. Your
+            stored backups remain end-to-end encrypted. Safeguards do not scan
+            stored chat data; checks happen only at inference time inside the
+            enclaves.
           </p>
           <a
             href={SAFEGUARDS_INFO_URL}
