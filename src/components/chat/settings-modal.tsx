@@ -572,7 +572,7 @@ export function SettingsModal({
   const [language, setLanguage] = useState<string>(SYSTEM_RESPONSE_LANGUAGE)
 
   // Default prompt preset for new chats
-  const { builtInPresets, userPresets, defaultPresetId, setDefaultPreset } =
+  const { builtInPresets, userPresets, defaultPreset, setDefaultPreset } =
     usePromptLibrary()
 
   // Cloud sync setting
@@ -3470,7 +3470,7 @@ ${encryptionKey.replace('key_', '')}
                           </div>
                         </div>
                         <select
-                          value={defaultPresetId ?? ''}
+                          value={defaultPreset?.id ?? ''}
                           onChange={(e) =>
                             setDefaultPreset(e.target.value || null)
                           }

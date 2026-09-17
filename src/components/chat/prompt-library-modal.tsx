@@ -589,7 +589,7 @@ function PresetDetail({
         </div>
       </div>
 
-      <div className="flex flex-none items-center gap-2 border-b border-border-subtle px-6 py-2">
+      <div className="flex flex-none flex-wrap items-center gap-2 border-b border-border-subtle px-6 py-2">
         <button
           type="button"
           onClick={onToggleFavorite}

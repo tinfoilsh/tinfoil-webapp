@@ -108,7 +108,9 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
 
     const handleChange = () => refresh()
     const handleStorage = (event: StorageEvent) => {
+      // A null key means localStorage.clear() in another tab.
       if (
+        event.key === null ||
         event.key === USER_PREFS_CUSTOM_PROMPT_PRESETS ||
         event.key === USER_PREFS_FAVORITE_PROMPT_PRESETS ||
         event.key === USER_PREFS_DEFAULT_PROMPT_PRESET_ID
