@@ -81,8 +81,14 @@ export function changedProfileFields(
   if (!baseline) return [...PROFILE_MERGE_FIELDS]
   const changed: string[] = []
   for (const field of PROFILE_MERGE_FIELDS) {
-    const a = (local as Record<string, unknown>)[field]
-    const b = (baseline as Record<string, unknown>)[field]
+    const a = normalizeFieldValue(
+      field,
+      (local as Record<string, unknown>)[field],
+    )
+    const b = normalizeFieldValue(
+      field,
+      (baseline as Record<string, unknown>)[field],
+    )
     if (!valuesEqual(a, b)) changed.push(field)
   }
   return changed
@@ -219,6 +225,23 @@ function laterTimestamp(a?: string, b?: string): string | undefined {
   return ta >= tb ? a : b
 }
 
+// The unset default preset is serialized as '' (so clears propagate) but
+// profiles from older clients omit the field entirely; both mean "Tinfoil
+// default" and must not register as a change or a conflict.
+const EMPTY_STRING_MEANS_UNSET = new Set<(typeof PROFILE_MERGE_FIELDS)[number]>(
+  ['defaultPromptPresetId'],
+)
+
+function normalizeFieldValue(field: string, value: unknown): unknown {
+  if (
+    value === '' &&
+    EMPTY_STRING_MEANS_UNSET.has(field as (typeof PROFILE_MERGE_FIELDS)[number])
+  ) {
+    return undefined
+  }
+  return value
+}
+
 function valuesEqual(a: unknown, b: unknown): boolean {
   if (typeof a === 'object' || typeof b === 'object') {
     return JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
@@ -255,13 +278,17 @@ export function mergeProfilesThreeWay(args: {
   let adoptedRemote = false
 
   for (const field of PROFILE_MERGE_FIELDS) {
-    const baselineValue = (baseline as Record<string, unknown>)[field]
+    const baselineValue = normalizeFieldValue(
+      field,
+      (baseline as Record<string, unknown>)[field],
+    )
     const localHasField = Object.prototype.hasOwnProperty.call(local, field)
     const localValue =
       !localHasField && TREAT_LOCAL_OMISSION_AS_UNEDITED.has(field)
         ? baselineValue
-        : (local as Record<string, unknown>)[field]
-    const remoteValue = (remote as Record<string, unknown>)[field]
+        : normalizeFieldValue(field, (local as Record<string, unknown>)[field])
+    const rawRemoteValue = (remote as Record<string, unknown>)[field]
+    const remoteValue = normalizeFieldValue(field, rawRemoteValue)
     const lc = fieldClock(local, field, localTrusted)
     const rc = fieldClock(remote, field, remoteTrusted)
 
@@ -275,7 +302,7 @@ export function mergeProfilesThreeWay(args: {
 
     if (valuesEqual(localValue, baselineValue)) {
       if (Object.prototype.hasOwnProperty.call(remote, field)) {
-        ;(merged as Record<string, unknown>)[field] = remoteValue
+        ;(merged as Record<string, unknown>)[field] = rawRemoteValue
         if (rc) mergedClocks[field] = rc
         adoptedRemote ||= !valuesEqual(localValue, remoteValue)
       } else {
@@ -293,7 +320,7 @@ export function mergeProfilesThreeWay(args: {
           remoteClock: rc,
         })
       ) {
-        ;(merged as Record<string, unknown>)[field] = remoteValue
+        ;(merged as Record<string, unknown>)[field] = rawRemoteValue
         mergedClocks[field] = rc
         adoptedRemote = true
       } else {

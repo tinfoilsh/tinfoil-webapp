@@ -503,6 +503,41 @@ describe('mergeProfilesThreeWay', () => {
     expect(result.merged.pinnedChatIds).toEqual([])
   })
 
+  it('adopts a remote default preset when the baseline predates the field', () => {
+    // The baseline came from an older client that never wrote the field,
+    // while this client serializes the unset default as ''. Both mean
+    // "no default" so the remote's new choice must win without conflict.
+    const result = mergeProfilesThreeWay({
+      baseline: { nickname: 'Ada' },
+      local: { nickname: 'Ada', defaultPromptPresetId: '' },
+      remote: {
+        nickname: 'Ada',
+        defaultPromptPresetId: 'user:abc',
+        version: 2,
+      },
+    })
+
+    expect(result.merged.defaultPromptPresetId).toBe('user:abc')
+    expect(result.conflicts).toEqual([])
+    expect(
+      changedProfileFields(
+        { nickname: 'Ada', defaultPromptPresetId: '' },
+        { nickname: 'Ada' },
+      ),
+    ).toEqual([])
+  })
+
+  it('propagates an explicit default preset clear', () => {
+    const result = mergeProfilesThreeWay({
+      baseline: { defaultPromptPresetId: 'user:abc' },
+      local: { defaultPromptPresetId: 'user:abc' },
+      remote: { defaultPromptPresetId: '', version: 2 },
+    })
+
+    expect(result.merged.defaultPromptPresetId).toBe('')
+    expect(result.conflicts).toEqual([])
+  })
+
   it('adopts populated remote fields when local stayed empty', () => {
     const result = mergeProfilesThreeWay({
       baseline: { nickname: '', additionalContext: '' },
