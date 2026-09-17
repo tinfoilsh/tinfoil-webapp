@@ -483,6 +483,41 @@ function attachmentHasPayload(attachment: Attachment): boolean {
   )
 }
 
+// Cloud copies keep image thumbnails but never the full-resolution bytes,
+// so a thumbnail alone must not stop an image from adopting the payload
+// already stored locally.
+function attachmentMissingStoredContent(attachment: Attachment): boolean {
+  return attachment.type === 'image'
+    ? attachment.base64 === undefined
+    : !attachmentHasPayload(attachment)
+}
+
+type AttachmentPayloadContent = Pick<
+  StoredAttachmentPayload,
+  'base64' | 'thumbnailBase64' | 'textContent' | 'pages'
+>
+
+function inheritMissingPayloadContent(
+  target: StoredAttachmentReference,
+  content: AttachmentPayloadContent,
+): void {
+  if (target.base64 === undefined && content.base64 !== undefined) {
+    target.base64 = content.base64
+  }
+  if (
+    target.thumbnailBase64 === undefined &&
+    content.thumbnailBase64 !== undefined
+  ) {
+    target.thumbnailBase64 = content.thumbnailBase64
+  }
+  if (target.textContent === undefined && content.textContent !== undefined) {
+    target.textContent = content.textContent
+  }
+  if (target.pages === undefined && content.pages !== undefined) {
+    target.pages = content.pages
+  }
+}
+
 function isLazilyRetrievableAttachment(attachment: Attachment): boolean {
   return (
     attachment.type === 'image' &&
@@ -598,12 +633,25 @@ function normalizeAttachmentPayloadsInTransaction(
 function inheritAttachmentPayloadReferences(
   chat: Chat,
   existing: StoredChat | null | undefined,
+  existingPayloads: StoredAttachmentPayload[] = [],
 ): Chat {
   type PayloadCandidate = {
     payloadId: string
     messageKey: string
     attachmentKey: string
     used: boolean
+  }
+  const existingPayloadById = new Map(
+    existingPayloads.map((payload) => [payload.id, payload]),
+  )
+  const adoptCandidate = (
+    incoming: StoredAttachmentReference,
+    candidate: PayloadCandidate,
+  ) => {
+    candidate.used = true
+    incoming.storagePayloadId = candidate.payloadId
+    const payload = existingPayloadById.get(candidate.payloadId)
+    if (payload) inheritMissingPayloadContent(incoming, payload)
   }
   type IncomingAttachment = {
     attachment: StoredAttachmentReference
@@ -667,7 +715,7 @@ function inheritAttachmentPayloadReferences(
     const candidates = candidatesByAttachmentId.get(attachmentId) ?? []
 
     for (const incoming of incomingAttachments) {
-      if (attachmentHasPayload(incoming.attachment)) {
+      if (!attachmentMissingStoredContent(incoming.attachment)) {
         continue
       }
 
@@ -682,7 +730,7 @@ function inheritAttachmentPayloadReferences(
           throw new AttachmentPayloadReferenceAmbiguityError()
         }
         if (referenceMatches.length === 1) {
-          referenceMatches[0].used = true
+          adoptCandidate(incoming.attachment, referenceMatches[0])
           continue
         }
         if (isLazilyRetrievableAttachment(incoming.attachment)) {
@@ -707,8 +755,7 @@ function inheritAttachmentPayloadReferences(
 
       const candidate = exactMatches[0]
       if (candidate) {
-        candidate.used = true
-        incoming.attachment.storagePayloadId = candidate.payloadId
+        adoptCandidate(incoming.attachment, candidate)
         continue
       }
 
@@ -721,6 +768,47 @@ function inheritAttachmentPayloadReferences(
   return {
     ...chat,
     messages,
+  }
+}
+
+// Rewrites match by the local payload reference first and fall back to
+// the stable client id, so a rewrite can only relabel the attachment it
+// was minted for even after the message list moved around.
+export function applyAttachmentRewritesInPlace(
+  messages: Message[],
+  rewrites: AttachmentRewrite[],
+): void {
+  const rewritesByPayloadId = new Map(
+    rewrites
+      .filter((rewrite) => rewrite.storagePayloadId)
+      .map((rewrite) => [rewrite.storagePayloadId, rewrite]),
+  )
+  const rewritesByClientId = new Map<string, AttachmentRewrite[]>()
+  for (const rewrite of rewrites) {
+    if (rewrite.storagePayloadId) continue
+    const candidates = rewritesByClientId.get(rewrite.clientId) ?? []
+    candidates.push(rewrite)
+    rewritesByClientId.set(rewrite.clientId, candidates)
+  }
+  const appliedRewrites = new Set<AttachmentRewrite>()
+  for (const msg of messages) {
+    for (const att of msg.attachments ?? []) {
+      const storedAttachment = att as StoredAttachmentReference
+      const rewriteByPayloadId = storedAttachment.storagePayloadId
+        ? rewritesByPayloadId.get(storedAttachment.storagePayloadId)
+        : undefined
+      const rewrite =
+        rewriteByPayloadId && !appliedRewrites.has(rewriteByPayloadId)
+          ? rewriteByPayloadId
+          : rewritesByClientId
+              .get(att.id)
+              ?.find((candidate) => !appliedRewrites.has(candidate))
+      if (rewrite) {
+        appliedRewrites.add(rewrite)
+        att.id = rewrite.serverId
+        att.encryptionKey = rewrite.encryptionKey
+      }
+    }
   }
 }
 
@@ -2733,38 +2821,7 @@ export class IndexedDBStorage {
             currentFingerprint !== opts.preUploadFingerprint
 
           if (!concurrentEdit && opts.rewrites.length > 0) {
-            const rewritesByPayloadId = new Map(
-              opts.rewrites
-                .filter((rewrite) => rewrite.storagePayloadId)
-                .map((rewrite) => [rewrite.storagePayloadId, rewrite]),
-            )
-            const rewritesByClientId = new Map<string, AttachmentRewrite[]>()
-            for (const rewrite of opts.rewrites) {
-              if (rewrite.storagePayloadId) continue
-              const rewrites = rewritesByClientId.get(rewrite.clientId) ?? []
-              rewrites.push(rewrite)
-              rewritesByClientId.set(rewrite.clientId, rewrites)
-            }
-            const appliedRewrites = new Set<AttachmentRewrite>()
-            for (const msg of chat.messages ?? []) {
-              for (const att of msg.attachments ?? []) {
-                const storedAttachment = att as StoredAttachmentReference
-                const rewriteByPayloadId = storedAttachment.storagePayloadId
-                  ? rewritesByPayloadId.get(storedAttachment.storagePayloadId)
-                  : undefined
-                const rewrite =
-                  rewriteByPayloadId && !appliedRewrites.has(rewriteByPayloadId)
-                    ? rewriteByPayloadId
-                    : rewritesByClientId
-                        .get(att.id)
-                        ?.find((candidate) => !appliedRewrites.has(candidate))
-                if (rewrite) {
-                  appliedRewrites.add(rewrite)
-                  att.id = rewrite.serverId
-                  att.encryptionKey = rewrite.encryptionKey
-                }
-              }
-            }
+            applyAttachmentRewritesInPlace(chat.messages ?? [], opts.rewrites)
           }
 
           chat.syncVersion = opts.syncVersion
@@ -2869,8 +2926,9 @@ export class IndexedDBStorage {
         const outboxStore = transaction.objectStore(SYNC_OUTBOX_STORE)
         const userId = opts.userId ?? chatOwnerId(opts.chat) ?? activeUserId()
         let existing: StoredChat | undefined
+        let existingPayloads: StoredAttachmentPayload[] = []
         let hasPendingDelete = false
-        let readsRemaining = userId ? 2 : 1
+        let readsRemaining = userId ? 3 : 2
         let applied = false
         let accountChanged = false
 
@@ -2902,6 +2960,7 @@ export class IndexedDBStorage {
             inheritedChat = inheritAttachmentPayloadReferences(
               opts.chat,
               existing,
+              existingPayloads,
             )
           } catch (error) {
             transaction.abort()
@@ -2988,6 +3047,15 @@ export class IndexedDBStorage {
           maybeApply()
         }
         chatRequest.onerror = () => reject(new Error('Failed to read chat'))
+        const payloadRequest = payloadStore
+          .index(ATTACHMENT_PAYLOADS_CHAT_INDEX)
+          .getAll(IDBKeyRange.only(opts.chat.id))
+        payloadRequest.onsuccess = () => {
+          existingPayloads = payloadRequest.result as StoredAttachmentPayload[]
+          maybeApply()
+        }
+        payloadRequest.onerror = () =>
+          reject(new Error('Failed to read attachment payloads'))
         if (userId) {
           const deleteRequest = outboxStore.get([userId, opts.chat.id])
           deleteRequest.onsuccess = () => {

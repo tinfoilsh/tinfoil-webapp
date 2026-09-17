@@ -5,6 +5,7 @@ import { nextClock } from '@/services/cloud/edit-clock'
 import { remoteWins, trustedChatClock } from '@/services/cloud/sync-predicates'
 import { chatEvents } from '@/services/storage/chat-events'
 import {
+  applyAttachmentRewritesInPlace,
   indexedDBStorage,
   type StoredChat,
 } from '@/services/storage/indexed-db'
@@ -214,8 +215,19 @@ async function mutateSyncedChat(
           throw new DOMException('Aborted', 'AbortError')
         }
         const syncVersion = uploaded.syncVersion ?? (base.syncVersion ?? 0) + 1
+        // The upload sealed the envelope under enclave-minted attachment
+        // ids and keys; the copy persisted here must carry the same ones
+        // so the local row matches what every other device will pull.
+        const syncedMessages = nextChat.messages.map((message) => ({
+          ...message,
+          attachments: message.attachments?.map((attachment) => ({
+            ...attachment,
+          })),
+        }))
+        applyAttachmentRewritesInPlace(syncedMessages, uploaded.rewrites)
         const syncedChat: StoredChat = {
           ...nextChat,
+          messages: syncedMessages,
           syncVersion,
           clockVersion: syncVersion,
           syncedAt: Date.now(),
@@ -230,7 +242,11 @@ async function mutateSyncedChat(
         })
         if (applied.applied) {
           chatEvents.emit({ reason: 'recovery', ids: [chatId] })
-          return syncedChat
+          // The base may have been the wire copy, which carries no image
+          // bytes. The stored row inherited the local attachment payloads,
+          // so callers that swap the result into view get the hydrated chat.
+          const persisted = await indexedDBStorage.getChat(chatId)
+          return persisted ?? syncedChat
         }
         continue
       } catch (error) {
