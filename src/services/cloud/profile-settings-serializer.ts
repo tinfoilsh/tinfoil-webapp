@@ -99,8 +99,8 @@ export function hasProfileChanged(
       JSON.stringify(profile2.customPromptPresets) ||
     JSON.stringify(profile1.favoritePromptPresetIds) !==
       JSON.stringify(profile2.favoritePromptPresetIds) ||
-    (profile1.defaultPromptPresetId ?? null) !==
-      (profile2.defaultPromptPresetId ?? null) ||
+    (profile1.defaultPromptPresetId ?? '') !==
+      (profile2.defaultPromptPresetId ?? '') ||
     JSON.stringify(profile1.pinnedChatIds) !==
       JSON.stringify(profile2.pinnedChatIds) ||
     profile1.reasoningEffort !== profile2.reasoningEffort ||
@@ -190,14 +190,10 @@ export function loadLocalSettings(): ProfileData {
   }
 
   // Always present so clearing the default on one device propagates as an
-  // explicit null instead of being indistinguishable from "not synced yet".
-  const defaultPromptPresetId = localStorage.getItem(
-    USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
-  )
+  // explicit empty string instead of being indistinguishable from "not
+  // synced yet".
   settings.defaultPromptPresetId =
-    defaultPromptPresetId && defaultPromptPresetId.trim().length > 0
-      ? defaultPromptPresetId
-      : null
+    localStorage.getItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID)?.trim() ?? ''
 
   const pinnedChatIds = localStorage.getItem(USER_PREFS_PINNED_CHAT_IDS)
   if (pinnedChatIds !== null) {
@@ -293,7 +289,7 @@ export function resetSettingsToLocalDefaults(): ProfileData {
     isUsingPersonalization: true,
     customPromptPresets: [],
     favoritePromptPresetIds: [],
-    defaultPromptPresetId: null,
+    defaultPromptPresetId: '',
     pinnedChatIds: [],
     reasoningEffort: 'medium',
     thinkingEnabled: true,

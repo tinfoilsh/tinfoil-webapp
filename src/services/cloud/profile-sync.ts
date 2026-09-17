@@ -71,8 +71,11 @@ export interface ProfileData {
   customPromptPresets?: ProfilePromptPreset[]
   // Ordered preset ids pinned as homescreen favorites (built-in or custom)
   favoritePromptPresetIds?: string[]
-  // Preset stamped onto every new chat; null means the Tinfoil default
-  defaultPromptPresetId?: string | null
+  // Preset stamped onto every new chat; empty string means the Tinfoil
+  // default. Always sent as a string (never omitted or null) so a clear on
+  // one device propagates, and so Swift's JSON encoding, which drops nil
+  // optionals, produces the same shape as the webapp.
+  defaultPromptPresetId?: string
   // Ordered durable chat ids pinned as favorites, newest first
   pinnedChatIds?: string[]
 

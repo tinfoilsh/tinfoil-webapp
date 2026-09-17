@@ -50,14 +50,14 @@ describe('profile-settings-serializer', () => {
   })
 
   it('always serializes the default prompt preset so clears propagate', () => {
-    expect(loadLocalSettings().defaultPromptPresetId).toBeNull()
+    expect(loadLocalSettings().defaultPromptPresetId).toBe('')
 
     localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'user:abc')
     expect(loadLocalSettings().defaultPromptPresetId).toBe('user:abc')
 
-    applySettingsToLocal({ defaultPromptPresetId: null })
+    applySettingsToLocal({ defaultPromptPresetId: '' })
     expect(localStorage.getItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID)).toBeNull()
-    expect(loadLocalSettings().defaultPromptPresetId).toBeNull()
+    expect(loadLocalSettings().defaultPromptPresetId).toBe('')
   })
 
   it('preserves absent language and personalization as unedited fields', () => {
