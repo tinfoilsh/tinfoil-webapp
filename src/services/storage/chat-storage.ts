@@ -10,6 +10,30 @@ import { chatEvents } from './chat-events'
 import { deletedChatsTracker } from './deleted-chats-tracker'
 import { indexedDBStorage, type Chat as StorageChat } from './indexed-db'
 
+/**
+ * Thrown when a chat cannot leave the cloud because some of its images
+ * could not be fetched for local retention.
+ */
+export class ChatImagesUnavailableError extends Error {
+  constructor(readonly attachmentIds: string[]) {
+    super('Some chat images could not be retrieved')
+    this.name = 'ChatImagesUnavailableError'
+  }
+}
+
+// Images whose bytes live on the server: bucket attachments carry
+// `encryptionKey`, legacy inline attachments carry `key`.
+function isServerKeyedImage(
+  attachment: NonNullable<
+    StorageChat['messages'][number]['attachments']
+  >[number],
+): boolean {
+  return (
+    attachment.type === 'image' &&
+    Boolean(attachment.encryptionKey || (attachment as { key?: string }).key)
+  )
+}
+
 export class ChatStorageService {
   private initialized = false
   private initializePromise: Promise<void> | null = null
@@ -437,6 +461,64 @@ export class ChatStorageService {
     chatEvents.emit({ reason: 'save', ids: [chatId] })
   }
 
+  // Deleting the cloud row cascades to its attachment blobs (both bucket
+  // images keyed by `encryptionKey` and legacy inline ones keyed by
+  // `key`), so every synced image must be held locally and detached from
+  // its server key before the delete. Dropping the key also lets a later
+  // conversion back to cloud upload the image afresh instead of pointing
+  // at a dead id.
+  private async detachSyncedImages(chatId: string): Promise<void> {
+    const stored = await indexedDBStorage.getChat(chatId)
+    if (!stored) return
+    const guard = cloudSync.createAccountOperationGuard()
+    const fetched = await cloudStorage.loadChatImages(chatId, stored.messages)
+    guard.assertCurrent()
+    const unfetchedIds = (messages: StorageChat['messages']) =>
+      messages.flatMap(
+        (message) =>
+          message.attachments
+            ?.filter(
+              (attachment) =>
+                isServerKeyedImage(attachment) &&
+                !attachment.base64 &&
+                !fetched[attachment.id],
+            )
+            .map((attachment) => attachment.id) ?? [],
+      )
+    const unfetched = unfetchedIds(stored.messages)
+    if (unfetched.length > 0) {
+      throw new ChatImagesUnavailableError(unfetched)
+    }
+    await indexedDBStorage.mutateChat(chatId, (chat) => {
+      // The chat may have gained images since the fetch; those have no
+      // bytes to retain, so the conversion must not proceed.
+      const stale = unfetchedIds(chat.messages)
+      if (stale.length > 0) {
+        throw new ChatImagesUnavailableError(stale)
+      }
+      let changed = false
+      const messages = chat.messages.map((message) => ({
+        ...message,
+        attachments: message.attachments?.map((attachment) => {
+          if (!isServerKeyedImage(attachment)) {
+            return attachment
+          }
+          changed = true
+          const {
+            encryptionKey: _encryptionKey,
+            key: _key,
+            ...detached
+          } = attachment as typeof attachment & { key?: string }
+          return {
+            ...detached,
+            base64: attachment.base64 ?? fetched[attachment.id],
+          }
+        }),
+      }))
+      return { chat: changed ? { ...chat, messages } : chat, changed }
+    })
+  }
+
   async convertChatToLocal(chatId: string): Promise<void> {
     await this.initialize()
 
@@ -445,6 +527,7 @@ export class ChatStorageService {
       throw new Error('Chat not found')
     }
 
+    await this.detachSyncedImages(chatId)
     await indexedDBStorage.resetChatTimestamps(chatId)
     await indexedDBStorage.updateChatLocalOnly(chatId, true)
     await indexedDBStorage.updateChatProject(chatId, null)
