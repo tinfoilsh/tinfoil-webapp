@@ -2172,6 +2172,19 @@ export function ChatInterface({
     }
   }
 
+  const openSettingsModal = (initialTab: SettingsTab | undefined) => {
+    setSettingsInitialTab(initialTab)
+    setHasMountedSettingsModal(true)
+    setIsSettingsModalOpen(true)
+    handleSetVerifierSidebarOpen(false)
+    setIsAskSidebarOpen(false)
+    setIsArtifactSidebarOpen(false)
+    // If window is narrow, close left sidebar when opening settings
+    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
+      setIsSidebarOpen(false)
+    }
+  }
+
   // Handler for settings modal
   const handleOpenSettingsModal = () => {
     if (isSettingsModalOpen) {
@@ -2179,30 +2192,12 @@ export function ChatInterface({
       setIsSettingsModalOpen(false)
     } else {
       // Open settings and close verifier if open
-      setSettingsInitialTab(syncNeedsAttention ? 'cloud-sync' : undefined)
-      setHasMountedSettingsModal(true)
-      setIsSettingsModalOpen(true)
-      handleSetVerifierSidebarOpen(false)
-      setIsAskSidebarOpen(false)
-      setIsArtifactSidebarOpen(false)
-      // If window is narrow, close left sidebar when opening settings
-      if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
-        setIsSidebarOpen(false)
-      }
+      openSettingsModal(syncNeedsAttention ? 'cloud-sync' : undefined)
     }
   }
 
   const handleOpenSafeguardsSettings = () => {
-    if (!isSignedIn) return
-    setSettingsInitialTab('safeguards')
-    setHasMountedSettingsModal(true)
-    setIsSettingsModalOpen(true)
-    handleSetVerifierSidebarOpen(false)
-    setIsAskSidebarOpen(false)
-    setIsArtifactSidebarOpen(false)
-    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
-      setIsSidebarOpen(false)
-    }
+    openSettingsModal('safeguards')
   }
 
   // Handler for opening share modal
@@ -2213,13 +2208,7 @@ export function ChatInterface({
 
   // Handler for encryption key button - opens settings modal to cloud-sync tab
   const handleOpenEncryptionKeyModal = () => {
-    setSettingsInitialTab('cloud-sync')
-    setHasMountedSettingsModal(true)
-    setIsSettingsModalOpen(true)
-    handleSetVerifierSidebarOpen(false)
-    if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
-      setIsSidebarOpen(false)
-    }
+    openSettingsModal('cloud-sync')
   }
 
   // Handler for cloud sync setup. When the user has no local key we first

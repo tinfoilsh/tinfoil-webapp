@@ -155,24 +155,25 @@ function toSnapshot(
 }
 
 function getPreviewSnapshot(): SafeguardsSnapshot {
-  const preview = toSnapshot(DEV_PLACEHOLDER_FLAGS, 'ready')
-  if (simulatedFlags === null) return { ...preview, isPreview: true }
   const windowStart =
     Date.now() - DEV_PLACEHOLDER_FLAGS.window_hours * MS_PER_HOUR
+  const data: FlagsResponse =
+    simulatedFlags === null
+      ? DEV_PLACEHOLDER_FLAGS
+      : {
+          ...DEV_PLACEHOLDER_FLAGS,
+          flags: simulatedFlags.map((flag) => ({
+            id: flag.id,
+            conversation_id: flag.conversationId,
+            created_at: new Date(flag.createdAt).toISOString(),
+          })),
+          in_window: simulatedFlags.filter(
+            (flag) => flag.createdAt >= windowStart,
+          ).length,
+        }
   return {
-    ...preview,
+    ...toSnapshot(data, 'ready'),
     isPreview: true,
-    flaggedChats: simulatedFlags,
-    flaggedChatIds: Object.fromEntries(
-      simulatedFlags.map((flag) => [flag.conversationId, true as const]),
-    ),
-    policy: {
-      inWindow: simulatedFlags.filter((flag) => flag.createdAt >= windowStart)
-        .length,
-      windowHours: DEV_PLACEHOLDER_FLAGS.window_hours,
-      warnThreshold: DEV_PLACEHOLDER_FLAGS.warn_threshold,
-      banThreshold: DEV_PLACEHOLDER_FLAGS.ban_threshold,
-    },
   }
 }
 

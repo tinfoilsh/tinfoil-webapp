@@ -216,6 +216,26 @@ describe('SafeguardsSettings', () => {
     expect(screen.getByRole('link', { name: /chat-1/ })).toBeVisible()
   })
 
+  it('highlights the warning boundary while one flag remains before suspension', () => {
+    setSnapshot({ status: 'ready', policy: { ...POLICY, inWindow: 2 } })
+    const { rerender } = render(
+      <SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />,
+    )
+    expect(screen.getByText('2 more before account suspension')).toHaveClass(
+      'text-content-muted',
+    )
+
+    setSnapshot({ status: 'ready', policy: { ...POLICY, inWindow: 3 } })
+    rerender(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)
+    expect(progressBar()).toHaveAttribute('aria-valuenow', '75')
+    expect(screen.getByText('1 more before account suspension')).toHaveClass(
+      'text-red-600',
+    )
+    expect(
+      screen.queryByText('Suspension limit reached'),
+    ).not.toBeInTheDocument()
+  })
+
   it.each([4, 6])(
     'caps progress at the limit without a negative remaining count (%s flags)',
     (inWindow) => {
