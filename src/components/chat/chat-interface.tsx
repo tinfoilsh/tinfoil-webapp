@@ -16,8 +16,6 @@ import { PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT } from '@/constants/settings
 import {
   SETTINGS_CODE_EXECUTION_ENABLED,
   SETTINGS_GENUI_ENABLED,
-  SETTINGS_HAS_SEEN_ONBOARDING,
-  SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
   SETTINGS_PII_CHECK_ENABLED,
   SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
   SETTINGS_WEB_SEARCH_AVAILABLE,
@@ -28,6 +26,7 @@ import {
   useChatRecoveryDrafts,
 } from '@/hooks/use-chat-recovery-drafts'
 import { useChatRouter } from '@/hooks/use-chat-router'
+import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
 import { useSafeguardsLoader } from '@/hooks/use-safeguards'
@@ -372,32 +371,15 @@ export function ChatInterface({
   const [isSubscribePromptOpen, setIsSubscribePromptOpen] = useState(false)
 
   // Onboarding state (must be defined before usePasskeyBackup so we can gate it)
-  const [showOnboarding, setShowOnboarding] = useState(false)
-
-  // Signed-in users never see the first-open onboarding: anyone missing the
-  // account flag is auto-tagged. This grandfathers accounts that predate the
-  // flow and carries the localStorage flag over when an anonymous visitor who
-  // already saw it signs in. The flag is also mirrored to localStorage so it
-  // survives signing out on this device.
-  useEffect(() => {
-    if (!isSignedIn || !user) return
-    localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
-    if (!user.unsafeMetadata?.has_completed_onboarding) {
-      user
-        .update({
-          unsafeMetadata: {
-            ...user.unsafeMetadata,
-            has_completed_onboarding: true,
-          },
-        })
-        .catch((error) => {
-          logError('Failed to backfill onboarding completion flag', error, {
-            component: 'ChatInterface',
-            action: 'backfillOnboardingFlag',
-          })
-        })
-    }
-  }, [isSignedIn, user])
+  const { showOnboarding, isOnboardingReady, dismissOnboarding } =
+    useOnboarding({
+      isAuthLoaded,
+      isSignedIn,
+      userId: user?.id === authUserId ? user?.id : undefined,
+      hasCompletedOnboarding:
+        user?.unsafeMetadata?.has_completed_onboarding === true,
+      suppressIntroModals,
+    })
 
   // iOS Safari keyboard fix: keep a CSS var in sync with the *visual* viewport height.
   // Without this, fixed full-screen layouts can leave an untouchable "dead zone"
@@ -509,7 +491,7 @@ export function ChatInterface({
     refreshBundleState,
   } = usePasskeyBackup({
     encryptionKey,
-    initialized: cloudSyncInitialized && !showOnboarding,
+    initialized: cloudSyncInitialized && isOnboardingReady && !showOnboarding,
     isSignedIn,
     user,
     onEncryptionKeyRecovered: useCallback(
@@ -538,20 +520,6 @@ export function ChatInterface({
   const handleLogoAnimFinished = useCallback(() => {
     setLogoAnimDone(true)
   }, [])
-
-  // Show the first-open onboarding to anonymous visitors who haven't seen
-  // it. Browsers with prior activity (web search intro flag) are treated as
-  // existing users and backfilled instead of being shown the flow.
-  useEffect(() => {
-    if (suppressIntroModals) return
-    if (!isAuthLoaded || isSignedIn) return
-    if (localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)) return
-    if (localStorage.getItem(SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO)) {
-      localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
-      return
-    }
-    setShowOnboarding(true)
-  }, [isAuthLoaded, isSignedIn, suppressIntroModals])
 
   // State for right sidebar
   const [isVerifierSidebarOpen, setIsVerifierSidebarOpen] = useState(false)
@@ -4654,7 +4622,7 @@ export function ChatInterface({
 
       <AnimatePresence>
         {showOnboarding && (
-          <OnboardingView onComplete={() => setShowOnboarding(false)} />
+          <OnboardingView key={authUserId} onComplete={dismissOnboarding} />
         )}
       </AnimatePresence>
 

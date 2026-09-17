@@ -4,7 +4,7 @@ import { GridTexture } from '@/components/ui/grid-texture'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/nextjs'
-import { TfLock, TfUnlockOpen } from '@tinfoilsh/tinfoil-icons'
+import { TfLock, TfShieldCheck, TfUnlockOpen } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
 
@@ -18,8 +18,9 @@ interface OnboardingViewProps {
   persistCompletion?: boolean
 }
 
-const TOTAL_PAGES = 2
+const TOTAL_PAGES = 3
 const PRIVACY_PAGE_INDEX = 1
+const SAFEGUARDS_PAGE_INDEX = 2
 const PRIVACY_CONFIRMATION_HOLD_S = 0.4
 const PRIVACY_CHECK_APPEAR_S = 0.18
 const PRIVACY_CONFIRMATION_SEQUENCE_S =
@@ -37,7 +38,14 @@ export function OnboardingView({
 
   const markCompleted = useCallback(() => {
     if (!persistCompletion) return
-    localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
+    try {
+      localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
+    } catch (error) {
+      logError('Could not persist local onboarding completion', error, {
+        component: 'OnboardingView',
+        action: 'markCompleted',
+      })
+    }
     user
       ?.update({
         unsafeMetadata: {
@@ -88,6 +96,9 @@ export function OnboardingView({
                   onChange={setPrivacyEnabled}
                 />
               )}
+              {currentPage === SAFEGUARDS_PAGE_INDEX && (
+                <OnboardingSafeguardsPage key="safeguards" />
+              )}
             </AnimatePresence>
           </div>
 
@@ -116,9 +127,7 @@ export function OnboardingView({
               onClick={handleContinue}
               className="w-full"
             >
-              {currentPage === PRIVACY_PAGE_INDEX && privacyEnabled
-                ? 'Get Started'
-                : 'Continue'}
+              {currentPage === TOTAL_PAGES - 1 ? 'Get Started' : 'Continue'}
             </Button>
           </div>
         </div>
@@ -202,6 +211,51 @@ function OnboardingLetterPage() {
               {paragraph}
             </motion.p>
           ))}
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+// MARK: - Page 3: Safeguards
+
+const SAFEGUARDS_URL = 'https://tinfoil.sh/safety-and-safeguards'
+
+function OnboardingSafeguardsPage() {
+  return (
+    <motion.div
+      className="flex flex-col items-center px-6 py-8"
+      initial={{ opacity: 0, x: 40 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+    >
+      <div className="flex w-full flex-col items-center gap-8">
+        <div className="flex h-28 items-center justify-center">
+          <TfShieldCheck className="h-24 w-24 text-content-primary" />
+        </div>
+
+        <div className="space-y-4 text-center">
+          <h2 className="font-aeonik text-3xl font-bold text-content-primary">
+            Tending the Garden
+          </h2>
+          <p className="text-balance text-base text-content-secondary">
+            Privacy-preserving safeguards review the AI responses in this chat.
+            The safeguards run inside secure enclaves at inference time, always
+            keeping your conversations private.{' '}
+            <strong className="font-semibold text-content-primary">
+              Tinfoil cannot see the nature of the violation or conversation
+              content.
+            </strong>
+          </p>
+          <a
+            href={SAFEGUARDS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block text-sm font-medium text-brand-accent-dark underline underline-offset-2 hover:opacity-80 dark:text-brand-accent-light"
+          >
+            Learn more about safeguards
+          </a>
         </div>
       </div>
     </motion.div>
