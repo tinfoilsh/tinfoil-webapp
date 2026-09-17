@@ -32,8 +32,12 @@ function formatFlagDate(timestamp: number): string {
   })
 }
 
-function windowDays(windowHours: number): number {
-  return Math.round(windowHours / HOURS_PER_DAY)
+function formatWindow(windowHours: number): string {
+  if (windowHours % HOURS_PER_DAY === 0) {
+    const days = windowHours / HOURS_PER_DAY
+    return `${days} ${days === 1 ? 'day' : 'days'}`
+  }
+  return `${windowHours} ${windowHours === 1 ? 'hour' : 'hours'}`
 }
 
 function FlaggedChatRow({
@@ -95,7 +99,7 @@ export function SafeguardsSettings({
     void refreshSafeguards()
   }, [])
 
-  const days = policy ? windowDays(policy.windowHours) : null
+  const windowDescription = policy ? formatWindow(policy.windowHours) : null
   const windowStart = policy ? Date.now() - policy.windowHours * MS_PER_HOUR : 0
   const inWindow = policy?.inWindow ?? 0
   const banThreshold = policy?.banThreshold ?? 0
@@ -114,28 +118,44 @@ export function SafeguardsSettings({
         <h3 className="font-aeonik text-sm font-medium text-content-secondary">
           Safeguards
         </h3>
-        <div className={cn(cardClass, 'p-4')}>
-          <p className="font-aeonik-fono text-sm text-content-secondary">
-            <strong>Your conversations stay private.</strong> Automated
-            safeguards check model responses in the context of the
-            conversation—not user prompts for wrongdoing. These checks run
-            entirely inside secure enclaves at inference time, applying our
-            narrow hard-no policy on child endangerment, mass violence and
-            terrorism, and encouraging self-harm.
-          </p>
-          <p className="mt-3 font-aeonik-fono text-sm text-content-secondary">
-            Only a flag linked to your account and the chat ID leaves the
-            enclaves. Tinfoil cannot see the conversation or the flagged
-            category, and there is no human review of your private chats. Your
-            stored backups remain end-to-end encrypted. Safeguards do not scan
-            stored chat data; checks happen only at inference time inside the
-            enclaves.
-          </p>
+        <div className={cn(cardClass, 'space-y-4 p-4 font-aeonik')}>
+          <section className="space-y-1">
+            <h4 className="text-sm font-semibold text-content-primary">
+              Your conversations stay private
+            </h4>
+            <p className="text-sm leading-relaxed text-content-secondary">
+              Safeguards run entirely inside secure enclaves. Tinfoil cannot
+              read your conversations, and there is no human review of your
+              private chats.
+            </p>
+          </section>
+          <section className="space-y-1">
+            <h4 className="text-sm font-semibold text-content-primary">
+              Safeguards assess model responses
+            </h4>
+            <p className="text-sm leading-relaxed text-content-secondary">
+              Automated checks assess model responses in conversational
+              context—not user prompts for wrongdoing—against our narrow hard-no
+              policy on child endangerment, mass violence and terrorism, and
+              encouraging self-harm.
+            </p>
+          </section>
+          <section className="space-y-1">
+            <h4 className="text-sm font-semibold text-content-primary">
+              Only a flag leaves the enclave
+            </h4>
+            <p className="text-sm leading-relaxed text-content-secondary">
+              Only a flag linked to your account and chat ID leaves the
+              enclaves—not the conversation or flagged category. Encrypted
+              stored backups are not scanned; checks happen only at inference
+              time.
+            </p>
+          </section>
           <a
             href={SAFEGUARDS_INFO_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 inline-flex items-center gap-1.5 font-aeonik text-sm text-brand-accent-dark hover:underline dark:text-brand-accent-light"
+            className="inline-flex items-center gap-1.5 text-sm text-brand-accent-dark hover:underline dark:text-brand-accent-light"
           >
             Learn how safeguards work
             <ArrowTopRightOnSquareIcon
@@ -165,30 +185,20 @@ export function SafeguardsSettings({
           </button>
         </div>
 
-        {status === 'error' && flaggedChats.length === 0 ? (
-          <div className={cn(cardClass, 'p-4')}>
-            <p className="font-aeonik-fono text-sm text-content-muted">
-              Could not load flagged chats. Try again in a moment.
-            </p>
-          </div>
-        ) : flaggedChats.length === 0 ? (
-          <div className={cn(cardClass, 'p-4')}>
-            <p className="font-aeonik-fono text-sm text-content-muted">
-              {status === 'loading' || days === null
-                ? 'Loading flagged chats...'
-                : `No flagged chats in the last ${days} days.`}
-            </p>
-          </div>
-        ) : (
-          <div className={cardClass}>
-            <div className="space-y-2 border-b border-border-subtle p-4">
-              <div className="flex items-center justify-between">
-                <span className="font-aeonik text-sm text-content-primary">
-                  {inWindow} of {banThreshold} flags in the last {days} days
-                </span>
+        <div className={cn(cardClass, 'font-aeonik')}>
+          <div className="space-y-2 border-b border-border-subtle p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-aeonik text-sm text-content-primary">
+                {policy
+                  ? `${inWindow} of ${banThreshold} flags in the last ${windowDescription}`
+                  : status === 'error'
+                    ? 'Flag count unavailable'
+                    : 'Loading flag count…'}
+              </span>
+              {policy && (
                 <span
                   className={cn(
-                    'font-aeonik-fono text-xs',
+                    'text-xs',
                     nearLimit ? 'text-red-600' : 'text-content-muted',
                   )}
                 >
@@ -196,20 +206,56 @@ export function SafeguardsSettings({
                     ? 'Suspension limit reached'
                     : `${remaining} more before account suspension`}
                 </span>
-              </div>
-              <Progress
-                value={progress}
-                aria-label="Flags toward account suspension"
-                className="h-2 bg-red-900/15 dark:bg-red-900/30 [&>div]:bg-red-800"
-              />
+              )}
             </div>
-            <p className="px-4 py-3 font-aeonik-fono text-xs text-content-muted">
+            <Progress
+              value={policy ? progress : null}
+              aria-label="Flags toward account suspension"
+              aria-valuetext={
+                policy
+                  ? `${inWindow} of ${banThreshold} flags`
+                  : status === 'error'
+                    ? 'Unavailable'
+                    : 'Loading'
+              }
+              className="h-2 bg-red-900/15 dark:bg-red-900/30 [&>div]:bg-red-800"
+            />
+          </div>
+          {status === 'error' && (
+            <div
+              role="alert"
+              className="space-y-2 px-4 py-3 text-sm text-content-muted"
+            >
+              <p>Could not load flagged chats. Please try again.</p>
+              {policy && <p>Showing the last loaded flags.</p>}
+              <button
+                type="button"
+                onClick={() => void refreshSafeguards()}
+                className="text-brand-accent-dark hover:underline dark:text-brand-accent-light"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+          {status === 'loading' && policy && (
+            <p role="status" className="px-4 py-3 text-sm text-content-muted">
+              Refreshing flagged chats…
+            </p>
+          )}
+          {policy && inWindow === 0 && (
+            <p className="px-4 py-3 text-sm text-content-muted">
+              No flagged chats in the last {windowDescription}.
+            </p>
+          )}
+          {policy && (
+            <p className="px-4 py-3 text-xs text-content-muted">
               These flags identify chats containing model responses flagged by
               safeguards. Repeated flags within the counting window can lead to
               automatic account suspension.
-              {days !== null &&
-                ` Flags count for ${days} days; older flags no longer count toward suspension.`}
+              {` Flags count for ${windowDescription}; older flags no longer count toward suspension.`}
             </p>
+          )}
+          {policy && flaggedChats.length > 0 && (
             <ul className="divide-y divide-border-subtle">
               {flaggedChats.map((flag) => (
                 <FlaggedChatRow
@@ -220,8 +266,8 @@ export function SafeguardsSettings({
                 />
               ))}
             </ul>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </>
   )
