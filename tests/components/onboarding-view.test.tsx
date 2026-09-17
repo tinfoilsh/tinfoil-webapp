@@ -212,6 +212,14 @@ describe('OnboardingView', () => {
 
       expect(onComplete).toHaveBeenCalledTimes(1)
       expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
+      expect(mocks.logError).toHaveBeenCalledWith(
+        'Could not persist local onboarding completion',
+        error,
+        {
+          component: 'OnboardingView',
+          action: 'markCompleted',
+        },
+      )
       expect(update).toHaveBeenCalledWith({
         unsafeMetadata: { existing: true, has_completed_onboarding: true },
       })
