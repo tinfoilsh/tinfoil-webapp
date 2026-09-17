@@ -109,6 +109,31 @@ const hasSystemPromptContent = (prompt: string): boolean =>
     .replace(/\n?<\/system>\s*$/, '')
     .trim().length > 0
 
+// Converts an enabled legacy custom prompt into the library preset that
+// new chats default to. Skipped when a default is already chosen, since that
+// choice was made on a build that no longer offers the legacy setting.
+export function adoptLegacyCustomPrompt(
+  enabled: boolean,
+  prompt: string,
+): void {
+  if (!enabled || !hasSystemPromptContent(prompt)) return
+  if (readDefaultPresetId() !== null) return
+  const existing = readUserPresets()
+  if (!existing.some((p) => p.id === MIGRATED_CUSTOM_PROMPT_PRESET_ID)) {
+    const now = Date.now()
+    const migrated: UserPromptPreset = {
+      id: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
+      name: MIGRATED_CUSTOM_PROMPT_PRESET_NAME,
+      description: MIGRATED_CUSTOM_PROMPT_PRESET_DESCRIPTION,
+      systemPrompt: prompt,
+      createdAt: now,
+      updatedAt: now,
+    }
+    writeUserPresets([...existing, migrated])
+  }
+  writeDefaultPresetId(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
+}
+
 // The settings page used to hold a single free-text "custom default prompt"
 // behind a toggle. That prompt now lives in the library as a user preset
 // marked as the default, so an enabled legacy prompt is converted once and
@@ -120,27 +145,7 @@ export function migrateLegacyCustomPrompt(): void {
     const prompt = localStorage.getItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT)
     if (enabled === null && prompt === null) return
 
-    if (
-      enabled === 'true' &&
-      prompt !== null &&
-      hasSystemPromptContent(prompt) &&
-      readDefaultPresetId() === null
-    ) {
-      const existing = readUserPresets()
-      if (!existing.some((p) => p.id === MIGRATED_CUSTOM_PROMPT_PRESET_ID)) {
-        const now = Date.now()
-        const migrated: UserPromptPreset = {
-          id: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
-          name: MIGRATED_CUSTOM_PROMPT_PRESET_NAME,
-          description: MIGRATED_CUSTOM_PROMPT_PRESET_DESCRIPTION,
-          systemPrompt: prompt,
-          createdAt: now,
-          updatedAt: now,
-        }
-        writeUserPresets([...existing, migrated])
-      }
-      writeDefaultPresetId(MIGRATED_CUSTOM_PROMPT_PRESET_ID)
-    }
+    adoptLegacyCustomPrompt(enabled === 'true', prompt ?? '')
 
     localStorage.removeItem(USER_PREFS_CUSTOM_PROMPT_ENABLED)
     localStorage.removeItem(USER_PREFS_CUSTOM_SYSTEM_PROMPT)

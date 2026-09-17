@@ -38,7 +38,11 @@ function isStaleBlobConflict(error: unknown): boolean {
 // iOS-only setting) and must survive our next push rather than being
 // dropped when we re-serialize only the keys we know about.
 const KNOWN_PROFILE_KEYS = new Set<string>(Object.keys(ProfileDataSchema.shape))
-const RETIRED_PROFILE_KEYS = new Set<string>(['projectUploadPreference'])
+const RETIRED_PROFILE_KEYS = new Set<string>([
+  'projectUploadPreference',
+  'isUsingCustomPrompt',
+  'customSystemPrompt',
+])
 
 function extractUnknownProfileFields(
   source: Record<string, unknown>,
