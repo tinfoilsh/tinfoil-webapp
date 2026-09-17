@@ -38,7 +38,14 @@ export function OnboardingView({
 
   const markCompleted = useCallback(() => {
     if (!persistCompletion) return
-    localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
+    try {
+      localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
+    } catch (error) {
+      logError('Could not persist local onboarding completion', error, {
+        component: 'OnboardingView',
+        action: 'markCompleted',
+      })
+    }
     user
       ?.update({
         unsafeMetadata: {

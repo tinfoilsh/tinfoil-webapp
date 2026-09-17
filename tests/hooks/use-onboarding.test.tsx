@@ -4,7 +4,11 @@ import {
 } from '@/constants/storage-keys'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/utils/error-handling', () => ({
+  logError: vi.fn(),
+}))
 
 const signedInOptions = {
   isAuthLoaded: true,
@@ -15,6 +19,10 @@ const signedInOptions = {
 }
 
 describe('useOnboarding', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('waits for auth and user data, then shows onboarding after sign-in', () => {
     const { result, rerender } = renderHook(useOnboarding, {
       initialProps: {
@@ -65,6 +73,62 @@ describe('useOnboarding', () => {
     const { result } = renderHook(() => useOnboarding(signedInOptions))
     expect(result.current.showOnboarding).toBe(false)
   })
+
+  it.each([SETTINGS_HAS_SEEN_ONBOARDING, null])(
+    'refreshes completion from other tabs, including clearing with key %s',
+    (clearEventKey) => {
+      const { result } = renderHook(() => useOnboarding(signedInOptions))
+      expect(result.current.showOnboarding).toBe(true)
+
+      act(() => {
+        localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')
+        window.dispatchEvent(
+          new StorageEvent('storage', { key: SETTINGS_HAS_SEEN_ONBOARDING }),
+        )
+      })
+      expect(result.current.showOnboarding).toBe(false)
+
+      act(() => {
+        localStorage.clear()
+        window.dispatchEvent(
+          new StorageEvent('storage', { key: clearEventKey }),
+        )
+      })
+      expect(result.current.showOnboarding).toBe(true)
+    },
+  )
+
+  it('does not reset dismissal for unrelated storage changes', () => {
+    const { result } = renderHook(() => useOnboarding(signedInOptions))
+    act(() => result.current.dismissOnboarding())
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO,
+        }),
+      )
+    })
+    expect(result.current.showOnboarding).toBe(false)
+  })
+
+  it.each([false, true])(
+    'uses account completion %s when local storage reads are blocked',
+    (hasCompletedOnboarding) => {
+      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+        throw new DOMException('Storage blocked', 'SecurityError')
+      })
+
+      const { result } = renderHook(() =>
+        useOnboarding({ ...signedInOptions, hasCompletedOnboarding }),
+      )
+      expect(result.current.isOnboardingReady).toBe(true)
+      expect(result.current.showOnboarding).toBe(!hasCompletedOnboarding)
+
+      act(() => result.current.dismissOnboarding())
+      expect(result.current.showOnboarding).toBe(false)
+    },
+  )
 
   it('does not treat the web search intro as onboarding completion', () => {
     localStorage.setItem(SETTINGS_HAS_SEEN_WEB_SEARCH_INTRO, 'true')

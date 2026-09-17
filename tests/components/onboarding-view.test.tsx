@@ -193,6 +193,31 @@ describe('OnboardingView', () => {
     expect(privacySwitch).toHaveAttribute('aria-pressed', 'false')
   })
 
+  it.each(['SecurityError', 'QuotaExceededError'])(
+    'finishes onboarding and updates the account when local storage throws %s',
+    async (errorName) => {
+      const error = new DOMException('Storage unavailable', errorName)
+      const update = vi.fn().mockResolvedValue(undefined)
+      mocks.useUser.mockReturnValue({
+        user: { unsafeMetadata: { existing: true }, update },
+      })
+      const onComplete = vi.fn()
+      render(<OnboardingView onComplete={onComplete} />)
+      await advanceToSafeguards()
+
+      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+        throw error
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
+
+      expect(onComplete).toHaveBeenCalledTimes(1)
+      expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
+      expect(update).toHaveBeenCalledWith({
+        unsafeMetadata: { existing: true, has_completed_onboarding: true },
+      })
+    },
+  )
+
   it('logs metadata failures without blocking completion', async () => {
     const error = new Error('Clerk unavailable')
     const update = vi.fn().mockRejectedValue(error)

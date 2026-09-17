@@ -1,4 +1,5 @@
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
+import { logError } from '@/utils/error-handling'
 import { useCallback, useEffect, useState } from 'react'
 
 interface UseOnboardingOptions {
@@ -27,10 +28,28 @@ export function useOnboarding({
       return
     }
 
-    setCompletion({
-      userId,
-      hasSeen: localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING) === 'true',
-    })
+    const refreshCompletion = () => {
+      let hasSeen = false
+      try {
+        hasSeen = localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING) === 'true'
+      } catch (error) {
+        logError('Could not read onboarding completion', error, {
+          component: 'useOnboarding',
+          action: 'refreshCompletion',
+        })
+      }
+      setCompletion({ userId, hasSeen })
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_HAS_SEEN_ONBOARDING || event.key === null) {
+        refreshCompletion()
+      }
+    }
+
+    refreshCompletion()
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
   }, [isAuthLoaded, isSignedIn, userId])
 
   const isOnboardingReady =
