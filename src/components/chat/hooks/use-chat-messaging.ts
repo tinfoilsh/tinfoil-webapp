@@ -1301,6 +1301,7 @@ export function useChatMessaging({
           codeExecutionAccessToken: updatedChat.codeExecutionAccessToken,
           codeExecutionEncryptionKey: codeExecutionEncryptionKey ?? undefined,
           codeExecutionContainerAuthToken,
+          conversationId: streamChatIdRef.current,
           recovery:
             recoveryEligible &&
             recoveryEnabled &&

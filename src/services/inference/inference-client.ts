@@ -16,6 +16,7 @@ import {
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
+import { CONVERSATION_ID_HEADER } from '@/constants/chat'
 import { shouldRetryTestFail } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
@@ -306,6 +307,11 @@ export interface SendChatStreamParams {
    * the model to resume the trailing assistant message. Not persisted.
    */
   trailingInstruction?: string
+  /**
+   * Stable chat id sent as CONVERSATION_ID_HEADER so safeguards can link a
+   * flag to this chat and count a continued conversation only once.
+   */
+  conversationId?: string
 }
 
 export async function sendChatStream(
@@ -331,6 +337,7 @@ export async function sendChatStream(
     codeExecutionContainerAuthToken,
     recovery,
     trailingInstruction,
+    conversationId,
   } = params
 
   const genUITools = genUIEnabled ? buildGenUIToolSchemas() : []
@@ -577,7 +584,13 @@ export async function sendChatStream(
       // errors such as quota-exhausted 429s.
       const stream = await (client.chat.completions.create as Function)(
         requestBody,
-        { signal, maxRetries: 0 },
+        {
+          signal,
+          maxRetries: 0,
+          headers: conversationId
+            ? { [CONVERSATION_ID_HEADER]: conversationId }
+            : undefined,
+        },
       )
       recordPerformanceDuration(
         PERFORMANCE_METRICS.INFERENCE_STREAM_READY,
