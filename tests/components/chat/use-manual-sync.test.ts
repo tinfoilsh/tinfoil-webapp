@@ -1,7 +1,12 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { useManualSync } from '@/components/chat/hooks/use-manual-sync'
+import { logError } from '@/utils/error-handling'
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('@/utils/error-handling', () => ({
+  logError: vi.fn(),
+}))
 
 describe('useManualSync', () => {
   beforeEach(() => {
@@ -9,6 +14,7 @@ describe('useManualSync', () => {
   })
   afterEach(() => {
     vi.useRealTimers()
+    vi.mocked(logError).mockClear()
   })
 
   it('holds the spinner for a minimum duration, then shows success briefly', async () => {
@@ -94,9 +100,10 @@ describe('useManualSync', () => {
   })
 
   it('clears a previous manual failure once a sync succeeds', async () => {
+    const failure = new Error('offline')
     const onSync = vi
       .fn()
-      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(failure)
       .mockResolvedValueOnce(true)
     const { result } = renderHook(() =>
       useManualSync({ isSyncing: false, syncFailed: false, onSync }),
@@ -108,6 +115,11 @@ describe('useManualSync', () => {
       await first
     })
     expect(result.current.hasSyncFailure).toBe(true)
+    expect(logError).toHaveBeenCalledExactlyOnceWith(
+      'Manual sync failed',
+      failure,
+      expect.objectContaining({ component: 'useManualSync' }),
+    )
 
     let retry: Promise<void> = Promise.resolve()
     act(() => {

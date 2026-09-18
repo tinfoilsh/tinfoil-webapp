@@ -1,5 +1,6 @@
 'use client'
 
+import { logError } from '@/utils/error-handling'
 import { useEffect, useRef, useState } from 'react'
 import { CONSTANTS } from '../constants'
 
@@ -69,7 +70,12 @@ export function useManualSync({
     let succeeded = false
     try {
       succeeded = await onSync()
-    } catch {}
+    } catch (error) {
+      logError('Manual sync failed', error, {
+        component: 'useManualSync',
+        action: 'sync',
+      })
+    }
 
     const remainingSpinnerTime = Math.max(
       0,
