@@ -36,10 +36,12 @@ const TEXT_TILE_PADDING: Record<FilePreviewSize, string> = {
 }
 
 export function buildTextPreviewExcerpt(content: string): string {
-  return content
+  // Only the head of the document is ever shown, so bound the work to a
+  // prefix instead of splitting a possibly multi-megabyte string into lines.
+  const head = content.slice(0, TEXT_PREVIEW_MAX_CHARS * TEXT_PREVIEW_MAX_LINES)
+  return head
     .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .slice(0, TEXT_PREVIEW_MAX_LINES)
+    .split('\n', TEXT_PREVIEW_MAX_LINES)
     .join('\n')
     .slice(0, TEXT_PREVIEW_MAX_CHARS)
 }
