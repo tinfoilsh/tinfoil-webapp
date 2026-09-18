@@ -30,12 +30,16 @@ file="plausible.js"
 # ported with a diff instead of overwriting the customized file.
 download_target="plausible.upstream.js"
 
-if curl -f -L --silent --show-error -o "$download_target" "$url"; then
+# Download to a temp file and move into place only on success, so a failed
+# run never destroys an upstream copy that is still being ported.
+tmp_download="$(mktemp "${download_target}.XXXXXX")"
+if curl -f -L --silent --show-error -o "$tmp_download" "$url"; then
+    mv "$tmp_download" "$download_target"
     new_size=$(wc -c < "$download_target")
     echo -e "${GREEN}✓${NC} $name upstream downloaded to ${download_target} (${new_size} bytes)"
 else
     echo "❌ Failed to download $name"
-    rm -f "$download_target"
+    rm -f "$tmp_download"
     exit 1
 fi
 
