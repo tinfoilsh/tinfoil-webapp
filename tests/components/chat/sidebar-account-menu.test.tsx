@@ -5,9 +5,10 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 let userState: { user: unknown } = { user: null }
+let routerAsPath = '/c/chat-1?view=compact#bottom'
 
 vi.mock('next/router', () => ({
-  useRouter: () => ({ asPath: '/c/chat-1?view=compact#bottom' }),
+  useRouter: () => ({ asPath: routerAsPath }),
 }))
 
 vi.mock('@clerk/nextjs', () => ({
@@ -221,6 +222,21 @@ describe('SidebarAccountMenu', () => {
     fireEvent.click(signIn)
     expect(onOpenSettings).not.toHaveBeenCalled()
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('leaves prefilled message text out of the sign-in return URL', () => {
+    userState = { user: null }
+    routerAsPath = '/newchat?q=private+prompt&view=compact#send=c2VjcmV0'
+    try {
+      renderMenu({ isSignedIn: false, canSync: false })
+      fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
+      const href = screen
+        .getByRole('menuitem', { name: 'Sign in' })
+        .getAttribute('href')
+      expect(href).toBe('/signin?redirect_url=%2Fnewchat%3Fview%3Dcompact')
+    } finally {
+      routerAsPath = '/c/chat-1?view=compact#bottom'
+    }
   })
 
   it('still opens account settings for signed-in users', () => {

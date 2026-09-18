@@ -1,5 +1,6 @@
 import { Modal, ModalDescription, ModalTitle } from '@/components/ui/modal'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
+import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 
@@ -18,7 +19,7 @@ export function SubscribePromptModal({
   const router = useRouter()
   // Send users back to where they hit the limit after they authenticate,
   // instead of dropping them on the home screen.
-  const signInHref = `/signin?redirect_url=${encodeURIComponent(router.asPath)}`
+  const signInHref = `/signin?redirect_url=${postAuthRedirectTarget(router.asPath)}`
 
   return (
     <Modal isOpen={isOpen} onClose={onClose}>

@@ -1,5 +1,7 @@
 import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
+import { stripMessageMarkers } from '@/utils/redirect-url'
+import { useRouter, type NextRouter } from 'next/router'
 import { useEffect, useRef } from 'react'
 
 interface UrlHashMessageHandlerProps {
@@ -14,19 +16,15 @@ const CONTROL_CHARS_REGEX = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/
  * Rewrites the current URL to remove any markers that would cause the message
  * handler to re-fire on a future reload. Strips both `?q=` and `#send=` so a
  * URL like `/?q=foo#send=<b64>` can't auto-send the leftover query param later.
+ * Goes through the Next router (not raw history.replaceState) so router.asPath
+ * is updated too; anything that later reads asPath, such as sign-in redirect
+ * links, must not see the message text.
  */
-function clearMessageMarkersFromUrl() {
-  const params = new URLSearchParams(window.location.search)
-  params.delete('q')
-  const remainingQuery = params.toString()
-  const hash = window.location.hash.startsWith('#send=')
-    ? ''
-    : window.location.hash
-  const newUrl =
-    window.location.pathname +
-    (remainingQuery ? `?${remainingQuery}` : '') +
-    hash
-  window.history.replaceState(null, '', newUrl)
+function clearMessageMarkersFromUrl(router: NextRouter) {
+  const newUrl = stripMessageMarkers(
+    window.location.pathname + window.location.search + window.location.hash,
+  )
+  void router.replace(newUrl, undefined, { shallow: true })
 }
 
 function sanitizeMessage(decodedMessage: string): string | null {
@@ -71,6 +69,7 @@ export function UrlHashMessageHandler({
   onMessageReady,
   isReady,
 }: UrlHashMessageHandlerProps) {
+  const router = useRouter()
   const hasProcessed = useRef(false)
 
   useEffect(() => {
@@ -106,7 +105,7 @@ export function UrlHashMessageHandler({
           hasProcessed.current = true
           onMessageReady(normalizedMessage)
 
-          clearMessageMarkersFromUrl()
+          clearMessageMarkersFromUrl(router)
           return true
         } catch (decodeError) {
           logWarning('Invalid base64 encoding in URL hash', {
@@ -150,7 +149,7 @@ export function UrlHashMessageHandler({
         hasProcessed.current = true
         onMessageReady(normalizedMessage)
 
-        clearMessageMarkersFromUrl()
+        clearMessageMarkersFromUrl(router)
         return true
       } catch (error) {
         logError('Failed to process URL query message', error, {
@@ -163,7 +162,7 @@ export function UrlHashMessageHandler({
     if (!processHashMessage()) {
       processQueryMessage()
     }
-  }, [isReady, onMessageReady])
+  }, [isReady, onMessageReady, router])
 
   return null
 }
