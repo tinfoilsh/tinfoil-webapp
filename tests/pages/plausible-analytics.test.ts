@@ -11,7 +11,7 @@ const plausibleScript = readFileSync(
 
 type Plausible = (eventName: string, options?: object) => void
 
-function loadPlausible(url: string) {
+function loadPlausible(url: string, referrer = '') {
   const parsedUrl = new URL(url)
   const location = {
     href: parsedUrl.href,
@@ -60,7 +60,7 @@ function loadPlausible(url: string) {
       clientHeight: 800,
     },
     hasFocus: () => true,
-    referrer: '',
+    referrer,
     visibilityState: 'visible',
   }
 
@@ -136,6 +136,17 @@ describe('Plausible analytics', () => {
     const request = analytics.fetchMock.mock.calls[0][1]
     const body = JSON.parse(String(request.body)) as { u: string }
     expect(body.u).toBe('https://chat.tinfoil.sh/signin')
+  })
+
+  it('strips the query and hash from the referrer as well', () => {
+    const analytics = loadPlausible(
+      'https://chat.tinfoil.sh/signin',
+      'https://chat.tinfoil.sh/newchat?q=private+prompt#send=c2VjcmV0',
+    )
+
+    const request = analytics.fetchMock.mock.calls[0][1]
+    const body = JSON.parse(String(request.body)) as { r: string | null }
+    expect(body.r).toBe('https://chat.tinfoil.sh/newchat')
   })
 })
 

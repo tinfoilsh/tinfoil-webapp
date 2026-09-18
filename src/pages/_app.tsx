@@ -178,7 +178,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
           data-domain="chat.tinfoil.sh"
           data-api="https://plausible.io/api/event"
           src="/js/plausible.js"
-          integrity="sha384-IlQxP/pbrnY+hZ1jlJh+jFNCftNypqYFIKMOYfahCzJSlo4QIvX4BUQk3vkZF+nI"
+          integrity="sha384-9YGq2V90wC72srh/cH1uW4ZAFQ9h0m/Tc+rHSBeG3AYVs/hi/g2IF7juIqZ3G8Te"
           crossOrigin="anonymous"
           strategy="afterInteractive"
         />

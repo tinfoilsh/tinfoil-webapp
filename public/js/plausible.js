@@ -19,6 +19,15 @@
           e && e.callback && e.callback({ error: t })
         })
   }
+  function k(t) {
+    if (!t) return null
+    try {
+      var n = new URL(t)
+      return n.origin + n.pathname
+    } catch (e) {
+      return null
+    }
+  }
   var c = !1,
     l = location.origin + location.pathname,
     r = {},
@@ -107,7 +116,7 @@
       (b.v = 33),
       (b.u = location.origin + location.pathname),
       (b.d = o.domain),
-      (b.r = document.referrer || null),
+      (b.r = k(document.referrer)),
       v && v.meta && (b.m = JSON.stringify(v.meta)),
       v && v.props && (b.p = v.props),
       v && !1 === v.interactive && (b.i = !1),
