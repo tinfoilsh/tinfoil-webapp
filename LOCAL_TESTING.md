@@ -105,6 +105,8 @@ Logs are written by the dev server (`dev:serve`) or the Next.js dev proxy. The `
 
 Select **Dev Simulator** to run canned responses entirely in the browser. It does not need the simulator server on port 3001, an API key, or the model router. Send `help` to list the available commands; `test thoughts`, `test code`, and `test retry` exercise the existing streaming patterns.
 
+Send **`test error`** to immediately show the connection-error banner locally. Use it to check the resend button, expandable details, and dismissal. Resending repeats the simulated error; send a different message to resume normal simulator responses. No network request is made.
+
 Send **`flag safeguard`** to preview a safeguard flag on the current chat. The sidebar shows a red flag, and **Settings → Safeguards** (when signed in) lists that chat and updates the progress bar. This is labeled as a local preview: nothing is submitted to the controlplane and your account is unaffected. Each chat counts once, even if the command is repeated. Reload the page or sign out to clear the preview.
 
 **Interleaved search + thinking:**

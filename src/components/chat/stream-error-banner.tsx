@@ -196,19 +196,19 @@ export function StreamErrorBanner({
           : 'border-red-300 bg-red-50 text-red-700',
       )}
     >
-      <div className="flex items-start gap-2 px-3 py-2.5">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">{title}</p>
-          <p
-            className={cn(
-              'mt-0.5 text-xs',
-              isDarkMode ? 'text-red-200/80' : 'text-red-700/80',
-            )}
-          >
-            {suggestion}
-          </p>
-        </div>
-        <div className="flex flex-shrink-0 items-center gap-1">
+      <div className="flex gap-2 px-3 py-2.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold">{title}</p>
+            <p
+              className={cn(
+                'mt-0.5 text-xs',
+                isDarkMode ? 'text-red-200/80' : 'text-red-700/80',
+              )}
+            >
+              {suggestion}
+            </p>
+          </div>
           {showRetry && (
             <button
               type="button"
@@ -219,7 +219,7 @@ export function StreamErrorBanner({
                 onRetry?.()
               }}
               className={cn(
-                'flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors',
+                'flex h-9 shrink-0 items-center gap-1 self-start whitespace-nowrap rounded-site-control border px-3 text-xs font-medium transition-colors sm:self-center',
                 isDarkMode
                   ? 'border-red-500/40 hover:bg-red-500/20'
                   : 'border-red-300 hover:bg-red-500/10',
@@ -231,6 +231,19 @@ export function StreamErrorBanner({
               {retryDisabled ? 'Offline' : retryLabel}
             </button>
           )}
+        </div>
+        <div className="flex shrink-0 flex-col justify-between gap-1">
+          <button
+            type="button"
+            onClick={handleDismiss}
+            aria-label="Dismiss error"
+            className={cn(
+              'rounded p-1 transition-colors',
+              isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
+            )}
+          >
+            <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+          </button>
           <button
             type="button"
             onClick={() => setIsExpanded((prev) => !prev)}
@@ -248,17 +261,6 @@ export function StreamErrorBanner({
               )}
               aria-hidden="true"
             />
-          </button>
-          <button
-            type="button"
-            onClick={handleDismiss}
-            aria-label="Dismiss error"
-            className={cn(
-              'rounded p-1 transition-colors',
-              isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
-            )}
-          >
-            <XMarkIcon className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       </div>

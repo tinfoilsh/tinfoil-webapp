@@ -1,6 +1,7 @@
 import type { BaseModel } from '@/config/models'
 import {
   DEV_SAFEGUARD_FLAG_COMMAND,
+  DEV_SIMULATOR_ERROR_COMMAND,
   DEV_SIMULATOR_HELP_COMMAND,
   DEV_SIMULATOR_HELP_STREAM,
 } from '@/constants/dev-simulator'
@@ -456,6 +457,7 @@ export function getSimulatorPattern(query: string): SimulatorPattern {
 
 - \`${DEV_SIMULATOR_HELP_COMMAND}\` — Show this command list.
 - \`${DEV_SAFEGUARD_FLAG_COMMAND}\` — Flag this chat locally to preview its sidebar badge and Settings → Safeguards (when signed in). Nothing is reported to your account.
+- \`${DEV_SIMULATOR_ERROR_COMMAND}\` — Show the connection-error banner immediately, without a network request. Test resend, details, and dismiss; resending repeats the error. Send a different message to continue normally.
 
 ### Streaming demos
 
