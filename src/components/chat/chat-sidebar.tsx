@@ -1556,9 +1556,10 @@ export function ChatSidebar({
                                     <div className="flex min-w-0 flex-1 flex-col text-left">
                                       <span
                                         className={cn(
-                                          'truncate leading-5',
-                                          project.decryptionFailed &&
-                                            'text-orange-500',
+                                          'truncate font-aeonik-fono text-sm font-medium leading-5',
+                                          project.decryptionFailed
+                                            ? 'text-orange-500'
+                                            : 'text-content-primary',
                                         )}
                                       >
                                         {project.name}
