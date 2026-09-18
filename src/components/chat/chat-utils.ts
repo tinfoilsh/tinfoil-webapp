@@ -1,7 +1,3 @@
-import { SYNC_CHATS } from '@/constants/storage-keys'
-import React from 'react'
-import type { Chat } from './types'
-
 /**
  * Structured error classification for chat request failures. Control flow
  * (retries, banners, rate-limit handling) must branch on these codes, never
@@ -29,35 +25,5 @@ export class ChatError extends Error {
     super(message)
     this.name = 'ChatError'
     this.status = options?.status
-  }
-}
-
-export function updateChatTitle(
-  _chats: Chat[],
-  setChats: React.Dispatch<React.SetStateAction<Chat[]>>,
-  currentChat: Chat,
-  setCurrentChat: React.Dispatch<React.SetStateAction<Chat>>,
-  chatId: string,
-  newTitle: string,
-) {
-  setChats((prevChats) => {
-    const updatedChats = prevChats.map((chat) =>
-      chat.id === chatId
-        ? { ...chat, title: newTitle, titleState: 'manual' as const }
-        : chat,
-    )
-
-    // Save updated chats to localStorage
-    localStorage.setItem(SYNC_CHATS, JSON.stringify(updatedChats))
-
-    return updatedChats
-  })
-
-  if (currentChat?.id === chatId) {
-    setCurrentChat((prev: Chat) => ({
-      ...prev,
-      title: newTitle,
-      titleState: 'manual' as const,
-    }))
   }
 }
