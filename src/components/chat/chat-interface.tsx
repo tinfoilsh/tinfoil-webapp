@@ -1988,7 +1988,7 @@ export function ChatInterface({
           logError('Lazy image description failed', error, {
             component: 'ChatInterface',
             action: 'lazyDescribeImage',
-            metadata: { documentId: doc.id, fileName: doc.name },
+            metadata: { documentId: doc.id },
           })
           return { id: doc.id, name: doc.name, description: '', success: false }
         }

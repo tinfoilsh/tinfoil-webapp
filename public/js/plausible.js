@@ -19,8 +19,17 @@
           e && e.callback && e.callback({ error: t })
         })
   }
+  function k(t) {
+    if (!t) return null
+    try {
+      var n = new URL(t)
+      return n.origin + n.pathname
+    } catch (e) {
+      return null
+    }
+  }
   var c = !1,
-    l = location.href,
+    l = location.origin + location.pathname,
     r = {},
     d = -1,
     u = 0,
@@ -52,6 +61,8 @@
   }
   function x() {
     return (
+      '/' === location.pathname ||
+      '/newchat' === location.pathname ||
       '/share' === location.pathname ||
       0 === location.pathname.indexOf('/share/') ||
       '/chat' === location.pathname ||
@@ -103,9 +114,9 @@
     var b = {}
     ;((b.n = i),
       (b.v = 33),
-      (b.u = location.href),
+      (b.u = location.origin + location.pathname),
       (b.d = o.domain),
-      (b.r = document.referrer || null),
+      (b.r = k(document.referrer)),
       v && v.meta && (b.m = JSON.stringify(v.meta)),
       v && v.props && (b.p = v.props),
       v && !1 === v.interactive && (b.i = !1),

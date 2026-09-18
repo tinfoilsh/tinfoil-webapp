@@ -130,7 +130,6 @@ export function createUpdateChatWithHistoryCheck({
           shouldSkipCloudSync,
           isStreaming: streamingTracker.isStreaming(chatId),
           messageCount: newMessages.length,
-          title: updatedChat.title,
         },
       })
 

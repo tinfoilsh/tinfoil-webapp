@@ -3,6 +3,7 @@
 import { UserAvatar } from '@/components/user-avatar'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { useRateLimit } from '@/hooks/use-rate-limit'
+import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useUser } from '@clerk/nextjs'
 import {
   ArrowPathIcon,
@@ -475,7 +476,7 @@ export function SidebarAccountMenu({
               </button>
             ) : (
               <Link
-                href={`/signin?redirect_url=${encodeURIComponent(router.asPath)}`}
+                href={`/signin?redirect_url=${postAuthRedirectTarget(router.asPath)}`}
                 role="menuitem"
                 tabIndex={-1}
                 className={MENU_ITEM_CLASS_NAME}

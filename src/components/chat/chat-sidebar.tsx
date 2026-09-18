@@ -27,6 +27,7 @@ import {
   setLocalOnlyModeEnabled as setLocalOnlyModeSetting,
 } from '@/utils/cloud-sync-settings'
 import { logInfo } from '@/utils/error-handling'
+import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/nextjs'
 import {
   ChevronDownIcon,
@@ -240,7 +241,7 @@ export function ChatSidebar({
   chatDecryptionProgress,
 }: ChatSidebarProps) {
   const router = useRouter()
-  const authRedirectUrl = encodeURIComponent(router.asPath)
+  const authRedirectUrl = postAuthRedirectTarget(router.asPath)
   const syncNeedsAttention = useSyncHealthAttention()
   const syncHealthFailed = useSyncHealthFailed()
   const [isInitialLoad, setIsInitialLoad] = useState(true)

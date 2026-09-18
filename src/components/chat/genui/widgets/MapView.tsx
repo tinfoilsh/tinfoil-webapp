@@ -155,7 +155,7 @@ function resolveCoordinate(
         logError('MapKit geocoder lookup failed', geoErr, {
           component: 'MapWidget',
           action: 'resolveCoordinate.geocoder',
-          metadata: { query },
+          metadata: { queryLength: query.length },
         })
       }
       const search = new mk.Search()
@@ -176,7 +176,7 @@ function resolveCoordinate(
           {
             component: 'MapWidget',
             action: 'resolveCoordinate.search',
-            metadata: { query },
+            metadata: { queryLength: query.length },
           },
         )
         resolve(null)

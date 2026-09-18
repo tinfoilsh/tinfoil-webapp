@@ -383,7 +383,7 @@ export function ProjectProvider({
         logInfo('Created project', {
           component: 'ProjectProvider',
           action: 'createProject',
-          metadata: { projectId: project.id, name: data.name },
+          metadata: { projectId: project.id },
         })
 
         return project
@@ -532,7 +532,8 @@ export function ProjectProvider({
           metadata: {
             projectId,
             documentId: document.id,
-            filename: file.name,
+            contentType: file.type || 'text/plain',
+            sizeBytes: file.size,
           },
         })
 
