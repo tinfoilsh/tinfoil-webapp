@@ -21,6 +21,7 @@ function setLocation(path: string) {
 
 afterEach(() => {
   routerReplace.mockClear()
+  vi.restoreAllMocks()
   setLocation('/')
 })
 
@@ -61,7 +62,6 @@ describe('UrlHashMessageHandler', () => {
     await vi.waitFor(() =>
       expect(replaceState).toHaveBeenCalledWith(null, '', '/newchat'),
     )
-    replaceState.mockRestore()
   })
 
   it('waits until ready and does nothing without a marker', () => {
