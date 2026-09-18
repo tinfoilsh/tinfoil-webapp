@@ -13,7 +13,6 @@ import { TypingAnimation } from '@/components/chat/typing-animation'
 import { useFavoriteDropTarget } from '@/components/chat/use-favorite-drop-target'
 import { PiSpinnerThin } from '@/components/icons/lazy-icons'
 import { Link } from '@/components/link'
-import { Logo } from '@/components/logo'
 import { SidebarPatternEdge } from '@/components/ui/sidebar-pattern-edge'
 import { cn } from '@/components/ui/utils'
 import {
@@ -861,11 +860,75 @@ export function ProjectSidebar({
         style={sidebarTintStyle}
       >
         <SidebarPatternEdge isDarkMode={isDarkMode} />
-        {/* Header */}
-        <div className="flex h-16 flex-none items-center justify-between border-b border-border-subtle p-4">
-          <Link href="/" title="Home" className="-ml-1 flex items-center">
-            <Logo className="h-6 w-auto" dark={isDarkMode} />
-          </Link>
+        {/* Header: the editable project title takes the logo's slot */}
+        <div className="flex h-16 flex-none items-center justify-between gap-2 border-b border-border-subtle px-4 py-3">
+          <div className="flex min-w-0 flex-1 flex-col">
+            {isLoading ? (
+              <div className="space-y-1">
+                <h2 className="truncate font-aeonik text-base font-semibold leading-5 text-content-primary">
+                  {projectName || 'Loading...'}
+                </h2>
+                <Shimmer className="h-3 w-32" />
+              </div>
+            ) : isEditingProjectName && project ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  handleSaveProjectName()
+                }}
+                className="flex items-center gap-2"
+              >
+                <input
+                  type="text"
+                  value={editingProjectName}
+                  onChange={(e) => setEditingProjectName(e.target.value)}
+                  onBlur={handleSaveProjectName}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setEditingProjectName(project.name)
+                      setIsEditingProjectName(false)
+                    }
+                  }}
+                  autoFocus
+                  aria-label="Project name"
+                  className={cn(
+                    'w-full rounded-md border px-2 py-1 font-aeonik text-base font-semibold leading-5',
+                    isDarkMode
+                      ? 'border-border-strong bg-surface-chat text-content-primary'
+                      : 'border-border-subtle bg-white text-content-primary',
+                    'focus:outline-none focus:ring-1 focus:ring-border-strong',
+                  )}
+                />
+              </form>
+            ) : project ? (
+              <>
+                <h2 className="font-aeonik text-base font-semibold leading-5 text-content-primary">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingProjectName(true)}
+                    className="group flex max-w-full items-center gap-2 text-left"
+                    title="Rename project"
+                  >
+                    <span className="truncate">
+                      {isAnimatingName ? (
+                        <TypingAnimation
+                          fromText={animationFromName}
+                          toText={animationToName}
+                          onComplete={handleNameAnimationComplete}
+                        />
+                      ) : (
+                        displayProjectName
+                      )}
+                    </span>
+                    <PencilSquareIcon className="h-4 w-4 shrink-0 text-content-muted opacity-0 transition-opacity group-hover:opacity-100" />
+                  </button>
+                </h2>
+                <p className="truncate font-aeonik-fono text-xs leading-4 text-content-muted">
+                  Updated {formatRelativeTime(new Date(project.updatedAt))}
+                </p>
+              </>
+            ) : null}
+          </div>
           {/* Close sidebar button */}
           <div className="group relative flex items-center">
             <button
@@ -887,36 +950,9 @@ export function ProjectSidebar({
             (like the expanded Project Settings panel) can never clip
             content such as the Save button out of reach. */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="relative z-20 flex flex-none items-center gap-2 px-2 py-2">
-            <Link
-              href={newChatHref}
-              aria-current={!currentChatId ? 'page' : undefined}
-              onClick={(e) => {
-                if (!isPlainPrimaryClick(e)) return
-                e.preventDefault()
-                if (!currentChatId) return
-                handleNewChat()
-              }}
-              className={cn(
-                'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-all duration-200',
-                !currentChatId
-                  ? 'cursor-default border-border-subtle bg-surface-chat text-content-muted'
-                  : 'border-transparent text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <PiNotePencilLight className="h-4 w-4" />
-                <span className="font-aeonik font-medium">New chat</span>
-              </span>
-              <span className="text-xs text-content-muted">
-                {modKey}
-                {isMac ? '⇧' : 'Shift+'}O
-              </span>
-            </Link>
-          </div>
-
-          {/* Project header with exit button and editable title */}
-          <div className="relative z-10 flex-none px-3 pb-2 pt-1">
+          {/* Exit project sits above New chat so leaving the project is the
+              first action in the sidebar. */}
+          <div className="relative z-20 flex flex-none items-center gap-2 px-2 pt-2">
             <button
               type="button"
               onClick={onExitProject}
@@ -974,71 +1010,34 @@ export function ProjectSidebar({
               <ArrowLeftIcon className="h-4 w-4" />
               <span className="font-aeonik font-medium">Exit Project</span>
             </button>
-            <div className="mt-2 px-2">
-              {isLoading ? (
-                <div className="space-y-2">
-                  <h2 className="truncate font-aeonik text-lg font-semibold text-content-primary">
-                    {projectName || 'Loading...'}
-                  </h2>
-                  <Shimmer className="h-3 w-32" />
-                </div>
-              ) : isEditingProjectName && project ? (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    handleSaveProjectName()
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <input
-                    type="text"
-                    value={editingProjectName}
-                    onChange={(e) => setEditingProjectName(e.target.value)}
-                    onBlur={handleSaveProjectName}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        setEditingProjectName(project.name)
-                        setIsEditingProjectName(false)
-                      }
-                    }}
-                    autoFocus
-                    className={cn(
-                      'w-full rounded-md border px-2 py-1 font-aeonik text-lg font-semibold',
-                      isDarkMode
-                        ? 'border-border-strong bg-surface-chat text-content-primary'
-                        : 'border-border-subtle bg-white text-content-primary',
-                      'focus:outline-none focus:ring-1 focus:ring-border-strong',
-                    )}
-                  />
-                </form>
-              ) : project ? (
-                <>
-                  <h2 className="font-aeonik text-lg font-semibold text-content-primary">
-                    <button
-                      type="button"
-                      onClick={() => setIsEditingProjectName(true)}
-                      className="group flex max-w-full items-center gap-2 text-left"
-                    >
-                      <span className="truncate">
-                        {isAnimatingName ? (
-                          <TypingAnimation
-                            fromText={animationFromName}
-                            toText={animationToName}
-                            onComplete={handleNameAnimationComplete}
-                          />
-                        ) : (
-                          displayProjectName
-                        )}
-                      </span>
-                      <PencilSquareIcon className="h-4 w-4 shrink-0 text-content-muted opacity-0 transition-opacity group-hover:opacity-100" />
-                    </button>
-                  </h2>
-                  <p className="mt-0.5 font-aeonik-fono text-xs text-content-muted">
-                    Updated {formatRelativeTime(new Date(project.updatedAt))}
-                  </p>
-                </>
-              ) : null}
-            </div>
+          </div>
+
+          <div className="relative z-20 flex flex-none items-center gap-2 px-2 py-2">
+            <Link
+              href={newChatHref}
+              aria-current={!currentChatId ? 'page' : undefined}
+              onClick={(e) => {
+                if (!isPlainPrimaryClick(e)) return
+                e.preventDefault()
+                if (!currentChatId) return
+                handleNewChat()
+              }}
+              className={cn(
+                'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-all duration-200',
+                !currentChatId
+                  ? 'cursor-default border-border-subtle bg-surface-chat text-content-muted'
+                  : 'border-transparent text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <PiNotePencilLight className="h-4 w-4" />
+                <span className="font-aeonik font-medium">New chat</span>
+              </span>
+              <span className="text-xs text-content-muted">
+                {modKey}
+                {isMac ? '⇧' : 'Shift+'}O
+              </span>
+            </Link>
           </div>
 
           {isSignedIn && cloudSyncEnabled && (
