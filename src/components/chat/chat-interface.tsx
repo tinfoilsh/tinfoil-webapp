@@ -2934,13 +2934,17 @@ export function ChatInterface({
 
       await handleDocumentUpload(
         file,
-        async (content, _documentId, _imageData, _hasDescription, pages) => {
+        async (content, _documentId, imageData, _hasDescription, pages) => {
           try {
             const projectContent = getDocumentTextContent(content, pages)
             if (!projectContent) {
               throw new Error('No readable content was found in this document.')
             }
-            await uploadProjectDocument(file, projectContent)
+            await uploadProjectDocument(
+              file,
+              projectContent,
+              imageData?.thumbnailBase64,
+            )
           } catch (error) {
             toast({
               title: 'Upload failed',

@@ -35,6 +35,7 @@ export function hydrateProjectDocuments(
     return {
       ...listed,
       content: full.content,
+      thumbnailBase64: full.thumbnailBase64,
       filename: full.filename,
       contentType: full.contentType,
       sizeBytes: full.sizeBytes,

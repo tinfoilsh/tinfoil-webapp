@@ -656,6 +656,7 @@ export class ProjectStorageService {
     contentType: string,
     content: string,
     sizeBytes?: number,
+    thumbnailBase64?: string,
   ): Promise<ProjectDocument> {
     if (!(await canWriteToCloud())) {
       throw new Error(
@@ -671,6 +672,7 @@ export class ProjectStorageService {
       filename,
       contentType,
       sizeBytes: persistedSizeBytes,
+      ...(thumbnailBase64 ? { thumbnailBase64 } : {}),
     }
     const plaintext = new TextEncoder().encode(JSON.stringify(docPayload))
 
@@ -695,6 +697,7 @@ export class ProjectStorageService {
       createdAt: now,
       updatedAt: now,
       content,
+      thumbnailBase64,
     }
   }
 
@@ -787,6 +790,7 @@ export class ProjectStorageService {
         createdAt: now,
         updatedAt: now,
         content: decoded.content,
+        thumbnailBase64: decoded.thumbnailBase64,
       }
     } catch (error) {
       if (options.strictBackupRead) throw error
@@ -874,6 +878,7 @@ export class ProjectStorageService {
       createdAt: now,
       updatedAt: now,
       content: decoded.content,
+      thumbnailBase64: decoded.thumbnailBase64,
     }
   }
 
@@ -967,6 +972,7 @@ export class ProjectStorageService {
             createdAt: now,
             updatedAt: now,
             content: decoded.content,
+            thumbnailBase64: decoded.thumbnailBase64,
           })
         } catch (decodeErr) {
           logError(`Failed to decode document ${originalId}`, decodeErr, {

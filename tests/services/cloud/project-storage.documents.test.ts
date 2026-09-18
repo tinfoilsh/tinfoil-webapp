@@ -90,6 +90,58 @@ describe('ProjectStorageService documents', () => {
     expect(restored.get('doc-1')?.sizeBytes).toBe(8192)
   })
 
+  it('persists and restores an image thumbnail', async () => {
+    const storage = new ProjectStorageService()
+    vi.spyOn(storage, 'generateDocumentId').mockResolvedValue({
+      documentId: 'doc-1',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      reverseTimestamp: 1,
+    })
+    mocks.enclavePush.mockResolvedValue({ etag: '1' })
+
+    const document = await storage.uploadDocument(
+      'project-1',
+      'photo.png',
+      'image/png',
+      'A description of the photo',
+      4096,
+      'dGh1bWI=',
+    )
+    expect(document.thumbnailBase64).toBe('dGh1bWI=')
+
+    const pushRequest = mocks.enclavePush.mock.calls[0][0]
+    const payload = JSON.parse(new TextDecoder().decode(pushRequest.plaintext))
+    expect(payload.thumbnailBase64).toBe('dGh1bWI=')
+
+    mocks.enclavePull.mockResolvedValue({
+      items: [{ id: 'project-1/doc-1', ok: true, etag: '1' }],
+    })
+    mocks.pullItemPlaintext.mockReturnValue(pushRequest.plaintext)
+    const restored = await storage.getDocuments('project-1', ['doc-1'])
+    expect(restored.get('doc-1')?.thumbnailBase64).toBe('dGh1bWI=')
+  })
+
+  it('omits the thumbnail field for documents without one', async () => {
+    const storage = new ProjectStorageService()
+    vi.spyOn(storage, 'generateDocumentId').mockResolvedValue({
+      documentId: 'doc-1',
+      timestamp: '2026-01-01T00:00:00.000Z',
+      reverseTimestamp: 1,
+    })
+    mocks.enclavePush.mockResolvedValue({ etag: '1' })
+
+    await storage.uploadDocument(
+      'project-1',
+      'notes.txt',
+      'text/plain',
+      'Plain notes',
+    )
+
+    const pushRequest = mocks.enclavePush.mock.calls[0][0]
+    const payload = JSON.parse(new TextDecoder().decode(pushRequest.plaintext))
+    expect('thumbnailBase64' in payload).toBe(false)
+  })
+
   it('derives a size when reading legacy document payloads', async () => {
     const storage = new ProjectStorageService()
     const content = 'R\u00e9sum\u00e9'

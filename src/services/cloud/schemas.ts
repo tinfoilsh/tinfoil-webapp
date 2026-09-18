@@ -188,5 +188,6 @@ export const ProjectDocumentPlaintextSchema = z
     filename: z.string().optional(),
     contentType: z.string().optional(),
     sizeBytes: z.number().nonnegative().optional(),
+    thumbnailBase64: z.string().optional(),
   })
   .passthrough()

@@ -28,6 +28,9 @@ export interface ProjectDocument {
   createdAt: string
   updatedAt: string
   content?: string
+  // Small JPEG preview stored alongside image documents so the sidebar can
+  // show a real thumbnail; the full image is never persisted.
+  thumbnailBase64?: string
   decryptionFailed?: boolean
 }
 
