@@ -244,7 +244,7 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
         } catch (error) {
           logError('Image description failed', error, {
             component: 'DocumentUploader',
-            metadata: { fileName: file.name },
+            metadata: { contentType: file.type, sizeBytes: file.size },
           })
           const message =
             error instanceof Error ? error.message : 'Unknown error'
@@ -368,7 +368,7 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
       logError('Document processing failed', error, {
         component: 'DocumentUploader',
         action: 'uploadDocument',
-        metadata: { documentId, fileName: file.name },
+        metadata: { documentId, contentType: file.type, sizeBytes: file.size },
       })
       onError(
         error instanceof Error

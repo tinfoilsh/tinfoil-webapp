@@ -92,7 +92,7 @@ export async function* chatChunkStreamFromSSE(
         } catch (error) {
           logError('Failed to parse SSE line', error, {
             component: 'chat-stream',
-            metadata: { line },
+            metadata: { lineLength: line.length },
           })
         }
       }

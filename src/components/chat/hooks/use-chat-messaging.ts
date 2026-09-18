@@ -1461,7 +1461,7 @@ export function useChatMessaging({
                 logInfo('[handleQuery] Title resolved from parallel gen', {
                   component: 'useChatMessaging',
                   action: 'handleQuery.titleResolved',
-                  metadata: { chatId, title: resolvedTitle },
+                  metadata: { chatId, titleLength: resolvedTitle.length },
                 })
               }
             } catch (error) {
@@ -1521,7 +1521,6 @@ export function useChatMessaging({
             metadata: {
               chatId,
               isLocalOnly: chatToSave.isLocalOnly,
-              title: chatToSave.title,
               messageCount: finalMessages.length,
             },
           })

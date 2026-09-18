@@ -670,7 +670,7 @@ export function ChatInput({
               logError('Failed to upload pasted image', error, {
                 component: 'ChatInput',
                 action: 'handlePaste',
-                metadata: { fileName: file.name },
+                metadata: { contentType: file.type, sizeBytes: file.size },
               })
             })
             return
