@@ -59,13 +59,24 @@ export function RecordingWaveform({
     let source: MediaStreamAudioSourceNode | null = null
     const AudioContextClass = getAudioContextClass()
     if (AudioContextClass) {
-      audioContext = new AudioContextClass()
-      source = audioContext.createMediaStreamSource(stream)
-      analyser = audioContext.createAnalyser()
-      analyser.fftSize = CONSTANTS.RECORDING_WAVEFORM_FFT_SIZE
-      source.connect(analyser)
-      if (audioContext.state === 'suspended') {
-        void audioContext.resume().catch(() => {})
+      // A stream with no audio track makes createMediaStreamSource throw;
+      // fall back to the flat-line rendering rather than tearing down the
+      // recording UI.
+      try {
+        audioContext = new AudioContextClass()
+        source = audioContext.createMediaStreamSource(stream)
+        analyser = audioContext.createAnalyser()
+        analyser.fftSize = CONSTANTS.RECORDING_WAVEFORM_FFT_SIZE
+        source.connect(analyser)
+        if (audioContext.state === 'suspended') {
+          void audioContext.resume().catch(() => {})
+        }
+      } catch {
+        source?.disconnect()
+        void audioContext?.close().catch(() => {})
+        audioContext = null
+        source = null
+        analyser = null
       }
     }
     const frame = analyser ? new Uint8Array(analyser.fftSize) : null
@@ -77,6 +88,7 @@ export function RecordingWaveform({
     let lastDisplayedSecond = -1
     let cssWidth = 0
     let cssHeight = 0
+    let strokeColor = ''
 
     const ctx = canvas?.getContext('2d') ?? null
 
@@ -89,6 +101,7 @@ export function RecordingWaveform({
       canvas.width = Math.round(cssWidth * dpr)
       canvas.height = Math.round(cssHeight * dpr)
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      strokeColor = getComputedStyle(canvas).color
     }
     resize()
     const resizeObserver =
@@ -100,7 +113,7 @@ export function RecordingWaveform({
     const draw = (scrollOffset: number) => {
       if (!canvas || !ctx || cssWidth === 0) return
       ctx.clearRect(0, 0, cssWidth, cssHeight)
-      ctx.strokeStyle = getComputedStyle(canvas).color
+      ctx.strokeStyle = strokeColor
       ctx.lineWidth = CONSTANTS.RECORDING_WAVEFORM_BAR_WIDTH_PX
       ctx.lineCap = 'round'
       const midY = cssHeight / 2
