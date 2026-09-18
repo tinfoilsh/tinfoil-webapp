@@ -20,50 +20,32 @@ name="Plausible Analytics"
 url="https://plausible.io/js/script.js"
 file="plausible.js"
 
-# Backup current version
-if [ -f "$file" ]; then
-    cp "$file" "${file}.backup"
-    old_size=$(wc -c < "$file")
-else
-    old_size=0
-fi
+# plausible.js carries local privacy edits that the upstream script does not
+# have. They must be re-applied by hand after every update, and
+# tests/pages/plausible-analytics.test.ts will fail until they are:
+#   - x(): suppress all events on /, /newchat, /chat*, /share*, /project/*/chat*
+#   - b.u and l: report location.origin + location.pathname, never href
+#   - k(): reduce document.referrer to origin + pathname before sending as b.r
+# The stock script is downloaded to plausible.upstream.js so the edits can be
+# ported with a diff instead of overwriting the customized file.
+download_target="plausible.upstream.js"
 
-# Download new version
-if curl -f -L --silent --show-error -o "$file" "$url"; then
-    new_size=$(wc -c < "$file")
-    sri_hash=$(openssl dgst -sha384 -binary "$file" | openssl base64 -A)
-
-    # Compare sizes
-    if [ $old_size -eq 0 ]; then
-        echo -e "${GREEN}✓${NC} $name downloaded (${new_size} bytes)"
-    elif [ $old_size -eq $new_size ]; then
-        echo -e "${GREEN}✓${NC} $name unchanged (${new_size} bytes)"
-        rm "${file}.backup"
-    else
-        diff=$((new_size - old_size))
-        if [ $diff -gt 0 ]; then
-            echo -e "${YELLOW}⚠${NC} $name updated: ${old_size} → ${new_size} bytes (+${diff})"
-        else
-            echo -e "${YELLOW}⚠${NC} $name updated: ${old_size} → ${new_size} bytes (${diff})"
-        fi
-        echo "   Backup saved as ${file}.backup"
-    fi
-
-    echo "   SRI: integrity=\"sha384-${sri_hash}\""
+if curl -f -L --silent --show-error -o "$download_target" "$url"; then
+    new_size=$(wc -c < "$download_target")
+    echo -e "${GREEN}✓${NC} $name upstream downloaded to ${download_target} (${new_size} bytes)"
 else
     echo "❌ Failed to download $name"
-    if [ -f "${file}.backup" ]; then
-        mv "${file}.backup" "$file"
-        echo "   Restored from backup"
-    fi
+    rm -f "$download_target"
     exit 1
 fi
 
 echo ""
-echo "✅ Update complete!"
-echo ""
 echo "Next steps:"
-echo "1. Copy the SRI hash above to src/app/layout.tsx"
-echo "2. Test the app: npm run dev"
-echo "3. Check browser console for errors"
-echo "4. Verify analytics are working in Network tab"
+echo "1. Port the upstream changes into ${file} by hand:"
+echo "     diff ${download_target} ${file}"
+echo "   keeping the local privacy edits listed at the top of this script."
+echo "2. Delete ${download_target} once ported."
+echo "3. Recompute the SRI hash and update src/pages/_app.tsx:"
+echo "     openssl dgst -sha384 -binary ${file} | openssl base64 -A"
+echo "4. Run: npx vitest run tests/pages/plausible-analytics.test.ts"
+echo -e "   ${YELLOW}It fails until the privacy edits and SRI hash are both in place.${NC}"
