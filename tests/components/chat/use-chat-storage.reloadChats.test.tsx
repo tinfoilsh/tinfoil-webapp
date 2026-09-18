@@ -1,5 +1,5 @@
 import { useChatStorage } from '@/components/chat/hooks/use-chat-storage'
-import type { PendingRecoveryEnvelope } from '@/components/chat/types'
+import type { Chat, PendingRecoveryEnvelope } from '@/components/chat/types'
 import { chatEvents } from '@/services/storage/chat-events'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -90,6 +90,50 @@ describe('useChatStorage.reloadChats', () => {
   afterEach(() => {
     vi.restoreAllMocks()
   })
+
+  it.each([false, true])(
+    'merges completed upload metadata without clearing pending edits (pending: %s)',
+    async (pendingSave) => {
+      const current: Chat = {
+        id: 'new-cloud-chat',
+        title: 'New conversation',
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        updatedAt: '2026-09-01T00:00:00Z',
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+        isBlankChat: false,
+        isLocalOnly: false,
+        locallyModified: true,
+        pendingSave,
+      }
+      const { result } = renderHook(() =>
+        useChatStorage({ storeHistory: true }),
+      )
+      await waitFor(() => expect(result.current.isInitialLoad).toBe(false))
+      act(() => {
+        result.current.setChats([current])
+        result.current.setCurrentChat(current)
+      })
+      const syncedAt = Date.now()
+      mockLoadChats.mockResolvedValue([
+        {
+          ...current,
+          syncedAt,
+          locallyModified: false,
+          pendingSave: undefined,
+          messages: [],
+          messageCount: 1,
+          isMetadataOnly: true,
+        },
+      ])
+      act(() => chatEvents.emit({ reason: 'sync', ids: [current.id] }))
+      await waitFor(() =>
+        expect(result.current.currentChat.syncedAt).toBe(syncedAt),
+      )
+      expect(result.current.currentChat.locallyModified).toBe(pendingSave)
+      expect(result.current.currentChat.messages).toBe(current.messages)
+      expect(result.current.currentChat.pendingSave).toBe(pendingSave)
+    },
+  )
 
   it('loads summaries first and hydrates a chat when selected', async () => {
     const summary = {

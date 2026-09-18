@@ -46,6 +46,10 @@ export function useChatSearch(
   const active = enabled && trimmed.length > 0
 
   const [results, setResults] = useState<SearchResultChat[]>([])
+  const [completedQuery, setCompletedQuery] = useState<{
+    term: string
+    includeProjectChats: boolean
+  } | null>(null)
   const [isSearching, setIsSearching] = useState(false)
   const [isIndexing, setIsIndexing] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -55,6 +59,7 @@ export function useChatSearch(
   useEffect(() => {
     if (!active) {
       setResults([])
+      setCompletedQuery(null)
       setIsSearching(false)
       setIsIndexing(false)
       setFailed(false)
@@ -78,6 +83,7 @@ export function useChatSearch(
         )
         if (cancelled) return
         setResults(chats)
+        setCompletedQuery({ term: trimmed, includeProjectChats })
         setIsSearching(false)
         if (outcome.reindexSettled) {
           // Re-query only after a successful rebuild. Refreshing on a
@@ -103,6 +109,7 @@ export function useChatSearch(
           action: 'search',
         })
         setResults([])
+        setCompletedQuery({ term: trimmed, includeProjectChats })
         setIsSearching(false)
         // A failed run has no settle callback to clear the indexing
         // flag, so reset it here or the "building index" indicator
@@ -118,5 +125,14 @@ export function useChatSearch(
     }
   }, [trimmed, active, includeProjectChats, refreshNonce])
 
-  return { results, isSearching, isIndexing, failed, available }
+  const isCurrentQuery =
+    completedQuery?.term === trimmed &&
+    completedQuery.includeProjectChats === includeProjectChats
+  return {
+    results: active && isCurrentQuery && !isSearching ? results : [],
+    isSearching: active && (!isCurrentQuery || isSearching),
+    isIndexing: active && isIndexing,
+    failed: active && isCurrentQuery && failed,
+    available,
+  }
 }

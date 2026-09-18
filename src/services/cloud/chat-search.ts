@@ -13,6 +13,7 @@
  * a promise so callers can re-query once it settles.
  */
 
+import { isSearchableChat } from '@/utils/chat-search-visibility'
 import { logError, logInfo } from '@/utils/error-handling'
 import { chatStorage } from '../storage/chat-storage'
 import {
@@ -225,7 +226,17 @@ export async function resolveSearchResultChats(
   const missing: string[] = []
   for (const r of results) {
     const local = await chatStorage.getChat(r.id)
+    if (
+      local?.decryptionFailed &&
+      !local.isBlankChat &&
+      !local.isTemporary &&
+      !local.dataCorrupted
+    ) {
+      missing.push(r.id)
+      continue
+    }
     if (local) {
+      if (!isSearchableChat(local)) continue
       if (!includeProjectChats && local.projectId) continue
       byId.set(r.id, {
         id: local.id,
@@ -245,10 +256,14 @@ export async function resolveSearchResultChats(
         const plaintextBytes = pullItemPlaintext(item)
         if (plaintextBytes == null) continue
         try {
-          const { chat } = await processRemoteChat({
-            id: item.id,
-            plaintext: new TextDecoder().decode(plaintextBytes),
-          })
+          const { chat } = await processRemoteChat(
+            {
+              id: item.id,
+              plaintext: new TextDecoder().decode(plaintextBytes),
+            },
+            item.project_id_set === true ? { projectId: item.project_id } : {},
+          )
+          if (!isSearchableChat(chat)) continue
           if (!includeProjectChats && chat.projectId) continue
           byId.set(item.id, {
             id: chat.id,
