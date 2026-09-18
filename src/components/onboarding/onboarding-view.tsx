@@ -165,7 +165,7 @@ export function OnboardingView({
 // MARK: - Page 1: Letter from the Founders
 
 const FOUNDERS_LETTER_PARAGRAPHS = [
-  <strong key="opening">
+  <strong key="opening" className="text-content-primary">
     Tinfoil Chat was built as a sanctuary for thought.
   </strong>,
   'At Tinfoil, we believe that AI is the most intimate technology yet created. We see AI as a space to explore, to make mistakes, to think out loud, to reflect with a beautiful and deep intelligence on the other end.',
@@ -237,7 +237,7 @@ function OnboardingSafeguardsPage() {
     >
       <div className="flex w-full flex-col items-center gap-8">
         <div className="flex h-28 items-center justify-center">
-          <TfShieldCheck className="h-24 w-24 text-tinfoil-accent-blue" />
+          <TfShieldCheck className="h-24 w-24 text-tinfoil-accent-blue dark:text-white" />
         </div>
 
         <div className="space-y-4 text-center">

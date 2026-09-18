@@ -3700,7 +3700,7 @@ ${encryptionKey.replace('key_', '')}
                             )}
                           >
                             <div className="flex items-start gap-2">
-                              <GoPasskeyFill className="mt-0.5 h-4 w-4 shrink-0 text-brand-accent-light" />
+                              <GoPasskeyFill className="mt-0.5 h-4 w-4 shrink-0 text-tinfoil-accent-blue dark:text-blue-400" />
                               <div>
                                 <span className="text-sm font-medium text-content-primary">
                                   Sync and backup using Passkeys
@@ -3712,8 +3712,8 @@ ${encryptionKey.replace('key_', '')}
                               </div>
                             </div>
                             <div className="ml-6 mt-2 flex items-center gap-1.5">
-                              <IoShieldCheckmark className="h-3.5 w-3.5 text-brand-accent-light" />
-                              <span className="text-xs font-medium text-brand-accent-light">
+                              <IoShieldCheckmark className="h-3.5 w-3.5 text-tinfoil-accent-blue dark:text-blue-400" />
+                              <span className="text-xs font-medium text-tinfoil-accent-blue dark:text-blue-400">
                                 Passkey active
                               </span>
                             </div>

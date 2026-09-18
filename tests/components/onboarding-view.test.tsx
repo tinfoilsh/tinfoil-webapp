@@ -65,6 +65,9 @@ describe('OnboardingView', () => {
       screen.getByText('Tinfoil Chat was built as a sanctuary for thought.')
         .tagName,
     ).toBe('STRONG')
+    expect(
+      screen.getByText('Tinfoil Chat was built as a sanctuary for thought.'),
+    ).toHaveClass('text-content-primary')
   })
 
   it('emphasizes that the private space belongs to the user', () => {
@@ -104,6 +107,9 @@ describe('OnboardingView', () => {
     )
     expect(learnMoreLink).toHaveAttribute('target', '_blank')
     expect(learnMoreLink).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(document.querySelector('svg.text-tinfoil-accent-blue')).toHaveClass(
+      'dark:text-white',
+    )
     const safeguardsParagraphs = [
       'Privacy-preserving safeguards review AI responses for safety.',
       'Safeguards run inside secure enclaves at inference time, keeping your conversations private and notifying you in case of a flag.',

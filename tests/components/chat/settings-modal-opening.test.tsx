@@ -1,5 +1,8 @@
 import { SettingsModal } from '@/components/chat/settings-modal'
-import { SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED } from '@/constants/storage-keys'
+import {
+  SETTINGS_CLOUD_SYNC_ENABLED,
+  SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
+} from '@/constants/storage-keys'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +14,21 @@ vi.mock('@clerk/nextjs', () => ({
     isSignedIn: false,
   }),
   useUser: () => ({ user: null }),
+}))
+
+vi.mock('@/services/passkey', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/passkey')>()),
+  loadPasskeyCredentials: vi.fn().mockResolvedValue([]),
+}))
+
+vi.mock('@/services/cloud/cloud-key-preflight', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/services/cloud/cloud-key-preflight')
+  >()),
+  validateCurrentPrimaryKey: vi.fn().mockResolvedValue({
+    canWrite: true,
+    remoteState: 'exists',
+  }),
 }))
 
 function Harness(props: Partial<Parameters<typeof SettingsModal>[0]> = {}) {
@@ -40,6 +58,32 @@ describe('settings opening', () => {
   beforeEach(() => {
     localStorage.clear()
   })
+
+  it.each([false, true])(
+    'uses theme-aware blue for active passkeys (dark: %s)',
+    async (isDarkMode) => {
+      localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+      render(
+        <Harness
+          initialTab="cloud-sync"
+          passkeyActive
+          isClient
+          isDarkMode={isDarkMode}
+          themeMode={isDarkMode ? 'dark' : 'light'}
+        />,
+      )
+
+      const status = await screen.findByText('Passkey active')
+      expect(status).toHaveClass(
+        'text-tinfoil-accent-blue',
+        'dark:text-blue-400',
+      )
+      expect(status.parentElement?.querySelector('svg')).toHaveClass(
+        'text-tinfoil-accent-blue',
+        'dark:text-blue-400',
+      )
+    },
+  )
 
   it.each([
     { saved: null, enabled: false },
