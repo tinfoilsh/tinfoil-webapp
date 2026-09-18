@@ -595,6 +595,10 @@ export function ChatInput({
       }
 
       mediaRecorder.onstop = async () => {
+        // The recorder can stop on its own (e.g. the microphone track ends),
+        // so recording state is cleared here rather than only in stopRecording.
+        setIsRecording(false)
+        setRecordingStream(null)
         try {
           // Stop all tracks
           stream?.getTracks().forEach((track) => track.stop())
@@ -622,8 +626,6 @@ export function ChatInput({
             variant: 'destructive',
             position: 'top-right',
           })
-          setIsRecording(false)
-          setRecordingStream(null)
           setIsTranscribing(false)
         }
       }
