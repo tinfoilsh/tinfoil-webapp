@@ -1,6 +1,11 @@
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { GridTexture } from '@/components/ui/grid-texture'
+import {
+  PRIVACY_POLICY_URL,
+  SAFEGUARDS_INFO_URL,
+  TERMS_URL,
+} from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/nextjs'
@@ -219,8 +224,6 @@ function OnboardingLetterPage() {
 
 // MARK: - Page 3: Safeguards
 
-const SAFEGUARDS_URL = 'https://tinfoil.sh/safety-and-safeguards'
-
 function OnboardingSafeguardsPage() {
   return (
     <motion.div
@@ -249,7 +252,7 @@ function OnboardingSafeguardsPage() {
             </strong>
           </p>
           <a
-            href={SAFEGUARDS_URL}
+            href={SAFEGUARDS_INFO_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block text-sm font-medium text-brand-accent-dark underline underline-offset-2 hover:opacity-80 dark:text-brand-accent-light"
@@ -263,9 +266,6 @@ function OnboardingSafeguardsPage() {
 }
 
 // MARK: - Page 2: Privacy
-
-const TERMS_URL = 'https://tinfoil.sh/terms'
-const PRIVACY_POLICY_URL = 'https://tinfoil.sh/privacy'
 
 function OnboardingPrivacyPage({
   privacyEnabled,

@@ -45,6 +45,13 @@ export const CONSTANTS = {
   SIDEBAR_SYNC_FEEDBACK_EXIT_S: 0.14,
   SIDEBAR_SYNC_FEEDBACK_ENTER_S: 0.22,
   SIDEBAR_SYNC_FEEDBACK_ENTER_DELAY_S: 0.06,
+  // Grace period before a hover-opened account menu closes once the pointer
+  // leaves it, so brushing past the gap between trigger and panel doesn't
+  // dismiss it.
+  SIDEBAR_MENU_HOVER_CLOSE_DELAY_MS: 400,
+  // How far outside the trigger/panel the pointer may wander before the
+  // hover-opened account menu starts its close countdown.
+  SIDEBAR_MENU_HOVER_TOLERANCE_PX: 48,
   // Height of a pinned sidebar section header (Projects/Chats). The Chats
   // header offsets by this amount so it stacks below the pinned Projects
   // header while scrolling.

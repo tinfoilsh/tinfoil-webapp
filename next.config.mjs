@@ -1,7 +1,11 @@
-import { dirname } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const projectRoot = dirname(fileURLToPath(import.meta.url))
+const { version: appVersion } = JSON.parse(
+  readFileSync(join(projectRoot, 'package.json'), 'utf8'),
+)
 
 const isDev = process.env.NODE_ENV === 'development'
 
@@ -20,6 +24,9 @@ if (isHostedBuild && process.env.NEXT_PUBLIC_DEV === 'true') {
 const nextConfig = {
   ...(isDev ? {} : { output: 'export' }),
   outputFileTracingRoot: projectRoot,
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+  },
 
   // Disable image optimization for static export
   images: {

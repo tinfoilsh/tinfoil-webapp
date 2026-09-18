@@ -17,7 +17,7 @@ import { AuthTokenUnavailableError, authTokenManager } from '@/services/auth'
 import { logError } from '@/utils/error-handling'
 import { z } from 'zod'
 
-export const SAFEGUARDS_INFO_URL = 'https://tinfoil.sh/safety-and-safeguards'
+export { SAFEGUARDS_INFO_URL } from '@/constants/external-links'
 
 export interface FlaggedChat {
   id: string
