@@ -97,12 +97,12 @@ describe('OnboardingView', () => {
     expect(learnMoreLink).toHaveAttribute('rel', 'noopener noreferrer')
     expect(
       screen.getByText(
-        'Privacy-preserving safeguards review the AI responses in this chat. The safeguards run inside secure enclaves at inference time, always keeping your conversations private.',
+        'Privacy-preserving safeguards review AI responses for safety. Safeguards run inside secure enclaves at inference time, keeping your conversations private and notifying you in case of a flag.',
       ),
     ).toBeInTheDocument()
     expect(
       screen.getByText(
-        'Tinfoil cannot see the nature of the violation or conversation content.',
+        'Tinfoil never sees conversation content or nature of the flag raised.',
       ),
     ).toBeInTheDocument()
     expect(onComplete).not.toHaveBeenCalled()

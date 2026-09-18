@@ -243,12 +243,12 @@ function OnboardingSafeguardsPage() {
             Tending the Garden
           </h2>
           <p className="text-balance text-base text-content-secondary">
-            Privacy-preserving safeguards review the AI responses in this chat.
-            The safeguards run inside secure enclaves at inference time, always
-            keeping your conversations private.{' '}
+            Privacy-preserving safeguards review AI responses for safety.
+            Safeguards run inside secure enclaves at inference time, keeping
+            your conversations private and notifying you in case of a flag.{' '}
             <strong className="font-semibold text-content-primary">
-              Tinfoil cannot see the nature of the violation or conversation
-              content.
+              Tinfoil never sees conversation content or nature of the flag
+              raised.
             </strong>
           </p>
           <a
