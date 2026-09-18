@@ -93,6 +93,11 @@ describe('VerifierSidebar', () => {
     const source = iframe.getAttribute('src')
     expect(source).toContain(VERIFICATION_CENTER_ORIGIN)
     expect(iframe).toHaveAttribute('loading', 'eager')
+    expect(iframe).toHaveAttribute('referrerpolicy', 'no-referrer')
+    expect(iframe).toHaveAttribute(
+      'sandbox',
+      'allow-scripts allow-same-origin allow-popups',
+    )
     expect(iframe.parentElement).toHaveAttribute('inert')
     expect(mocks.getVerificationDocument).not.toHaveBeenCalled()
     expect(mocks.getCachedVerificationDocument).not.toHaveBeenCalled()

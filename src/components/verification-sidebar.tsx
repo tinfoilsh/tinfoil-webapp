@@ -217,6 +217,8 @@ export function VerifierSidebar({
             ref={iframeRef}
             src={iframeUrl}
             loading="eager"
+            referrerPolicy="no-referrer"
+            sandbox="allow-scripts allow-same-origin allow-popups"
             className="h-full w-full"
             style={{ border: 'none' }}
             title="Tinfoil Verification Center"
