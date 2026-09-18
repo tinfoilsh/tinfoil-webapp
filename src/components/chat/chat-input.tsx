@@ -38,6 +38,7 @@ import { CONSTANTS } from './constants'
 import { useEnterToNewline } from './hooks/use-enter-to-newline'
 import { isImeComposition } from './keyboard-utils'
 import type { PromptPreset } from './prompts/types'
+import { RecordingWaveform } from './recording-waveform'
 import type { ProcessedDocument } from './renderers/types'
 import type { LoadingState } from './types'
 
@@ -282,6 +283,11 @@ export function ChatInput({
   // --- Speech-to-text state ---
   const [isRecording, setIsRecording] = useState(false)
   const [isTranscribing, setIsTranscribing] = useState(false)
+  // Mirrors mediaStreamRef in state so the live waveform re-renders with the
+  // active stream while recording.
+  const [recordingStream, setRecordingStream] = useState<MediaStream | null>(
+    null,
+  )
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const recordingSessionRef = useRef(0)
@@ -429,7 +435,9 @@ export function ChatInput({
     // growth kicks in.
     scheduleResize(ownTextareaRef.current)
     // Include `textareaResetNonce` so a remount recalculates height immediately.
-  }, [input, resizeTextarea, scheduleResize, textareaResetNonce])
+    // Include `isRecording` because the textarea is hidden while recording and
+    // measures as zero height, so it must be re-measured once it reappears.
+  }, [input, resizeTextarea, scheduleResize, textareaResetNonce, isRecording])
 
   // Recompute the height cap when the visual viewport changes (e.g. the
   // on-screen keyboard opens or closes) so long text never pushes the send
@@ -483,6 +491,7 @@ export function ChatInput({
       recordingTimeoutRef.current = null
     }
     setIsRecording(false)
+    setRecordingStream(null)
   }, [])
 
   const sendAudioForTranscription = useCallback(
@@ -614,12 +623,14 @@ export function ChatInput({
             position: 'top-right',
           })
           setIsRecording(false)
+          setRecordingStream(null)
           setIsTranscribing(false)
         }
       }
 
       mediaRecorder.start(1000)
       setIsRecording(true)
+      setRecordingStream(stream)
 
       // Auto-stop after configured timeout
       recordingTimeoutRef.current = setTimeout(() => {
@@ -938,6 +949,19 @@ export function ChatInput({
             {/* The button groups are sized to the send button so a one-line
                 textarea centers against them; when it grows they stay pinned
                 to the bottom via items-end. */}
+            {/* While recording, the textarea stays mounted (so its ref, height
+                and focus handling survive) but is hidden behind the live
+                waveform, which occupies the same slot. */}
+            {isRecording && recordingStream && (
+              <RecordingWaveform
+                stream={recordingStream}
+                className={cn(
+                  'w-full',
+                  isCompact && 'min-w-0 flex-1 self-center',
+                )}
+                style={{ minHeight: inputMinHeight }}
+              />
+            )}
             <textarea
               id="chat-input"
               aria-label="Message"
@@ -1198,6 +1222,7 @@ export function ChatInput({
               className={cn(
                 'w-full resize-none bg-transparent font-chat text-lg leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
                 isCompact && 'min-w-0 flex-1 self-center',
+                isRecording && recordingStream && 'hidden',
               )}
               style={{
                 minHeight: inputMinHeight,
