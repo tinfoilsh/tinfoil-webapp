@@ -23,7 +23,7 @@ export function SubscribePromptModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose}>
       <ModalTitle className="mt-2 text-balance px-8 text-center text-xl font-bold">
-        You&apos;ve used your free requests
+        No more free requests
       </ModalTitle>
 
       <ModalDescription className="mt-2 text-balance px-2 text-center">
