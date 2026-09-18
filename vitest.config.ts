@@ -12,7 +12,6 @@ export default defineConfig({
       'tests/**/*.test.tsx',
       'tests/**/*.test.mjs',
     ],
-    exclude: ['tests/ui/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
