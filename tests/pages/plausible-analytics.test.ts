@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
@@ -15,6 +16,7 @@ function loadPlausible(url: string) {
   const location = {
     href: parsedUrl.href,
     hostname: parsedUrl.hostname,
+    origin: parsedUrl.origin,
     pathname: parsedUrl.pathname,
     protocol: parsedUrl.protocol,
   }
@@ -86,6 +88,12 @@ describe('Plausible analytics', () => {
   })
 
   it.each([
+    ['home with prefilled prompt', 'https://chat.tinfoil.sh/?q=private+prompt'],
+    ['home with hash prompt', 'https://chat.tinfoil.sh/#send=cHJpdmF0ZQ=='],
+    [
+      'new chat with prefilled prompt',
+      'https://chat.tinfoil.sh/newchat?q=private',
+    ],
     ['shared chat', 'https://chat.tinfoil.sh/share/chat-id#v2:throwaway-key'],
     ['chat root', 'https://chat.tinfoil.sh/chat'],
     ['chat', 'https://chat.tinfoil.sh/chat/chat-id'],
@@ -117,5 +125,28 @@ describe('Plausible analytics', () => {
     const request = analytics.fetchMock.mock.calls[0][1]
     const body = JSON.parse(String(request.body)) as { u: string }
     expect(body.u).toBe('https://chat.tinfoil.sh/shared')
+  })
+
+  it('reports only the origin and path, never the query or hash', () => {
+    const analytics = loadPlausible(
+      'https://chat.tinfoil.sh/signin?redirect_url=%2F%3Fq%3Dsecret#token',
+    )
+
+    expect(analytics.fetchMock).toHaveBeenCalledTimes(1)
+    const request = analytics.fetchMock.mock.calls[0][1]
+    const body = JSON.parse(String(request.body)) as { u: string }
+    expect(body.u).toBe('https://chat.tinfoil.sh/signin')
+  })
+})
+
+describe('Plausible script integrity', () => {
+  it('matches the subresource integrity hash declared in _app', () => {
+    const app = readFileSync(
+      resolve(process.cwd(), 'src/pages/_app.tsx'),
+      'utf8',
+    )
+    const declared = app.match(/integrity="(sha384-[^"]+)"/)?.[1]
+    const actual = `sha384-${createHash('sha384').update(plausibleScript).digest('base64')}`
+    expect(declared).toBe(actual)
   })
 })

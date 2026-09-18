@@ -20,7 +20,7 @@
         })
   }
   var c = !1,
-    l = location.href,
+    l = location.origin + location.pathname,
     r = {},
     d = -1,
     u = 0,
@@ -52,6 +52,8 @@
   }
   function x() {
     return (
+      '/' === location.pathname ||
+      '/newchat' === location.pathname ||
       '/share' === location.pathname ||
       0 === location.pathname.indexOf('/share/') ||
       '/chat' === location.pathname ||
@@ -103,7 +105,7 @@
     var b = {}
     ;((b.n = i),
       (b.v = 33),
-      (b.u = location.href),
+      (b.u = location.origin + location.pathname),
       (b.d = o.domain),
       (b.r = document.referrer || null),
       v && v.meta && (b.m = JSON.stringify(v.meta)),

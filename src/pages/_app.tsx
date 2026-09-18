@@ -12,6 +12,8 @@ import Head from 'next/head'
 import Script from 'next/script'
 
 const ANALYTICS_EXCLUDED_ROUTES = new Set([
+  '/',
+  '/newchat',
   '/share/[[...slug]]',
   '/chat/[[...slug]]',
   '/chat/[chatId]',
@@ -176,7 +178,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
           data-domain="chat.tinfoil.sh"
           data-api="https://plausible.io/api/event"
           src="/js/plausible.js"
-          integrity="sha384-b9XvNgc2+VPXI896lpD5wayk8mrDF40D+0aMR10g+8OO5zij+GXEhu2NhUSz1Oxz"
+          integrity="sha384-IlQxP/pbrnY+hZ1jlJh+jFNCftNypqYFIKMOYfahCzJSlo4QIvX4BUQk3vkZF+nI"
           crossOrigin="anonymous"
           strategy="afterInteractive"
         />
