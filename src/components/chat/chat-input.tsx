@@ -33,7 +33,7 @@ import {
   ContextUsageIndicator,
   type ContextUsage,
 } from './components/context-usage-indicator'
-import { MacFileIcon } from './components/mac-file-icon'
+import { FilePreview, imageDataUrl } from './components/file-preview'
 import { CONSTANTS } from './constants'
 import { useEnterToNewline } from './hooks/use-enter-to-newline'
 import { isImeComposition } from './keyboard-utils'
@@ -879,31 +879,19 @@ export function ChatInput({
                     </button>
                   )}
                   <div className="flex items-center gap-2">
-                    {doc.attachment?.type === 'image' || doc.imageData ? (
-                      <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-md border border-border-subtle bg-surface-card">
-                        <img
-                          src={`data:${doc.attachment?.mimeType ?? doc.imageData?.mimeType};base64,${doc.attachment?.thumbnailBase64 ?? doc.attachment?.base64 ?? doc.imageData?.base64}`}
-                          alt={doc.name}
-                          className="h-full w-full object-cover"
-                        />
-                        {(doc.isUploading || doc.isGeneratingDescription) && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-surface-chat/70">
-                            <PiSpinner className="h-3.5 w-3.5 animate-spin text-content-primary" />
-                          </div>
-                        )}
-                      </div>
-                    ) : doc.isUploading ? (
-                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center">
-                        <PiSpinner className="h-5 w-5 animate-spin text-content-secondary" />
-                      </div>
-                    ) : (
-                      <MacFileIcon
-                        filename={doc.name}
-                        size={18}
-                        isDarkMode={isDarkMode}
-                        compact
-                      />
-                    )}
+                    <FilePreview
+                      filename={doc.name}
+                      imageSrc={imageDataUrl(
+                        doc.attachment?.thumbnailBase64 ??
+                          doc.attachment?.base64 ??
+                          doc.imageData?.base64,
+                        doc.attachment?.mimeType ?? doc.imageData?.mimeType,
+                      )}
+                      textContent={doc.attachment?.textContent ?? doc.content}
+                      isBusy={Boolean(
+                        doc.isUploading || doc.isGeneratingDescription,
+                      )}
+                    />
                     <div className="flex min-w-0 flex-col">
                       <span
                         className={cn(

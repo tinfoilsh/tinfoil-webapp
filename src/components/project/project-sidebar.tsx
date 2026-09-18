@@ -2,6 +2,10 @@
 
 import { ChatList, type ChatItemData } from '@/components/chat/chat-list'
 import { formatRelativeTime } from '@/components/chat/chat-list-utils'
+import {
+  FilePreview,
+  imageDataUrl,
+} from '@/components/chat/components/file-preview'
 import { getDocumentTextContent } from '@/components/chat/document-content'
 import { useDocumentUploader } from '@/components/chat/document-uploader'
 import { useDrag } from '@/components/chat/drag-context'
@@ -11,7 +15,6 @@ import { SidebarAccountMenu } from '@/components/chat/sidebar-account-menu'
 import { SidebarPanel, SidebarRail } from '@/components/chat/sidebar-layout'
 import { TypingAnimation } from '@/components/chat/typing-animation'
 import { useFavoriteDropTarget } from '@/components/chat/use-favorite-drop-target'
-import { PiSpinnerThin } from '@/components/icons/lazy-icons'
 import { Link } from '@/components/link'
 import { SidebarPatternEdge } from '@/components/ui/sidebar-pattern-edge'
 import { cn } from '@/components/ui/utils'
@@ -57,33 +60,6 @@ import {
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  BsFile,
-  BsFiletypeCss,
-  BsFiletypeCsv,
-  BsFiletypeDoc,
-  BsFiletypeDocx,
-  BsFiletypeGif,
-  BsFiletypeHtml,
-  BsFiletypeJpg,
-  BsFiletypeJs,
-  BsFiletypeJson,
-  BsFiletypeJsx,
-  BsFiletypeMd,
-  BsFiletypeMov,
-  BsFiletypeMp3,
-  BsFiletypeMp4,
-  BsFiletypePdf,
-  BsFiletypePng,
-  BsFiletypePpt,
-  BsFiletypePptx,
-  BsFiletypeTsx,
-  BsFiletypeTxt,
-  BsFiletypeWav,
-  BsFiletypeXls,
-  BsFiletypeXlsx,
-  BsFiletypeXml,
-} from 'react-icons/bs'
 import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
 import { PiNotePencilLight, PiPushPin } from 'react-icons/pi'
 import { useProject } from './project-context'
@@ -156,67 +132,6 @@ function Shimmer({ className }: { className?: string }) {
       className={cn('animate-pulse rounded bg-content-muted/20', className)}
     />
   )
-}
-
-function getFileIcon(filename: string, className: string) {
-  const extension = filename.toLowerCase().split('.').pop() || ''
-
-  switch (extension) {
-    case 'pdf':
-      return <BsFiletypePdf className={className} />
-    case 'doc':
-      return <BsFiletypeDoc className={className} />
-    case 'docx':
-      return <BsFiletypeDocx className={className} />
-    case 'xls':
-      return <BsFiletypeXls className={className} />
-    case 'xlsx':
-      return <BsFiletypeXlsx className={className} />
-    case 'csv':
-      return <BsFiletypeCsv className={className} />
-    case 'ppt':
-      return <BsFiletypePpt className={className} />
-    case 'pptx':
-      return <BsFiletypePptx className={className} />
-    case 'html':
-    case 'htm':
-    case 'xhtml':
-      return <BsFiletypeHtml className={className} />
-    case 'css':
-      return <BsFiletypeCss className={className} />
-    case 'js':
-      return <BsFiletypeJs className={className} />
-    case 'jsx':
-      return <BsFiletypeJsx className={className} />
-    case 'ts':
-    case 'tsx':
-      return <BsFiletypeTsx className={className} />
-    case 'json':
-      return <BsFiletypeJson className={className} />
-    case 'md':
-      return <BsFiletypeMd className={className} />
-    case 'xml':
-      return <BsFiletypeXml className={className} />
-    case 'txt':
-      return <BsFiletypeTxt className={className} />
-    case 'png':
-      return <BsFiletypePng className={className} />
-    case 'jpg':
-    case 'jpeg':
-      return <BsFiletypeJpg className={className} />
-    case 'gif':
-      return <BsFiletypeGif className={className} />
-    case 'mp3':
-      return <BsFiletypeMp3 className={className} />
-    case 'wav':
-      return <BsFiletypeWav className={className} />
-    case 'mp4':
-      return <BsFiletypeMp4 className={className} />
-    case 'mov':
-      return <BsFiletypeMov className={className} />
-    default:
-      return <BsFile className={className} />
-  }
 }
 
 function DangerZoneAction({
@@ -1460,13 +1375,10 @@ export function ProjectSidebar({
                                 : 'bg-surface-sidebar',
                             )}
                           >
-                            <PiSpinnerThin
-                              className={cn(
-                                'h-4 w-4 flex-shrink-0 animate-spin',
-                                isDarkMode
-                                  ? 'text-brand-accent-light'
-                                  : 'text-brand-accent-dark',
-                              )}
+                            <FilePreview
+                              filename={file.name}
+                              size="sm"
+                              isBusy
                             />
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-aeonik-fono text-xs text-content-primary">
@@ -1489,15 +1401,15 @@ export function ProjectSidebar({
                                 : 'bg-surface-sidebar',
                             )}
                           >
-                            {getFileIcon(
-                              doc.filename,
-                              cn(
-                                'h-4 w-4 flex-shrink-0',
-                                isDarkMode
-                                  ? 'text-brand-accent-light'
-                                  : 'text-brand-accent-dark',
-                              ),
-                            )}
+                            <FilePreview
+                              filename={doc.filename}
+                              imageSrc={imageDataUrl(
+                                doc.thumbnailBase64,
+                                'image/jpeg',
+                              )}
+                              textContent={doc.content}
+                              size="sm"
+                            />
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-aeonik-fono text-xs text-content-primary">
                                 {doc.decryptionFailed
