@@ -226,15 +226,6 @@ export async function resolveSearchResultChats(
   const missing: string[] = []
   for (const r of results) {
     const local = await chatStorage.getChat(r.id)
-    if (
-      local?.decryptionFailed &&
-      !local.isBlankChat &&
-      !local.isTemporary &&
-      !local.dataCorrupted
-    ) {
-      missing.push(r.id)
-      continue
-    }
     if (local) {
       if (!isSearchableChat(local)) continue
       if (!includeProjectChats && local.projectId) continue

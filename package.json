@@ -14,10 +14,8 @@
     "prepare": "husky install",
     "release": "node scripts/release.mjs",
     "find-unused": "ts-unused-exports tsconfig.json",
-    "test": "vitest run && playwright test",
+    "test": "vitest run",
     "test:unit": "vitest",
-    "test:ui": "playwright test",
-    "test:ui:interactive": "playwright test --ui",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
@@ -74,7 +72,6 @@
     "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
     "@tailwindcss/container-queries": "^0.1.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",

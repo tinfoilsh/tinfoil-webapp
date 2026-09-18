@@ -10,6 +10,8 @@ import { useEffect, useState } from 'react'
 
 const COPIED_FEEDBACK_MS = 2000
 const DESCRIPTION_MAX_LENGTH = 4000
+const REPORT_SUBJECT = 'Tinfoil Chat bug report'
+const CONTEXT_SEPARATOR = '---'
 
 interface ReportBugModalProps {
   isOpen: boolean
@@ -20,16 +22,13 @@ interface ReportBugModalProps {
 }
 
 function buildReportBody(description: string, selectedModel?: string): string {
-  const { origin, pathname } = new URL(window.location.href)
   const context = [
     `App version: ${APP_VERSION}`,
     selectedModel ? `Model: ${selectedModel}` : null,
-    `Page: ${origin}${pathname}`,
     `Browser: ${navigator.userAgent}`,
-    `Screen: ${window.innerWidth}x${window.innerHeight}`,
   ].filter((line): line is string => line !== null)
 
-  return [description.trim(), '', '---', ...context].join('\n')
+  return [description.trim(), '', CONTEXT_SEPARATOR, ...context].join('\n')
 }
 
 // RFC 6068: mailto query values must be percent-encoded, which
@@ -67,7 +66,7 @@ export function ReportBugModal({
     // Assigning to location.href hands the mailto: URL to the OS. Browsers
     // give no signal about whether a mail client picked it up, so the
     // fallback address stays visible in the modal rather than closing it.
-    window.location.href = buildMailtoUrl('Tinfoil Chat bug report', body)
+    window.location.href = buildMailtoUrl(REPORT_SUBJECT, body)
     toast({
       title: 'Opening your email client',
       description: `If nothing opens, email us at ${SUPPORT_EMAIL}.`,
