@@ -296,7 +296,7 @@ export function resetSettingsToLocalDefaults(): ProfileData {
     webSearchEnabled: true,
     webSearchAvailable: true,
     codeExecutionEnabled: false,
-    pixelateSidebarChatTitlesEnabled: true,
+    pixelateSidebarChatTitlesEnabled: false,
     browserTabChatTitleEnabled: true,
     piiCheckEnabled: true,
     enterToNewlineEnabled: false,

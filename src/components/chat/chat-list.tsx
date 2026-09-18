@@ -2,7 +2,6 @@
 
 import { useFlaggedChatIds } from '@/hooks/use-safeguards'
 import { useStreamingChats } from '@/hooks/use-streaming-chats'
-import { useSyncFailedChats } from '@/hooks/use-sync-health'
 import { Fragment, useEffect, useState } from 'react'
 import { cn } from '../ui/utils'
 import {
@@ -31,7 +30,6 @@ interface ChatListProps {
   pixelateSidebarChatTitles: boolean
   isLoading?: boolean
   showEncryptionStatus?: boolean
-  showSyncStatus?: boolean
   enableTitleAnimation?: boolean
   animatedDeleteConfirmation?: boolean
   isDraggable?: boolean
@@ -72,7 +70,6 @@ export function ChatList({
   pixelateSidebarChatTitles,
   isLoading = false,
   showEncryptionStatus = false,
-  showSyncStatus = false,
   enableTitleAnimation = false,
   animatedDeleteConfirmation = true,
   isDraggable = false,
@@ -101,7 +98,6 @@ export function ChatList({
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
-  const syncFailedChats = useSyncFailedChats()
   const flaggedChatIds = useFlaggedChatIds()
   // App-wide source of truth for which chats are streaming, so the
   // indicator covers background streams in any chat, not just the active one.
@@ -181,8 +177,7 @@ export function ChatList({
               isDarkMode ? 'bg-surface-chat' : 'bg-white',
             )}
           >
-            <Shimmer className="mb-2 h-4 w-3/4" />
-            <Shimmer className="h-3 w-1/2" />
+            <Shimmer className="h-4 w-3/4" />
           </div>
         ))}
       </div>
@@ -223,9 +218,7 @@ export function ChatList({
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                 showEncryptionStatus={showEncryptionStatus}
-                showSyncStatus={showSyncStatus}
                 isStreaming={!chat.isBlankChat && streamingChats.has(chat.id)}
-                syncFailed={Boolean(syncFailedChats[chat.id])}
                 isFlagged={Boolean(flaggedChatIds[chat.id])}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id

@@ -427,7 +427,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   cancelGeneration={cancelGeneration ?? (() => {})}
                   inputRef={inputRef ?? fallbackInputRef}
                   handleInputFocus={handleInputFocus ?? (() => {})}
-                  inputMinHeight="60px"
+                  inputMinHeight={CONSTANTS.WELCOME_INPUT_MIN_HEIGHT}
                   isDarkMode={isDarkMode}
                   handleDocumentUpload={handleDocumentUpload}
                   processedDocuments={processedDocuments}

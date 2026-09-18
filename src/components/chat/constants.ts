@@ -2,6 +2,8 @@ export const CONSTANTS = {
   LOADING_TIMEOUT: 500,
   MOBILE_BREAKPOINT: 768,
   INPUT_MIN_HEIGHT: '28px',
+  // Welcome-screen composer: one comfortable line of text before it grows.
+  WELCOME_INPUT_MIN_HEIGHT: '36px',
   // Maximum height of the chat input textarea before it scrolls internally
   INPUT_MAX_HEIGHT_PX: 240,
   // Fallback estimate of the input card chrome height (paddings, toolbar row,
@@ -36,10 +38,10 @@ export const CONSTANTS = {
   // Sidebar widths
   CHAT_SIDEBAR_WIDTH_PX: 300,
   CHAT_SIDEBAR_COLLAPSED_WIDTH_PX: 48,
-  // Collapsed rail fade timings (seconds).
-  CHAT_SIDEBAR_RAIL_FADE_IN_DURATION_S: 0.15,
-  CHAT_SIDEBAR_RAIL_FADE_IN_DELAY_S: 0.04,
-  CHAT_SIDEBAR_RAIL_FADE_OUT_DURATION_S: 0.1,
+  MOBILE_SIDEBAR_WIDTH: '85vw',
+  // Sidebar geometry and the adjacent chat area share one transition.
+  SIDEBAR_LAYOUT_TRANSITION_CLASS_NAME:
+    'transition-[transform,left,right] duration-200 ease-in-out motion-reduce:transition-none',
   SIDEBAR_SYNC_MIN_SPINNER_MS: 1000,
   SIDEBAR_SYNC_SUCCESS_FEEDBACK_MS: 1500,
   SIDEBAR_SYNC_FEEDBACK_EXIT_S: 0.14,
@@ -52,10 +54,14 @@ export const CONSTANTS = {
   // How far outside the trigger/panel the pointer may wander before the
   // hover-opened account menu starts its close countdown.
   SIDEBAR_MENU_HOVER_TOLERANCE_PX: 48,
+  // Recent chats listed in the search modal before a term is typed.
+  SEARCH_RECENT_CHAT_COUNT: 8,
   // Height of a pinned sidebar section header (Projects/Chats). The Chats
   // header offsets by this amount so it stacks below the pinned Projects
   // header while scrolling.
   SIDEBAR_PINNED_HEADER_OFFSET_PX: 44,
+  // Vertical gap between floating sidebar section cards (matches mt-2).
+  SIDEBAR_SECTION_GAP_PX: 8,
   // Duration of a sidebar section expand/collapse animation (seconds),
   // shared by the Projects and Chats height animations.
   SIDEBAR_SECTION_ANIMATION_S: 0.2,

@@ -6,16 +6,15 @@ import { getDocumentTextContent } from '@/components/chat/document-content'
 import { useDocumentUploader } from '@/components/chat/document-uploader'
 import { useDrag } from '@/components/chat/drag-context'
 import { consumeFavoriteDrop } from '@/components/chat/favorite-drag'
-import { SidebarSyncButton } from '@/components/chat/sidebar-sync-button'
+import type { SettingsTab } from '@/components/chat/settings-modal'
+import { SidebarAccountMenu } from '@/components/chat/sidebar-account-menu'
+import { SidebarPanel, SidebarRail } from '@/components/chat/sidebar-layout'
 import { TypingAnimation } from '@/components/chat/typing-animation'
 import { useFavoriteDropTarget } from '@/components/chat/use-favorite-drop-target'
 import { PiSpinnerThin } from '@/components/icons/lazy-icons'
 import { Link } from '@/components/link'
 import { Logo } from '@/components/logo'
-import {
-  SIDEBAR_PATTERN_EDGE_WIDTH_PX,
-  SidebarPatternEdge,
-} from '@/components/ui/sidebar-pattern-edge'
+import { SidebarPatternEdge } from '@/components/ui/sidebar-pattern-edge'
 import { cn } from '@/components/ui/utils'
 import {
   getProjectColor,
@@ -44,8 +43,10 @@ import {
 import { useAuth } from '@clerk/nextjs'
 import {
   ArrowLeftIcon,
+  ChatBubbleLeftRightIcon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   ChevronUpIcon,
   Cog6ToothIcon,
   DocumentIcon,
@@ -86,11 +87,12 @@ import {
 } from 'react-icons/bs'
 import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
 import { PiNotePencilLight, PiPushPin } from 'react-icons/pi'
-import { CONSTANTS } from '../chat/constants'
 import { useProject } from './project-context'
 
 const MOBILE_BREAKPOINT = 1024
 const FAVORITES_PANEL_ID = 'project-sidebar-favorites-panel'
+const SECTION_HEADER_CLASS_NAME =
+  'relative z-10 mx-2 flex w-[calc(100%-1rem)] items-center justify-between rounded-lg border bg-surface-sidebar px-4 py-3 text-sm text-content-secondary transition-colors hover:border-border-subtle hover:text-content-primary'
 
 interface ProjectChat {
   id: string
@@ -103,7 +105,6 @@ interface ProjectChat {
   decryptionFailed?: boolean
   dataCorrupted?: boolean
   isTemporary?: boolean
-  pendingSave?: boolean
 }
 
 interface ProjectOption {
@@ -135,13 +136,15 @@ interface ProjectSidebarProps {
   onAddChatToProject?: (chatId: string) => Promise<void>
   onMoveChatToProject?: (chatId: string, projectId: string) => Promise<void>
   projects?: ProjectOption[]
-  onSettingsClick?: () => void
+  onSettingsClick?: (tab?: SettingsTab) => void
+  onReportBugClick?: () => void
   favoriteChats?: ChatItemData[]
   pinnedChatIds?: readonly string[]
   onToggleFavorite?: (chat: ChatItemData) => void | Promise<void>
   onRemoveFavorite?: (chatId: string) => void
   onOpenFavorite?: (chat: ChatItemData) => void | Promise<void>
   cloudSyncEnabled: boolean
+  isPremium?: boolean
   windowWidth: number
   onManualSync?: () => Promise<boolean>
   isSyncing?: boolean
@@ -309,12 +312,14 @@ export function ProjectSidebar({
   onMoveChatToProject,
   projects = [],
   onSettingsClick,
+  onReportBugClick,
   favoriteChats = [],
   pinnedChatIds = [],
   onToggleFavorite,
   onRemoveFavorite,
   onOpenFavorite,
   cloudSyncEnabled,
+  isPremium = false,
   windowWidth,
   onManualSync,
   isSyncing = false,
@@ -724,26 +729,20 @@ export function ProjectSidebar({
   // Convert chatsProp to ChatItemData format and sort by updatedAt descending
   const projectChats: ChatItemData[] = (chatsProp || [])
     .filter((c) => !c.isBlankChat)
+    .sort(
+      (a, b) =>
+        new Date(b.updatedAt ?? b.createdAt).getTime() -
+        new Date(a.updatedAt ?? a.createdAt).getTime(),
+    )
     .map((c) => ({
       id: c.id,
       title: c.title,
       messageCount: c.messageCount,
-      createdAt: c.createdAt,
-      updatedAt:
-        c.updatedAt ??
-        (c.createdAt instanceof Date
-          ? c.createdAt.toISOString()
-          : new Date(c.createdAt).toISOString()),
       projectId: c.projectId,
       decryptionFailed: c.decryptionFailed,
       dataCorrupted: c.dataCorrupted,
       isTemporary: c.isTemporary,
-      pendingSave: c.pendingSave,
     }))
-    .sort(
-      (a, b) =>
-        new Date(b.updatedAt!).getTime() - new Date(a.updatedAt!).getTime(),
-    )
 
   const resolvedFavoriteChats = favoriteChats.filter(isResolvedFavoriteChat)
 
@@ -772,138 +771,94 @@ export function ProjectSidebar({
 
   // Subtle background applied to expanded section panels so they read as
   // distinct drawers against the sidebar surface.
-  const expandedPanelClass = isDarkMode ? 'bg-white/5' : 'bg-black/5'
+  const expandedPanelClass = 'bg-surface-sidebar-panel'
 
   return (
     <>
       {/* Collapsed sidebar rail - always visible on desktop when sidebar is closed */}
-      <AnimatePresence initial={false}>
-        {!isMobile && !isOpen && (
-          <motion.div
-            key="project-collapsed-rail"
-            initial={{ opacity: 0 }}
-            animate={{
-              opacity: 1,
-              transition: {
-                duration: CONSTANTS.CHAT_SIDEBAR_RAIL_FADE_IN_DURATION_S,
-                delay: CONSTANTS.CHAT_SIDEBAR_RAIL_FADE_IN_DELAY_S,
-              },
-            }}
-            exit={{
-              opacity: 0,
-              transition: {
-                duration: CONSTANTS.CHAT_SIDEBAR_RAIL_FADE_OUT_DURATION_S,
-              },
-            }}
-            className="fixed left-0 top-0 z-50 flex h-dvh flex-col text-content-primary"
-            style={{
-              width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`,
-            }}
-          >
-            {/* Folder icon - shows expand icon on hover */}
-            <div className="flex h-16 flex-none items-center justify-center">
-              <button
-                onClick={() => setIsOpen(true)}
-                className="group/logo relative rounded p-2"
-                aria-label="Expand sidebar"
+      {!isMobile && (
+        <SidebarRail
+          isOpen={isOpen}
+          tintStyle={sidebarTintStyle}
+          aria-label="Project navigation"
+        >
+          {/* Folder icon - shows expand icon on hover */}
+          <div className="flex h-16 flex-none items-center justify-center">
+            <button
+              onClick={() => setIsOpen(true)}
+              className="group/logo relative rounded-lg p-2"
+              aria-label="Expand sidebar"
+            >
+              <FolderIcon className="h-6 w-6 text-content-secondary group-hover/logo:opacity-0" />
+              <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 group-hover/logo:opacity-100" />
+            </button>
+          </div>
+          {/* Action buttons */}
+          <div className="flex flex-col items-center gap-1 px-2">
+            {/* New chat button */}
+            <div className="group relative">
+              <Link
+                href={newChatHref}
+                onClick={(e) => {
+                  if (!isPlainPrimaryClick(e)) return
+                  e.preventDefault()
+                  onNewChat()
+                }}
+                className={cn(
+                  'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
+                  'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                )}
+                aria-label="New chat"
               >
-                <FolderIcon className="h-6 w-6 text-content-secondary transition-opacity group-hover/logo:opacity-0" />
-                <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 transition-opacity group-hover/logo:opacity-100" />
-              </button>
+                <PiNotePencilLight className="h-5 w-5" />
+              </Link>
+              <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                New chat{' '}
+                <span className="text-content-muted">
+                  {modKey}
+                  {isMac ? '⇧' : 'Shift+'}O
+                </span>
+              </span>
             </div>
 
-            {/* Action buttons */}
-            <div className="flex flex-col items-center gap-1 px-2">
-              {/* New chat button */}
-              <div className="group relative">
-                <Link
-                  href={newChatHref}
-                  onClick={(e) => {
-                    if (!isPlainPrimaryClick(e)) return
-                    e.preventDefault()
-                    onNewChat()
+            {isSignedIn && cloudSyncEnabled && (
+              <div className="group relative" {...favoriteDropTargetProps}>
+                <button
+                  onClick={() => {
+                    setIsFavoritesExpanded(true)
+                    setIsOpen(true)
+                    requestAnimationFrame(() =>
+                      favoritesSectionRef.current?.scrollIntoView({
+                        block: 'start',
+                      }),
+                    )
                   }}
                   className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                     'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                    isFavoriteDropTarget &&
+                      (isDarkMode
+                        ? 'border border-white/30 bg-white/10'
+                        : 'border border-gray-400 bg-gray-200/30'),
                   )}
-                  aria-label="New chat"
+                  aria-label="Favorites"
                 >
-                  <PiNotePencilLight className="h-5 w-5" />
-                </Link>
+                  <PiPushPin className="h-5 w-5" />
+                </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                  New chat{' '}
-                  <span className="text-content-muted">
-                    {modKey}
-                    {isMac ? '⇧' : 'Shift+'}O
-                  </span>
+                  Favorites
                 </span>
               </div>
+            )}
+          </div>
+        </SidebarRail>
+      )}
 
-              {isSignedIn && cloudSyncEnabled && (
-                <div className="group relative" {...favoriteDropTargetProps}>
-                  <button
-                    onClick={() => {
-                      setIsFavoritesExpanded(true)
-                      setIsOpen(true)
-                      requestAnimationFrame(() =>
-                        favoritesSectionRef.current?.scrollIntoView({
-                          block: 'start',
-                        }),
-                      )
-                    }}
-                    className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
-                      'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                      isFavoriteDropTarget &&
-                        (isDarkMode
-                          ? 'border border-white/30 bg-white/10'
-                          : 'border border-gray-400 bg-gray-200/30'),
-                    )}
-                    aria-label="Favorites"
-                  >
-                    <PiPushPin className="h-5 w-5" />
-                  </button>
-                  <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                    Favorites
-                  </span>
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div
-        inert={!isOpen}
-        className={cn(
-          'fixed left-0 z-40 flex h-dvh flex-col items-start overflow-hidden [&>*:not(:first-child)]:w-[var(--sidebar-content-width)] [&>*:not(:first-child)]:transition-opacity [&>*:not(:first-child)]:duration-100',
-          isMobile
-            ? isOpen
-              ? 'translate-x-0'
-              : '-translate-x-full'
-            : 'translate-x-0',
-          isMobile || isOpen
-            ? '[&>*:not(:first-child)]:opacity-100'
-            : '[&>*:not(:first-child)]:opacity-0',
-          'bg-surface-sidebar text-content-primary',
-          'transition-all duration-200 ease-in-out',
-        )}
-        style={
-          {
-            width: isMobile
-              ? '85vw'
-              : isOpen
-                ? `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`
-                : `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`,
-            maxWidth: `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`,
-            paddingRight: `${SIDEBAR_PATTERN_EDGE_WIDTH_PX}px`,
-            '--sidebar-content-width': isMobile
-              ? '100%'
-              : `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX - SIDEBAR_PATTERN_EDGE_WIDTH_PX}px`,
-            ...sidebarTintStyle,
-          } as React.CSSProperties
-        }
+      <SidebarPanel
+        as="div"
+        isOpen={isOpen}
+        isMobile={isMobile}
+        style={sidebarTintStyle}
       >
         <SidebarPatternEdge isDarkMode={isDarkMode} />
         {/* Header */}
@@ -916,7 +871,7 @@ export function ProjectSidebar({
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="rounded p-1.5 text-content-muted transition-all duration-200 hover:bg-surface-chat hover:text-content-secondary"
+              className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-secondary"
               aria-label="Close sidebar"
             >
               <GoSidebarExpand className="h-5 w-5" />
@@ -933,33 +888,6 @@ export function ProjectSidebar({
             content such as the Save button out of reach. */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div className="relative z-20 flex flex-none items-center gap-2 px-2 py-2">
-            <div className="group relative flex items-center">
-              <button
-                type="button"
-                onClick={onSettingsClick}
-                aria-label="Settings"
-                className="relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-2 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
-              >
-                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
-                {syncNeedsAttention && (
-                  <span
-                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-              <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                Settings
-              </span>
-            </div>
-            {isSignedIn && cloudSyncEnabled && onManualSync && (
-              <SidebarSyncButton
-                isSyncing={isSyncing}
-                syncFailed={syncFailed}
-                onSync={onManualSync}
-              />
-            )}
             <Link
               href={newChatHref}
               aria-current={!currentChatId ? 'page' : undefined}
@@ -970,10 +898,10 @@ export function ProjectSidebar({
                 handleNewChat()
               }}
               className={cn(
-                'flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border-subtle bg-surface-chat-background px-2 py-2 text-sm transition-all duration-200',
+                'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-all duration-200',
                 !currentChatId
-                  ? 'cursor-default text-content-muted'
-                  : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                  ? 'cursor-default border-border-subtle bg-surface-chat text-content-muted'
+                  : 'border-transparent text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
               )}
             >
               <span className="flex items-center gap-2">
@@ -988,8 +916,9 @@ export function ProjectSidebar({
           </div>
 
           {/* Project header with exit button and editable title */}
-          <div className="relative z-10 flex-none border-t border-border-subtle p-3">
+          <div className="relative z-10 flex-none px-3 pb-2 pt-1">
             <button
+              type="button"
               onClick={onExitProject}
               onDragEnter={(e) => {
                 if (e.dataTransfer.types.includes('application/x-chat-id')) {
@@ -1037,14 +966,9 @@ export function ProjectSidebar({
                 clearDragState()
               }}
               className={cn(
-                'flex w-full items-center gap-2 rounded-lg p-2 text-sm transition-colors',
-                isExitButtonDragHover
-                  ? isDarkMode
-                    ? 'border border-white/30 bg-white/10'
-                    : 'border border-gray-400 bg-gray-200/30'
-                  : isDarkMode
-                    ? 'text-content-secondary hover:bg-surface-chat'
-                    : 'text-content-secondary hover:bg-surface-sidebar',
+                'inline-flex items-center gap-2 rounded-lg bg-tinfoil-accent-blue px-3 py-1.5 text-sm text-white transition-colors hover:bg-tinfoil-accent-blue-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-surface-sidebar',
+                isExitButtonDragHover &&
+                  'bg-tinfoil-accent-blue-darker ring-2 ring-tinfoil-accent-blue-soft',
               )}
             >
               <ArrowLeftIcon className="h-4 w-4" />
@@ -1122,7 +1046,7 @@ export function ProjectSidebar({
               ref={favoritesSectionRef}
               {...favoriteDropTargetProps}
               className={cn(
-                'relative z-10 flex-none border-y border-border-subtle transition-colors',
+                'relative z-10 mt-2 flex-none transition-colors',
                 isFavoriteDropTarget &&
                   (isDarkMode ? 'bg-white/10' : 'bg-gray-200/50'),
               )}
@@ -1132,7 +1056,16 @@ export function ProjectSidebar({
                 aria-expanded={isFavoritesExpanded}
                 aria-controls={FAVORITES_PANEL_ID}
                 onClick={() => setIsFavoritesExpanded((expanded) => !expanded)}
-                className="flex w-full items-center justify-between px-4 py-3 text-sm text-content-secondary transition-colors hover:text-content-primary"
+                className={cn(
+                  SECTION_HEADER_CLASS_NAME,
+                  isFavoritesExpanded
+                    ? 'border-border-subtle'
+                    : 'border-transparent',
+                  isFavoriteDropTarget &&
+                    (isDarkMode
+                      ? 'border-white/30 bg-white/10'
+                      : 'border-gray-400 bg-gray-200/50'),
+                )}
               >
                 <span className="flex items-center gap-2">
                   <PiPushPin className="h-4 w-4" aria-hidden="true" />
@@ -1145,9 +1078,9 @@ export function ProjectSidebar({
                   </span>
                 </span>
                 {isFavoritesExpanded ? (
-                  <ChevronUpIcon className="h-4 w-4" />
+                  <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
                 ) : (
-                  <ChevronDownIcon className="h-4 w-4" />
+                  <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
                 )}
               </button>
               <AnimatePresence initial={false}>
@@ -1158,7 +1091,10 @@ export function ProjectSidebar({
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
                     transition={{ duration: 0.2, ease: 'easeInOut' }}
-                    className="overflow-hidden"
+                    className={cn(
+                      '-mt-3 overflow-hidden rounded-t-lg pt-3',
+                      expandedPanelClass,
+                    )}
                   >
                     {resolvedFavoriteChats.length > 0 ? (
                       <ChatList
@@ -1201,14 +1137,19 @@ export function ProjectSidebar({
           )}
 
           {/* Project Settings Dropdown */}
-          <div className="relative z-10 flex-none border-y border-border-subtle">
+          <div className="relative z-10 mt-2 flex-none">
             <button
+              type="button"
+              aria-expanded={settingsExpanded && !isLoading}
               onClick={() =>
                 !isLoading && setSettingsExpanded(!settingsExpanded)
               }
               disabled={isLoading}
               className={cn(
-                'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
+                SECTION_HEADER_CLASS_NAME,
+                settingsExpanded && !isLoading
+                  ? 'border-border-subtle'
+                  : 'border-transparent',
                 isLoading
                   ? 'cursor-default opacity-50'
                   : 'text-content-secondary hover:text-content-primary',
@@ -1221,9 +1162,9 @@ export function ProjectSidebar({
                 </span>
               </span>
               {settingsExpanded && !isLoading ? (
-                <ChevronUpIcon className="h-4 w-4" />
+                <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <ChevronDownIcon className="h-4 w-4" />
+                <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
 
@@ -1234,9 +1175,12 @@ export function ProjectSidebar({
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
-                  className="overflow-hidden"
+                  className={cn(
+                    '-mt-3 overflow-hidden rounded-t-lg pt-3',
+                    expandedPanelClass,
+                  )}
                 >
-                  <div className={cn('px-4 py-4', expandedPanelClass)}>
+                  <div className="px-4 py-4">
                     <div className="space-y-3">
                       {/* Description */}
                       <div className="space-y-2">
@@ -1404,14 +1348,19 @@ export function ProjectSidebar({
           </div>
 
           {/* Documents Section */}
-          <div className="relative z-10 flex-none border-b border-border-subtle">
+          <div className="relative z-10 mt-2 flex-none">
             <button
+              type="button"
+              aria-expanded={documentsExpanded && !isLoading}
               onClick={() =>
                 !isLoading && setDocumentsExpanded(!documentsExpanded)
               }
               disabled={isLoading}
               className={cn(
-                'flex w-full items-center justify-between px-4 py-3 text-sm transition-colors',
+                SECTION_HEADER_CLASS_NAME,
+                documentsExpanded && !isLoading
+                  ? 'border-border-subtle'
+                  : 'border-transparent',
                 isLoading
                   ? 'cursor-default opacity-50'
                   : 'text-content-secondary hover:text-content-primary',
@@ -1424,9 +1373,9 @@ export function ProjectSidebar({
                 </span>
               </span>
               {documentsExpanded && !isLoading ? (
-                <ChevronUpIcon className="h-4 w-4" />
+                <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <ChevronDownIcon className="h-4 w-4" />
+                <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
             <input
@@ -1446,9 +1395,12 @@ export function ProjectSidebar({
                   animate={{ height: 'auto', opacity: 1 }}
                   exit={{ height: 0, opacity: 0 }}
                   transition={{ duration: 0.2, ease: 'easeInOut' }}
-                  className="overflow-hidden"
+                  className={cn(
+                    '-mt-3 overflow-hidden rounded-t-lg pt-3',
+                    expandedPanelClass,
+                  )}
                 >
-                  <div className={cn('px-2 py-2', expandedPanelClass)}>
+                  <div className="px-2 py-3">
                     {/* Drag and drop zone - at top */}
                     <button
                       type="button"
@@ -1588,128 +1540,132 @@ export function ProjectSidebar({
           </div>
 
           {/* Chat History Header */}
-          <div className="relative z-10 flex-none border-b border-border-subtle px-3 py-2 sm:px-4 sm:py-3">
-            <h3 className="truncate font-aeonik-fono text-sm font-medium text-content-primary">
-              Project Chats
-            </h3>
-            <p className="font-aeonik-fono text-xs text-content-muted">
-              Chats in this project share context and documents.
-            </p>
-          </div>
+          <section className="relative z-10 mt-2 flex min-h-48 flex-1 flex-col">
+            <div className="relative z-10 mx-2 flex-none rounded-lg border border-border-subtle bg-surface-sidebar px-4 py-3">
+              <h3 className="flex items-center gap-2 font-aeonik text-sm font-medium text-content-primary">
+                <ChatBubbleLeftRightIcon
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                />
+                <span>Project Chats</span>
+              </h3>
+            </div>
+            <div
+              className={cn(
+                'relative z-0 -mt-3 flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-lg pt-3',
+                expandedPanelClass,
+              )}
+            >
+              <p className="flex-none border-b border-border-subtle px-4 py-3 font-aeonik-fono text-xs text-content-muted">
+                Chats in this project share context and documents.
+              </p>
 
-          {/* Scrollable Chat List */}
-          <div
-            onDragOver={(e) => {
-              if (e.dataTransfer.types.includes('application/x-chat-id')) {
-                e.preventDefault()
-                e.dataTransfer.dropEffect = 'move'
-                setIsDropTargetChatList(true)
-              }
-            }}
-            onDragEnter={(e) => {
-              if (e.dataTransfer.types.includes('application/x-chat-id')) {
-                e.preventDefault()
-                setIsDropTargetChatList(true)
-              }
-            }}
-            onDragLeave={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                setIsDropTargetChatList(false)
-              }
-            }}
-            onDrop={async (e) => {
-              e.preventDefault()
-              setIsDropTargetChatList(false)
-              const chatId = e.dataTransfer.getData('application/x-chat-id')
-              const favoriteDropConsumed = chatId
-                ? consumeFavoriteDrop({
-                    source: draggingChatSource,
-                    chatId,
-                    pinnedChatIds,
-                    onRemoveFavorite,
-                  })
-                : false
-              if (!favoriteDropConsumed && chatId && onAddChatToProject) {
-                await onAddChatToProject(chatId)
-              }
-              clearDragState()
-            }}
-            className={cn(
-              'relative z-10 flex-1',
-              isDropTargetChatList &&
-                (isDarkMode
-                  ? 'border border-white/30 bg-white/10'
-                  : 'border border-gray-400 bg-gray-200/30'),
-            )}
-          >
-            <ChatList
-              chats={projectChats}
-              currentChatId={currentChatId}
-              currentChatIsBlank={!currentChatId}
-              isDarkMode={isDarkMode}
-              pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-              isLoading={isLoading && projectChats.length === 0}
-              enableTitleAnimation={true}
-              animatedDeleteConfirmation={false}
-              isDraggable={!!onRemoveChatFromProject}
-              showMoveToProject={!!onMoveChatToProject && projects.length > 0}
-              projects={projects.filter((p) => p.id !== project?.id)}
-              getChatHref={(chat) =>
-                chat.isBlankChat
-                  ? newChatHref
-                  : resolvedProjectId
-                    ? getChatPath(chat.id, { projectId: resolvedProjectId })
-                    : undefined
-              }
-              onSelectChat={(chatId) => {
-                if (chatId.startsWith('blank-') || chatId === '') {
-                  handleNewChat()
-                } else {
-                  handleChatSelect(chatId)
-                }
-              }}
-              onUpdateTitle={updateChatTitle}
-              onDeleteChat={handleDeleteChat}
-              onDragStart={(chatId) =>
-                setDraggingChat(chatId, project?.id ?? null)
-              }
-              onDragEnd={() => clearDragState()}
-              onMoveToProject={onMoveChatToProject}
-              onRemoveFromProject={onRemoveChatFromProject}
-              pinnedChatIds={pinnedChatIds}
-              onTogglePin={onToggleFavorite}
-            />
-          </div>
+              {/* Scrollable Chat List */}
+              <div
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes('application/x-chat-id')) {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    setIsDropTargetChatList(true)
+                  }
+                }}
+                onDragEnter={(e) => {
+                  if (e.dataTransfer.types.includes('application/x-chat-id')) {
+                    e.preventDefault()
+                    setIsDropTargetChatList(true)
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                    setIsDropTargetChatList(false)
+                  }
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault()
+                  setIsDropTargetChatList(false)
+                  const chatId = e.dataTransfer.getData('application/x-chat-id')
+                  const favoriteDropConsumed = chatId
+                    ? consumeFavoriteDrop({
+                        source: draggingChatSource,
+                        chatId,
+                        pinnedChatIds,
+                        onRemoveFavorite,
+                      })
+                    : false
+                  if (!favoriteDropConsumed && chatId && onAddChatToProject) {
+                    await onAddChatToProject(chatId)
+                  }
+                  clearDragState()
+                }}
+                className={cn(
+                  'relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain',
+                  isDropTargetChatList &&
+                    (isDarkMode
+                      ? 'border border-white/30 bg-white/10'
+                      : 'border border-gray-400 bg-gray-200/30'),
+                )}
+              >
+                <ChatList
+                  chats={projectChats}
+                  currentChatId={currentChatId}
+                  currentChatIsBlank={!currentChatId}
+                  isDarkMode={isDarkMode}
+                  pixelateSidebarChatTitles={pixelateSidebarChatTitles}
+                  isLoading={isLoading && projectChats.length === 0}
+                  enableTitleAnimation={true}
+                  animatedDeleteConfirmation={false}
+                  isDraggable={!!onRemoveChatFromProject}
+                  showMoveToProject={
+                    !!onMoveChatToProject && projects.length > 0
+                  }
+                  projects={projects.filter((p) => p.id !== project?.id)}
+                  getChatHref={(chat) =>
+                    chat.isBlankChat
+                      ? newChatHref
+                      : resolvedProjectId
+                        ? getChatPath(chat.id, { projectId: resolvedProjectId })
+                        : undefined
+                  }
+                  onSelectChat={(chatId) => {
+                    if (chatId.startsWith('blank-') || chatId === '') {
+                      handleNewChat()
+                    } else {
+                      handleChatSelect(chatId)
+                    }
+                  }}
+                  onUpdateTitle={updateChatTitle}
+                  onDeleteChat={handleDeleteChat}
+                  onDragStart={(chatId) =>
+                    setDraggingChat(chatId, project?.id ?? null)
+                  }
+                  onDragEnd={() => clearDragState()}
+                  onMoveToProject={onMoveChatToProject}
+                  onRemoveFromProject={onRemoveChatFromProject}
+                  pinnedChatIds={pinnedChatIds}
+                  onTogglePin={onToggleFavorite}
+                />
+              </div>
+            </div>
+          </section>
         </div>
 
-        {/* Terms and privacy policy - pinned below the scroll area */}
-        <div className="relative z-10 flex h-[56px] flex-none items-center justify-center border-t border-border-subtle p-3">
-          <p className="text-center text-xs leading-relaxed text-content-secondary">
-            By using this service, you agree to Tinfoil&apos;s{' '}
-            <Link
-              href="https://tinfoil.sh/terms"
-              className={
-                isDarkMode
-                  ? 'text-white underline hover:text-content-secondary'
-                  : 'text-brand-accent-dark underline hover:text-brand-accent-dark/80'
-              }
-            >
-              Terms of Service
-            </Link>{' '}
-            and{' '}
-            <Link
-              href="https://tinfoil.sh/privacy"
-              className={
-                isDarkMode
-                  ? 'text-white underline hover:text-content-secondary'
-                  : 'text-brand-accent-dark underline hover:text-brand-accent-dark/80'
-              }
-            >
-              Privacy Policy
-            </Link>
-          </p>
+        {/* Account menu: settings, sync, help. Pinned below the scroll area. */}
+        <div className="relative z-10 flex-none border-t border-border-subtle p-2">
+          <SidebarAccountMenu
+            isSidebarOpen={isOpen}
+            isSignedIn={Boolean(isSignedIn)}
+            isPremium={Boolean(isPremium)}
+            isDarkMode={isDarkMode}
+            canSync={Boolean(isSignedIn && cloudSyncEnabled)}
+            isSyncing={isSyncing}
+            syncFailed={syncFailed}
+            syncNeedsAttention={syncNeedsAttention}
+            onSync={onManualSync}
+            onOpenSettings={(tab) => onSettingsClick?.(tab)}
+            onReportBug={() => onReportBugClick?.()}
+          />
         </div>
-      </div>
+      </SidebarPanel>
 
       {/* Mobile overlay */}
       {isOpen && (

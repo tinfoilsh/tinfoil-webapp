@@ -59,16 +59,13 @@ import { formatRelativeTime } from './chat-list-utils'
 import { CONSTANTS } from './constants'
 import { useDrag } from './drag-context'
 import { consumeFavoriteDrop } from './favorite-drag'
-import { RateLimitUsage } from './rate-limit-usage'
-import { SidebarSyncButton } from './sidebar-sync-button'
+import type { SettingsTab } from './settings-modal'
+import { SidebarAccountMenu } from './sidebar-account-menu'
 import { getSidebarUpsellVariant } from './sidebar-upsell-state'
 import { useFavoriteDropTarget } from './use-favorite-drop-target'
 
 import { useProject } from '@/components/project/project-context'
-import {
-  SIDEBAR_PATTERN_EDGE_WIDTH_PX,
-  SidebarPatternEdge,
-} from '@/components/ui/sidebar-pattern-edge'
+import { SidebarPatternEdge } from '@/components/ui/sidebar-pattern-edge'
 import { cn } from '@/components/ui/utils'
 import {
   getProjectColor,
@@ -77,7 +74,6 @@ import {
 } from '@/constants/project-colors'
 import { useCloudPagination } from '@/hooks/use-cloud-pagination'
 
-import { useChatSearch } from '@/hooks/use-chat-search'
 import { logError } from '@/utils/error-handling'
 import {
   getChatPath,
@@ -87,10 +83,21 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '../link'
 import { Logo } from '../logo'
+import { SidebarPanel, SidebarRail } from './sidebar-layout'
 import { getChatLoadMoreAction } from './sidebar-pagination'
 import type { Chat } from './types'
 
 const FAVORITES_PANEL_ID = 'sidebar-favorites-panel'
+const ENCRYPTION_NOTE_ID = 'sidebar-encryption-note'
+const STORAGE_TAB_CLASS_NAME =
+  'flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors'
+const STORAGE_TAB_ACTIVE_CLASS_NAME =
+  'border-tinfoil-accent-blue bg-tinfoil-accent-blue text-white hover:bg-tinfoil-accent-blue-hover'
+const STORAGE_TAB_INACTIVE_CLASS_NAME =
+  'border-border-subtle bg-surface-chat-background text-content-secondary hover:border-border-strong hover:text-content-primary'
+const STORAGE_TAB_DROP_TARGET_CLASS_NAME =
+  'border-tinfoil-accent-blue ring-2 ring-tinfoil-accent-blue-soft'
+
 const SIDEBAR_CTA_CLASS_NAME =
   'block w-full rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90'
 
@@ -111,11 +118,6 @@ type ChatSidebarProps = {
   pixelateSidebarChatTitles: boolean
   createNewChat: (isLocalOnly?: boolean, fromUserAction?: boolean) => void
   handleChatSelect: (chatId: string) => void
-  /**
-   * Opens a chat that is not in the loaded `chats` pages (search
-   * results can reach past pagination); downloads and selects it.
-   */
-  onOpenChatById?: (chatId: string) => Promise<void>
   updateChatTitle: (chatId: string, newTitle: string) => void
   deleteChat: (chatId: string) => void
   isClient: boolean
@@ -151,7 +153,9 @@ type ChatSidebarProps = {
   onRemoveChatFromProject?: (chatId: string) => Promise<void>
   onConvertChatToCloud?: (chatId: string) => Promise<boolean>
   onConvertChatToLocal?: (chatId: string) => Promise<void>
-  onSettingsClick?: () => void
+  onSettingsClick?: (tab?: SettingsTab) => void
+  onReportBugClick?: () => void
+  onSearchClick?: () => void
   pinnedChatIds?: readonly string[]
   onToggleFavorite?: (chat: ChatItemData) => void | Promise<void>
   onRemoveFavorite?: (chatId: string) => void
@@ -198,7 +202,6 @@ export function ChatSidebar({
   pixelateSidebarChatTitles,
   createNewChat,
   handleChatSelect,
-  onOpenChatById,
   updateChatTitle,
   deleteChat,
   isClient,
@@ -227,6 +230,8 @@ export function ChatSidebar({
   onConvertChatToCloud,
   onConvertChatToLocal,
   onSettingsClick,
+  onReportBugClick,
+  onSearchClick,
   pinnedChatIds = [],
   onToggleFavorite,
   onRemoveFavorite,
@@ -380,7 +385,8 @@ export function ChatSidebar({
 
   // Subtle background applied to expanded section panels so they read as
   // distinct drawers against the sidebar surface.
-  const expandedPanelClass = isDarkMode ? 'bg-white/5' : 'bg-black/5'
+  // Opaque so pinned panels hide content scrolling beneath them.
+  const expandedPanelClass = 'bg-surface-sidebar-panel'
 
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(
     null,
@@ -606,7 +612,6 @@ export function ChatSidebar({
   // Drives both the Projects section's visibility and the Chats header's
   // sticky offset so the two can never drift apart.
   const hasPinnedProjectsHeader = Boolean(isSignedIn && isPremium)
-
   // Heal stale accordion state: a stored Projects=true flag (e.g. from a
   // premium session) would otherwise leave a signed-out/non-premium user
   // with no Projects section AND a collapsed chat list — an empty sidebar.
@@ -808,62 +813,8 @@ export function ChatSidebar({
     }
   }
 
-  // Encrypted server-side search over synced chats. Only offered on
-  // the cloud tab: local-only chats never reach the enclave, so the
-  // index cannot know about them.
-  const [chatSearchTerm, setChatSearchTerm] = useState('')
-  const searchEnabled =
-    !!isSignedIn &&
-    cloudSyncEnabled &&
-    !(localOnlyModeEnabled && activeTab === 'local')
-  const chatSearch = useChatSearch(chatSearchTerm, searchEnabled, isPremium)
-  const isSearchActive = searchEnabled && chatSearchTerm.trim().length > 0
-
-  const searchResultChats = useMemo((): ChatItemData[] => {
-    if (!isSearchActive) return []
-    // Enclave unavailable (older deploy, no key): degrade to filtering
-    // the locally loaded titles so the box still does something useful.
-    if (!chatSearch.available) {
-      const needle = chatSearchTerm.trim().toLowerCase()
-      return (sortedChats as ChatItemData[]).filter(
-        (chat) =>
-          !chat.isBlankChat && chat.title.toLowerCase().includes(needle),
-      )
-    }
-    return chatSearch.results.map((r) => ({
-      id: r.id,
-      title: r.title,
-      updatedAt: r.updatedAt,
-      messageCount: r.messageCount,
-      projectId: r.projectId,
-    }))
-  }, [
-    isSearchActive,
-    chatSearch.available,
-    chatSearch.results,
-    chatSearchTerm,
-    sortedChats,
-  ])
-
-  const handleSearchResultSelect = useCallback(
-    (chatId: string) => {
-      if (chats.some((c) => c.id === chatId)) {
-        handleChatSelect(chatId)
-        return
-      }
-      // A hit outside the loaded pagination pages: download + select.
-      if (onOpenChatById) {
-        void onOpenChatById(chatId).catch((error) => {
-          logError('Failed to open searched chat', error, {
-            component: 'ChatSidebar',
-            action: 'handleSearchResultSelect',
-            metadata: { chatId },
-          })
-        })
-      }
-    },
-    [chats, handleChatSelect, onOpenChatById],
-  )
+  const [isEncryptionNoteExpanded, setIsEncryptionNoteExpanded] =
+    useState(false)
 
   const handleCloudSyncToggle = async (enabled: boolean) => {
     if (enabled) {
@@ -917,213 +868,166 @@ export function ChatSidebar({
   return (
     <>
       {/* Collapsed sidebar rail - shown on desktop when sidebar is closed. */}
-      <AnimatePresence initial={false}>
-        {!isMobile && !isOpen && (
-          <motion.nav
-            key="collapsed-rail"
-            aria-label="Chat history"
-            initial={{ opacity: 0 }}
-            animate={{
-              opacity: 1,
-              transition: {
-                duration: CONSTANTS.CHAT_SIDEBAR_RAIL_FADE_IN_DURATION_S,
-                delay: CONSTANTS.CHAT_SIDEBAR_RAIL_FADE_IN_DELAY_S,
-              },
-            }}
-            exit={{
-              opacity: 0,
-              transition: {
-                duration: CONSTANTS.CHAT_SIDEBAR_RAIL_FADE_OUT_DURATION_S,
-              },
-            }}
-            className="fixed left-0 top-0 z-50 flex h-dvh flex-col text-content-primary"
-            style={{
-              width: `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`,
-            }}
-          >
-            {/* Logo icon - shows expand icon on hover */}
-            <div className="flex h-16 flex-none items-center justify-center">
-              <button
-                onClick={() => setIsOpen(true)}
-                className="group/logo relative rounded p-2"
-                aria-label="Expand sidebar"
+      {!isMobile && (
+        <SidebarRail
+          isOpen={isOpen}
+          tintStyle={sidebarTintStyle}
+          aria-label="Chat history"
+        >
+          {/* Logo icon - shows expand icon on hover */}
+          <div className="flex h-16 flex-none items-center justify-center">
+            <button
+              onClick={() => setIsOpen(true)}
+              className="group/logo relative rounded-lg p-2"
+              aria-label="Expand sidebar"
+            >
+              <img
+                src={isDarkMode ? '/icon-dark.png' : '/icon-light.png'}
+                alt=""
+                className="h-6 w-6 group-hover/logo:opacity-0"
+              />
+              <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 group-hover/logo:opacity-100" />
+            </button>
+          </div>
+          {/* Action buttons */}
+          <div className="flex flex-col items-center gap-1 px-2">
+            {/* New chat button */}
+            <div className="group relative">
+              <Link
+                href={newChatHref}
+                onClick={(e) => {
+                  if (!isPlainPrimaryClick(e)) return
+                  e.preventDefault()
+                  createNewChat(activeTab === 'local', true)
+                }}
+                className={cn(
+                  'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
+                  'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                )}
+                aria-label="New chat"
               >
-                <img
-                  src={isDarkMode ? '/icon-dark.png' : '/icon-light.png'}
-                  alt=""
-                  className="h-6 w-6 transition-opacity group-hover/logo:opacity-0"
-                />
-                <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 transition-opacity group-hover/logo:opacity-100" />
-              </button>
+                <PiNotePencilLight className="h-5 w-5" />
+              </Link>
+              <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                New chat{' '}
+                <span className="text-content-muted">
+                  {modKey}
+                  {isMac ? '⇧' : 'Shift+'}O
+                </span>
+              </span>
             </div>
 
-            {/* Action buttons */}
-            <div className="flex flex-col items-center gap-1 px-2">
-              {/* New chat button */}
-              <div className="group relative">
-                <Link
-                  href={newChatHref}
-                  onClick={(e) => {
-                    if (!isPlainPrimaryClick(e)) return
-                    e.preventDefault()
-                    createNewChat(activeTab === 'local', true)
+            {isSignedIn && cloudSyncEnabled && (
+              <div className="group relative" {...favoriteDropTargetProps}>
+                <button
+                  onClick={() => {
+                    expandFavoritesSection()
+                    setIsOpen(true)
+                    requestAnimationFrame(() =>
+                      favoritesSectionRef.current?.scrollIntoView({
+                        block: 'start',
+                      }),
+                    )
                   }}
                   className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                     'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                    isFavoriteDropTarget &&
+                      (isDarkMode
+                        ? 'border border-white/30 bg-white/10'
+                        : 'border border-gray-400 bg-gray-200/30'),
                   )}
-                  aria-label="New chat"
+                  aria-label="Favorites"
                 >
-                  <PiNotePencilLight className="h-5 w-5" />
-                </Link>
+                  <PiPushPin className="h-5 w-5" />
+                </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                  New chat{' '}
-                  <span className="text-content-muted">
-                    {modKey}
-                    {isMac ? '⇧' : 'Shift+'}O
-                  </span>
+                  Favorites
                 </span>
               </div>
+            )}
 
-              {isSignedIn && cloudSyncEnabled && (
-                <div className="group relative" {...favoriteDropTargetProps}>
-                  <button
-                    onClick={() => {
-                      expandFavoritesSection()
-                      setIsOpen(true)
-                      requestAnimationFrame(() =>
-                        favoritesSectionRef.current?.scrollIntoView({
-                          block: 'start',
-                        }),
-                      )
-                    }}
-                    className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
-                      'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                      isFavoriteDropTarget &&
-                        (isDarkMode
-                          ? 'border border-white/30 bg-white/10'
-                          : 'border border-gray-400 bg-gray-200/30'),
-                    )}
-                    aria-label="Favorites"
-                  >
-                    <PiPushPin className="h-5 w-5" />
-                  </button>
-                  <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                    Favorites
-                  </span>
-                </div>
-              )}
-
-              {/* Projects button - only for premium users */}
-              {isSignedIn && isPremium && (
-                <div className="group relative">
-                  <button
-                    onClick={() => {
-                      sessionStorage.setItem(
-                        UI_SIDEBAR_EXPAND_SECTION,
-                        'projects',
-                      )
-                      expandProjectsSection()
-                      setIsOpen(true)
-                    }}
-                    className={cn(
-                      'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
-                      'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                    )}
-                    aria-label="Projects"
-                  >
-                    <FolderIcon className="h-5 w-5" />
-                  </button>
-                  <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                    Projects
-                  </span>
-                </div>
-              )}
-
-              {/* Chats button */}
+            {/* Projects button - only for premium users */}
+            {isSignedIn && isPremium && (
               <div className="group relative">
                 <button
                   onClick={() => {
-                    sessionStorage.setItem(UI_SIDEBAR_EXPAND_SECTION, 'chats')
-                    expandChatsSection()
+                    sessionStorage.setItem(
+                      UI_SIDEBAR_EXPAND_SECTION,
+                      'projects',
+                    )
+                    expandProjectsSection()
                     setIsOpen(true)
                   }}
                   className={cn(
                     'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
                     'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
                   )}
-                  aria-label="Chats"
+                  aria-label="Projects"
                 >
-                  <IoChatbubblesOutline className="h-5 w-5" />
+                  <FolderIcon className="h-5 w-5" />
                 </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                  Chats <span className="text-content-muted">{modKey}.</span>
+                  Projects
                 </span>
               </div>
+            )}
 
-              {/* Settings button */}
-              <div className="group relative">
-                <button
-                  onClick={onSettingsClick}
-                  className={cn(
-                    'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
-                    'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                  )}
-                  aria-label="Settings"
-                >
-                  <Cog6ToothIcon className="h-5 w-5" />
-                  {syncNeedsAttention && (
-                    <span
-                      className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
-                      title="Cloud sync needs attention"
-                      aria-hidden="true"
-                    />
-                  )}
-                </button>
-                <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                  Settings
-                </span>
-              </div>
+            {/* Chats button */}
+            <div className="group relative">
+              <button
+                onClick={() => {
+                  sessionStorage.setItem(UI_SIDEBAR_EXPAND_SECTION, 'chats')
+                  expandChatsSection()
+                  setIsOpen(true)
+                }}
+                className={cn(
+                  'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
+                  'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                )}
+                aria-label="Chats"
+              >
+                <IoChatbubblesOutline className="h-5 w-5" />
+              </button>
+              <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                Chats <span className="text-content-muted">{modKey}.</span>
+              </span>
             </div>
-          </motion.nav>
-        )}
-      </AnimatePresence>
+
+            {/* Settings button */}
+            <div className="group relative">
+              <button
+                onClick={() => onSettingsClick?.()}
+                className={cn(
+                  'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
+                  'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                )}
+                aria-label="Settings"
+              >
+                <Cog6ToothIcon className="h-5 w-5" />
+                {syncNeedsAttention && (
+                  <span
+                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
+                    title="Cloud sync needs attention"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+              <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                Settings
+              </span>
+            </div>
+          </div>
+        </SidebarRail>
+      )}
 
       {/* Expanded sidebar wrapper */}
-      <nav
+      <SidebarPanel
         aria-label="Chat history"
-        inert={!isOpen}
-        className={cn(
-          'fixed z-40 flex h-dvh flex-col items-start overflow-hidden [&>*:not(:first-child)]:w-[var(--sidebar-content-width)] [&>*:not(:first-child)]:transition-opacity [&>*:not(:first-child)]:duration-100',
-          // On mobile: slide in/out. On desktop: always positioned, just toggle width
-          isMobile
-            ? isOpen
-              ? 'translate-x-0'
-              : '-translate-x-full'
-            : 'translate-x-0',
-          isMobile || isOpen
-            ? '[&>*:not(:first-child)]:opacity-100'
-            : '[&>*:not(:first-child)]:opacity-0',
-          'bg-surface-sidebar text-content-primary',
-          isInitialLoad ? '' : 'transition-all duration-200 ease-in-out',
-        )}
-        style={
-          {
-            width: isMobile
-              ? '85vw'
-              : isOpen
-                ? `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`
-                : `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`,
-            maxWidth: `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`,
-            paddingRight: `${SIDEBAR_PATTERN_EDGE_WIDTH_PX}px`,
-            left: '0',
-            '--sidebar-content-width': isMobile
-              ? '100%'
-              : `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX - SIDEBAR_PATTERN_EDGE_WIDTH_PX}px`,
-            ...sidebarTintStyle,
-          } as React.CSSProperties
-        }
+        isOpen={isOpen}
+        isMobile={isMobile}
+        animate={!isInitialLoad}
+        style={sidebarTintStyle}
       >
         <SidebarPatternEdge isDarkMode={isDarkMode} />
         {/* Header */}
@@ -1136,7 +1040,7 @@ export function ChatSidebar({
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="rounded p-1.5 text-content-muted transition-all duration-200 hover:bg-surface-chat hover:text-content-secondary"
+              className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-secondary"
               aria-label="Close sidebar"
             >
               <GoSidebarExpand className="h-5 w-5" />
@@ -1159,38 +1063,8 @@ export function ChatSidebar({
             hideScrollbarDuringAnimation && 'scrollbar-hide',
           )}
         >
-          {/* Toolbar: Settings, Sync, New chat. Stacked above the usage
-              card below so the buttons' tooltips are not clipped by it. */}
+          {/* Toolbar: New chat */}
           <div className="relative z-20 flex flex-none items-center gap-2 px-2">
-            {/* Settings button */}
-            <div className="group relative flex items-center">
-              <button
-                id="settings-button"
-                type="button"
-                onClick={onSettingsClick}
-                aria-label="Settings"
-                className="relative flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-2 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
-              >
-                <Cog6ToothIcon className="h-5 w-5" aria-hidden="true" />
-                {syncNeedsAttention && (
-                  <span
-                    className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
-                )}
-              </button>
-              <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                Settings
-              </span>
-            </div>
-            {isSignedIn && cloudSyncEnabled && onManualSync && (
-              <SidebarSyncButton
-                isSyncing={isSyncing}
-                syncFailed={syncFailed}
-                onSync={onManualSync}
-              />
-            )}
             <Link
               href={newChatHref}
               aria-current={isCurrentNewChat ? 'page' : undefined}
@@ -1201,10 +1075,10 @@ export function ChatSidebar({
                 createNewChat(activeTab === 'local', true)
               }}
               className={cn(
-                'flex min-w-0 flex-1 items-center justify-between rounded-lg border border-border-subtle bg-surface-chat-background px-2 py-2 text-sm transition-all duration-200',
+                'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-all duration-200',
                 isCurrentNewChat
-                  ? 'cursor-default text-content-muted'
-                  : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+                  ? 'cursor-default border-border-subtle bg-surface-chat text-content-muted'
+                  : 'border-transparent text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
               )}
             >
               <span className="flex items-center gap-2">
@@ -1217,12 +1091,6 @@ export function ChatSidebar({
               </span>
             </Link>
           </div>
-
-          <RateLimitUsage
-            isPremium={Boolean(
-              isAuthLoaded && isSignedIn && !isSubscriptionLoading && isPremium,
-            )}
-          />
 
           {/* Message for non-premium users (signed in or not) */}
           {upsellVariant && (
@@ -1321,11 +1189,6 @@ export function ChatSidebar({
             </div>
           )}
 
-          {/* Divider after boxes */}
-          {upsellVariant && (
-            <div className="relative z-10 border-b border-border-subtle" />
-          )}
-
           {/* Backup warning - shown when chats aren't backed up, or when
               encrypted backups exist remotely but this device can't decrypt
               them yet. */}
@@ -1377,7 +1240,7 @@ export function ChatSidebar({
               ref={favoritesSectionRef}
               {...favoriteDropTargetProps}
               className={cn(
-                'relative z-10 flex-none border-t border-border-subtle transition-colors',
+                'relative z-10 mt-2 flex-none transition-colors',
                 isFavoriteDropTarget &&
                   (isDarkMode ? 'bg-white/10' : 'bg-gray-200/50'),
               )}
@@ -1394,7 +1257,16 @@ export function ChatSidebar({
                     expandFavoritesSection()
                   }
                 }}
-                className="flex w-full items-center justify-between px-4 py-3 text-sm text-content-secondary transition-colors hover:text-content-primary"
+                className={cn(
+                  'relative z-10 mx-2 flex w-[calc(100%-1rem)] items-center justify-between rounded-lg border bg-surface-sidebar px-4 py-3 text-sm text-content-secondary transition-colors hover:border-border-subtle hover:text-content-primary',
+                  isFavoritesExpanded
+                    ? 'border-border-subtle'
+                    : 'border-transparent',
+                  isFavoriteDropTarget &&
+                    (isDarkMode
+                      ? 'border-white/30 bg-white/10'
+                      : 'border-gray-400 bg-gray-200/50'),
+                )}
               >
                 <span className="flex items-center gap-2">
                   <PiPushPin className="h-4 w-4" aria-hidden="true" />
@@ -1423,7 +1295,10 @@ export function ChatSidebar({
                       duration: CONSTANTS.SIDEBAR_SECTION_ANIMATION_S,
                       ease: 'easeInOut',
                     }}
-                    className="overflow-hidden"
+                    className={cn(
+                      '-mt-3 overflow-hidden rounded-t-lg pt-3',
+                      expandedPanelClass,
+                    )}
                   >
                     {favoriteChats.length > 0 ? (
                       <ChatList
@@ -1431,7 +1306,6 @@ export function ChatSidebar({
                         currentChatId={currentChat?.id}
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                        showSyncStatus={true}
                         getChatHref={(chat) =>
                           getChatPath(chat.id, { projectId: chat.projectId })
                         }
@@ -1463,106 +1337,111 @@ export function ChatSidebar({
             </section>
           )}
 
-          {/* Projects dropdown - show for premium users. The header and
-              list are direct children of the scroll container (no section
-              wrapper) so the sticky header pins to the scroll area itself
-              and stays visible for the rest of the scroll. */}
+          {/* Projects dropdown - show for premium users. */}
           {hasPinnedProjectsHeader && (
             <>
-              <button
-                type="button"
-                aria-expanded={isProjectsExpanded}
-                onClick={() => {
-                  if (isProjectsExpanded) {
-                    hideScrollbarWhileSectionsAnimate()
-                    setIsProjectsExpanded(false)
-                  } else {
-                    expandProjectsSection()
-                  }
-                }}
-                onDragOver={(e) => {
-                  if (
-                    e.dataTransfer.types.includes('application/x-chat-id') &&
-                    cloudSyncEnabled
-                  ) {
-                    e.preventDefault()
-                    if (draggingChatSource !== 'favorites') {
-                      e.dataTransfer.dropEffect = 'move'
-                      setIsDropTargetProjectsHeader(true)
+              <div
+                className="sticky top-0 z-30 flex-none bg-surface-sidebar px-2"
+                style={{ paddingTop: `${CONSTANTS.SIDEBAR_SECTION_GAP_PX}px` }}
+              >
+                {isProjectsExpanded && (
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-3 rounded-t-lg bg-surface-sidebar-panel"
+                  />
+                )}
+                <button
+                  type="button"
+                  aria-expanded={isProjectsExpanded}
+                  onClick={() => {
+                    if (isProjectsExpanded) {
+                      hideScrollbarWhileSectionsAnimate()
+                      setIsProjectsExpanded(false)
+                    } else {
+                      expandProjectsSection()
                     }
-                  }
-                }}
-                onDragEnter={(e) => {
-                  if (
-                    e.dataTransfer.types.includes('application/x-chat-id') &&
-                    cloudSyncEnabled
-                  ) {
-                    e.preventDefault()
-                    if (draggingChatSource !== 'favorites') {
-                      setIsDropTargetProjectsHeader(true)
-                      if (!isProjectsExpanded) {
-                        expandProjectsSection()
+                  }}
+                  onDragOver={(e) => {
+                    if (
+                      e.dataTransfer.types.includes('application/x-chat-id') &&
+                      cloudSyncEnabled
+                    ) {
+                      e.preventDefault()
+                      if (draggingChatSource !== 'favorites') {
+                        e.dataTransfer.dropEffect = 'move'
+                        setIsDropTargetProjectsHeader(true)
                       }
                     }
-                  }
-                }}
-                onDragLeave={() => {
-                  setIsDropTargetProjectsHeader(false)
-                }}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  const chatId = e.dataTransfer.getData('application/x-chat-id')
-                  if (chatId) {
-                    consumeFavoriteDrop({
-                      source: draggingChatSource,
-                      chatId,
-                      pinnedChatIds,
-                      onRemoveFavorite,
-                    })
-                  }
-                  setIsDropTargetProjectsHeader(false)
-                  clearDragState()
-                }}
-                style={{
-                  // Explicit height shared with the Chats header's stacking
-                  // offset so the pinned headers always sit flush; a
-                  // content-driven height can drift from the constant and
-                  // open a seam where scrolled content shows through.
-                  height: `${CONSTANTS.SIDEBAR_PINNED_HEADER_OFFSET_PX}px`,
-                }}
-                className={cn(
-                  // flex-none is load-bearing: header and panel are direct
-                  // children of the flex-col scroll container, and without
-                  // it flexbox shrinks them to fit the viewport instead of
-                  // letting the container scroll.
-                  'sticky top-0 z-30 flex w-full flex-none cursor-pointer items-center justify-between border-t border-border-subtle bg-surface-sidebar px-4 text-sm transition-colors',
-                  isDropTargetProjectsHeader
-                    ? isDarkMode
-                      ? 'border border-white/30 bg-white/10'
-                      : 'border border-gray-400 bg-gray-200/30'
-                    : isProjectMode
+                  }}
+                  onDragEnter={(e) => {
+                    if (
+                      e.dataTransfer.types.includes('application/x-chat-id') &&
+                      cloudSyncEnabled
+                    ) {
+                      e.preventDefault()
+                      if (draggingChatSource !== 'favorites') {
+                        setIsDropTargetProjectsHeader(true)
+                        if (!isProjectsExpanded) {
+                          expandProjectsSection()
+                        }
+                      }
+                    }
+                  }}
+                  onDragLeave={() => {
+                    setIsDropTargetProjectsHeader(false)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const chatId = e.dataTransfer.getData(
+                      'application/x-chat-id',
+                    )
+                    if (chatId) {
+                      consumeFavoriteDrop({
+                        source: draggingChatSource,
+                        chatId,
+                        pinnedChatIds,
+                        onRemoveFavorite,
+                      })
+                    }
+                    setIsDropTargetProjectsHeader(false)
+                    clearDragState()
+                  }}
+                  style={{
+                    height: `${CONSTANTS.SIDEBAR_PINNED_HEADER_OFFSET_PX}px`,
+                  }}
+                  className={cn(
+                    'relative z-10 flex w-full cursor-pointer items-center justify-between rounded-lg border bg-surface-sidebar px-4 text-sm transition-colors hover:border-border-subtle',
+                    isProjectsExpanded
+                      ? 'border-border-subtle'
+                      : 'border-transparent',
+                    isDropTargetProjectsHeader
                       ? isDarkMode
-                        ? 'text-brand-accent-light'
-                        : 'text-brand-accent-dark'
-                      : 'text-content-secondary',
-                )}
-              >
-                <span className="flex items-center gap-2">
-                  <FolderIcon className="h-4 w-4" />
-                  <span className="font-aeonik font-medium">
-                    {isProjectMode && activeProjectName
-                      ? activeProjectName
-                      : 'Projects'}
-                  </span>
-                </span>
-                <span className="flex items-center gap-1">
-                  {isProjectsExpanded ? (
-                    <ChevronDownIcon className="h-4 w-4" />
-                  ) : (
-                    <ChevronRightIcon className="h-4 w-4" />
+                        ? 'border border-white/30 bg-white/10'
+                        : 'border border-gray-400 bg-gray-200/30'
+                      : isProjectMode
+                        ? isDarkMode
+                          ? 'text-brand-accent-light'
+                          : 'text-brand-accent-dark'
+                        : 'text-content-secondary',
                   )}
-                </span>
-              </button>
+                >
+                  <span className="flex items-center gap-2">
+                    <FolderIcon className="h-4 w-4" />
+                    <span className="font-aeonik font-medium">
+                      {isProjectMode && activeProjectName
+                        ? activeProjectName
+                        : 'Projects'}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    {isProjectsExpanded ? (
+                      <ChevronDownIcon className="h-4 w-4" />
+                    ) : (
+                      <ChevronRightIcon className="h-4 w-4" />
+                    )}
+                  </span>
+                </button>
+              </div>
 
               {/* Expanded projects list. flex-none matters here too: this
                   panel is a direct child of the flex-col scroll container,
@@ -1579,11 +1458,12 @@ export function ChatSidebar({
                       duration: CONSTANTS.SIDEBAR_SECTION_ANIMATION_S,
                       ease: 'easeInOut',
                     }}
-                    className="flex-none overflow-hidden"
+                    className={cn(
+                      '-mt-3 flex-none overflow-hidden rounded-t-lg pt-3',
+                      expandedPanelClass,
+                    )}
                   >
-                    <div
-                      className={cn('space-y-1 px-2 py-2', expandedPanelClass)}
-                    >
+                    <div className="space-y-1 px-2 py-2">
                       {/* Cloud sync disabled message */}
                       {!cloudSyncEnabled ? (
                         <div className="px-3 py-2">
@@ -1907,97 +1787,126 @@ export function ChatSidebar({
               header while the chat list scrolls. */}
           <div
             className={cn(
-              'relative z-10 flex-none border-t border-border-subtle',
-              !isChatHistoryExpanded && 'border-b',
+              'relative isolate z-10 flex flex-col',
+              // When expanded the section takes the rest of the sidebar and
+              // the list scrolls inside it, so the header, tabs, and note
+              // never move. Collapsed, it just takes its natural height.
+              isChatHistoryExpanded ? 'min-h-0 flex-1' : 'flex-none',
             )}
           >
             <div
-              onDragOver={(e) => {
-                const chatId = e.dataTransfer.types.includes(
-                  'application/x-chat-id',
-                )
-                if (chatId) {
-                  e.preventDefault()
-                  e.dataTransfer.dropEffect = 'move'
-                  setDropTargetChatHistory(true)
-                }
-              }}
-              onDragEnter={(e) => {
-                const chatId = e.dataTransfer.types.includes(
-                  'application/x-chat-id',
-                )
-                if (chatId) {
-                  e.preventDefault()
-                  setDropTargetChatHistory(true)
-                  if (
-                    !isChatHistoryExpanded &&
-                    draggingChatSource !== 'favorites'
-                  ) {
-                    expandChatsSection()
-                  }
-                }
-              }}
-              onDragLeave={() => {
-                setDropTargetChatHistory(false)
-              }}
-              onDrop={async (e) => {
-                e.preventDefault()
-                const chatId = e.dataTransfer.getData('application/x-chat-id')
-                const favoriteDropConsumed = chatId
-                  ? consumeFavoriteDrop({
-                      source: draggingChatSource,
-                      chatId,
-                      pinnedChatIds,
-                      onRemoveFavorite,
-                    })
-                  : false
-                if (favoriteDropConsumed) {
-                  expandChatsSection()
-                } else if (chatId && onRemoveChatFromProject) {
-                  await onRemoveChatFromProject(chatId)
-                }
-                clearDragState()
-              }}
-              className={cn(
-                'sticky z-20 flex w-full items-center bg-surface-sidebar text-sm transition-colors',
-                isDropTargetChatHistory
-                  ? isDarkMode
-                    ? 'border border-white/30 bg-white/10'
-                    : 'border border-gray-400 bg-gray-200/30'
-                  : 'text-content-secondary',
-              )}
-              style={{
-                // Stack below the pinned Projects header when present.
-                top: hasPinnedProjectsHeader
-                  ? `${CONSTANTS.SIDEBAR_PINNED_HEADER_OFFSET_PX}px`
-                  : 0,
-              }}
+              className="relative z-30 flex-none px-2"
+              style={{ paddingTop: `${CONSTANTS.SIDEBAR_SECTION_GAP_PX}px` }}
             >
-              <button
-                type="button"
-                aria-expanded={isChatHistoryExpanded}
-                onClick={() => {
-                  if (isChatHistoryExpanded) {
-                    hideScrollbarWhileSectionsAnimate()
-                    setIsChatHistoryExpanded(false)
-                  } else {
-                    expandChatsSection()
+              <div
+                onDragOver={(e) => {
+                  const chatId = e.dataTransfer.types.includes(
+                    'application/x-chat-id',
+                  )
+                  if (chatId) {
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    setDropTargetChatHistory(true)
                   }
                 }}
-                className="flex w-full items-center justify-between px-4 py-3 text-left"
-              >
-                <span className="flex items-center gap-2">
-                  <IoChatbubblesOutline className="h-4 w-4" />
-                  <span className="truncate font-aeonik font-medium">
-                    Chats
-                  </span>
-                </span>
-                {isChatHistoryExpanded ? (
-                  <ChevronDownIcon className="h-4 w-4" />
-                ) : (
-                  <ChevronRightIcon className="h-4 w-4" />
+                onDragEnter={(e) => {
+                  const chatId = e.dataTransfer.types.includes(
+                    'application/x-chat-id',
+                  )
+                  if (chatId) {
+                    e.preventDefault()
+                    setDropTargetChatHistory(true)
+                    if (
+                      !isChatHistoryExpanded &&
+                      draggingChatSource !== 'favorites'
+                    ) {
+                      expandChatsSection()
+                    }
+                  }
+                }}
+                onDragLeave={() => {
+                  setDropTargetChatHistory(false)
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault()
+                  const chatId = e.dataTransfer.getData('application/x-chat-id')
+                  const favoriteDropConsumed = chatId
+                    ? consumeFavoriteDrop({
+                        source: draggingChatSource,
+                        chatId,
+                        pinnedChatIds,
+                        onRemoveFavorite,
+                      })
+                    : false
+                  if (
+                    !favoriteDropConsumed &&
+                    chatId &&
+                    onRemoveChatFromProject
+                  ) {
+                    await onRemoveChatFromProject(chatId)
+                  }
+                  clearDragState()
+                }}
+                className={cn(
+                  'relative flex w-full items-center rounded-lg border bg-surface-sidebar text-sm transition-colors hover:border-border-subtle',
+                  isChatHistoryExpanded
+                    ? 'border-border-subtle'
+                    : 'border-transparent',
+                  isDropTargetChatHistory
+                    ? isDarkMode
+                      ? 'border border-white/30 bg-white/10'
+                      : 'border border-gray-400 bg-gray-200/30'
+                    : 'text-content-secondary',
                 )}
-              </button>
+                style={{
+                  height: `${CONSTANTS.SIDEBAR_PINNED_HEADER_OFFSET_PX}px`,
+                }}
+              >
+                <button
+                  type="button"
+                  aria-expanded={isChatHistoryExpanded}
+                  onClick={() => {
+                    if (isChatHistoryExpanded) {
+                      hideScrollbarWhileSectionsAnimate()
+                      setIsChatHistoryExpanded(false)
+                    } else {
+                      expandChatsSection()
+                    }
+                  }}
+                  className="flex min-w-0 flex-1 items-center justify-between py-3 pl-4 pr-4 text-left"
+                >
+                  <span className="flex items-center gap-2">
+                    <IoChatbubblesOutline className="h-4 w-4" />
+                    <span className="truncate font-aeonik font-medium">
+                      Chats
+                    </span>
+                  </span>
+                  {isChatHistoryExpanded ? (
+                    <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+                {onSearchClick && (
+                  <div className="group absolute right-10 top-1/2 z-10 flex -translate-y-1/2 items-center">
+                    <button
+                      type="button"
+                      onClick={onSearchClick}
+                      aria-label="Search chats"
+                      className="rounded-md p-1.5 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-primary"
+                    >
+                      <MagnifyingGlassIcon
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                      />
+                    </button>
+                    <span className="pointer-events-none absolute right-0 top-full z-50 mt-1 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                      Search{' '}
+                      <span className="text-content-muted">{modKey}K</span>
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Expanded Chats content */}
@@ -2011,258 +1920,256 @@ export function ChatSidebar({
                     duration: CONSTANTS.SIDEBAR_SECTION_ANIMATION_S,
                     ease: 'easeInOut',
                   }}
-                  className={cn('overflow-hidden', expandedPanelClass)}
+                  className={cn(
+                    // The -mt-3 tucks the panel's rounded top under the
+                    // header card above.
+                    'relative z-20 -mt-3 flex-none overflow-hidden rounded-t-lg border-b border-border-subtle',
+                    expandedPanelClass,
+                  )}
                 >
-                  {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
-                  {isSignedIn && cloudSyncEnabled && localOnlyModeEnabled && (
-                    <div
-                      className="relative mx-4 mt-2 flex rounded-lg bg-surface-chat p-1"
-                      role="tablist"
-                      aria-label="Chat storage"
-                    >
-                      {/* Sliding background indicator */}
+                  <div className="pt-3">
+                    {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
+                    {isSignedIn && cloudSyncEnabled && localOnlyModeEnabled && (
                       <div
-                        aria-hidden="true"
-                        className={cn(
-                          'absolute inset-y-1 w-[calc(50%-4px)] rounded-md shadow-sm transition-all duration-200 ease-in-out',
-                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          activeTab === 'cloud'
-                            ? 'translate-x-0'
-                            : 'translate-x-full',
-                        )}
-                        style={{ left: '4px' }}
-                      />
-
-                      <button
-                        id="chat-cloud-tab"
-                        role="tab"
-                        aria-selected={activeTab === 'cloud'}
-                        aria-controls="chat-storage-panel"
-                        onClick={() => setActiveTab('cloud')}
-                        onDragOver={(e) => {
-                          if (
-                            e.dataTransfer.types.includes(
-                              'application/x-chat-id',
-                            ) &&
-                            onConvertChatToCloud
-                          ) {
-                            e.preventDefault()
-                            if (draggingChatSource !== 'favorites') {
-                              e.dataTransfer.dropEffect = 'move'
-                              setDropTargetTab('cloud')
-                            }
-                          }
-                        }}
-                        onDragEnter={(e) => {
-                          if (
-                            e.dataTransfer.types.includes(
-                              'application/x-chat-id',
-                            ) &&
-                            onConvertChatToCloud
-                          ) {
-                            e.preventDefault()
-                            if (draggingChatSource !== 'favorites') {
-                              setDropTargetTab('cloud')
-                              setActiveTab('cloud')
-                            }
-                          }
-                        }}
-                        onDragLeave={() => {
-                          if (dropTargetTab === 'cloud') {
-                            setDropTargetTab(null)
-                          }
-                        }}
-                        onDrop={async (e) => {
-                          e.preventDefault()
-                          const chatId = e.dataTransfer.getData(
-                            'application/x-chat-id',
-                          )
-                          if (chatId) {
-                            const favoriteDropConsumed = consumeFavoriteDrop({
-                              source: draggingChatSource,
-                              chatId,
-                              pinnedChatIds,
-                              onRemoveFavorite,
-                            })
+                        className="mx-4 mt-4 flex gap-2"
+                        role="tablist"
+                        aria-label="Chat storage"
+                      >
+                        <button
+                          id="chat-cloud-tab"
+                          role="tab"
+                          aria-selected={activeTab === 'cloud'}
+                          aria-controls="chat-storage-panel"
+                          onClick={() => setActiveTab('cloud')}
+                          onDragOver={(e) => {
                             if (
-                              !favoriteDropConsumed &&
-                              draggingChatFromProjectId &&
-                              onRemoveChatFromProject
-                            ) {
-                              // Chat from project is already cloud, just remove from project
-                              await onRemoveChatFromProject(chatId)
-                            } else if (
-                              !favoriteDropConsumed &&
+                              e.dataTransfer.types.includes(
+                                'application/x-chat-id',
+                              ) &&
                               onConvertChatToCloud
                             ) {
-                              // Only convert if dragging from local (not from project)
-                              await onConvertChatToCloud(chatId)
+                              e.preventDefault()
+                              if (draggingChatSource !== 'favorites') {
+                                e.dataTransfer.dropEffect = 'move'
+                                setDropTargetTab('cloud')
+                              }
                             }
-                          }
-                          clearDragState()
-                        }}
-                        className={cn(
-                          'relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                          dropTargetTab === 'cloud'
-                            ? isDarkMode
-                              ? 'bg-white/10'
-                              : 'bg-gray-200/30'
-                            : activeTab === 'cloud'
-                              ? isDarkMode
-                                ? 'text-white'
-                                : 'text-content-primary'
-                              : 'text-content-muted hover:text-content-secondary',
-                        )}
-                      >
-                        <CloudIcon className="h-3.5 w-3.5" />
-                        Cloud
-                      </button>
-                      <button
-                        id="chat-local-tab"
-                        role="tab"
-                        aria-selected={activeTab === 'local'}
-                        aria-controls="chat-storage-panel"
-                        onClick={() => setActiveTab('local')}
-                        onDragOver={(e) => {
-                          if (
-                            e.dataTransfer.types.includes(
-                              'application/x-chat-id',
-                            ) &&
-                            onConvertChatToLocal
-                          ) {
+                          }}
+                          onDragEnter={(e) => {
+                            if (
+                              e.dataTransfer.types.includes(
+                                'application/x-chat-id',
+                              ) &&
+                              onConvertChatToCloud
+                            ) {
+                              e.preventDefault()
+                              if (draggingChatSource !== 'favorites') {
+                                setDropTargetTab('cloud')
+                                setActiveTab('cloud')
+                              }
+                            }
+                          }}
+                          onDragLeave={() => {
+                            if (dropTargetTab === 'cloud') {
+                              setDropTargetTab(null)
+                            }
+                          }}
+                          onDrop={async (e) => {
                             e.preventDefault()
-                            if (draggingChatSource !== 'favorites') {
-                              e.dataTransfer.dropEffect = 'move'
-                              setDropTargetTab('local')
-                            }
-                          }
-                        }}
-                        onDragEnter={(e) => {
-                          if (
-                            e.dataTransfer.types.includes(
+                            const chatId = e.dataTransfer.getData(
                               'application/x-chat-id',
-                            ) &&
-                            onConvertChatToLocal
-                          ) {
-                            e.preventDefault()
-                            if (draggingChatSource !== 'favorites') {
-                              setActiveTab('local')
-                              setDropTargetTab('local')
-                            }
-                          }
-                        }}
-                        onDragLeave={() => {
-                          if (dropTargetTab === 'local') {
-                            setDropTargetTab(null)
-                          }
-                        }}
-                        onDrop={async (e) => {
-                          e.preventDefault()
-                          const chatId = e.dataTransfer.getData(
-                            'application/x-chat-id',
-                          )
-                          const favoriteDropConsumed = chatId
-                            ? consumeFavoriteDrop({
+                            )
+                            if (chatId) {
+                              const favoriteDropConsumed = consumeFavoriteDrop({
                                 source: draggingChatSource,
                                 chatId,
                                 pinnedChatIds,
                                 onRemoveFavorite,
                               })
-                            : false
-                          if (
-                            !favoriteDropConsumed &&
-                            chatId &&
-                            onConvertChatToLocal
-                          ) {
-                            // convertChatToLocal also clears projectId
-                            await onConvertChatToLocal(chatId)
-                          }
-                          clearDragState()
-                        }}
-                        className={cn(
-                          'relative z-10 flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
-                          dropTargetTab === 'local'
-                            ? isDarkMode
-                              ? 'bg-white/10'
-                              : 'bg-gray-200/30'
-                            : activeTab === 'local'
-                              ? isDarkMode
-                                ? 'text-white'
-                                : 'text-content-primary'
-                              : 'text-content-muted hover:text-content-secondary',
-                        )}
-                      >
-                        <CiFloppyDisk className="h-3.5 w-3.5" />
-                        Local
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Description text - show when NOT displaying the cloud sync box */}
-                  {(!isSignedIn || cloudSyncEnabled) && (
-                    <div className="font-base mx-4 mt-1 min-h-[52px] pb-3 font-aeonik-fono text-xs text-content-muted">
-                      {!isSignedIn ? (
-                        'Your chats are stored temporarily in this browser tab. Create an account for persistent storage.'
-                      ) : localOnlyModeEnabled && activeTab === 'local' ? (
-                        "Local chats are stored only on this device and won't sync across devices."
-                      ) : (
-                        <>
-                          Your chats are encrypted and synced to the cloud. The
-                          encryption key is only stored on this browser and
-                          never sent to Tinfoil.
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Encrypted search over synced chats */}
-                  {searchEnabled && (
-                    <div className="relative mx-4 mb-2">
-                      <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-content-muted" />
-                      <input
-                        type="text"
-                        value={chatSearchTerm}
-                        onChange={(e) => setChatSearchTerm(e.target.value)}
-                        placeholder="Search chats..."
-                        aria-label="Search chats"
-                        className={cn(
-                          'h-9 w-full rounded-md border pl-8 pr-7 text-sm',
-                          isDarkMode
-                            ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                            : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-                          'focus:outline-none focus:ring-1 focus:ring-border-strong',
-                        )}
-                      />
-                      {chatSearchTerm.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setChatSearchTerm('')}
-                          aria-label="Clear search"
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-content-muted transition-colors hover:text-content-secondary"
+                              if (
+                                !favoriteDropConsumed &&
+                                draggingChatFromProjectId &&
+                                onRemoveChatFromProject
+                              ) {
+                                // Chat from project is already cloud, just remove from project
+                                await onRemoveChatFromProject(chatId)
+                              } else if (
+                                !favoriteDropConsumed &&
+                                onConvertChatToCloud
+                              ) {
+                                // Only convert if dragging from local (not from project)
+                                await onConvertChatToCloud(chatId)
+                              }
+                            }
+                            clearDragState()
+                          }}
+                          className={cn(
+                            STORAGE_TAB_CLASS_NAME,
+                            activeTab === 'cloud'
+                              ? STORAGE_TAB_ACTIVE_CLASS_NAME
+                              : STORAGE_TAB_INACTIVE_CLASS_NAME,
+                            dropTargetTab === 'cloud' &&
+                              STORAGE_TAB_DROP_TARGET_CLASS_NAME,
+                          )}
                         >
-                          <XMarkIcon className="h-3.5 w-3.5" />
+                          <CloudIcon className="h-3.5 w-3.5" />
+                          Cloud
                         </button>
-                      )}
-                    </div>
-                  )}
+                        <button
+                          id="chat-local-tab"
+                          role="tab"
+                          aria-selected={activeTab === 'local'}
+                          aria-controls="chat-storage-panel"
+                          onClick={() => setActiveTab('local')}
+                          onDragOver={(e) => {
+                            if (
+                              e.dataTransfer.types.includes(
+                                'application/x-chat-id',
+                              ) &&
+                              onConvertChatToLocal
+                            ) {
+                              e.preventDefault()
+                              if (draggingChatSource !== 'favorites') {
+                                e.dataTransfer.dropEffect = 'move'
+                                setDropTargetTab('local')
+                              }
+                            }
+                          }}
+                          onDragEnter={(e) => {
+                            if (
+                              e.dataTransfer.types.includes(
+                                'application/x-chat-id',
+                              ) &&
+                              onConvertChatToLocal
+                            ) {
+                              e.preventDefault()
+                              if (draggingChatSource !== 'favorites') {
+                                setActiveTab('local')
+                                setDropTargetTab('local')
+                              }
+                            }
+                          }}
+                          onDragLeave={() => {
+                            if (dropTargetTab === 'local') {
+                              setDropTargetTab(null)
+                            }
+                          }}
+                          onDrop={async (e) => {
+                            e.preventDefault()
+                            const chatId = e.dataTransfer.getData(
+                              'application/x-chat-id',
+                            )
+                            const favoriteDropConsumed = chatId
+                              ? consumeFavoriteDrop({
+                                  source: draggingChatSource,
+                                  chatId,
+                                  pinnedChatIds,
+                                  onRemoveFavorite,
+                                })
+                              : false
+                            if (
+                              !favoriteDropConsumed &&
+                              chatId &&
+                              onConvertChatToLocal
+                            ) {
+                              // convertChatToLocal also clears projectId
+                              await onConvertChatToLocal(chatId)
+                            }
+                            clearDragState()
+                          }}
+                          className={cn(
+                            STORAGE_TAB_CLASS_NAME,
+                            activeTab === 'local'
+                              ? STORAGE_TAB_ACTIVE_CLASS_NAME
+                              : STORAGE_TAB_INACTIVE_CLASS_NAME,
+                            dropTargetTab === 'local' &&
+                              STORAGE_TAB_DROP_TARGET_CLASS_NAME,
+                          )}
+                        >
+                          <CiFloppyDisk className="h-3.5 w-3.5" />
+                          Local
+                        </button>
+                      </div>
+                    )}
 
-                  {/* Cloud Sync Setup - show when signed in and cloud sync is OFF */}
-                  {isSignedIn && !cloudSyncEnabled && (
-                    <div className="px-3 py-2">
-                      <p className="text-xs text-content-muted">
-                        Chat are only stored locally on this device. Set up
-                        end-to-end encrypted cloud sync to back up and access
-                        your data across multiple devices.
-                      </p>
-                      <button
-                        onClick={openCloudSyncSetup}
-                        className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
-                      >
-                        <CloudIcon className="h-3.5 w-3.5" />
-                        Enable Cloud Sync
-                      </button>
-                    </div>
-                  )}
+                    {/* Description text - show when NOT displaying the cloud sync box */}
+                    {(!isSignedIn || cloudSyncEnabled) && (
+                      <div className="font-base mx-4 min-h-[36px] pb-3 pt-3 font-aeonik-fono text-xs text-content-muted">
+                        {!isSignedIn ? (
+                          'Your chats are stored temporarily in this browser tab. Create an account for persistent storage.'
+                        ) : localOnlyModeEnabled && activeTab === 'local' ? (
+                          "Local chats are stored only on this device and won't sync across devices."
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              aria-expanded={isEncryptionNoteExpanded}
+                              aria-controls={ENCRYPTION_NOTE_ID}
+                              onClick={() =>
+                                setIsEncryptionNoteExpanded((open) => !open)
+                              }
+                              className="flex w-full items-center gap-2 text-left transition-colors hover:text-content-secondary"
+                            >
+                              <FaLock
+                                className="h-3 w-3 shrink-0"
+                                aria-hidden="true"
+                              />
+                              <span className="flex-1">
+                                Your chats are end-to-end encrypted.
+                              </span>
+                              <ChevronDownIcon
+                                className={cn(
+                                  'h-3.5 w-3.5 shrink-0 transition-transform',
+                                  isEncryptionNoteExpanded && 'rotate-180',
+                                )}
+                                aria-hidden="true"
+                              />
+                            </button>
+                            <AnimatePresence initial={false}>
+                              {isEncryptionNoteExpanded && (
+                                <motion.p
+                                  id={ENCRYPTION_NOTE_ID}
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                  transition={{
+                                    duration:
+                                      CONSTANTS.SIDEBAR_SECTION_ANIMATION_S,
+                                    ease: 'easeInOut',
+                                  }}
+                                  className="overflow-hidden pl-5"
+                                >
+                                  <span className="block pt-1.5">
+                                    Your chats are synced to the cloud. The
+                                    encryption key is only stored on this
+                                    browser and never sent to Tinfoil.
+                                  </span>
+                                </motion.p>
+                              )}
+                            </AnimatePresence>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Cloud Sync Setup - show when signed in and cloud sync is OFF */}
+                    {isSignedIn && !cloudSyncEnabled && (
+                      <div className="px-3 py-2">
+                        <p className="text-xs text-content-muted">
+                          Chats are only stored locally on this device. Set up
+                          end-to-end encrypted cloud sync to back up and access
+                          your data across multiple devices.
+                        </p>
+                        <button
+                          onClick={openCloudSyncSetup}
+                          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
+                        >
+                          <CloudIcon className="h-3.5 w-3.5" />
+                          Enable Cloud Sync
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -2278,7 +2185,10 @@ export function ChatSidebar({
                     duration: CONSTANTS.SIDEBAR_SECTION_ANIMATION_S,
                     ease: 'easeInOut',
                   }}
-                  className={cn('overflow-hidden', expandedPanelClass)}
+                  className={cn(
+                    'relative isolate z-0 flex min-h-0 flex-1 flex-col overflow-hidden',
+                    expandedPanelClass,
+                  )}
                 >
                   <div
                     id="chat-storage-panel"
@@ -2354,7 +2264,8 @@ export function ChatSidebar({
                       clearDragState()
                     }}
                     className={cn(
-                      'relative z-10',
+                      'relative z-10 min-h-0 flex-1 overflow-y-auto',
+                      hideScrollbarDuringAnimation && 'scrollbar-hide',
                       isDropTargetChatList &&
                         (isDarkMode
                           ? 'border border-white/30 bg-white/10'
@@ -2363,26 +2274,15 @@ export function ChatSidebar({
                   >
                     {isClient && (
                       <ChatList
-                        chats={
-                          isSearchActive
-                            ? searchResultChats
-                            : (sortedChats as ChatItemData[])
-                        }
+                        chats={sortedChats as ChatItemData[]}
                         currentChatId={currentChat?.id}
                         currentChatIsBlank={currentChat?.isBlankChat}
                         currentChatIsLocalOnly={currentChat?.isLocalOnly}
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                        isLoading={
-                          isSearchActive &&
-                          chatSearch.isSearching &&
-                          searchResultChats.length === 0
-                        }
                         showEncryptionStatus={true}
-                        showSyncStatus={true}
                         enableTitleAnimation={true}
                         isDraggable={
-                          !isSearchActive &&
                           isSignedIn &&
                           cloudSyncEnabled &&
                           (!!onMoveChatToProject ||
@@ -2390,7 +2290,6 @@ export function ChatSidebar({
                             !!onConvertChatToLocal)
                         }
                         showMoveToProject={
-                          !isSearchActive &&
                           isSignedIn &&
                           isPremium &&
                           cloudSyncEnabled &&
@@ -2405,11 +2304,7 @@ export function ChatSidebar({
                                 isLocalOnly: chat.isLocalOnly,
                               })
                         }
-                        onSelectChat={
-                          isSearchActive
-                            ? handleSearchResultSelect
-                            : handleChatSelect
-                        }
+                        onSelectChat={handleChatSelect}
                         onAfterSelect={undefined}
                         onUpdateTitle={updateChatTitle}
                         onDeleteChat={deleteChat}
@@ -2430,14 +2325,7 @@ export function ChatSidebar({
                             : undefined
                         }
                         loadingIndicator={
-                          isSearchActive && chatSearch.isIndexing ? (
-                            <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
-                              <PiSpinner className="h-4 w-4 animate-spin" />
-                              <span className="text-sm">
-                                Building search index...
-                              </span>
-                            </div>
-                          ) : chatDecryptionProgress?.isDecrypting ? (
+                          chatDecryptionProgress?.isDecrypting ? (
                             <div className="flex items-center gap-2 px-4 py-2 text-content-secondary">
                               <PiSpinner className="h-4 w-4 animate-spin" />
                               <span className="text-sm">
@@ -2454,28 +2342,7 @@ export function ChatSidebar({
                         pinnedChatIds={pinnedChatIds}
                         onTogglePin={onToggleFavorite}
                         emptyState={
-                          isSearchActive && chatSearch.failed ? (
-                            <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
-                              <p className="text-sm text-content-muted">
-                                Search is unavailable right now
-                              </p>
-                              <p className="mt-1 text-balance text-xs text-content-muted">
-                                Please try again in a moment
-                              </p>
-                            </div>
-                          ) : isSearchActive ? (
-                            <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
-                              <p className="text-sm text-content-muted">
-                                No matching chats
-                              </p>
-                              {chatSearch.isIndexing && (
-                                <p className="mt-1 text-balance text-xs text-content-muted">
-                                  The search index is still being built; results
-                                  will fill in shortly
-                                </p>
-                              )}
-                            </div>
-                          ) : activeTab === 'local' ? (
+                          activeTab === 'local' ? (
                             <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
                               <p className="text-sm text-content-muted">
                                 No local chats yet
@@ -2488,65 +2355,61 @@ export function ChatSidebar({
                           ) : undefined
                         }
                         loadMoreButton={
-                          isSearchActive ? undefined : (
-                            <>
-                              {/* Shimmer placeholder while loading or waiting for chats to render */}
-                              {(isLoadingMore || pendingChatsRender) && (
-                                <div className="space-y-1 px-2">
-                                  {[...Array(3)].map((_, i) => (
-                                    <div
-                                      key={i}
-                                      className="animate-pulse rounded-lg px-3 py-2"
-                                    >
-                                      <div
-                                        className={cn(
-                                          'mb-1.5 h-3.5 w-3/4 rounded',
-                                          isDarkMode
-                                            ? 'bg-gray-700'
-                                            : 'bg-gray-200',
-                                        )}
-                                      />
-                                      <div
-                                        className={cn(
-                                          'h-3 w-1/3 rounded',
-                                          isDarkMode
-                                            ? 'bg-gray-700'
-                                            : 'bg-gray-200',
-                                        )}
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {shouldShowLoadMore && (
-                                <div className="px-3 py-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => void loadMoreChats()}
-                                    disabled={
-                                      isLoadingMore || pendingChatsRender
-                                    }
-                                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-sidebar px-3 py-2 text-xs font-medium text-content-secondary transition-colors hover:border-border-strong hover:text-content-primary disabled:cursor-wait disabled:opacity-60"
+                          <>
+                            {/* Shimmer placeholder while loading or waiting for chats to render */}
+                            {(isLoadingMore || pendingChatsRender) && (
+                              <div className="space-y-1 px-2">
+                                {[...Array(3)].map((_, i) => (
+                                  <div
+                                    key={i}
+                                    className="animate-pulse rounded-lg px-3 py-2"
                                   >
-                                    {(isLoadingMore || pendingChatsRender) && (
-                                      <PiSpinner className="h-3.5 w-3.5 animate-spin" />
-                                    )}
-                                    {isLoadingMore || pendingChatsRender
-                                      ? 'Loading chats...'
-                                      : 'Load more chats'}
-                                  </button>
+                                    <div
+                                      className={cn(
+                                        'mb-1.5 h-3.5 w-3/4 rounded',
+                                        isDarkMode
+                                          ? 'bg-gray-700'
+                                          : 'bg-gray-200',
+                                      )}
+                                    />
+                                    <div
+                                      className={cn(
+                                        'h-3 w-1/3 rounded',
+                                        isDarkMode
+                                          ? 'bg-gray-700'
+                                          : 'bg-gray-200',
+                                      )}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {shouldShowLoadMore && (
+                              <div className="px-3 py-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void loadMoreChats()}
+                                  disabled={isLoadingMore || pendingChatsRender}
+                                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-sidebar px-3 py-2 text-xs font-medium text-content-secondary transition-colors hover:border-border-strong hover:text-content-primary disabled:cursor-wait disabled:opacity-60"
+                                >
+                                  {(isLoadingMore || pendingChatsRender) && (
+                                    <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                                  )}
+                                  {isLoadingMore || pendingChatsRender
+                                    ? 'Loading chats...'
+                                    : 'Load more chats'}
+                                </button>
+                              </div>
+                            )}
+                            {isSignedIn &&
+                              !shouldShowLoadMore &&
+                              !hasMoreRemote &&
+                              hasAttemptedLoadMore && (
+                                <div className="px-3 py-2 text-center text-xs text-content-muted">
+                                  No more chats
                                 </div>
                               )}
-                              {isSignedIn &&
-                                !shouldShowLoadMore &&
-                                !hasMoreRemote &&
-                                hasAttemptedLoadMore && (
-                                  <div className="px-3 py-2 text-center text-xs text-content-muted">
-                                    No more chats
-                                  </div>
-                                )}
-                            </>
-                          )
+                          </>
                         }
                       />
                     )}
@@ -2597,34 +2460,23 @@ export function ChatSidebar({
           </div>
         )}
 
-        {/* Terms and privacy policy */}
-        <div className="relative z-10 mt-auto flex h-[56px] flex-none items-center justify-center border-t border-border-subtle bg-surface-sidebar p-3">
-          <p className="text-balance text-center text-xs leading-relaxed text-content-secondary">
-            By using this service, you agree to Tinfoil&apos;s{' '}
-            <Link
-              href="https://tinfoil.sh/terms"
-              className={
-                isDarkMode
-                  ? 'text-white underline hover:text-content-secondary'
-                  : 'text-brand-accent-dark underline hover:text-brand-accent-dark/80'
-              }
-            >
-              Terms of Service
-            </Link>{' '}
-            and{' '}
-            <Link
-              href="https://tinfoil.sh/privacy"
-              className={
-                isDarkMode
-                  ? 'text-white underline hover:text-content-secondary'
-                  : 'text-brand-accent-dark underline hover:text-brand-accent-dark/80'
-              }
-            >
-              Privacy Policy
-            </Link>
-          </p>
+        {/* Account menu: settings, sync, help. Pinned below the scroll area. */}
+        <div className="relative z-10 mt-auto flex-none border-t border-border-subtle bg-surface-sidebar p-2">
+          <SidebarAccountMenu
+            isSidebarOpen={isOpen}
+            isSignedIn={Boolean(isSignedIn)}
+            isPremium={Boolean(isPremium)}
+            isDarkMode={isDarkMode}
+            canSync={Boolean(isSignedIn && cloudSyncEnabled)}
+            isSyncing={isSyncing}
+            syncFailed={syncFailed}
+            syncNeedsAttention={syncNeedsAttention}
+            onSync={onManualSync}
+            onOpenSettings={(tab) => onSettingsClick?.(tab)}
+            onReportBug={() => onReportBugClick?.()}
+          />
         </div>
-      </nav>
+      </SidebarPanel>
 
       {/* Mobile overlay */}
       {isOpen && (

@@ -7,6 +7,7 @@ type PopoverPosition = {
 }
 
 type QuoteSelectionPopoverProps = {
+  enabled?: boolean
   containerRef: React.RefObject<HTMLElement | null>
   onQuote: (text: string) => void
   onAsk?: (text: string) => void
@@ -19,6 +20,7 @@ const MIN_SELECTION_LENGTH = 2
 const POPOVER_VERTICAL_OFFSET = 40
 
 export function QuoteSelectionPopover({
+  enabled = true,
   containerRef,
   onQuote,
   onAsk,
@@ -86,16 +88,30 @@ export function QuoteSelectionPopover({
   }, [containerRef, hidePopover])
 
   useEffect(() => {
+    if (!enabled) {
+      hidePopover()
+      return
+    }
+    let selectionFrame: number | null = null
+    const scheduleUpdate = () => {
+      if (selectionFrame !== null) cancelAnimationFrame(selectionFrame)
+      selectionFrame = requestAnimationFrame(() => {
+        selectionFrame = null
+        updateFromSelection()
+      })
+    }
     const handleSelectionChange = () => {
       // Defer to allow the selection to fully settle (important on mobile).
-      requestAnimationFrame(updateFromSelection)
+      scheduleUpdate()
     }
 
     const handleMouseUp = () => {
-      requestAnimationFrame(updateFromSelection)
+      scheduleUpdate()
     }
 
     const handleScrollOrResize = () => {
+      if (selectionFrame !== null) cancelAnimationFrame(selectionFrame)
+      selectionFrame = null
       hidePopover()
     }
 
@@ -105,12 +121,13 @@ export function QuoteSelectionPopover({
     window.addEventListener('resize', handleScrollOrResize)
 
     return () => {
+      if (selectionFrame !== null) cancelAnimationFrame(selectionFrame)
       document.removeEventListener('selectionchange', handleSelectionChange)
       document.removeEventListener('mouseup', handleMouseUp)
       window.removeEventListener('scroll', handleScrollOrResize, true)
       window.removeEventListener('resize', handleScrollOrResize)
     }
-  }, [updateFromSelection, hidePopover])
+  }, [enabled, updateFromSelection, hidePopover])
 
   const handleQuoteClick = useCallback(
     (e: React.MouseEvent) => {
@@ -136,7 +153,7 @@ export function QuoteSelectionPopover({
     [selectedText, onAsk, hidePopover],
   )
 
-  if (!position) return null
+  if (!enabled || !position) return null
 
   return (
     <div

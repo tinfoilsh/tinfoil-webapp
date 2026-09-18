@@ -42,9 +42,12 @@ test.describe('Smoke Tests', () => {
       await page.waitForTimeout(300)
     }
 
-    // Now click the settings button inside the sidebar
-    const settingsButton = page.locator('#settings-button')
-    await expect(settingsButton).toBeVisible({ timeout: 10000 })
+    // Settings lives inside the account menu at the bottom of the sidebar
+    const accountMenuButton = page.locator('[data-account-menu-trigger]')
+    await expect(accountMenuButton).toBeVisible({ timeout: 10000 })
+    await accountMenuButton.click()
+    const settingsButton = page.locator('[data-settings-button]')
+    await expect(settingsButton).toBeVisible({ timeout: 5000 })
     await settingsButton.click()
 
     // Navigate to the General tab where the theme toggle is located

@@ -3,10 +3,16 @@ import { cn } from '@/components/ui/utils'
 import { UserAvatar } from '@/components/user-avatar'
 import { API_BASE_URL } from '@/config'
 import {
+  DASHBOARD_URL,
+  PRIVACY_POLICY_URL,
+  TERMS_URL,
+} from '@/constants/external-links'
+import {
   BROWSER_TAB_CHAT_TITLE_CHANGED_EVENT,
   ENTER_TO_NEWLINE_CHANGED_EVENT,
   PIXELATE_SIDEBAR_CHAT_TITLES_CHANGED_EVENT,
 } from '@/constants/settings-events'
+import type { SettingsTab } from '@/constants/settings-tabs'
 import {
   SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
   SETTINGS_CHAT_FONT,
@@ -102,6 +108,7 @@ import {
   showSignoutProgress,
 } from '@/utils/signout-progress'
 import { useAuth, useUser } from '@clerk/nextjs'
+import { Dialog } from '@headlessui/react'
 import {
   ArrowDownTrayIcon,
   ArrowPathIcon,
@@ -111,6 +118,7 @@ import {
   CheckCircleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  CircleStackIcon,
   ComputerDesktopIcon,
   CreditCardIcon,
   EyeIcon,
@@ -125,7 +133,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { AiOutlineCloudSync, AiOutlineExport } from 'react-icons/ai'
 import { BsQrCode } from 'react-icons/bs'
 import { GoPasskeyFill } from 'react-icons/go'
@@ -152,8 +160,6 @@ import {
 import type { Attachment, Chat } from './types'
 
 const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
-
-const DASHBOARD_URL = 'https://dash.tinfoil.sh'
 
 const DELETE_ALL_CHATS_CONFIRM_PHRASE = 'delete all chats'
 const DELETE_ALL_PROJECTS_CONFIRM_PHRASE = 'delete all projects'
@@ -347,14 +353,61 @@ const STEP_CIRCLE_CLASSES = cn(
   'bg-content-muted/20 text-content-secondary',
 )
 
-export type SettingsTab =
-  | 'general'
-  | 'chat'
-  | 'personalization'
-  | 'prompts'
-  | 'cloud-sync'
-  | 'safeguards'
-  | 'account'
+type ImportSection = 'chatgpt' | 'claude' | 'tinfoil'
+
+function ImportAccordionHeader({
+  title,
+  panelId,
+  expanded,
+  onToggle,
+}: {
+  title: string
+  panelId: string
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <h3>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        onClick={onToggle}
+        className="flex w-full items-center justify-between p-4 text-left"
+      >
+        <span className="font-aeonik text-sm font-medium text-content-primary">
+          {title}
+        </span>
+        <ChevronDownIcon
+          aria-hidden="true"
+          className={cn(
+            'h-4 w-4 text-content-muted transition-transform',
+            expanded && 'rotate-180',
+          )}
+        />
+      </button>
+    </h3>
+  )
+}
+
+function ImportStep({
+  step,
+  children,
+}: {
+  step: number
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className={STEP_CIRCLE_CLASSES}>{step}</div>
+      <div className="font-aeonik-fono text-sm text-content-muted">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+export type { SettingsTab } from '@/constants/settings-tabs'
 
 import type { ThemeMode } from './hooks/use-ui-state'
 
@@ -596,7 +649,7 @@ export function SettingsModal({
     useState<boolean>(false)
 
   const [pixelateSidebarChatTitles, setPixelateSidebarChatTitles] =
-    useState<boolean>(true)
+    useState<boolean>(false)
   const [browserTabChatTitle, setBrowserTabChatTitle] = useState<boolean>(true)
 
   const [webSearchAvailable, setWebSearchAvailable] = useState<boolean>(true)
@@ -608,6 +661,11 @@ export function SettingsModal({
   const [chatFont, setChatFont] = useState<ChatFont>('system')
 
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState(false)
+  const importSectionId = useId()
+  const [openImportSection, setOpenImportSection] =
+    useState<ImportSection | null>(null)
+  const toggleImportSection = (section: ImportSection) =>
+    setOpenImportSection((current) => (current === section ? null : section))
 
   // Active tab state
   const [activeTab, setActiveTab] = useState<SettingsTab>(
@@ -656,9 +714,7 @@ export function SettingsModal({
   const [upgradeError, setUpgradeError] = useState<string | null>(null)
 
   // Import state
-  const [importSource, setImportSource] = useState<
-    'chatgpt' | 'claude' | 'tinfoil' | null
-  >(null)
+  const [importSource, setImportSource] = useState<ImportSection | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const [importProgress, setImportProgress] = useState<ImportProgress | null>(
     null,
@@ -774,11 +830,7 @@ export function SettingsModal({
     const savedPixelateSidebarChatTitles = localStorage.getItem(
       SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
     )
-    setPixelateSidebarChatTitles(
-      savedPixelateSidebarChatTitles === null
-        ? true
-        : savedPixelateSidebarChatTitles === 'true',
-    )
+    setPixelateSidebarChatTitles(savedPixelateSidebarChatTitles === 'true')
 
     const savedBrowserTabChatTitle = localStorage.getItem(
       SETTINGS_BROWSER_TAB_CHAT_TITLE_ENABLED,
@@ -1337,7 +1389,7 @@ export function SettingsModal({
 
   // Rendered in place of a source's upload button so progress and the
   // outcome appear inside the box the user is importing from.
-  const renderImportStatus = (source: 'chatgpt' | 'claude' | 'tinfoil') => {
+  const renderImportStatus = (source: ImportSection) => {
     if (importSource !== source) return null
     if (isImporting && importProgress) {
       const { title, detail, percent } = describeImportProgress(importProgress)
@@ -1455,7 +1507,7 @@ export function SettingsModal({
   // sequence stops at the first file that fails so the outcome is never
   // masked by a later success.
   const importOffDevice = async (
-    source: 'chatgpt' | 'claude' | 'tinfoil',
+    source: ImportSection,
     files: readonly File[],
     sourceLabel: string,
   ) => {
@@ -2382,31 +2434,28 @@ ${encryptionKey.replace('key_', '')}
           },
         ]
       : []),
+    { id: 'data' as const, label: 'Data', icon: CircleStackIcon },
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <Dialog
+      open={isOpen}
+      onClose={setIsOpen}
+      autoFocus
+      className="fixed inset-0 z-50 flex items-center justify-center"
+    >
       {/* Modal overlay */}
-      <div
-        className="fixed inset-0 bg-black/50"
-        onClick={() => setIsOpen(false)}
-      />
+      <div className="fixed inset-0 bg-black/50" aria-hidden="true" />
 
       {/* Settings modal */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{
-          type: 'spring',
-          damping: 25,
-          stiffness: 300,
-        }}
+      <Dialog.Panel
+        data-settings-panel
         className={cn(
           'relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col overflow-hidden rounded-site-lg border font-aeonik shadow-xl md:flex-row',
           'border-border-subtle bg-surface-sidebar text-content-primary',
         )}
       >
+        <Dialog.Title className="sr-only">Settings</Dialog.Title>
         {/* Mobile header with close button and horizontal tabs */}
         <div className="flex flex-col border-b border-border-subtle md:hidden">
           {/* Close button row */}
@@ -2906,49 +2955,47 @@ ${encryptionKey.replace('key_', '')}
                             <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
                           </label>
                         </div>
-                      </div>
 
-                      {/* Web Search PII Detection */}
-                      <div
-                        className={cn(
-                          'rounded-lg border border-border-subtle p-4',
-                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                        )}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="mr-3 flex-1">
-                            <div className="font-aeonik text-sm font-medium text-content-primary">
-                              Automatic PII Blocking in Web Search
+                        {/* Web Search PII Detection - only meaningful while web search is on */}
+                        {webSearchAvailable && (
+                          <div className="mt-4 flex items-start justify-between border-t border-border-subtle pt-4">
+                            <div className="mr-3 flex-1">
+                              <div className="font-aeonik text-sm font-medium text-content-primary">
+                                Automatic PII Blocking
+                              </div>
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                Block web search queries that contain personal
+                                information.
+                              </div>
                             </div>
-                            <div className="font-aeonik-fono text-xs text-content-muted">
-                              When web search is enabled, queries containing
-                              personal information will be blocked.
-                            </div>
+                            <label className="relative inline-flex cursor-pointer items-center">
+                              <input
+                                type="checkbox"
+                                checked={piiCheckEnabled}
+                                onChange={(e) => {
+                                  const newValue = e.target.checked
+                                  setPiiCheckEnabled(newValue)
+                                  if (isClient) {
+                                    localStorage.setItem(
+                                      SETTINGS_PII_CHECK_ENABLED,
+                                      newValue.toString(),
+                                    )
+                                    window.dispatchEvent(
+                                      new CustomEvent(
+                                        'piiCheckEnabledChanged',
+                                        {
+                                          detail: { enabled: newValue },
+                                        },
+                                      ),
+                                    )
+                                  }
+                                }}
+                                className="peer sr-only"
+                              />
+                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                            </label>
                           </div>
-                          <label className="relative inline-flex cursor-pointer items-center">
-                            <input
-                              type="checkbox"
-                              checked={piiCheckEnabled}
-                              onChange={(e) => {
-                                const newValue = e.target.checked
-                                setPiiCheckEnabled(newValue)
-                                if (isClient) {
-                                  localStorage.setItem(
-                                    SETTINGS_PII_CHECK_ENABLED,
-                                    newValue.toString(),
-                                  )
-                                  window.dispatchEvent(
-                                    new CustomEvent('piiCheckEnabledChanged', {
-                                      detail: { enabled: newValue },
-                                    }),
-                                  )
-                                }
-                              }}
-                              className="peer sr-only"
-                            />
-                            <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
-                          </label>
-                        </div>
+                        )}
                       </div>
 
                       {/* Generative UI */}
@@ -2995,254 +3042,6 @@ ${encryptionKey.replace('key_', '')}
                         </div>
                       </div>
                     </div>
-                  </div>
-                </>
-              )}
-
-              {/* General Tab: Data (danger zone) */}
-              {activeTab === 'general' && (
-                <>
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Data
-                    </h3>
-                    <>
-                      {/* Delete all saved chats */}
-                      <div
-                        className={cn(
-                          'rounded-lg border border-border-subtle p-4',
-                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                        )}
-                      >
-                        <div className="space-y-3">
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                            <div>
-                              <div className="font-aeonik text-sm font-medium text-content-primary">
-                                Delete all saved chats
-                              </div>
-                              <div className="font-aeonik-fono text-xs text-content-muted">
-                                {isSignedIn
-                                  ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
-                                  : 'Permanently delete every chat from this browser. This cannot be undone.'}
-                              </div>
-                            </div>
-                            {!showDeleteAllChatsConfirm && (
-                              <button
-                                onClick={() =>
-                                  setShowDeleteAllChatsConfirm(true)
-                                }
-                                className={cn(
-                                  'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
-                                  isDarkMode
-                                    ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                    : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                )}
-                              >
-                                Delete all saved chats
-                              </button>
-                            )}
-                          </div>
-                          {showDeleteAllChatsConfirm && (
-                            <div className="space-y-2">
-                              <label className="block">
-                                <span className="font-aeonik-fono text-xs text-content-muted">
-                                  Type{' '}
-                                  <code className="font-mono text-content-primary">
-                                    {DELETE_ALL_CHATS_CONFIRM_PHRASE}
-                                  </code>{' '}
-                                  to confirm.
-                                </span>
-                                <input
-                                  type="text"
-                                  autoComplete="off"
-                                  autoCorrect="off"
-                                  autoCapitalize="off"
-                                  spellCheck={false}
-                                  value={deleteAllChatsConfirmText}
-                                  onChange={(e) =>
-                                    setDeleteAllChatsConfirmText(e.target.value)
-                                  }
-                                  disabled={isDeletingAllChats}
-                                  placeholder={DELETE_ALL_CHATS_CONFIRM_PHRASE}
-                                  className={cn(
-                                    'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                    isDarkMode
-                                      ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                      : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                  )}
-                                />
-                              </label>
-                              <div className="flex flex-col gap-2 sm:flex-row">
-                                <button
-                                  onClick={handleDeleteAllChats}
-                                  disabled={
-                                    isDeletingAllChats ||
-                                    deleteAllChatsConfirmText
-                                      .trim()
-                                      .toLowerCase() !==
-                                      DELETE_ALL_CHATS_CONFIRM_PHRASE
-                                  }
-                                  className={cn(
-                                    'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                    isDarkMode
-                                      ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                      : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                  )}
-                                >
-                                  {isDeletingAllChats && (
-                                    <PiSpinner
-                                      className="h-4 w-4 animate-spin"
-                                      aria-hidden="true"
-                                    />
-                                  )}
-                                  <span>
-                                    {isDeletingAllChats
-                                      ? 'Requesting…'
-                                      : 'Yes, delete all my chats'}
-                                  </span>
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setShowDeleteAllChatsConfirm(false)
-                                    setDeleteAllChatsConfirmText('')
-                                  }}
-                                  disabled={isDeletingAllChats}
-                                  className={cn(
-                                    'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                    isDarkMode
-                                      ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                      : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                  )}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Delete all projects remains available for account data control. */}
-                      {canDeleteAllProjects(Boolean(isSignedIn)) && (
-                        <div
-                          className={cn(
-                            'rounded-lg border border-border-subtle p-4',
-                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          )}
-                        >
-                          <div className="space-y-3">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                              <div>
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  Delete all projects
-                                </div>
-                                <div className="font-aeonik-fono text-xs text-content-muted">
-                                  Permanently delete every project and its
-                                  documents. Chats inside projects will be
-                                  detached but kept. This cannot be undone.
-                                </div>
-                              </div>
-                              {!showDeleteAllProjectsConfirm && (
-                                <button
-                                  onClick={() =>
-                                    setShowDeleteAllProjectsConfirm(true)
-                                  }
-                                  className={cn(
-                                    'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
-                                    isDarkMode
-                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                  )}
-                                >
-                                  Delete all projects
-                                </button>
-                              )}
-                            </div>
-                            {showDeleteAllProjectsConfirm && (
-                              <div className="space-y-2">
-                                <label className="block">
-                                  <span className="font-aeonik-fono text-xs text-content-muted">
-                                    Type{' '}
-                                    <code className="font-mono text-content-primary">
-                                      {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
-                                    </code>{' '}
-                                    to confirm.
-                                  </span>
-                                  <input
-                                    type="text"
-                                    autoComplete="off"
-                                    autoCorrect="off"
-                                    autoCapitalize="off"
-                                    spellCheck={false}
-                                    value={deleteAllProjectsConfirmText}
-                                    onChange={(e) =>
-                                      setDeleteAllProjectsConfirmText(
-                                        e.target.value,
-                                      )
-                                    }
-                                    disabled={isDeletingAllProjects}
-                                    placeholder={
-                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                    }
-                                    className={cn(
-                                      'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                      isDarkMode
-                                        ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                        : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                    )}
-                                  />
-                                </label>
-                                <div className="flex flex-col gap-2 sm:flex-row">
-                                  <button
-                                    onClick={handleDeleteAllProjects}
-                                    disabled={
-                                      isDeletingAllProjects ||
-                                      deleteAllProjectsConfirmText
-                                        .trim()
-                                        .toLowerCase() !==
-                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                    }
-                                    className={cn(
-                                      'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                      isDarkMode
-                                        ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                        : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                    )}
-                                  >
-                                    {isDeletingAllProjects && (
-                                      <PiSpinner
-                                        className="h-4 w-4 animate-spin"
-                                        aria-hidden="true"
-                                      />
-                                    )}
-                                    <span>
-                                      {isDeletingAllProjects
-                                        ? 'Requesting…'
-                                        : 'Yes, delete all my projects'}
-                                    </span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setShowDeleteAllProjectsConfirm(false)
-                                      setDeleteAllProjectsConfirmText('')
-                                    }}
-                                    disabled={isDeletingAllProjects}
-                                    className={cn(
-                                      'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                      isDarkMode
-                                        ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                        : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                    )}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </>
                   </div>
                 </>
               )}
@@ -4138,327 +3937,344 @@ ${encryptionKey.replace('key_', '')}
                       </div>
                     </div>
                   )}
+                </>
+              )}
 
-                  {/* ChatGPT Import */}
+              {/* Data Tab */}
+              {activeTab === 'data' && (
+                <>
                   <div className="space-y-3">
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Import from ChatGPT
+                      Delete
                     </h3>
-                    <div
-                      className={cn(
-                        'space-y-3 rounded-lg border border-border-subtle p-4',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-                            isDarkMode
-                              ? 'bg-content-muted/20 text-content-secondary'
-                              : 'bg-content-muted/20 text-content-secondary',
-                          )}
-                        >
-                          1
-                        </div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          Open{' '}
-                          <a
-                            href="https://chatgpt.com/#settings/DataControls"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={cn(
-                              'hover:underline',
-                              isDarkMode
-                                ? 'text-brand-accent-light'
-                                : 'text-[#004444]',
-                            )}
-                          >
-                            ChatGPT Settings &gt; Data Controls
-                          </a>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-                            isDarkMode
-                              ? 'bg-content-muted/20 text-content-secondary'
-                              : 'bg-content-muted/20 text-content-secondary',
-                          )}
-                        >
-                          2
-                        </div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          Click on &quot;Export data&quot; and confirm the
-                          export.
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-                            isDarkMode
-                              ? 'bg-content-muted/20 text-content-secondary'
-                              : 'bg-content-muted/20 text-content-secondary',
-                          )}
-                        >
-                          3
-                        </div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          {shouldImportOffDevice()
-                            ? 'Download the ZIP file you receive by email.'
-                            : 'Download and unzip the file you receive by email.'}
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-                            isDarkMode
-                              ? 'bg-content-muted/20 text-content-secondary'
-                              : 'bg-content-muted/20 text-content-secondary',
-                          )}
-                        >
-                          4
-                        </div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          {shouldImportOffDevice() ? (
-                            <>
-                              Select the ZIP export to include attachments, or
-                              the{' '}
-                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations*.json
-                              </code>{' '}
-                              files for chat text only. Large exports are split
-                              into several files; select them all.
-                            </>
-                          ) : (
-                            <>
-                              Select the{' '}
-                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations*.json
-                              </code>{' '}
-                              files from the unzipped folder. Large exports are
-                              split into several files; select them all.
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <input
-                        ref={chatGptFileInputRef}
-                        type="file"
-                        accept={
-                          shouldImportOffDevice() ? '.json,.zip' : '.json'
-                        }
-                        onChange={(e) => stageImportFiles('chatgpt', e)}
-                        className="hidden"
-                        disabled={isImporting}
-                        multiple
-                      />
-                      {renderImportStatus('chatgpt') ??
-                        renderStagedImport('chatgpt') ?? (
-                          <button
-                            onClick={() => chatGptFileInputRef.current?.click()}
-                            disabled={isImporting}
-                            className={cn(
-                              'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                              isImporting
-                                ? 'cursor-not-allowed opacity-50'
-                                : 'hover:bg-surface-chat',
-                              isDarkMode
-                                ? 'bg-surface-chat text-content-primary'
-                                : 'bg-surface-sidebar text-content-primary',
-                            )}
-                          >
-                            <ArrowUpTrayIcon className="h-4 w-4" />
-                            Select File
-                          </button>
+                    <>
+                      {/* Delete all saved chats */}
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                         )}
-                    </div>
-                  </div>
-
-                  {/* Claude Import */}
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Import from Claude
-                    </h3>
-                    <div
-                      className={cn(
-                        'space-y-3 rounded-lg border border-border-subtle p-4',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-                            isDarkMode
-                              ? 'bg-content-muted/20 text-content-secondary'
-                              : 'bg-content-muted/20 text-content-secondary',
-                          )}
-                        >
-                          1
-                        </div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          Open{' '}
-                          <a
-                            href="https://claude.ai/settings/data-privacy-controls"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={cn(
-                              'hover:underline',
-                              isDarkMode
-                                ? 'text-brand-accent-light'
-                                : 'text-[#004444]',
-                            )}
-                          >
-                            Claude Settings &gt; Privacy
-                          </a>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-                            isDarkMode
-                              ? 'bg-content-muted/20 text-content-secondary'
-                              : 'bg-content-muted/20 text-content-secondary',
-                          )}
-                        >
-                          2
-                        </div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          Click on &quot;Export data&quot; and confirm the
-                          export.
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-                            isDarkMode
-                              ? 'bg-content-muted/20 text-content-secondary'
-                              : 'bg-content-muted/20 text-content-secondary',
-                          )}
-                        >
-                          3
-                        </div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          {isPremium && shouldImportOffDevice()
-                            ? 'Download the ZIP file you receive by email.'
-                            : 'Download and unzip the file you receive by email.'}
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-3">
-                        <div
-                          className={cn(
-                            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-aeonik-fono text-xs font-medium leading-none',
-                            isDarkMode
-                              ? 'bg-content-muted/20 text-content-secondary'
-                              : 'bg-content-muted/20 text-content-secondary',
-                          )}
-                        >
-                          4
-                        </div>
-                        <div className="font-aeonik-fono text-sm text-content-muted">
-                          {isPremium && shouldImportOffDevice() ? (
-                            <>
-                              Select the ZIP export with the Conversations
-                              button to include attachments. For projects,
-                              select every file in the unzipped{' '}
-                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                projects
-                              </code>{' '}
-                              folder. Claude exports do not record which project
-                              a chat belonged to, so project chats import as
-                              regular chats.
-                            </>
-                          ) : isPremium ? (
-                            <>
-                              Select the{' '}
-                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations*.json
-                              </code>{' '}
-                              files from the unzipped folder, or every file in
-                              its{' '}
-                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                projects
-                              </code>{' '}
-                              folder. Large exports are split into several
-                              files; select them all. Claude exports do not
-                              record which project a chat belonged to, so
-                              project chats import as regular chats.
-                            </>
-                          ) : (
-                            <>
-                              Select the{' '}
-                              <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                conversations*.json
-                              </code>{' '}
-                              files from the unzipped folder. Large exports are
-                              split into several files; select them all.
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <input
-                        ref={claudeConversationsFileInputRef}
-                        type="file"
-                        accept={
-                          isPremium && shouldImportOffDevice()
-                            ? '.json,.zip'
-                            : '.json'
-                        }
-                        onChange={(e) =>
-                          stageImportFiles('claude-conversations', e)
-                        }
-                        className="hidden"
-                        disabled={isImporting}
-                        multiple
-                      />
-                      {isPremium && (
-                        <input
-                          ref={claudeProjectsFileInputRef}
-                          type="file"
-                          accept=".json"
-                          onChange={(e) =>
-                            stageImportFiles('claude-projects', e)
-                          }
-                          className="hidden"
-                          disabled={isImporting}
-                          multiple
-                        />
-                      )}
-                      {renderImportStatus('claude') ??
-                        renderStagedImport('claude') ?? (
-                          <div className="mt-2 flex gap-2">
-                            <button
-                              onClick={() =>
-                                claudeConversationsFileInputRef.current?.click()
-                              }
-                              disabled={isImporting}
-                              className={cn(
-                                'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                isImporting
-                                  ? 'cursor-not-allowed opacity-50'
-                                  : 'hover:bg-surface-chat',
-                                isDarkMode
-                                  ? 'bg-surface-chat text-content-primary'
-                                  : 'bg-surface-sidebar text-content-primary',
-                              )}
-                            >
-                              <ArrowUpTrayIcon className="h-4 w-4" />
-                              Conversations
-                            </button>
-                            {isPremium && (
+                      >
+                        <div className="space-y-3">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                            <div>
+                              <div className="font-aeonik text-sm font-medium text-content-primary">
+                                Delete all saved chats
+                              </div>
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                {isSignedIn
+                                  ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
+                                  : 'Permanently delete every chat from this browser. This cannot be undone.'}
+                              </div>
+                            </div>
+                            {!showDeleteAllChatsConfirm && (
                               <button
                                 onClick={() =>
-                                  claudeProjectsFileInputRef.current?.click()
+                                  setShowDeleteAllChatsConfirm(true)
+                                }
+                                className={cn(
+                                  'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
+                                  isDarkMode
+                                    ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                    : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                )}
+                              >
+                                Delete all saved chats
+                              </button>
+                            )}
+                          </div>
+                          {showDeleteAllChatsConfirm && (
+                            <div className="space-y-2">
+                              <label className="block">
+                                <span className="font-aeonik-fono text-xs text-content-muted">
+                                  Type{' '}
+                                  <code className="font-mono text-content-primary">
+                                    {DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                  </code>{' '}
+                                  to confirm.
+                                </span>
+                                <input
+                                  type="text"
+                                  autoComplete="off"
+                                  autoCorrect="off"
+                                  autoCapitalize="off"
+                                  spellCheck={false}
+                                  value={deleteAllChatsConfirmText}
+                                  onChange={(e) =>
+                                    setDeleteAllChatsConfirmText(e.target.value)
+                                  }
+                                  disabled={isDeletingAllChats}
+                                  placeholder={DELETE_ALL_CHATS_CONFIRM_PHRASE}
+                                  className={cn(
+                                    'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                    isDarkMode
+                                      ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                      : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                  )}
+                                />
+                              </label>
+                              <div className="flex flex-col gap-2 sm:flex-row">
+                                <button
+                                  onClick={handleDeleteAllChats}
+                                  disabled={
+                                    isDeletingAllChats ||
+                                    deleteAllChatsConfirmText
+                                      .trim()
+                                      .toLowerCase() !==
+                                      DELETE_ALL_CHATS_CONFIRM_PHRASE
+                                  }
+                                  className={cn(
+                                    'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                      : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                  )}
+                                >
+                                  {isDeletingAllChats && (
+                                    <PiSpinner
+                                      className="h-4 w-4 animate-spin"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <span>
+                                    {isDeletingAllChats
+                                      ? 'Requesting…'
+                                      : 'Yes, delete all my chats'}
+                                  </span>
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setShowDeleteAllChatsConfirm(false)
+                                    setDeleteAllChatsConfirmText('')
+                                  }}
+                                  disabled={isDeletingAllChats}
+                                  className={cn(
+                                    'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                    isDarkMode
+                                      ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                      : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                  )}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Delete all projects remains available for account data control. */}
+                      {canDeleteAllProjects(Boolean(isSignedIn)) && (
+                        <div
+                          className={cn(
+                            'rounded-lg border border-border-subtle p-4',
+                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                          )}
+                        >
+                          <div className="space-y-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                              <div>
+                                <div className="font-aeonik text-sm font-medium text-content-primary">
+                                  Delete all projects
+                                </div>
+                                <div className="font-aeonik-fono text-xs text-content-muted">
+                                  Permanently delete every project and its
+                                  documents. Chats inside projects will be
+                                  detached but kept. This cannot be undone.
+                                </div>
+                              </div>
+                              {!showDeleteAllProjectsConfirm && (
+                                <button
+                                  onClick={() =>
+                                    setShowDeleteAllProjectsConfirm(true)
+                                  }
+                                  className={cn(
+                                    'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
+                                    isDarkMode
+                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                  )}
+                                >
+                                  Delete all projects
+                                </button>
+                              )}
+                            </div>
+                            {showDeleteAllProjectsConfirm && (
+                              <div className="space-y-2">
+                                <label className="block">
+                                  <span className="font-aeonik-fono text-xs text-content-muted">
+                                    Type{' '}
+                                    <code className="font-mono text-content-primary">
+                                      {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
+                                    </code>{' '}
+                                    to confirm.
+                                  </span>
+                                  <input
+                                    type="text"
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="off"
+                                    spellCheck={false}
+                                    value={deleteAllProjectsConfirmText}
+                                    onChange={(e) =>
+                                      setDeleteAllProjectsConfirmText(
+                                        e.target.value,
+                                      )
+                                    }
+                                    disabled={isDeletingAllProjects}
+                                    placeholder={
+                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                    }
+                                    className={cn(
+                                      'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                      isDarkMode
+                                        ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                        : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                    )}
+                                  />
+                                </label>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                  <button
+                                    onClick={handleDeleteAllProjects}
+                                    disabled={
+                                      isDeletingAllProjects ||
+                                      deleteAllProjectsConfirmText
+                                        .trim()
+                                        .toLowerCase() !==
+                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                    }
+                                    className={cn(
+                                      'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                      isDarkMode
+                                        ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                        : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                    )}
+                                  >
+                                    {isDeletingAllProjects && (
+                                      <PiSpinner
+                                        className="h-4 w-4 animate-spin"
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                    <span>
+                                      {isDeletingAllProjects
+                                        ? 'Requesting…'
+                                        : 'Yes, delete all my projects'}
+                                    </span>
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setShowDeleteAllProjectsConfirm(false)
+                                      setDeleteAllProjectsConfirmText('')
+                                    }}
+                                    disabled={isDeletingAllProjects}
+                                    className={cn(
+                                      'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                      isDarkMode
+                                        ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                        : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                    )}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Import
+                    </h3>
+                    {/* ChatGPT Import */}
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <ImportAccordionHeader
+                        title="Import from ChatGPT"
+                        panelId={`${importSectionId}-chatgpt`}
+                        expanded={openImportSection === 'chatgpt'}
+                        onToggle={() => toggleImportSection('chatgpt')}
+                      />
+                      {openImportSection === 'chatgpt' && (
+                        <div
+                          id={`${importSectionId}-chatgpt`}
+                          className="space-y-3 border-t border-border-subtle p-4"
+                        >
+                          <ImportStep step={1}>
+                            Open{' '}
+                            <a
+                              href="https://chatgpt.com/#settings/DataControls"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={cn(
+                                'hover:underline',
+                                isDarkMode
+                                  ? 'text-brand-accent-light'
+                                  : 'text-[#004444]',
+                              )}
+                            >
+                              ChatGPT Settings &gt; Data Controls
+                            </a>
+                          </ImportStep>
+                          <ImportStep step={2}>
+                            Click on &quot;Export data&quot; and confirm the
+                            export.
+                          </ImportStep>
+                          <ImportStep step={3}>
+                            {shouldImportOffDevice()
+                              ? 'Download the ZIP file you receive by email.'
+                              : 'Download and unzip the file you receive by email.'}
+                          </ImportStep>
+                          <ImportStep step={4}>
+                            {shouldImportOffDevice() ? (
+                              <>
+                                Select the ZIP export to include attachments, or
+                                the{' '}
+                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                  conversations*.json
+                                </code>{' '}
+                                files for chat text only. Large exports are
+                                split into several files; select them all.
+                              </>
+                            ) : (
+                              <>
+                                Select the{' '}
+                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                  conversations*.json
+                                </code>{' '}
+                                files from the unzipped folder. Large exports
+                                are split into several files; select them all.
+                              </>
+                            )}
+                          </ImportStep>
+                          <input
+                            ref={chatGptFileInputRef}
+                            type="file"
+                            accept={
+                              shouldImportOffDevice() ? '.json,.zip' : '.json'
+                            }
+                            onChange={(e) => stageImportFiles('chatgpt', e)}
+                            className="hidden"
+                            disabled={isImporting}
+                            multiple
+                          />
+                          {renderImportStatus('chatgpt') ??
+                            renderStagedImport('chatgpt') ?? (
+                              <button
+                                onClick={() =>
+                                  chatGptFileInputRef.current?.click()
                                 }
                                 disabled={isImporting}
                                 className={cn(
-                                  'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                  'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
                                   isImporting
                                     ? 'cursor-not-allowed opacity-50'
                                     : 'hover:bg-surface-chat',
@@ -4468,54 +4284,223 @@ ${encryptionKey.replace('key_', '')}
                                 )}
                               >
                                 <ArrowUpTrayIcon className="h-4 w-4" />
-                                Projects
+                                Select File
                               </button>
                             )}
-                          </div>
-                        )}
+                        </div>
+                      )}
                     </div>
-                  </div>
 
-                  {/* Tinfoil Import */}
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Import from Tinfoil
-                    </h3>
+                    {/* Claude Import */}
                     <div
                       className={cn(
-                        'space-y-3 rounded-lg border border-border-subtle p-4',
+                        'rounded-lg border border-border-subtle',
                         isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                       )}
                     >
-                      <div className="font-aeonik-fono text-xs text-content-muted">
-                        Re-import a Tinfoil conversations export. When cloud
-                        sync is off, chats and attachments stay in this browser.
-                      </div>
-                      <input
-                        ref={tinfoilFileInputRef}
-                        type="file"
-                        accept=".json,.zip"
-                        onChange={handleImportTinfoil}
-                        className="hidden"
-                        disabled={isImporting}
+                      <ImportAccordionHeader
+                        title="Import from Claude"
+                        panelId={`${importSectionId}-claude`}
+                        expanded={openImportSection === 'claude'}
+                        onToggle={() => toggleImportSection('claude')}
                       />
-                      {renderImportStatus('tinfoil') ?? (
-                        <button
-                          onClick={() => tinfoilFileInputRef.current?.click()}
-                          disabled={isImporting}
-                          className={cn(
-                            'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                            isImporting
-                              ? 'cursor-not-allowed opacity-50'
-                              : 'hover:bg-surface-chat',
-                            isDarkMode
-                              ? 'bg-surface-chat text-content-primary'
-                              : 'bg-surface-sidebar text-content-primary',
-                          )}
+                      {openImportSection === 'claude' && (
+                        <div
+                          id={`${importSectionId}-claude`}
+                          className="space-y-3 border-t border-border-subtle p-4"
                         >
-                          <ArrowUpTrayIcon className="h-4 w-4" />
-                          Select Tinfoil Export
-                        </button>
+                          <ImportStep step={1}>
+                            Open{' '}
+                            <a
+                              href="https://claude.ai/settings/data-privacy-controls"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={cn(
+                                'hover:underline',
+                                isDarkMode
+                                  ? 'text-brand-accent-light'
+                                  : 'text-[#004444]',
+                              )}
+                            >
+                              Claude Settings &gt; Privacy
+                            </a>
+                          </ImportStep>
+                          <ImportStep step={2}>
+                            Click on &quot;Export data&quot; and confirm the
+                            export.
+                          </ImportStep>
+                          <ImportStep step={3}>
+                            {isPremium && shouldImportOffDevice()
+                              ? 'Download the ZIP file you receive by email.'
+                              : 'Download and unzip the file you receive by email.'}
+                          </ImportStep>
+                          <ImportStep step={4}>
+                            {isPremium && shouldImportOffDevice() ? (
+                              <>
+                                Select the ZIP export with the Conversations
+                                button to include attachments. For projects,
+                                select every file in the unzipped{' '}
+                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                  projects
+                                </code>{' '}
+                                folder. Claude exports do not record which
+                                project a chat belonged to, so project chats
+                                import as regular chats.
+                              </>
+                            ) : isPremium ? (
+                              <>
+                                Select the{' '}
+                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                  conversations*.json
+                                </code>{' '}
+                                files from the unzipped folder, or every file in
+                                its{' '}
+                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                  projects
+                                </code>{' '}
+                                folder. Large exports are split into several
+                                files; select them all. Claude exports do not
+                                record which project a chat belonged to, so
+                                project chats import as regular chats.
+                              </>
+                            ) : (
+                              <>
+                                Select the{' '}
+                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                  conversations*.json
+                                </code>{' '}
+                                files from the unzipped folder. Large exports
+                                are split into several files; select them all.
+                              </>
+                            )}
+                          </ImportStep>
+                          <input
+                            ref={claudeConversationsFileInputRef}
+                            type="file"
+                            accept={
+                              isPremium && shouldImportOffDevice()
+                                ? '.json,.zip'
+                                : '.json'
+                            }
+                            onChange={(e) =>
+                              stageImportFiles('claude-conversations', e)
+                            }
+                            className="hidden"
+                            disabled={isImporting}
+                            multiple
+                          />
+                          {isPremium && (
+                            <input
+                              ref={claudeProjectsFileInputRef}
+                              type="file"
+                              accept=".json"
+                              onChange={(e) =>
+                                stageImportFiles('claude-projects', e)
+                              }
+                              className="hidden"
+                              disabled={isImporting}
+                              multiple
+                            />
+                          )}
+                          {renderImportStatus('claude') ??
+                            renderStagedImport('claude') ?? (
+                              <div className="mt-2 flex gap-2">
+                                <button
+                                  onClick={() =>
+                                    claudeConversationsFileInputRef.current?.click()
+                                  }
+                                  disabled={isImporting}
+                                  className={cn(
+                                    'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                    isImporting
+                                      ? 'cursor-not-allowed opacity-50'
+                                      : 'hover:bg-surface-chat',
+                                    isDarkMode
+                                      ? 'bg-surface-chat text-content-primary'
+                                      : 'bg-surface-sidebar text-content-primary',
+                                  )}
+                                >
+                                  <ArrowUpTrayIcon className="h-4 w-4" />
+                                  Conversations
+                                </button>
+                                {isPremium && (
+                                  <button
+                                    onClick={() =>
+                                      claudeProjectsFileInputRef.current?.click()
+                                    }
+                                    disabled={isImporting}
+                                    className={cn(
+                                      'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                      isImporting
+                                        ? 'cursor-not-allowed opacity-50'
+                                        : 'hover:bg-surface-chat',
+                                      isDarkMode
+                                        ? 'bg-surface-chat text-content-primary'
+                                        : 'bg-surface-sidebar text-content-primary',
+                                    )}
+                                  >
+                                    <ArrowUpTrayIcon className="h-4 w-4" />
+                                    Projects
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tinfoil Import */}
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <ImportAccordionHeader
+                        title="Import from Tinfoil"
+                        panelId={`${importSectionId}-tinfoil`}
+                        expanded={openImportSection === 'tinfoil'}
+                        onToggle={() => toggleImportSection('tinfoil')}
+                      />
+                      {openImportSection === 'tinfoil' && (
+                        <div
+                          id={`${importSectionId}-tinfoil`}
+                          className="space-y-3 border-t border-border-subtle p-4"
+                        >
+                          <div className="font-aeonik-fono text-xs text-content-muted">
+                            Re-import a Tinfoil conversations export. When cloud
+                            sync is off, chats and attachments stay in this
+                            browser.
+                          </div>
+                          <input
+                            ref={tinfoilFileInputRef}
+                            type="file"
+                            accept=".json,.zip"
+                            onChange={handleImportTinfoil}
+                            className="hidden"
+                            disabled={isImporting}
+                          />
+                          {renderImportStatus('tinfoil') ?? (
+                            <button
+                              onClick={() =>
+                                tinfoilFileInputRef.current?.click()
+                              }
+                              disabled={isImporting}
+                              className={cn(
+                                'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                isImporting
+                                  ? 'cursor-not-allowed opacity-50'
+                                  : 'hover:bg-surface-chat',
+                                isDarkMode
+                                  ? 'bg-surface-chat text-content-primary'
+                                  : 'bg-surface-sidebar text-content-primary',
+                              )}
+                            >
+                              <ArrowUpTrayIcon className="h-4 w-4" />
+                              Select Tinfoil Export
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
@@ -4847,20 +4832,63 @@ ${encryptionKey.replace('key_', '')}
                       </div>
                     </div>
                   )}
+
+                  {/* Legal */}
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Legal
+                    </h3>
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <p className="text-sm leading-relaxed text-content-secondary">
+                        By using this service, you agree to Tinfoil&apos;s{' '}
+                        <a
+                          href={TERMS_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-content-primary underline underline-offset-2 transition-colors hover:text-content-secondary"
+                        >
+                          Terms of Service
+                        </a>{' '}
+                        and{' '}
+                        <a
+                          href={PRIVACY_POLICY_URL}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-content-primary underline underline-offset-2 transition-colors hover:text-content-secondary"
+                        >
+                          Privacy Policy
+                        </a>
+                        .
+                      </p>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
           </div>
         </div>
-      </motion.div>
+      </Dialog.Panel>
 
       {/* Sign-out confirmation when local-only mode is enabled */}
       {showSignOutConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-          <div className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
-            <h3 className="font-aeonik text-lg font-medium text-content-primary">
+        <Dialog
+          open={showSignOutConfirm}
+          onClose={() => setShowSignOutConfirm(false)}
+          autoFocus
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50"
+        >
+          <Dialog.Panel className="mx-4 w-full max-w-sm rounded-site-lg border border-border-subtle bg-surface-card p-6 shadow-xl">
+            <Dialog.Title
+              as="h3"
+              className="font-aeonik text-lg font-medium text-content-primary"
+            >
               Sign Out
-            </h3>
+            </Dialog.Title>
             <div className="mt-3 space-y-2 text-sm text-content-secondary">
               <p>
                 {passkeyActive
@@ -4903,9 +4931,9 @@ ${encryptionKey.replace('key_', '')}
                 {isSigningOut ? 'Signing out...' : 'Sign Out'}
               </button>
             </div>
-          </div>
-        </div>
+          </Dialog.Panel>
+        </Dialog>
       )}
-    </div>
+    </Dialog>
   )
 }
