@@ -38,8 +38,9 @@ const aeonikFono = localFont({
     },
   ],
   variable: '--font-aeonik-fono',
+  // Core UI font: preloaded so text doesn't repaint from the fallback.
   display: 'swap',
-  preload: false,
+  preload: true,
 })
 
 const aeonik = localFont({
@@ -76,8 +77,9 @@ const aeonik = localFont({
     },
   ],
   variable: '--font-aeonik',
+  // Core UI font: preloaded so text doesn't repaint from the fallback.
   display: 'swap',
-  preload: false,
+  preload: true,
   declarations: [{ prop: 'ascent-override', value: '90%' }],
 })
 
@@ -93,8 +95,9 @@ const lora = localFont({
     },
   ],
   variable: '--font-lora',
+  // Preload chat font previews before the settings dialog opens.
   display: 'swap',
-  preload: false,
+  preload: true,
 })
 
 const openDyslexic = localFont({
@@ -121,8 +124,9 @@ const openDyslexic = localFont({
     },
   ],
   variable: '--font-opendyslexic',
+  // Preload chat font previews before the settings dialog opens.
   display: 'swap',
-  preload: false,
+  preload: true,
 })
 
 migrateStorageKeys()

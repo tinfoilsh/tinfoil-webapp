@@ -1,5 +1,5 @@
 import { VerifierSidebar } from '@/components/verification-sidebar'
-import { act, render, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -63,10 +63,69 @@ describe('VerifierSidebar', () => {
     mocks.getCachedVerificationDocument.mockReturnValue(null)
     mocks.getVerificationDocument.mockReset()
     onLineSpy = vi.spyOn(window.navigator, 'onLine', 'get')
+    // The browser regression covers the remote page; unit tests keep frames local.
+    vi.spyOn(HTMLIFrameElement.prototype, 'src', 'get').mockReturnValue(
+      'about:blank',
+    )
   })
 
   afterEach(() => {
-    onLineSpy.mockRestore()
+    vi.restoreAllMocks()
+  })
+
+  it('preloads on the client while closed and reuses the iframe when opened', async () => {
+    const props = {
+      isOpen: false,
+      setIsOpen: vi.fn(),
+      onVerificationComplete: vi.fn(),
+      isDarkMode: false,
+      isClient: false,
+    }
+    const { queryByTitle, getByTitle, rerender } = render(
+      <VerifierSidebar {...props} />,
+    )
+    expect(queryByTitle('Tinfoil Verification Center')).not.toBeInTheDocument()
+
+    rerender(<VerifierSidebar {...props} isClient />)
+    const iframe = getByTitle(
+      'Tinfoil Verification Center',
+    ) as HTMLIFrameElement
+    const source = iframe.getAttribute('src')
+    expect(source).toContain(VERIFICATION_CENTER_ORIGIN)
+    expect(iframe).toHaveAttribute('loading', 'eager')
+    expect(iframe.parentElement).toHaveAttribute('inert')
+    expect(mocks.getVerificationDocument).not.toHaveBeenCalled()
+    expect(mocks.getCachedVerificationDocument).not.toHaveBeenCalled()
+
+    const postMessage = vi
+      .spyOn(iframe.contentWindow!, 'postMessage')
+      .mockImplementation(() => {})
+    fireEvent.load(iframe)
+    expect(postMessage).toHaveBeenCalledWith(
+      { type: 'TINFOIL_VERIFICATION_CENTER_CLOSE' },
+      VERIFICATION_CENTER_ORIGIN,
+    )
+
+    const document = { securityVerified: true }
+    mocks.getCachedVerificationDocument.mockReturnValue(document)
+    rerender(<VerifierSidebar {...props} isClient isOpen />)
+    expect(getByTitle('Tinfoil Verification Center')).toBe(iframe)
+    expect(iframe.getAttribute('src')).toBe(source)
+    expect(iframe.parentElement).not.toHaveAttribute('inert')
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(
+        { type: 'TINFOIL_VERIFICATION_DOCUMENT', document },
+        VERIFICATION_CENTER_ORIGIN,
+      ),
+    )
+    expect(props.onVerificationComplete).toHaveBeenCalledWith(true)
+    expect(mocks.getVerificationDocument).not.toHaveBeenCalled()
+
+    rerender(<VerifierSidebar {...props} isClient />)
+    expect(iframe.parentElement).toHaveAttribute('inert')
+    rerender(<VerifierSidebar {...props} isClient isOpen />)
+    expect(getByTitle('Tinfoil Verification Center')).toBe(iframe)
+    expect(iframe.getAttribute('src')).toBe(source)
   })
 
   it('keeps a previously successful verification when fetching offline', async () => {
