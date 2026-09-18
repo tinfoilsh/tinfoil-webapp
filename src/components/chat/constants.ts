@@ -29,6 +29,19 @@ export const CONSTANTS = {
   RECORDING_TIMEOUT_MS: 600000,
   // Default audio model for voice transcription
   DEFAULT_AUDIO_MODEL: 'voxtral-small-24b',
+  // Live recording waveform: a new amplitude bar is appended at this rate
+  // and the strip scrolls left by one bar each time.
+  RECORDING_WAVEFORM_SAMPLE_INTERVAL_MS: 50,
+  RECORDING_WAVEFORM_BAR_WIDTH_PX: 2,
+  RECORDING_WAVEFORM_BAR_GAP_PX: 2,
+  RECORDING_WAVEFORM_HEIGHT_PX: 28,
+  // Bars never shrink below this so silence still reads as a flat line.
+  RECORDING_WAVEFORM_MIN_BAR_HEIGHT_PX: 2,
+  // Typical speech peaks well below full scale; amplitudes are scaled by this
+  // factor so a normal speaking voice fills most of the strip height.
+  RECORDING_WAVEFORM_GAIN: 3,
+  // Smaller FFT sizes give lower-latency time-domain samples for the meter.
+  RECORDING_WAVEFORM_FFT_SIZE: 512,
   // Copy button timeout in milliseconds (2 seconds)
   COPY_TIMEOUT_MS: 2000,
   // Maximum width for table columns in pixels

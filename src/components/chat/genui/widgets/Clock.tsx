@@ -1,4 +1,5 @@
 import { Card } from '@/components/ui/card'
+import { getAudioContextClass } from '@/utils/audio-context'
 import { Bell, BellOff } from 'lucide-react'
 import type { JSX } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -442,16 +443,6 @@ function formatEndTime(endTimeMs: number): string {
   } catch {
     return new Date(endTimeMs).toTimeString().slice(0, 5)
   }
-}
-
-function getAudioContextClass() {
-  if (typeof window === 'undefined') return null
-  return (
-    window.AudioContext ??
-    (window as typeof window & { webkitAudioContext?: typeof AudioContext })
-      .webkitAudioContext ??
-    null
-  )
 }
 
 function CountdownTimer({
