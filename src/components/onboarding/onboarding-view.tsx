@@ -165,7 +165,9 @@ export function OnboardingView({
 // MARK: - Page 1: Letter from the Founders
 
 const FOUNDERS_LETTER_PARAGRAPHS = [
-  'Tinfoil Chat was built as a sanctuary for thought.',
+  <strong key="opening">
+    Tinfoil Chat was built as a sanctuary for thought.
+  </strong>,
   'At Tinfoil, we believe that AI is the most intimate technology yet created. We see AI as a space to explore, to make mistakes, to think out loud, to reflect with a beautiful and deep intelligence on the other end.',
   <>
     This is <em>your</em> space to explore ideas in private.
@@ -235,7 +237,7 @@ function OnboardingSafeguardsPage() {
     >
       <div className="flex w-full flex-col items-center gap-8">
         <div className="flex h-28 items-center justify-center">
-          <TfShieldCheck className="h-24 w-24 text-content-primary" />
+          <TfShieldCheck className="h-24 w-24 text-tinfoil-accent-blue" />
         </div>
 
         <div className="space-y-4 text-center">
@@ -244,8 +246,12 @@ function OnboardingSafeguardsPage() {
           </h2>
           <p className="text-balance text-base text-content-secondary">
             Privacy-preserving safeguards review AI responses for safety.
+          </p>
+          <p className="text-balance text-base text-content-secondary">
             Safeguards run inside secure enclaves at inference time, keeping
-            your conversations private and notifying you in case of a flag.{' '}
+            your conversations private and notifying you in case of a flag.
+          </p>
+          <p className="text-balance text-base text-content-secondary">
             <strong className="font-semibold text-content-primary">
               Tinfoil never sees conversation content or nature of the flag
               raised.

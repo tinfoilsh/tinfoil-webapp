@@ -58,6 +58,15 @@ describe('OnboardingView', () => {
     ).toHaveAttribute('height', '338')
   })
 
+  it('emphasizes the opening sentence', () => {
+    render(<OnboardingView onComplete={vi.fn()} />)
+
+    expect(
+      screen.getByText('Tinfoil Chat was built as a sanctuary for thought.')
+        .tagName,
+    ).toBe('STRONG')
+  })
+
   it('emphasizes that the private space belongs to the user', () => {
     render(<OnboardingView onComplete={vi.fn()} />)
 
@@ -95,16 +104,15 @@ describe('OnboardingView', () => {
     )
     expect(learnMoreLink).toHaveAttribute('target', '_blank')
     expect(learnMoreLink).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(
-      screen.getByText(
-        'Privacy-preserving safeguards review AI responses for safety. Safeguards run inside secure enclaves at inference time, keeping your conversations private and notifying you in case of a flag.',
-      ),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        'Tinfoil never sees conversation content or nature of the flag raised.',
-      ),
-    ).toBeInTheDocument()
+    const safeguardsParagraphs = [
+      'Privacy-preserving safeguards review AI responses for safety.',
+      'Safeguards run inside secure enclaves at inference time, keeping your conversations private and notifying you in case of a flag.',
+      'Tinfoil never sees conversation content or nature of the flag raised.',
+    ].map((text) => screen.getByText(text).closest('p'))
+    for (const paragraph of safeguardsParagraphs) {
+      expect(paragraph).toBeInTheDocument()
+    }
+    expect(new Set(safeguardsParagraphs).size).toBe(3)
     expect(onComplete).not.toHaveBeenCalled()
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
     expect(update).not.toHaveBeenCalled()
