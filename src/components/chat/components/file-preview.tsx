@@ -75,6 +75,26 @@ export function FilePreview({
 }: FilePreviewProps) {
   const showImage = Boolean(imageSrc)
   const showText = !showImage && hasTextPreview(filename, textContent)
+  // While a file is still processing and there is nothing to preview yet,
+  // show a bare spinner in the same slot so the row keeps its geometry
+  // without framing an empty tile.
+  const showPendingSpinner = isBusy && !showImage && !showText
+
+  if (showPendingSpinner) {
+    return (
+      <div
+        className={cn(
+          'flex flex-shrink-0 items-center justify-center',
+          SIZE_CLASSES[size],
+          className,
+        )}
+        data-testid="file-preview"
+        data-preview-kind="pending"
+      >
+        <PiSpinner className="h-4 w-4 animate-spin text-content-secondary" />
+      </div>
+    )
+  }
 
   return (
     <div

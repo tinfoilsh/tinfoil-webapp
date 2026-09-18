@@ -48,6 +48,28 @@ describe('FilePreview', () => {
     )
   })
 
+  it('shows a bare spinner while a file is still processing', () => {
+    render(<FilePreview filename="photo.avif" isBusy />)
+    const tile = screen.getByTestId('file-preview')
+    expect(tile).toHaveAttribute('data-preview-kind', 'pending')
+    expect(tile.className).not.toContain('border')
+  })
+
+  it('keeps the thumbnail visible under the busy overlay', () => {
+    render(
+      <FilePreview
+        filename="photo.png"
+        imageSrc="data:image/jpeg;base64,AAAA"
+        isBusy
+      />,
+    )
+    expect(screen.getByTestId('file-preview')).toHaveAttribute(
+      'data-preview-kind',
+      'image',
+    )
+    expect(screen.getByAltText('photo.png')).toBeInTheDocument()
+  })
+
   it('does not render a thumbnail for images without data', () => {
     render(<FilePreview filename="photo.png" textContent="A description" />)
     expect(screen.getByTestId('file-preview')).toHaveAttribute(
