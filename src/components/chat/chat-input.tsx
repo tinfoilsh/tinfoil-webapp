@@ -881,12 +881,17 @@ export function ChatInput({
                   <div className="flex items-center gap-2">
                     <FilePreview
                       filename={doc.name}
-                      imageSrc={imageDataUrl(
-                        doc.attachment?.thumbnailBase64 ??
-                          doc.attachment?.base64 ??
-                          doc.imageData?.base64,
-                        doc.attachment?.mimeType ?? doc.imageData?.mimeType,
-                      )}
+                      imageSrc={
+                        doc.attachment?.type === 'image' || doc.imageData
+                          ? imageDataUrl(
+                              doc.attachment?.thumbnailBase64 ??
+                                doc.attachment?.base64 ??
+                                doc.imageData?.base64,
+                              doc.attachment?.mimeType ??
+                                doc.imageData?.mimeType,
+                            )
+                          : null
+                      }
                       textContent={doc.attachment?.textContent ?? doc.content}
                       isBusy={Boolean(
                         doc.isUploading || doc.isGeneratingDescription,
