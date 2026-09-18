@@ -56,4 +56,4 @@ napkin.md
 
 # test results
 /coverage
-/public/js/plausible.upstream.js
+/public/js/plausible.upstream.js*
