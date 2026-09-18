@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '../../src/constants/storage-keys'
 
-const PREVIEW_FONT_VARIABLES = [
-  '--font-lora',
-  '--font-aeonik-fono',
-  '--font-opendyslexic',
-]
+const PREVIEW_FONTS = ['lora', 'aeonik-fono', 'opendyslexic']
+const PREVIEW_FONT_VARIABLES = PREVIEW_FONTS.map((font) => `--font-${font}`)
+const PREVIEW_FONT_SELECTOR = PREVIEW_FONTS.map((font) => `.font-${font}`).join(
+  ', ',
+)
 
 test('loads chat preview fonts before opening settings', async ({ page }) => {
   await page.addInitScript((key) => {
@@ -68,7 +68,7 @@ test('loads chat preview fonts before opening settings', async ({ page }) => {
     .click()
 
   const previews = settings
-    .locator('.font-lora, .font-aeonik-fono, .font-opendyslexic')
+    .locator(PREVIEW_FONT_SELECTOR)
     .filter({ hasText: /^Aa$/ })
   await expect(previews).toHaveCount(PREVIEW_FONT_VARIABLES.length)
   const ready = await previews.evaluateAll((elements) =>

@@ -12,7 +12,7 @@ test('preloads the closed verification center and opens it without reloading', a
 
   let documentRequests = 0
   await page.route(`${VERIFICATION_CENTER_ORIGIN}/**`, async (route) => {
-    documentRequests++
+    if (route.request().resourceType() === 'document') documentRequests++
     await route.fulfill({
       contentType: 'text/html',
       body: '<!doctype html><html><body>Verification center loaded</body></html>',

@@ -109,7 +109,7 @@ describe('useManualSync', () => {
     })
     expect(result.current.hasSyncFailure).toBe(true)
 
-    let retry: Promise<void>
+    let retry: Promise<void> = Promise.resolve()
     act(() => {
       retry = result.current.sync()
     })
