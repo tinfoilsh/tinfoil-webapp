@@ -1,6 +1,6 @@
+import { SETTINGS_TABS, type SettingsTab } from '@/constants/settings-tabs'
 import { logInfo, logWarning } from '@/utils/error-handling'
 import { useEffect, useRef } from 'react'
-import type { SettingsTab } from './chat/settings-modal'
 
 interface UrlHashSettingsHandlerProps {
   onSettingsTabReady: (tab: SettingsTab) => void
@@ -35,22 +35,15 @@ export function UrlHashSettingsHandler({
         return
       }
 
-      // Import/export now live inside the chat tab; keep old links working.
+      // Import/export live inside the Data tab; keep old links working.
       const legacyTabAliases: Record<string, SettingsTab> = {
-        import: 'chat',
-        export: 'chat',
+        import: 'data',
+        export: 'data',
       }
       const tabName = legacyTabAliases[parts[1]] ?? parts[1]
-      const validTabs: SettingsTab[] = [
-        'general',
-        'chat',
-        'personalization',
-        'prompts',
-        'cloud-sync',
-        'account',
-      ]
+      const tab = SETTINGS_TABS.find((candidate) => candidate === tabName)
 
-      if (!validTabs.includes(tabName as SettingsTab)) {
+      if (!tab) {
         logWarning('Invalid settings tab in URL fragment', {
           component: 'UrlHashSettingsHandler',
           metadata: { tabName },
@@ -63,7 +56,7 @@ export function UrlHashSettingsHandler({
         metadata: { tab: tabName },
       })
 
-      onSettingsTabReady(tabName as SettingsTab)
+      onSettingsTabReady(tab)
 
       window.history.replaceState(
         null,

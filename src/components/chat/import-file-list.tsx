@@ -1,7 +1,7 @@
 import { cn } from '@/components/ui/utils'
 import { formatFileSize } from '@/utils/format-file-size'
 import { XMarkIcon } from '@heroicons/react/24/outline'
-import { MacFileIcon } from './components/mac-file-icon'
+import { FilePreview } from './components/file-preview'
 
 interface ImportFileListProps {
   files: readonly File[]
@@ -45,12 +45,7 @@ export function ImportFileList({
               isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
             )}
           >
-            <MacFileIcon
-              filename={file.name}
-              size={18}
-              isDarkMode={isDarkMode}
-              compact
-            />
+            <FilePreview filename={file.name} />
             <div className="flex min-w-0 flex-1 flex-col">
               <span className="truncate text-sm font-medium text-content-primary">
                 {file.name}

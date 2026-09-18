@@ -157,7 +157,7 @@ export class CloudSyncService {
   private accountGeneration = 0
   private legacyMigrationKicked = false
   private lockAcquisitionController = new AbortController()
-  private crossTabReloadFrame: number | null = null
+  private chatReloadFrame: number | null = null
   private cloudSyncEnabled = isCloudSyncEnabled()
   private projectUploadBarriers = new Map<string, Promise<void>>()
   private projectBarrierQueues = new Map<string, Promise<void>>()
@@ -181,7 +181,7 @@ export class CloudSyncService {
         if (event.key === SETTINGS_CLOUD_SYNC_ENABLED) {
           this.handleCloudSyncSettingChange()
         } else if (event.key === SYNC_CHAT_DELETION_REVISION) {
-          this.queueCrossTabReload()
+          this.queueChatReload()
         }
       })
     }
@@ -195,9 +195,9 @@ export class CloudSyncService {
       this.streamingCallbacks.clear()
       this.legacyMigrationKicked = false
       this.cancelSyncLifecycle('disabled')
-      if (this.crossTabReloadFrame !== null) {
-        cancelAnimationFrame(this.crossTabReloadFrame)
-        this.crossTabReloadFrame = null
+      if (this.chatReloadFrame !== null) {
+        cancelAnimationFrame(this.chatReloadFrame)
+        this.chatReloadFrame = null
       }
     } else if (!this.cloudSyncEnabled && enabled) {
       this.lockAcquisitionController = new AbortController()
@@ -212,10 +212,10 @@ export class CloudSyncService {
     abortSyncEnclaveRequests('cloud-sync')
   }
 
-  private queueCrossTabReload(): void {
-    if (this.crossTabReloadFrame !== null) return
-    this.crossTabReloadFrame = requestAnimationFrame(() => {
-      this.crossTabReloadFrame = null
+  private queueChatReload(): void {
+    if (this.chatReloadFrame !== null) return
+    this.chatReloadFrame = requestAnimationFrame(() => {
+      this.chatReloadFrame = null
       chatEvents.emit({ reason: 'sync', ids: [] })
     })
   }
@@ -405,9 +405,9 @@ export class CloudSyncService {
     this.uploadCoalescer.clear()
     this.streamingCallbacks.clear()
     this.legacyMigrationKicked = false
-    if (this.crossTabReloadFrame !== null) {
-      cancelAnimationFrame(this.crossTabReloadFrame)
-      this.crossTabReloadFrame = null
+    if (this.chatReloadFrame !== null) {
+      cancelAnimationFrame(this.chatReloadFrame)
+      this.chatReloadFrame = null
     }
     void indexedDBStorage.clearRevisionSyncState().catch((error) => {
       logError('Failed to clear account revision state', error, {
@@ -664,6 +664,7 @@ export class CloudSyncService {
         projectIntentIncluded,
       })
       this.ensureCurrentAccount(generation, userId)
+      this.queueChatReload()
     } finally {
       release()
     }
@@ -719,6 +720,7 @@ export class CloudSyncService {
           }
           await this.assertUploadFinalized(chatId, generation, userId)
           reportChatSynced(chatId)
+          this.queueChatReload()
         } catch (error) {
           if (this.readActiveUserId() !== userId) throw error
           await this.recoverFromChatUploadError(chatId, generation, error)

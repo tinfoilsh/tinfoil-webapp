@@ -25,29 +25,13 @@ import {
   BsFiletypeXlsx,
   BsFiletypeXml,
 } from 'react-icons/bs'
-import { PiSpinner } from 'react-icons/pi'
 
 type MacFileIconProps = {
   filename: string
   size?: number
-  isDarkMode?: boolean
-  isUploading?: boolean
-  compact?: boolean
 }
 
-export function MacFileIcon({
-  filename,
-  size = 20,
-  isUploading = false,
-}: MacFileIconProps) {
-  if (isUploading) {
-    return (
-      <div className="flex items-center justify-center p-2">
-        <PiSpinner className="h-5 w-5 animate-spin text-content-secondary" />
-      </div>
-    )
-  }
-
+export function MacFileIcon({ filename, size = 20 }: MacFileIconProps) {
   const extension = filename.toLowerCase().split('.').pop() || ''
   const iconClass = 'text-content-secondary'
 
@@ -109,5 +93,5 @@ export function MacFileIcon({
     }
   }
 
-  return <div className="flex items-center justify-center p-1">{getIcon()}</div>
+  return getIcon()
 }

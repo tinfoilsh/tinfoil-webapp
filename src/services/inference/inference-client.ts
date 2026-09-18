@@ -21,6 +21,8 @@ import {
   DEV_SAFEGUARD_FLAG_COMMAND,
   DEV_SAFEGUARD_FLAG_RESPONSE,
   DEV_SIMULATOR_ENABLED,
+  DEV_SIMULATOR_ERROR_COMMAND,
+  DEV_SIMULATOR_ERROR_MESSAGE,
 } from '@/constants/dev-simulator'
 import { simulateSafeguardFlag } from '@/services/safeguards'
 import { shouldRetryTestFail, simulateStream } from '@/utils/dev-simulator'
@@ -394,6 +396,10 @@ export async function sendChatStream(
       }
 
       try {
+        if (queryText.trim().toLowerCase() === DEV_SIMULATOR_ERROR_COMMAND) {
+          throw new ChatError(DEV_SIMULATOR_ERROR_MESSAGE, 'FETCH_ERROR')
+        }
+
         // Check if this is a retry test that should fail. A TypeError is
         // what fetch() rejects with on a real network failure, so the
         // simulation exercises the same retry classification as production.

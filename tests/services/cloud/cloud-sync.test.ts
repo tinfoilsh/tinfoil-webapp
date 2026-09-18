@@ -8,6 +8,7 @@ import {
   CROSS_TAB_SYNC_LOCK,
   CROSS_TAB_SYNC_LOCK_OPTIONS,
 } from '@/services/cloud/cloud-sync'
+import { chatEvents } from '@/services/storage/chat-events'
 import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -191,6 +192,59 @@ describe('CloudSyncService revision coordinator routing', () => {
     expect(guard.isCurrent()).toBe(false)
     expect(guard.assertCurrent).toThrow('Cloud account changed')
   })
+
+  it.each(['queued', 'direct'])(
+    'notifies the UI after a %s upload has finalized its sync metadata',
+    async (mode) => {
+      vi.useFakeTimers()
+      const notify = vi.fn()
+      const unsubscribe = chatEvents.on(notify)
+      try {
+        canWriteToCloud.mockResolvedValue(true)
+        const chat = {
+          id: 'chat-1',
+          syncUserId: 'user-1',
+          title: 'New chat',
+          locallyModified: true,
+          pendingUpload: 1,
+          syncedAt: 0,
+          syncVersion: 0,
+          updatedAt: '2026-01-01T00:00:00Z',
+          messages: [{ role: 'user', content: 'Hello' }],
+        }
+        getChat.mockResolvedValue(chat)
+        uploadChat.mockResolvedValue({
+          syncVersion: 1,
+          rewrites: [],
+          projectIntentIncluded: false,
+        })
+        finalizeUpload.mockImplementation(async () => {
+          chat.locallyModified = false
+          chat.pendingUpload = 0
+          chat.syncedAt = Date.now()
+          chat.syncVersion = 1
+        })
+        const service = new CloudSyncService()
+        const pending = Promise.allSettled([
+          mode === 'queued'
+            ? service.backupChatAndWait(chat.id)
+            : service.backupChatNow(chat.id),
+        ])
+        await vi.runAllTimersAsync()
+        expect(await pending).toEqual([
+          { status: 'fulfilled', value: undefined },
+        ])
+        expect(chat.syncedAt).toBeGreaterThan(0)
+        expect(notify).toHaveBeenCalledExactlyOnceWith({
+          reason: 'sync',
+          ids: [],
+        })
+      } finally {
+        unsubscribe()
+        vi.useRealTimers()
+      }
+    },
+  )
 
   it('holds project deletion until an existing direct upload finishes', async () => {
     canWriteToCloud.mockResolvedValue(true)

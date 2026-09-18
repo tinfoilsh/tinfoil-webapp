@@ -55,19 +55,42 @@ async function getDocumentForBackup(
   )
 }
 
+// Storage with a deterministic document id and an accepting enclave push,
+// shared by the upload round-trip tests.
+function uploadReadyStorage() {
+  const storage = new ProjectStorageService()
+  vi.spyOn(storage, 'generateDocumentId').mockResolvedValue({
+    documentId: 'doc-1',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    reverseTimestamp: 1,
+  })
+  mocks.enclavePush.mockResolvedValue({ etag: '1' })
+  return storage
+}
+
+function pushedPayload() {
+  const pushRequest = mocks.enclavePush.mock.calls[0][0]
+  return JSON.parse(new TextDecoder().decode(pushRequest.plaintext))
+}
+
+// Feeds the pushed plaintext back through a pull so decode is exercised
+// against exactly what upload produced.
+async function restoreFromPush(storage: ProjectStorageService) {
+  const pushRequest = mocks.enclavePush.mock.calls[0][0]
+  mocks.enclavePull.mockResolvedValue({
+    items: [{ id: 'project-1/doc-1', ok: true, etag: '1' }],
+  })
+  mocks.pullItemPlaintext.mockReturnValue(pushRequest.plaintext)
+  return storage.getDocuments('project-1', ['doc-1'])
+}
+
 describe('ProjectStorageService documents', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
   it('persists and restores the original file size', async () => {
-    const storage = new ProjectStorageService()
-    vi.spyOn(storage, 'generateDocumentId').mockResolvedValue({
-      documentId: 'doc-1',
-      timestamp: '2026-01-01T00:00:00.000Z',
-      reverseTimestamp: 1,
-    })
-    mocks.enclavePush.mockResolvedValue({ etag: '1' })
+    const storage = uploadReadyStorage()
 
     const document = await storage.uploadDocument(
       'project-1',
@@ -77,17 +100,46 @@ describe('ProjectStorageService documents', () => {
       8192,
     )
 
-    const pushRequest = mocks.enclavePush.mock.calls[0][0]
-    const payload = JSON.parse(new TextDecoder().decode(pushRequest.plaintext))
+    const payload = pushedPayload()
     expect(payload.sizeBytes).toBe(8192)
     expect(document.sizeBytes).toBe(8192)
 
-    mocks.enclavePull.mockResolvedValue({
-      items: [{ id: 'project-1/doc-1', ok: true, etag: '1' }],
-    })
-    mocks.pullItemPlaintext.mockReturnValue(pushRequest.plaintext)
-    const restored = await storage.getDocuments('project-1', ['doc-1'])
+    const restored = await restoreFromPush(storage)
     expect(restored.get('doc-1')?.sizeBytes).toBe(8192)
+  })
+
+  it('persists and restores an image thumbnail', async () => {
+    const storage = uploadReadyStorage()
+
+    const document = await storage.uploadDocument(
+      'project-1',
+      'photo.png',
+      'image/png',
+      'A description of the photo',
+      4096,
+      'dGh1bWI=',
+    )
+    expect(document.thumbnailBase64).toBe('dGh1bWI=')
+
+    const payload = pushedPayload()
+    expect(payload.thumbnailBase64).toBe('dGh1bWI=')
+
+    const restored = await restoreFromPush(storage)
+    expect(restored.get('doc-1')?.thumbnailBase64).toBe('dGh1bWI=')
+  })
+
+  it('omits the thumbnail field for documents without one', async () => {
+    const storage = uploadReadyStorage()
+
+    await storage.uploadDocument(
+      'project-1',
+      'notes.txt',
+      'text/plain',
+      'Plain notes',
+    )
+
+    const payload = pushedPayload()
+    expect('thumbnailBase64' in payload).toBe(false)
   })
 
   it('derives a size when reading legacy document payloads', async () => {

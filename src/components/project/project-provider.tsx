@@ -494,7 +494,11 @@ export function ProjectProvider({
   )
 
   const uploadDocument = useCallback(
-    async (file: File, content: string): Promise<ProjectDocument> => {
+    async (
+      file: File,
+      content: string,
+      thumbnailBase64?: string,
+    ): Promise<ProjectDocument> => {
       requirePremiumAccess()
       if (!activeProject) {
         throw new Error('No active project')
@@ -511,6 +515,7 @@ export function ProjectProvider({
           file.type || 'text/plain',
           content,
           file.size,
+          thumbnailBase64,
         )
 
         documentMutationGenerationRef.current += 1

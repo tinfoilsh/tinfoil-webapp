@@ -56,6 +56,61 @@ describe('useChatSearch', () => {
     vi.useRealTimers()
   })
 
+  it('hides the old query results as soon as the user edits the search', async () => {
+    searchSyncedChats.mockResolvedValue(readyOutcome())
+    resolveSearchResultChats
+      .mockResolvedValueOnce([
+        { id: 'old', title: 'Old result', messageCount: 2 },
+      ])
+      .mockResolvedValueOnce([
+        { id: 'new', title: 'New result', messageCount: 2 },
+      ])
+    const { result, rerender } = renderHook(
+      ({ term }) => useChatSearch(term, true),
+      {
+        initialProps: { term: 'old' },
+      },
+    )
+    await flushDebounce()
+    expect(result.current.results[0].id).toBe('old')
+    rerender({ term: 'new' })
+    expect(result.current.results).toEqual([])
+    expect(result.current.isSearching).toBe(true)
+    await flushDebounce()
+    expect(result.current.results[0].id).toBe('new')
+    expect(result.current.isSearching).toBe(false)
+    rerender({ term: '' })
+    expect(result.current.results).toEqual([])
+    expect(result.current.isSearching).toBe(false)
+  })
+
+  it('hides project hits immediately when the allowed search scope changes', async () => {
+    searchSyncedChats.mockResolvedValue(readyOutcome())
+    resolveSearchResultChats
+      .mockResolvedValueOnce([
+        {
+          id: 'project-chat',
+          title: 'Project result',
+          projectId: 'p1',
+          messageCount: 2,
+        },
+      ])
+      .mockResolvedValueOnce([])
+    const { result, rerender } = renderHook(
+      ({ premium }) => useChatSearch('result', true, premium),
+      {
+        initialProps: { premium: true },
+      },
+    )
+    await flushDebounce()
+    expect(result.current.results).toHaveLength(1)
+    rerender({ premium: false })
+    expect(result.current.results).toEqual([])
+    await flushDebounce()
+    expect(resolveSearchResultChats).toHaveBeenLastCalledWith([], false)
+    expect(result.current.results).toEqual([])
+  })
+
   it('clears the indexing flag when a later search run fails', async () => {
     searchSyncedChats.mockResolvedValueOnce(indexingOutcome())
     const { result, rerender } = renderHook(
@@ -67,6 +122,7 @@ describe('useChatSearch', () => {
 
     searchSyncedChats.mockRejectedValueOnce(new Error('enclave timeout'))
     rerender({ term: 'duck' })
+    expect(result.current.isIndexing).toBe(true)
     await flushDebounce()
 
     expect(result.current.isSearching).toBe(false)

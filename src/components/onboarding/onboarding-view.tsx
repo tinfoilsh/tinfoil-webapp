@@ -1,6 +1,11 @@
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { GridTexture } from '@/components/ui/grid-texture'
+import {
+  PRIVACY_POLICY_URL,
+  SAFEGUARDS_INFO_URL,
+  TERMS_URL,
+} from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/nextjs'
@@ -160,7 +165,9 @@ export function OnboardingView({
 // MARK: - Page 1: Letter from the Founders
 
 const FOUNDERS_LETTER_PARAGRAPHS = [
-  'Tinfoil Chat was built as a sanctuary for thought.',
+  <strong key="opening" className="text-content-primary">
+    Tinfoil Chat was built as a sanctuary for thought.
+  </strong>,
   'At Tinfoil, we believe that AI is the most intimate technology yet created. We see AI as a space to explore, to make mistakes, to think out loud, to reflect with a beautiful and deep intelligence on the other end.',
   <>
     This is <em>your</em> space to explore ideas in private.
@@ -219,8 +226,6 @@ function OnboardingLetterPage() {
 
 // MARK: - Page 3: Safeguards
 
-const SAFEGUARDS_URL = 'https://tinfoil.sh/safety-and-safeguards'
-
 function OnboardingSafeguardsPage() {
   return (
     <motion.div
@@ -232,7 +237,7 @@ function OnboardingSafeguardsPage() {
     >
       <div className="flex w-full flex-col items-center gap-8">
         <div className="flex h-28 items-center justify-center">
-          <TfShieldCheck className="h-24 w-24 text-content-primary" />
+          <TfShieldCheck className="h-24 w-24 text-tinfoil-accent-blue dark:text-white" />
         </div>
 
         <div className="space-y-4 text-center">
@@ -240,16 +245,20 @@ function OnboardingSafeguardsPage() {
             Tending the Garden
           </h2>
           <p className="text-balance text-base text-content-secondary">
-            Privacy-preserving safeguards review the AI responses in this chat.
-            The safeguards run inside secure enclaves at inference time, always
-            keeping your conversations private.{' '}
+            Privacy-preserving safeguards review AI responses for safety.
+          </p>
+          <p className="text-balance text-base text-content-secondary">
+            Safeguards run inside secure enclaves at inference time, keeping
+            your conversations private and notifying you in case of a flag.
+          </p>
+          <p className="text-balance text-base text-content-secondary">
             <strong className="font-semibold text-content-primary">
-              Tinfoil cannot see the nature of the violation or conversation
-              content.
+              Tinfoil never sees conversation content or nature of the flag
+              raised.
             </strong>
           </p>
           <a
-            href={SAFEGUARDS_URL}
+            href={SAFEGUARDS_INFO_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block text-sm font-medium text-brand-accent-dark underline underline-offset-2 hover:opacity-80 dark:text-brand-accent-light"
@@ -263,9 +272,6 @@ function OnboardingSafeguardsPage() {
 }
 
 // MARK: - Page 2: Privacy
-
-const TERMS_URL = 'https://tinfoil.sh/terms'
-const PRIVACY_POLICY_URL = 'https://tinfoil.sh/privacy'
 
 function OnboardingPrivacyPage({
   privacyEnabled,

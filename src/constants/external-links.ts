@@ -1,0 +1,5 @@
+export const TERMS_URL = 'https://tinfoil.sh/terms'
+export const PRIVACY_POLICY_URL = 'https://tinfoil.sh/privacy'
+export const DASHBOARD_URL = 'https://dash.tinfoil.sh'
+export const SUPPORT_EMAIL = 'contact@tinfoil.sh'
+export const SAFEGUARDS_INFO_URL = 'https://tinfoil.sh/safety-and-safeguards'

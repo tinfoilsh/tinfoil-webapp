@@ -2,18 +2,13 @@
 
 import { Progress } from '@/components/ui/progress'
 import { cn } from '@/components/ui/utils'
-import { UI_SIDEBAR_USAGE_EXPANDED } from '@/constants/storage-keys'
 import { useRateLimit } from '@/hooks/use-rate-limit'
 import type {
   RateLimitInfo,
   TokenBudget,
 } from '@/services/inference/tinfoil-client'
-import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
-import { AnimatePresence, motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
-import { CONSTANTS } from './constants'
 
-const USAGE_PANEL_ID = 'sidebar-usage-panel'
 const COUNTDOWN_TICK_MS = 60 * 1000
 const MS_PER_MINUTE = 60 * 1000
 const MINUTES_PER_HOUR = 60
@@ -112,21 +107,6 @@ function usageBarClassName(budget: TokenBudget): string {
   )
 }
 
-/**
- * The dimension closest to its cap. Drives the collapsed summary bar so the
- * at-a-glance view always reflects whichever budget will run out first.
- */
-export function mostConstrainedBudget(
-  rateLimit: RateLimitInfo,
-): TokenBudget | undefined {
-  const { inputTokens, outputTokens } = rateLimit
-  if (!inputTokens) return outputTokens
-  if (!outputTokens) return inputTokens
-  return usagePercent(outputTokens) > usagePercent(inputTokens)
-    ? outputTokens
-    : inputTokens
-}
-
 interface UsageBarProps {
   label: string
   budget: TokenBudget
@@ -157,90 +137,40 @@ function UsageBar({ label, budget }: UsageBarProps) {
   )
 }
 
-function readExpandedPreference(): boolean {
-  if (typeof window === 'undefined') return false
-  return sessionStorage.getItem(UI_SIDEBAR_USAGE_EXPANDED) === 'true'
+interface RateLimitUsageProps {
+  isPremium: boolean
 }
 
-export function RateLimitUsage({ isPremium }: { isPremium: boolean }) {
+/**
+ * Compact token usage summary for the sidebar account menu. Renders nothing
+ * until budgets are known so the menu doesn't show an empty section.
+ */
+export function RateLimitUsage({ isPremium }: RateLimitUsageProps) {
   const rateLimit = useRateLimit()
   const countdown = useResetCountdown(rateLimit?.resetsAt ?? '')
-  const [isExpanded, setIsExpanded] = useState(readExpandedPreference)
 
   if (!isPremium || !hasTokenUsage(rateLimit)) return null
 
   const title = rateLimit.kind === 'hourly' ? 'Hourly usage' : 'Daily usage'
-  const summary = mostConstrainedBudget(rateLimit)
-
-  const toggleExpanded = () => {
-    const next = !isExpanded
-    setIsExpanded(next)
-    sessionStorage.setItem(UI_SIDEBAR_USAGE_EXPANDED, next ? 'true' : 'false')
-  }
 
   return (
-    <div className="relative z-10 flex-none px-2 py-2">
-      <div className="rounded-lg border border-border-subtle bg-surface-chat">
-        <button
-          type="button"
-          aria-expanded={isExpanded}
-          aria-controls={USAGE_PANEL_ID}
-          onClick={toggleExpanded}
-          className={cn(
-            'flex w-full items-center justify-between rounded-lg px-3 pt-3 text-left transition-colors hover:bg-surface-chat/80',
-            isExpanded ? 'pb-3' : 'pb-2',
-          )}
-        >
-          <span className="font-aeonik text-xs font-medium text-content-primary">
-            {title}
+    <div className="space-y-2 px-3 py-2">
+      <div className="flex items-center justify-between">
+        <span className="font-aeonik text-xs font-medium text-content-primary">
+          {title}
+        </span>
+        {countdown && (
+          <span className="font-aeonik-fono text-[11px] text-content-muted">
+            Resets in {countdown}
           </span>
-          <span className="flex items-center gap-1.5">
-            {countdown && (
-              <span className="text-[11px] text-content-muted">
-                Resets in {countdown}
-              </span>
-            )}
-            {isExpanded ? (
-              <ChevronDownIcon className="h-3.5 w-3.5 text-content-muted" />
-            ) : (
-              <ChevronRightIcon className="h-3.5 w-3.5 text-content-muted" />
-            )}
-          </span>
-        </button>
-        {!isExpanded && summary && (
-          <div className="px-3 pb-3">
-            <Progress
-              value={usagePercent(summary)}
-              aria-label={`${title} summary`}
-              className={cn('h-1', usageBarClassName(summary))}
-            />
-          </div>
         )}
-        <AnimatePresence initial={false}>
-          {isExpanded && (
-            <motion.div
-              id={USAGE_PANEL_ID}
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{
-                duration: CONSTANTS.SIDEBAR_SECTION_ANIMATION_S,
-                ease: 'easeInOut',
-              }}
-              className="overflow-hidden"
-            >
-              <div className="space-y-2 px-3 pb-3">
-                {rateLimit.inputTokens && (
-                  <UsageBar label="Input" budget={rateLimit.inputTokens} />
-                )}
-                {rateLimit.outputTokens && (
-                  <UsageBar label="Output" budget={rateLimit.outputTokens} />
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
+      {rateLimit.inputTokens && (
+        <UsageBar label="Input" budget={rateLimit.inputTokens} />
+      )}
+      {rateLimit.outputTokens && (
+        <UsageBar label="Output" budget={rateLimit.outputTokens} />
+      )}
     </div>
   )
 }

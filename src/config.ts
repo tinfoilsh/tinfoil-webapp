@@ -2,6 +2,9 @@
 // We'll provide fallback values for development if not set
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || ''
 
+// Injected from package.json at build time (see next.config.mjs).
+export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
+
 // Local dev mode: bypass TinfoilAI client and connect to local router.
 // Gated on BOTH the build flag and a localhost runtime origin. Dev mode only
 // ever targets a local proxy, so a production bundle accidentally built with

@@ -5,10 +5,8 @@ import { canRequestChatPin } from '@/services/storage/pinned-chats'
 import { isPlainPrimaryClick } from '@/utils/navigation'
 import {
   CheckIcon,
-  CloudArrowUpIcon,
   CloudIcon,
   EllipsisVerticalIcon,
-  ExclamationTriangleIcon,
   FolderIcon,
   PencilSquareIcon,
   TrashIcon,
@@ -16,25 +14,20 @@ import {
 } from '@heroicons/react/24/outline'
 import { FlagIcon } from '@heroicons/react/24/solid'
 import Link from 'next/link'
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CiFloppyDisk } from 'react-icons/ci'
 import { PiPushPin, PiPushPinFill } from 'react-icons/pi'
 import { FaLock } from '../icons/lazy-icons'
 import { RedactedText } from '../ui/redacted-text'
 import { cn } from '../ui/utils'
-import { formatRelativeTime } from './chat-list-utils'
 import { getBlankQueueId } from './message-queue-identity'
 import { TypingAnimation } from './typing-animation'
-
-const INITIAL_TURN_MESSAGE_COUNT = 2
 
 export interface ChatItemData {
   id: string
   title: string
   isBlankChat?: boolean
-  createdAt?: Date | string
-  updatedAt?: string
   messageCount?: number
   messages?: { length: number }
   isMetadataOnly?: boolean
@@ -42,7 +35,6 @@ export interface ChatItemData {
   dataCorrupted?: boolean
   isLocalOnly?: boolean
   isTemporary?: boolean
-  pendingSave?: boolean
   projectId?: string
 }
 
@@ -67,11 +59,6 @@ export function getBlankChatSelectId(chat: ChatItemData): string {
   return getBlankQueueId(chat.isLocalOnly === true)
 }
 
-const toDate = (value?: Date | string): Date | null => {
-  if (!value) return null
-  return value instanceof Date ? value : new Date(value)
-}
-
 export interface ProjectOption {
   id: string
   name: string
@@ -85,19 +72,11 @@ interface ChatListItemProps {
   isDarkMode: boolean
   pixelateSidebarChatTitles: boolean
   showEncryptionStatus?: boolean
-  showSyncStatus?: boolean
   /**
    * True while this chat's assistant response is actively streaming.
-   * Drives the live "streaming" indicator and suppresses the "Syncing
-   * with cloud" badge (the upload is deferred until the stream finishes).
+   * Drives the live "streaming" indicator.
    */
   isStreaming?: boolean
-  /**
-   * True when this chat's last upload attempt failed terminally
-   * (per the sync-health store). Shows a quiet warning icon so the
-   * failure is visible without blocking anything.
-   */
-  syncFailed?: boolean
   /**
    * True when the safeguards service flagged this chat for review. Shows a
    * red flag so the user can find the chat from the Safeguards settings
@@ -181,9 +160,7 @@ export function ChatListItem({
   isDarkMode,
   pixelateSidebarChatTitles,
   showEncryptionStatus = false,
-  showSyncStatus = false,
   isStreaming = false,
-  syncFailed = false,
   isFlagged = false,
   enableTitleAnimation = false,
   isDraggable = false,
@@ -347,36 +324,6 @@ export function ChatListItem({
     onDragEnd?.()
   }
 
-  const createdAt = toDate(chat.createdAt)
-  const timestamp = toDate(chat.updatedAt) ?? createdAt
-  const relativeTimePhase = useMemo(
-    () => ({ isStreaming, referenceTime: Date.now() }),
-    [isStreaming],
-  )
-  const createdRelativeTime = timestamp
-    ? formatRelativeTime(
-        createdAt ?? timestamp,
-        relativeTimePhase.isStreaming
-          ? relativeTimePhase.referenceTime
-          : Date.now(),
-      )
-    : null
-  const updatedRelativeTime = timestamp ? formatRelativeTime(timestamp) : null
-  // Skip the updated time when it would read the same as the created
-  // time, so rows don't repeat "9h ago · Updated 9h ago". Without a
-  // createdAt there is nothing to compare against and the timestamp
-  // may itself be the creation time, so show it unlabeled instead of
-  // claiming "Updated".
-  // The first user/assistant turn creates the chat, so its persistence
-  // updates are not meaningful history updates. Later turns can show the
-  // updated time once streaming has settled.
-  const showUpdatedTime =
-    !isStreaming &&
-    messageCount > INITIAL_TURN_MESSAGE_COUNT &&
-    timestamp !== null &&
-    createdAt !== null &&
-    updatedRelativeTime !== createdRelativeTime
-
   return (
     <div
       draggable={isDraggable}
@@ -406,7 +353,7 @@ export function ChatListItem({
           >
             <input
               aria-label="Chat title"
-              className="min-w-0 flex-1 rounded bg-surface-sidebar px-2 py-1 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="min-w-0 flex-1 rounded bg-surface-sidebar px-2 py-1 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-tinfoil-accent-blue"
               value={editingTitle}
               onChange={(e) => onTitleChange(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -415,7 +362,7 @@ export function ChatListItem({
             />
             <button
               type="submit"
-              className="ml-auto flex-shrink-0 rounded p-1 text-green-500 transition-colors hover:bg-green-500/10"
+              className="ml-auto flex-shrink-0 rounded p-1 text-tinfoil-accent-blue transition-colors hover:bg-tinfoil-accent-blue-subtle"
               title="Save"
               aria-label="Save chat title"
             >
@@ -503,70 +450,11 @@ export function ChatListItem({
                 />
               )}
             </span>
-            {(chat.decryptionFailed ||
-              (messageCount > 0 && timestamp) ||
-              (showSyncStatus &&
-                (chat.isLocalOnly ||
-                  (!chat.isBlankChat && syncFailed) ||
-                  (!chat.isBlankChat &&
-                    chat.pendingSave &&
-                    !isStreaming)))) && (
-              <span className="mt-1 flex min-h-[16px] w-full flex-wrap items-center gap-2 @container">
-                {chat.decryptionFailed ? (
-                  <span className="text-xs text-red-500">
-                    {chat.dataCorrupted
-                      ? 'Failed to decrypt: corrupted data'
-                      : 'Failed to decrypt: wrong key'}
-                  </span>
-                ) : messageCount > 0 && timestamp ? (
-                  <span className="text-xs leading-none text-content-muted">
-                    <span className="text-content-secondary">
-                      {createdRelativeTime}
-                    </span>
-                    {showUpdatedTime && <> · Updated {updatedRelativeTime}</>}
-                  </span>
-                ) : null}
-                {showSyncStatus && (
-                  <>
-                    {chat.isLocalOnly ? (
-                      <span className="flex items-center gap-0.5 whitespace-nowrap text-xs leading-none text-content-muted">
-                        {messageCount > 0 && (
-                          <span className="mr-1.5 hidden text-content-muted @xs:inline">
-                            ·
-                          </span>
-                        )}
-                        <CiFloppyDisk className="h-3 w-3" aria-hidden="true" />
-                        Only saved locally
-                      </span>
-                    ) : !chat.isBlankChat && syncFailed ? (
-                      <span
-                        className="flex items-center text-orange-500"
-                        title="This chat couldn't be synced"
-                      >
-                        <ExclamationTriangleIcon
-                          className="h-3 w-3"
-                          aria-hidden="true"
-                        />
-                        <span className="sr-only">
-                          This chat couldn&apos;t be synced
-                        </span>
-                      </span>
-                    ) : !chat.isBlankChat &&
-                      chat.pendingSave &&
-                      !isStreaming ? (
-                      <span
-                        className="flex items-center text-blue-500"
-                        title="Syncing with cloud"
-                      >
-                        <CloudArrowUpIcon
-                          className="h-3 w-3"
-                          aria-hidden="true"
-                        />
-                        <span className="sr-only">Syncing with cloud</span>
-                      </span>
-                    ) : null}
-                  </>
-                )}
+            {chat.decryptionFailed && (
+              <span className="mt-1 block text-xs text-red-500">
+                {chat.dataCorrupted
+                  ? 'Failed to decrypt: corrupted data'
+                  : 'Failed to decrypt: wrong key'}
               </span>
             )}
           </>

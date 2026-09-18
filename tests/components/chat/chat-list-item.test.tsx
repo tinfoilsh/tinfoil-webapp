@@ -3,7 +3,7 @@ import {
   type ChatItemData,
 } from '@/components/chat/chat-list-item'
 import { fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const savedChat: ChatItemData = {
   id: 'chat-123',
@@ -284,58 +284,18 @@ describe('ChatListItem title privacy', () => {
   })
 })
 
-describe('ChatListItem timestamps', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-11T13:30:00.000Z'))
-  })
-
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  const timestampedChat: ChatItemData = {
+describe('ChatListItem message count', () => {
+  const timestampedChat = {
     ...savedChat,
     createdAt: '2026-08-11T12:00:00.000Z',
     updatedAt: '2026-08-11T12:01:00.000Z',
   }
 
-  it('hides the updated timestamp while a later response streams', () => {
-    renderChatListItem({
-      chat: {
-        ...timestampedChat,
-        messageCount: 4,
-        createdAt: '2026-08-11T10:00:00.000Z',
-      },
-      isStreaming: true,
-    })
+  it('shows only the title for saved chats', () => {
+    renderChatListItem({ chat: { ...timestampedChat, messageCount: 4 } })
 
-    expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
-  })
-
-  it('keeps the initial turn labeled with only its creation time', () => {
-    renderChatListItem({ chat: timestampedChat })
-
-    expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
-  })
-
-  it('shows the updated timestamp for later completed turns', () => {
-    renderChatListItem({
-      chat: {
-        ...timestampedChat,
-        messageCount: 4,
-        createdAt: '2026-08-11T10:00:00.000Z',
-      },
-    })
-
-    expect(screen.getByText(/Updated/)).toBeInTheDocument()
-  })
-
-  it('does not repeat equivalent relative timestamps', () => {
-    renderChatListItem({
-      chat: { ...timestampedChat, messageCount: 4 },
-    })
-
+    expect(screen.getByText('Trip planning')).toBeInTheDocument()
+    expect(screen.queryByText(/ago/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
   })
 
@@ -349,9 +309,7 @@ describe('ChatListItem timestamps', () => {
       },
     })
 
-    // A summary is not a "New chat" and still shows its timestamp.
     expect(screen.queryByTitle('New chat')).not.toBeInTheDocument()
-    expect(screen.getByText(/1h ago/)).toBeInTheDocument()
   })
 
   it('treats hydrated chats by their real messages', () => {
@@ -365,47 +323,5 @@ describe('ChatListItem timestamps', () => {
     })
 
     expect(screen.getByTitle('New chat')).toBeInTheDocument()
-  })
-})
-
-describe('ChatListItem streaming timestamp', () => {
-  it('keeps relative time stable and hides updated time while streaming', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-08-07T00:00:10.000Z'))
-    const chat = {
-      ...savedChat,
-      createdAt: '2026-08-07T00:00:00.000Z',
-      updatedAt: '2026-08-07T00:00:05.000Z',
-    }
-
-    try {
-      const { rerenderChat } = renderChatListItem({ chat, isStreaming: true })
-      expect(screen.getByText('10s ago')).toBeInTheDocument()
-      expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
-
-      vi.advanceTimersByTime(5_000)
-      rerenderChat({
-        ...chat,
-        messageCount: 3,
-        updatedAt: '2026-08-07T00:00:10.000Z',
-      })
-
-      expect(screen.getByText('10s ago')).toBeInTheDocument()
-      expect(screen.queryByText(/Updated/)).not.toBeInTheDocument()
-
-      rerenderChat(
-        {
-          ...chat,
-          messageCount: 3,
-          updatedAt: '2026-08-07T00:00:10.000Z',
-        },
-        false,
-      )
-
-      expect(screen.getByText('15s ago')).toBeInTheDocument()
-      expect(screen.getByText(/Updated 5s ago/)).toBeInTheDocument()
-    } finally {
-      vi.useRealTimers()
-    }
   })
 })

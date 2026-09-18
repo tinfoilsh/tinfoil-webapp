@@ -124,13 +124,16 @@ export function ArtifactSidebar({
       <div
         ref={panelRef}
         className={cn(
-          'fixed right-0 top-0 z-40 flex h-full w-[85vw] flex-col border-l border-border-subtle bg-surface-chat-background font-aeonik transition-transform duration-200 ease-in-out',
+          'fixed right-0 top-0 z-40 flex h-full flex-col border-l border-border-subtle bg-surface-chat-background font-aeonik transition-transform duration-200 ease-in-out',
           isOpen ? 'translate-x-0' : 'translate-x-full',
         )}
         style={
           isResizable
             ? { width: `${width}px` }
-            : { maxWidth: `${CONSTANTS.ARTIFACT_SIDEBAR_WIDTH_PX}px` }
+            : {
+                width: CONSTANTS.MOBILE_SIDEBAR_WIDTH,
+                maxWidth: `${CONSTANTS.ARTIFACT_SIDEBAR_WIDTH_PX}px`,
+              }
         }
         aria-hidden={!isOpen}
       >

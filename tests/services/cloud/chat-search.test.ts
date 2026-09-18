@@ -282,4 +282,149 @@ describe('chat-search', () => {
     expect(chats.map((chat) => chat.id)).toEqual(['regular-chat'])
     expect(mockGetChat).toHaveBeenCalledWith('project-chat')
   })
+
+  it.each([false, true])(
+    'uses pulled project metadata before filtering results (include projects: %s)',
+    async (includeProjects) => {
+      mockPull.mockResolvedValue({
+        items: [
+          {
+            id: 'remote-project-chat',
+            ok: true,
+            project_id: 'project-1',
+            project_id_set: true,
+            plaintext: Buffer.from(
+              JSON.stringify({
+                title: 'Project discussion',
+                messages: [{ role: 'user', content: 'Project question' }],
+                createdAt: '2026-06-01T00:00:00Z',
+              }),
+            ).toString('base64'),
+          },
+        ],
+      })
+      const search = await importChatSearch()
+      const chats = await search.resolveSearchResultChats(
+        [{ id: 'remote-project-chat', score: 1 }],
+        includeProjects,
+      )
+      expect(chats.map((chat) => chat.projectId)).toEqual(
+        includeProjects ? ['project-1'] : [],
+      )
+    },
+  )
+
+  it('honors explicit project removal over stale payload metadata', async () => {
+    mockPull.mockResolvedValue({
+      items: [
+        {
+          id: 'moved-chat',
+          ok: true,
+          project_id: null,
+          project_id_set: true,
+          plaintext: Buffer.from(
+            JSON.stringify({
+              title: 'Regular discussion',
+              projectId: 'old-project',
+              messages: [{ role: 'user', content: 'Question' }],
+              createdAt: '2026-06-01T00:00:00Z',
+            }),
+          ).toString('base64'),
+        },
+      ],
+    })
+    const search = await importChatSearch()
+    const chats = await search.resolveSearchResultChats(
+      [{ id: 'moved-chat', score: 1 }],
+      false,
+    )
+    expect(chats).toHaveLength(1)
+    expect(chats[0].projectId).toBeUndefined()
+  })
+
+  it.each([true, false])(
+    'retries failed-decryption hits and only displays readable results (readable: %s)',
+    async (readable) => {
+      mockGetChat.mockResolvedValue({
+        id: 'recovered',
+        title: 'Unable to decrypt',
+        messages: [],
+        decryptionFailed: true,
+      })
+      mockPull.mockResolvedValue({
+        items: [
+          readable
+            ? {
+                id: 'recovered',
+                ok: true,
+                plaintext: Buffer.from(
+                  JSON.stringify({
+                    title: 'Recovered discussion',
+                    messages: [{ role: 'user', content: 'Question' }],
+                    createdAt: '2026-06-01T00:00:00Z',
+                  }),
+                ).toString('base64'),
+              }
+            : { id: 'recovered', ok: false, code: 'UNKNOWN_KEY' },
+        ],
+      })
+      const search = await importChatSearch()
+      const chats = await search.resolveSearchResultChats([
+        { id: 'recovered', score: 1 },
+      ])
+      expect(chats.map((chat) => chat.title)).toEqual(
+        readable ? ['Recovered discussion'] : [],
+      )
+      expect(mockPull).toHaveBeenCalledExactlyOnceWith({
+        scope: 'chat',
+        ids: ['recovered'],
+        keys: [{ key: 'primary-b64' }],
+      })
+    },
+  )
+
+  it('does not retry a failed-decryption hit without a loaded key', async () => {
+    mockHasPrimaryKey.mockReturnValue(false)
+    mockGetChat.mockResolvedValue({
+      id: 'locked',
+      title: 'Unable to decrypt',
+      messages: [],
+      decryptionFailed: true,
+    })
+    const search = await importChatSearch()
+    await expect(
+      search.resolveSearchResultChats([{ id: 'locked', score: 1 }]),
+    ).resolves.toEqual([])
+    expect(mockPull).not.toHaveBeenCalled()
+  })
+
+  it.each(['isBlankChat', 'isTemporary', 'dataCorrupted'])(
+    'does not expose a cached search hit with %s set',
+    async (flag) => {
+      mockGetChat.mockResolvedValue({
+        id: 'hidden',
+        title: 'Hidden result',
+        messages: [{}],
+        [flag]: true,
+      })
+      const search = await importChatSearch()
+      const chats = await search.resolveSearchResultChats([
+        { id: 'hidden', score: 1 },
+      ])
+      expect(chats).toEqual([])
+      expect(mockPull).not.toHaveBeenCalled()
+
+      mockGetChat.mockResolvedValue({
+        id: 'hidden',
+        title: 'Hidden result',
+        messages: [],
+        [flag]: true,
+        decryptionFailed: true,
+      })
+      await expect(
+        search.resolveSearchResultChats([{ id: 'hidden', score: 1 }]),
+      ).resolves.toEqual([])
+      expect(mockPull).not.toHaveBeenCalled()
+    },
+  )
 })

@@ -37,7 +37,6 @@ export function VerifierSidebar({
 }: VerifierSidebarProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [isReady, setIsReady] = useState(false)
-  const [hasOpenedPanel, setHasOpenedPanel] = useState(false)
   const [verificationDocument, setVerificationDocument] = useState<any>(null)
   const retryCountRef = useRef(0)
   const isRetryingRef = useRef(false)
@@ -186,14 +185,6 @@ export function VerifierSidebar({
     }
   }, [isOpen, isClient, fetchVerificationDocument])
 
-  // Defer mounting the verification-center iframe (and its bundles) until the
-  // panel is first opened; keep it mounted afterwards so re-opening is instant.
-  useEffect(() => {
-    if (isOpen) {
-      setHasOpenedPanel(true)
-    }
-  }, [isOpen])
-
   useEffect(() => {
     if (isReady && iframeRef.current) {
       const message = isOpen
@@ -214,13 +205,18 @@ export function VerifierSidebar({
         inert={!isOpen}
         className={`${
           isOpen ? 'translate-x-0' : 'translate-x-full'
-        } fixed right-0 top-0 z-40 flex h-full w-[85vw] overflow-hidden border-l border-border-subtle bg-surface-sidebar font-aeonik transition-all duration-200 ease-in-out`}
-        style={{ maxWidth: `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX}px` }}
+        } fixed right-0 top-0 z-40 flex h-full overflow-hidden border-l border-border-subtle bg-surface-sidebar font-aeonik transition-all duration-200 ease-in-out`}
+        style={{
+          width: CONSTANTS.MOBILE_SIDEBAR_WIDTH,
+          maxWidth: `${CONSTANTS.VERIFIER_SIDEBAR_WIDTH_PX}px`,
+        }}
       >
-        {isClient && hasOpenedPanel && (
+        {/* Keep the iframe loaded while closed so opening only changes visibility. */}
+        {isClient && (
           <iframe
             ref={iframeRef}
             src={iframeUrl}
+            loading="eager"
             className="h-full w-full"
             style={{ border: 'none' }}
             title="Tinfoil Verification Center"

@@ -2,6 +2,7 @@
 
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
+import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { getClerkErrorMessage } from '@/utils/clerk-errors'
 import { logError } from '@/utils/error-handling'
 import { sanitizeRelativeRedirect } from '@/utils/redirect-url'
@@ -1099,7 +1100,7 @@ export default function SignInPage({
         <p className="mt-8 text-balance text-center text-xs leading-relaxed text-content-muted">
           By continuing, you agree to our{' '}
           <a
-            href="https://tinfoil.sh/terms"
+            href={TERMS_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="underline transition-colors hover:text-content-primary"
@@ -1108,7 +1109,7 @@ export default function SignInPage({
           </a>{' '}
           and acknowledge our{' '}
           <a
-            href="https://tinfoil.sh/privacy"
+            href={PRIVACY_POLICY_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="underline transition-colors hover:text-content-primary"

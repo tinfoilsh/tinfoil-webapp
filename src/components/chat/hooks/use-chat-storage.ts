@@ -428,6 +428,19 @@ export function useChatStorage({
               }
 
               if (
+                !isStreaming &&
+                !hasPendingTitle &&
+                nextCurrent.updatedAt === existingChat.updatedAt &&
+                nextCurrent.messages.length === existingMessageCount &&
+                nextCurrent.locallyModified !== existingChat.locallyModified
+              ) {
+                nextCurrent = {
+                  ...nextCurrent,
+                  locallyModified: existingChat.locallyModified,
+                }
+              }
+
+              if (
                 nextCurrent.isLocalOnly !== existingChat.isLocalOnly ||
                 nextCurrent.projectId !== existingChat.projectId
               ) {

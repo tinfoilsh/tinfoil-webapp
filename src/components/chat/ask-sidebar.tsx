@@ -79,10 +79,13 @@ export function AskSidebar({
     <>
       <div
         className={cn(
-          'fixed right-0 top-0 z-40 flex h-full w-[85vw] flex-col border-l border-border-subtle bg-surface-chat-background font-aeonik transition-transform duration-200 ease-in-out',
+          'fixed right-0 top-0 z-40 flex h-full flex-col border-l border-border-subtle bg-surface-chat-background font-aeonik transition-transform duration-200 ease-in-out',
           isOpen ? 'translate-x-0' : 'translate-x-full',
         )}
-        style={{ maxWidth: `${CONSTANTS.ASK_SIDEBAR_WIDTH_PX}px` }}
+        style={{
+          width: CONSTANTS.MOBILE_SIDEBAR_WIDTH,
+          maxWidth: `${CONSTANTS.ASK_SIDEBAR_WIDTH_PX}px`,
+        }}
         inert={!isOpen}
         aria-hidden={!isOpen}
       >

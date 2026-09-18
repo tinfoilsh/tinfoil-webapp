@@ -14,6 +14,7 @@ export function SidebarPatternEdge({ isDarkMode }: { isDarkMode: boolean }) {
 
   return (
     <div
+      data-sidebar-pattern-edge
       aria-hidden="true"
       className="pointer-events-none absolute inset-y-0 right-0 z-20"
       style={{

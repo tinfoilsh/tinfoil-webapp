@@ -33,7 +33,7 @@ import {
   ContextUsageIndicator,
   type ContextUsage,
 } from './components/context-usage-indicator'
-import { MacFileIcon } from './components/mac-file-icon'
+import { FilePreview, imageDataUrl } from './components/file-preview'
 import { CONSTANTS } from './constants'
 import { useEnterToNewline } from './hooks/use-enter-to-newline'
 import { isImeComposition } from './keyboard-utils'
@@ -879,31 +879,24 @@ export function ChatInput({
                     </button>
                   )}
                   <div className="flex items-center gap-2">
-                    {doc.attachment?.type === 'image' || doc.imageData ? (
-                      <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-md border border-border-subtle bg-surface-card">
-                        <img
-                          src={`data:${doc.attachment?.mimeType ?? doc.imageData?.mimeType};base64,${doc.attachment?.thumbnailBase64 ?? doc.attachment?.base64 ?? doc.imageData?.base64}`}
-                          alt={doc.name}
-                          className="h-full w-full object-cover"
-                        />
-                        {(doc.isUploading || doc.isGeneratingDescription) && (
-                          <div className="absolute inset-0 flex items-center justify-center bg-surface-chat/70">
-                            <PiSpinner className="h-3.5 w-3.5 animate-spin text-content-primary" />
-                          </div>
-                        )}
-                      </div>
-                    ) : doc.isUploading ? (
-                      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center">
-                        <PiSpinner className="h-5 w-5 animate-spin text-content-secondary" />
-                      </div>
-                    ) : (
-                      <MacFileIcon
-                        filename={doc.name}
-                        size={18}
-                        isDarkMode={isDarkMode}
-                        compact
-                      />
-                    )}
+                    <FilePreview
+                      filename={doc.name}
+                      imageSrc={
+                        doc.attachment?.type === 'image' || doc.imageData
+                          ? imageDataUrl(
+                              doc.attachment?.thumbnailBase64 ??
+                                doc.attachment?.base64 ??
+                                doc.imageData?.base64,
+                              doc.attachment?.mimeType ??
+                                doc.imageData?.mimeType,
+                            )
+                          : null
+                      }
+                      textContent={doc.attachment?.textContent ?? doc.content}
+                      isBusy={Boolean(
+                        doc.isUploading || doc.isGeneratingDescription,
+                      )}
+                    />
                     <div className="flex min-w-0 flex-col">
                       <span
                         className={cn(
@@ -1424,7 +1417,7 @@ export function ChatInput({
                         }
                       }}
                       className={cn(
-                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-button-send-background text-button-send-foreground transition-colors hover:bg-button-send-background/80 disabled:opacity-50 md:h-8 md:w-8',
+                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-tinfoil-accent-blue text-white transition-colors hover:bg-tinfoil-accent-blue-hover disabled:opacity-50 md:h-8 md:w-8',
                         !isCompact && 'ml-2',
                       )}
                       style={{ WebkitTapHighlightColor: 'transparent' }}
@@ -1436,9 +1429,9 @@ export function ChatInput({
                       aria-label={showStopAction ? 'Stop generation' : 'Send'}
                     >
                       {showStopAction ? (
-                        <div className="h-3.5 w-3.5 bg-button-send-foreground/80 transition-colors md:h-3 md:w-3" />
+                        <div className="h-3.5 w-3.5 bg-white/80 transition-colors md:h-3 md:w-3" />
                       ) : (
-                        <FiArrowUp className="h-6 w-6 text-button-send-foreground transition-colors md:h-5 md:w-5" />
+                        <FiArrowUp className="h-6 w-6 text-current transition-colors md:h-5 md:w-5" />
                       )}
                     </button>
                   )

@@ -1,5 +1,9 @@
 import type { Message } from '@/components/chat/types'
-import { DEV_SAFEGUARD_FLAG_RESPONSE } from '@/constants/dev-simulator'
+import {
+  DEV_SAFEGUARD_FLAG_RESPONSE,
+  DEV_SIMULATOR_ERROR_COMMAND,
+  DEV_SIMULATOR_ERROR_MESSAGE,
+} from '@/constants/dev-simulator'
 import type {
   ChatChunk,
   ChatChunkStream,
@@ -117,12 +121,55 @@ describe('local Dev Simulator', () => {
     ).toBe('')
     expect(contentOf(chunks)).toContain('Available Dev Simulator commands')
     expect(contentOf(chunks)).toContain('`flag safeguard`')
+    expect(contentOf(chunks)).toContain(`\`${DEV_SIMULATOR_ERROR_COMMAND}\``)
     for (const command of Object.keys(SIMULATOR_PATTERNS)) {
       expect(contentOf(chunks)).toContain(`\`${command}\``)
     }
     expect(chunks.at(-1)?.choices?.[0]?.finish_reason).toBe('stop')
     expect(fetch).not.toHaveBeenCalled()
     expect(createCompletion).not.toHaveBeenCalled()
+  })
+
+  it.each([DEV_SIMULATOR_ERROR_COMMAND, '  TEST ERROR  '])(
+    'surfaces a repeatable connection error immediately for %s without network calls',
+    async (command) => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await expect(send(command)).rejects.toMatchObject({
+          name: 'ChatError',
+          code: 'FETCH_ERROR',
+          message: DEV_SIMULATOR_ERROR_MESSAGE,
+        })
+        expect(vi.getTimerCount()).toBe(0)
+      }
+      expect(fetch).not.toHaveBeenCalled()
+      expect(createCompletion).not.toHaveBeenCalled()
+    },
+  )
+
+  it('honors cancellation instead of showing the simulated error', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(
+      send(DEV_SIMULATOR_ERROR_COMMAND, { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('streams normally after an error and does not interpret prose as an error command', async () => {
+    await expect(send(DEV_SIMULATOR_ERROR_COMMAND)).rejects.toMatchObject({
+      code: 'FETCH_ERROR',
+    })
+    const query = 'What does test error mean?'
+    const result = collect(
+      await send(query, {
+        messages: [
+          userMessage(DEV_SIMULATOR_ERROR_COMMAND),
+          userMessage(query),
+        ],
+      }),
+    )
+    await vi.runAllTimersAsync()
+    expect(contentOf(await result)).toBe(getSimulatorPattern(query).content)
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it.each(['flag safeguard', '  FLAG SAFEGUARD  '])(
@@ -239,25 +286,28 @@ describe('local Dev Simulator', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('leaves the same words on a normal model on the normal SDK path', async () => {
-    createCompletion.mockResolvedValue({
-      async *[Symbol.asyncIterator]() {
-        yield { choices: [{ delta: { content: 'Normal answer' } }] }
-      },
-    })
-    const stream = await sendChatStream({
-      model: { ...DEV_SIMULATOR_MODEL, modelName: 'gpt-oss-120b' },
-      systemPrompt: '',
-      updatedMessages: [userMessage('flag safeguard')],
-      signal: new AbortController().signal,
-      conversationId: 'current-chat',
-      genUIEnabled: false,
-    })
-    expect(contentOf(await collect(stream))).toBe('Normal answer')
-    expect(createCompletion).toHaveBeenCalledOnce()
-    expect(createCompletion.mock.calls[0][1].headers).toMatchObject({
-      'X-Tinfoil-Conversation-Id': 'current-chat',
-    })
-    expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
-  })
+  it.each(['flag safeguard', DEV_SIMULATOR_ERROR_COMMAND])(
+    'leaves %s on a normal model on the normal SDK path',
+    async (command) => {
+      createCompletion.mockResolvedValue({
+        async *[Symbol.asyncIterator]() {
+          yield { choices: [{ delta: { content: 'Normal answer' } }] }
+        },
+      })
+      const stream = await sendChatStream({
+        model: { ...DEV_SIMULATOR_MODEL, modelName: 'gpt-oss-120b' },
+        systemPrompt: '',
+        updatedMessages: [userMessage(command)],
+        signal: new AbortController().signal,
+        conversationId: 'current-chat',
+        genUIEnabled: false,
+      })
+      expect(contentOf(await collect(stream))).toBe('Normal answer')
+      expect(createCompletion).toHaveBeenCalledOnce()
+      expect(createCompletion.mock.calls[0][1].headers).toMatchObject({
+        'X-Tinfoil-Conversation-Id': 'current-chat',
+      })
+      expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
+    },
+  )
 })

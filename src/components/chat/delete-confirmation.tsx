@@ -10,6 +10,16 @@ interface DeleteConfirmationProps {
   animated?: boolean
 }
 
+// The overlay is pinned to the row it covers (inset-0), so its height is
+// whatever the row happens to be. Buttons therefore stretch to fill and center
+// their label with flexbox instead of relying on vertical padding, which would
+// overflow and push the text off-center whenever the row is shorter than the
+// padded content.
+const OVERLAY_CLASS_NAME =
+  'absolute inset-0 z-50 flex items-stretch gap-1.5 rounded-lg bg-surface-sidebar p-1 shadow-lg'
+const BUTTON_CLASS_NAME =
+  'flex min-w-0 flex-1 items-center justify-center rounded-md px-3 text-sm font-medium leading-none transition-colors'
+
 export function DeleteConfirmation({
   onConfirm,
   onCancel,
@@ -20,7 +30,7 @@ export function DeleteConfirmation({
     <>
       <button
         className={cn(
-          'flex-1 rounded-md p-2 text-sm font-medium transition-colors',
+          BUTTON_CLASS_NAME,
           isDarkMode
             ? 'bg-surface-chat text-content-primary hover:bg-surface-chat/80'
             : 'bg-surface-chat text-content-secondary hover:bg-surface-chat/80',
@@ -35,7 +45,7 @@ export function DeleteConfirmation({
       </button>
       <button
         className={cn(
-          'flex-1 rounded-md p-2 text-sm font-medium transition-colors',
+          BUTTON_CLASS_NAME,
           isDarkMode
             ? 'bg-red-600 text-white hover:bg-red-700'
             : 'bg-red-500 text-white hover:bg-red-600',
@@ -68,16 +78,12 @@ export function DeleteConfirmation({
             duration: 0.15,
           },
         }}
-        className="absolute inset-0 z-50 flex gap-2 rounded-md bg-surface-sidebar p-2 shadow-lg"
+        className={OVERLAY_CLASS_NAME}
       >
         {content}
       </motion.div>
     )
   }
 
-  return (
-    <div className="absolute inset-0 z-50 flex gap-2 rounded-md bg-surface-sidebar p-2 shadow-lg">
-      {content}
-    </div>
-  )
+  return <div className={OVERLAY_CLASS_NAME}>{content}</div>
 }

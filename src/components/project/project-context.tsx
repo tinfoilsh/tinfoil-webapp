@@ -44,7 +44,11 @@ export interface ProjectContextValue {
   createProject: (data: CreateProjectData) => Promise<Project>
   updateProject: (id: string, data: UpdateProjectData) => Promise<void>
   deleteProject: (id: string) => Promise<void>
-  uploadDocument: (file: File, content: string) => Promise<ProjectDocument>
+  uploadDocument: (
+    file: File,
+    content: string,
+    thumbnailBase64?: string,
+  ) => Promise<ProjectDocument>
   removeDocument: (docId: string) => Promise<void>
   refreshDocuments: () => Promise<void>
   updateProjectMemory: (memory: Fact[]) => Promise<void>

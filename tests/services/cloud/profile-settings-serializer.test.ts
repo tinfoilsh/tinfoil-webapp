@@ -25,12 +25,24 @@ import {
   applySettingsToLocal,
   hasProfileChanged,
   loadLocalSettings,
+  resetSettingsToLocalDefaults,
 } from '@/services/cloud/profile-settings-serializer'
 import { beforeEach, describe, expect, it } from 'vitest'
 
 describe('profile-settings-serializer', () => {
   beforeEach(() => {
     localStorage.clear()
+  })
+
+  it('resets title redaction to off with other local defaults', () => {
+    applySettingsToLocal({ pixelateSidebarChatTitlesEnabled: true })
+
+    const defaults = resetSettingsToLocalDefaults()
+
+    expect(defaults.pixelateSidebarChatTitlesEnabled).toBe(false)
+    expect(
+      localStorage.getItem(SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED),
+    ).toBe('false')
   })
 
   it('preserves empty local personalization values for syncing clears', () => {

@@ -129,6 +129,7 @@ import { UrlHashSettingsHandler } from '../url-hash-settings-handler'
 import { ArtifactSidebar } from './artifact-sidebar'
 import { AskSidebar } from './ask-sidebar'
 import { ChatAnnouncer } from './chat-announcer'
+import { ChatHeader } from './chat-header'
 import { ChatInput } from './chat-input'
 import { ChatMessages } from './chat-messages'
 import {
@@ -213,6 +214,14 @@ const SettingsModalLazy = dynamic(
 )
 const ShareModalLazy = dynamic(
   () => import('./share-modal').then((m) => m.ShareModal),
+  { ssr: false },
+)
+const ChatSearchModalLazy = dynamic(
+  () => import('./chat-search-modal').then((m) => m.ChatSearchModal),
+  { ssr: false },
+)
+const ReportBugModalLazy = dynamic(
+  () => import('../modals/report-bug-modal').then((m) => m.ReportBugModal),
   { ssr: false },
 )
 const PromptLibraryModalLazy = dynamic(
@@ -523,8 +532,6 @@ export function ChatInterface({
 
   // State for right sidebar
   const [isVerifierSidebarOpen, setIsVerifierSidebarOpen] = useState(false)
-  const [hasMountedVerifierSidebar, setHasMountedVerifierSidebar] =
-    useState(false)
 
   // State for settings modal
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false)
@@ -538,6 +545,11 @@ export function ChatInterface({
   // State for share modal
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
   const [hasMountedShareModal, setHasMountedShareModal] = useState(false)
+  const [isReportBugModalOpen, setIsReportBugModalOpen] = useState(false)
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
+  const [hasMountedSearchModal, setHasMountedSearchModal] = useState(false)
+  const [hasMountedReportBugModal, setHasMountedReportBugModal] =
+    useState(false)
 
   // State for cloud sync setup modal
   const [showCloudSyncSetupModal, setShowCloudSyncSetupModal] = useState(false)
@@ -620,11 +632,11 @@ export function ChatInterface({
 
   const [pixelateSidebarChatTitles, setPixelateSidebarChatTitles] = useState(
     () => {
-      if (typeof window === 'undefined') return true
+      if (typeof window === 'undefined') return false
       const saved = localStorage.getItem(
         SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
       )
-      return saved === null ? true : saved === 'true'
+      return saved === 'true'
     },
   )
 
@@ -1674,9 +1686,7 @@ export function ChatInterface({
       ) {
         return
       }
-      setPixelateSidebarChatTitles(
-        event.newValue === null ? true : event.newValue === 'true',
-      )
+      setPixelateSidebarChatTitles(event.newValue === 'true')
     }
 
     window.addEventListener(
@@ -1733,14 +1743,10 @@ export function ChatInterface({
     if (windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT) {
       if (
         isSidebarOpen &&
-        (isVerifierSidebarOpen ||
-          isSettingsModalOpen ||
-          isAskSidebarOpen ||
-          isArtifactSidebarOpen)
+        (isVerifierSidebarOpen || isAskSidebarOpen || isArtifactSidebarOpen)
       ) {
         // Close right sidebars to prioritize left sidebar
         setIsVerifierSidebarOpen(false)
-        setIsSettingsModalOpen(false)
         setIsAskSidebarOpen(false)
         setIsArtifactSidebarOpen(false)
       }
@@ -1749,7 +1755,6 @@ export function ChatInterface({
     windowWidth,
     isSidebarOpen,
     isVerifierSidebarOpen,
-    isSettingsModalOpen,
     isAskSidebarOpen,
     isArtifactSidebarOpen,
   ])
@@ -1845,6 +1850,15 @@ export function ChatInterface({
     windowWidth,
   ])
 
+  const handleOpenSearchModal = useCallback(() => {
+    setIsSettingsModalOpen(false)
+    setIsShareModalOpen(false)
+    setIsPromptLibraryModalOpen(false)
+    setIsReportBugModalOpen(false)
+    setHasMountedSearchModal(true)
+    setIsSearchModalOpen(true)
+  }, [])
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1852,6 +1866,19 @@ export function ChatInterface({
       if ((e.metaKey || e.ctrlKey) && e.key === '.') {
         e.preventDefault()
         setIsSidebarOpen((prev) => !prev)
+        return
+      }
+
+      // Cmd+K (or Ctrl+K) to search chats and projects
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'k'
+      ) {
+        e.preventDefault()
+        if (isSearchModalOpen) setIsSearchModalOpen(false)
+        else handleOpenSearchModal()
         return
       }
 
@@ -1871,7 +1898,13 @@ export function ChatInterface({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [setIsSidebarOpen, currentChat?.messages?.length, createNewChat])
+  }, [
+    setIsSidebarOpen,
+    currentChat?.messages?.length,
+    createNewChat,
+    isSearchModalOpen,
+    handleOpenSearchModal,
+  ])
 
   // Get the selected model details
   const selectedModelDetails = findSelectableModel(selectedModel, models) as
@@ -2150,7 +2183,6 @@ export function ChatInterface({
 
   // Handler for setting verifier sidebar state
   const handleSetVerifierSidebarOpen = (isOpen: boolean) => {
-    if (isOpen) setHasMountedVerifierSidebar(true)
     setIsVerifierSidebarOpen(isOpen)
     if (isOpen) {
       // If window is narrow, close left sidebar when opening right sidebar
@@ -2174,18 +2206,23 @@ export function ChatInterface({
   }
 
   // Handler for settings modal
-  const handleOpenSettingsModal = () => {
-    if (isSettingsModalOpen) {
+  const handleOpenSettingsModal = (tab?: SettingsTab) => {
+    if (isSettingsModalOpen && !tab) {
       // If already open, close it
       setIsSettingsModalOpen(false)
     } else {
       // Open settings and close verifier if open
-      openSettingsModal(syncNeedsAttention ? 'cloud-sync' : undefined)
+      openSettingsModal(tab ?? (syncNeedsAttention ? 'cloud-sync' : undefined))
     }
   }
 
   const handleOpenSafeguardsSettings = () => {
     openSettingsModal('safeguards')
+  }
+
+  const handleOpenReportBugModal = () => {
+    setHasMountedReportBugModal(true)
+    setIsReportBugModalOpen(true)
   }
 
   // Handler for opening share modal
@@ -2897,13 +2934,17 @@ export function ChatInterface({
 
       await handleDocumentUpload(
         file,
-        async (content, _documentId, _imageData, _hasDescription, pages) => {
+        async (content, _documentId, imageData, _hasDescription, pages) => {
           try {
             const projectContent = getDocumentTextContent(content, pages)
             if (!projectContent) {
               throw new Error('No readable content was found in this document.')
             }
-            await uploadProjectDocument(file, projectContent)
+            await uploadProjectDocument(
+              file,
+              projectContent,
+              imageData?.thumbnailBase64,
+            )
           } catch (error) {
             toast({
               title: 'Upload failed',
@@ -3583,6 +3624,193 @@ export function ChatInterface({
   const showEmptyChatGrid =
     (currentChat?.messages.length ?? 0) === 0 && !isWaitingForResponse
 
+  const showChatHeader =
+    !!currentChat && currentChat.messages.length > 0 && !isChatHydrating
+
+  const hideTopControlsOnMobile =
+    windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
+    (isSidebarOpen ||
+      isVerifierSidebarOpen ||
+      isSettingsModalOpen ||
+      isAskSidebarOpen ||
+      isArtifactSidebarOpen)
+
+  const hasVisibleChatHeader = showChatHeader && !hideTopControlsOnMobile
+  const sidebarToggle = windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT &&
+    !isSidebarOpen &&
+    !(
+      isVerifierSidebarOpen ||
+      isSettingsModalOpen ||
+      isAskSidebarOpen ||
+      isArtifactSidebarOpen
+    ) && (
+      <div className="group relative">
+        <button
+          type="button"
+          className={cn(
+            'flex items-center justify-center gap-2 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
+            !hasVisibleChatHeader && 'fixed left-4 top-4 z-50',
+          )}
+          onClick={() => {
+            setIsSidebarOpen(true)
+            setIsVerifierSidebarOpen(false)
+            setIsSettingsModalOpen(false)
+          }}
+          aria-label="Open sidebar"
+        >
+          <GoSidebarCollapse className="h-5 w-5" />
+        </button>
+        <span
+          className={cn(
+            'pointer-events-none z-50 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100',
+            hasVisibleChatHeader
+              ? 'absolute left-0 top-full mt-1'
+              : 'fixed left-4 top-16',
+          )}
+        >
+          Open sidebar{' '}
+          <span className="ml-1.5 text-content-muted">{modKey}.</span>
+        </span>
+      </div>
+    )
+
+  const topControls = (
+    <>
+      {/* New chat button - only show in compact conversations with messages */}
+      {currentChat?.messages && currentChat.messages.length > 0 && (
+        <Link
+          href={getNewChatPath({
+            isLocalOnly: currentChat.isLocalOnly,
+            projectId: activeProject?.id,
+          })}
+          onClick={(e) => {
+            if (!isPlainPrimaryClick(e)) return
+            e.preventDefault()
+            createNewChat(currentChat.isLocalOnly, true)
+          }}
+          className="flex items-center justify-center rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:hidden"
+          aria-label="New chat"
+        >
+          <PiNotePencilLight className="h-4 w-4" />
+        </Link>
+      )}
+
+      {canToggleTemporaryChat(currentChat) &&
+        (() => {
+          const hasMessages =
+            !!currentChat?.messages && currentChat.messages.length > 0
+          const label = isTemporaryMode
+            ? hasMessages
+              ? 'Save chat'
+              : 'Exit temporary chat'
+            : 'Temporary chat'
+          return (
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={handleToggleTemporaryMode}
+                aria-label={label}
+                aria-pressed={isTemporaryMode}
+                className={cn(
+                  'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
+                  isTemporaryMode
+                    ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
+                    : 'border-transparent bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
+                )}
+              >
+                <SlGhost className="h-4 w-4" />
+              </button>
+              <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+                {label}
+              </span>
+            </div>
+          )
+        })()}
+
+      {/* Share button - only show when there are messages and chat is not temporary */}
+      {!currentChat?.isTemporary &&
+        currentChat?.messages &&
+        currentChat.messages.length > 0 && (
+          <button
+            type="button"
+            onClick={handleOpenShareModal}
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
+            aria-label="Share"
+          >
+            <IoShareOutline className="h-4 w-4" />
+            <span className="hidden text-sm @3xl/conversation:inline">
+              Share
+            </span>
+          </button>
+        )}
+
+      {/* Verifier toggle button */}
+      <div className="group relative">
+        <button
+          id="verification-status"
+          className={cn(
+            'relative flex items-center justify-center gap-2 rounded-lg border p-2.5 transition-all duration-200',
+            'bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
+            isVerifierSidebarOpen
+              ? 'cursor-default border-border-subtle bg-surface-chat text-content-muted hover:text-content-muted'
+              : 'border-transparent',
+          )}
+          onClick={handleOpenVerifierSidebar}
+          aria-label={
+            isVerifierSidebarOpen
+              ? 'Close verification panel'
+              : 'Open verification panel'
+          }
+          aria-pressed={isVerifierSidebarOpen}
+        >
+          {verificationStatus === 'pending' ? (
+            <>
+              <PiSpinner className="h-4 w-4 animate-spin" />
+              <span
+                className={cn(
+                  'text-sm leading-none',
+                  hasVisibleChatHeader &&
+                    'sr-only @3xl/conversation:not-sr-only',
+                )}
+              >
+                Verifying...
+              </span>
+            </>
+          ) : verificationStatus === 'verified' ? (
+            <>
+              <BiSolidLock className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light" />
+              <span
+                className={cn(
+                  'text-sm leading-none text-brand-accent-dark dark:text-brand-accent-light',
+                  hasVisibleChatHeader &&
+                    'sr-only @3xl/conversation:not-sr-only',
+                )}
+              >
+                Verified
+              </span>
+            </>
+          ) : (
+            <>
+              <BiSolidLockOpen className="h-4 w-4 text-red-500" />
+              <span
+                className={cn(
+                  'text-sm leading-none text-red-500',
+                  hasVisibleChatHeader &&
+                    'sr-only @3xl/conversation:not-sr-only',
+                )}
+              >
+                Error
+              </span>
+            </>
+          )}
+        </button>
+        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+          {isVerifierSidebarOpen ? 'Close verification' : 'View details'}
+        </span>
+      </div>
+    </>
+  )
+
   return (
     <div
       className="flex overflow-hidden bg-surface-chat-background"
@@ -3630,7 +3858,11 @@ export function ChatInterface({
       {/* URL Hash Settings Handler */}
       <UrlHashSettingsHandler
         isReady={
-          !isLoadingConfig && isClient && !!currentChat && hasValidatedModel
+          isAuthLoaded &&
+          !isLoadingConfig &&
+          isClient &&
+          !!currentChat &&
+          hasValidatedModel
         }
         onSettingsTabReady={(tab) => {
           setSettingsInitialTab(tab)
@@ -3644,30 +3876,11 @@ export function ChatInterface({
       />
 
       {/* Mobile sidebar toggle - only visible when collapsed sidebar rail is hidden */}
-      {windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT &&
-        !isSidebarOpen &&
-        !(isVerifierSidebarOpen || isSettingsModalOpen || isAskSidebarOpen) && (
-          <div className="group relative">
-            <button
-              className="fixed left-4 top-4 z-50 flex items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
-              onClick={() => {
-                setIsSidebarOpen(true)
-                setIsVerifierSidebarOpen(false)
-                setIsSettingsModalOpen(false)
-              }}
-              aria-label="Open sidebar"
-            >
-              <GoSidebarCollapse className="h-5 w-5" />
-            </button>
-            <span className="pointer-events-none fixed left-4 top-16 z-50 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-              Open sidebar{' '}
-              <span className="ml-1.5 text-content-muted">{modKey}.</span>
-            </span>
-          </div>
-        )}
+      {!hasVisibleChatHeader && sidebarToggle}
 
-      {/* Temporary chat indicator (top-left, fills inner corner) */}
-      {(isTemporaryMode || currentChat?.isTemporary) && (
+      {/* Temporary chat indicator (top-left, fills inner corner). Once a
+          chat has messages the header's metadata line marks it instead. */}
+      {(isTemporaryMode || currentChat?.isTemporary) && !showChatHeader && (
         <div
           className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(18,90%,92%)] py-7 pl-16 pr-3 text-xs font-medium text-orange-600 transition-all duration-300 dark:bg-[hsl(20,40%,15%)] dark:text-orange-500 md:py-2 md:pl-3"
           style={{
@@ -3688,15 +3901,9 @@ export function ChatInterface({
         </div>
       )}
 
-      {/* Right side toggle buttons */}
-      {!(
-        windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
-        (isSidebarOpen ||
-          isVerifierSidebarOpen ||
-          isSettingsModalOpen ||
-          isAskSidebarOpen ||
-          isArtifactSidebarOpen)
-      ) && (
+      {/* Right side toggle buttons - float over the welcome screen; once a
+          chat has messages they move into the chat header. */}
+      {!showChatHeader && !hideTopControlsOnMobile && (
         <div
           className="fixed top-4 z-50 flex gap-2 transition-all duration-300"
           style={{
@@ -3712,117 +3919,7 @@ export function ChatInterface({
                 : '16px',
           }}
         >
-          {/* New chat button - only show on mobile when there are messages */}
-          {windowWidth < CONSTANTS.MOBILE_BREAKPOINT &&
-            currentChat?.messages &&
-            currentChat.messages.length > 0 && (
-              <Link
-                href={getNewChatPath({
-                  isLocalOnly: currentChat.isLocalOnly,
-                  projectId: activeProject?.id,
-                })}
-                onClick={(e) => {
-                  if (!isPlainPrimaryClick(e)) return
-                  e.preventDefault()
-                  createNewChat(currentChat.isLocalOnly, true)
-                }}
-                className="flex items-center justify-center rounded-lg border border-border-subtle bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary"
-                aria-label="New chat"
-              >
-                <PiNotePencilLight className="h-4 w-4" />
-              </Link>
-            )}
-
-          {canToggleTemporaryChat(currentChat) &&
-            (() => {
-              const hasMessages =
-                !!currentChat?.messages && currentChat.messages.length > 0
-              const label = isTemporaryMode
-                ? hasMessages
-                  ? 'Save chat'
-                  : 'Exit temporary chat'
-                : 'Temporary chat'
-              return (
-                <div className="group relative">
-                  <button
-                    type="button"
-                    onClick={handleToggleTemporaryMode}
-                    aria-label={label}
-                    aria-pressed={isTemporaryMode}
-                    className={cn(
-                      'flex items-center justify-center rounded-lg border p-2.5 transition-all duration-200',
-                      isTemporaryMode
-                        ? 'border-orange-500/40 bg-surface-chat-background bg-gradient-to-b from-orange-500/15 to-orange-500/15 text-orange-500 hover:from-orange-500/25 hover:to-orange-500/25'
-                        : 'border-border-subtle bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                    )}
-                  >
-                    <SlGhost className="h-4 w-4" />
-                  </button>
-                  <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-                    {label}
-                  </span>
-                </div>
-              )
-            })()}
-
-          {/* Share button - only show when there are messages and chat is not temporary */}
-          {!currentChat?.isTemporary &&
-            currentChat?.messages &&
-            currentChat.messages.length > 0 && (
-              <button
-                type="button"
-                onClick={handleOpenShareModal}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:bg-surface-chat hover:text-content-primary md:px-3 md:py-2"
-                aria-label="Share"
-              >
-                <IoShareOutline className="h-4 w-4" />
-                <span className="hidden text-sm md:inline">Share</span>
-              </button>
-            )}
-
-          {/* Verifier toggle button */}
-          <div className="group relative">
-            <button
-              id="verification-status"
-              className={cn(
-                'relative flex items-center justify-center gap-2 rounded-lg border border-border-subtle p-2.5 transition-all duration-200',
-                'bg-surface-chat-background text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-                isVerifierSidebarOpen &&
-                  'cursor-default bg-surface-chat text-content-muted hover:text-content-muted',
-              )}
-              onClick={handleOpenVerifierSidebar}
-              aria-label={
-                isVerifierSidebarOpen
-                  ? 'Close verification panel'
-                  : 'Open verification panel'
-              }
-              aria-pressed={isVerifierSidebarOpen}
-            >
-              {verificationStatus === 'pending' ? (
-                <>
-                  <PiSpinner className="h-4 w-4 animate-spin" />
-                  <span className="text-sm leading-none">Verifying...</span>
-                </>
-              ) : verificationStatus === 'verified' ? (
-                <>
-                  <BiSolidLock className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light" />
-                  <span className="text-sm leading-none text-brand-accent-dark dark:text-brand-accent-light">
-                    Verified
-                  </span>
-                </>
-              ) : (
-                <>
-                  <BiSolidLockOpen className="h-4 w-4 text-red-500" />
-                  <span className="text-sm leading-none text-red-500">
-                    Error
-                  </span>
-                </>
-              )}
-            </button>
-            <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-              {isVerifierSidebarOpen ? 'Close verification' : 'View details'}
-            </span>
-          </div>
+          {topControls}
         </div>
       )}
 
@@ -3866,7 +3963,6 @@ export function ChatInterface({
                       decryptionFailed: c.decryptionFailed,
                       dataCorrupted: c.dataCorrupted,
                       isTemporary: c.isTemporary,
-                      pendingSave: c.pendingSave,
                     }))}
                   deleteChat={deleteChat}
                   updateChatTitle={updateChatTitle}
@@ -3884,6 +3980,8 @@ export function ChatInterface({
                     name: p.name,
                   }))}
                   onSettingsClick={handleOpenSettingsModal}
+                  onReportBugClick={handleOpenReportBugModal}
+                  isPremium={isPremium}
                   favoriteChats={favoriteChats}
                   pinnedChatIds={pinnedChatIds}
                   onToggleFavorite={handleToggleFavorite}
@@ -3926,11 +4024,12 @@ export function ChatInterface({
                       decryptionFailed: c.decryptionFailed,
                       dataCorrupted: c.dataCorrupted,
                       isTemporary: c.isTemporary,
-                      pendingSave: c.pendingSave,
                     }))}
                   deleteChat={deleteChat}
                   updateChatTitle={updateChatTitle}
                   onSettingsClick={handleOpenSettingsModal}
+                  onReportBugClick={handleOpenReportBugModal}
+                  isPremium={isPremium}
                   favoriteChats={favoriteChats}
                   pinnedChatIds={pinnedChatIds}
                   onToggleFavorite={handleToggleFavorite}
@@ -3962,7 +4061,6 @@ export function ChatInterface({
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                 createNewChat={createNewChat}
                 handleChatSelect={handleChatSelect}
-                onOpenChatById={(chatId) => loadChatById(chatId, false)}
                 updateChatTitle={updateChatTitle}
                 deleteChat={deleteChat}
                 isClient={isClient}
@@ -4010,6 +4108,8 @@ export function ChatInterface({
                 onConvertChatToCloud={handleConvertChatToCloud}
                 onConvertChatToLocal={handleConvertChatToLocal}
                 onSettingsClick={handleOpenSettingsModal}
+                onReportBugClick={handleOpenReportBugModal}
+                onSearchClick={handleOpenSearchModal}
                 pinnedChatIds={pinnedChatIds}
                 onToggleFavorite={handleToggleFavorite}
                 onRemoveFavorite={unpinChat}
@@ -4023,7 +4123,7 @@ export function ChatInterface({
       </DragProvider>
 
       {/* Right Verifier Sidebar */}
-      {hasMountedVerifierSidebar && (
+      {isClient && (
         <VerifierSidebarLazy
           isOpen={isVerifierSidebarOpen}
           setIsOpen={handleSetVerifierSidebarOpen}
@@ -4068,6 +4168,35 @@ export function ChatInterface({
         onWidthChange={setArtifactSidebarWidth}
         isResizable={windowWidth >= CONSTANTS.MOBILE_BREAKPOINT}
       />
+
+      {hasMountedSearchModal && (
+        <ChatSearchModalLazy
+          isOpen={isSearchModalOpen}
+          onClose={() => setIsSearchModalOpen(false)}
+          chats={chats}
+          projects={projects}
+          searchEnabled={Boolean(isSignedIn && cloudSyncSettingEnabled)}
+          isPremium={isPremium}
+          onOpenChat={handleOpenFavorite}
+          onOpenProject={(project) =>
+            openProjectChat({
+              projectId: project.id,
+              projectName: project.name,
+              createNewChat,
+              enterProjectMode,
+            })
+          }
+        />
+      )}
+
+      {hasMountedReportBugModal && (
+        <ReportBugModalLazy
+          isOpen={isReportBugModalOpen}
+          onClose={() => setIsReportBugModalOpen(false)}
+          isDarkMode={isDarkMode}
+          selectedModel={selectedModel}
+        />
+      )}
 
       {/* Share Modal */}
       {hasMountedShareModal && (
@@ -4142,7 +4271,10 @@ export function ChatInterface({
 
       {/* Main Chat Area - Modified for sliding effect */}
       <div
-        className="absolute overflow-hidden transition-all duration-200"
+        className={cn(
+          'absolute overflow-hidden @container/conversation',
+          CONSTANTS.SIDEBAR_LAYOUT_TRANSITION_CLASS_NAME,
+        )}
         style={{
           right:
             windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
@@ -4159,7 +4291,9 @@ export function ChatInterface({
             windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
               ? isSidebarOpen
                 ? `${CONSTANTS.CHAT_SIDEBAR_WIDTH_PX}px`
-                : `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`
+                : windowWidth >= CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT
+                  ? `${CONSTANTS.CHAT_SIDEBAR_COLLAPSED_WIDTH_PX}px`
+                  : '0'
               : '0',
           top: 0,
         }}
@@ -4189,7 +4323,7 @@ export function ChatInterface({
             {showEmptyChatGrid && <GridTexture />}
             {/* Rate Limit Banner (desktop) — on mobile this renders as a
                 floating pill above the chat input instead. */}
-            {shouldShowRateLimitBanner(rateLimit) && (
+            {!hasVisibleChatHeader && shouldShowRateLimitBanner(rateLimit) && (
               <RateLimitBanner
                 rateLimit={rateLimit}
                 isDarkMode={isDarkMode}
@@ -4197,8 +4331,28 @@ export function ChatInterface({
               />
             )}
 
+            {hasVisibleChatHeader && (
+              <ChatHeader
+                chat={currentChat}
+                isStreaming={isStreaming}
+                actions={topControls}
+                leadingAction={sidebarToggle}
+                notice={
+                  shouldShowRateLimitBanner(rateLimit) ? (
+                    <RateLimitBanner
+                      rateLimit={rateLimit}
+                      isDarkMode={isDarkMode}
+                      className="w-auto px-0"
+                    />
+                  ) : undefined
+                }
+                className="relative z-30"
+              />
+            )}
+
             {/* Messages Area */}
             <QuoteSelectionPopover
+              enabled={showChatHeader && !isSettingsModalOpen}
               containerRef={scrollContainerRef}
               onQuote={(text) => {
                 setQuote(text)
@@ -4364,7 +4518,7 @@ export function ChatInterface({
                     />
                   </div>
                   {selectPendingInputToolCallFromChat(currentChat) ? (
-                    <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 md:px-8">
+                    <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 @3xl/conversation:px-8">
                       <GenUIInputAreaRenderer
                         pending={selectPendingInputToolCallFromChat(
                           currentChat,
@@ -4376,13 +4530,13 @@ export function ChatInterface({
                   ) : (
                     <form
                       onSubmit={handleSubmit}
-                      className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8"
+                      className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 @3xl/conversation:px-8"
                     >
                       {shouldShowRateLimitBanner(rateLimit) && (
                         <RateLimitBanner
                           rateLimit={rateLimit}
                           isDarkMode={isDarkMode}
-                          className="mb-2 flex md:hidden"
+                          className="mb-2 flex @3xl/conversation:hidden"
                           pillClassName="rounded-full border"
                         />
                       )}

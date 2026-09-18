@@ -1,35 +1,9 @@
+import { cn } from '@/components/ui/utils'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { memo, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  BsFile,
-  BsFiletypeCss,
-  BsFiletypeCsv,
-  BsFiletypeDoc,
-  BsFiletypeDocx,
-  BsFiletypeGif,
-  BsFiletypeHtml,
-  BsFiletypeJpg,
-  BsFiletypeJs,
-  BsFiletypeJson,
-  BsFiletypeJsx,
-  BsFiletypeMd,
-  BsFiletypeMov,
-  BsFiletypeMp3,
-  BsFiletypeMp4,
-  BsFiletypePdf,
-  BsFiletypePng,
-  BsFiletypePpt,
-  BsFiletypePptx,
-  BsFiletypeTsx,
-  BsFiletypeTxt,
-  BsFiletypeWav,
-  BsFiletypeXls,
-  BsFiletypeXlsx,
-  BsFiletypeXml,
-} from 'react-icons/bs'
 
-import { cn } from '@/components/ui/utils'
+import { FilePreview } from '../../components/file-preview'
 
 import { getMessageAttachments } from '../../attachment-helpers'
 import {
@@ -53,67 +27,6 @@ interface DocumentListProps {
   documents?: Array<{ name: string }>
   documentContent?: string
   imageData?: Array<{ base64: string; mimeType: string }>
-}
-
-function getFileIcon(filename: string, size: number = 20) {
-  const extension = filename.toLowerCase().split('.').pop() || ''
-  const iconClass = 'text-content-secondary'
-
-  switch (extension) {
-    case 'pdf':
-      return <BsFiletypePdf size={size} className={iconClass} />
-    case 'doc':
-      return <BsFiletypeDoc size={size} className={iconClass} />
-    case 'docx':
-      return <BsFiletypeDocx size={size} className={iconClass} />
-    case 'xls':
-      return <BsFiletypeXls size={size} className={iconClass} />
-    case 'xlsx':
-      return <BsFiletypeXlsx size={size} className={iconClass} />
-    case 'csv':
-      return <BsFiletypeCsv size={size} className={iconClass} />
-    case 'ppt':
-      return <BsFiletypePpt size={size} className={iconClass} />
-    case 'pptx':
-      return <BsFiletypePptx size={size} className={iconClass} />
-    case 'html':
-    case 'htm':
-      return <BsFiletypeHtml size={size} className={iconClass} />
-    case 'css':
-      return <BsFiletypeCss size={size} className={iconClass} />
-    case 'js':
-      return <BsFiletypeJs size={size} className={iconClass} />
-    case 'jsx':
-      return <BsFiletypeJsx size={size} className={iconClass} />
-    case 'ts':
-    case 'tsx':
-      return <BsFiletypeTsx size={size} className={iconClass} />
-    case 'json':
-      return <BsFiletypeJson size={size} className={iconClass} />
-    case 'md':
-      return <BsFiletypeMd size={size} className={iconClass} />
-    case 'xml':
-      return <BsFiletypeXml size={size} className={iconClass} />
-    case 'txt':
-      return <BsFiletypeTxt size={size} className={iconClass} />
-    case 'png':
-      return <BsFiletypePng size={size} className={iconClass} />
-    case 'jpg':
-    case 'jpeg':
-      return <BsFiletypeJpg size={size} className={iconClass} />
-    case 'gif':
-      return <BsFiletypeGif size={size} className={iconClass} />
-    case 'mp3':
-      return <BsFiletypeMp3 size={size} className={iconClass} />
-    case 'wav':
-      return <BsFiletypeWav size={size} className={iconClass} />
-    case 'mp4':
-      return <BsFiletypeMp4 size={size} className={iconClass} />
-    case 'mov':
-      return <BsFiletypeMov size={size} className={iconClass} />
-    default:
-      return <BsFile size={size} className={iconClass} />
-  }
 }
 
 function getPreviewForDocument(
@@ -297,9 +210,10 @@ export const DocumentList = memo(function DocumentList({
                 className="flex min-w-[200px] max-w-[300px] cursor-pointer flex-col rounded-lg bg-surface-message-user/90 p-3 text-left shadow-sm backdrop-blur-sm transition-colors hover:bg-surface-message-user"
               >
                 <span className="flex items-center gap-2">
-                  <span className="flex items-center justify-center p-1">
-                    {getFileIcon(attachment.fileName, 20)}
-                  </span>
+                  <FilePreview
+                    filename={attachment.fileName}
+                    textContent={attachment.textContent}
+                  />
                   <span className="truncate text-sm font-medium text-content-primary">
                     {attachment.fileName}
                   </span>
@@ -344,7 +258,10 @@ export const DocumentList = memo(function DocumentList({
             >
               <div className="flex items-center justify-between border-b border-border-subtle px-6 py-4">
                 <div className="flex items-center gap-3">
-                  {getFileIcon(modalContent.name, 24)}
+                  <FilePreview
+                    filename={modalContent.name}
+                    textContent={modalContent.content}
+                  />
                   <h2
                     id="document-modal-title"
                     className="text-lg font-semibold text-content-primary"

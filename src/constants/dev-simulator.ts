@@ -4,6 +4,9 @@ export const DEV_SIMULATOR_ENABLED =
   process.env.NODE_ENV === 'development' || IS_DEV
 export const DEV_SAFEGUARD_FLAG_COMMAND = 'flag safeguard'
 export const DEV_SIMULATOR_HELP_COMMAND = 'help'
+export const DEV_SIMULATOR_ERROR_COMMAND = 'test error'
+export const DEV_SIMULATOR_ERROR_MESSAGE =
+  'Simulated connection failure for local testing. No network request was made. Dismiss this banner and send a different message to continue; resending this command triggers the error again.'
 export const DEV_SIMULATOR_HELP_STREAM = {
   streamDelayMs: 10,
   chunkSize: 32,
