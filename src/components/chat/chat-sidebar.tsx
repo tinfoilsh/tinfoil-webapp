@@ -1224,7 +1224,7 @@ export function ChatSidebar({
                   <button
                     type="button"
                     onClick={onCloudSyncSetupClick}
-                    className="mt-2 w-full rounded-md bg-amber-500/90 px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-amber-500"
+                    className="mt-2 w-full rounded-md bg-tinfoil-accent-blue px-2.5 py-1.5 font-aeonik text-xs font-medium text-white transition-colors hover:bg-tinfoil-accent-blue-hover"
                   >
                     {backupWarningNeedsRecovery
                       ? 'Set Up Cloud Sync'
