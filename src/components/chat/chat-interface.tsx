@@ -665,6 +665,10 @@ export function ChatInterface({
   const userEmail = user?.primaryEmailAddress?.emailAddress || ''
 
   const isPremium = !isSubscriptionLoading && chat_subscription_active
+  // The composer only uses premium status to decide which controls to show,
+  // and the server enforces access on every request. Using the cached value
+  // while auth loads keeps the toolbar from reflowing once Clerk resolves.
+  const showPremiumComposerControls = chat_subscription_active
 
   useEffect(() => {
     if (!router.isReady || router.query.upgrade !== 'projects') return
@@ -4429,7 +4433,7 @@ export function ChatInterface({
                       activeArtifactToolCallId={
                         isArtifactSidebarOpen ? activeArtifactToolCallId : null
                       }
-                      isPremium={isPremium}
+                      isPremium={showPremiumComposerControls}
                       models={models}
                       onSubmit={handleSubmit}
                       input={input}
@@ -4566,7 +4570,7 @@ export function ChatInterface({
                         handleDocumentUpload={handleFileUpload}
                         processedDocuments={processedDocuments}
                         removeDocument={removeDocument}
-                        isPremium={isPremium}
+                        isPremium={showPremiumComposerControls}
                         contextUsage={contextUsage}
                         quote={quote}
                         onClearQuote={() => setQuote(null)}
