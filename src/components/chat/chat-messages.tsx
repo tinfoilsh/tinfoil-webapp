@@ -572,7 +572,7 @@ export function ChatMessages({
 
   // Early return if no model (should never happen)
   if (!currentModel) {
-    return <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-24"></div>
+    return <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-6"></div>
   }
 
   // Show loading dots only while waiting on a fresh response. When the last
@@ -686,7 +686,7 @@ export function ChatMessages({
         aria-label="Conversation"
         aria-live="polite"
         aria-busy={isStreamingResponse || hasActiveRecovery}
-        className="mx-auto w-full min-w-0 px-0 pb-6 pt-24 font-chat md:px-4"
+        className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
       >
         {/* Archived Messages - only shown if there are more than the max prompt messages */}
         {archivedMessages.length > 0 && (

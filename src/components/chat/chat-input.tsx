@@ -1424,7 +1424,7 @@ export function ChatInput({
                         }
                       }}
                       className={cn(
-                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-button-send-background text-button-send-foreground transition-colors hover:bg-button-send-background/80 disabled:opacity-50 md:h-8 md:w-8',
+                        'group flex h-10 w-10 items-center justify-center rounded-site-control bg-tinfoil-accent-blue text-white transition-colors hover:bg-tinfoil-accent-blue-hover disabled:opacity-50 md:h-8 md:w-8',
                         !isCompact && 'ml-2',
                       )}
                       style={{ WebkitTapHighlightColor: 'transparent' }}
@@ -1436,9 +1436,9 @@ export function ChatInput({
                       aria-label={showStopAction ? 'Stop generation' : 'Send'}
                     >
                       {showStopAction ? (
-                        <div className="h-3.5 w-3.5 bg-button-send-foreground/80 transition-colors md:h-3 md:w-3" />
+                        <div className="h-3.5 w-3.5 bg-white/80 transition-colors md:h-3 md:w-3" />
                       ) : (
-                        <FiArrowUp className="h-6 w-6 text-button-send-foreground transition-colors md:h-5 md:w-5" />
+                        <FiArrowUp className="h-6 w-6 text-current transition-colors md:h-5 md:w-5" />
                       )}
                     </button>
                   )

@@ -481,7 +481,7 @@ const DefaultMessageComponent = ({
       {/* Full-width edit mode for assistant responses */}
       {!isUser && isEditing && (
         <div className="w-full px-4 py-2">
-          <div className="rounded-xl border border-border-subtle bg-surface-chat p-4">
+          <div className="rounded-lg border border-border-subtle bg-surface-chat p-4">
             <textarea
               ref={editTextareaRef}
               aria-label="Edit response"
@@ -666,7 +666,7 @@ const DefaultMessageComponent = ({
             {/* Full-width edit mode for user messages */}
             {isUser && isEditing && (
               <div className="w-full px-4">
-                <div className="rounded-xl border border-border-subtle bg-surface-chat p-4">
+                <div className="rounded-lg border border-border-subtle bg-surface-chat p-4">
                   <textarea
                     ref={editTextareaRef}
                     aria-label="Edit message"

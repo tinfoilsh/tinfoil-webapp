@@ -1,4 +1,5 @@
 const { radius } = require('./src/lib/radius')
+const TINFOIL_ACCENT_BLUE_RGB = '16 52 125'
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -98,12 +99,23 @@ module.exports = {
           'accent-light-darker':
             'hsl(var(--color-accent-light-darker) / <alpha-value>)',
         },
+        // Mirrors tinfoil-accent-blue from @tinfoil/tailwind-preset.
+        'tinfoil-accent-blue': {
+          DEFAULT: `rgb(${TINFOIL_ACCENT_BLUE_RGB})`,
+          hover: '#1F458F',
+          darker: '#01236B',
+          subtle: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.10)`,
+          soft: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.30)`,
+          medium: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.60)`,
+          bold: `rgb(${TINFOIL_ACCENT_BLUE_RGB} / 0.90)`,
+        },
         surface: {
           background: 'hsl(var(--surface-background) / <alpha-value>)',
           chat: 'hsl(var(--surface-chat) / <alpha-value>)',
           'chat-background':
             'hsl(var(--surface-chat-background) / <alpha-value>)',
           sidebar: 'hsl(var(--surface-sidebar) / <alpha-value>)',
+          'sidebar-panel': 'hsl(var(--surface-sidebar-panel) / <alpha-value>)',
           'sidebar-button':
             'hsl(var(--surface-sidebar-button) / <alpha-value>)',
           'sidebar-button-hover':

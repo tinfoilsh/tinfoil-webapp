@@ -122,16 +122,29 @@ describe('SteppedSlider', () => {
       css = result.css
     })
 
-    it.each(['no-preference', 'reduce'])(
-      'respects the %s motion preference at Max and after stepping down',
-      async (prefersReducedMotion) => {
+    it.each([
+      { theme: 'light', motion: 'no-preference' },
+      { theme: 'light', motion: 'reduce' },
+      { theme: 'dark', motion: 'no-preference' },
+      { theme: 'dark', motion: 'reduce' },
+    ])(
+      'uses blue and honors reduced motion in $theme / $motion',
+      async ({ theme, motion }) => {
         const browserWindow = new Window({
-          settings: { device: { prefersReducedMotion } },
+          settings: { device: { prefersReducedMotion: motion } },
         })
         try {
           const style = browserWindow.document.createElement('style')
           style.textContent = css
           browserWindow.document.head.append(style)
+          browserWindow.document.documentElement.setAttribute(
+            'data-theme',
+            theme,
+          )
+          browserWindow.document.documentElement.classList.toggle(
+            'dark',
+            theme === 'dark',
+          )
           const { container } = render(<ControlledSlider />)
           const thumb = screen.getByRole('slider', { name: 'Intelligence' })
 
@@ -139,14 +152,19 @@ describe('SteppedSlider', () => {
             fireEvent.keyDown(thumb, { key })
             browserWindow.document.body.innerHTML = container.innerHTML
             const fill = browserWindow.document.querySelector(
-              '.bg-brand-accent-light',
+              '.bg-tinfoil-accent-blue',
             )!
             const computed = browserWindow.getComputedStyle(fill)
 
             expect(computed.animation).toBe(
-              key === 'End' && prefersReducedMotion === 'no-preference'
+              key === 'End' && motion === 'no-preference'
                 ? 'slider-max-flow 8s linear infinite'
                 : '',
+            )
+            expect(computed.backgroundColor).toBe('rgb(16 52 125 / 1)')
+            expect(thumb).toHaveClass(
+              'focus-visible:ring-tinfoil-accent-blue',
+              'dark:focus-visible:ring-white',
             )
           }
         } finally {
