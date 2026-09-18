@@ -1,6 +1,10 @@
 import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
-import { stripMessageMarkers } from '@/utils/redirect-url'
+import {
+  MESSAGE_HASH_PREFIX,
+  MESSAGE_QUERY_PARAM,
+  stripMessageMarkers,
+} from '@/utils/redirect-url'
 import { useRouter, type NextRouter } from 'next/router'
 import { useEffect, useRef } from 'react'
 
@@ -24,7 +28,10 @@ function clearMessageMarkersFromUrl(router: NextRouter) {
   const newUrl = stripMessageMarkers(
     window.location.pathname + window.location.search + window.location.hash,
   )
-  void router.replace(newUrl, undefined, { shallow: true })
+  router.replace(newUrl, undefined, { shallow: true }).catch(() => {
+    // A rejected navigation must not leave message text in the address bar.
+    window.history.replaceState(null, '', newUrl)
+  })
 }
 
 function sanitizeMessage(decodedMessage: string): string | null {
@@ -81,11 +88,15 @@ export function UrlHashMessageHandler({
       try {
         const hash = window.location.hash
 
-        if (!hash || hash.length <= 1 || !hash.startsWith('#send=')) {
+        if (
+          !hash ||
+          hash.length <= 1 ||
+          !hash.startsWith(MESSAGE_HASH_PREFIX)
+        ) {
           return false
         }
 
-        const encodedMessage = hash.slice(6)
+        const encodedMessage = hash.slice(MESSAGE_HASH_PREFIX.length)
 
         try {
           // Decode base64 to binary, then interpret as UTF-8
@@ -130,7 +141,7 @@ export function UrlHashMessageHandler({
     const processQueryMessage = () => {
       try {
         const params = new URLSearchParams(window.location.search)
-        const rawMessage = params.get('q')
+        const rawMessage = params.get(MESSAGE_QUERY_PARAM)
 
         if (!rawMessage) {
           return false

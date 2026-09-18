@@ -12,8 +12,8 @@ export function sanitizeRelativeRedirect(value: unknown): string | null {
   return value
 }
 
-const MESSAGE_QUERY_PARAM = 'q'
-const MESSAGE_HASH_PREFIX = '#send='
+export const MESSAGE_QUERY_PARAM = 'q'
+export const MESSAGE_HASH_PREFIX = '#send='
 
 /**
  * Removes the `?q=` and `#send=` prefill markers from a relative path. Those

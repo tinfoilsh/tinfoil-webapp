@@ -52,6 +52,18 @@ describe('UrlHashMessageHandler', () => {
     })
   })
 
+  it('falls back to a direct history swap if the router navigation rejects', async () => {
+    routerReplace.mockRejectedValueOnce(new Error('route cancelled'))
+    setLocation('/newchat?q=secret')
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    render(<UrlHashMessageHandler onMessageReady={vi.fn()} isReady />)
+    await vi.waitFor(() =>
+      expect(replaceState).toHaveBeenCalledWith(null, '', '/newchat'),
+    )
+    replaceState.mockRestore()
+  })
+
   it('waits until ready and does nothing without a marker', () => {
     setLocation('/newchat?q=later')
     const onMessageReady = vi.fn()

@@ -532,7 +532,7 @@ export function ProjectProvider({
           metadata: {
             projectId,
             documentId: document.id,
-            contentType: file.type,
+            contentType: file.type || 'text/plain',
             sizeBytes: file.size,
           },
         })

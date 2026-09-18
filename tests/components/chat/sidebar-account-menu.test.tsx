@@ -4,8 +4,9 @@ import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const DEFAULT_AS_PATH = '/c/chat-1?view=compact#bottom'
 let userState: { user: unknown } = { user: null }
-let routerAsPath = '/c/chat-1?view=compact#bottom'
+let routerAsPath = DEFAULT_AS_PATH
 
 vi.mock('next/router', () => ({
   useRouter: () => ({ asPath: routerAsPath }),
@@ -66,6 +67,7 @@ describe('SidebarAccountMenu', () => {
     vi.unstubAllGlobals()
   })
   beforeEach(() => {
+    routerAsPath = DEFAULT_AS_PATH
     userState = {
       user: {
         firstName: 'Ada',
@@ -227,16 +229,12 @@ describe('SidebarAccountMenu', () => {
   it('leaves prefilled message text out of the sign-in return URL', () => {
     userState = { user: null }
     routerAsPath = '/newchat?q=private+prompt&view=compact#send=c2VjcmV0'
-    try {
-      renderMenu({ isSignedIn: false, canSync: false })
-      fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
-      const href = screen
-        .getByRole('menuitem', { name: 'Sign in' })
-        .getAttribute('href')
-      expect(href).toBe('/signin?redirect_url=%2Fnewchat%3Fview%3Dcompact')
-    } finally {
-      routerAsPath = '/c/chat-1?view=compact#bottom'
-    }
+    renderMenu({ isSignedIn: false, canSync: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
+    const href = screen
+      .getByRole('menuitem', { name: 'Sign in' })
+      .getAttribute('href')
+    expect(href).toBe('/signin?redirect_url=%2Fnewchat%3Fview%3Dcompact')
   })
 
   it('still opens account settings for signed-in users', () => {
