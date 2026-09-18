@@ -683,7 +683,6 @@ export class ProjectStorageService {
       plaintext,
       ifMatch: null,
       idempotencyKey: newIdempotencyKey(),
-      metadata: { filename, contentType, projectId },
     })
 
     const now = new Date().toISOString()
