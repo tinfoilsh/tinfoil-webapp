@@ -35,7 +35,7 @@ describe('fetchSharedChat', () => {
       binary,
     })
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/shares/chat-id'),
+      expect.stringMatching(/\/api\/shares\/chat-id$/),
       { method: 'GET', cache: 'no-store' },
     )
   })
@@ -82,7 +82,7 @@ describe('share management', () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ shared }))
       await expect(getShareStatus('chat-id')).resolves.toBe(shared)
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/api/shares/chat-id/status'),
+        expect.stringMatching(/\/api\/shares\/chat-id\/status$/),
         { headers: { Authorization: 'Bearer owner-token' }, cache: 'no-store' },
       )
     },
@@ -104,7 +104,7 @@ describe('share management', () => {
     )
     await deleteSharedChat('chat-id')
     expect(fetch).toHaveBeenCalledWith(
-      expect.stringContaining('/api/shares/chat-id'),
+      expect.stringMatching(/\/api\/shares\/chat-id$/),
       { method: 'DELETE', headers: { Authorization: 'Bearer owner-token' } },
     )
   })

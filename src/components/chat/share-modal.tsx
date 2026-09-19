@@ -68,6 +68,7 @@ function ShareModalContent({
   const isMountedRef = useRef(false)
   const isBusy = isUploading || isRevoking
   const canChangeSharing = !isBusy && !isCheckingShare && hasShare !== null
+  const showShareEnabled = hasShare !== null && isShareEnabled
 
   useEffect(() => {
     isMountedRef.current = true
@@ -77,7 +78,7 @@ function ShareModalContent({
   }, [])
 
   useEffect(() => {
-    if (!isOpen || isBusy) return
+    if (!isOpen) return
     if (!chatId) {
       setHasShare(false)
       setIsCheckingShare(false)
@@ -103,7 +104,7 @@ function ShareModalContent({
     return () => {
       ignore = true
     }
-  }, [chatId, isOpen, isBusy, statusRetry])
+  }, [chatId, isOpen, statusRetry])
 
   // Reset modal state when chatId changes (different chat)
   useEffect(() => {
@@ -360,6 +361,7 @@ function ShareModalContent({
         variant: 'destructive',
         position: 'top-left',
       })
+      setStatusRetry((value) => value + 1)
     } finally {
       setIsUploading(false)
     }
@@ -367,7 +369,7 @@ function ShareModalContent({
 
   const handleShareEnabledChange = async (enabled: boolean) => {
     if (!canChangeSharing) return
-    if (enabled || !chatId) {
+    if (enabled || !chatId || !hasShare) {
       setIsShareEnabled(enabled)
       return
     }
@@ -386,6 +388,7 @@ function ShareModalContent({
         variant: 'destructive',
         position: 'top-left',
       })
+      setStatusRetry((value) => value + 1)
     } finally {
       setIsRevoking(false)
     }
@@ -456,7 +459,9 @@ function ShareModalContent({
                   <CardContent className="p-0">
                     <div className="flex items-start gap-4 p-4">
                       <div className="mt-1 rounded-full bg-surface-chat p-2 text-content-secondary">
-                        {isShareEnabled ? (
+                        {hasShare === null ? (
+                          <LinkIcon className="h-5 w-5" />
+                        ) : showShareEnabled ? (
                           <GlobeAltIcon className="h-5 w-5" />
                         ) : (
                           <LockClosedIcon className="h-5 w-5" />
@@ -496,7 +501,7 @@ function ShareModalContent({
                           <div className="relative flex items-center">
                             <input
                               type="checkbox"
-                              checked={isShareEnabled}
+                              checked={showShareEnabled}
                               disabled={!canChangeSharing}
                               onChange={(e) =>
                                 void handleShareEnabledChange(e.target.checked)
@@ -525,7 +530,7 @@ function ShareModalContent({
                           </p>
                         )}
 
-                        {isShareEnabled && !shareUrl && (
+                        {showShareEnabled && !shareUrl && (
                           <div className="flex justify-start pt-2">
                             <button
                               onClick={handleShareLink}

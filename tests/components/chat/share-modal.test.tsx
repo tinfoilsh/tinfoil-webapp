@@ -149,6 +149,41 @@ describe('ShareModal revocation', () => {
       'chat-id',
       new Uint8Array([4, 5, 6]),
     )
+    expect(mocks.getShareStatus).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels sharing locally when no link has been created', async () => {
+    mocks.deleteSharedChat.mockRejectedValue(new Error('Offline'))
+    render(<ShareModal {...props} />)
+    fireEvent.click(await readyCheckbox())
+    expect(screen.getByRole('checkbox')).toBeChecked()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.getByRole('checkbox')).toBeEnabled()
+    expect(screen.getByText('Private')).toBeVisible()
+    expect(mocks.deleteSharedChat).not.toHaveBeenCalled()
+    expect(mocks.toast).not.toHaveBeenCalled()
+  })
+
+  it('does not show stale enabled controls while reopened status is unknown', async () => {
+    shared = true
+    const view = render(<ShareModal {...props} />)
+    expect(await readyCheckbox()).toBeChecked()
+    view.rerender(<ShareModal {...props} isOpen={false} />)
+    const status = deferred<boolean>()
+    mocks.getShareStatus.mockReturnValueOnce(status.promise)
+    view.rerender(<ShareModal {...props} />)
+    expect(screen.getByRole('checkbox')).toBeDisabled()
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(
+      screen.queryByRole('button', { name: 'Create share link' }),
+    ).not.toBeInTheDocument()
+    await act(async () => status.reject(new Error('Offline')))
+    expect(screen.getByText('Share status unavailable')).toBeVisible()
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.queryByText('Private')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry share status' }))
+    expect(await readyCheckbox()).toBeChecked()
   })
 
   it('discovers an existing share after remount and revokes without the original key', async () => {
@@ -242,11 +277,12 @@ describe('ShareModal revocation', () => {
     expect(screen.getByText('Private')).toBeVisible()
   })
 
-  it('ignores a status response belonging to a different conversation', async () => {
+  it('ignores a stale status response after reopening the same conversation', async () => {
     const status = deferred<boolean>()
     mocks.getShareStatus.mockReturnValueOnce(status.promise)
     const view = render(<ShareModal {...props} />)
-    view.rerender(<ShareModal {...props} chatId="other-chat" />)
+    view.rerender(<ShareModal {...props} isOpen={false} />)
+    view.rerender(<ShareModal {...props} />)
     expect(await readyCheckbox()).not.toBeChecked()
     await act(async () => status.resolve(true))
     expect(screen.getByRole('checkbox')).not.toBeChecked()
