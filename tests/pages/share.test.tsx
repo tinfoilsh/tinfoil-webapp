@@ -134,4 +134,19 @@ describe('SharePage', () => {
     )
     expect(mocks.shareOpen).not.toHaveBeenCalled()
   })
+
+  it('does not decrypt or render a revoked share', async () => {
+    window.location.hash = `#v2:${VALID_SHARE_KEY}`
+    const { SharedChatNotFoundError } = await import('@/services/share-api')
+    mocks.fetchSharedChat.mockRejectedValue(new SharedChatNotFoundError())
+    render(<SharePage />)
+    expect(
+      await screen.findByRole('heading', { name: 'Invalid Share Link' }),
+    ).toBeVisible()
+    expect(
+      screen.getByText('This shared chat does not exist or has been deleted'),
+    ).toBeVisible()
+    expect(mocks.shareOpen).not.toHaveBeenCalled()
+    expect(mocks.sharedChatView).not.toHaveBeenCalled()
+  })
 })

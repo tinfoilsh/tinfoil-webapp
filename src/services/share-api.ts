@@ -21,6 +21,36 @@ export class SharedChatNotFoundError extends Error {}
 
 export class UnsupportedShareFormatError extends Error {}
 
+export async function getShareStatus(chatId: string): Promise<boolean> {
+  const response = await fetch(`${API_BASE_URL}/api/shares/${chatId}/status`, {
+    headers: await getAuthHeaders(),
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to check share status: ${response.status}`)
+  }
+  const data: unknown = await response.json()
+  if (
+    typeof data !== 'object' ||
+    data === null ||
+    !('shared' in data) ||
+    typeof data.shared !== 'boolean'
+  ) {
+    throw new Error('Invalid share status response')
+  }
+  return data.shared
+}
+
+export async function deleteSharedChat(chatId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/shares/${chatId}`, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  })
+  if (!response.ok) {
+    throw new Error(`Failed to revoke shared chat: ${response.status}`)
+  }
+}
+
 /**
  * Upload v1 binary encrypted shared chat data to the server.
  */
@@ -57,6 +87,7 @@ export async function fetchSharedChat(
 ): Promise<FetchedShareData> {
   const response = await fetch(`${API_BASE_URL}/api/shares/${chatId}`, {
     method: 'GET',
+    cache: 'no-store',
   })
 
   if (!response.ok) {
