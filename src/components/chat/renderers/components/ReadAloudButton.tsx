@@ -34,7 +34,9 @@ export function ReadAloudButton({
         ? 'Stop reading aloud'
         : status === 'paused'
           ? 'Resume reading aloud'
-          : 'Read aloud'
+          : variant === 'menu'
+            ? 'Read'
+            : 'Read aloud'
 
   useEffect(() => () => speechPlayer.stop(owner), [owner, content, textFormat])
 
@@ -80,7 +82,7 @@ export function ReadAloudButton({
                 ? 'Stop'
                 : status === 'paused'
                   ? 'Resume'
-                  : 'Read aloud'}
+                  : 'Read'}
           </span>
         )}
       </button>
