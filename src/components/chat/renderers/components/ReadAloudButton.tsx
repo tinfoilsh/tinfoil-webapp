@@ -37,24 +37,24 @@ export function ReadAloudButton({
           : variant === 'menu'
             ? 'Read'
             : 'Read aloud'
+  const tooltipLabel =
+    status === 'loading' ? 'Buffering audio — click to cancel' : label
 
   useEffect(() => () => speechPlayer.stop(owner), [owner, content, textFormat])
 
   return (
-    <div className="group/speech relative flex items-center">
+    <div className="relative flex items-center">
       <button
         type="button"
         aria-label={label}
         aria-pressed={active}
-        title={
-          status === 'loading' ? 'Buffering audio — click to cancel' : label
-        }
+        title={variant === 'menu' ? tooltipLabel : undefined}
         onClick={() => {
           if (status === 'paused') speechPlayer.resume(owner)
           else if (active) speechPlayer.stop(owner)
           else speechPlayer.read(owner, content, textFormat)
         }}
-        className={`flex items-center whitespace-nowrap transition-colors ${variant === 'menu' ? 'gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium' : 'rounded px-2 py-2'} ${
+        className={`group/speech relative flex items-center whitespace-nowrap transition-colors ${variant === 'menu' ? 'gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium' : 'rounded px-2 py-2'} ${
           status === 'playing'
             ? 'animate-pulse bg-red-500/10 text-red-600 hover:bg-red-500/20 motion-reduce:animate-none dark:text-red-400'
             : variant === 'menu'
@@ -73,6 +73,14 @@ export function ReadAloudButton({
           <StopIcon className="h-3.5 w-3.5" aria-hidden="true" />
         ) : (
           <SpeakerWaveIcon className="h-3.5 w-3.5" aria-hidden="true" />
+        )}
+        {variant === 'icon' && (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/speech:opacity-100 group-focus-visible/speech:opacity-100"
+          >
+            {tooltipLabel}
+          </span>
         )}
         {variant === 'menu' && (
           <span>
