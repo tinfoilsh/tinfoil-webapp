@@ -1,6 +1,6 @@
 {
   "name": "tinfoil-chat",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "scripts": {
     "dev": "npm run dev:frontend",
     "dev:frontend": "next dev",
