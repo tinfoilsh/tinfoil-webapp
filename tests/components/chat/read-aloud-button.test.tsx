@@ -30,20 +30,58 @@ describe('read aloud button', () => {
 
   it('starts on click, exposes buffering and stop controls, and returns to idle', async () => {
     render(<ReadAloudButton content="Hello." />)
+    expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
+      'animate-pulse',
+      'text-red-600',
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
     expect(
       screen.getByRole('button', { name: 'Cancel read aloud' }),
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Cancel read aloud' }),
+    ).not.toHaveClass('animate-pulse', 'text-red-600')
     await waitFor(() => expect(generation.requests).toHaveLength(1))
     await act(async () => {
       generation.requests[0].push(2)
       generation.requests[0].finish()
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Stop reading aloud' }))
+    const stopButton = screen.getByRole('button', {
+      name: 'Stop reading aloud',
+    })
+    expect(stopButton).toHaveClass(
+      'animate-pulse',
+      'text-red-600',
+      'dark:text-red-400',
+      'motion-reduce:animate-none',
+    )
+    fireEvent.click(stopButton)
     expect(
       screen.getByRole('button', { name: 'Read aloud' }),
     ).toBeInTheDocument()
     expect(audio.close).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
+      'animate-pulse',
+      'text-red-600',
+    )
+  })
+
+  it('clears the red pulse when playback finishes naturally', async () => {
+    render(<ReadAloudButton content="Hello." />)
+    fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
+    await waitFor(() => expect(generation.requests).toHaveLength(1))
+    await act(async () => {
+      generation.requests[0].push(2)
+      generation.requests[0].finish()
+    })
+    expect(
+      screen.getByRole('button', { name: 'Stop reading aloud' }),
+    ).toHaveClass('animate-pulse', 'text-red-600')
+    act(() => audio.advanceTo(3))
+    expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
+      'animate-pulse',
+      'text-red-600',
+    )
   })
 
   it('aborts pending generation when the message changes', async () => {

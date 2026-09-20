@@ -37,11 +37,15 @@ export function ReadAloudButton({ content }: { content: string }) {
         onClick={() =>
           active ? speechPlayer.stop(owner) : speechPlayer.read(owner, content)
         }
-        className="flex items-center rounded px-2 py-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+        className={`flex items-center rounded px-2 py-2 transition-colors ${
+          status === 'playing'
+            ? 'animate-pulse bg-red-500/10 text-red-600 hover:bg-red-500/20 motion-reduce:animate-none dark:text-red-400'
+            : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
+        }`}
       >
         {status === 'loading' ? (
           <ArrowPathIcon
-            className="h-3.5 w-3.5 animate-spin"
+            className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
             aria-hidden="true"
           />
         ) : active ? (
