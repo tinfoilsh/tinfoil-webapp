@@ -246,7 +246,7 @@ describe('useChatMessaging message edits', () => {
     { action: 'regenerate', quote: 'First answer', content: 'Second question' },
     { action: 'regenerate', quote: 'First answer', content: '' },
   ])(
-    'preserves quote $quote when $action resends "$content"',
+    'preserves quote $quote when applying $action to "$content"',
     async ({ action, quote, content }) => {
       const chat = makeChat()
       const messageIndex = 2
@@ -271,6 +271,17 @@ describe('useChatMessaging message edits', () => {
         }
       })
 
+      await vi.waitFor(() => {
+        expect(result.current.currentChat.messages.at(-1)?.content).toBe(
+          'New answer',
+        )
+        expect(sessionSaveMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            messages: result.current.currentChat.messages,
+          }),
+        )
+      })
+
       expect(sendChatStreamMock).toHaveBeenCalledTimes(1)
       const request = sendChatStreamMock.mock.calls[0][0] as {
         updatedMessages: Chat['messages']
@@ -287,14 +298,6 @@ describe('useChatMessaging message edits', () => {
       expect(result.current.currentChat.messages).toHaveLength(messageIndex + 2)
       expect(result.current.currentChat.messages[messageIndex]).toEqual(
         request.updatedMessages[messageIndex],
-      )
-      expect(result.current.currentChat.messages.at(-1)?.content).toBe(
-        'New answer',
-      )
-      expect(sessionSaveMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          messages: result.current.currentChat.messages,
-        }),
       )
     },
   )
