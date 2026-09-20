@@ -1780,6 +1780,7 @@ export function useChatMessaging({
         attachments.length > 0 ? attachments : undefined,
         undefined,
         truncatedMessages,
+        originalMessage.quote,
       )
     },
     [loadingState, currentChat, handleQuery],
