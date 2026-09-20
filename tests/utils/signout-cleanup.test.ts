@@ -14,6 +14,8 @@ import { resetSyncHealth } from '@/services/cloud/sync-health'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
 import { projectEvents } from '@/services/project/project-events'
+import { SPEECH } from '@/services/speech/constants'
+import { speechPlayer } from '@/services/speech/player'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { resetSyncEnclaveClient } from '@/services/sync-enclave'
@@ -22,7 +24,19 @@ import {
   performUserSwitchCleanup,
   retryFailedStorageCleanup,
 } from '@/utils/signout-cleanup'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { controlledSpeech, FakeAudioContext } from '../services/speech/fixtures'
+
+const speechMocks = vi.hoisted(() => ({
+  stream: vi.fn(),
+  AudioContext: vi.fn(),
+}))
+vi.mock('@/services/speech/stream', () => ({
+  streamSpeech: speechMocks.stream,
+}))
+vi.mock('@/utils/audio-context', () => ({
+  getAudioContextClass: () => speechMocks.AudioContext,
+}))
 
 vi.mock('@/components/chat/renderers', () => ({
   resetRendererRegistry: vi.fn(),
@@ -77,6 +91,7 @@ vi.mock('@/services/sync-enclave', () => ({
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
   logInfo: vi.fn(),
+  logWarning: vi.fn(),
 }))
 
 describe('performSignoutCleanup', () => {
@@ -105,6 +120,49 @@ describe('performSignoutCleanup', () => {
     localStorage.clear()
     sessionStorage.clear()
   })
+
+  afterEach(() => speechPlayer.stop())
+
+  it.each([
+    ['signout', () => performSignoutCleanup()],
+    [
+      'signout preserving the encryption key',
+      () => performSignoutCleanup({ preserveEncryptionKey: true }),
+    ],
+    ['account switch', () => performUserSwitchCleanup('user_new')],
+  ])(
+    'stops speech immediately during %s, before asynchronous storage cleanup',
+    async (_name, cleanup) => {
+      const audio = new FakeAudioContext()
+      const generation = controlledSpeech()
+      speechMocks.AudioContext.mockImplementation(function () {
+        return audio
+      })
+      speechMocks.stream.mockImplementation(generation.stream)
+      speechPlayer.read(Symbol('private response'), 'Private response.')
+      await vi.waitFor(() => expect(generation.requests).toHaveLength(1))
+      generation.requests[0].push(SPEECH.START_BUFFER_SECONDS)
+      await vi.waitFor(() =>
+        expect(speechPlayer.getSnapshot().status).toBe('playing'),
+      )
+      let finishReset!: () => void
+      vi.mocked(indexedDBStorage.resetForAccountChange).mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          finishReset = resolve
+        }),
+      )
+      const result = cleanup()
+      try {
+        expect(speechPlayer.getSnapshot().status).toBe('idle')
+        expect(generation.requests[0].signal.aborted).toBe(true)
+        expect(audio.scheduled.every((source) => source.stopped)).toBe(true)
+        expect(audio.close).toHaveBeenCalledOnce()
+      } finally {
+        finishReset()
+        await result
+      }
+    },
+  )
 
   it('preserves the browser onboarding flag while clearing user data', async () => {
     localStorage.setItem(SETTINGS_HAS_SEEN_ONBOARDING, 'true')

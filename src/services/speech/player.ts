@@ -87,6 +87,7 @@ export class SpeechPlayer {
       }
       session.nodes.clear()
       session.chunks.clear()
+      session.text = []
       if (session.context.state !== 'closed') {
         void session.context.close().catch(() => undefined)
       }

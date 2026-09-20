@@ -20,6 +20,7 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { resetChatRecoveryState } from '@/services/inference/chat-recovery'
 import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
 import { projectEvents } from '@/services/project/project-events'
+import { speechPlayer } from '@/services/speech/player'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { projectCache } from '@/services/storage/project-cache'
@@ -46,6 +47,7 @@ interface ClearUserDataOptions {
 }
 
 async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
+  speechPlayer.stop()
   const {
     context,
     preserveUserId,
