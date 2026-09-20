@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { createSpeech } = vi.hoisted(() => ({ createSpeech: vi.fn() }))
+const { createSpeech, ready } = vi.hoisted(() => ({
+  createSpeech: vi.fn(),
+  ready: vi.fn(),
+}))
 vi.mock('tinfoil', () => ({
   TinfoilAI: class {
+    ready = ready
     audio = { speech: { create: createSpeech } }
   },
 }))
@@ -13,6 +17,7 @@ let stderr: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
   vi.resetModules()
   createSpeech.mockReset()
+  ready.mockReset().mockResolvedValue(undefined)
   stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
   vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
   vi.stubGlobal(
@@ -30,6 +35,41 @@ afterEach(() => {
 })
 
 describe('speech smoke diagnostics', () => {
+  it('finishes verification before starting either benchmark batch', async () => {
+    let finishVerification!: () => void
+    ready.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishVerification = resolve
+      }),
+    )
+    createSpeech.mockImplementation(
+      async () =>
+        new Response(new Uint8Array([0, 0]), {
+          headers: { 'Content-Type': 'audio/pcm' },
+        }),
+    )
+    await import('../../scripts/smoke-speech.mjs')
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce())
+    expect(createSpeech).not.toHaveBeenCalled()
+    finishVerification()
+    await vi.waitFor(() =>
+      expect(process.stdout.write).toHaveBeenCalledTimes(2),
+    )
+    expect(createSpeech).toHaveBeenCalledTimes(4)
+  })
+  it('accepts whitespace before content-type parameters', async () => {
+    createSpeech.mockImplementation(
+      async () =>
+        new Response(new Uint8Array([0, 0]), {
+          headers: { 'Content-Type': 'audio/pcm ; charset=binary' },
+        }),
+    )
+    await import('../../scripts/smoke-speech.mjs')
+    await vi.waitFor(() =>
+      expect(process.stdout.write).toHaveBeenCalledTimes(2),
+    )
+    expect(stderr).not.toHaveBeenCalled()
+  })
   it.each([
     [
       () => new Response(null, { headers: { 'Content-Type': 'audio/pcm' } }),

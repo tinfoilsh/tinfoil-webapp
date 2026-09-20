@@ -252,23 +252,26 @@ describe('DefaultMessageRenderer read aloud', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('does not offer speech while a response is streaming', () => {
-    render(
-      <Renderer
-        message={{
-          role: 'assistant',
-          content: 'Partial.',
-          timestamp: new Date(),
-        }}
-        messageIndex={0}
-        model={model}
-        isDarkMode={false}
-        isLastMessage
-        isStreaming
-      />,
-    )
-    expect(
-      screen.queryByRole('button', { name: 'Read aloud' }),
-    ).not.toBeInTheDocument()
-  })
+  it.each([true, false])(
+    'does not offer speech while a response is streaming (last=%s)',
+    (isLastMessage) => {
+      render(
+        <Renderer
+          message={{
+            role: 'assistant',
+            content: 'Partial.',
+            timestamp: new Date(),
+          }}
+          messageIndex={0}
+          model={model}
+          isDarkMode={false}
+          isLastMessage={isLastMessage}
+          isStreaming
+        />,
+      )
+      expect(
+        screen.queryByRole('button', { name: 'Read aloud' }),
+      ).not.toBeInTheDocument()
+    },
+  )
 })

@@ -5,6 +5,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('speech text', () => {
+  it.each(['<br>', '<br/>', '<br />', '<BR>'])(
+    'preserves word boundaries around %s',
+    (tag) => {
+      expect(prepareSpeechText(`Hello${tag}world.`)).toBe('Hello\nworld.')
+    },
+  )
+
+  it('silences reference-style citation badges but keeps descriptive link labels', () => {
+    expect(
+      prepareSpeechText(
+        'See [1] [2][source] [docs][source] for details.\n\n[1]: https://example.com\n[source]: https://example.com',
+      ),
+    ).toBe('See docs for details.')
+  })
   it('preserves literal Markdown-like characters in a plain-text selection', () => {
     expect(
       prepareSpeechText('  **literal** [1](source) `code`  ', 'plain'),

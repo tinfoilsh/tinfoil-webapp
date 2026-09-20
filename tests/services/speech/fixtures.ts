@@ -60,6 +60,8 @@ class FakeAudioSource {
 export interface ControlledRequest {
   text: string
   signal: AbortSignal
+  consumed: number
+  finished: boolean
   push: (seconds: number, sample?: number) => void
   finish: () => void
   fail: (error: Error) => void
@@ -74,11 +76,13 @@ export function controlledSpeech() {
       queue.push(item)
       wake?.()
     }
-    const abort = () => enqueue(new DOMException('Aborted', 'AbortError'))
+    const abort = () => wake?.()
     signal.addEventListener('abort', abort, { once: true })
-    requests.push({
+    const request: ControlledRequest = {
       text,
       signal,
+      consumed: 0,
+      finished: false,
       push: (seconds, sample = 0) =>
         enqueue(
           new Float32Array(Math.round(seconds * SPEECH.SAMPLE_RATE)).fill(
@@ -87,7 +91,8 @@ export function controlledSpeech() {
         ),
       finish: () => enqueue(null),
       fail: (error) => enqueue(error),
-    })
+    }
+    requests.push(request)
     try {
       for (;;) {
         signal.throwIfAborted()
@@ -98,9 +103,13 @@ export function controlledSpeech() {
         const item = queue.shift()
         if (item === null) return
         if (item instanceof Error) throw item
-        if (item) yield item
+        if (item) {
+          yield item
+          request.consumed++
+        }
       }
     } finally {
+      request.finished = true
       signal.removeEventListener('abort', abort)
     }
   }

@@ -27,7 +27,7 @@ async function measure(client, input) {
     { signal: AbortSignal.timeout(TIMEOUT_MS), maxRetries: 0 },
   )
   assert.equal(
-    response.headers.get('content-type')?.split(';')[0],
+    response.headers.get('content-type')?.split(';')[0].trim(),
     'audio/pcm',
     'Expected PCM audio from the speech endpoint',
   )
@@ -67,6 +67,7 @@ async function main() {
   const { key } = await keyResponse.json()
   assert.equal(typeof key, 'string', 'Session endpoint did not return a key')
   const client = new TinfoilAI({ apiKey: key, transport: 'ehbp' })
+  await client.ready()
   for (const concurrency of [1, 2]) {
     const start = performance.now()
     const results =

@@ -13,7 +13,6 @@ export type SpeechTextFormat = 'markdown' | 'plain'
 function readableText(node: Nodes): string {
   switch (node.type) {
     case 'code':
-    case 'html':
     case 'definition':
     case 'footnoteDefinition':
     case 'footnoteReference':
@@ -26,12 +25,18 @@ function readableText(node: Nodes): string {
     case 'math':
     case 'inlineMath':
       return node.value
+    case 'html':
+      return /^<br\s*\/?>$/i.test(node.value.trim()) ? '\n' : ''
     case 'break':
       return '\n'
-    case 'link': {
+    case 'link':
+    case 'linkReference': {
       const label = node.children.map(readableText).join('')
       // Citation badges and autolinks do not add useful narration.
-      return label === node.url || /^\[?\d+\]?$/.test(label) ? '' : label
+      return (node.type === 'link' && label === node.url) ||
+        /^\[?\d+\]?$/.test(label)
+        ? ''
+        : label
     }
     default: {
       if (!('children' in node)) return ''

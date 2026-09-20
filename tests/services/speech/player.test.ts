@@ -76,7 +76,7 @@ describe('buffered speech playback', () => {
   it('holds a single incomplete chunk until enough playable seconds exist', async () => {
     await start(1)
     generation.requests[0].push(SPEECH.START_BUFFER_SECONDS - 1)
-    await Promise.resolve()
+    await vi.waitFor(() => expect(generation.requests[0].consumed).toBe(1))
     expect(audio.scheduled).toHaveLength(0)
     generation.requests[0].push(1)
     await vi.waitFor(() => expect(audio.scheduled).toHaveLength(2))
@@ -138,7 +138,7 @@ describe('buffered speech playback', () => {
     audio.advanceTo(SPEECH.START_BUFFER_SECONDS + 1)
     expect(player.getSnapshot().status).toBe('loading')
     generation.requests[0].push(1)
-    await Promise.resolve()
+    await vi.waitFor(() => expect(generation.requests[0].consumed).toBe(2))
     expect(audio.scheduled).toHaveLength(1)
     generation.requests[0].finish()
     await vi.waitFor(() => expect(audio.scheduled).toHaveLength(2))
@@ -172,7 +172,11 @@ describe('buffered speech playback', () => {
     expect(audio.scheduled.every((node) => node.stopped)).toBe(true)
     generation.requests[1].push(20)
     generation.requests[1].finish()
-    await Promise.resolve()
+    await vi.waitFor(() =>
+      expect(generation.requests.every((request) => request.finished)).toBe(
+        true,
+      ),
+    )
     expect(audio.scheduled).toHaveLength(1)
     expect(player.getSnapshot().status).toBe('idle')
   })
