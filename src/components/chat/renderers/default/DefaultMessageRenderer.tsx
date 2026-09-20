@@ -25,6 +25,7 @@ import { isImeComposition } from '../../keyboard-utils'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
+import { ReadAloudButton } from '../components/ReadAloudButton'
 import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
@@ -837,6 +838,13 @@ const DefaultMessageComponent = ({
                   content={message.content}
                   isDarkMode={isDarkMode}
                 />
+                {message.role === 'assistant' &&
+                  !isStreaming &&
+                  !message.isThinking &&
+                  !message.isError &&
+                  !isLimitError && (
+                    <ReadAloudButton content={message.content} />
+                  )}
                 {/* Regenerate button - only on last assistant message */}
                 {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
                   <div className="group/regen relative">
