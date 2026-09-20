@@ -236,6 +236,69 @@ describe('useChatMessaging message edits', () => {
     pendingStreams.clear()
   })
 
+  it.each([
+    {
+      action: 'edit',
+      quote: 'First answer\nQuoted context',
+      content: 'Second question',
+    },
+    { action: 'edit', quote: undefined, content: 'Second question' },
+    { action: 'regenerate', quote: 'First answer', content: 'Second question' },
+    { action: 'regenerate', quote: 'First answer', content: '' },
+  ])(
+    'preserves quote $quote when $action resends "$content"',
+    async ({ action, quote, content }) => {
+      const chat = makeChat()
+      const messageIndex = 2
+      chat.messages[messageIndex] = {
+        ...chat.messages[messageIndex],
+        content,
+        quote,
+      }
+      const stream = createOpenStream()
+      stream.send({ choices: [{ delta: { content: 'New answer' } }] })
+      stream.send({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+      stream.close()
+      sendChatStreamMock.mockResolvedValue(stream.stream)
+      const { result } = renderMessaging(chat)
+      const expectedContent = action === 'edit' ? 'Edited question' : content
+
+      await act(async () => {
+        if (action === 'edit') {
+          result.current.messaging.editMessage(messageIndex, expectedContent)
+        } else {
+          result.current.messaging.regenerateMessage(messageIndex)
+        }
+      })
+
+      expect(sendChatStreamMock).toHaveBeenCalledTimes(1)
+      const request = sendChatStreamMock.mock.calls[0][0] as {
+        updatedMessages: Chat['messages']
+      }
+      expect(request.updatedMessages).toHaveLength(messageIndex + 1)
+      expect(request.updatedMessages.slice(0, messageIndex)).toEqual(
+        chat.messages.slice(0, messageIndex),
+      )
+      expect(request.updatedMessages[messageIndex]).toMatchObject({
+        role: 'user',
+        content: expectedContent,
+        quote,
+      })
+      expect(result.current.currentChat.messages).toHaveLength(messageIndex + 2)
+      expect(result.current.currentChat.messages[messageIndex]).toEqual(
+        request.updatedMessages[messageIndex],
+      )
+      expect(result.current.currentChat.messages.at(-1)?.content).toBe(
+        'New answer',
+      )
+      expect(sessionSaveMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          messages: result.current.currentChat.messages,
+        }),
+      )
+    },
+  )
+
   it('deletes a single message and persists the shortened history', () => {
     const { result } = renderMessaging(makeChat())
 
