@@ -3,7 +3,11 @@ import { logWarning } from '@/utils/error-handling'
 import { SPEECH } from './constants'
 import { SpeechError, speechErrorMessage } from './errors'
 import { streamSpeech, type SpeechStream } from './stream'
-import { prepareSpeechText, splitSpeechText } from './text'
+import {
+  prepareSpeechText,
+  splitSpeechText,
+  type SpeechTextFormat,
+} from './text'
 
 export interface SpeechSnapshot {
   owner: symbol | null
@@ -95,10 +99,14 @@ export class SpeechPlayer {
     this.update(IDLE)
   }
 
-  read(owner: symbol, content: string): void {
+  read(
+    owner: symbol,
+    content: string,
+    format: SpeechTextFormat = 'markdown',
+  ): void {
     this.stop()
     try {
-      const text = splitSpeechText(prepareSpeechText(content))
+      const text = splitSpeechText(prepareSpeechText(content, format))
       if (!text.length) throw new SpeechError('empty')
       const context = this.audioContext()
       const session: Session = {

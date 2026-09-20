@@ -1,5 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { PiChatCircleText, PiQuotes } from 'react-icons/pi'
+import { ReadAloudButton } from './renderers/components/ReadAloudButton'
 
 type PopoverPosition = {
   top: number
@@ -18,6 +25,7 @@ const MIN_SELECTION_LENGTH = 2
 
 // Vertical offset (in pixels) above the selection for the popover.
 const POPOVER_VERTICAL_OFFSET = 40
+const POPOVER_VIEWPORT_PADDING = 8
 
 export function QuoteSelectionPopover({
   enabled = true,
@@ -129,6 +137,21 @@ export function QuoteSelectionPopover({
     }
   }, [enabled, updateFromSelection, hidePopover])
 
+  useLayoutEffect(() => {
+    if (!position || !popoverRef.current) return
+    const halfWidth = popoverRef.current.getBoundingClientRect().width / 2
+    const left = Math.max(
+      halfWidth + POPOVER_VIEWPORT_PADDING,
+      Math.min(
+        position.left,
+        window.innerWidth - halfWidth - POPOVER_VIEWPORT_PADDING,
+      ),
+    )
+    const top = Math.max(POPOVER_VIEWPORT_PADDING, position.top)
+    if (left !== position.left || top !== position.top)
+      setPosition({ left, top })
+  }, [position, onAsk])
+
   const handleQuoteClick = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
@@ -191,6 +214,11 @@ export function QuoteSelectionPopover({
           <span>Ask</span>
         </button>
       )}
+      <ReadAloudButton
+        content={selectedText}
+        textFormat="plain"
+        variant="menu"
+      />
     </div>
   )
 }

@@ -8,6 +8,8 @@ import { SpeechError } from './errors'
 
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath)
 
+export type SpeechTextFormat = 'markdown' | 'plain'
+
 function readableText(node: Nodes): string {
   switch (node.type) {
     case 'code':
@@ -48,10 +50,14 @@ function readableText(node: Nodes): string {
   }
 }
 
-export function prepareSpeechText(markdown: string): string {
+export function prepareSpeechText(
+  markdown: string,
+  format: SpeechTextFormat = 'markdown',
+): string {
   if (markdown.length > SPEECH.MAX_TEXT_CHARACTERS) {
     throw new SpeechError('too-long')
   }
+  if (format === 'plain') return markdown.trim()
   return readableText(parser.parse(markdown))
     .replace(/[^\S\n]+/g, ' ')
     .replace(/ *\n+ */g, '\n')

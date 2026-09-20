@@ -5,6 +5,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 afterEach(() => vi.unstubAllGlobals())
 
 describe('speech text', () => {
+  it('preserves literal Markdown-like characters in a plain-text selection', () => {
+    expect(
+      prepareSpeechText('  **literal** [1](source) `code`  ', 'plain'),
+    ).toBe('**literal** [1](source) `code`')
+    expect(() =>
+      prepareSpeechText('x'.repeat(SPEECH.MAX_TEXT_CHARACTERS + 1), 'plain'),
+    ).toThrow('too-long')
+  })
   it.each([
     '',
     `${'A sentence with enough words for narration. '.repeat(20)}Last sentence!`,
