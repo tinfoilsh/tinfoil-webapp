@@ -1,6 +1,8 @@
 export const SPEECH = {
   MODEL: 'qwen3-tts',
   VOICE: 'aiden',
+  INSTRUCTIONS:
+    'Read in a calm, natural conversational voice with a steady pace, consistent pitch range, and restrained expression. Use natural sentence pauses and maintain an even narration style.',
   // Qwen's raw HTTP audio stream is mono, signed 16-bit little-endian PCM.
   SAMPLE_RATE: 24000,
   CHANNELS: 1,

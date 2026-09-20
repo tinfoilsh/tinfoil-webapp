@@ -77,6 +77,7 @@ export const streamSpeech: SpeechStream = async function* (text, signal) {
       {
         model: SPEECH.MODEL,
         voice: SPEECH.VOICE,
+        instructions: SPEECH.INSTRUCTIONS,
         input: text,
         response_format: 'pcm',
         stream_format: 'audio',

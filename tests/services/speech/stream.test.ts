@@ -130,11 +130,46 @@ describe('speech SDK requests', () => {
     expect(JSON.parse(options.body as string)).toEqual({
       model: SPEECH.MODEL,
       voice: SPEECH.VOICE,
+      instructions: SPEECH.INSTRUCTIONS,
       input: 'Hello.',
       response_format: 'pcm',
       stream_format: 'audio',
     })
     expect(options.signal).toBeDefined()
+  })
+
+  it('sends identical style guidance separately from the text of parallel chunks', async () => {
+    const transport = clientWithResponse(
+      () =>
+        new Response(bytes([0, 0]), {
+          headers: { 'Content-Type': 'audio/pcm' },
+        }),
+    )
+    const chunks = [
+      'Here is the first part.',
+      'This continues the explanation.',
+    ]
+    await expect(
+      Promise.all(
+        chunks.map((text) =>
+          collect(streamSpeech(text, new AbortController().signal)),
+        ),
+      ),
+    ).resolves.toEqual([[0], [0]])
+    expect(
+      transport.mock.calls.map(([, options]) =>
+        JSON.parse(options!.body as string),
+      ),
+    ).toEqual(
+      chunks.map((input) => ({
+        model: SPEECH.MODEL,
+        voice: SPEECH.VOICE,
+        instructions: SPEECH.INSTRUCTIONS,
+        input,
+        response_format: 'pcm',
+        stream_format: 'audio',
+      })),
+    )
   })
 
   it('rejects unexpected WAV or JSON instead of interpreting it as PCM', async () => {
