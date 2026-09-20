@@ -95,6 +95,45 @@ describe('read aloud button', () => {
     ).toBeInTheDocument()
   })
 
+  it.each(['resume', 'stop'])(
+    'can %s paused speech without generating it again',
+    async (action) => {
+      render(<ReadAloudButton content="Hello." />)
+      fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
+      await waitFor(() => expect(generation.requests).toHaveLength(1))
+      await act(async () => {
+        generation.requests[0].push(2)
+        generation.requests[0].finish()
+      })
+      act(() => {
+        audio.state = 'suspended'
+        audio.onstatechange?.()
+      })
+      expect(screen.getByRole('status')).toHaveTextContent('Speech paused')
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      if (action === 'resume') {
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Resume reading aloud' }),
+        )
+        await waitFor(() =>
+          expect(
+            screen.getByRole('button', { name: 'Stop reading aloud' }),
+          ).toHaveClass('animate-pulse'),
+        )
+        expect(audio.scheduled).toHaveLength(1)
+      } else {
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Stop reading aloud' }),
+        )
+        expect(
+          screen.getByRole('button', { name: 'Read aloud' }),
+        ).toBeInTheDocument()
+        expect(audio.close).toHaveBeenCalledOnce()
+      }
+      expect(generation.requests).toHaveLength(1)
+    },
+  )
+
   it('aborts pending generation on unmount', async () => {
     const view = render(<ReadAloudButton content="Original." />)
     fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))

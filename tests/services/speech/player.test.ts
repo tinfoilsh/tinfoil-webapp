@@ -35,7 +35,7 @@ describe('buffered speech playback', () => {
 
   it('does not count out-of-order audio toward the startup buffer', async () => {
     await start()
-    generation.requests[1].push(20, 0.2)
+    generation.requests[1].push(SPEECH.START_BUFFER_SECONDS + 1, 0.2)
     generation.requests[1].finish()
     await vi.waitFor(() => expect(generation.requests).toHaveLength(3))
     expect(audio.scheduled).toHaveLength(0)
@@ -52,21 +52,23 @@ describe('buffered speech playback', () => {
   })
 
   it('generates chunks three and four while one and two play, with bounded lookahead', async () => {
+    const chunkSeconds =
+      SPEECH.START_BUFFER_SECONDS / SPEECH.CONCURRENT_REQUESTS
     await start()
     for (const request of generation.requests.slice()) {
-      request.push(6)
+      request.push(chunkSeconds)
       request.finish()
     }
     await vi.waitFor(() => expect(generation.requests).toHaveLength(4))
     expect(player.getSnapshot().status).toBe('playing')
     expect(audio.currentTime).toBe(0)
     for (const request of generation.requests.slice(2)) {
-      request.push(6)
+      request.push(chunkSeconds)
       request.finish()
     }
     await vi.waitFor(() => expect(audio.scheduled).toHaveLength(4))
     expect(generation.requests).toHaveLength(4)
-    audio.advanceTo(audio.scheduled[0].startTime + 6)
+    audio.advanceTo(audio.scheduled[0].startTime + chunkSeconds)
     await vi.waitFor(() => expect(generation.requests).toHaveLength(5))
     expect(generation.requests[4].text).toContain('4:')
   })
@@ -220,9 +222,9 @@ describe('buffered speech playback', () => {
     expect(player.getSnapshot().status).toBe('idle')
   })
 
-  it('shows an actionable error if the browser suspends playback', async () => {
+  it('shows an actionable error if the browser closes playback', async () => {
     await start()
-    audio.state = 'suspended'
+    audio.state = 'closed'
     audio.onstatechange?.()
     expect(player.getSnapshot()).toMatchObject({
       status: 'error',
@@ -231,6 +233,76 @@ describe('buffered speech playback', () => {
     expect(generation.requests.every((request) => request.signal.aborted)).toBe(
       true,
     )
+  })
+
+  it.each(['suspended', 'interrupted'])(
+    'preserves playback across a temporary %s context',
+    async (state) => {
+      await start(1)
+      generation.requests[0].push(2)
+      generation.requests[0].finish()
+      await vi.waitFor(() => expect(audio.scheduled).toHaveLength(1))
+      audio.state = state
+      audio.onstatechange?.()
+      expect(player.getSnapshot().status).toBe('paused')
+      expect(audio.scheduled[0].stopped).toBe(false)
+      expect(generation.requests[0].signal.aborted).toBe(false)
+      player.resume(Symbol('wrong owner'))
+      expect(audio.resume).toHaveBeenCalledOnce()
+      player.resume(owner)
+      await vi.waitFor(() =>
+        expect(player.getSnapshot().status).toBe('playing'),
+      )
+      expect(audio.scheduled).toHaveLength(1)
+      expect(generation.requests).toHaveLength(1)
+      audio.advanceTo(3)
+      expect(player.getSnapshot().status).toBe('idle')
+    },
+  )
+
+  it('waits to generate speech when initial audio activation is interrupted', async () => {
+    audio.resume.mockImplementationOnce(async () => {
+      audio.state = 'interrupted'
+    })
+    player.read(owner, 'Hello.')
+    await vi.waitFor(() => expect(player.getSnapshot().status).toBe('paused'))
+    expect(generation.requests).toHaveLength(0)
+    player.resume(owner)
+    await vi.waitFor(() => expect(generation.requests).toHaveLength(1))
+    expect(player.getSnapshot().status).toBe('loading')
+  })
+
+  it('queues incoming audio while paused and resumes scheduling in order', async () => {
+    let delivered = 0
+    player = new SpeechPlayer(
+      async function* (text, signal) {
+        for await (const samples of generation.stream(text, signal)) {
+          yield samples
+          delivered++
+        }
+      },
+      () => audio as unknown as AudioContext,
+    )
+    await start()
+    generation.requests[0].push(SPEECH.START_BUFFER_SECONDS)
+    await vi.waitFor(() => expect(delivered).toBe(1))
+    audio.state = 'suspended'
+    audio.onstatechange?.()
+    generation.requests[0].push(1)
+    generation.requests[0].finish()
+    generation.requests[1].push(2)
+    generation.requests[1].finish()
+    await vi.waitFor(() => expect(delivered).toBe(3))
+    expect(audio.scheduled).toHaveLength(1)
+    expect(generation.requests).toHaveLength(2)
+    audio.state = 'running'
+    audio.onstatechange?.()
+    await vi.waitFor(() => expect(audio.scheduled).toHaveLength(3))
+    expect(audio.scheduled[1].startTime).toBe(
+      audio.scheduled[0].startTime + SPEECH.START_BUFFER_SECONDS,
+    )
+    expect(audio.scheduled[2].startTime).toBe(audio.scheduled[1].startTime + 1)
+    expect(player.getSnapshot().status).toBe('playing')
   })
 
   it('rejects an empty response without creating a context or making requests', () => {

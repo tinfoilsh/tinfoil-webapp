@@ -8,7 +8,10 @@ export class FakeAudioContext {
   destination = {}
   onstatechange: (() => void) | null = null
   scheduled: FakeAudioSource[] = []
-  resume = vi.fn(async (): Promise<void> => undefined)
+  resume = vi.fn(async (): Promise<void> => {
+    this.state = 'running'
+    this.onstatechange?.()
+  })
   close = vi.fn(async () => {
     this.state = 'closed'
   })

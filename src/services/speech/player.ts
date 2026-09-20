@@ -7,7 +7,7 @@ import { prepareSpeechText, splitSpeechText } from './text'
 
 export interface SpeechSnapshot {
   owner: symbol | null
-  status: 'idle' | 'loading' | 'playing' | 'error'
+  status: 'idle' | 'loading' | 'playing' | 'paused' | 'error'
   error?: string
 }
 
@@ -124,13 +124,8 @@ export class SpeechPlayer {
         .resume()
         .then(() => {
           if (this.session !== session) return
-          if (context.state !== 'running') throw new SpeechError('interrupted')
-          context.onstatechange = () => {
-            if (this.session === session && context.state !== 'running') {
-              this.fail(session, new SpeechError('interrupted'))
-            }
-          }
-          this.pump(session)
+          context.onstatechange = () => this.handleContextState(session)
+          this.handleContextState(session)
         })
         .catch((error: unknown) => this.fail(session, error))
     } catch (error) {
@@ -155,8 +150,37 @@ export class SpeechPlayer {
     })
   }
 
-  private pump(session: Session): void {
+  resume(owner: symbol): void {
+    const session = this.session
+    if (
+      !session ||
+      session.owner !== owner ||
+      this.snapshot.status !== 'paused'
+    )
+      return
+    void session.context
+      .resume()
+      .then(() => this.handleContextState(session))
+      .catch((error: unknown) => this.fail(session, error))
+  }
+
+  private handleContextState(session: Session): void {
     if (this.session !== session) return
+    if (session.context.state === 'closed') {
+      this.fail(session, new SpeechError('interrupted'))
+    } else if (session.context.state !== 'running') {
+      this.update({ owner: session.owner, status: 'paused' })
+    } else {
+      this.update({
+        owner: session.owner,
+        status: session.started ? 'playing' : 'loading',
+      })
+      this.pump(session)
+    }
+  }
+
+  private pump(session: Session): void {
+    if (this.session !== session || session.context.state !== 'running') return
     try {
       while (session.nextPlayback < session.nextSchedule) {
         const chunk = session.chunks.get(session.nextPlayback)
