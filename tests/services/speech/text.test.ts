@@ -1,8 +1,24 @@
 import { SPEECH } from '@/services/speech/constants'
 import { prepareSpeechText, splitSpeechText } from '@/services/speech/text'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('speech text', () => {
+  it.each([
+    '',
+    `${'A sentence with enough words for narration. '.repeat(20)}Last sentence!`,
+    'The value is 3.14. Is that right? Yes! 最後です。 終わり。',
+  ])('preserves text and punctuation without Intl.Segmenter: %s', (text) => {
+    vi.stubGlobal('Intl', { ...Intl, Segmenter: undefined })
+    const chunks = splitSpeechText(text)
+    expect(chunks.join(' ')).toBe(text)
+    expect(
+      chunks.every(
+        (chunk) => Array.from(chunk).length <= SPEECH.MAX_CHUNK_CHARACTERS,
+      ),
+    ).toBe(true)
+  })
   it('reads prose and labels without code blocks, citations, or markup', () => {
     expect(
       prepareSpeechText(

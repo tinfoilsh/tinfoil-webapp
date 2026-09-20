@@ -26,7 +26,12 @@ async function measure(client, input) {
     },
     { signal: AbortSignal.timeout(TIMEOUT_MS), maxRetries: 0 },
   )
-  assert.equal(response.headers.get('content-type')?.split(';')[0], 'audio/pcm')
+  assert.equal(
+    response.headers.get('content-type')?.split(';')[0],
+    'audio/pcm',
+    'Expected PCM audio from the speech endpoint',
+  )
+  assert.ok(response.body, 'Streaming response body is missing')
   let bytes = 0
   let chunks = 0
   let firstByteMs = null
@@ -36,8 +41,12 @@ async function measure(client, input) {
     bytes += chunk.length
     chunks++
   }
-  assert.ok(bytes > 0)
-  assert.equal(bytes % BYTES_PER_SAMPLE, 0)
+  assert.ok(bytes > 0, 'Speech stream returned no audio')
+  assert.equal(
+    bytes % BYTES_PER_SAMPLE,
+    0,
+    'Speech stream ended with an incomplete PCM sample',
+  )
   return {
     firstByteMs,
     totalMs: Math.round(performance.now() - start),
@@ -50,9 +59,13 @@ async function main() {
   const keyResponse = await fetch(`${CONTROLPLANE}/api/keys/chat`, {
     signal: AbortSignal.timeout(TIMEOUT_MS),
   })
-  assert.equal(keyResponse.status, 200)
+  assert.equal(
+    keyResponse.status,
+    200,
+    'Could not obtain an anonymous session key',
+  )
   const { key } = await keyResponse.json()
-  assert.equal(typeof key, 'string')
+  assert.equal(typeof key, 'string', 'Session endpoint did not return a key')
   const client = new TinfoilAI({ apiKey: key, transport: 'ehbp' })
   for (const concurrency of [1, 2]) {
     const start = performance.now()
@@ -68,7 +81,7 @@ async function main() {
 
 main().catch((error) => {
   process.stderr.write(
-    `${JSON.stringify({ error: 'Speech smoke test failed', name: error.name, status: error.status })}\n`,
+    `${JSON.stringify({ error: 'Speech smoke test failed', name: error.name, status: error.status, check: error instanceof assert.AssertionError ? error.message : undefined })}\n`,
   )
   process.exitCode = 1
 })

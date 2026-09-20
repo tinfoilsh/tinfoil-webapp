@@ -67,7 +67,7 @@ export function splitSpeechText(text: string): string[] {
           ),
           ({ segment }) => segment,
         )
-      : text.split(/(?<=[.!?。！？])\s+/u)
+      : (text.match(/[\s\S]+?(?:[.!?。！？](?=\s|$)|$)/gu) ?? [])
   const chunks: string[] = []
   let current = ''
   const flush = () => {

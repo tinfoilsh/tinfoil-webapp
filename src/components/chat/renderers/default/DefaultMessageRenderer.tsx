@@ -838,8 +838,7 @@ const DefaultMessageComponent = ({
                   content={message.content}
                   isDarkMode={isDarkMode}
                 />
-                {message.role === 'assistant' &&
-                  !isStreaming &&
+                {!isStreaming &&
                   !message.isThinking &&
                   !message.isError &&
                   !isLimitError && (
