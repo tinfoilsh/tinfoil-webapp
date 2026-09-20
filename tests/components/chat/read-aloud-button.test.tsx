@@ -28,6 +28,32 @@ describe('read aloud button', () => {
   })
   afterEach(() => act(() => speechPlayer.stop()))
 
+  it('provides a styled tooltip on hover and keyboard focus', () => {
+    render(<ReadAloudButton content="Hello." />)
+    const tooltip = screen.getByText('Read aloud')
+    expect(tooltip).toHaveClass(
+      'opacity-0',
+      'group-hover/speech:opacity-100',
+      'group-focus-visible/speech:opacity-100',
+    )
+    expect(tooltip).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.getByRole('button', { name: 'Read aloud' })).toHaveClass(
+      'group/speech',
+      'relative',
+    )
+    expect(
+      screen.getByRole('button', { name: 'Read aloud' }),
+    ).not.toHaveAttribute('title')
+  })
+
+  it('keeps the menu variant labeled without an extra styled tooltip', () => {
+    render(<ReadAloudButton content="Hello." variant="menu" />)
+    expect(screen.getByRole('button', { name: 'Read' })).toHaveTextContent(
+      'Read',
+    )
+    expect(screen.queryByText('Read aloud')).not.toBeInTheDocument()
+  })
+
   it('starts on click, exposes buffering and stop controls, and returns to idle', async () => {
     render(<ReadAloudButton content="Hello." />)
     expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
@@ -41,6 +67,9 @@ describe('read aloud button', () => {
     expect(
       screen.getByRole('button', { name: 'Cancel read aloud' }),
     ).not.toHaveClass('animate-pulse', 'text-red-600')
+    expect(
+      screen.getByText('Buffering audio — click to cancel'),
+    ).toBeInTheDocument()
     await waitFor(() => expect(generation.requests).toHaveLength(1))
     await act(async () => {
       generation.requests[0].push(2)
@@ -49,6 +78,7 @@ describe('read aloud button', () => {
     const stopButton = screen.getByRole('button', {
       name: 'Stop reading aloud',
     })
+    expect(screen.getByText('Stop reading aloud')).toBeInTheDocument()
     expect(stopButton).toHaveClass(
       'animate-pulse',
       'text-red-600',
@@ -110,6 +140,7 @@ describe('read aloud button', () => {
         audio.onstatechange?.()
       })
       expect(screen.getByRole('status')).toHaveTextContent('Speech paused')
+      expect(screen.getByText('Resume reading aloud')).toBeInTheDocument()
       expect(screen.queryByRole('alert')).not.toBeInTheDocument()
       if (action === 'resume') {
         fireEvent.click(

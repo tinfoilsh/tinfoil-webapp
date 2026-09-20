@@ -1,6 +1,7 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import { ForwardIcon } from '@heroicons/react/24/outline'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -157,7 +158,14 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue response' }))
+    const continueButton = screen.getByRole('button', {
+      name: 'Continue response',
+    })
+    const expectedIcon = render(<ForwardIcon />)
+    expect(continueButton.querySelector('svg')?.innerHTML).toBe(
+      expectedIcon.container.querySelector('svg')?.innerHTML,
+    )
+    fireEvent.click(continueButton)
     expect(onContinueAssistantMessage).toHaveBeenCalledWith(3)
   })
 
