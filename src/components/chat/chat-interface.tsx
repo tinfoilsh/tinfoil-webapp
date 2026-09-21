@@ -155,6 +155,7 @@ import {
   resolveProjectUploadTarget,
   routeChatFileUpload,
 } from './file-upload-routing'
+import { ForkOverlay } from './fork-overlay'
 import { GenUIInputAreaRenderer } from './genui/GenUIInputAreaRenderer'
 import { selectPendingInputToolCallFromChat } from './genui/pending-input-tool-call'
 import {
@@ -2712,11 +2713,14 @@ export function ChatInterface({
   )
 
   // Start a new conversation from the messages up to and including the
-  // chosen one. Signed-in chats are forked by storage (local copy or via
-  // the sync enclave); guest chats are copied into session storage. One
-  // fork runs at a time, and the result is only selected if the user is
-  // still viewing the chat it was forked from.
+  // chosen one. A placeholder fork appears in the sidebar at once and the
+  // conversation is dimmed under a status overlay while storage does the
+  // real work (local copy or via the sync enclave); the placeholder is
+  // then swapped for the stored row. Guest chats are copied into session
+  // storage. One fork runs at a time, and the result is only selected if
+  // the user is still viewing the chat it was forked from.
   const forkInFlightRef = useRef(false)
+  const [isForking, setIsForking] = useState(false)
   const handleForkMessage = useCallback(
     async (messageIndex: number) => {
       if (!currentChat || currentChat.isTemporary || currentChat.isBlankChat) {
@@ -2729,29 +2733,38 @@ export function ChatInterface({
         return
       }
       const sourceId = currentChat.id
+      const forkId = generateReverseId().id
+      const placeholder: Chat = {
+        ...buildForkedChat(currentChat, messageCount, forkId),
+        pendingSave: true,
+      }
       forkInFlightRef.current = true
+      setIsForking(true)
+      setChats((current) => upsertChatById(current, placeholder))
+      const startedAt = Date.now()
       try {
         let fork: Chat
         if (isSignedIn) {
-          fork = await chatStorage.forkChat(sourceId, messageCount)
+          fork = await chatStorage.forkChat(sourceId, messageCount, forkId)
         } else {
-          fork = buildForkedChat(
-            currentChat,
-            messageCount,
-            generateReverseId().id,
-          )
+          fork = { ...placeholder, pendingSave: false }
           sessionChatStorage.saveChat(fork)
+        }
+        const elapsed = Date.now() - startedAt
+        if (elapsed < CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS) {
+          await new Promise((resolve) =>
+            setTimeout(
+              resolve,
+              CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS - elapsed,
+            ),
+          )
         }
         setChats((current) => upsertChatById(current, fork))
         if (currentChatRef.current?.id !== sourceId) return
         invalidateFavoriteNavigation()
         setCurrentChat(fork)
-        toast({
-          title: 'Conversation forked',
-          description:
-            'You can continue from here without changing the original.',
-        })
       } catch (error) {
+        setChats((current) => current.filter((chat) => chat.id !== forkId))
         logError('Failed to fork conversation', error, {
           component: 'ChatInterface',
           action: 'handleForkMessage',
@@ -2764,6 +2777,7 @@ export function ChatInterface({
         })
       } finally {
         forkInFlightRef.current = false
+        setIsForking(false)
       }
     },
     [
@@ -4497,6 +4511,9 @@ export function ChatInterface({
                 isStreaming={isStreaming}
                 isWaitingForResponse={isWaitingForResponse}
               />
+              <AnimatePresence>
+                {isForking && <ForkOverlay sidebarSide="left" />}
+              </AnimatePresence>
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
@@ -4575,6 +4592,7 @@ export function ChatInterface({
                         currentChat.isTemporary ||
                         currentChat.isBlankChat ||
                         isStreaming ||
+                        isForking ||
                         loadingState !== 'idle'
                           ? undefined
                           : handleForkMessage

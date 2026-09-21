@@ -793,6 +793,32 @@ describe('chatStorage forkChat', () => {
     expect(forkCloudChatSpy).not.toHaveBeenCalled()
   })
 
+  it('stores the fork under a caller-supplied id on both paths', async () => {
+    const localSource = { ...storedSource, isLocalOnly: true }
+    getChatSpy.mockImplementation(async (id) =>
+      id === 'rev_123_abc'
+        ? localSource
+        : (saveChatSpy.mock.calls[0]?.[0] ?? null),
+    )
+    const localFork = await chatStorage.forkChat('rev_123_abc', 1, 'fork-local')
+    expect(localFork.id).toBe('fork-local')
+
+    vi.clearAllMocks()
+    const cloudSource = { ...storedSource, isLocalOnly: false }
+    getChatSpy.mockImplementation(async (id) =>
+      id === 'rev_123_abc'
+        ? cloudSource
+        : id === 'fork-cloud'
+          ? { ...cloudSource, id, messages: cloudSource.messages.slice(0, 1) }
+          : null,
+    )
+    const cloudFork = await chatStorage.forkChat('rev_123_abc', 1, 'fork-cloud')
+    expect(cloudFork.id).toBe('fork-cloud')
+    expect(forkCloudChatSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ targetId: 'fork-cloud' }),
+    )
+  })
+
   it('fails when the source chat does not exist', async () => {
     getChatSpy.mockResolvedValue(null)
 

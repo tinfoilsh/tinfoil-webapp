@@ -17,7 +17,7 @@ import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { CiFloppyDisk } from 'react-icons/ci'
-import { PiPushPin, PiPushPinFill } from 'react-icons/pi'
+import { PiPushPin, PiPushPinFill, PiSpinner } from 'react-icons/pi'
 import { FaLock } from '../icons/lazy-icons'
 import { RedactedText } from '../ui/redacted-text'
 import { cn } from '../ui/utils'
@@ -36,6 +36,8 @@ export interface ChatItemData {
   isLocalOnly?: boolean
   isTemporary?: boolean
   projectId?: string
+  /** True while the chat's first save (e.g. a fork) is still landing. */
+  pendingSave?: boolean
 }
 
 export function canPinChat(chat: ChatItemData): boolean {
@@ -425,6 +427,14 @@ export function ChatListItem({
                 >
                   <span className="stream-loader" />
                   <span className="sr-only">Generating response</span>
+                </span>
+              ) : chat.pendingSave ? (
+                <span
+                  className="mx-2 flex w-[18px] flex-shrink-0 items-center justify-center text-content-muted"
+                  title="Forking conversation"
+                >
+                  <PiSpinner className="h-3.5 w-3.5 animate-spin" />
+                  <span className="sr-only">Forking conversation</span>
                 </span>
               ) : (
                 isNewChat && (

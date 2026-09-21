@@ -55,6 +55,11 @@ export const CONSTANTS = {
   // Sidebar geometry and the adjacent chat area share one transition.
   SIDEBAR_LAYOUT_TRANSITION_CLASS_NAME:
     'transition-[transform,left,right] duration-200 ease-in-out motion-reduce:transition-none',
+  // Fork overlay: how long the conversation takes to lift out of view
+  // toward the sidebar, and how long the dimmed status card stays up
+  // after the fork lands so a fast fork still reads as an action.
+  FORK_LIFT_DURATION_S: 0.45,
+  FORK_OVERLAY_MIN_VISIBLE_MS: 600,
   SIDEBAR_SYNC_MIN_SPINNER_MS: 1000,
   SIDEBAR_SYNC_SUCCESS_FEEDBACK_MS: 1500,
   SIDEBAR_SYNC_FEEDBACK_EXIT_S: 0.14,

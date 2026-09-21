@@ -573,9 +573,14 @@ export class ChatStorageService {
    * Create a new chat holding the first `messageCount` messages of an
    * existing one. Local-only chats are copied on this device; synced
    * chats are forked by the enclave so their image bytes stay
-   * server-side and each chat ends up owning its own copies.
+   * server-side and each chat ends up owning its own copies. Callers
+   * may pre-mint `forkId` so they can show the fork before it lands.
    */
-  async forkChat(sourceId: string, messageCount: number): Promise<Chat> {
+  async forkChat(
+    sourceId: string,
+    messageCount: number,
+    forkId: string = generateReverseId().id,
+  ): Promise<Chat> {
     await this.initialize()
 
     const source = await this.getChat(sourceId)
@@ -585,7 +590,6 @@ export class ChatStorageService {
     if (messageCount < 1 || messageCount > source.messages.length) {
       throw new RangeError('Fork point is outside the conversation')
     }
-    const { id: forkId } = generateReverseId()
 
     // The user's global opt-out is invariant (§9.6 R6): while cloud sync
     // is disabled nothing may reach the enclave, so even a chat that was
