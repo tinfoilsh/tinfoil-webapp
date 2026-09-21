@@ -148,7 +148,7 @@ curl -i \
 curl -i http://localhost:3000/api/dev/not-a-real-route
 ```
 
-If port 3001 is unavailable, general local API requests return 502 rather than bypassing the gateway.
+If port 3001 is unavailable, local API requests fail rather than bypassing the gateway or contacting controlplane directly.
 
 ## Optional local model router
 

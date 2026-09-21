@@ -11,8 +11,6 @@
  * is still exercised. Token values are never logged.
  */
 
-import crypto from 'node:crypto'
-
 const MAX_BODY_BYTES = 64 * 1024
 const DEFAULT_POLICY = Object.freeze({
   window_hours: 168,
@@ -103,7 +101,6 @@ export function createMockSafeguardsStore({
       conversation_id: conversationId,
       created_at: new Date().toISOString(),
     }
-    // Newest first.
     flags.unshift(flag)
     return { flag, duplicate: false }
   }
@@ -185,8 +182,3 @@ export function createMockSafeguardsStore({
 }
 
 export const MOCK_SAFEGUARDS_DEFAULT_POLICY = DEFAULT_POLICY
-
-/** Deterministic UUID helper for tests that want stable ids. */
-export function makeFlagId(seed) {
-  return `dev-safeguard:${crypto.createHash('sha1').update(seed).digest('hex').slice(0, 16)}`
-}

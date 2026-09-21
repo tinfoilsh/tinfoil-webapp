@@ -325,6 +325,31 @@ describe('local Dev Simulator', () => {
     expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
   })
 
+  it('aborts an in-flight safeguard mutation request', async () => {
+    const controller = new AbortController()
+    let notifyStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve
+    })
+    fetchMock.mockImplementationOnce(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          notifyStarted()
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'))
+          })
+        }),
+    )
+
+    const stream = await send('flag safeguard', { signal: controller.signal })
+    const pending = collect(stream)
+    await started
+    controller.abort()
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchMock.mock.calls[0][1]?.signal).toBe(controller.signal)
+  })
+
   it('rejects a missing chat ID with a clear FETCH_ERROR', async () => {
     await expect(
       send('flag safeguard', { conversationId: '' }),

@@ -20,17 +20,9 @@ export function createLocalApiGateway({
       }
 
       const pathOnly = (req.url || '').split('?')[0]
-      if (pathOnly === '/api/dev' || pathOnly.startsWith('/api/dev/')) {
-        send(
-          res,
-          404,
-          'application/json',
-          JSON.stringify({ error: 'Not found' }),
-        )
-        return
-      }
-
-      if (!pathOnly.startsWith('/api/')) {
+      const isUnknownDevRoute =
+        pathOnly === '/api/dev' || pathOnly.startsWith('/api/dev/')
+      if (isUnknownDevRoute || !pathOnly.startsWith('/api/')) {
         send(
           res,
           404,

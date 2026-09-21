@@ -28,7 +28,7 @@ import {
   DEV_SIMULATOR_ERROR_MESSAGE,
 } from '@/constants/dev-simulator'
 import { AuthTokenUnavailableError, authTokenManager } from '@/services/auth'
-import { refreshSafeguards } from '@/services/safeguards'
+import { refreshSafeguardsAfterMutation } from '@/services/safeguards'
 import { shouldRetryTestFail, simulateStream } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
@@ -172,11 +172,12 @@ function delay(ms: number): Promise<void> {
  */
 async function callDevSafeguardsRoute(
   method: 'POST' | 'DELETE',
+  signal: AbortSignal,
   body?: Record<string, unknown>,
 ): Promise<void> {
   let headers: Record<string, string>
   try {
-    headers = await authTokenManager.getAuthHeaders()
+    headers = await authTokenManager.getAuthHeaders(signal)
   } catch (err) {
     if (err instanceof AuthTokenUnavailableError) {
       throw new ChatError(DEV_SAFEGUARD_SIGN_IN_REQUIRED, 'FETCH_ERROR')
@@ -187,6 +188,7 @@ async function callDevSafeguardsRoute(
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   })
   if (!response.ok) {
     throw new ChatError(
@@ -196,22 +198,28 @@ async function callDevSafeguardsRoute(
   }
 }
 
-function runSafeguardFlagCommand(
-  conversationId: string,
-  signal: AbortSignal,
-): ChatChunkStream {
+function runSafeguardCommand({
+  method,
+  signal,
+  response,
+  body,
+}: {
+  method: 'POST' | 'DELETE'
+  signal: AbortSignal
+  response: string
+  body?: Record<string, unknown>
+}): ChatChunkStream {
   return {
     async *[Symbol.asyncIterator]() {
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-      await callDevSafeguardsRoute('POST', {
-        conversation_id: conversationId,
-      })
+      await callDevSafeguardsRoute(method, signal, body)
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-      await refreshSafeguards()
+      await refreshSafeguardsAfterMutation()
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
       yield {
         choices: [
           {
-            delta: { content: DEV_SAFEGUARD_FLAG_RESPONSE },
+            delta: { content: response },
             finish_reason: 'stop',
           },
         ],
@@ -220,23 +228,24 @@ function runSafeguardFlagCommand(
   }
 }
 
+function runSafeguardFlagCommand(
+  conversationId: string,
+  signal: AbortSignal,
+): ChatChunkStream {
+  return runSafeguardCommand({
+    method: 'POST',
+    signal,
+    response: DEV_SAFEGUARD_FLAG_RESPONSE,
+    body: { conversation_id: conversationId },
+  })
+}
+
 function runSafeguardResetCommand(signal: AbortSignal): ChatChunkStream {
-  return {
-    async *[Symbol.asyncIterator]() {
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-      await callDevSafeguardsRoute('DELETE')
-      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-      await refreshSafeguards()
-      yield {
-        choices: [
-          {
-            delta: { content: DEV_SAFEGUARD_RESET_RESPONSE },
-            finish_reason: 'stop',
-          },
-        ],
-      }
-    },
-  }
+  return runSafeguardCommand({
+    method: 'DELETE',
+    signal,
+    response: DEV_SAFEGUARD_RESET_RESPONSE,
+  })
 }
 
 // Statuses the OpenAI SDK itself treats as retryable (client shouldRetry):
