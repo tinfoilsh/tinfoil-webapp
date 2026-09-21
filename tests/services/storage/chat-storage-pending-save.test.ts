@@ -743,7 +743,12 @@ describe('chatStorage forkChat', () => {
       const request = forkCloudChatSpy.mock.calls[0]?.[0] as
         { targetId: string } | undefined
       return request && id === request.targetId
-        ? { ...source, id, title: 'Trip planning (fork)' }
+        ? {
+            ...source,
+            id,
+            title: 'Trip planning (fork)',
+            messages: source.messages.slice(0, request.messageCount),
+          }
         : null
     })
 
@@ -756,7 +761,31 @@ describe('chatStorage forkChat', () => {
       title: 'Trip planning (fork)',
     })
     expect(fork.id).not.toBe('rev_123_abc')
+    expect(fork.messages.map((m) => m.content)).toEqual(['one', 'two'])
     expect(saveChatSpy).not.toHaveBeenCalled()
+  })
+
+  it('copies a synced chat on this device while cloud sync is disabled', async () => {
+    setCloudSyncEnabled(false)
+    const source = { ...storedSource, isLocalOnly: false }
+    getChatSpy.mockImplementation(async (id: unknown) =>
+      id === 'rev_123_abc' ? source : (saveChatSpy.mock.calls[0]?.[0] ?? null),
+    )
+
+    const fork = await chatStorage.forkChat('rev_123_abc', 2)
+
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
+    expect(fork.isLocalOnly).toBe(true)
+    expect(saveChatSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a fork point outside a synced conversation before reaching the enclave', async () => {
+    getChatSpy.mockResolvedValue({ ...storedSource, isLocalOnly: false })
+
+    await expect(chatStorage.forkChat('rev_123_abc', 4)).rejects.toThrow(
+      RangeError,
+    )
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
   })
 
   it('fails when the source chat does not exist', async () => {

@@ -3,7 +3,8 @@ export const TEMPORARY_CHAT_TITLE = 'Temporary Chat'
 export const FORK_TITLE_SUFFIX = ' (fork)'
 
 export function forkChatTitle(sourceTitle: string): string {
-  return `${sourceTitle || DEFAULT_CHAT_TITLE}${FORK_TITLE_SUFFIX}`
+  const base = sourceTitle || DEFAULT_CHAT_TITLE
+  return base.endsWith(FORK_TITLE_SUFFIX) ? base : `${base}${FORK_TITLE_SUFFIX}`
 }
 
 /**

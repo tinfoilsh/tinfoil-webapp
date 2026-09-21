@@ -582,9 +582,15 @@ export class ChatStorageService {
     if (!source) {
       throw new Error('Chat not found')
     }
+    if (messageCount < 1 || messageCount > source.messages.length) {
+      throw new RangeError('Fork point is outside the conversation')
+    }
     const { id: forkId } = generateReverseId()
 
-    if (source.isLocalOnly) {
+    // The user's global opt-out is invariant (§9.6 R6): while cloud sync
+    // is disabled nothing may reach the enclave, so even a chat that was
+    // synced before the opt-out is copied on this device.
+    if (source.isLocalOnly || !isCloudSyncEnabled()) {
       const fork = buildForkedChat(source, messageCount, forkId)
       const saved = await this.saveChat(fork, true)
       const stored = await this.getChat(forkId)

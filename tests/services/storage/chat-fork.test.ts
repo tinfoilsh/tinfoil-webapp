@@ -1,5 +1,5 @@
 import type { Attachment, Chat, Message } from '@/components/chat/types'
-import { FORK_TITLE_SUFFIX } from '@/constants/chat'
+import { FORK_TITLE_SUFFIX, forkChatTitle } from '@/constants/chat'
 import { buildForkedChat } from '@/services/storage/chat-fork'
 import { describe, expect, it } from 'vitest'
 
@@ -34,6 +34,13 @@ describe('buildForkedChat', () => {
           fileName: 'notes.txt',
           textContent: 'hello',
         },
+        {
+          id: 'att-legacy',
+          type: 'image',
+          fileName: 'b.png',
+          base64: 'LEGACYBYTES',
+          key: 'legacy-key',
+        } as Attachment,
       ],
     },
     {
@@ -42,6 +49,7 @@ describe('buildForkedChat', () => {
       turnId: 't1',
       timestamp: new Date('2026-01-01T00:00:01Z'),
       thoughts: 'looking',
+      timeline: [{ type: 'content', id: 'content-0', content: 'Nice photo' }],
     },
     {
       role: 'user',
@@ -104,7 +112,7 @@ describe('buildForkedChat', () => {
 
   it('gives attachments fresh ids and detaches them from source storage', () => {
     const fork = buildForkedChat(source, 1, 'chat-fork')
-    const [image, document] = fork.messages[0].attachments!
+    const [image, document, legacy] = fork.messages[0].attachments!
 
     expect(image.id).not.toBe('att-image')
     expect(image).toMatchObject({
@@ -116,7 +124,26 @@ describe('buildForkedChat', () => {
     expect(image).not.toHaveProperty('storagePayloadId')
     expect(document.id).not.toBe('att-doc')
     expect(document.textContent).toBe('hello')
+    expect(legacy.base64).toBe('LEGACYBYTES')
+    expect(legacy).not.toHaveProperty('key')
     expect(source.messages[0].attachments![0].id).toBe('att-image')
+  })
+
+  it('does not share nested message state with the source', () => {
+    const fork = buildForkedChat(source, 2, 'chat-fork')
+
+    expect(fork.messages[1].timeline).toEqual(source.messages[1].timeline)
+    expect(fork.messages[1].timeline).not.toBe(source.messages[1].timeline)
+    expect(fork.messages[0].attachments![0]).not.toBe(
+      source.messages[0].attachments![0],
+    )
+  })
+
+  it('does not stack the fork suffix when forking a fork', () => {
+    expect(forkChatTitle(`Trip planning${FORK_TITLE_SUFFIX}`)).toBe(
+      `Trip planning${FORK_TITLE_SUFFIX}`,
+    )
+    expect(forkChatTitle('')).toBe(`Untitled${FORK_TITLE_SUFFIX}`)
   })
 
   it('rejects a fork point outside the conversation', () => {

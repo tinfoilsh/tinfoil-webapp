@@ -34,10 +34,10 @@ export function buildForkedChat(
 }
 
 function forkMessage(message: Message): Message {
-  const { attachments, ...rest } = message
+  const { attachments, ...rest } = structuredClone(message)
   return attachments
     ? { ...rest, attachments: attachments.map(forkAttachment) }
-    : { ...rest }
+    : rest
 }
 
 function forkAttachment(attachment: Attachment): Attachment {
