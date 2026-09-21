@@ -3,7 +3,7 @@ import {
   AUTH_ACTIVE_USER_ID,
   SETTINGS_CACHED_SUBSCRIPTION_STATUS,
 } from '@/constants/storage-keys'
-import { useUser } from '@clerk/nextjs'
+import { useUser } from '@clerk/react'
 import { useEffect, useState } from 'react'
 
 type StripeSubscriptionStatus =

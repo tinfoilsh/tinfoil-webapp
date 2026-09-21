@@ -9,7 +9,7 @@ import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { samePendingRecoveryEnvelope } from '@/types/chat-recovery'
 import { logError, logInfo } from '@/utils/error-handling'
-import { useAuth } from '@clerk/nextjs'
+import { useAuth } from '@clerk/react'
 import {
   useCallback,
   useEffect,

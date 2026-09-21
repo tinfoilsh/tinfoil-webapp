@@ -46,7 +46,7 @@ import {
   isCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
-import { useAuth } from '@clerk/nextjs'
+import { useAuth } from '@clerk/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 function clocksEqual(a?: EditClock, b?: EditClock): boolean {

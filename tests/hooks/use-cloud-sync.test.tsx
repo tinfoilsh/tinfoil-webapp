@@ -7,7 +7,7 @@ const { reportSyncSuccessMock, smartSyncMock } = vi.hoisted(() => ({
   smartSyncMock: vi.fn(),
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => ({ getToken: vi.fn(), isSignedIn: false }),
 }))
 

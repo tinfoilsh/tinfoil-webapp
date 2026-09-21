@@ -64,7 +64,7 @@ const auth = vi.hoisted(() => {
   }
 })
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => ({
     isLoaded: auth.isAuthLoaded,
     isSignedIn: auth.isSignedIn,

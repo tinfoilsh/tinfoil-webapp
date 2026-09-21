@@ -22,7 +22,7 @@ const {
   pendingStreams: new Set<string>(),
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => ({ isSignedIn: false, userId: undefined }),
 }))
 

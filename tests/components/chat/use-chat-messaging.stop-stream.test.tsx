@@ -69,7 +69,7 @@ const {
   cloudSyncState: { enabled: false },
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => authState,
 }))
 

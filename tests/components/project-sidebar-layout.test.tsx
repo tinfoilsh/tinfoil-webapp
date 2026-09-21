@@ -26,7 +26,7 @@ vi.mock('@/components/chat/document-uploader', () => ({
     isDocumentUploading: false,
   }),
 }))
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => ({
     isSignedIn: true,
     getToken: async () => null,

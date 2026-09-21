@@ -8,7 +8,7 @@ import {
   subscribeSafeguards,
   type SafeguardsSnapshot,
 } from '@/services/safeguards'
-import { useAuth } from '@clerk/nextjs'
+import { useAuth } from '@clerk/react'
 import { useEffect, useSyncExternalStore } from 'react'
 
 export function useSafeguards(): SafeguardsSnapshot {

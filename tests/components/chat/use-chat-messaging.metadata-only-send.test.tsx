@@ -21,7 +21,7 @@ const {
   isDeletedMock: vi.fn(() => false),
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => ({ isSignedIn: true, userId: 'user-1' }),
 }))
 

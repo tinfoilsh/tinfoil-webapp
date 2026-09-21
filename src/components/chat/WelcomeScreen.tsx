@@ -6,7 +6,7 @@ import {
   type BaseModel,
 } from '@/config/models'
 import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
-import { useUser } from '@clerk/nextjs'
+import { useUser } from '@clerk/react'
 import { motion } from 'framer-motion'
 import React, { memo, useEffect, useRef, useState } from 'react'
 import { BiSolidLock } from 'react-icons/bi'

@@ -107,7 +107,7 @@ import {
   hideSignoutProgress,
   showSignoutProgress,
 } from '@/utils/signout-progress'
-import { useAuth, useUser } from '@clerk/nextjs'
+import { useAuth, useUser } from '@clerk/react'
 import { Dialog } from '@headlessui/react'
 import {
   ArrowDownTrayIcon,

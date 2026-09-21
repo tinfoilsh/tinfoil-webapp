@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 const clerkProvider = vi.hoisted(() => vi.fn((_props: unknown) => null))
 
-vi.mock('@clerk/nextjs', () => ({ ClerkProvider: clerkProvider }))
+vi.mock('@clerk/react', () => ({ ClerkProvider: clerkProvider }))
 vi.mock('@/components/auth-cleanup-handler', () => ({
   AuthCleanupHandler: () => null,
 }))
@@ -39,7 +39,7 @@ function elementProps(node: ReactNode): Array<Record<string, unknown>> {
 }
 
 describe('Clerk privacy configuration', () => {
-  it('disables telemetry on the app-level Clerk provider', () => {
+  it('bundles Clerk from npm and disables telemetry on the app-level provider', () => {
     const Component = () => null
     const appProps = {
       Component,
@@ -50,7 +50,11 @@ describe('Clerk privacy configuration', () => {
     render(<App {...appProps} />)
 
     expect(clerkProvider.mock.calls[0][0]).toEqual(
-      expect.objectContaining({ telemetry: false }),
+      expect.objectContaining({
+        telemetry: false,
+        Clerk: expect.any(Function),
+        ui: expect.objectContaining({ ClerkUI: expect.any(Function) }),
+      }),
     )
   })
 

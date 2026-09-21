@@ -18,7 +18,7 @@ import type {
   UpdateProjectData,
 } from '@/types/project'
 import { logError, logInfo } from '@/utils/error-handling'
-import { useAuth } from '@clerk/nextjs'
+import { useAuth } from '@clerk/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   buildProjectContext,
