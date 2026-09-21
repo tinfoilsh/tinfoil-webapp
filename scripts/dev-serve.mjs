@@ -4,7 +4,7 @@
  *
  * Proxies:
  *   /api/local-router/* → http://localhost:8090/*
- *   /api/dev/simulator  → http://localhost:3001/api/dev/simulator
+ *   /api/*              → http://localhost:3001/api/* (local API gateway)
  *
  * Everything else is served from the out/ directory as static files.
  *
@@ -14,29 +14,14 @@
 
 import fs from 'node:fs'
 import http from 'node:http'
-import https from 'node:https'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { proxyRequest } from './http-proxy.mjs'
 
 const PORT = 3000
 const ROUTER_UPSTREAM = 'http://localhost:8090'
 const SIMULATOR_UPSTREAM = 'http://localhost:3001'
-const CONTROLPLANE_PROXY_ORIGIN = parseControlplaneProxyOrigin(
-  process.env.NEXT_PUBLIC_API_BASE_URL,
-)
 const MAX_LOG_BODY_BYTES = 10 * 1024 * 1024 // 10 MB
-
-function parseControlplaneProxyOrigin(raw) {
-  if (!raw) return null
-  let url
-  try {
-    url = new URL(raw)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
-  return `${url.protocol}//${url.host}`.replace(/\/$/, '')
-}
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = path.resolve(__dirname, '..')
 const OUT_DIR = path.join(PROJECT_ROOT, 'out')
@@ -57,34 +42,6 @@ const MIME_TYPES = {
   '.ttf': 'font/ttf',
   '.txt': 'text/plain',
   '.map': 'application/json',
-}
-
-function proxyRequest(req, res, upstream, { rewritePath } = {}) {
-  const url = new URL(upstream)
-  const transport = url.protocol === 'https:' ? https : http
-  const port = url.port || (url.protocol === 'https:' ? 443 : 80)
-  const targetPath =
-    typeof rewritePath === 'function' ? rewritePath(req.url) : req.url
-  const options = {
-    hostname: url.hostname,
-    port,
-    path: targetPath,
-    method: req.method,
-    headers: { ...req.headers, host: url.host },
-  }
-
-  const proxyReq = transport.request(options, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode, proxyRes.headers)
-    proxyRes.pipe(res, { end: true })
-  })
-
-  proxyReq.on('error', (err) => {
-    console.error(`Proxy error → ${upstream}: ${err.message}`)
-    res.writeHead(502, { 'Content-Type': 'text/plain' })
-    res.end('Bad Gateway')
-  })
-
-  req.pipe(proxyReq, { end: true })
 }
 
 function serveStatic(req, res) {
@@ -138,34 +95,15 @@ function serveStatic(req, res) {
 export function createDevServeHandler({
   simulatorUpstream = SIMULATOR_UPSTREAM,
   routerUpstream = ROUTER_UPSTREAM,
-  controlplaneUpstream = CONTROLPLANE_PROXY_ORIGIN,
 } = {}) {
   return function handle(req, res) {
     const pathOnly = (req.url || '').split('?')[0]
 
-    // 1. /api/dev/* → local dev backend (simulator + mock controlplane mutations).
-    if (
-      pathOnly === '/api/dev/simulator' ||
-      pathOnly === '/api/dev/safeguard-flags' ||
-      pathOnly.startsWith('/api/dev/simulator/')
-    ) {
-      proxyRequest(req, res, simulatorUpstream)
-      return
-    }
-
-    // 2. /api/local-router/* → local model router (strip the prefix).
+    // 1. /api/local-router/* → local model router (strip the prefix).
     if (pathOnly.startsWith('/api/local-router/')) {
       proxyRequest(req, res, routerUpstream, {
         rewritePath: (u) => u.replace('/api/local-router', ''),
       })
-      return
-    }
-
-    // 3. Mock safeguard flags GET → local dev backend. Route ALL methods so
-    // POST/DELETE against this path get a 405 from the mock rather than
-    // silently forwarding real account data through the catch-all.
-    if (pathOnly === '/api/users/me/safeguard-flags') {
-      proxyRequest(req, res, simulatorUpstream)
       return
     }
 
@@ -328,20 +266,14 @@ export function createDevServeHandler({
       return
     }
 
-    // 4. Remaining /api/* → configured real controlplane, if configured.
+    // 2. All other /api/* traffic goes through the local API gateway, which
+    // owns mock registration and forwards unmatched routes to controlplane.
     if (pathOnly.startsWith('/api/')) {
-      if (!controlplaneUpstream) {
-        res.writeHead(502, { 'Content-Type': 'text/plain' })
-        res.end(
-          'NEXT_PUBLIC_API_BASE_URL is not configured; cannot forward controlplane request.',
-        )
-        return
-      }
-      proxyRequest(req, res, controlplaneUpstream)
+      proxyRequest(req, res, simulatorUpstream)
       return
     }
 
-    // 5. Everything else: static files
+    // 3. Everything else: static files
     serveStatic(req, res)
   }
 }
@@ -353,19 +285,7 @@ if (server) {
   server.listen(PORT, () => {
     console.log(`Dev server running at http://localhost:${PORT}`)
     console.log(`  Static files: ${OUT_DIR}`)
-    console.log(
-      `  Proxy: /api/dev/*                       → ${SIMULATOR_UPSTREAM}`,
-    )
-    console.log(
-      `  Proxy: /api/local-router/*              → ${ROUTER_UPSTREAM}`,
-    )
-    console.log(
-      `  Proxy: /api/users/me/safeguard-flags    → ${SIMULATOR_UPSTREAM}`,
-    )
-    console.log(
-      `  Proxy: /api/*                           → ${
-        CONTROLPLANE_PROXY_ORIGIN || '(unconfigured; 502)'
-      }`,
-    )
+    console.log(`  Proxy: /api/local-router/* → ${ROUTER_UPSTREAM}`)
+    console.log(`  Proxy: /api/*              → ${SIMULATOR_UPSTREAM}`)
   })
 }

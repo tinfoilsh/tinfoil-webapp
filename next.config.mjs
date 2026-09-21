@@ -25,22 +25,6 @@ if (isHostedBuild && process.env.NEXT_PUBLIC_DEV === 'true') {
 // local builds use scripts/dev-serve.mjs instead of Next rewrites.
 const isLocalDevProxyEnabled = isDev && process.env.NEXT_PUBLIC_DEV === 'true'
 
-function parseLocalControlplaneProxyOrigin(raw) {
-  if (!raw) return null
-  let url
-  try {
-    url = new URL(raw)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
-  return `${url.protocol}//${url.host}`
-}
-
-const localControlplaneProxyOrigin = isLocalDevProxyEnabled
-  ? parseLocalControlplaneProxyOrigin(process.env.NEXT_PUBLIC_API_BASE_URL)
-  : null
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   ...(isDev ? {} : { output: 'export' }),
@@ -66,37 +50,19 @@ const nextConfig = {
     optimizePackageImports: ['react-icons', 'lucide-react', '@heroicons/react'],
   },
 
-  // Local development API proxy. Order matters: local and mocked routes must
-  // come before the catch-all that forwards to the real controlplane.
+  // Local development API gateway. Next only separates model-router traffic;
+  // the port-3001 gateway owns mock registration and controlplane forwarding.
   async rewrites() {
     if (!isLocalDevProxyEnabled) return []
 
-    const localRoutes = [
-      {
-        source: '/api/dev/simulator',
-        destination: 'http://localhost:3001/api/dev/simulator',
-      },
-      {
-        source: '/api/dev/safeguard-flags',
-        destination: 'http://localhost:3001/api/dev/safeguard-flags',
-      },
+    return [
       {
         source: '/api/local-router/:path*',
         destination: 'http://localhost:8090/:path*',
       },
       {
-        source: '/api/users/me/safeguard-flags',
-        destination: 'http://localhost:3001/api/users/me/safeguard-flags',
-      },
-    ]
-    if (!localControlplaneProxyOrigin) return localRoutes
-    return [
-      ...localRoutes,
-      // Catch-all: everything else under /api/* forwards to the real
-      // controlplane so Clerk/billing/cloud continue to work in dev.
-      {
         source: '/api/:path*',
-        destination: `${localControlplaneProxyOrigin}/api/:path*`,
+        destination: 'http://localhost:3001/api/:path*',
       },
     ]
   },

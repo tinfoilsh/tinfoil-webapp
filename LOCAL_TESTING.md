@@ -61,16 +61,19 @@ npm run build      # generates out/
 npm run dev:serve  # serves out/ on port 3000 with API proxying
 ```
 
-Both modes route `/api/*` requests with the same precedence:
+Both frontend modes route `/api/local-router/*` directly to the local model
+router and send every other `/api/*` request to the local API gateway on
+`localhost:3001`. The gateway owns route selection:
 
-1. `/api/dev/*` → local mock backend on `localhost:3001` (simulator LLM +
-   mock safeguard mutations).
-2. `/api/local-router/*` → local model router on `localhost:8090`.
-3. `GET /api/users/me/safeguard-flags` → local mock backend (returns the
-   real controlplane schema).
-4. Everything else under `/api/*` → the configured real controlplane at
-   `NEXT_PUBLIC_API_BASE_URL`, so Clerk, billing, cloud sync, sharing, etc.
-   keep working in dev.
+1. Dev Simulator handles `POST /api/dev/simulator`.
+2. Registered controlplane mocks get the first opportunity to handle other routes.
+3. Unknown `/api/dev/*` routes return 404 and never reach production.
+4. Remaining `/api/*` requests are forwarded to the configured real
+   controlplane at `NEXT_PUBLIC_API_BASE_URL`, so Clerk, billing, cloud sync,
+   sharing, etc. keep working in dev.
+
+Future controlplane mocks are registered in `scripts/mock-controlplane.mjs`;
+the frontend servers do not need to know their individual routes.
 
 `dev:serve` (`scripts/dev-serve.mjs`) also accepts stream log uploads at
 `POST /api/dev/stream-log`.
