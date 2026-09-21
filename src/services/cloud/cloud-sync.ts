@@ -670,6 +670,84 @@ export class CloudSyncService {
     }
   }
 
+  /**
+   * Fork a synced chat server-side and bring the new row into local
+   * storage. Pending local edits are flushed first so the enclave copies
+   * exactly what the user sees; the fork is then pulled back through the
+   * same path a chat created on another device takes, so its local sync
+   * bookkeeping starts out correct.
+   */
+  async forkChat(request: {
+    sourceId: string
+    targetId: string
+    messageCount: number
+    title: string
+  }): Promise<StoredChat> {
+    const generation = this.accountGeneration
+    const userId = this.readActiveUserId()
+    if (!(await cloudStorage.isAuthenticated())) {
+      throw new Error('Authentication required for cloud sync')
+    }
+    this.ensureCurrentAccount(generation, userId)
+    if (!(await canWriteToCloud())) {
+      throw new Error('Cloud sync key is not authorized')
+    }
+    this.ensureCurrentAccount(generation, userId)
+
+    await this.uploadCoalescer.waitForUpload(request.sourceId)
+    let source = await indexedDBStorage.getChat(request.sourceId)
+    this.ensureCurrentAccount(generation, userId)
+    if (!source) {
+      throw new Error('Chat not found')
+    }
+    if (source.syncUserId !== userId) {
+      throw new Error('Chat does not belong to the active account')
+    }
+    if (source.locallyModified) {
+      await this.backupChatNow(request.sourceId)
+      source = await indexedDBStorage.getChat(request.sourceId)
+      this.ensureCurrentAccount(generation, userId)
+      // An edit that landed during the flush is not on the server yet,
+      // so forking now would silently branch from the older revision.
+      if (!source || source.locallyModified) {
+        throw new Error('Chat changed while preparing to fork')
+      }
+    }
+
+    await cloudStorage.forkChat({
+      ...request,
+      createdAt: new Date().toISOString(),
+      idempotencyKey: newIdempotencyKey(),
+    })
+    this.ensureCurrentAccount(generation, userId)
+
+    const fork = await cloudStorage.downloadChat(request.targetId)
+    this.ensureCurrentAccount(generation, userId)
+    if (!fork) {
+      throw new Error(
+        `Forked chat was not found after creation: ${request.targetId}`,
+      )
+    }
+    const applied = await indexedDBStorage.applyRemoteChatIfFresh({
+      chat: fork,
+      syncVersion: fork.syncVersion ?? 0,
+      expectedLocalUpdatedAt: null,
+      isCurrent: () =>
+        this.isCurrentGeneration(generation) &&
+        this.readActiveUserId() === userId,
+      userId: userId ?? undefined,
+    })
+    this.ensureCurrentAccount(generation, userId)
+    if (!applied.applied) {
+      throw new Error(
+        `Forked chat could not be stored locally: ${request.targetId}`,
+      )
+    }
+    chatEvents.emit({ reason: 'sync', ids: [request.targetId] })
+    reportChatSynced(request.targetId)
+    return fork
+  }
+
   private async doBackupChat(
     chatId: string,
     idempotencyKey: string,

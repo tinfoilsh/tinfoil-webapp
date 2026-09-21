@@ -383,6 +383,35 @@ describe('sync-api (enclave JSON-RPC)', () => {
     })
   })
 
+  it('fork posts the source, target, prefix length, title, and timestamp', async () => {
+    const api = await import('@/services/sync-enclave/sync-api')
+    mockFetch.mockResolvedValueOnce(
+      ok({ ok: true, id: 'chat-fork', etag: '1', key_id: 'aa'.repeat(16) }),
+    )
+
+    const response = await api.fork({
+      sourceId: 'chat-source',
+      targetId: 'chat-fork',
+      keyB64: api.hexToB64('aa'.repeat(32)),
+      messageCount: 3,
+      title: 'Trip planning (fork)',
+      createdAt: '2026-03-04T05:06:07.123Z',
+      idempotencyKey: 'fork-1',
+    })
+
+    expect(response.id).toBe('chat-fork')
+    expect(lastRequest()[0]).toBe('/v1/sync/fork')
+    expect(lastBody()).toEqual({
+      source_id: 'chat-source',
+      target_id: 'chat-fork',
+      key: api.hexToB64('aa'.repeat(32)),
+      message_count: 3,
+      title: 'Trip planning (fork)',
+      created_at: '2026-03-04T05:06:07.123Z',
+      idempotency_key: 'fork-1',
+    })
+  })
+
   it('attachmentPut posts idempotency key', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
     mockFetch.mockResolvedValueOnce(

@@ -93,6 +93,7 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { chatEvents } from '@/services/storage/chat-events'
+import { buildForkedChat } from '@/services/storage/chat-fork'
 import {
   ChatImagesUnavailableError,
   chatStorage,
@@ -115,6 +116,7 @@ import {
   recordPerformanceDuration,
   startPerformanceTimer,
 } from '@/utils/performance-metrics'
+import { generateReverseId } from '@/utils/reverse-id'
 import {
   estimateMessageTokens,
   estimateTokenCount,
@@ -153,6 +155,7 @@ import {
   resolveProjectUploadTarget,
   routeChatFileUpload,
 } from './file-upload-routing'
+import { ForkOverlay } from './fork-overlay'
 import { GenUIInputAreaRenderer } from './genui/GenUIInputAreaRenderer'
 import { selectPendingInputToolCallFromChat } from './genui/pending-input-tool-call'
 import {
@@ -2709,6 +2712,86 @@ export function ChatInterface({
     [reloadChats, toast],
   )
 
+  // Start a new conversation from the messages up to and including the
+  // chosen one. A placeholder fork appears in the sidebar at once and the
+  // conversation is dimmed under a status overlay while storage does the
+  // real work (local copy or via the sync enclave); the placeholder is
+  // then swapped for the stored row. Guest chats are copied into session
+  // storage. One fork runs at a time, and the result is only selected if
+  // the user is still viewing the chat it was forked from.
+  const forkInFlightRef = useRef(false)
+  const [isForking, setIsForking] = useState(false)
+  const handleForkMessage = useCallback(
+    async (messageIndex: number) => {
+      if (!currentChat || currentChat.isTemporary || currentChat.isBlankChat) {
+        return
+      }
+      if (loadingState !== 'idle' || isStreaming) return
+      if (forkInFlightRef.current) return
+      const messageCount = messageIndex + 1
+      if (messageCount < 1 || messageCount > currentChat.messages.length) {
+        return
+      }
+      const sourceId = currentChat.id
+      const forkId = generateReverseId().id
+      const placeholder: Chat = {
+        ...buildForkedChat(currentChat, messageCount, forkId),
+        pendingSave: true,
+      }
+      forkInFlightRef.current = true
+      setIsForking(true)
+      setChats((current) => upsertChatById(current, placeholder))
+      const startedAt = Date.now()
+      try {
+        let fork: Chat
+        if (isSignedIn) {
+          fork = await chatStorage.forkChat(sourceId, messageCount, forkId)
+        } else {
+          fork = { ...placeholder, pendingSave: false }
+          sessionChatStorage.saveChat(fork)
+        }
+        const elapsed = Date.now() - startedAt
+        if (elapsed < CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS) {
+          await new Promise((resolve) =>
+            setTimeout(
+              resolve,
+              CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS - elapsed,
+            ),
+          )
+        }
+        setChats((current) => upsertChatById(current, fork))
+        if (currentChatRef.current?.id !== sourceId) return
+        invalidateFavoriteNavigation()
+        setCurrentChat(fork)
+      } catch (error) {
+        setChats((current) => current.filter((chat) => chat.id !== forkId))
+        logError('Failed to fork conversation', error, {
+          component: 'ChatInterface',
+          action: 'handleForkMessage',
+          metadata: { chatId: sourceId, messageCount },
+        })
+        toast({
+          title: 'Failed to fork conversation',
+          description: 'Please try again.',
+          variant: 'destructive',
+        })
+      } finally {
+        forkInFlightRef.current = false
+        setIsForking(false)
+      }
+    },
+    [
+      currentChat,
+      invalidateFavoriteNavigation,
+      isSignedIn,
+      isStreaming,
+      loadingState,
+      setChats,
+      setCurrentChat,
+      toast,
+    ],
+  )
+
   const handleToggleFavorite = useCallback(
     async (favorite: Pick<Chat, 'id' | 'isLocalOnly'>) => {
       if (pinnedChatIds.includes(favorite.id)) {
@@ -4428,6 +4511,7 @@ export function ChatInterface({
                 isStreaming={isStreaming}
                 isWaitingForResponse={isWaitingForResponse}
               />
+              <AnimatePresence>{isForking && <ForkOverlay />}</AnimatePresence>
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
@@ -4502,6 +4586,15 @@ export function ChatInterface({
                       }
                       onEditAssistantMessage={editAssistantMessage}
                       onContinueAssistantMessage={continueAssistantMessage}
+                      onForkMessage={
+                        currentChat.isTemporary ||
+                        currentChat.isBlankChat ||
+                        isStreaming ||
+                        isForking ||
+                        loadingState !== 'idle'
+                          ? undefined
+                          : handleForkMessage
+                      }
                       onRetryToolCall={retryToolCall}
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
@@ -4540,7 +4633,15 @@ export function ChatInterface({
                 <div
                   ref={inputAreaRef}
                   data-chat-input-area
-                  className="pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 px-4 pb-4"
+                  aria-busy={isForking || undefined}
+                  className={cn(
+                    'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 px-4 pb-4',
+                    // The fork overlay only covers the transcript; the
+                    // composer lives in this sibling layer, so it goes
+                    // inert here or a send could race the fork.
+                    isForking &&
+                      '[&_.pointer-events-auto]:pointer-events-none [&_.pointer-events-auto]:opacity-50',
+                  )}
                   style={{
                     minHeight: '80px',
                     maxHeight: '50dvh',

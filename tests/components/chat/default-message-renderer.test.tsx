@@ -207,6 +207,62 @@ describe('DefaultMessageRenderer message actions', () => {
     expect(onDeleteMessage).toHaveBeenCalledWith(3)
   })
 
+  it('forks from a user message with its own index', () => {
+    const onForkMessage = vi.fn()
+    render(
+      <Renderer
+        message={{
+          role: 'user',
+          content: 'Hello',
+          timestamp: new Date('2026-08-07T00:00:00.000Z'),
+        }}
+        messageIndex={2}
+        model={model}
+        isDarkMode={false}
+        onForkMessage={onForkMessage}
+      />,
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Fork conversation from here' }),
+    )
+    expect(onForkMessage).toHaveBeenCalledWith(2)
+  })
+
+  it('forks from an assistant message with its own index', () => {
+    const onForkMessage = vi.fn()
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={5}
+        model={model}
+        isDarkMode={false}
+        onForkMessage={onForkMessage}
+      />,
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Fork conversation from here' }),
+    )
+    expect(onForkMessage).toHaveBeenCalledWith(5)
+  })
+
+  it('does not offer fork when no handler is provided', () => {
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        onDeleteMessage={vi.fn()}
+      />,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'Fork conversation from here' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('continues an assistant response without editing', () => {
     const onContinueAssistantMessage = vi.fn()
     render(

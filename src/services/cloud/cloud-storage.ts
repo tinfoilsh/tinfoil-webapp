@@ -15,6 +15,7 @@ import {
   attachmentGet as enclaveAttachmentGet,
   attachmentPut as enclaveAttachmentPut,
   deleteRow as enclaveDeleteRow,
+  fork as enclaveFork,
   listStatus as enclaveListStatus,
   pull as enclavePull,
   push as enclavePush,
@@ -387,6 +388,39 @@ export class CloudStorageService {
       rewrites,
       projectIntentIncluded,
     }
+  }
+
+  /**
+   * Ask the enclave to copy the first `messageCount` messages of a
+   * synced chat into a new row. Image bytes never leave the server:
+   * the enclave re-uploads them under the new chat so each chat owns
+   * its own attachment blobs.
+   */
+  async forkChat(request: {
+    sourceId: string
+    targetId: string
+    messageCount: number
+    title: string
+    createdAt: string
+    idempotencyKey: string
+  }): Promise<{ syncVersion: number | null }> {
+    const resp = await enclaveFork({
+      sourceId: request.sourceId,
+      targetId: request.targetId,
+      keyB64: requirePrimaryKeyB64(),
+      messageCount: request.messageCount,
+      title: request.title,
+      createdAt: request.createdAt,
+      idempotencyKey: request.idempotencyKey,
+    })
+    if (resp.search_indexed === false) {
+      logWarning('Forked chat stored but not search-indexed', {
+        component: 'CloudStorage',
+        action: 'forkChat',
+        metadata: { chatId: request.targetId },
+      })
+    }
+    return { syncVersion: etagToSyncVersion(resp.etag) ?? null }
   }
 
   private async encryptAndUploadAttachments(

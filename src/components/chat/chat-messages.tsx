@@ -75,6 +75,7 @@ type ChatMessagesProps = {
   onDeleteMessage?: (messageIndex: number) => void
   onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
   onContinueAssistantMessage?: (messageIndex: number) => void
+  onForkMessage?: (messageIndex: number) => void
   onRetryToolCall?: (
     messageIndex: number,
     toolCallId: string,
@@ -129,6 +130,7 @@ const ChatMessage = memo(
     onDeleteMessage,
     onEditAssistantMessage,
     onContinueAssistantMessage,
+    onForkMessage,
     onRetryToolCall,
   }: {
     message: Message
@@ -144,6 +146,7 @@ const ChatMessage = memo(
     onDeleteMessage?: (messageIndex: number) => void
     onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
     onContinueAssistantMessage?: (messageIndex: number) => void
+    onForkMessage?: (messageIndex: number) => void
     onRetryToolCall?: (
       messageIndex: number,
       toolCallId: string,
@@ -168,6 +171,7 @@ const ChatMessage = memo(
         onDeleteMessage={onDeleteMessage}
         onEditAssistantMessage={onEditAssistantMessage}
         onContinueAssistantMessage={onContinueAssistantMessage}
+        onForkMessage={onForkMessage}
         onRetryToolCall={onRetryToolCall}
       />
     )
@@ -192,6 +196,7 @@ const ChatMessage = memo(
       prevProps.onEditAssistantMessage === nextProps.onEditAssistantMessage &&
       prevProps.onContinueAssistantMessage ===
         nextProps.onContinueAssistantMessage &&
+      prevProps.onForkMessage === nextProps.onForkMessage &&
       prevProps.onRetryToolCall === nextProps.onRetryToolCall
     )
   },
@@ -332,6 +337,7 @@ export function ChatMessages({
   onDeleteMessage,
   onEditAssistantMessage,
   onContinueAssistantMessage,
+  onForkMessage,
   onRetryToolCall,
   showScrollButton,
   webSearchEnabled,
@@ -368,6 +374,7 @@ export function ChatMessages({
         onDeleteMessage,
         onEditAssistantMessage,
         onContinueAssistantMessage,
+        onForkMessage,
         onRetryToolCall,
       }
 

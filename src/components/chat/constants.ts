@@ -55,6 +55,9 @@ export const CONSTANTS = {
   // Sidebar geometry and the adjacent chat area share one transition.
   SIDEBAR_LAYOUT_TRANSITION_CLASS_NAME:
     'transition-[transform,left,right] duration-200 ease-in-out motion-reduce:transition-none',
+  // How long the dimmed "forking" overlay stays up after the fork lands
+  // so a fast fork still reads as an action instead of a flicker.
+  FORK_OVERLAY_MIN_VISIBLE_MS: 600,
   SIDEBAR_SYNC_MIN_SPINNER_MS: 1000,
   SIDEBAR_SYNC_SUCCESS_FEEDBACK_MS: 1500,
   SIDEBAR_SYNC_FEEDBACK_EXIT_S: 0.14,

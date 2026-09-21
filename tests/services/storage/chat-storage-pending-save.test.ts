@@ -1,5 +1,6 @@
 import type { Chat } from '@/components/chat/types'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import type { cloudSync } from '@/services/cloud/cloud-sync'
 import {
   ChatImagesUnavailableError,
   chatStorage,
@@ -7,6 +8,10 @@ import {
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+type ForkCloudChatRequest = Parameters<
+  typeof import('@/services/cloud/cloud-sync').cloudSync.forkChat
+>[0]
 
 const {
   saveChatSpy,
@@ -40,12 +45,13 @@ const {
   markAsDeletedSpy,
   mutateChatSpy,
   loadChatImagesSpy,
+  forkCloudChatSpy,
 } = vi.hoisted(() => ({
   saveChatSpy: vi.fn(async (chat: unknown) => ({
     saved: true,
     isLocalOnly: (chat as { isLocalOnly?: boolean }).isLocalOnly === true,
   })),
-  getChatSpy: vi.fn(async () => null as unknown),
+  getChatSpy: vi.fn(async (_id: string) => null as unknown),
   getAllChatsSpy: vi.fn(async () => [] as unknown[]),
   getAllChatIdsSpy: vi.fn(async () => [] as string[]),
   deleteAllChatsSpy: vi.fn(async () => 0),
@@ -83,6 +89,7 @@ const {
     ) => null as unknown,
   ),
   loadChatImagesSpy: vi.fn(async () => ({}) as Record<string, string>),
+  forkCloudChatSpy: vi.fn(async (_request: ForkCloudChatRequest) => {}),
 }))
 
 vi.mock('@/services/storage/indexed-db', () => ({
@@ -114,6 +121,7 @@ vi.mock('@/services/cloud/cloud-sync', () => ({
     hasPendingUpload: hasPendingUploadSpy,
     createAccountOperationGuard: createAccountOperationGuardSpy,
     withProjectUploadBarrier: withProjectUploadBarrierSpy,
+    forkChat: forkCloudChatSpy,
   },
 }))
 vi.mock('@/services/cloud/cloud-storage', () => ({
@@ -686,5 +694,138 @@ describe('chatStorage project move rollback', () => {
       reason: 'save',
       ids: ['rev_123_abc'],
     })
+  })
+})
+
+describe('chatStorage forkChat', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    isDeletedSpy.mockReturnValue(false)
+    setCloudSyncEnabled(true)
+  })
+
+  const storedSource = {
+    id: 'rev_123_abc',
+    title: 'Trip planning',
+    createdAt: '2026-06-02T09:00:00.000Z',
+    updatedAt: '2026-06-02T09:05:00.000Z',
+    lastAccessedAt: 1,
+    syncVersion: 4,
+    messages: [
+      { role: 'user', content: 'one', timestamp: '2026-06-02T09:00:00.000Z' },
+      {
+        role: 'assistant',
+        content: 'two',
+        timestamp: '2026-06-02T09:00:01.000Z',
+      },
+      { role: 'user', content: 'three', timestamp: '2026-06-02T09:00:02.000Z' },
+    ],
+  }
+
+  it('copies a local-only chat on this device without touching the cloud', async () => {
+    const source = { ...storedSource, isLocalOnly: true }
+    getChatSpy.mockImplementation(async (id) =>
+      id === 'rev_123_abc' ? source : (saveChatSpy.mock.calls[0]?.[0] ?? null),
+    )
+
+    const fork = await chatStorage.forkChat('rev_123_abc', 2)
+
+    expect(fork.id).not.toBe('rev_123_abc')
+    expect(fork.title).toBe('Trip planning (fork)')
+    expect(fork.messages.map((m) => m.content)).toEqual(['one', 'two'])
+    expect(fork.isLocalOnly).toBe(true)
+    const persisted = saveChatSpy.mock.calls[0][0] as Record<string, unknown>
+    expect(persisted.id).toBe(fork.id)
+    expect(persisted).not.toHaveProperty('syncVersion')
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
+    expect(backupChatSpy).not.toHaveBeenCalled()
+  })
+
+  it('forks a synced chat through the enclave and returns the stored row', async () => {
+    const source = { ...storedSource, isLocalOnly: false }
+    getChatSpy.mockImplementation(async (id) => {
+      if (id === 'rev_123_abc') return source
+      const request = forkCloudChatSpy.mock.calls[0]?.[0] as
+        Parameters<typeof cloudSync.forkChat>[0] | undefined
+      return request && id === request.targetId
+        ? {
+            ...source,
+            id,
+            title: 'Trip planning (fork)',
+            messages: source.messages.slice(0, request.messageCount),
+          }
+        : null
+    })
+
+    const fork = await chatStorage.forkChat('rev_123_abc', 2)
+
+    expect(forkCloudChatSpy).toHaveBeenCalledWith({
+      sourceId: 'rev_123_abc',
+      targetId: fork.id,
+      messageCount: 2,
+      title: 'Trip planning (fork)',
+    })
+    expect(fork.id).not.toBe('rev_123_abc')
+    expect(fork.messages.map((m) => m.content)).toEqual(['one', 'two'])
+    expect(saveChatSpy).not.toHaveBeenCalled()
+  })
+
+  it('copies a synced chat on this device while cloud sync is disabled', async () => {
+    setCloudSyncEnabled(false)
+    const source = { ...storedSource, isLocalOnly: false }
+    getChatSpy.mockImplementation(async (id) =>
+      id === 'rev_123_abc' ? source : (saveChatSpy.mock.calls[0]?.[0] ?? null),
+    )
+
+    const fork = await chatStorage.forkChat('rev_123_abc', 2)
+
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
+    expect(fork.isLocalOnly).toBe(true)
+    expect(saveChatSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a fork point outside a synced conversation before reaching the enclave', async () => {
+    getChatSpy.mockResolvedValue({ ...storedSource, isLocalOnly: false })
+
+    await expect(chatStorage.forkChat('rev_123_abc', 4)).rejects.toThrow(
+      RangeError,
+    )
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
+  })
+
+  it('stores the fork under a caller-supplied id on both paths', async () => {
+    const localSource = { ...storedSource, isLocalOnly: true }
+    getChatSpy.mockImplementation(async (id) =>
+      id === 'rev_123_abc'
+        ? localSource
+        : (saveChatSpy.mock.calls[0]?.[0] ?? null),
+    )
+    const localFork = await chatStorage.forkChat('rev_123_abc', 1, 'fork-local')
+    expect(localFork.id).toBe('fork-local')
+
+    vi.clearAllMocks()
+    const cloudSource = { ...storedSource, isLocalOnly: false }
+    getChatSpy.mockImplementation(async (id) =>
+      id === 'rev_123_abc'
+        ? cloudSource
+        : id === 'fork-cloud'
+          ? { ...cloudSource, id, messages: cloudSource.messages.slice(0, 1) }
+          : null,
+    )
+    const cloudFork = await chatStorage.forkChat('rev_123_abc', 1, 'fork-cloud')
+    expect(cloudFork.id).toBe('fork-cloud')
+    expect(forkCloudChatSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ targetId: 'fork-cloud' }),
+    )
+  })
+
+  it('fails when the source chat does not exist', async () => {
+    getChatSpy.mockResolvedValue(null)
+
+    await expect(chatStorage.forkChat('missing', 1)).rejects.toThrow(
+      'Chat not found',
+    )
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
+    expect(saveChatSpy).not.toHaveBeenCalled()
   })
 })

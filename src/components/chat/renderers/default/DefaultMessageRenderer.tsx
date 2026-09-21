@@ -13,6 +13,7 @@ import {
   PencilSquareIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
+import { GitFork } from 'lucide-react'
 import React, { memo, useState, type JSX } from 'react'
 import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
@@ -67,6 +68,7 @@ const DefaultMessageComponent = ({
   onDeleteMessage,
   onEditAssistantMessage,
   onContinueAssistantMessage,
+  onForkMessage,
   onRetryToolCall,
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
@@ -232,6 +234,10 @@ const DefaultMessageComponent = ({
   const handleDelete = React.useCallback(() => {
     onDeleteMessage?.(messageIndex)
   }, [messageIndex, onDeleteMessage])
+
+  const handleFork = React.useCallback(() => {
+    onForkMessage?.(messageIndex)
+  }, [messageIndex, onForkMessage])
 
   const handleRegenerate = React.useCallback(() => {
     if (onRegenerateMessage) {
@@ -784,6 +790,20 @@ const DefaultMessageComponent = ({
                         </span>
                       </div>
                     )}
+                    {onForkMessage && (
+                      <div className="group/fork relative">
+                        <button
+                          onClick={handleFork}
+                          aria-label="Fork conversation from here"
+                          className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+                        >
+                          <GitFork className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100">
+                          Fork from here
+                        </span>
+                      </div>
+                    )}
                     {onDeleteMessage && (
                       <div className="group/delete relative">
                         <button
@@ -903,6 +923,20 @@ const DefaultMessageComponent = ({
                     </button>
                     <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
                       Edit
+                    </span>
+                  </div>
+                )}
+                {onForkMessage && (
+                  <div className="group/fork relative">
+                    <button
+                      onClick={handleFork}
+                      aria-label="Fork conversation from here"
+                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
+                    >
+                      <GitFork className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100">
+                      Fork from here
                     </span>
                   </div>
                 )}

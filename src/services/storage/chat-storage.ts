@@ -1,12 +1,15 @@
 import type { Chat } from '@/components/chat/types'
+import { forkChatTitle } from '@/constants/chat'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
+import { generateReverseId } from '@/utils/reverse-id'
 import { cloudStorage } from '../cloud/cloud-storage'
 import { cloudSync } from '../cloud/cloud-sync'
 import { streamingTracker } from '../cloud/streaming-tracker'
 import { newIdempotencyKey } from '../sync-enclave/sync-api'
 import { chatEvents } from './chat-events'
+import { buildForkedChat } from './chat-fork'
 import { deletedChatsTracker } from './deleted-chats-tracker'
 import { indexedDBStorage, type Chat as StorageChat } from './indexed-db'
 
@@ -564,6 +567,51 @@ export class ChatStorageService {
     }
 
     chatEvents.emit({ reason: 'save', ids: [chatId] })
+  }
+
+  /**
+   * Create a new chat holding the first `messageCount` messages of an
+   * existing one. Local-only chats are copied on this device; synced
+   * chats are forked by the enclave so their image bytes stay
+   * server-side and each chat ends up owning its own copies. Callers
+   * may pre-mint `forkId` so they can show the fork before it lands.
+   */
+  async forkChat(
+    sourceId: string,
+    messageCount: number,
+    forkId: string = generateReverseId().id,
+  ): Promise<Chat> {
+    await this.initialize()
+
+    const source = await this.getChat(sourceId)
+    if (!source) {
+      throw new Error('Chat not found')
+    }
+    if (messageCount < 1 || messageCount > source.messages.length) {
+      throw new RangeError('Fork point is outside the conversation')
+    }
+
+    // The user's global opt-out is invariant (§9.6 R6): while cloud sync
+    // is disabled nothing may reach the enclave, so even a chat that was
+    // synced before the opt-out is copied on this device.
+    if (source.isLocalOnly || !isCloudSyncEnabled()) {
+      const fork = buildForkedChat(source, messageCount, forkId)
+      const saved = await this.saveChat(fork, true)
+      const stored = await this.getChat(forkId)
+      return stored ?? saved
+    }
+
+    await cloudSync.forkChat({
+      sourceId,
+      targetId: forkId,
+      messageCount,
+      title: forkChatTitle(source.title),
+    })
+    const fork = await this.getChat(forkId)
+    if (!fork) {
+      throw new Error('Forked chat was not stored')
+    }
+    return fork
   }
 
   async moveChatToProject(chatId: string, projectId: string): Promise<void> {

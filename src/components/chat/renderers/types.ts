@@ -35,6 +35,8 @@ export interface MessageRenderProps {
   onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
   /** Ask the model to resume an assistant response. */
   onContinueAssistantMessage?: (messageIndex: number) => void
+  /** Start a new conversation containing every message up to this one. */
+  onForkMessage?: (messageIndex: number) => void
   /**
    * Retry a single failed GenUI tool call in place. Resolves true when repaired
    * and preserves typed failures for the retry card.
