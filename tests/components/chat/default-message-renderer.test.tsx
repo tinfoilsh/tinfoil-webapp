@@ -260,7 +260,7 @@ describe('DefaultMessageRenderer message actions', () => {
 
     expect(
       screen.queryByRole('button', { name: 'Fork conversation from here' }),
-    ).toBeNull()
+    ).not.toBeInTheDocument()
   })
 
   it('continues an assistant response without editing', () => {

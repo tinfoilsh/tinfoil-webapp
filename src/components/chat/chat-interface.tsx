@@ -2713,18 +2713,23 @@ export function ChatInterface({
 
   // Start a new conversation from the messages up to and including the
   // chosen one. Signed-in chats are forked by storage (local copy or via
-  // the sync enclave); guest chats are copied into session storage.
+  // the sync enclave); guest chats are copied into session storage. One
+  // fork runs at a time, and the result is only selected if the user is
+  // still viewing the chat it was forked from.
+  const forkInFlightRef = useRef(false)
   const handleForkMessage = useCallback(
     async (messageIndex: number) => {
       if (!currentChat || currentChat.isTemporary || currentChat.isBlankChat) {
         return
       }
       if (loadingState !== 'idle' || isStreaming) return
+      if (forkInFlightRef.current) return
       const messageCount = messageIndex + 1
       if (messageCount < 1 || messageCount > currentChat.messages.length) {
         return
       }
       const sourceId = currentChat.id
+      forkInFlightRef.current = true
       try {
         let fork: Chat
         if (isSignedIn) {
@@ -2737,8 +2742,9 @@ export function ChatInterface({
           )
           sessionChatStorage.saveChat(fork)
         }
-        invalidateFavoriteNavigation()
         setChats((current) => upsertChatById(current, fork))
+        if (currentChatRef.current?.id !== sourceId) return
+        invalidateFavoriteNavigation()
         setCurrentChat(fork)
         toast({
           title: 'Conversation forked',
@@ -2756,6 +2762,8 @@ export function ChatInterface({
           description: 'Please try again.',
           variant: 'destructive',
         })
+      } finally {
+        forkInFlightRef.current = false
       }
     },
     [
@@ -4564,7 +4572,10 @@ export function ChatInterface({
                       onEditAssistantMessage={editAssistantMessage}
                       onContinueAssistantMessage={continueAssistantMessage}
                       onForkMessage={
-                        currentChat.isTemporary || currentChat.isBlankChat
+                        currentChat.isTemporary ||
+                        currentChat.isBlankChat ||
+                        isStreaming ||
+                        loadingState !== 'idle'
                           ? undefined
                           : handleForkMessage
                       }
