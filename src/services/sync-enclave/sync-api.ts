@@ -239,6 +239,37 @@ export interface OKResponse {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  Fork                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Server-side chat fork. The enclave unseals the source under the
+ * CEK, keeps the first `messageCount` messages, re-uploads every image
+ * so the fork owns its own attachment blobs, and seals the result as a
+ * brand-new create-only row. `createdAt` is caller-supplied so a retry
+ * under the same idempotency key seals byte-identical plaintext.
+ */
+export interface ForkRequest {
+  sourceId: string
+  targetId: string
+  /** User's CEK, base64-encoded raw 32 bytes. */
+  keyB64: string
+  messageCount: number
+  title: string
+  /** RFC 3339 timestamp stamped as the fork's createdAt/updatedAt. */
+  createdAt: string
+  idempotencyKey: string
+}
+
+export interface ForkResponse {
+  ok: true
+  id: string
+  etag: string
+  key_id: string
+  search_indexed?: boolean
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Key registry                                                              */
 /* -------------------------------------------------------------------------- */
 
@@ -903,6 +934,24 @@ export async function deleteRow(req: DeleteRequest): Promise<OKResponse> {
       if_match: req.ifMatch,
       idempotency_key: req.idempotencyKey,
       key: req.keyB64,
+    },
+    undefined,
+    { requestScope: 'cloud-sync' },
+  )
+}
+
+export async function fork(req: ForkRequest): Promise<ForkResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<ForkResponse>(
+    '/v1/sync/fork',
+    {
+      source_id: req.sourceId,
+      target_id: req.targetId,
+      key: req.keyB64,
+      message_count: req.messageCount,
+      title: req.title,
+      created_at: req.createdAt,
+      idempotency_key: req.idempotencyKey,
     },
     undefined,
     { requestScope: 'cloud-sync' },

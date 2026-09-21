@@ -34,6 +34,8 @@ export type {
   BackupInventoryResponse,
   BackupInventoryScope,
   DeleteRequest,
+  ForkRequest,
+  ForkResponse,
   KeyCurrentBundle,
   KeyCurrentResponse,
   KeyRegisterBundleInput,
