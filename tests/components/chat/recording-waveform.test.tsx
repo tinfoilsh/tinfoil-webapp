@@ -4,8 +4,9 @@ import {
   RecordingWaveform,
   formatRecordingDuration,
 } from '@/components/chat/recording-waveform'
+import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { createRef } from 'react'
+import { createRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/project', () => ({
@@ -25,6 +26,54 @@ vi.mock('@/components/chat/hooks/use-chat-font', () => ({
   CHAT_FONT_CLASSES: { default: '' },
   useChatFont: () => 'default',
 }))
+
+vi.mock('@/services/inference/tinfoil-client', () => ({
+  getTinfoilClient: vi.fn(),
+}))
+
+function stubRecording(deferStop = false) {
+  stubWebAudio()
+  const tracks = [{ stop: vi.fn() }]
+  const stream = { getTracks: () => tracks } as unknown as MediaStream
+  vi.stubGlobal('navigator', {
+    userAgent: 'Desktop',
+    mediaDevices: { getUserMedia: vi.fn(() => Promise.resolve(stream)) },
+  })
+  let pendingStop: (() => void) | null = null
+  class FakeMediaRecorder {
+    static isTypeSupported = () => true
+    state: RecordingState = 'inactive'
+    ondataavailable: ((event: BlobEvent) => void) | null = null
+    onstop: (() => void) | null = null
+    start() {
+      this.state = 'recording'
+    }
+    stop() {
+      this.state = 'inactive'
+      if (deferStop) {
+        pendingStop = () => this.dispatchStop()
+      } else {
+        this.dispatchStop()
+      }
+    }
+    dispatchStop() {
+      this.ondataavailable?.({ data: new Blob(['audio']) } as BlobEvent)
+      this.onstop?.()
+    }
+  }
+  vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
+  const transcribe = vi.fn().mockResolvedValue('More details')
+  vi.mocked(getTinfoilClient).mockResolvedValue({
+    audio: { transcriptions: { create: transcribe } },
+  } as unknown as Awaited<ReturnType<typeof getTinfoilClient>>)
+  return {
+    transcribe,
+    finishStop: () => {
+      pendingStop?.()
+      pendingStop = null
+    },
+  }
+}
 
 describe('formatRecordingDuration', () => {
   it('renders minutes without padding and seconds zero-padded', () => {
@@ -176,56 +225,170 @@ describe('RecordingWaveform', () => {
 })
 
 describe('ChatInput recording UI', () => {
-  it('swaps the textarea for the waveform while recording and back on stop', async () => {
-    stubWebAudio()
-    const tracks = [{ stop: vi.fn() }]
-    const stream = { getTracks: () => tracks } as unknown as MediaStream
-    vi.stubGlobal('navigator', {
-      mediaDevices: { getUserMedia: vi.fn(() => Promise.resolve(stream)) },
-    })
-    class FakeMediaRecorder {
-      static isTypeSupported = () => true
-      state: RecordingState = 'inactive'
-      ondataavailable: ((event: BlobEvent) => void) | null = null
-      onstop: (() => void) | null = null
-      start() {
-        this.state = 'recording'
+  it.each([false, true])(
+    'keeps an expanded draft above repeated recordings (compact: %s)',
+    async (hasMessages) => {
+      const { transcribe, finishStop } = stubRecording(true)
+      const expandedHeight = 200
+      vi.spyOn(
+        HTMLTextAreaElement.prototype,
+        'scrollHeight',
+        'get',
+      ).mockImplementation(function (this: HTMLTextAreaElement) {
+        return this.classList.contains('hidden') ? 0 : expandedHeight
+      })
+      let finishTranscription!: (text: string) => void
+      transcribe.mockImplementation(
+        () =>
+          new Promise<string>((resolve) => {
+            finishTranscription = resolve
+          }),
+      )
+      const draft =
+        'An existing draft\nwith several lines\nthat should stay visible'
+      const handleSubmit = vi.fn()
+      const handleDocumentUpload = vi.fn().mockResolvedValue(undefined)
+      const inputRef = createRef<HTMLTextAreaElement>()
+      function Composer() {
+        const [input, setInput] = useState(draft)
+        return (
+          <ChatInput
+            input={input}
+            setInput={setInput}
+            handleSubmit={handleSubmit}
+            handleDocumentUpload={handleDocumentUpload}
+            loadingState="idle"
+            cancelGeneration={vi.fn()}
+            inputRef={inputRef}
+            handleInputFocus={vi.fn()}
+            inputMinHeight="40px"
+            isDarkMode
+            isPremium
+            hasMessages={hasMessages}
+            audioModel="audio-model"
+          />
+        )
       }
-      stop() {
-        this.state = 'inactive'
+      render(<Composer />)
+      const textarea = screen.getByRole('textbox', { name: 'Message' })
+      const pastedImage = new File(['image'], 'pasted.png', {
+        type: 'image/png',
+      })
+      const clipboardData = {
+        items: [{ type: pastedImage.type, getAsFile: () => pastedImage }],
+        getData: () => '',
       }
-    }
-    vi.stubGlobal('MediaRecorder', FakeMediaRecorder)
+      expect(textarea).toHaveStyle({ height: `${expandedHeight}px` })
+      let expectedDraft = draft
 
-    render(
-      <ChatInput
-        input=""
-        setInput={vi.fn()}
-        handleSubmit={vi.fn()}
-        loadingState="idle"
-        cancelGeneration={vi.fn()}
-        inputRef={createRef<HTMLTextAreaElement>()}
-        handleInputFocus={vi.fn()}
-        inputMinHeight="40px"
-        isDarkMode
-        isPremium
-        audioModel="audio-model"
-      />,
-    )
+      for (let recording = 0; recording < 2; recording++) {
+        await act(async () => {
+          fireEvent.click(
+            screen.getByRole('button', { name: 'Start recording' }),
+          )
+        })
 
-    const textarea = screen.getByRole('textbox', { name: 'Message' })
-    expect(screen.queryByTestId('recording-timer')).not.toBeInTheDocument()
+        const waveform = screen.getByTestId('recording-timer').parentElement
+        expect(waveform).not.toBeNull()
+        expect(textarea.nextElementSibling).toBe(waveform)
+        expect(textarea.parentElement).toHaveClass('flex-col')
+        expect(screen.getByRole('textbox', { name: 'Message' })).toBe(textarea)
+        expect(textarea).not.toHaveClass('hidden')
+        expect(textarea).toHaveValue(expectedDraft)
+        expect(textarea).toHaveStyle({ height: `${expandedHeight}px` })
+        expect(textarea).toHaveAttribute('readonly')
+        expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+        fireEvent.keyDown(textarea, { key: 'Enter' })
+        fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
+        expect(handleSubmit).not.toHaveBeenCalled()
+        fireEvent.paste(textarea, { clipboardData })
+        expect(handleDocumentUpload).not.toHaveBeenCalled()
 
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
-    })
+        await act(async () => {
+          fireEvent.click(
+            screen.getByRole('button', { name: 'Stop recording' }),
+          )
+        })
+        expect(transcribe).toHaveBeenCalledTimes(recording)
+        expect(textarea).toHaveAttribute('readonly')
+        expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+        fireEvent.keyDown(textarea, { key: 'Enter' })
+        expect(handleSubmit).not.toHaveBeenCalled()
+        fireEvent.paste(textarea, { clipboardData })
+        expect(handleDocumentUpload).not.toHaveBeenCalled()
 
-    expect(screen.getByTestId('recording-timer')).toBeInTheDocument()
-    expect(textarea).toHaveClass('hidden')
+        await act(async () => {
+          finishStop()
+        })
+        expect(transcribe).toHaveBeenCalledTimes(recording + 1)
+        expect(textarea).toHaveValue(expectedDraft)
+        expect(textarea).toHaveAttribute('readonly')
+        expect(textarea).toHaveStyle({ height: `${expandedHeight}px` })
+        expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+        fireEvent.keyDown(textarea, { key: 'Enter' })
+        expect(handleSubmit).not.toHaveBeenCalled()
+        fireEvent.paste(textarea, { clipboardData })
+        expect(handleDocumentUpload).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Stop recording' }))
+        await act(async () => {
+          finishTranscription('More details')
+        })
+        expectedDraft += ' More details'
+        expect(textarea).toHaveValue(expectedDraft)
+        expect(textarea).not.toHaveAttribute('readonly')
+        expect(textarea).toHaveStyle({ height: `${expandedHeight}px` })
+        expect(screen.queryByTestId('recording-timer')).not.toBeInTheDocument()
+      }
 
-    expect(screen.queryByTestId('recording-timer')).not.toBeInTheDocument()
-    expect(textarea).not.toHaveClass('hidden')
-  })
+      await act(async () => {
+        fireEvent.paste(textarea, { clipboardData })
+      })
+      expect(handleDocumentUpload).toHaveBeenCalledExactlyOnceWith(pastedImage)
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }))
+      expect(handleSubmit).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each(['', ' \n'])(
+    'swaps an empty draft %j for the waveform while recording and back on stop',
+    async (input) => {
+      stubRecording()
+      const setInput = vi.fn()
+
+      render(
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          handleSubmit={vi.fn()}
+          loadingState="idle"
+          cancelGeneration={vi.fn()}
+          inputRef={createRef<HTMLTextAreaElement>()}
+          handleInputFocus={vi.fn()}
+          inputMinHeight="40px"
+          isDarkMode
+          isPremium
+          audioModel="audio-model"
+        />,
+      )
+
+      const textarea = screen.getByRole('textbox', { name: 'Message' })
+      expect(screen.queryByTestId('recording-timer')).not.toBeInTheDocument()
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
+      })
+
+      expect(screen.getByTestId('recording-timer')).toBeInTheDocument()
+      expect(textarea).toHaveClass('hidden')
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Stop recording' }))
+      })
+
+      expect(screen.queryByTestId('recording-timer')).not.toBeInTheDocument()
+      expect(textarea).not.toHaveClass('hidden')
+      expect(setInput).toHaveBeenCalledExactlyOnceWith('More details')
+      expect(textarea).not.toHaveAttribute('readonly')
+    },
+  )
 })
