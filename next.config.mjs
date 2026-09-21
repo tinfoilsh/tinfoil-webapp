@@ -8,7 +8,6 @@ const { version: appVersion } = JSON.parse(
 )
 
 const isDev = process.env.NODE_ENV === 'development'
-const isDevProxyEnabled = isDev || process.env.NEXT_PUBLIC_DEV === 'true'
 
 // Defense-in-depth: NEXT_PUBLIC_DEV bypasses enclave attestation and must
 // never be baked into a deployed bundle. Local static testing (see
@@ -21,7 +20,12 @@ if (isHostedBuild && process.env.NEXT_PUBLIC_DEV === 'true') {
   )
 }
 
-function normalizeUpstream(raw) {
+// Local development reverse proxy. This is deliberately gated by both
+// Next's development server and Tinfoil's explicit local-dev flag. Static
+// local builds use scripts/dev-serve.mjs instead of Next rewrites.
+const isLocalDevProxyEnabled = isDev && process.env.NEXT_PUBLIC_DEV === 'true'
+
+function parseLocalControlplaneProxyOrigin(raw) {
   if (!raw) return null
   let url
   try {
@@ -30,13 +34,12 @@ function normalizeUpstream(raw) {
     return null
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
-  // Strip trailing slashes; Next rewrites append the matched suffix.
-  return `${url.protocol}//${url.host}`.replace(/\/$/, '')
+  return `${url.protocol}//${url.host}`
 }
 
-const configuredControlplaneBase = normalizeUpstream(
-  process.env.NEXT_PUBLIC_API_BASE_URL,
-)
+const localControlplaneProxyOrigin = isLocalDevProxyEnabled
+  ? parseLocalControlplaneProxyOrigin(process.env.NEXT_PUBLIC_API_BASE_URL)
+  : null
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -63,11 +66,12 @@ const nextConfig = {
     optimizePackageImports: ['react-icons', 'lucide-react', '@heroicons/react'],
   },
 
-  // Proxy dev-only routes (only works in `next dev`, ignored in static export).
-  // Order matters: specific dev-backend and mock routes MUST come before the
-  // catch-all controlplane forwarder so they don't leak to production.
+  // Local development API proxy. Order matters: local and mocked routes must
+  // come before the catch-all that forwards to the real controlplane.
   async rewrites() {
-    const specific = [
+    if (!isLocalDevProxyEnabled) return []
+
+    const localRoutes = [
       {
         source: '/api/dev/simulator',
         destination: 'http://localhost:3001/api/dev/simulator',
@@ -85,14 +89,14 @@ const nextConfig = {
         destination: 'http://localhost:3001/api/users/me/safeguard-flags',
       },
     ]
-    if (!isDevProxyEnabled || !configuredControlplaneBase) return specific
+    if (!localControlplaneProxyOrigin) return localRoutes
     return [
-      ...specific,
+      ...localRoutes,
       // Catch-all: everything else under /api/* forwards to the real
       // controlplane so Clerk/billing/cloud continue to work in dev.
       {
         source: '/api/:path*',
-        destination: `${configuredControlplaneBase}/api/:path*`,
+        destination: `${localControlplaneProxyOrigin}/api/:path*`,
       },
     ]
   },

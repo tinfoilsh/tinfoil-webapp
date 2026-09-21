@@ -43,6 +43,7 @@ describe('next.config.mjs rewrites', () => {
   })
 
   it('installs the catch-all controlplane rewrite in dev, after the specific routes', async () => {
+    process.env.NODE_ENV = 'development'
     process.env.NEXT_PUBLIC_DEV = 'true'
     process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.tinfoil.sh'
     const cfg = await loadConfig()
@@ -65,14 +66,19 @@ describe('next.config.mjs rewrites', () => {
     process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.tinfoil.sh'
     const cfg = await loadConfig()
     const rules = await cfg.rewrites()
-    expect(rules.map((r) => r.source)).not.toContain('/api/:path*')
-    // But still declares the specific dev rewrites (harmless in static export).
-    expect(rules.map((r) => r.source)).toContain(
-      '/api/users/me/safeguard-flags',
-    )
+    expect(rules).toEqual([])
+  })
+
+  it('does not enable the proxy in next dev without the explicit Tinfoil dev flag', async () => {
+    process.env.NODE_ENV = 'development'
+    delete process.env.NEXT_PUBLIC_DEV
+    process.env.NEXT_PUBLIC_API_BASE_URL = 'https://api.tinfoil.sh'
+    const cfg = await loadConfig()
+    expect(await cfg.rewrites()).toEqual([])
   })
 
   it('omits the catch-all when NEXT_PUBLIC_API_BASE_URL is not configured', async () => {
+    process.env.NODE_ENV = 'development'
     process.env.NEXT_PUBLIC_DEV = 'true'
     delete process.env.NEXT_PUBLIC_API_BASE_URL
     const cfg = await loadConfig()
@@ -81,6 +87,7 @@ describe('next.config.mjs rewrites', () => {
   })
 
   it('rejects a malformed NEXT_PUBLIC_API_BASE_URL rather than building a bad rewrite', async () => {
+    process.env.NODE_ENV = 'development'
     process.env.NEXT_PUBLIC_DEV = 'true'
     process.env.NEXT_PUBLIC_API_BASE_URL = 'not a url'
     const cfg = await loadConfig()

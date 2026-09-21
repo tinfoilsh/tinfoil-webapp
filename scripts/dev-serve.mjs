@@ -21,12 +21,12 @@ import { fileURLToPath } from 'node:url'
 const PORT = 3000
 const ROUTER_UPSTREAM = 'http://localhost:8090'
 const SIMULATOR_UPSTREAM = 'http://localhost:3001'
-const CONTROLPLANE_UPSTREAM = normalizeUpstream(
+const CONTROLPLANE_PROXY_ORIGIN = parseControlplaneProxyOrigin(
   process.env.NEXT_PUBLIC_API_BASE_URL,
 )
 const MAX_LOG_BODY_BYTES = 10 * 1024 * 1024 // 10 MB
 
-function normalizeUpstream(raw) {
+function parseControlplaneProxyOrigin(raw) {
   if (!raw) return null
   let url
   try {
@@ -138,7 +138,7 @@ function serveStatic(req, res) {
 export function createDevServeHandler({
   simulatorUpstream = SIMULATOR_UPSTREAM,
   routerUpstream = ROUTER_UPSTREAM,
-  controlplaneUpstream = CONTROLPLANE_UPSTREAM,
+  controlplaneUpstream = CONTROLPLANE_PROXY_ORIGIN,
 } = {}) {
   return function handle(req, res) {
     const pathOnly = (req.url || '').split('?')[0]
@@ -364,7 +364,7 @@ if (server) {
     )
     console.log(
       `  Proxy: /api/*                           → ${
-        CONTROLPLANE_UPSTREAM || '(unconfigured; 502)'
+        CONTROLPLANE_PROXY_ORIGIN || '(unconfigured; 502)'
       }`,
     )
   })
