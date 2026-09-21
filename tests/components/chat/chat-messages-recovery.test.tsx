@@ -89,7 +89,7 @@ describe('ChatMessages recovery indicator', () => {
   })
 
   it('hides message actions when the conversation is read-only', () => {
-    render(<ChatMessages {...baseProps} hideMessageActions />)
+    render(<ChatMessages {...baseProps} readOnly />)
 
     expect(screen.getByTestId('message-turn-1')).toHaveAttribute(
       'data-actions-hidden',

@@ -29,7 +29,7 @@ import { useChatRouter } from '@/hooks/use-chat-router'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
-import { useSafeguards, useSafeguardsLoader } from '@/hooks/use-safeguards'
+import { useFlaggedChatIds, useSafeguardsLoader } from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
@@ -541,7 +541,7 @@ export function ChatInterface({
   >(undefined)
   const syncNeedsAttention = useSyncHealthAttention()
   useSafeguardsLoader()
-  const { flaggedChatIds } = useSafeguards()
+  const flaggedChatIds = useFlaggedChatIds()
 
   // State for share modal
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
@@ -3881,6 +3881,7 @@ export function ChatInterface({
           !isLoadingConfig && isClient && !!currentChat && hasValidatedModel
         }
         onMessageReady={(message) => {
+          if (currentChatIsFlagged) return
           handleQuery(message)
         }}
       />
@@ -4461,10 +4462,10 @@ export function ChatInterface({
                       activeArtifactToolCallId={
                         isArtifactSidebarOpen ? activeArtifactToolCallId : null
                       }
-                      hideMessageActions={currentChatIsFlagged}
+                      readOnly={currentChatIsFlagged}
                       isPremium={showPremiumComposerControls}
                       models={models}
-                      onSubmit={currentChatIsFlagged ? undefined : handleSubmit}
+                      onSubmit={handleSubmit}
                       input={input}
                       setInput={setInput}
                       loadingState={loadingState}
@@ -4476,33 +4477,19 @@ export function ChatInterface({
                       processedDocuments={processedDocuments}
                       removeDocument={removeDocument}
                       selectedModel={selectedModel}
-                      handleModelSelect={
-                        currentChatIsFlagged ? undefined : handleModelSelect
-                      }
+                      handleModelSelect={handleModelSelect}
                       expandedLabel={expandedLabel}
                       handleLabelClick={handleLabelClick}
-                      onEditMessage={
-                        currentChatIsFlagged ? undefined : editMessage
-                      }
-                      onRegenerateMessage={
-                        currentChatIsFlagged ? undefined : regenerateMessage
-                      }
+                      onEditMessage={editMessage}
+                      onRegenerateMessage={regenerateMessage}
                       onDeleteMessage={
-                        !currentChatIsFlagged && currentChat.messages.length > 1
+                        currentChat.messages.length > 1
                           ? deleteMessage
                           : undefined
                       }
-                      onEditAssistantMessage={
-                        currentChatIsFlagged ? undefined : editAssistantMessage
-                      }
-                      onContinueAssistantMessage={
-                        currentChatIsFlagged
-                          ? undefined
-                          : continueAssistantMessage
-                      }
-                      onRetryToolCall={
-                        currentChatIsFlagged ? undefined : retryToolCall
-                      }
+                      onEditAssistantMessage={editAssistantMessage}
+                      onContinueAssistantMessage={continueAssistantMessage}
+                      onRetryToolCall={retryToolCall}
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
                       onWebSearchToggle={

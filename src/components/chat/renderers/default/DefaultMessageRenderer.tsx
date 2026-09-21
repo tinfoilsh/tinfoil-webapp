@@ -81,6 +81,11 @@ const DefaultMessageComponent = ({
   const userMessageContentRef = React.useRef<HTMLDivElement>(null)
   const editTextareaRef = React.useRef<HTMLTextAreaElement>(null)
   const editButtonRef = React.useRef<HTMLButtonElement>(null)
+
+  React.useEffect(() => {
+    if (hideActions) setIsEditing(false)
+  }, [hideActions])
+
   const isLimitError =
     message.isRateLimitError || message.isHourlyRateLimitError
   const modelDisplayName = message.modelDisplayName?.trim()
@@ -728,7 +733,7 @@ const DefaultMessageComponent = ({
             )}
 
             {/* Action bar for user messages */}
-            {isUser && !isEditing && !hideActions && (
+            {isUser && !isEditing && (
               <div className="flex h-0 items-center justify-end gap-1 overflow-visible px-4">
                 {formattedDate && (
                   <div className="group/date relative">
@@ -742,77 +747,84 @@ const DefaultMessageComponent = ({
                     )}
                   </div>
                 )}
-                {onRegenerateMessage && (
-                  <div className="group/regen relative">
-                    <button
-                      onClick={handleRegenerate}
-                      aria-label="Regenerate response"
-                      className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
-                    >
-                      <ArrowPathIcon className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
-                      Regenerate
-                    </span>
-                  </div>
-                )}
-                {onEditMessage && (
-                  <div className="group/edit relative">
-                    <button
-                      ref={editButtonRef}
-                      onClick={handleStartEdit}
-                      aria-label="Edit message"
-                      className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
-                    >
-                      <PencilSquareIcon
-                        className="h-4 w-4"
-                        aria-hidden="true"
-                      />
-                    </button>
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
-                      Edit
-                    </span>
-                  </div>
-                )}
-                {onDeleteMessage && (
-                  <div className="group/delete relative">
-                    <button
-                      onClick={handleDelete}
-                      aria-label="Delete message"
-                      className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-red-500"
-                    >
-                      <TrashIcon className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100">
-                      Delete
-                    </span>
-                  </div>
-                )}
-                <div className="group/copy relative">
-                  <button
-                    onClick={handleCopyUser}
-                    aria-label={copiedUser ? 'Copied' : 'Copy message'}
-                    className={`flex items-center gap-1.5 rounded-lg p-2 text-xs font-medium transition-all ${
-                      copiedUser
-                        ? 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400'
-                        : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
-                    }`}
-                  >
-                    {copiedUser ? (
-                      <>
-                        <BsCheckLg className="h-4 w-4" aria-hidden="true" />
-                        <span>Copied!</span>
-                      </>
-                    ) : (
-                      <RxCopy className="h-4 w-4" aria-hidden="true" />
+                {!hideActions && (
+                  <>
+                    {onRegenerateMessage && (
+                      <div className="group/regen relative">
+                        <button
+                          onClick={handleRegenerate}
+                          aria-label="Regenerate response"
+                          className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+                        >
+                          <ArrowPathIcon
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
+                        </button>
+                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
+                          Regenerate
+                        </span>
+                      </div>
                     )}
-                  </button>
-                  {!copiedUser && (
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/copy:opacity-100">
-                      Copy
-                    </span>
-                  )}
-                </div>
+                    {onEditMessage && (
+                      <div className="group/edit relative">
+                        <button
+                          ref={editButtonRef}
+                          onClick={handleStartEdit}
+                          aria-label="Edit message"
+                          className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+                        >
+                          <PencilSquareIcon
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
+                        </button>
+                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
+                          Edit
+                        </span>
+                      </div>
+                    )}
+                    {onDeleteMessage && (
+                      <div className="group/delete relative">
+                        <button
+                          onClick={handleDelete}
+                          aria-label="Delete message"
+                          className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-red-500"
+                        >
+                          <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100">
+                          Delete
+                        </span>
+                      </div>
+                    )}
+                    <div className="group/copy relative">
+                      <button
+                        onClick={handleCopyUser}
+                        aria-label={copiedUser ? 'Copied' : 'Copy message'}
+                        className={`flex items-center gap-1.5 rounded-lg p-2 text-xs font-medium transition-all ${
+                          copiedUser
+                            ? 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400'
+                            : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
+                        }`}
+                      >
+                        {copiedUser ? (
+                          <>
+                            <BsCheckLg className="h-4 w-4" aria-hidden="true" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <RxCopy className="h-4 w-4" aria-hidden="true" />
+                        )}
+                      </button>
+                      {!copiedUser && (
+                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/copy:opacity-100">
+                          Copy
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </>
