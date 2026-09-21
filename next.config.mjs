@@ -10,8 +10,8 @@ const { version: appVersion } = JSON.parse(
 const isDev = process.env.NODE_ENV === 'development'
 
 // Defense-in-depth: NEXT_PUBLIC_DEV bypasses enclave attestation and must
-// never be baked into a deployed bundle. Local static testing (see
-// LOCAL_TESTING.md "Option B") builds with this flag on purpose, so the guard
+// never be baked into a deployed bundle. Local static testing (see dev.md)
+// builds with this flag on purpose, so the guard
 // only trips in a hosted build environment (Vercel/CI).
 const isHostedBuild = Boolean(process.env.VERCEL || process.env.CI)
 if (isHostedBuild && process.env.NEXT_PUBLIC_DEV === 'true') {
