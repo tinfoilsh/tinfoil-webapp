@@ -40,6 +40,7 @@ const {
   markAsDeletedSpy,
   mutateChatSpy,
   loadChatImagesSpy,
+  forkCloudChatSpy,
 } = vi.hoisted(() => ({
   saveChatSpy: vi.fn(async (chat: unknown) => ({
     saved: true,
@@ -83,6 +84,7 @@ const {
     ) => null as unknown,
   ),
   loadChatImagesSpy: vi.fn(async () => ({}) as Record<string, string>),
+  forkCloudChatSpy: vi.fn(async () => {}),
 }))
 
 vi.mock('@/services/storage/indexed-db', () => ({
@@ -114,6 +116,7 @@ vi.mock('@/services/cloud/cloud-sync', () => ({
     hasPendingUpload: hasPendingUploadSpy,
     createAccountOperationGuard: createAccountOperationGuardSpy,
     withProjectUploadBarrier: withProjectUploadBarrierSpy,
+    forkChat: forkCloudChatSpy,
   },
 }))
 vi.mock('@/services/cloud/cloud-storage', () => ({
@@ -686,5 +689,83 @@ describe('chatStorage project move rollback', () => {
       reason: 'save',
       ids: ['rev_123_abc'],
     })
+  })
+})
+
+describe('chatStorage forkChat', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    isDeletedSpy.mockReturnValue(false)
+    setCloudSyncEnabled(true)
+  })
+
+  const storedSource = {
+    id: 'rev_123_abc',
+    title: 'Trip planning',
+    createdAt: '2026-06-02T09:00:00.000Z',
+    updatedAt: '2026-06-02T09:05:00.000Z',
+    lastAccessedAt: 1,
+    syncVersion: 4,
+    messages: [
+      { role: 'user', content: 'one', timestamp: '2026-06-02T09:00:00.000Z' },
+      {
+        role: 'assistant',
+        content: 'two',
+        timestamp: '2026-06-02T09:00:01.000Z',
+      },
+      { role: 'user', content: 'three', timestamp: '2026-06-02T09:00:02.000Z' },
+    ],
+  }
+
+  it('copies a local-only chat on this device without touching the cloud', async () => {
+    const source = { ...storedSource, isLocalOnly: true }
+    getChatSpy.mockImplementation(async (id: unknown) =>
+      id === 'rev_123_abc' ? source : (saveChatSpy.mock.calls[0]?.[0] ?? null),
+    )
+
+    const fork = await chatStorage.forkChat('rev_123_abc', 2)
+
+    expect(fork.id).not.toBe('rev_123_abc')
+    expect(fork.title).toBe('Trip planning (fork)')
+    expect(fork.messages.map((m) => m.content)).toEqual(['one', 'two'])
+    expect(fork.isLocalOnly).toBe(true)
+    const persisted = saveChatSpy.mock.calls[0][0] as Record<string, unknown>
+    expect(persisted.id).toBe(fork.id)
+    expect(persisted).not.toHaveProperty('syncVersion')
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
+    expect(backupChatSpy).not.toHaveBeenCalled()
+  })
+
+  it('forks a synced chat through the enclave and returns the stored row', async () => {
+    const source = { ...storedSource, isLocalOnly: false }
+    getChatSpy.mockImplementation(async (id: unknown) => {
+      if (id === 'rev_123_abc') return source
+      const request = forkCloudChatSpy.mock.calls[0]?.[0] as
+        { targetId: string } | undefined
+      return request && id === request.targetId
+        ? { ...source, id, title: 'Trip planning (fork)' }
+        : null
+    })
+
+    const fork = await chatStorage.forkChat('rev_123_abc', 2)
+
+    expect(forkCloudChatSpy).toHaveBeenCalledWith({
+      sourceId: 'rev_123_abc',
+      targetId: fork.id,
+      messageCount: 2,
+      title: 'Trip planning (fork)',
+    })
+    expect(fork.id).not.toBe('rev_123_abc')
+    expect(saveChatSpy).not.toHaveBeenCalled()
+  })
+
+  it('fails when the source chat does not exist', async () => {
+    getChatSpy.mockResolvedValue(null)
+
+    await expect(chatStorage.forkChat('missing', 1)).rejects.toThrow(
+      'Chat not found',
+    )
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
+    expect(saveChatSpy).not.toHaveBeenCalled()
   })
 })

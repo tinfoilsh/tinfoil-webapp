@@ -21,6 +21,7 @@ const {
   uploadChat,
   downloadChat,
   downloadChats,
+  forkCloudChat,
   finalizeUpload,
   getPendingUploadChats,
   applyRemoteChatIfFresh,
@@ -40,6 +41,7 @@ const {
   uploadChat: vi.fn(),
   downloadChat: vi.fn(),
   downloadChats: vi.fn(),
+  forkCloudChat: vi.fn(),
   finalizeUpload: vi.fn(),
   getPendingUploadChats: vi.fn(),
   applyRemoteChatIfFresh: vi.fn(),
@@ -62,6 +64,7 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
     uploadChat,
     downloadChat,
     downloadChats,
+    forkChat: forkCloudChat,
     listChats,
   },
 }))
@@ -1110,5 +1113,135 @@ describe('CloudSyncService revision coordinator routing', () => {
     ).resolves.toBe(2)
     expect(clearRevisionCheckpoint).toHaveBeenCalledOnce()
     expect(drainChatRevisionSync).toHaveBeenCalledOnce()
+  })
+})
+
+describe('CloudSyncService forkChat', () => {
+  const syncedSource = {
+    id: 'chat-source',
+    syncUserId: 'user-1',
+    title: 'Trip planning',
+    locallyModified: false,
+    syncedAt: 10,
+    syncVersion: 3,
+    updatedAt: '2026-01-01T00:00:00Z',
+    messages: [
+      { role: 'user', content: 'one' },
+      { role: 'assistant', content: 'two' },
+    ],
+  }
+  const remoteFork = {
+    ...syncedSource,
+    id: 'chat-fork',
+    title: 'Trip planning (fork)',
+    syncVersion: 1,
+    messages: syncedSource.messages.slice(0, 1),
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
+    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    isAuthenticated.mockResolvedValue(true)
+    canWriteToCloud.mockResolvedValue(true)
+    getChat.mockResolvedValue(syncedSource)
+    forkCloudChat.mockResolvedValue({ syncVersion: 1 })
+    downloadChat.mockResolvedValue(remoteFork)
+    applyRemoteChatIfFresh.mockResolvedValue({ applied: true })
+  })
+
+  it('flushes the source, forks on the enclave, and stores the pulled row as a new chat', async () => {
+    const notify = vi.fn()
+    const unsubscribe = chatEvents.on(notify)
+    try {
+      const fork = await new CloudSyncService().forkChat({
+        sourceId: 'chat-source',
+        targetId: 'chat-fork',
+        messageCount: 1,
+        title: 'Trip planning (fork)',
+      })
+
+      expect(fork).toBe(remoteFork)
+      expect(forkCloudChat).toHaveBeenCalledWith({
+        sourceId: 'chat-source',
+        targetId: 'chat-fork',
+        messageCount: 1,
+        title: 'Trip planning (fork)',
+        createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        idempotencyKey: expect.any(String),
+      })
+      expect(downloadChat).toHaveBeenCalledWith('chat-fork')
+      expect(applyRemoteChatIfFresh).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chat: remoteFork,
+          syncVersion: 1,
+          expectedLocalUpdatedAt: null,
+          userId: 'user-1',
+        }),
+      )
+      expect(notify).toHaveBeenCalledWith({
+        reason: 'sync',
+        ids: ['chat-fork'],
+      })
+      expect(uploadChat).not.toHaveBeenCalled()
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('uploads pending local edits before asking the enclave to fork', async () => {
+    const dirty = { ...syncedSource, locallyModified: true, pendingUpload: 1 }
+    getChat.mockResolvedValue(dirty)
+    uploadChat.mockResolvedValue({
+      syncVersion: 4,
+      rewrites: [],
+      projectIntentIncluded: false,
+    })
+    finalizeUpload.mockImplementation(async () => {
+      dirty.locallyModified = false
+      dirty.pendingUpload = 0
+    })
+
+    await new CloudSyncService().forkChat({
+      sourceId: 'chat-source',
+      targetId: 'chat-fork',
+      messageCount: 1,
+      title: 'Trip planning (fork)',
+    })
+
+    expect(uploadChat).toHaveBeenCalledTimes(1)
+    expect(uploadChat.mock.invocationCallOrder[0]).toBeLessThan(
+      forkCloudChat.mock.invocationCallOrder[0],
+    )
+  })
+
+  it('fails without touching the enclave when pending edits cannot be synced', async () => {
+    getChat.mockResolvedValue({ ...syncedSource, locallyModified: true })
+    canWriteToCloud.mockResolvedValue(false)
+
+    await expect(
+      new CloudSyncService().forkChat({
+        sourceId: 'chat-source',
+        targetId: 'chat-fork',
+        messageCount: 1,
+        title: 'Trip planning (fork)',
+      }),
+    ).rejects.toThrow('Cloud sync key is not authorized')
+
+    expect(forkCloudChat).not.toHaveBeenCalled()
+    expect(applyRemoteChatIfFresh).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a failure when the fork cannot be stored locally', async () => {
+    applyRemoteChatIfFresh.mockResolvedValue({ applied: false })
+
+    await expect(
+      new CloudSyncService().forkChat({
+        sourceId: 'chat-source',
+        targetId: 'chat-fork',
+        messageCount: 1,
+        title: 'Trip planning (fork)',
+      }),
+    ).rejects.toThrow('Forked chat could not be stored locally')
   })
 })
