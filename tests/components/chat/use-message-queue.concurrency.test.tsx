@@ -55,6 +55,27 @@ describe('useMessageQueue concurrency', () => {
     ).toEqual(existing)
   })
 
+  it('clears queued messages and their persisted copy', () => {
+    const storageKey = `${MESSAGE_QUEUE_PREFIX}chat-a`
+    const { result } = renderHook(() =>
+      useMessageQueue({
+        chatId: 'chat-a',
+        loadingState: 'loading' as LoadingState,
+        handleQuery: vi.fn(),
+        isRateLimited: () => false,
+      }),
+    )
+
+    act(() => result.current.submit({ text: 'queued message' }))
+    expect(result.current.queuedMessages).toHaveLength(1)
+    expect(window.sessionStorage.getItem(storageKey)).not.toBeNull()
+
+    act(() => result.current.clearQueuedMessages())
+
+    expect(result.current.queuedMessages).toEqual([])
+    expect(window.sessionStorage.getItem(storageKey)).toBeNull()
+  })
+
   it('dispatches in a newly active chat while another chat is still streaming', async () => {
     let resolveA: (() => void) | undefined
     const handleQuery = vi.fn((text: string) => {

@@ -49,6 +49,7 @@ type ChatMessagesProps = {
   isWaitingForResponse?: boolean
   isStreamingResponse?: boolean
   activeArtifactToolCallId?: string | null
+  hideMessageActions?: boolean
   isPremium?: boolean
   models?: BaseModel[]
   onSubmit?: (e: React.FormEvent) => void
@@ -308,6 +309,7 @@ export function ChatMessages({
   isWaitingForResponse = false,
   isStreamingResponse = false,
   activeArtifactToolCallId,
+  hideMessageActions = false,
   isPremium,
   models,
   onSubmit,
@@ -672,6 +674,7 @@ export function ChatMessages({
               draft,
               activeArtifactToolCallId,
             )}
+            hideActions={hideMessageActions}
           />
         )}
         {!draft && <RecoveryMessage />}
@@ -720,6 +723,7 @@ export function ChatMessages({
                           recoveryDraft ?? message,
                           activeArtifactToolCallId,
                         )}
+                        hideActions={hideMessageActions}
                         onEditMessage={
                           recoveryDraft ? undefined : onEditMessage
                         }
@@ -775,6 +779,7 @@ export function ChatMessages({
                   recoveryDraft ?? message,
                   activeArtifactToolCallId,
                 )}
+                hideActions={hideMessageActions}
                 onEditMessage={recoveryDraft ? undefined : onEditMessage}
                 onRegenerateMessage={
                   recoveryDraft ? undefined : onRegenerateMessage

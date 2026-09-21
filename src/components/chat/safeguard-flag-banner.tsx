@@ -36,8 +36,7 @@ export function SafeguardFlagBanner({
             : 'This chat was flagged by a safeguard model.'}
         </p>
         <p className="mt-0.5 text-xs">
-          Stop using this chat and start a new one to avoid triggering the
-          safeguard again.
+          This chat is now read-only. Start a new chat to continue.
         </p>
         {isPreview && (
           <p className="mt-1 text-xs">

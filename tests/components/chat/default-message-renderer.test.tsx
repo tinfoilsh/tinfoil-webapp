@@ -81,6 +81,21 @@ describe('DefaultMessageRenderer metadata', () => {
     expect(screen.queryByText('Encrypted')).not.toBeInTheDocument()
   })
 
+  it('hides user actions in read-only conversations', () => {
+    renderMessage(
+      {
+        role: 'user',
+        content: 'Hello',
+        timestamp: new Date('2026-08-07T00:00:00.000Z'),
+      },
+      true,
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'Copy message' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('shows response metadata when actions are hidden', () => {
     renderMessage(
       {

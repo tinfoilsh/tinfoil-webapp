@@ -34,7 +34,7 @@ describe('SafeguardFlagBanner', () => {
       'This chat was flagged by a safeguard model.',
     )
     expect(screen.getByRole('alert')).toHaveTextContent(
-      'Stop using this chat and start a new one',
+      'This chat is now read-only. Start a new chat to continue.',
     )
     fireEvent.click(
       screen.getByRole('button', {

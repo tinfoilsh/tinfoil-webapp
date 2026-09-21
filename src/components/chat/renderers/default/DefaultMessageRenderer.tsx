@@ -728,7 +728,7 @@ const DefaultMessageComponent = ({
             )}
 
             {/* Action bar for user messages */}
-            {isUser && !isEditing && (
+            {isUser && !isEditing && !hideActions && (
               <div className="flex h-0 items-center justify-end gap-1 overflow-visible px-4">
                 {formattedDate && (
                   <div className="group/date relative">
