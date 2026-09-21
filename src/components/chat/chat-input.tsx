@@ -490,8 +490,6 @@ export function ChatInput({
       clearTimeout(recordingTimeoutRef.current)
       recordingTimeoutRef.current = null
     }
-    setIsRecording(false)
-    setRecordingStream(null)
   }, [])
 
   const sendAudioForTranscription = useCallback(
@@ -951,9 +949,9 @@ export function ChatInput({
             {/* The button groups are sized to the send button so a one-line
                 textarea centers against them; when it grows they stay pinned
                 to the bottom via items-end. */}
-            {/* While recording, the textarea stays mounted (so its ref, height
-                and focus handling survive) but is hidden behind the live
-                waveform, which occupies the same slot. */}
+            {/* While recording an empty draft, the textarea stays mounted (so
+                its ref, height and focus handling survive) but is hidden behind
+                the live waveform, which occupies the same slot. */}
             {/* Nonempty drafts stay visible above the waveform. */}
             <div
               className={cn(
@@ -979,10 +977,11 @@ export function ChatInput({
                   // `input`; schedule a coalesced resize rather than reflowing now.
                   scheduleResize(e.currentTarget as HTMLTextAreaElement)
                 }}
-                onPaste={handlePaste}
+                onPaste={
+                  isRecording || isTranscribing ? undefined : handlePaste
+                }
                 onKeyDown={(e) => {
                   if ((isRecording || isTranscribing) && e.key !== 'Escape') {
-                    if (e.key === 'Enter') e.preventDefault()
                     return
                   }
                   // Enter during IME composition only confirms the conversion;

@@ -31,7 +31,7 @@ vi.mock('@/services/inference/tinfoil-client', () => ({
   getTinfoilClient: vi.fn(),
 }))
 
-function stubRecording() {
+function stubRecording(deferStop = false) {
   stubWebAudio()
   const tracks = [{ stop: vi.fn() }]
   const stream = { getTracks: () => tracks } as unknown as MediaStream
@@ -39,6 +39,7 @@ function stubRecording() {
     userAgent: 'Desktop',
     mediaDevices: { getUserMedia: vi.fn(() => Promise.resolve(stream)) },
   })
+  let pendingStop: (() => void) | null = null
   class FakeMediaRecorder {
     static isTypeSupported = () => true
     state: RecordingState = 'inactive'
@@ -49,6 +50,13 @@ function stubRecording() {
     }
     stop() {
       this.state = 'inactive'
+      if (deferStop) {
+        pendingStop = () => this.dispatchStop()
+      } else {
+        this.dispatchStop()
+      }
+    }
+    dispatchStop() {
       this.ondataavailable?.({ data: new Blob(['audio']) } as BlobEvent)
       this.onstop?.()
     }
@@ -58,7 +66,13 @@ function stubRecording() {
   vi.mocked(getTinfoilClient).mockResolvedValue({
     audio: { transcriptions: { create: transcribe } },
   } as unknown as Awaited<ReturnType<typeof getTinfoilClient>>)
-  return { transcribe }
+  return {
+    transcribe,
+    finishStop: () => {
+      pendingStop?.()
+      pendingStop = null
+    },
+  }
 }
 
 describe('formatRecordingDuration', () => {
@@ -214,7 +228,7 @@ describe('ChatInput recording UI', () => {
   it.each([false, true])(
     'keeps an expanded draft above repeated recordings (compact: %s)',
     async (hasMessages) => {
-      const { transcribe } = stubRecording()
+      const { transcribe, finishStop } = stubRecording(true)
       const expandedHeight = 200
       vi.spyOn(
         HTMLTextAreaElement.prototype,
@@ -233,6 +247,7 @@ describe('ChatInput recording UI', () => {
       const draft =
         'An existing draft\nwith several lines\nthat should stay visible'
       const handleSubmit = vi.fn()
+      const handleDocumentUpload = vi.fn().mockResolvedValue(undefined)
       const inputRef = createRef<HTMLTextAreaElement>()
       function Composer() {
         const [input, setInput] = useState(draft)
@@ -241,6 +256,7 @@ describe('ChatInput recording UI', () => {
             input={input}
             setInput={setInput}
             handleSubmit={handleSubmit}
+            handleDocumentUpload={handleDocumentUpload}
             loadingState="idle"
             cancelGeneration={vi.fn()}
             inputRef={inputRef}
@@ -255,6 +271,13 @@ describe('ChatInput recording UI', () => {
       }
       render(<Composer />)
       const textarea = screen.getByRole('textbox', { name: 'Message' })
+      const pastedImage = new File(['image'], 'pasted.png', {
+        type: 'image/png',
+      })
+      const clipboardData = {
+        items: [{ type: pastedImage.type, getAsFile: () => pastedImage }],
+        getData: () => '',
+      }
       expect(textarea).toHaveStyle({ height: `${expandedHeight}px` })
       let expectedDraft = draft
 
@@ -278,18 +301,34 @@ describe('ChatInput recording UI', () => {
         fireEvent.keyDown(textarea, { key: 'Enter' })
         fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
         expect(handleSubmit).not.toHaveBeenCalled()
+        fireEvent.paste(textarea, { clipboardData })
+        expect(handleDocumentUpload).not.toHaveBeenCalled()
 
         await act(async () => {
           fireEvent.click(
             screen.getByRole('button', { name: 'Stop recording' }),
           )
         })
+        expect(transcribe).toHaveBeenCalledTimes(recording)
+        expect(textarea).toHaveAttribute('readonly')
+        expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+        fireEvent.keyDown(textarea, { key: 'Enter' })
+        expect(handleSubmit).not.toHaveBeenCalled()
+        fireEvent.paste(textarea, { clipboardData })
+        expect(handleDocumentUpload).not.toHaveBeenCalled()
+
+        await act(async () => {
+          finishStop()
+        })
+        expect(transcribe).toHaveBeenCalledTimes(recording + 1)
         expect(textarea).toHaveValue(expectedDraft)
         expect(textarea).toHaveAttribute('readonly')
         expect(textarea).toHaveStyle({ height: `${expandedHeight}px` })
         expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
         fireEvent.keyDown(textarea, { key: 'Enter' })
         expect(handleSubmit).not.toHaveBeenCalled()
+        fireEvent.paste(textarea, { clipboardData })
+        expect(handleDocumentUpload).not.toHaveBeenCalled()
 
         await act(async () => {
           finishTranscription('More details')
@@ -301,6 +340,10 @@ describe('ChatInput recording UI', () => {
         expect(screen.queryByTestId('recording-timer')).not.toBeInTheDocument()
       }
 
+      await act(async () => {
+        fireEvent.paste(textarea, { clipboardData })
+      })
+      expect(handleDocumentUpload).toHaveBeenCalledExactlyOnceWith(pastedImage)
       fireEvent.click(screen.getByRole('button', { name: 'Send' }))
       expect(handleSubmit).toHaveBeenCalledOnce()
     },
@@ -310,11 +353,12 @@ describe('ChatInput recording UI', () => {
     'swaps an empty draft %j for the waveform while recording and back on stop',
     async (input) => {
       stubRecording()
+      const setInput = vi.fn()
 
       render(
         <ChatInput
           input={input}
-          setInput={vi.fn()}
+          setInput={setInput}
           handleSubmit={vi.fn()}
           loadingState="idle"
           cancelGeneration={vi.fn()}
@@ -343,6 +387,8 @@ describe('ChatInput recording UI', () => {
 
       expect(screen.queryByTestId('recording-timer')).not.toBeInTheDocument()
       expect(textarea).not.toHaveClass('hidden')
+      expect(setInput).toHaveBeenCalledExactlyOnceWith('More details')
+      expect(textarea).not.toHaveAttribute('readonly')
     },
   )
 })
