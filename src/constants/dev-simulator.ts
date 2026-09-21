@@ -12,8 +12,7 @@ export const DEV_SIMULATOR_HELP_STREAM = {
   streamDelayMs: 10,
   chunkSize: 32,
 } as const
-export const DEV_SAFEGUARD_FLAG_RESPONSE =
-  'Flagged this chat through the local mock controlplane. The sidebar and Settings → Safeguards now reflect the mocked flag; nothing was sent to the real controlplane. Repeating this command counts the chat only once. Send `reset safeguards` or restart `dev:backend` to clear.'
+export const DEV_SAFEGUARD_FLAG_RESPONSE = `Flagged this chat through the local mock controlplane. The sidebar and Settings → Safeguards now reflect the mocked flag; nothing was sent to the real controlplane. Repeating this command counts the chat only once. Send \`${DEV_SAFEGUARD_RESET_COMMAND}\` or restart \`dev:backend\` to clear.`
 export const DEV_SAFEGUARD_RESET_RESPONSE =
   'Cleared all mocked safeguard flags on the local backend and refreshed the store.'
 export const DEV_SAFEGUARD_SIGN_IN_REQUIRED =

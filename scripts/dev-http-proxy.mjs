@@ -10,8 +10,11 @@ export function parseProxyOrigin(raw) {
   } catch {
     return null
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
-  return `${url.protocol}//${url.host}`
+  if (url.protocol === 'https:') return `${url.protocol}//${url.host}`
+  const isLoopbackHttp =
+    url.protocol === 'http:' &&
+    ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  return isLoopbackHttp ? `${url.protocol}//${url.host}` : null
 }
 
 function handleProxyError(error, res, upstream) {

@@ -467,7 +467,7 @@ ${Object.keys(SIMULATOR_PATTERNS)
   .map((command) => `- \`${command}\``)
   .join('\n')}
 
-Other messages receive a default demo response. All responses are simulated locally; no model API or router is needed. Mock safeguard flags persist across page reloads and are cleared by \`reset safeguards\` or restarting \`dev:backend\`.`,
+Other messages receive a default demo response. All responses are simulated locally; no model API or router is needed. Mock safeguard flags persist across page reloads and are cleared by \`${DEV_SAFEGUARD_RESET_COMMAND}\` or restarting \`dev:backend\`.`,
     }
   }
 
