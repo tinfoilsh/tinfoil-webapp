@@ -31,6 +31,7 @@ export interface SafeguardsPolicy {
 }
 
 export interface SafeguardsSnapshot {
+  hasLoaded: boolean
   flaggedChats: readonly FlaggedChat[]
   /** conversationId -> true, for O(1) sidebar lookups. */
   flaggedChatIds: Readonly<Record<string, true>>
@@ -57,6 +58,7 @@ const FlagsResponseSchema = z.object({
 type FlagsResponse = z.infer<typeof FlagsResponseSchema>
 
 const EMPTY_SNAPSHOT: SafeguardsSnapshot = {
+  hasLoaded: false,
   flaggedChats: [],
   flaggedChatIds: {},
   policy: null,
@@ -108,6 +110,7 @@ function toSnapshot(
     if (chat.conversationId) flaggedChatIds[chat.conversationId] = true
   }
   return {
+    hasLoaded: true,
     flaggedChats,
     flaggedChatIds,
     policy: {

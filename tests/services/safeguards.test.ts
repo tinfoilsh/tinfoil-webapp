@@ -70,6 +70,7 @@ describe('safeguards store', () => {
   })
 
   it('loads flagged chats and indexes them by conversation id', async () => {
+    expect(getSafeguardsSnapshot().hasLoaded).toBe(false)
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify(RESPONSE)),
     )
@@ -78,6 +79,7 @@ describe('safeguards store', () => {
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('ready')
+    expect(snapshot.hasLoaded).toBe(true)
     expect(snapshot.policy).toEqual({
       inWindow: 1,
       windowHours: 168,
@@ -111,6 +113,7 @@ describe('safeguards store', () => {
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('error')
+    expect(snapshot.hasLoaded).toBe(true)
     expect(snapshot.flaggedChats).toHaveLength(3)
   })
 
@@ -133,6 +136,7 @@ describe('safeguards store', () => {
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('error')
+    expect(snapshot.hasLoaded).toBe(false)
     expect(snapshot.policy).toBeNull()
     expect(snapshot.flaggedChats).toEqual([])
   })

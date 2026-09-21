@@ -32,6 +32,7 @@ const POLICY = {
 
 function setSnapshot(overrides: Partial<SafeguardsSnapshot> = {}) {
   vi.mocked(useSafeguards).mockReturnValue({
+    hasLoaded: false,
     flaggedChats: [],
     flaggedChatIds: {},
     policy: null,

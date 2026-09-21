@@ -7,6 +7,7 @@ vi.mock('@/hooks/use-safeguards', () => ({ useSafeguards: vi.fn() }))
 
 function setFlags() {
   vi.mocked(useSafeguards).mockReturnValue({
+    hasLoaded: true,
     flaggedChats: [],
     flaggedChatIds: { 'flagged-chat': true },
     policy: null,

@@ -1,179 +1,188 @@
-# Local Testing & Dev Mode
+# Local development
 
-This guide covers how to run the Tinfoil webapp against a local model router for development and debugging.
+The recommended local workflow runs the webapp with the Dev Simulator, a local API gateway, and selected controlplane mocks. A local model router is optional.
 
-## Dev Mode Overview
+## Quick start
 
-Dev mode bypasses the [TinfoilAI](https://github.com/tinfoilsh/tinfoil-node) client (attestation, EHBP encryption) and connects directly to a local model router via a plain OpenAI-compatible client.
-
-### What changes in dev mode
-
-| Concern        | Production                        | Dev mode                                           |
-| -------------- | --------------------------------- | -------------------------------------------------- |
-| Client         | `TinfoilAI` (attestation + EHBP)  | `OpenAI` (plain HTTPS)                             |
-| API base       | `https://api.tinfoil.sh`          | `localhost:8090` via proxy                         |
-| Auth           | Clerk session token               | Static API key from `.env`                         |
-| Models         | Fetched from `/api/config/models` | Hardcoded in `src/config/models.ts` (`DEV_MODELS`) |
-| Stream logging | Disabled                          | JSONL files written to `logs/`                     |
-
-## Setup
-
-### 1. Environment variables
+### 1. Configure the environment
 
 ```bash
 cp .env.example .env.local
 ```
 
-Set the dev flags in `.env.local`:
+Set:
 
 ```env
 NEXT_PUBLIC_DEV=true
+NEXT_PUBLIC_API_BASE_URL=https://api.tinfoil.sh
 NEXT_PUBLIC_DEV_API_KEY=tf-api-key
 ```
 
-### 2. Start the local model router
+`NEXT_PUBLIC_DEV_API_KEY` is only used when testing inference against the optional local model router. Clerk continues to provide normal account authentication.
 
-Your model router should be running on `localhost:8090` and expose an OpenAI-compatible `/v1/chat/completions` endpoint.
-
-_The [model router](https://github.com/tinfoilsh/confidential-model-router) does this by default in dev mode_
-
-### 3. Run the app
-
-First, start the local mock backend on port 3001. It provides the dev
-simulator LLM endpoint AND the mocked controlplane safeguard routes:
+### 2. Start the local API gateway
 
 ```bash
 npm run dev:backend
 ```
 
-Then start one of the frontend modes:
+This starts port 3001 and provides:
 
-**Option A: Next.js dev server** (hot reload, slower startup)
+- The Dev Simulator endpoint
+- Registered controlplane mocks
+- Forwarding for unmatched controlplane APIs
+
+### 3. Start the frontend
 
 ```bash
 npm run dev
 ```
 
-**Option B: Static dev server** (fast, serves production build)
+Open http://localhost:3000 and sign in when testing account-scoped features such as safeguards.
+
+## Local architecture
+
+| Process            | Port | Required | Purpose                                                           |
+| ------------------ | ---: | -------- | ----------------------------------------------------------------- |
+| Next frontend      | 3000 | Yes      | Application UI and same-origin API entrypoint                     |
+| Local API gateway  | 3001 | Yes      | Dev Simulator, registered mocks, and real-controlplane forwarding |
+| Local model router | 8090 | No       | Optional testing of actual model-router requests                  |
+
+Frontend routing in explicit local dev mode:
+
+```text
+/api/local-router/* → optional model router on port 8090
+/api/*              → local API gateway on port 3001
+```
+
+Gateway routing:
+
+```text
+POST /api/dev/simulator → Dev Simulator
+registered mock route   → matching mock module
+unknown /api/dev/*      → 404; never forwarded to production
+remaining /api/*        → NEXT_PUBLIC_API_BASE_URL
+```
+
+Future controlplane mocks are registered in `scripts/mock-controlplane.mjs`. Next and the static development server do not know individual mock routes.
+
+## What changes in local mode
+
+| Concern            | Production                                   | Local development                                                                           |
+| ------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Controlplane API   | Browser contacts the configured API directly | Browser uses the same-origin gateway; selected routes are mocked and the rest are forwarded |
+| Clerk              | Real Clerk                                   | Real Clerk                                                                                  |
+| Safeguards         | Real controlplane                            | Local mock using the production client contract                                             |
+| Default UI testing | Production models                            | Dev Simulator                                                                               |
+| Local model router | Not applicable                               | Optional                                                                                    |
+| Inference auth     | Clerk/delegated token                        | Static key only for the optional local router                                               |
+| Attestation        | Enabled                                      | Disabled only for optional local-router inference                                           |
+| Stream logs        | Disabled                                     | Available locally                                                                           |
+
+Hosted builds reject `NEXT_PUBLIC_DEV=true`.
+
+## Dev Simulator
+
+Select **Dev Simulator** in the model picker. It does not require the local model router.
+
+Send:
+
+```text
+help
+```
+
+for the complete command list. Useful commands include:
+
+```text
+test thoughts
+test long thoughts
+test no thoughts
+test rapid
+test code
+test retry
+test error
+```
+
+`test error` shows the local connection-error banner. Resending repeats the error; a different message resumes normal simulator responses.
+
+## Testing safeguards
+
+Safeguard testing requires local Clerk sign-in so the production safeguards client obtains and sends its normal bearer header. The mock requires the header but does not validate the token cryptographically.
+
+1. Start both the gateway and frontend.
+2. Sign in.
+3. Select **Dev Simulator**.
+4. Create a chat and send:
+
+   ```text
+   flag safeguard
+   ```
+
+5. Confirm the sidebar marker, Settings → Safeguards entry, read-only banner, and disabled generation actions.
+6. Refresh and confirm the flag persists. Mock state lives in the backend process.
+7. Create an unflagged chat and send:
+
+   ```text
+   reset safeguards
+   ```
+
+Restarting `npm run dev:backend` also clears all mock flags. No real controlplane violation is created.
+
+The signed-in client fetches safeguards immediately, every 30 seconds while visible, and when the page regains focus or comes back online. Generation waits for the first successful safeguard response; later refreshes preserve the last successful state.
+
+## Verifying gateway routing
 
 ```bash
-npm run build      # generates out/
-npm run dev:serve  # serves out/ on port 3000 with API proxying
+# Unmocked request forwarded to real controlplane
+curl -i 'http://localhost:3000/api/config/models?chat=true'
+
+# Mock endpoint requires a bearer header
+curl -i http://localhost:3000/api/users/me/safeguard-flags
+
+# Local mock response
+curl -i \
+  -H 'Authorization: Bearer local-test' \
+  http://localhost:3000/api/users/me/safeguard-flags
+
+# Unknown development routes never reach production
+curl -i http://localhost:3000/api/dev/not-a-real-route
 ```
 
-Both frontend modes route `/api/local-router/*` directly to the local model
-router and send every other `/api/*` request to the local API gateway on
-`localhost:3001`. The gateway owns route selection:
+If port 3001 is unavailable, general local API requests return 502 rather than bypassing the gateway.
 
-1. Dev Simulator handles `POST /api/dev/simulator`.
-2. Registered controlplane mocks get the first opportunity to handle other routes.
-3. Unknown `/api/dev/*` routes return 404 and never reach production.
-4. Remaining `/api/*` requests are forwarded to the configured real
-   controlplane at `NEXT_PUBLIC_API_BASE_URL`, so Clerk, billing, cloud sync,
-   sharing, etc. keep working in dev.
+## Optional local model router
 
-Future controlplane mocks are registered in `scripts/mock-controlplane.mjs`;
-the frontend servers do not need to know their individual routes.
+Run an OpenAI-compatible model router on `localhost:8090`, then select one of the normal development models instead of Dev Simulator.
 
-`dev:serve` (`scripts/dev-serve.mjs`) also accepts stream log uploads at
-`POST /api/dev/stream-log`.
+The frontend proxies `/api/local-router/*` to the router and strips the prefix. This path uses `NEXT_PUBLIC_DEV_API_KEY` and bypasses the production attested inference client.
 
-### Testing the safeguard read-only flow locally
+Development models are defined in `src/config/models.ts` under `DEV_MODELS`.
 
-Because the mocked safeguard route uses the _real_ production HTTP path, the
-safeguards client runs unchanged. To exercise it:
+## Static development server
 
-1. Start `npm run dev:backend`.
-2. Start `npm run dev` (or `npm run build && npm run dev:serve`).
-3. Sign in locally so the browser has a Clerk session token — the mock
-   backend requires a bearer header on the safeguard GET, matching
-   production. It does not validate the token cryptographically.
-4. Select **Dev Simulator** in the model picker and open a chat.
-5. Send **`flag safeguard`**. The simulator POSTs the active conversation
-   id to `/api/dev/safeguard-flags`, then triggers the normal
-   `refreshSafeguards()` fetch. Sidebar flag, Settings → Safeguards, and
-   the read-only chat banner all react through the production code path.
-6. Refresh the page: the flag persists because mock state lives in the
-   backend process, not in the browser.
-7. Send **`reset safeguards`** (in the Dev Simulator) to clear all mocked
-   flags via DELETE and refresh the store.
-8. Restart `npm run dev:backend` to wipe all mock state.
+To test the production static export locally, leave `dev:backend` running and replace `npm run dev` with:
 
-Notes:
-
-- The client-side safeguards service (`src/services/safeguards.ts`) has no
-  simulator branch. The only difference in dev is the URL: same-origin
-  `/api/*` in dev, absolute `NEXT_PUBLIC_API_BASE_URL` in production.
-- Other controlplane traffic (Clerk, cloud sync, sharing, billing) still
-  reaches the real controlplane through the catch-all rewrite.
-- No real safeguard violation is ever created; nothing is written to Clerk
-  metadata or persisted in the browser.
-- Production and Vercel previews never enable the mock: `NEXT_PUBLIC_DEV`
-  is rejected in hosted builds by `next.config.mjs`.
-
-## Adding Dev Models
-
-Dev models are defined in `src/config/models.ts` in the `DEV_MODELS` array. To add a new model:
-
-```ts
-const DEV_MODELS: BaseModel[] = [
-  {
-    modelName: 'your-model-name', // must match what the router expects
-    image: 'provider.webp',
-    name: 'Display Name',
-    nameShort: 'Short Name',
-    description: 'Description',
-    type: 'chat',
-    chat: true,
-    multimodal: true,
-  },
-]
+```bash
+npm run build
+npm run dev:serve
 ```
 
-Models can also specify a `requestParams` field.
+`dev:serve` serves `out/` on port 3000 and applies the same API-gateway and model-router boundaries as Next development mode.
 
-## Stream Logging
+## Stream logging
 
-In dev mode, every streaming response is logged as a JSONL file in `logs/`. Each file captures the full SSE event stream with timestamps:
+In local mode, streaming responses can be written under `logs/` as per-chat Markdown transcripts. Both frontend modes accept stream-log uploads through:
 
-```
-logs/
-  stream-a1b2c3d4-2026-04-23T14-30-00-000Z.jsonl
-```
-
-Each line is a JSON object with:
-
-- `t` — timestamp (ms since epoch)
-- `type` — `raw` | `parsed` | `tinfoil_event` | `web_search_dispatch`
-- `data` — the event payload
-
-Logs are written by the dev server (`dev:serve`) or the Next.js dev proxy. The `logs/` directory is gitignored.
-
-## Test Prompts
-
-### Dev Simulator
-
-Select **Dev Simulator** to run canned responses entirely in the browser. It does not need the simulator server on port 3001, an API key, or the model router. Send `help` to list the available commands; `test thoughts`, `test code`, and `test retry` exercise the existing streaming patterns.
-
-Send **`test error`** to immediately show the connection-error banner locally. Use it to check the resend button, expandable details, and dismissal. Resending repeats the simulated error; send a different message to resume normal simulator responses. No network request is made.
-
-Send **`flag safeguard`** to flag the current chat through the local mock
-controlplane. The command POSTs to `/api/dev/safeguard-flags` and then
-triggers the normal `refreshSafeguards()` fetch, so the sidebar,
-**Settings → Safeguards**, and read-only chat state all react through the
-production code path. Each chat counts once, even if the command is
-repeated. Send **`reset safeguards`** to clear all mocked flags; restarting
-`npm run dev:backend` also wipes state. Nothing is submitted to the real
-controlplane and your account is unaffected. Sign-in is required so the
-normal bearer header is sent.
-
-**Interleaved search + thinking:**
-
-```
-Hi! Please consecutively search for the following items. After getting results
-for each one, think about what you learned & also put some text.
-
-items: cats, turtles, local news.
+```text
+POST /api/dev/stream-log
 ```
 
-This exercises the timeline rendering with interleaved thinking blocks, web search blocks, and content blocks.
+The `logs/` directory is gitignored.
+
+## Troubleshooting
+
+- **Port 3000 occupied:** stop the previous `npm run dev` or `npm run dev:serve` process.
+- **Port 3001 unavailable:** start `npm run dev:backend`; gateway requests otherwise return 502.
+- **Port 8090 unavailable:** only optional local-router models fail. Dev Simulator still works.
+- **Safeguard command asks for sign-in:** authenticate with Clerk locally.
+- **Stale mock flags:** send `reset safeguards` from an unflagged chat or restart `dev:backend`.

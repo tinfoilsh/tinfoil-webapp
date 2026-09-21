@@ -29,7 +29,11 @@ import { useChatRouter } from '@/hooks/use-chat-router'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
-import { useFlaggedChatIds, useSafeguardsLoader } from '@/hooks/use-safeguards'
+import {
+  useFlaggedChatIds,
+  useSafeguardsLoaded,
+  useSafeguardsLoader,
+} from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
@@ -542,6 +546,7 @@ export function ChatInterface({
   const syncNeedsAttention = useSyncHealthAttention()
   useSafeguardsLoader()
   const flaggedChatIds = useFlaggedChatIds()
+  const safeguardsLoaded = useSafeguardsLoaded()
 
   // State for share modal
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
@@ -1252,6 +1257,10 @@ export function ChatInterface({
   const currentChatIsFlagged = Boolean(
     currentChatId && flaggedChatIds[currentChatId],
   )
+  const safeguardGenerationBlocked =
+    !isAuthLoaded ||
+    currentChatIsFlagged ||
+    (Boolean(isSignedIn) && !safeguardsLoaded)
   const recoveryDrafts = useChatRecoveryDrafts(currentChatId ?? '')
   const activeRecoveryTurnIds = useChatRecoveryActiveTurnIds(
     currentChatId ?? '',
@@ -1376,14 +1385,14 @@ export function ChatInterface({
       models.length === 0 ||
       isChatHydrating ||
       hasPendingRecoveryRef.current ||
-      currentChatIsFlagged ||
+      safeguardGenerationBlocked ||
       (currentChatId ? isChatRecoveryActive(currentChatId) : false),
     dispatchBlocked:
       models.length === 0 ||
       isChatHydrating ||
       hasPendingRecovery ||
       activeRecoveryTurnIds.length > 0 ||
-      currentChatIsFlagged,
+      safeguardGenerationBlocked,
     onRateLimited: handleQueueRateLimited,
     cancelGeneration,
   })
@@ -3227,7 +3236,7 @@ export function ChatInterface({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (isChatHydrating || currentChatIsFlagged) return
+    if (isChatHydrating || safeguardGenerationBlocked) return
 
     if (rateLimit && rateLimit.remaining <= 0 && rateLimit.kind !== 'hourly') {
       setIsSubscribePromptOpen(true)
@@ -3881,7 +3890,7 @@ export function ChatInterface({
           !isLoadingConfig && isClient && !!currentChat && hasValidatedModel
         }
         onMessageReady={(message) => {
-          if (currentChatIsFlagged) return
+          if (safeguardGenerationBlocked) return
           handleQuery(message)
         }}
       />
@@ -4384,7 +4393,9 @@ export function ChatInterface({
             {/* Messages Area */}
             <QuoteSelectionPopover
               enabled={
-                showChatHeader && !isSettingsModalOpen && !currentChatIsFlagged
+                showChatHeader &&
+                !isSettingsModalOpen &&
+                !safeguardGenerationBlocked
               }
               containerRef={scrollContainerRef}
               onQuote={(text) => {
@@ -4462,7 +4473,7 @@ export function ChatInterface({
                       activeArtifactToolCallId={
                         isArtifactSidebarOpen ? activeArtifactToolCallId : null
                       }
-                      readOnly={currentChatIsFlagged}
+                      readOnly={safeguardGenerationBlocked}
                       isPremium={showPremiumComposerControls}
                       models={models}
                       onSubmit={handleSubmit}
@@ -4551,7 +4562,7 @@ export function ChatInterface({
                       }
                     />
                   </div>
-                  {currentChatIsFlagged ? null : selectPendingInputToolCallFromChat(
+                  {safeguardGenerationBlocked ? null : selectPendingInputToolCallFromChat(
                       currentChat,
                     ) ? (
                     <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 @3xl/conversation:px-8">

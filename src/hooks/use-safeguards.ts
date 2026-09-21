@@ -32,9 +32,19 @@ export function useFlaggedChatIds(): SafeguardsSnapshot['flaggedChatIds'] {
   )
 }
 
+export function useSafeguardsLoaded(): boolean {
+  return useSyncExternalStore(
+    subscribeSafeguards,
+    () => getSafeguardsSnapshot().hasLoaded,
+    () => getSafeguardsServerSnapshot().hasLoaded,
+  )
+}
+
+const SAFEGUARDS_REFRESH_INTERVAL_MS = 30_000
+
 /**
- * Loads flagged chats once per signed-in session and clears them on
- * sign-out. Mount once near the chat root.
+ * Keeps the signed-in user's flags current and clears them on sign-out.
+ * Background tabs pause polling and refresh immediately when active again.
  */
 export function useSafeguardsLoader(): void {
   const { isSignedIn, userId } = useAuth()
@@ -43,7 +53,26 @@ export function useSafeguardsLoader(): void {
       resetSafeguards()
       return
     }
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') void refreshSafeguards()
+    }
+    const handleVisibilityChange = () => refreshIfVisible()
+
     void refreshSafeguards()
-    return resetSafeguards
+    const interval = window.setInterval(
+      refreshIfVisible,
+      SAFEGUARDS_REFRESH_INTERVAL_MS,
+    )
+    window.addEventListener('focus', refreshIfVisible)
+    window.addEventListener('online', refreshIfVisible)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshIfVisible)
+      window.removeEventListener('online', refreshIfVisible)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      resetSafeguards()
+    }
   }, [isSignedIn, userId])
 }

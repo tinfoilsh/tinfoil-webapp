@@ -94,7 +94,16 @@ Next.js and `dev-serve` do not know individual mock routes.
 - Remain environment-agnostic.
 - Always use the production HTTP request and Zod response schema.
 - Acquire authentication through `authTokenManager`.
+- Track whether the first successful response has loaded without discarding the last good snapshot during later refreshes.
 - Contain no `IS_DEV` branch, placeholders, simulated flags, or browser persistence.
+
+### `src/hooks/use-safeguards.ts`
+
+- Fetch immediately for a signed-in user.
+- Poll every 30 seconds while the page is visible.
+- Refresh immediately on focus, visibility restoration, and reconnect.
+- Pause interval requests while hidden.
+- Deduplicate overlapping refreshes through the safeguards service.
 
 ## Mock safeguard contracts
 
@@ -164,6 +173,7 @@ When the active conversation is flagged:
 - Close any message edit already in progress.
 - Disable Quote/Ask interactions.
 - Reject form submissions and URL-provided messages.
+- Block all generation until authentication resolves and the first signed-in safeguard response succeeds.
 - Block queued dispatch, clear queued messages, and cancel active generation.
 - Keep history readable and scrollable.
 - Keep rename, share/export, and whole-chat deletion available.
