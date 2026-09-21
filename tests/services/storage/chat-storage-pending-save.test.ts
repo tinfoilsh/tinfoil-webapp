@@ -1,5 +1,6 @@
 import type { Chat } from '@/components/chat/types'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import type { cloudSync } from '@/services/cloud/cloud-sync'
 import {
   ChatImagesUnavailableError,
   chatStorage,
@@ -7,6 +8,10 @@ import {
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+type ForkCloudChatRequest = Parameters<
+  typeof import('@/services/cloud/cloud-sync').cloudSync.forkChat
+>[0]
 
 const {
   saveChatSpy,
@@ -46,7 +51,7 @@ const {
     saved: true,
     isLocalOnly: (chat as { isLocalOnly?: boolean }).isLocalOnly === true,
   })),
-  getChatSpy: vi.fn(async () => null as unknown),
+  getChatSpy: vi.fn(async (_id: string) => null as unknown),
   getAllChatsSpy: vi.fn(async () => [] as unknown[]),
   getAllChatIdsSpy: vi.fn(async () => [] as string[]),
   deleteAllChatsSpy: vi.fn(async () => 0),
@@ -84,7 +89,7 @@ const {
     ) => null as unknown,
   ),
   loadChatImagesSpy: vi.fn(async () => ({}) as Record<string, string>),
-  forkCloudChatSpy: vi.fn(async () => {}),
+  forkCloudChatSpy: vi.fn(async (_request: ForkCloudChatRequest) => {}),
 }))
 
 vi.mock('@/services/storage/indexed-db', () => ({
@@ -719,7 +724,7 @@ describe('chatStorage forkChat', () => {
 
   it('copies a local-only chat on this device without touching the cloud', async () => {
     const source = { ...storedSource, isLocalOnly: true }
-    getChatSpy.mockImplementation(async (id: unknown) =>
+    getChatSpy.mockImplementation(async (id) =>
       id === 'rev_123_abc' ? source : (saveChatSpy.mock.calls[0]?.[0] ?? null),
     )
 
@@ -738,10 +743,10 @@ describe('chatStorage forkChat', () => {
 
   it('forks a synced chat through the enclave and returns the stored row', async () => {
     const source = { ...storedSource, isLocalOnly: false }
-    getChatSpy.mockImplementation(async (id: unknown) => {
+    getChatSpy.mockImplementation(async (id) => {
       if (id === 'rev_123_abc') return source
       const request = forkCloudChatSpy.mock.calls[0]?.[0] as
-        { targetId: string } | undefined
+        Parameters<typeof cloudSync.forkChat>[0] | undefined
       return request && id === request.targetId
         ? {
             ...source,
@@ -768,7 +773,7 @@ describe('chatStorage forkChat', () => {
   it('copies a synced chat on this device while cloud sync is disabled', async () => {
     setCloudSyncEnabled(false)
     const source = { ...storedSource, isLocalOnly: false }
-    getChatSpy.mockImplementation(async (id: unknown) =>
+    getChatSpy.mockImplementation(async (id) =>
       id === 'rev_123_abc' ? source : (saveChatSpy.mock.calls[0]?.[0] ?? null),
     )
 

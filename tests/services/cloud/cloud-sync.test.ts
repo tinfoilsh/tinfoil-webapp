@@ -1138,6 +1138,14 @@ describe('CloudSyncService forkChat', () => {
     messages: syncedSource.messages.slice(0, 1),
   }
 
+  const forkSource = () =>
+    new CloudSyncService().forkChat({
+      sourceId: 'chat-source',
+      targetId: 'chat-fork',
+      messageCount: 1,
+      title: 'Trip planning (fork)',
+    })
+
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
@@ -1154,12 +1162,7 @@ describe('CloudSyncService forkChat', () => {
     const notify = vi.fn()
     const unsubscribe = chatEvents.on(notify)
     try {
-      const fork = await new CloudSyncService().forkChat({
-        sourceId: 'chat-source',
-        targetId: 'chat-fork',
-        messageCount: 1,
-        title: 'Trip planning (fork)',
-      })
+      const fork = await forkSource()
 
       expect(fork).toBe(remoteFork)
       expect(forkCloudChat).toHaveBeenCalledWith({
@@ -1215,17 +1218,22 @@ describe('CloudSyncService forkChat', () => {
     )
   })
 
-  it('checks authentication and key authorization even when the source is clean', async () => {
+  it('requires authentication even when the source is clean', async () => {
+    isAuthenticated.mockResolvedValue(false)
+
+    await expect(forkSource()).rejects.toThrow(
+      'Authentication required for cloud sync',
+    )
+
+    expect(forkCloudChat).not.toHaveBeenCalled()
+  })
+
+  it('requires key authorization even when the source is clean', async () => {
     canWriteToCloud.mockResolvedValue(false)
 
-    await expect(
-      new CloudSyncService().forkChat({
-        sourceId: 'chat-source',
-        targetId: 'chat-fork',
-        messageCount: 1,
-        title: 'Trip planning (fork)',
-      }),
-    ).rejects.toThrow('Cloud sync key is not authorized')
+    await expect(forkSource()).rejects.toThrow(
+      'Cloud sync key is not authorized',
+    )
 
     expect(forkCloudChat).not.toHaveBeenCalled()
   })
@@ -1233,14 +1241,9 @@ describe('CloudSyncService forkChat', () => {
   it('refuses to fork a chat that belongs to another account', async () => {
     getChat.mockResolvedValue({ ...syncedSource, syncUserId: 'user-2' })
 
-    await expect(
-      new CloudSyncService().forkChat({
-        sourceId: 'chat-source',
-        targetId: 'chat-fork',
-        messageCount: 1,
-        title: 'Trip planning (fork)',
-      }),
-    ).rejects.toThrow('Chat does not belong to the active account')
+    await expect(forkSource()).rejects.toThrow(
+      'Chat does not belong to the active account',
+    )
 
     expect(forkCloudChat).not.toHaveBeenCalled()
   })
@@ -1248,14 +1251,7 @@ describe('CloudSyncService forkChat', () => {
   it('fails when the source chat is missing locally', async () => {
     getChat.mockResolvedValue(null)
 
-    await expect(
-      new CloudSyncService().forkChat({
-        sourceId: 'chat-source',
-        targetId: 'chat-fork',
-        messageCount: 1,
-        title: 'Trip planning (fork)',
-      }),
-    ).rejects.toThrow('Chat not found')
+    await expect(forkSource()).rejects.toThrow('Chat not found')
 
     expect(forkCloudChat).not.toHaveBeenCalled()
   })
@@ -1263,14 +1259,9 @@ describe('CloudSyncService forkChat', () => {
   it('fails when the fork cannot be pulled back after the enclave created it', async () => {
     downloadChat.mockResolvedValue(null)
 
-    await expect(
-      new CloudSyncService().forkChat({
-        sourceId: 'chat-source',
-        targetId: 'chat-fork',
-        messageCount: 1,
-        title: 'Trip planning (fork)',
-      }),
-    ).rejects.toThrow('Forked chat was not found after creation: chat-fork')
+    await expect(forkSource()).rejects.toThrow(
+      'Forked chat was not found after creation: chat-fork',
+    )
 
     expect(forkCloudChat).toHaveBeenCalledTimes(1)
     expect(applyRemoteChatIfFresh).not.toHaveBeenCalled()
@@ -1287,14 +1278,9 @@ describe('CloudSyncService forkChat', () => {
     // An edit lands during the upload, so the row stays locally modified.
     finalizeUpload.mockResolvedValue(undefined)
 
-    await expect(
-      new CloudSyncService().forkChat({
-        sourceId: 'chat-source',
-        targetId: 'chat-fork',
-        messageCount: 1,
-        title: 'Trip planning (fork)',
-      }),
-    ).rejects.toThrow('Chat changed while preparing to fork')
+    await expect(forkSource()).rejects.toThrow(
+      'Chat changed while preparing to fork',
+    )
 
     expect(forkCloudChat).not.toHaveBeenCalled()
   })
@@ -1308,14 +1294,7 @@ describe('CloudSyncService forkChat', () => {
         return { syncVersion: 1 }
       })
 
-      await expect(
-        new CloudSyncService().forkChat({
-          sourceId: 'chat-source',
-          targetId: 'chat-fork',
-          messageCount: 1,
-          title: 'Trip planning (fork)',
-        }),
-      ).rejects.toThrow('Cloud account changed')
+      await expect(forkSource()).rejects.toThrow('Cloud account changed')
 
       expect(applyRemoteChatIfFresh).not.toHaveBeenCalled()
       expect(notify).not.toHaveBeenCalled()
@@ -1328,14 +1307,9 @@ describe('CloudSyncService forkChat', () => {
     getChat.mockResolvedValue({ ...syncedSource, locallyModified: true })
     canWriteToCloud.mockResolvedValue(false)
 
-    await expect(
-      new CloudSyncService().forkChat({
-        sourceId: 'chat-source',
-        targetId: 'chat-fork',
-        messageCount: 1,
-        title: 'Trip planning (fork)',
-      }),
-    ).rejects.toThrow('Cloud sync key is not authorized')
+    await expect(forkSource()).rejects.toThrow(
+      'Cloud sync key is not authorized',
+    )
 
     expect(forkCloudChat).not.toHaveBeenCalled()
     expect(applyRemoteChatIfFresh).not.toHaveBeenCalled()
@@ -1344,13 +1318,8 @@ describe('CloudSyncService forkChat', () => {
   it('surfaces a failure when the fork cannot be stored locally', async () => {
     applyRemoteChatIfFresh.mockResolvedValue({ applied: false })
 
-    await expect(
-      new CloudSyncService().forkChat({
-        sourceId: 'chat-source',
-        targetId: 'chat-fork',
-        messageCount: 1,
-        title: 'Trip planning (fork)',
-      }),
-    ).rejects.toThrow('Forked chat could not be stored locally: chat-fork')
+    await expect(forkSource()).rejects.toThrow(
+      'Forked chat could not be stored locally: chat-fork',
+    )
   })
 })
