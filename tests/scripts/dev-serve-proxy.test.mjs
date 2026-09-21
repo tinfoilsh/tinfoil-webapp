@@ -117,6 +117,17 @@ describe('dev-serve route precedence', () => {
     expect(router.requests).toHaveLength(0)
   })
 
+  it('routes the exact /api/local-router root to the model router', async () => {
+    await driveHandler(handler(), {
+      method: 'GET',
+      path: '/api/local-router',
+    })
+
+    expect(router.requests).toHaveLength(1)
+    expect(router.requests[0].url).toBe('/')
+    expect(gateway.requests).toHaveLength(0)
+  })
+
   it('routes /api/local-router/* directly to the model router', async () => {
     await driveHandler(handler(), {
       method: 'GET',

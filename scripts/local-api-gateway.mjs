@@ -1,4 +1,4 @@
-import { proxyRequest } from './http-proxy.mjs'
+import { proxyRequest } from './dev-http-proxy.mjs'
 import { createMockControlplane } from './mock-controlplane.mjs'
 
 function send(res, status, contentType, body) {
@@ -20,7 +20,7 @@ export function createLocalApiGateway({
       }
 
       const pathOnly = (req.url || '').split('?')[0]
-      if (pathOnly.startsWith('/api/dev/')) {
+      if (pathOnly === '/api/dev' || pathOnly.startsWith('/api/dev/')) {
         send(
           res,
           404,

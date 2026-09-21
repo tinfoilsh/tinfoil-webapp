@@ -33,6 +33,7 @@ import {
   useFlaggedChatIds,
   useSafeguardsLoaded,
   useSafeguardsLoader,
+  useSafeguardStatusNotification,
 } from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
@@ -545,6 +546,7 @@ export function ChatInterface({
   >(undefined)
   const syncNeedsAttention = useSyncHealthAttention()
   useSafeguardsLoader()
+  useSafeguardStatusNotification()
   const flaggedChatIds = useFlaggedChatIds()
   const safeguardsLoaded = useSafeguardsLoaded()
 

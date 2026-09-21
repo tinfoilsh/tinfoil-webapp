@@ -16,7 +16,8 @@
 
 import nextEnv from '@next/env'
 import http from 'node:http'
-import { parseProxyOrigin } from './http-proxy.mjs'
+import { parseProxyOrigin } from './dev-http-proxy.mjs'
+import { handleDevStreamLog, isDevStreamLogRequest } from './dev-stream-log.mjs'
 import { createLocalApiGateway } from './local-api-gateway.mjs'
 
 nextEnv.loadEnvConfig(process.cwd(), true)
@@ -215,7 +216,10 @@ const localApiGateway = createLocalApiGateway({
 const server = http.createServer(async (req, res) => {
   // CORS headers for local development
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  )
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
   // Handle preflight
@@ -226,6 +230,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   const pathOnly = (req.url || '').split('?')[0]
+
+  if (isDevStreamLogRequest(req)) {
+    handleDevStreamLog(req, res)
+    return
+  }
 
   if (pathOnly !== '/api/dev/simulator') {
     await localApiGateway.route(req, res)

@@ -1,5 +1,6 @@
 import http from 'node:http'
 import https from 'node:https'
+import { pipeline } from 'node:stream'
 
 export function parseProxyOrigin(raw) {
   if (!raw) return null
@@ -11,6 +12,17 @@ export function parseProxyOrigin(raw) {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
   return `${url.protocol}//${url.host}`
+}
+
+function handleProxyError(error, res, upstream) {
+  console.error(`Proxy error → ${upstream}: ${error.message}`)
+  if (res.destroyed) return
+  if (!res.headersSent) {
+    res.writeHead(502, { 'Content-Type': 'text/plain' })
+    res.end('Bad Gateway')
+    return
+  }
+  res.destroy(error)
 }
 
 export function proxyRequest(req, res, upstream, { rewritePath } = {}) {
@@ -29,16 +41,12 @@ export function proxyRequest(req, res, upstream, { rewritePath } = {}) {
 
   const proxyReq = transport.request(options, (proxyRes) => {
     res.writeHead(proxyRes.statusCode, proxyRes.headers)
-    proxyRes.pipe(res, { end: true })
+    pipeline(proxyRes, res, (error) => {
+      if (error) handleProxyError(error, res, upstream)
+    })
   })
 
-  proxyReq.on('error', (error) => {
-    console.error(`Proxy error → ${upstream}: ${error.message}`)
-    if (!res.headersSent) {
-      res.writeHead(502, { 'Content-Type': 'text/plain' })
-    }
-    res.end('Bad Gateway')
+  pipeline(req, proxyReq, (error) => {
+    if (error) handleProxyError(error, res, upstream)
   })
-
-  req.pipe(proxyReq, { end: true })
 }

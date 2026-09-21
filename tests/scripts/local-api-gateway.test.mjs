@@ -50,22 +50,25 @@ describe('local API gateway', () => {
     expect(proxy).toHaveBeenCalledWith(req, res, 'https://api.tinfoil.sh')
   })
 
-  it('never forwards unknown development-only routes to controlplane', async () => {
-    const proxy = vi.fn()
-    const res = makeResponse()
-    const gateway = createLocalApiGateway({
-      controlplaneUpstream: 'https://api.tinfoil.sh',
-      mockControlplane: { route: () => null },
-      proxy,
-    })
+  it.each(['/api/dev', '/api/dev/not-registered'])(
+    'never forwards the development namespace %s to controlplane',
+    async (url) => {
+      const proxy = vi.fn()
+      const res = makeResponse()
+      const gateway = createLocalApiGateway({
+        controlplaneUpstream: 'https://api.tinfoil.sh',
+        mockControlplane: { route: () => null },
+        proxy,
+      })
 
-    await gateway.route({ url: '/api/dev/not-registered', method: 'POST' }, res)
+      await gateway.route({ url, method: 'POST' }, res)
 
-    expect(res.writeHead).toHaveBeenCalledWith(404, {
-      'Content-Type': 'application/json',
-    })
-    expect(proxy).not.toHaveBeenCalled()
-  })
+      expect(res.writeHead).toHaveBeenCalledWith(404, {
+        'Content-Type': 'application/json',
+      })
+      expect(proxy).not.toHaveBeenCalled()
+    },
+  )
 
   it('returns 502 instead of dropping unhandled APIs when no upstream is configured', async () => {
     const res = makeResponse()
