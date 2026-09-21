@@ -4511,9 +4511,7 @@ export function ChatInterface({
                 isStreaming={isStreaming}
                 isWaitingForResponse={isWaitingForResponse}
               />
-              <AnimatePresence>
-                {isForking && <ForkOverlay sidebarSide="left" />}
-              </AnimatePresence>
+              <AnimatePresence>{isForking && <ForkOverlay />}</AnimatePresence>
               <div
                 ref={scrollContainerRef}
                 onScroll={handleScroll}
