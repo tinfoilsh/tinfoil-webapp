@@ -168,6 +168,9 @@ function installMockBackend(): {
   return { flags, fetchMock }
 }
 
+let backendFlags: MockFlag[]
+let fetchMock: ReturnType<typeof vi.fn>
+
 describe('local Dev Simulator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -177,6 +180,9 @@ describe('local Dev Simulator', () => {
       Authorization: 'Bearer local-test-token',
       'Content-Type': 'application/json',
     })
+    const backend = installMockBackend()
+    backendFlags = backend.flags
+    fetchMock = backend.fetchMock
   })
 
   afterEach(() => {
@@ -186,7 +192,6 @@ describe('local Dev Simulator', () => {
   })
 
   it('answers help using the original user text without any simulator server or API call', async () => {
-    installMockBackend()
     const result = collect(await send('help'))
     await vi.runAllTimersAsync()
     const chunks = await result
@@ -206,7 +211,6 @@ describe('local Dev Simulator', () => {
   it.each([DEV_SIMULATOR_ERROR_COMMAND, '  TEST ERROR  '])(
     'surfaces a repeatable connection error immediately for %s without network calls',
     async (command) => {
-      installMockBackend()
       for (let attempt = 0; attempt < 2; attempt++) {
         await expect(send(command)).rejects.toMatchObject({
           name: 'ChatError',
@@ -220,7 +224,6 @@ describe('local Dev Simulator', () => {
   )
 
   it('honors cancellation instead of showing the simulated error', async () => {
-    installMockBackend()
     const controller = new AbortController()
     controller.abort()
     await expect(
@@ -231,12 +234,9 @@ describe('local Dev Simulator', () => {
   it.each(['flag safeguard', '  FLAG SAFEGUARD  '])(
     'POSTs the active conversation id and refreshes the store via the normal HTTP path for %s',
     async (command) => {
-      const { fetchMock, flags } = installMockBackend()
       const chunks = await collect(await send(command))
       expect(contentOf(chunks)).toBe(DEV_SAFEGUARD_FLAG_RESPONSE)
 
-      // The client POSTed to the mock backend, then GET'd through the
-      // normal safeguards fetch.
       const posts = fetchMock.mock.calls.filter(
         (call) => (call[1] as RequestInit)?.method === 'POST',
       )
@@ -257,7 +257,9 @@ describe('local Dev Simulator', () => {
       expect(gets.some((c) => c[0] === '/api/users/me/safeguard-flags')).toBe(
         true,
       )
-      expect(flags.map((f) => f.conversation_id)).toEqual(['current-chat'])
+      expect(backendFlags.map((f) => f.conversation_id)).toEqual([
+        'current-chat',
+      ])
       expect(getSafeguardsSnapshot().flaggedChatIds).toEqual({
         'current-chat': true,
       })
@@ -266,14 +268,13 @@ describe('local Dev Simulator', () => {
   )
 
   it('counts each chat once through the mock backend', async () => {
-    const { fetchMock, flags } = installMockBackend()
     await collect(await send('flag safeguard'))
     await collect(await send('flag safeguard'))
-    expect(flags.map((f) => f.conversation_id)).toEqual(['current-chat'])
+    expect(backendFlags.map((f) => f.conversation_id)).toEqual(['current-chat'])
     await collect(
       await send('flag safeguard', { conversationId: 'another-chat' }),
     )
-    expect(flags.map((f) => f.conversation_id).sort()).toEqual([
+    expect(backendFlags.map((f) => f.conversation_id).sort()).toEqual([
       'another-chat',
       'current-chat',
     ])
@@ -285,12 +286,11 @@ describe('local Dev Simulator', () => {
   })
 
   it('clears flags on `reset safeguards` through the DELETE endpoint', async () => {
-    const { fetchMock, flags } = installMockBackend()
     await collect(await send('flag safeguard'))
-    expect(flags).toHaveLength(1)
+    expect(backendFlags).toHaveLength(1)
     const chunks = await collect(await send('reset safeguards'))
     expect(contentOf(chunks)).toBe(DEV_SAFEGUARD_RESET_RESPONSE)
-    expect(flags).toHaveLength(0)
+    expect(backendFlags).toHaveLength(0)
     expect(getSafeguardsSnapshot().flaggedChatIds).toEqual({})
     const deletes = fetchMock.mock.calls.filter(
       (call) => (call[1] as RequestInit)?.method === 'DELETE',
@@ -300,7 +300,6 @@ describe('local Dev Simulator', () => {
   })
 
   it('does not retrigger a command from earlier conversation history', async () => {
-    installMockBackend()
     const result = collect(
       await send('help', {
         messages: [userMessage('flag safeguard'), userMessage('help')],
@@ -312,7 +311,6 @@ describe('local Dev Simulator', () => {
   })
 
   it('requires the exact command rather than matching it in prose', async () => {
-    installMockBackend()
     const result = collect(await send('What does flag safeguard mean?'))
     await vi.runAllTimersAsync()
     await result
@@ -320,7 +318,6 @@ describe('local Dev Simulator', () => {
   })
 
   it('does not flag a chat when the command is canceled before consumption', async () => {
-    installMockBackend()
     const controller = new AbortController()
     const stream = await send('flag safeguard', { signal: controller.signal })
     controller.abort()
@@ -329,7 +326,6 @@ describe('local Dev Simulator', () => {
   })
 
   it('rejects a missing chat ID with a clear FETCH_ERROR', async () => {
-    installMockBackend()
     await expect(
       send('flag safeguard', { conversationId: '' }),
     ).rejects.toMatchObject({ code: 'FETCH_ERROR' })
@@ -337,7 +333,6 @@ describe('local Dev Simulator', () => {
   })
 
   it('explains that sign-in is required when no Clerk token is available', async () => {
-    installMockBackend()
     const { AuthTokenUnavailableError } = await import('@/services/auth')
     getAuthHeaders.mockRejectedValue(
       new AuthTokenUnavailableError('signed out'),
@@ -355,7 +350,6 @@ describe('local Dev Simulator', () => {
   })
 
   it('preserves the simulated retry pattern without making network calls', async () => {
-    installMockBackend()
     const onRetry = vi.fn()
     const result = sendChatStream({
       model: DEV_SIMULATOR_MODEL,
@@ -375,7 +369,6 @@ describe('local Dev Simulator', () => {
   it.each(['flag safeguard', 'reset safeguards', DEV_SIMULATOR_ERROR_COMMAND])(
     'leaves %s on a normal model on the normal SDK path',
     async (command) => {
-      installMockBackend()
       createCompletion.mockResolvedValue({
         async *[Symbol.asyncIterator]() {
           yield { choices: [{ delta: { content: 'Normal answer' } }] }

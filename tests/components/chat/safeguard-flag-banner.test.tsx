@@ -55,7 +55,6 @@ describe('SafeguardFlagBanner', () => {
 
   it('does not distinguish mock flags: the banner is identical to production', () => {
     render(<SafeguardFlagBanner chatId="flagged-chat" isDarkMode={false} />)
-    // No "Local preview" or "simulated flag" wording is rendered anywhere.
     expect(screen.queryByText(/Local preview/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument()
     expect(

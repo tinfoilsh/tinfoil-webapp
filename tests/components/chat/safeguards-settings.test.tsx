@@ -53,7 +53,7 @@ describe('SafeguardsSettings', () => {
     setSnapshot()
   })
 
-  it('never surfaces a local-preview label: mock and real data render identically', () => {
+  it('does not label safeguard responses as local previews', () => {
     setSnapshot({ status: 'ready', policy: POLICY })
     render(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)
     expect(screen.queryByText(/Local preview/i)).not.toBeInTheDocument()

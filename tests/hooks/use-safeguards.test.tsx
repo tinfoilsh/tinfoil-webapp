@@ -17,6 +17,8 @@ vi.mock('@/services/safeguards', () => ({
   subscribeSafeguards: vi.fn(),
 }))
 
+const SAFEGUARDS_REFRESH_INTERVAL_MS = 30_000
+
 describe('useSafeguardsLoader', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -34,7 +36,7 @@ describe('useSafeguardsLoader', () => {
     renderHook(() => useSafeguardsLoader())
 
     expect(mocks.refresh).toHaveBeenCalledTimes(1)
-    vi.advanceTimersByTime(30_000)
+    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS)
     expect(mocks.refresh).toHaveBeenCalledTimes(2)
 
     window.dispatchEvent(new Event('focus'))
@@ -48,7 +50,7 @@ describe('useSafeguardsLoader', () => {
       .mockReturnValue('hidden')
     renderHook(() => useSafeguardsLoader())
 
-    vi.advanceTimersByTime(30_000)
+    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS)
     expect(mocks.refresh).toHaveBeenCalledTimes(1)
 
     visibility.mockReturnValue('visible')
@@ -60,9 +62,22 @@ describe('useSafeguardsLoader', () => {
     const { unmount } = renderHook(() => useSafeguardsLoader())
 
     unmount()
-    vi.advanceTimersByTime(30_000)
+    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS)
+    window.dispatchEvent(new Event('focus'))
+    window.dispatchEvent(new Event('online'))
+    document.dispatchEvent(new Event('visibilitychange'))
 
     expect(mocks.reset).toHaveBeenCalledTimes(1)
     expect(mocks.refresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears state without fetching or polling when signed out', () => {
+    mocks.useAuth.mockReturnValue({ isSignedIn: false, userId: null })
+
+    renderHook(() => useSafeguardsLoader())
+    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS)
+
+    expect(mocks.reset).toHaveBeenCalledTimes(1)
+    expect(mocks.refresh).not.toHaveBeenCalled()
   })
 })

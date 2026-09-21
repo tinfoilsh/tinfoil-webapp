@@ -72,6 +72,7 @@ describe('mock safeguards backend', () => {
     store = createMockSafeguardsStore({ logger })
   })
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -161,14 +162,13 @@ describe('mock safeguards backend', () => {
   })
 
   it('returns multiple flags newest-first', async () => {
+    const now = Date.now()
+    vi.useFakeTimers()
+    vi.setSystemTime(now - 60_000)
     store.addFlag('chat-old')
-    // Force an older timestamp so newest-first ordering is deterministic
-    // regardless of resolution.
-    store.listFlags().flags // no-op
-    const flagsInternal = store.listFlags().flags
-    // Mutate stored created_at via addFlag then patch.
-    flagsInternal[0].created_at = new Date(Date.now() - 60_000).toISOString()
+    vi.setSystemTime(now)
     store.addFlag('chat-new')
+    vi.useRealTimers()
     const list = await drive(
       store,
       makeRequest('GET', '/api/users/me/safeguard-flags', { headers: AUTH }),
@@ -183,31 +183,19 @@ describe('mock safeguards backend', () => {
     const custom = createMockSafeguardsStore({
       policy: { window_hours: 1, warn_threshold: 1, ban_threshold: 2 },
     })
-    // Add one flag "just now" and one two hours ago.
-    custom.addFlag('recent')
-    const state = custom.listFlags()
-    state.flags[0].created_at // read no-op
-    // Manually push an old flag to internal list via addFlag then patch.
+    const now = Date.now()
+    vi.useFakeTimers()
+    vi.setSystemTime(now - 3 * 60 * 60 * 1000)
     custom.addFlag('old')
-    // Access via listFlags and patch the underlying array through addFlag id.
-    // Simpler: reach through a fresh addFlag with older created_at using
-    // a monkey-patched Date? Use direct list mutation:
-    const list = custom.listFlags()
-    list.flags.forEach((f) => {
-      if (f.conversation_id === 'old') {
-        f.created_at = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
-      }
-    })
-    // listFlags returns a shallow copy; we need to mutate stored state.
-    // Use route to fetch canonical state instead.
+    vi.setSystemTime(now)
+    custom.addFlag('recent')
+    vi.useRealTimers()
+
     const res = await drive(
       custom,
       makeRequest('GET', '/api/users/me/safeguard-flags', { headers: AUTH }),
     )
-    // Both flags are still recent because listFlags() cloned; the store
-    // itself only exposes mutation through addFlag/reset. So both count in
-    // window. Assert both are counted.
-    expect(res.json.in_window).toBe(2)
+    expect(res.json.in_window).toBe(1)
     expect(res.json.window_hours).toBe(1)
   })
 

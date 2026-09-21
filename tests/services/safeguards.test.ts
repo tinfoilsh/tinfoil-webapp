@@ -15,6 +15,7 @@ vi.mock('@/services/auth', () => ({
 
 vi.mock('@/config', () => ({ API_BASE_URL: 'https://api.test' }))
 
+const SAFEGUARDS_URL = 'https://api.test/api/users/me/safeguard-flags'
 const RESPONSE = {
   flags: [
     { id: 'v1', conversation_id: 'chat-a', created_at: '2026-09-16T12:00:00Z' },
@@ -25,6 +26,12 @@ const RESPONSE = {
   window_hours: 168,
   warn_threshold: 8,
   ban_threshold: 10,
+}
+
+function mockSafeguardsResponse(response = RESPONSE) {
+  return vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response(JSON.stringify(response)))
 }
 
 // A fetch mock whose response the test controls, plus a `called` promise that
@@ -59,21 +66,14 @@ describe('safeguards store', () => {
   })
 
   it('always fetches the configured API base URL', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify(RESPONSE)))
+    const fetchSpy = mockSafeguardsResponse()
     await refreshSafeguards()
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'https://api.test/api/users/me/safeguard-flags',
-      expect.any(Object),
-    )
+    expect(fetchSpy).toHaveBeenCalledWith(SAFEGUARDS_URL, expect.any(Object))
   })
 
   it('loads flagged chats and indexes them by conversation id', async () => {
     expect(getSafeguardsSnapshot().hasLoaded).toBe(false)
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(RESPONSE)),
-    )
+    mockSafeguardsResponse()
 
     await refreshSafeguards()
 
@@ -93,7 +93,7 @@ describe('safeguards store', () => {
     ])
     expect(snapshot.flaggedChatIds).toEqual({ 'chat-a': true, 'chat-b': true })
     expect(fetch).toHaveBeenCalledWith(
-      'https://api.test/api/users/me/safeguard-flags',
+      SAFEGUARDS_URL,
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer t' }),
       }),
@@ -118,9 +118,7 @@ describe('safeguards store', () => {
   })
 
   it('shares one request between concurrent refreshes', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify(RESPONSE)))
+    const fetchSpy = mockSafeguardsResponse()
 
     await Promise.all([refreshSafeguards(), refreshSafeguards()])
 
@@ -175,9 +173,7 @@ describe('safeguards store', () => {
   })
 
   it('notifies subscribers and clears on reset', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(RESPONSE)),
-    )
+    mockSafeguardsResponse()
     const listener = vi.fn()
     subscribeSafeguards(listener)
 

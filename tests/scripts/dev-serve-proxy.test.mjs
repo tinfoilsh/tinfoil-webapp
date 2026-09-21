@@ -19,8 +19,10 @@ function makeRecordingServer() {
       res.end(JSON.stringify({ ok: true }))
     })
   })
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject)
     server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject)
       const { port } = server.address()
       resolve({ server, requests, url: `http://127.0.0.1:${port}` })
     })
@@ -51,6 +53,9 @@ function nodeRequest({ port, method, path, headers, body }) {
         )
       },
     )
+    req.setTimeout(2_000, () => {
+      req.destroy(new Error(`Timed out requesting ${method} ${path}`))
+    })
     req.on('error', reject)
     if (body) req.write(body)
     req.end()
@@ -59,7 +64,13 @@ function nodeRequest({ port, method, path, headers, body }) {
 
 async function driveHandler(handler, { method, path, headers, body } = {}) {
   const server = http.createServer(handler)
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject)
+      resolve()
+    })
+  })
   const { port } = server.address()
   try {
     return await nodeRequest({ port, method, path, headers, body })
@@ -98,6 +109,7 @@ describe('dev-serve route precedence', () => {
     ['GET', '/api/users/me/safeguard-flags?x=1'],
     ['POST', '/api/dev/safeguard-flags'],
     ['DELETE', '/api/dev/safeguard-flags'],
+    ['POST', '/api/dev/stream-log'],
     ['GET', '/api/config/models?feature=new'],
   ])('routes %s %s through the local API gateway', async (method, path) => {
     const response = await driveHandler(handler(), {
