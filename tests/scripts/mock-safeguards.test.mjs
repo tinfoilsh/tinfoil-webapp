@@ -95,6 +95,18 @@ describe('mock safeguards backend', () => {
     expect(res.statusCode).toBe(401)
   })
 
+  it.each(['POST', 'DELETE'])(
+    'rejects unauthenticated %s mutations with 401',
+    async (method) => {
+      const res = await drive(
+        store,
+        makeRequest(method, '/api/dev/safeguard-flags'),
+      )
+      expect(res.statusCode).toBe(401)
+      expect(res.json).toMatchObject({ error: expect.any(String) })
+    },
+  )
+
   it('returns the production schema with default policy values', async () => {
     const res = await drive(
       store,
@@ -114,7 +126,7 @@ describe('mock safeguards backend', () => {
     const res = await drive(
       store,
       makeRequest('POST', '/api/dev/safeguard-flags', {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...AUTH, 'Content-Type': 'application/json' },
         body: {},
       }),
     )
@@ -125,7 +137,7 @@ describe('mock safeguards backend', () => {
     const res = await drive(
       store,
       makeRequest('POST', '/api/dev/safeguard-flags', {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...AUTH, 'Content-Type': 'application/json' },
         body: { conversation_id: '   ' },
       }),
     )
@@ -136,7 +148,7 @@ describe('mock safeguards backend', () => {
     const first = await drive(
       store,
       makeRequest('POST', '/api/dev/safeguard-flags', {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...AUTH, 'Content-Type': 'application/json' },
         body: { conversation_id: 'chat-1' },
       }),
     )
@@ -146,7 +158,7 @@ describe('mock safeguards backend', () => {
     const dup = await drive(
       store,
       makeRequest('POST', '/api/dev/safeguard-flags', {
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...AUTH, 'Content-Type': 'application/json' },
         body: { conversation_id: 'chat-1' },
       }),
     )
@@ -204,7 +216,7 @@ describe('mock safeguards backend', () => {
     store.addFlag('b')
     const res = await drive(
       store,
-      makeRequest('DELETE', '/api/dev/safeguard-flags'),
+      makeRequest('DELETE', '/api/dev/safeguard-flags', { headers: AUTH }),
     )
     expect(res.statusCode).toBe(200)
     expect(res.json).toEqual({ cleared: 2 })
@@ -218,7 +230,7 @@ describe('mock safeguards backend', () => {
   it('returns 405 for unsupported methods on each route', async () => {
     const put = await drive(
       store,
-      makeRequest('PUT', '/api/dev/safeguard-flags'),
+      makeRequest('PUT', '/api/dev/safeguard-flags', { headers: AUTH }),
     )
     expect(put.statusCode).toBe(405)
     expect(put.headers.Allow).toBe('POST, DELETE')

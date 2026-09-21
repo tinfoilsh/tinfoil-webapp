@@ -122,6 +122,7 @@ export function createMockSafeguardsStore({
   }
 
   async function handleDevFlags(req, res) {
+    if (!requireAuth(req, res)) return
     if (req.method === 'POST') {
       let body
       try {
