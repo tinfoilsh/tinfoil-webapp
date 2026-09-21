@@ -1,8 +1,6 @@
+import { API_BASE_URL } from '@/config'
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from './auth'
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
 
 export const SHARE_STORAGE_FORMAT_HEADER = 'X-Format-Version'
 export const SHARE_STORAGE_FORMAT_VERSION = '1'

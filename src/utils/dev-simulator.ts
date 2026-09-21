@@ -1,6 +1,7 @@
 import type { BaseModel } from '@/config/models'
 import {
   DEV_SAFEGUARD_FLAG_COMMAND,
+  DEV_SAFEGUARD_RESET_COMMAND,
   DEV_SIMULATOR_ERROR_COMMAND,
   DEV_SIMULATOR_HELP_COMMAND,
   DEV_SIMULATOR_HELP_STREAM,
@@ -14,7 +15,7 @@ export const DEV_SIMULATOR_MODEL: BaseModel = {
   name: 'Dev Simulator',
   nameShort: 'Dev',
   description: 'Development model for testing streaming and thinking behaviors',
-  details: `Simulates various streaming patterns including thinking, content generation, and edge cases. Send "${DEV_SAFEGUARD_FLAG_COMMAND}" to preview a flagged chat locally.`,
+  details: `Simulates various streaming patterns including thinking, content generation, and edge cases. Send "${DEV_SAFEGUARD_FLAG_COMMAND}" to flag a chat through the local mock controlplane, or "${DEV_SAFEGUARD_RESET_COMMAND}" to clear all mock flags.`,
   parameters: 'Configurable via query patterns',
   recommendedUse: 'Testing and development only',
   type: 'chat',
@@ -456,7 +457,8 @@ export function getSimulatorPattern(query: string): SimulatorPattern {
       content: `## Available Dev Simulator commands
 
 - \`${DEV_SIMULATOR_HELP_COMMAND}\` — Show this command list.
-- \`${DEV_SAFEGUARD_FLAG_COMMAND}\` — Flag this chat locally to preview its sidebar badge and Settings → Safeguards (when signed in). Nothing is reported to your account.
+- \`${DEV_SAFEGUARD_FLAG_COMMAND}\` — Flag this chat through the local mock controlplane. The sidebar and Settings → Safeguards update via the normal fetch path. Nothing is sent to the real controlplane. Requires sign-in.
+- \`${DEV_SAFEGUARD_RESET_COMMAND}\` — Clear all mocked flags on the local backend and refresh the store. Requires sign-in.
 - \`${DEV_SIMULATOR_ERROR_COMMAND}\` — Show the connection-error banner immediately, without a network request. Test resend, details, and dismiss; resending repeats the error. Send a different message to continue normally.
 
 ### Streaming demos
@@ -465,7 +467,7 @@ ${Object.keys(SIMULATOR_PATTERNS)
   .map((command) => `- \`${command}\``)
   .join('\n')}
 
-Other messages receive a default demo response. All responses are simulated locally; no model API or simulator server is needed. Reload the page to clear simulated safeguard flags.`,
+Other messages receive a default demo response. All responses are simulated locally; no model API or router is needed. Mock safeguard flags persist across page reloads and are cleared by \`reset safeguards\` or restarting \`dev:backend\`.`,
     }
   }
 

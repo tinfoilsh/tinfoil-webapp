@@ -8,6 +8,7 @@ const { version: appVersion } = JSON.parse(
 )
 
 const isDev = process.env.NODE_ENV === 'development'
+const isDevProxyEnabled = isDev || process.env.NEXT_PUBLIC_DEV === 'true'
 
 // Defense-in-depth: NEXT_PUBLIC_DEV bypasses enclave attestation and must
 // never be baked into a deployed bundle. Local static testing (see
@@ -19,6 +20,23 @@ if (isHostedBuild && process.env.NEXT_PUBLIC_DEV === 'true') {
     'NEXT_PUBLIC_DEV=true is not allowed in a deployed build: it disables enclave attestation. Unset NEXT_PUBLIC_DEV for production/preview deploys.',
   )
 }
+
+function normalizeUpstream(raw) {
+  if (!raw) return null
+  let url
+  try {
+    url = new URL(raw)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+  // Strip trailing slashes; Next rewrites append the matched suffix.
+  return `${url.protocol}//${url.host}`.replace(/\/$/, '')
+}
+
+const configuredControlplaneBase = normalizeUpstream(
+  process.env.NEXT_PUBLIC_API_BASE_URL,
+)
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -45,16 +63,36 @@ const nextConfig = {
     optimizePackageImports: ['react-icons', 'lucide-react', '@heroicons/react'],
   },
 
-  // Proxy dev simulator to standalone server (only works in `next dev`, ignored in static export)
+  // Proxy dev-only routes (only works in `next dev`, ignored in static export).
+  // Order matters: specific dev-backend and mock routes MUST come before the
+  // catch-all controlplane forwarder so they don't leak to production.
   async rewrites() {
-    return [
+    const specific = [
       {
         source: '/api/dev/simulator',
         destination: 'http://localhost:3001/api/dev/simulator',
       },
       {
+        source: '/api/dev/safeguard-flags',
+        destination: 'http://localhost:3001/api/dev/safeguard-flags',
+      },
+      {
         source: '/api/local-router/:path*',
         destination: 'http://localhost:8090/:path*',
+      },
+      {
+        source: '/api/users/me/safeguard-flags',
+        destination: 'http://localhost:3001/api/users/me/safeguard-flags',
+      },
+    ]
+    if (!isDevProxyEnabled || !configuredControlplaneBase) return specific
+    return [
+      ...specific,
+      // Catch-all: everything else under /api/* forwards to the real
+      // controlplane so Clerk/billing/cloud continue to work in dev.
+      {
+        source: '/api/:path*',
+        destination: `${configuredControlplaneBase}/api/:path*`,
       },
     ]
   },

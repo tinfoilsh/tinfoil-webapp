@@ -2,7 +2,6 @@ import {
   getSafeguardsSnapshot,
   refreshSafeguards,
   resetSafeguards,
-  simulateSafeguardFlag,
   subscribeSafeguards,
 } from '@/services/safeguards'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +13,7 @@ vi.mock('@/services/auth', () => ({
   AuthTokenUnavailableError: class extends Error {},
 }))
 
-vi.mock('@/config', () => ({ API_BASE_URL: 'https://api.test', IS_DEV: false }))
+vi.mock('@/config', () => ({ API_BASE_URL: 'https://api.test' }))
 
 const RESPONSE = {
   flags: [
@@ -53,10 +52,21 @@ describe('safeguards store', () => {
     resetSafeguards()
   })
 
-  it('does not allow a simulated flag outside local dev mode', () => {
-    expect(simulateSafeguardFlag('chat-a')).toBe(false)
-    expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
-    expect(getSafeguardsSnapshot().isPreview).toBe(false)
+  it('has no simulator or preview surface on the exported store', async () => {
+    const mod = await import('@/services/safeguards')
+    expect(mod).not.toHaveProperty('simulateSafeguardFlag')
+    expect(getSafeguardsSnapshot()).not.toHaveProperty('isPreview')
+  })
+
+  it('always fetches the configured API base URL', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify(RESPONSE)))
+    await refreshSafeguards()
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'https://api.test/api/users/me/safeguard-flags',
+      expect.any(Object),
+    )
   })
 
   it('loads flagged chats and indexes them by conversation id', async () => {

@@ -5,13 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/hooks/use-safeguards', () => ({ useSafeguards: vi.fn() }))
 
-function setFlags(isPreview = false) {
+function setFlags() {
   vi.mocked(useSafeguards).mockReturnValue({
     flaggedChats: [],
     flaggedChatIds: { 'flagged-chat': true },
     policy: null,
     status: 'ready',
-    isPreview,
   })
 }
 
@@ -53,16 +52,13 @@ describe('SafeguardFlagBanner', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('clearly distinguishes simulated flags and keeps signed-in settings unavailable to guests', () => {
-    setFlags(true)
+  it('does not distinguish mock flags: the banner is identical to production', () => {
     render(<SafeguardFlagBanner chatId="flagged-chat" isDarkMode={false} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('Local preview:')
-    expect(
-      screen.getByText('This is a simulated flag. Your account is unaffected.'),
-    ).toBeVisible()
+    // No "Local preview" or "simulated flag" wording is rendered anywhere.
+    expect(screen.queryByText(/Local preview/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument()
     expect(
       screen.getByText('Sign in to view Settings → Safeguards.'),
     ).toBeVisible()
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })

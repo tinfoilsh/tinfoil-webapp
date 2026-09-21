@@ -39,13 +39,20 @@ _The [model router](https://github.com/tinfoilsh/confidential-model-router) does
 
 ### 3. Run the app
 
+First, start the local mock backend on port 3001. It provides the dev
+simulator LLM endpoint AND the mocked controlplane safeguard routes:
+
+```bash
+npm run dev:backend
+```
+
+Then start one of the frontend modes:
+
 **Option A: Next.js dev server** (hot reload, slower startup)
 
 ```bash
 npm run dev
 ```
-
-The Next.js config proxies `/api/local-router/*` to `localhost:8090` automatically.
 
 **Option B: Static dev server** (fast, serves production build)
 
@@ -54,12 +61,52 @@ npm run build      # generates out/
 npm run dev:serve  # serves out/ on port 3000 with API proxying
 ```
 
-`dev:serve` (`scripts/dev-serve.mjs`) is a lightweight Node server that:
+Both modes route `/api/*` requests with the same precedence:
 
-- Serves the static export from `out/`
-- Proxies `/api/local-router/*` to `localhost:8090`
-- Proxies `/api/dev/simulator` to `localhost:3001`
-- Accepts stream log uploads at `POST /api/dev/stream-log`
+1. `/api/dev/*` → local mock backend on `localhost:3001` (simulator LLM +
+   mock safeguard mutations).
+2. `/api/local-router/*` → local model router on `localhost:8090`.
+3. `GET /api/users/me/safeguard-flags` → local mock backend (returns the
+   real controlplane schema).
+4. Everything else under `/api/*` → the configured real controlplane at
+   `NEXT_PUBLIC_API_BASE_URL`, so Clerk, billing, cloud sync, sharing, etc.
+   keep working in dev.
+
+`dev:serve` (`scripts/dev-serve.mjs`) also accepts stream log uploads at
+`POST /api/dev/stream-log`.
+
+### Testing the safeguard read-only flow locally
+
+Because the mocked safeguard route uses the _real_ production HTTP path, the
+safeguards client runs unchanged. To exercise it:
+
+1. Start `npm run dev:backend`.
+2. Start `npm run dev` (or `npm run build && npm run dev:serve`).
+3. Sign in locally so the browser has a Clerk session token — the mock
+   backend requires a bearer header on the safeguard GET, matching
+   production. It does not validate the token cryptographically.
+4. Select **Dev Simulator** in the model picker and open a chat.
+5. Send **`flag safeguard`**. The simulator POSTs the active conversation
+   id to `/api/dev/safeguard-flags`, then triggers the normal
+   `refreshSafeguards()` fetch. Sidebar flag, Settings → Safeguards, and
+   the read-only chat banner all react through the production code path.
+6. Refresh the page: the flag persists because mock state lives in the
+   backend process, not in the browser.
+7. Send **`reset safeguards`** (in the Dev Simulator) to clear all mocked
+   flags via DELETE and refresh the store.
+8. Restart `npm run dev:backend` to wipe all mock state.
+
+Notes:
+
+- The client-side safeguards service (`src/services/safeguards.ts`) has no
+  simulator branch. The only difference in dev is the URL: same-origin
+  `/api/*` in dev, absolute `NEXT_PUBLIC_API_BASE_URL` in production.
+- Other controlplane traffic (Clerk, cloud sync, sharing, billing) still
+  reaches the real controlplane through the catch-all rewrite.
+- No real safeguard violation is ever created; nothing is written to Clerk
+  metadata or persisted in the browser.
+- Production and Vercel previews never enable the mock: `NEXT_PUBLIC_DEV`
+  is rejected in hosted builds by `next.config.mjs`.
 
 ## Adding Dev Models
 
@@ -107,7 +154,15 @@ Select **Dev Simulator** to run canned responses entirely in the browser. It doe
 
 Send **`test error`** to immediately show the connection-error banner locally. Use it to check the resend button, expandable details, and dismissal. Resending repeats the simulated error; send a different message to resume normal simulator responses. No network request is made.
 
-Send **`flag safeguard`** to preview a safeguard flag on the current chat. The sidebar shows a red flag, and **Settings → Safeguards** (when signed in) lists that chat and updates the progress bar. This is labeled as a local preview: nothing is submitted to the controlplane and your account is unaffected. Each chat counts once, even if the command is repeated. Reload the page or sign out to clear the preview.
+Send **`flag safeguard`** to flag the current chat through the local mock
+controlplane. The command POSTs to `/api/dev/safeguard-flags` and then
+triggers the normal `refreshSafeguards()` fetch, so the sidebar,
+**Settings → Safeguards**, and read-only chat state all react through the
+production code path. Each chat counts once, even if the command is
+repeated. Send **`reset safeguards`** to clear all mocked flags; restarting
+`npm run dev:backend` also wipes state. Nothing is submitted to the real
+controlplane and your account is unaffected. Sign-in is required so the
+normal bearer header is sent.
 
 **Interleaved search + thinking:**
 

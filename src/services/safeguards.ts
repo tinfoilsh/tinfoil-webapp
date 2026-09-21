@@ -8,11 +8,7 @@
  * `useSyncExternalStore`, mirroring the sync-health store.
  */
 
-import { API_BASE_URL, IS_DEV } from '@/config'
-import {
-  DEV_SAFEGUARD_FLAG_ID_PREFIX,
-  DEV_SIMULATOR_ENABLED,
-} from '@/constants/dev-simulator'
+import { API_BASE_URL } from '@/config'
 import { AuthTokenUnavailableError, authTokenManager } from '@/services/auth'
 import { logError } from '@/utils/error-handling'
 import { z } from 'zod'
@@ -35,7 +31,6 @@ export interface SafeguardsPolicy {
 }
 
 export interface SafeguardsSnapshot {
-  isPreview: boolean
   flaggedChats: readonly FlaggedChat[]
   /** conversationId -> true, for O(1) sidebar lookups. */
   flaggedChatIds: Readonly<Record<string, true>>
@@ -62,37 +57,10 @@ const FlagsResponseSchema = z.object({
 type FlagsResponse = z.infer<typeof FlagsResponseSchema>
 
 const EMPTY_SNAPSHOT: SafeguardsSnapshot = {
-  isPreview: false,
   flaggedChats: [],
   flaggedChatIds: {},
   policy: null,
   status: 'idle',
-}
-
-// Placeholder data so the Safeguards page can be exercised locally without
-// a flagged account. One flag is outside the counting window on purpose.
-const DEV_PLACEHOLDER_FLAGS: FlagsResponse = {
-  flags: [
-    {
-      id: 'dev-flag-1',
-      conversation_id: 'dev-flagged-chat-1',
-      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'dev-flag-2',
-      conversation_id: 'dev-flagged-chat-2',
-      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'dev-flag-3',
-      conversation_id: 'dev-flagged-chat-3',
-      created_at: new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  ],
-  in_window: 2,
-  window_hours: 7 * 24,
-  warn_threshold: 8,
-  ban_threshold: 10,
 }
 
 type Listener = () => void
@@ -100,7 +68,6 @@ type Listener = () => void
 let snapshot: SafeguardsSnapshot = EMPTY_SNAPSHOT
 const listeners = new Set<Listener>()
 let inflight: Promise<void> | null = null
-let simulatedFlags: FlaggedChat[] | null = null
 // Bumped by reset so a response from before the reset is discarded rather
 // than published for the next account.
 let generation = 0
@@ -141,7 +108,6 @@ function toSnapshot(
     if (chat.conversationId) flaggedChatIds[chat.conversationId] = true
   }
   return {
-    isPreview: false,
     flaggedChats,
     flaggedChatIds,
     policy: {
@@ -152,49 +118,6 @@ function toSnapshot(
     },
     status,
   }
-}
-
-function getPreviewSnapshot(): SafeguardsSnapshot {
-  const windowStart =
-    Date.now() - DEV_PLACEHOLDER_FLAGS.window_hours * MS_PER_HOUR
-  const data: FlagsResponse =
-    simulatedFlags === null
-      ? DEV_PLACEHOLDER_FLAGS
-      : {
-          ...DEV_PLACEHOLDER_FLAGS,
-          flags: simulatedFlags.map((flag) => ({
-            id: flag.id,
-            conversation_id: flag.conversationId,
-            created_at: new Date(flag.createdAt).toISOString(),
-          })),
-          in_window: simulatedFlags.filter(
-            (flag) => flag.createdAt >= windowStart,
-          ).length,
-        }
-  return {
-    ...toSnapshot(data, 'ready'),
-    isPreview: true,
-  }
-}
-
-const MS_PER_HOUR = 60 * 60 * 1000
-
-export function simulateSafeguardFlag(conversationId: string): boolean {
-  if (!DEV_SIMULATOR_ENABLED || !conversationId.trim()) return false
-  if (simulatedFlags?.some((flag) => flag.conversationId === conversationId))
-    return true
-  simulatedFlags = [
-    {
-      id: `${DEV_SAFEGUARD_FLAG_ID_PREFIX}${conversationId}`,
-      conversationId,
-      createdAt: Date.now(),
-    },
-    ...(simulatedFlags ?? []),
-  ]
-  generation += 1
-  inflight = null
-  publish(getPreviewSnapshot())
-  return true
 }
 
 async function fetchFlags(): Promise<FlagsResponse> {
@@ -213,10 +136,6 @@ async function fetchFlags(): Promise<FlagsResponse> {
  * thrown, since callers only render from the snapshot.
  */
 export function refreshSafeguards(): Promise<void> {
-  if (IS_DEV || (DEV_SIMULATOR_ENABLED && simulatedFlags !== null)) {
-    publish(getPreviewSnapshot())
-    return Promise.resolve()
-  }
   if (inflight) return inflight
   const requestGeneration = generation
   publish({ ...snapshot, status: 'loading' })
@@ -248,6 +167,5 @@ export function refreshSafeguards(): Promise<void> {
 export function resetSafeguards(): void {
   generation += 1
   inflight = null
-  simulatedFlags = null
   publish(EMPTY_SNAPSHOT)
 }

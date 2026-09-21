@@ -15,6 +15,7 @@
  */
 
 import http from 'node:http'
+import { createMockControlplane } from './mock-controlplane.mjs'
 
 const PORT = process.env.DEV_SIMULATOR_PORT
   ? parseInt(process.env.DEV_SIMULATOR_PORT, 10)
@@ -200,16 +201,25 @@ async function* simulateStream(query) {
 // HTTP Server
 // ============================================================================
 
+const mockControlplane = createMockControlplane()
+
 const server = http.createServer(async (req, res) => {
   // CORS headers for local development
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
   // Handle preflight
   if (req.method === 'OPTIONS') {
     res.writeHead(204)
     res.end()
+    return
+  }
+
+  // Give registered controlplane mocks first chance to handle the request.
+  const mockResponse = mockControlplane.route(req, res)
+  if (mockResponse !== null) {
+    await mockResponse
     return
   }
 
@@ -281,6 +291,11 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`🧪 Dev simulator server running at http://localhost:${PORT}`)
   console.log(`   Endpoint: POST http://localhost:${PORT}/api/dev/simulator`)
+  console.log('')
+  console.log('   Mock controlplane endpoints:')
+  console.log(`     - GET    /api/users/me/safeguard-flags`)
+  console.log(`     - POST   /api/dev/safeguard-flags`)
+  console.log(`     - DELETE /api/dev/safeguard-flags`)
   console.log('')
   console.log('   Test patterns:')
   console.log('     - "test thoughts" - Basic thinking + content')

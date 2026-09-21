@@ -15,7 +15,7 @@ export function SafeguardFlagBanner({
   isDarkMode,
   onOpenSettings,
 }: SafeguardFlagBannerProps) {
-  const { flaggedChatIds, isPreview } = useSafeguards()
+  const { flaggedChatIds } = useSafeguards()
   if (!flaggedChatIds[chatId]) return null
 
   return (
@@ -31,18 +31,11 @@ export function SafeguardFlagBanner({
       <FlagIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">
-          {isPreview
-            ? 'Local preview: this chat was flagged by a safeguard model.'
-            : 'This chat was flagged by a safeguard model.'}
+          This chat was flagged by a safeguard model.
         </p>
         <p className="mt-0.5 text-xs">
           This chat is now read-only. Start a new chat to continue.
         </p>
-        {isPreview && (
-          <p className="mt-1 text-xs">
-            This is a simulated flag. Your account is unaffected.
-          </p>
-        )}
         {onOpenSettings ? (
           <button
             type="button"

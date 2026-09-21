@@ -1,4 +1,5 @@
 import type { Attachment, Message } from '@/components/chat/types'
+import { API_BASE_URL } from '@/config'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { isLocalRecoveryEnvelope } from '@/types/chat-recovery'
 import {
@@ -46,8 +47,6 @@ import {
   type RemoteChatData,
 } from './chat-codec'
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
 const AUTH_INIT_WAIT_MS = 3000
 const RESTORE_DELETED_CHAT_HEADER = RESTORE_DELETED_HEADERS.Chat
 const ENCLAVE_CHAT_LIST_LIMIT = 100

@@ -1,9 +1,7 @@
+import { API_BASE_URL } from '@/config'
 import { logError } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import type { PasskeyCredentialEntry } from './passkey-key-storage'
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
 
 /**
  * One-way recovery fetch for users who registered a passkey on the

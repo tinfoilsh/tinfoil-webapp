@@ -32,7 +32,6 @@ const POLICY = {
 
 function setSnapshot(overrides: Partial<SafeguardsSnapshot> = {}) {
   vi.mocked(useSafeguards).mockReturnValue({
-    isPreview: false,
     flaggedChats: [],
     flaggedChatIds: {},
     policy: null,
@@ -53,14 +52,10 @@ describe('SafeguardsSettings', () => {
     setSnapshot()
   })
 
-  it('labels local previews rather than presenting them as account flags', () => {
-    setSnapshot({ isPreview: true, status: 'ready', policy: POLICY })
+  it('never surfaces a local-preview label: mock and real data render identically', () => {
+    setSnapshot({ status: 'ready', policy: POLICY })
     render(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)
-    expect(
-      screen.getByText(
-        'Local preview only. These flags do not affect your account.',
-      ),
-    ).toBeVisible()
+    expect(screen.queryByText(/Local preview/i)).not.toBeInTheDocument()
   })
 
   it('splits the explanation into three headed sections with the policy link', () => {

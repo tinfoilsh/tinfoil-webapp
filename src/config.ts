@@ -1,6 +1,9 @@
-// For Next.js, public environment variables are replaced at build time
-// We'll provide fallback values for development if not set
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+// Local dev sends controlplane requests through the same-origin proxy, which
+// can mock selected routes and forward the rest to the configured upstream.
+// Hosted builds reject NEXT_PUBLIC_DEV in next.config.mjs.
+const CONFIGURED_API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || ''
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_DEV === 'true' ? '' : CONFIGURED_API_BASE_URL
 
 // Injected from package.json at build time (see next.config.mjs).
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
