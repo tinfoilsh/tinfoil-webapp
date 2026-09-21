@@ -93,6 +93,7 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { generateCodeExecutionAccessToken } from '@/services/exec-snapshot/access-token'
 import { isPrfSupported, PrfNotSupportedError } from '@/services/passkey'
 import { chatEvents } from '@/services/storage/chat-events'
+import { buildForkedChat } from '@/services/storage/chat-fork'
 import {
   ChatImagesUnavailableError,
   chatStorage,
@@ -115,6 +116,7 @@ import {
   recordPerformanceDuration,
   startPerformanceTimer,
 } from '@/utils/performance-metrics'
+import { generateReverseId } from '@/utils/reverse-id'
 import {
   estimateMessageTokens,
   estimateTokenCount,
@@ -2709,6 +2711,65 @@ export function ChatInterface({
     [reloadChats, toast],
   )
 
+  // Start a new conversation from the messages up to and including the
+  // chosen one. Signed-in chats are forked by storage (local copy or via
+  // the sync enclave); guest chats are copied into session storage.
+  const handleForkMessage = useCallback(
+    async (messageIndex: number) => {
+      if (!currentChat || currentChat.isTemporary || currentChat.isBlankChat) {
+        return
+      }
+      if (loadingState !== 'idle' || isStreaming) return
+      const messageCount = messageIndex + 1
+      if (messageCount < 1 || messageCount > currentChat.messages.length) {
+        return
+      }
+      const sourceId = currentChat.id
+      try {
+        let fork: Chat
+        if (isSignedIn) {
+          fork = await chatStorage.forkChat(sourceId, messageCount)
+        } else {
+          fork = buildForkedChat(
+            currentChat,
+            messageCount,
+            generateReverseId().id,
+          )
+          sessionChatStorage.saveChat(fork)
+        }
+        invalidateFavoriteNavigation()
+        setChats((current) => upsertChatById(current, fork))
+        setCurrentChat(fork)
+        toast({
+          title: 'Conversation forked',
+          description:
+            'You can continue from here without changing the original.',
+        })
+      } catch (error) {
+        logError('Failed to fork conversation', error, {
+          component: 'ChatInterface',
+          action: 'handleForkMessage',
+          metadata: { chatId: sourceId, messageCount },
+        })
+        toast({
+          title: 'Failed to fork conversation',
+          description: 'Please try again.',
+          variant: 'destructive',
+        })
+      }
+    },
+    [
+      currentChat,
+      invalidateFavoriteNavigation,
+      isSignedIn,
+      isStreaming,
+      loadingState,
+      setChats,
+      setCurrentChat,
+      toast,
+    ],
+  )
+
   const handleToggleFavorite = useCallback(
     async (favorite: Pick<Chat, 'id' | 'isLocalOnly'>) => {
       if (pinnedChatIds.includes(favorite.id)) {
@@ -4502,6 +4563,11 @@ export function ChatInterface({
                       }
                       onEditAssistantMessage={editAssistantMessage}
                       onContinueAssistantMessage={continueAssistantMessage}
+                      onForkMessage={
+                        currentChat.isTemporary || currentChat.isBlankChat
+                          ? undefined
+                          : handleForkMessage
+                      }
                       onRetryToolCall={retryToolCall}
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
