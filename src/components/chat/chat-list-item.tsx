@@ -431,10 +431,10 @@ export function ChatListItem({
               ) : chat.pendingSave ? (
                 <span
                   className="mx-2 flex w-[18px] flex-shrink-0 items-center justify-center text-content-muted"
-                  title="Forking conversation"
+                  title="Saving conversation"
                 >
                   <PiSpinner className="h-3.5 w-3.5 animate-spin" />
-                  <span className="sr-only">Forking conversation</span>
+                  <span className="sr-only">Saving conversation</span>
                 </span>
               ) : (
                 isNewChat && (
