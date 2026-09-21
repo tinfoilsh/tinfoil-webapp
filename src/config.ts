@@ -1,15 +1,6 @@
-// For Next.js, public environment variables are replaced at build time
-// We'll provide fallback values for development if not set
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || ''
-
-// Injected from package.json at build time (see next.config.mjs).
-export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
-
-// Local dev mode: bypass TinfoilAI client and connect to local router.
-// Gated on BOTH the build flag and a localhost runtime origin. Dev mode only
-// ever targets a local proxy, so a production bundle accidentally built with
-// NEXT_PUBLIC_DEV=true still fails closed (attestation stays on) when served
-// from a public origin.
+// Local dev mode is gated on both the build flag and a local/private runtime
+// origin. A dev-flagged bundle served publicly therefore keeps attestation and
+// direct controlplane routing enabled.
 function isLocalRuntimeOrigin(): boolean {
   if (typeof window === 'undefined') return false
   const { hostname } = window.location
@@ -23,6 +14,16 @@ function isLocalRuntimeOrigin(): boolean {
 
 export const IS_DEV =
   process.env.NEXT_PUBLIC_DEV === 'true' && isLocalRuntimeOrigin()
+
+// Local dev sends controlplane requests through the same-origin API gateway.
+// Hosted builds reject NEXT_PUBLIC_DEV in next.config.mjs, and the runtime
+// origin check above keeps non-hosted public bundles on the direct API.
+const CONFIGURED_API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
+export const API_BASE_URL = IS_DEV ? '' : CONFIGURED_API_BASE_URL
+
+// Injected from package.json at build time (see next.config.mjs).
+export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || 'dev'
 export const DEV_API_KEY = process.env.NEXT_PUBLIC_DEV_API_KEY || ''
 
 // Sync enclave URL. The web client speaks only to this attested enclave

@@ -14,11 +14,20 @@
  * The server runs on port 3001 by default (configurable via DEV_SIMULATOR_PORT).
  */
 
+import nextEnv from '@next/env'
 import http from 'node:http'
+import { parseProxyOrigin } from './dev-http-proxy.mjs'
+import { handleDevStreamLog, isDevStreamLogRequest } from './dev-stream-log.mjs'
+import { createLocalApiGateway } from './local-api-gateway.mjs'
+
+nextEnv.loadEnvConfig(process.cwd(), true)
 
 const PORT = process.env.DEV_SIMULATOR_PORT
   ? parseInt(process.env.DEV_SIMULATOR_PORT, 10)
   : 3001
+const CONTROLPLANE_UPSTREAM = parseProxyOrigin(
+  process.env.NEXT_PUBLIC_API_BASE_URL,
+)
 
 // ============================================================================
 // Simulator patterns and streaming logic (copied from src/utils/dev-simulator.ts)
@@ -200,10 +209,17 @@ async function* simulateStream(query) {
 // HTTP Server
 // ============================================================================
 
+const localApiGateway = createLocalApiGateway({
+  controlplaneUpstream: CONTROLPLANE_UPSTREAM,
+})
+
 const server = http.createServer(async (req, res) => {
   // CORS headers for local development
   res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+  )
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
 
   // Handle preflight
@@ -213,10 +229,24 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
-  // Only handle POST to /api/dev/simulator
-  if (req.method !== 'POST' || req.url !== '/api/dev/simulator') {
-    res.writeHead(404, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ error: 'Not found' }))
+  const pathOnly = (req.url || '').split('?')[0]
+
+  if (isDevStreamLogRequest(req)) {
+    handleDevStreamLog(req, res)
+    return
+  }
+
+  if (pathOnly !== '/api/dev/simulator') {
+    await localApiGateway.route(req, res)
+    return
+  }
+
+  if (req.method !== 'POST') {
+    res.writeHead(405, {
+      Allow: 'POST',
+      'Content-Type': 'application/json',
+    })
+    res.end(JSON.stringify({ error: 'Method Not Allowed' }))
     return
   }
 
@@ -281,6 +311,14 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`🧪 Dev simulator server running at http://localhost:${PORT}`)
   console.log(`   Endpoint: POST http://localhost:${PORT}/api/dev/simulator`)
+  console.log(
+    `   Controlplane fallback: ${CONTROLPLANE_UPSTREAM || '(unconfigured; 502)'}`,
+  )
+  console.log('')
+  console.log('   Mock controlplane endpoints:')
+  console.log(`     - GET    /api/users/me/safeguard-flags`)
+  console.log(`     - POST   /api/dev/safeguard-flags`)
+  console.log(`     - DELETE /api/dev/safeguard-flags`)
   console.log('')
   console.log('   Test patterns:')
   console.log('     - "test thoughts" - Basic thinking + content')

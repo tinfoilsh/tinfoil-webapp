@@ -10,10 +10,8 @@
  * is close to expiring, and an in-flight promise deduplicates concurrent
  * requests (mirrors the enclave-metadata fetch pattern).
  */
+import { API_BASE_URL } from '@/config'
 import { logError } from '@/utils/error-handling'
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
 
 // Refresh ahead of expiry so we never hand MapKit a token Apple is about
 // to reject.

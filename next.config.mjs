@@ -10,8 +10,8 @@ const { version: appVersion } = JSON.parse(
 const isDev = process.env.NODE_ENV === 'development'
 
 // Defense-in-depth: NEXT_PUBLIC_DEV bypasses enclave attestation and must
-// never be baked into a deployed bundle. Local static testing (see
-// LOCAL_TESTING.md "Option B") builds with this flag on purpose, so the guard
+// never be baked into a deployed bundle. Local static testing (see dev.md)
+// builds with this flag on purpose, so the guard
 // only trips in a hosted build environment (Vercel/CI).
 const isHostedBuild = Boolean(process.env.VERCEL || process.env.CI)
 if (isHostedBuild && process.env.NEXT_PUBLIC_DEV === 'true') {
@@ -19,6 +19,11 @@ if (isHostedBuild && process.env.NEXT_PUBLIC_DEV === 'true') {
     'NEXT_PUBLIC_DEV=true is not allowed in a deployed build: it disables enclave attestation. Unset NEXT_PUBLIC_DEV for production/preview deploys.',
   )
 }
+
+// Local development reverse proxy. This is deliberately gated by both
+// Next's development server and Tinfoil's explicit local-dev flag. Static
+// local builds use scripts/dev-serve.mjs instead of Next rewrites.
+const isLocalDevProxyEnabled = isDev && process.env.NEXT_PUBLIC_DEV === 'true'
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -45,16 +50,19 @@ const nextConfig = {
     optimizePackageImports: ['react-icons', 'lucide-react', '@heroicons/react'],
   },
 
-  // Proxy dev simulator to standalone server (only works in `next dev`, ignored in static export)
+  // Local development API gateway. Next only separates model-router traffic;
+  // the port-3001 gateway owns mock registration and controlplane forwarding.
   async rewrites() {
+    if (!isLocalDevProxyEnabled) return []
+
     return [
-      {
-        source: '/api/dev/simulator',
-        destination: 'http://localhost:3001/api/dev/simulator',
-      },
       {
         source: '/api/local-router/:path*',
         destination: 'http://localhost:8090/:path*',
+      },
+      {
+        source: '/api/:path*',
+        destination: 'http://localhost:3001/api/:path*',
       },
     ]
   },

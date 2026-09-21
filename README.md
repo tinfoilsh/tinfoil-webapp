@@ -10,8 +10,6 @@
   - [Encrypted Chat Storage](#encrypted-chat-storage)
   - [Verification Steps](#verification-steps)
 - [Development](#development)
-  - [Quick Start](#quick-start)
-  - [Local Testing & Dev Mode](#local-testing--dev-mode)
 - [Releases](#releases)
 - [Reporting Vulnerabilities](#reporting-vulnerabilities)
 
@@ -61,38 +59,7 @@ Learn more about the security model:
 
 ## Development
 
-### Quick Start
-
-1. **Clone and install**
-
-   ```bash
-   git clone https://github.com/tinfoilsh/tinfoil-webapp.git
-   cd tinfoil-webapp
-   npm install
-   ```
-
-2. **Environment setup**
-
-   ```bash
-   cp .env.example .env.local
-   ```
-
-   Configure your `.env.local` with the required keys:
-
-   ```env
-   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_key
-   CLERK_SECRET_KEY=your_clerk_secret
-   NEXT_PUBLIC_API_BASE_URL=https://api.tinfoil.sh
-   ```
-
-3. **Start development server**
-   ```bash
-   npm run dev
-   ```
-
-### Local Testing & Dev Mode
-
-For running the app against a local model router (bypassing attestation and encryption), see **[LOCAL_TESTING.md](./LOCAL_TESTING.md)**.
+See **[dev.md](./dev.md)** for environment setup, the recommended local workflow, Dev Simulator commands, controlplane mocks, safeguard testing, and optional local model-router usage.
 
 ## Releases
 

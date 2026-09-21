@@ -88,6 +88,15 @@ describe('ChatMessages recovery indicator', () => {
     mockFindContextStartIndex.mockReturnValue(0)
   })
 
+  it('hides message actions when the conversation is read-only', () => {
+    render(<ChatMessages {...baseProps} readOnly />)
+
+    expect(screen.getByTestId('message-turn-1')).toHaveAttribute(
+      'data-actions-hidden',
+      'true',
+    )
+  })
+
   it('defers archived message rendering until requested', () => {
     mockFindContextStartIndex.mockReturnValue(2)
     const archivedMessages = [

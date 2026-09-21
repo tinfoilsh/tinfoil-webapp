@@ -1,5 +1,6 @@
 'use client'
 
+import { useToast } from '@/hooks/use-toast'
 import {
   getSafeguardsServerSnapshot,
   getSafeguardsSnapshot,
@@ -9,7 +10,7 @@ import {
   type SafeguardsSnapshot,
 } from '@/services/safeguards'
 import { useAuth } from '@clerk/nextjs'
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 export function useSafeguards(): SafeguardsSnapshot {
   return useSyncExternalStore(
@@ -32,9 +33,56 @@ export function useFlaggedChatIds(): SafeguardsSnapshot['flaggedChatIds'] {
   )
 }
 
+export function useSafeguardsLoaded(): boolean {
+  return useSyncExternalStore(
+    subscribeSafeguards,
+    () => getSafeguardsSnapshot().hasLoaded,
+    () => getSafeguardsServerSnapshot().hasLoaded,
+  )
+}
+
+export function useSafeguardsStatus(): SafeguardsSnapshot['status'] {
+  return useSyncExternalStore(
+    subscribeSafeguards,
+    () => getSafeguardsSnapshot().status,
+    () => getSafeguardsServerSnapshot().status,
+  )
+}
+
+export function useSafeguardStatusNotification(): void {
+  const { isSignedIn } = useAuth()
+  const safeguardsLoaded = useSafeguardsLoaded()
+  const safeguardsStatus = useSafeguardsStatus()
+  const notifiedRef = useRef(false)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    if (safeguardsStatus === 'idle') {
+      notifiedRef.current = false
+      return
+    }
+    if (
+      !isSignedIn ||
+      safeguardsLoaded ||
+      safeguardsStatus !== 'error' ||
+      notifiedRef.current
+    ) {
+      return
+    }
+    notifiedRef.current = true
+    toast({
+      title: 'Unable to check safeguard status',
+      description: 'We’ll retry automatically. Generation is paused for now.',
+      variant: 'destructive',
+    })
+  }, [isSignedIn, safeguardsLoaded, safeguardsStatus, toast])
+}
+
+const SAFEGUARDS_REFRESH_INTERVAL_MS = 30_000
+
 /**
- * Loads flagged chats once per signed-in session and clears them on
- * sign-out. Mount once near the chat root.
+ * Keeps the signed-in user's flags current and clears them on sign-out.
+ * Background tabs pause polling and refresh immediately when active again.
  */
 export function useSafeguardsLoader(): void {
   const { isSignedIn, userId } = useAuth()
@@ -43,7 +91,26 @@ export function useSafeguardsLoader(): void {
       resetSafeguards()
       return
     }
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') void refreshSafeguards()
+    }
+    const handleVisibilityChange = () => refreshIfVisible()
+
     void refreshSafeguards()
-    return resetSafeguards
+    const interval = window.setInterval(
+      refreshIfVisible,
+      SAFEGUARDS_REFRESH_INTERVAL_MS,
+    )
+    window.addEventListener('focus', refreshIfVisible)
+    window.addEventListener('online', refreshIfVisible)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshIfVisible)
+      window.removeEventListener('online', refreshIfVisible)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      resetSafeguards()
+    }
   }, [isSignedIn, userId])
 }

@@ -81,6 +81,42 @@ describe('DefaultMessageRenderer metadata', () => {
     expect(screen.queryByText('Encrypted')).not.toBeInTheDocument()
   })
 
+  it('hides user actions but preserves the date in read-only conversations', () => {
+    render(
+      <Renderer
+        message={{
+          role: 'user',
+          content: 'Hello',
+          timestamp: new Date('2026-08-07T00:00:00.000Z'),
+        }}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        hideActions
+        onEditMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
+        onRegenerateMessage={vi.fn()}
+      />,
+    )
+
+    for (const name of [
+      'Copy message',
+      'Edit message',
+      'Delete message',
+      'Regenerate response',
+    ]) {
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    }
+    expect(
+      screen.getByText(
+        new Date('2026-08-07T00:00:00.000Z').toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        }),
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('shows response metadata when actions are hidden', () => {
     renderMessage(
       {
@@ -128,6 +164,31 @@ describe('DefaultMessageRenderer message actions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
     expect(onDeleteMessage).toHaveBeenCalledWith(4)
+  })
+
+  it('closes an active edit when the conversation becomes read-only', () => {
+    const message: Message = {
+      role: 'user',
+      content: 'Hello',
+      timestamp: new Date('2026-08-07T00:00:00.000Z'),
+    }
+    const props = {
+      message,
+      messageIndex: 0,
+      model,
+      isDarkMode: false,
+      onEditMessage: vi.fn(),
+    }
+    const { rerender } = render(<Renderer {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument()
+
+    rerender(<Renderer {...props} hideActions />)
+
+    expect(
+      screen.queryByRole('button', { name: 'Save' }),
+    ).not.toBeInTheDocument()
   })
 
   it('deletes an assistant message with its own index', () => {

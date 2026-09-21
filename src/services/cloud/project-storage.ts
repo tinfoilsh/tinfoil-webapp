@@ -1,3 +1,4 @@
+import { API_BASE_URL } from '@/config'
 import type {
   CreateProjectData,
   Project,
@@ -32,9 +33,6 @@ import {
 import { pullKey, requirePrimaryKeyB64 } from './cek-encoding'
 import { canWriteToCloud } from './cloud-key-authorization'
 import { ProjectDataSchema, ProjectDocumentPlaintextSchema } from './schemas'
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.tinfoil.sh'
 
 const PROJECT_SCOPE = 'project'
 const PROJECT_DOCUMENT_SCOPE = 'project_document'

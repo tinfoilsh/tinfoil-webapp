@@ -99,7 +99,7 @@ export function SafeguardsSettings({
   onNavigateToChat,
   chats = [],
 }: SafeguardsSettingsProps) {
-  const { flaggedChats, policy, status, isPreview } = useSafeguards()
+  const { flaggedChats, policy, status } = useSafeguards()
   const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
 
   const getFlaggedChatPath = (chatId: string): string => {
@@ -149,12 +149,6 @@ export function SafeguardsSettings({
             />
           </button>
         </div>
-
-        {isPreview && (
-          <p className="font-aeonik text-sm text-content-muted">
-            Local preview only. These flags do not affect your account.
-          </p>
-        )}
 
         <div className={cn(cardClass, 'font-aeonik')}>
           <div className="space-y-2 border-b border-border-subtle p-4">

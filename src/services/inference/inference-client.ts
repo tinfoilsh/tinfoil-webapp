@@ -20,11 +20,15 @@ import { CONVERSATION_ID_HEADER } from '@/constants/chat'
 import {
   DEV_SAFEGUARD_FLAG_COMMAND,
   DEV_SAFEGUARD_FLAG_RESPONSE,
+  DEV_SAFEGUARD_RESET_COMMAND,
+  DEV_SAFEGUARD_RESET_RESPONSE,
+  DEV_SAFEGUARD_SIGN_IN_REQUIRED,
   DEV_SIMULATOR_ENABLED,
   DEV_SIMULATOR_ERROR_COMMAND,
   DEV_SIMULATOR_ERROR_MESSAGE,
 } from '@/constants/dev-simulator'
-import { simulateSafeguardFlag } from '@/services/safeguards'
+import { AuthTokenUnavailableError, authTokenManager } from '@/services/auth'
+import { refreshSafeguardsAfterMutation } from '@/services/safeguards'
 import { shouldRetryTestFail, simulateStream } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
@@ -157,6 +161,91 @@ function isOnline(): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * `flag safeguard` and `reset safeguards` drive the local mock backend over
+ * the same HTTP surface production uses. The auth check surfaces a friendly
+ * message when no Clerk session is available so we don't leak an
+ * `AuthTokenUnavailableError` to the chat UI, but the mock backend does not
+ * validate the token itself.
+ */
+async function callDevSafeguardsRoute(
+  method: 'POST' | 'DELETE',
+  signal: AbortSignal,
+  body?: Record<string, unknown>,
+): Promise<void> {
+  let headers: Record<string, string>
+  try {
+    headers = await authTokenManager.getAuthHeaders(signal)
+  } catch (err) {
+    if (err instanceof AuthTokenUnavailableError) {
+      throw new ChatError(DEV_SAFEGUARD_SIGN_IN_REQUIRED, 'FETCH_ERROR')
+    }
+    throw err
+  }
+  const response = await fetch('/api/dev/safeguard-flags', {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+    signal,
+  })
+  if (!response.ok) {
+    throw new ChatError(
+      `Local mock backend returned ${response.status} for ${method} /api/dev/safeguard-flags.`,
+      'FETCH_ERROR',
+    )
+  }
+}
+
+function runSafeguardCommand({
+  method,
+  signal,
+  response,
+  body,
+}: {
+  method: 'POST' | 'DELETE'
+  signal: AbortSignal
+  response: string
+  body?: Record<string, unknown>
+}): ChatChunkStream {
+  return {
+    async *[Symbol.asyncIterator]() {
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      await callDevSafeguardsRoute(method, signal, body)
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      await refreshSafeguardsAfterMutation()
+      if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      yield {
+        choices: [
+          {
+            delta: { content: response },
+            finish_reason: 'stop',
+          },
+        ],
+      }
+    },
+  }
+}
+
+function runSafeguardFlagCommand(
+  conversationId: string,
+  signal: AbortSignal,
+): ChatChunkStream {
+  return runSafeguardCommand({
+    method: 'POST',
+    signal,
+    response: DEV_SAFEGUARD_FLAG_RESPONSE,
+    body: { conversation_id: conversationId },
+  })
+}
+
+function runSafeguardResetCommand(signal: AbortSignal): ChatChunkStream {
+  return runSafeguardCommand({
+    method: 'DELETE',
+    signal,
+    response: DEV_SAFEGUARD_RESET_RESPONSE,
+  })
 }
 
 // Statuses the OpenAI SDK itself treats as retryable (client shouldRetry):
@@ -364,27 +453,20 @@ export async function sendChatStream(
       .pop()
     const queryText = lastUserMessage?.content || ''
 
-    if (queryText.trim().toLowerCase() === DEV_SAFEGUARD_FLAG_COMMAND) {
+    const normalizedQuery = queryText.trim().toLowerCase()
+
+    if (normalizedQuery === DEV_SAFEGUARD_FLAG_COMMAND) {
       if (!conversationId?.trim()) {
         throw new ChatError(
-          'A chat ID is required for the safeguard preview.',
+          'A chat ID is required to flag a conversation.',
           'FETCH_ERROR',
         )
       }
-      return {
-        async *[Symbol.asyncIterator]() {
-          if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
-          simulateSafeguardFlag(conversationId)
-          yield {
-            choices: [
-              {
-                delta: { content: DEV_SAFEGUARD_FLAG_RESPONSE },
-                finish_reason: 'stop',
-              },
-            ],
-          }
-        },
-      }
+      return runSafeguardFlagCommand(conversationId, signal)
+    }
+
+    if (normalizedQuery === DEV_SAFEGUARD_RESET_COMMAND) {
+      return runSafeguardResetCommand(signal)
     }
 
     let lastError: unknown = null

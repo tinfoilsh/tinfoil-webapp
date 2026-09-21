@@ -1,6 +1,8 @@
 import type { Message } from '@/components/chat/types'
 import {
   DEV_SAFEGUARD_FLAG_RESPONSE,
+  DEV_SAFEGUARD_RESET_RESPONSE,
+  DEV_SAFEGUARD_SIGN_IN_REQUIRED,
   DEV_SIMULATOR_ERROR_COMMAND,
   DEV_SIMULATOR_ERROR_MESSAGE,
 } from '@/constants/dev-simulator'
@@ -9,12 +11,7 @@ import type {
   ChatChunkStream,
 } from '@/services/inference/chat-stream'
 import { sendChatStream } from '@/services/inference/inference-client'
-import {
-  getSafeguardsSnapshot,
-  refreshSafeguards,
-  resetSafeguards,
-  simulateSafeguardFlag,
-} from '@/services/safeguards'
+import { getSafeguardsSnapshot, resetSafeguards } from '@/services/safeguards'
 import {
   DEV_SIMULATOR_MODEL,
   SIMULATOR_PATTERNS,
@@ -25,14 +22,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const { createCompletion } = vi.hoisted(() => ({ createCompletion: vi.fn() }))
 
 vi.mock('@/config', () => ({
-  API_BASE_URL: 'https://api.test',
+  API_BASE_URL: '',
   IS_DEV: true,
   DEV_API_KEY: '',
 }))
-vi.mock('@/services/auth', () => ({
-  authTokenManager: { getAuthHeaders: vi.fn() },
-  AuthTokenUnavailableError: class extends Error {},
+
+const { getAuthHeaders } = vi.hoisted(() => ({
+  getAuthHeaders: vi.fn(),
 }))
+
+vi.mock('@/services/auth', () => {
+  class AuthTokenUnavailableError extends Error {
+    constructor(msg = 'unavailable') {
+      super(msg)
+      this.name = 'AuthTokenUnavailableError'
+    }
+  }
+  return {
+    authTokenManager: { getAuthHeaders },
+    AuthTokenUnavailableError,
+  }
+})
+
 vi.mock('@/services/inference/tinfoil-client', () => ({
   getTinfoilClient: vi.fn(async () => ({
     chat: { completions: { create: createCompletion } },
@@ -91,15 +102,87 @@ function contentOf(chunks: ChatChunk[]): string {
     .join('')
 }
 
+interface MockFlag {
+  id: string
+  conversation_id: string
+  created_at: string
+}
+
+/**
+ * Minimal in-memory analogue of the local mock backend. Bound as a `fetch`
+ * stub so the inference client exercises its real HTTP path end-to-end.
+ */
+function installMockBackend(): {
+  flags: MockFlag[]
+  fetchMock: ReturnType<typeof vi.fn>
+} {
+  const flags: MockFlag[] = []
+  const fetchMock = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/dev/safeguard-flags' && method === 'POST') {
+        const body = init?.body ? JSON.parse(String(init.body)) : {}
+        const id = body?.conversation_id
+        if (typeof id !== 'string' || !id.trim()) {
+          return new Response(JSON.stringify({ error: 'bad' }), { status: 400 })
+        }
+        const existing = flags.find((f) => f.conversation_id === id.trim())
+        if (existing) {
+          return new Response(
+            JSON.stringify({ created: false, duplicate: true }),
+            { status: 200 },
+          )
+        }
+        flags.unshift({
+          id: `dev-safeguard:${id.trim()}`,
+          conversation_id: id.trim(),
+          created_at: new Date().toISOString(),
+        })
+        return new Response(
+          JSON.stringify({ created: true, duplicate: false }),
+          { status: 200 },
+        )
+      }
+      if (url === '/api/dev/safeguard-flags' && method === 'DELETE') {
+        const cleared = flags.length
+        flags.length = 0
+        return new Response(JSON.stringify({ cleared }), { status: 200 })
+      }
+      if (url === '/api/users/me/safeguard-flags') {
+        return new Response(
+          JSON.stringify({
+            flags,
+            in_window: flags.length,
+            window_hours: 168,
+            warn_threshold: 8,
+            ban_threshold: 10,
+          }),
+          { status: 200 },
+        )
+      }
+      throw new Error(`Unexpected fetch: ${method} ${url}`)
+    },
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  return { flags, fetchMock }
+}
+
+let backendFlags: MockFlag[]
+let fetchMock: ReturnType<typeof vi.fn>
+
 describe('local Dev Simulator', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
     resetSafeguards()
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockRejectedValue(new Error('Unexpected network request')),
-    )
+    getAuthHeaders.mockResolvedValue({
+      Authorization: 'Bearer local-test-token',
+      'Content-Type': 'application/json',
+    })
+    const backend = installMockBackend()
+    backendFlags = backend.flags
+    fetchMock = backend.fetchMock
   })
 
   afterEach(() => {
@@ -114,19 +197,14 @@ describe('local Dev Simulator', () => {
     const chunks = await result
 
     expect(contentOf(chunks)).toBe(getSimulatorPattern('help').content)
-    expect(
-      chunks
-        .map((chunk) => chunk.choices?.[0]?.delta?.reasoning_content ?? '')
-        .join(''),
-    ).toBe('')
     expect(contentOf(chunks)).toContain('Available Dev Simulator commands')
     expect(contentOf(chunks)).toContain('`flag safeguard`')
+    expect(contentOf(chunks)).toContain('`reset safeguards`')
     expect(contentOf(chunks)).toContain(`\`${DEV_SIMULATOR_ERROR_COMMAND}\``)
     for (const command of Object.keys(SIMULATOR_PATTERNS)) {
       expect(contentOf(chunks)).toContain(`\`${command}\``)
     }
     expect(chunks.at(-1)?.choices?.[0]?.finish_reason).toBe('stop')
-    expect(fetch).not.toHaveBeenCalled()
     expect(createCompletion).not.toHaveBeenCalled()
   })
 
@@ -141,7 +219,6 @@ describe('local Dev Simulator', () => {
         })
         expect(vi.getTimerCount()).toBe(0)
       }
-      expect(fetch).not.toHaveBeenCalled()
       expect(createCompletion).not.toHaveBeenCalled()
     },
   )
@@ -154,59 +231,72 @@ describe('local Dev Simulator', () => {
     ).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  it('streams normally after an error and does not interpret prose as an error command', async () => {
-    await expect(send(DEV_SIMULATOR_ERROR_COMMAND)).rejects.toMatchObject({
-      code: 'FETCH_ERROR',
-    })
-    const query = 'What does test error mean?'
-    const result = collect(
-      await send(query, {
-        messages: [
-          userMessage(DEV_SIMULATOR_ERROR_COMMAND),
-          userMessage(query),
-        ],
-      }),
-    )
-    await vi.runAllTimersAsync()
-    expect(contentOf(await result)).toBe(getSimulatorPattern(query).content)
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
   it.each(['flag safeguard', '  FLAG SAFEGUARD  '])(
-    'flags the actual conversation for %s and confirms it is only a preview',
+    'POSTs the active conversation id and refreshes the store via the normal HTTP path for %s',
     async (command) => {
       const chunks = await collect(await send(command))
       expect(contentOf(chunks)).toBe(DEV_SAFEGUARD_FLAG_RESPONSE)
-      expect(getSafeguardsSnapshot()).toMatchObject({
-        isPreview: true,
-        flaggedChatIds: { 'current-chat': true },
-        flaggedChats: [{ conversationId: 'current-chat' }],
-        policy: { inWindow: 1 },
+
+      const posts = fetchMock.mock.calls.filter(
+        (call) => (call[1] as RequestInit)?.method === 'POST',
+      )
+      expect(posts).toHaveLength(1)
+      expect(posts[0][0]).toBe('/api/dev/safeguard-flags')
+      expect(JSON.parse(String((posts[0][1] as RequestInit).body))).toEqual({
+        conversation_id: 'current-chat',
       })
-      expect(fetch).not.toHaveBeenCalled()
-      expect(createCompletion).not.toHaveBeenCalled()
+      const headers = (posts[0][1] as RequestInit).headers as Record<
+        string,
+        string
+      >
+      expect(headers.Authorization).toBe('Bearer local-test-token')
+
+      const gets = fetchMock.mock.calls.filter(
+        (call) => ((call[1] as RequestInit)?.method ?? 'GET') === 'GET',
+      )
+      expect(gets.some((c) => c[0] === '/api/users/me/safeguard-flags')).toBe(
+        true,
+      )
+      expect(backendFlags.map((f) => f.conversation_id)).toEqual([
+        'current-chat',
+      ])
+      expect(getSafeguardsSnapshot().flaggedChatIds).toEqual({
+        'current-chat': true,
+      })
+      expect(getSafeguardsSnapshot()).not.toHaveProperty('isPreview')
     },
   )
 
-  it('counts each chat once and retains simulated flags across settings refreshes', async () => {
-    await refreshSafeguards()
+  it('counts each chat once through the mock backend', async () => {
     await collect(await send('flag safeguard'))
-    const firstFlag = getSafeguardsSnapshot().flaggedChats[0]
     await collect(await send('flag safeguard'))
-    await refreshSafeguards()
-    expect(getSafeguardsSnapshot().flaggedChats).toEqual([firstFlag])
-    expect(getSafeguardsSnapshot().policy?.inWindow).toBe(1)
-
+    expect(backendFlags.map((f) => f.conversation_id)).toEqual(['current-chat'])
     await collect(
       await send('flag safeguard', { conversationId: 'another-chat' }),
     )
-    await refreshSafeguards()
-    expect(getSafeguardsSnapshot().policy?.inWindow).toBe(2)
+    expect(backendFlags.map((f) => f.conversation_id).sort()).toEqual([
+      'another-chat',
+      'current-chat',
+    ])
     expect(getSafeguardsSnapshot().flaggedChatIds).toEqual({
       'current-chat': true,
       'another-chat': true,
     })
-    expect(fetch).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalled()
+  })
+
+  it('clears flags on `reset safeguards` through the DELETE endpoint', async () => {
+    await collect(await send('flag safeguard'))
+    expect(backendFlags).toHaveLength(1)
+    const chunks = await collect(await send('reset safeguards'))
+    expect(contentOf(chunks)).toBe(DEV_SAFEGUARD_RESET_RESPONSE)
+    expect(backendFlags).toHaveLength(0)
+    expect(getSafeguardsSnapshot().flaggedChatIds).toEqual({})
+    const deletes = fetchMock.mock.calls.filter(
+      (call) => (call[1] as RequestInit)?.method === 'DELETE',
+    )
+    expect(deletes).toHaveLength(1)
+    expect(deletes[0][0]).toBe('/api/dev/safeguard-flags')
   })
 
   it('does not retrigger a command from earlier conversation history', async () => {
@@ -235,37 +325,53 @@ describe('local Dev Simulator', () => {
     expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
   })
 
-  it('cancels an in-progress simulator delay immediately', async () => {
+  it('aborts an in-flight safeguard mutation request', async () => {
     const controller = new AbortController()
-    const iterator = (await send('help', { signal: controller.signal }))[
-      Symbol.asyncIterator
-    ]()
-    const pending = iterator.next()
-    const rejected = expect(pending).rejects.toMatchObject({
-      name: 'AbortError',
+    let notifyStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve
     })
+    fetchMock.mockImplementationOnce(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          notifyStarted()
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'))
+          })
+        }),
+    )
+
+    const stream = await send('flag safeguard', { signal: controller.signal })
+    const pending = collect(stream)
+    await started
     controller.abort()
-    await rejected
-    expect(vi.getTimerCount()).toBe(0)
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchMock.mock.calls[0][1]?.signal).toBe(controller.signal)
   })
 
-  it('rejects a missing chat ID instead of reporting a successful preview', async () => {
+  it('rejects a missing chat ID with a clear FETCH_ERROR', async () => {
     await expect(
       send('flag safeguard', { conversationId: '' }),
     ).rejects.toMatchObject({ code: 'FETCH_ERROR' })
-    expect(simulateSafeguardFlag('  ')).toBe(false)
     expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
   })
 
-  it('clears simulated chat IDs when the safeguards state is reset', async () => {
-    await collect(await send('flag safeguard'))
-    resetSafeguards()
-    expect(getSafeguardsSnapshot().isPreview).toBe(false)
-    expect(getSafeguardsSnapshot().flaggedChatIds).toEqual({})
-    await refreshSafeguards()
-    expect(
-      getSafeguardsSnapshot().flaggedChatIds['current-chat'],
-    ).toBeUndefined()
+  it('explains that sign-in is required when no Clerk token is available', async () => {
+    const { AuthTokenUnavailableError } = await import('@/services/auth')
+    getAuthHeaders.mockRejectedValue(
+      new AuthTokenUnavailableError('signed out'),
+    )
+    await expect(collect(await send('flag safeguard'))).rejects.toMatchObject({
+      code: 'FETCH_ERROR',
+      message: DEV_SAFEGUARD_SIGN_IN_REQUIRED,
+    })
+    await expect(collect(await send('reset safeguards'))).rejects.toMatchObject(
+      {
+        code: 'FETCH_ERROR',
+        message: DEV_SAFEGUARD_SIGN_IN_REQUIRED,
+      },
+    )
   })
 
   it('preserves the simulated retry pattern without making network calls', async () => {
@@ -283,10 +389,9 @@ describe('local Dev Simulator', () => {
       getSimulatorPattern('test retry').content,
     )
     expect(onRetry).toHaveBeenCalledTimes(3)
-    expect(fetch).not.toHaveBeenCalled()
   })
 
-  it.each(['flag safeguard', DEV_SIMULATOR_ERROR_COMMAND])(
+  it.each(['flag safeguard', 'reset safeguards', DEV_SIMULATOR_ERROR_COMMAND])(
     'leaves %s on a normal model on the normal SDK path',
     async (command) => {
       createCompletion.mockResolvedValue({

@@ -49,6 +49,7 @@ type ChatMessagesProps = {
   isWaitingForResponse?: boolean
   isStreamingResponse?: boolean
   activeArtifactToolCallId?: string | null
+  readOnly?: boolean
   isPremium?: boolean
   models?: BaseModel[]
   onSubmit?: (e: React.FormEvent) => void
@@ -308,6 +309,7 @@ export function ChatMessages({
   isWaitingForResponse = false,
   isStreamingResponse = false,
   activeArtifactToolCallId,
+  readOnly = false,
   isPremium,
   models,
   onSubmit,
@@ -358,6 +360,16 @@ export function ChatMessages({
   const [expandedArchiveChatId, setExpandedArchiveChatId] = useState<
     string | null
   >(null)
+  const messageActions = readOnly
+    ? {}
+    : {
+        onEditMessage,
+        onRegenerateMessage,
+        onDeleteMessage,
+        onEditAssistantMessage,
+        onContinueAssistantMessage,
+        onRetryToolCall,
+      }
 
   const preparePrint = useCallback(async () => {
     await new Promise<void>((resolve) => {
@@ -535,7 +547,7 @@ export function ChatMessages({
             isDarkMode={isDarkMode}
             isPremium={isPremium}
             models={models}
-            onSubmit={onSubmit}
+            onSubmit={readOnly ? undefined : onSubmit}
             input={input}
             setInput={setInput}
             loadingState={loadingState}
@@ -672,6 +684,7 @@ export function ChatMessages({
               draft,
               activeArtifactToolCallId,
             )}
+            hideActions={readOnly}
           />
         )}
         {!draft && <RecoveryMessage />}
@@ -720,24 +733,8 @@ export function ChatMessages({
                           recoveryDraft ?? message,
                           activeArtifactToolCallId,
                         )}
-                        onEditMessage={
-                          recoveryDraft ? undefined : onEditMessage
-                        }
-                        onRegenerateMessage={
-                          recoveryDraft ? undefined : onRegenerateMessage
-                        }
-                        onDeleteMessage={
-                          recoveryDraft ? undefined : onDeleteMessage
-                        }
-                        onEditAssistantMessage={
-                          recoveryDraft ? undefined : onEditAssistantMessage
-                        }
-                        onContinueAssistantMessage={
-                          recoveryDraft ? undefined : onContinueAssistantMessage
-                        }
-                        onRetryToolCall={
-                          recoveryDraft ? undefined : onRetryToolCall
-                        }
+                        hideActions={readOnly}
+                        {...(recoveryDraft ? {} : messageActions)}
                       />
                       {showRecoveryStatusAfter(message) && <RecoveryMessage />}
                       {renderRecoveryAfter(message, i)}
@@ -775,18 +772,8 @@ export function ChatMessages({
                   recoveryDraft ?? message,
                   activeArtifactToolCallId,
                 )}
-                onEditMessage={recoveryDraft ? undefined : onEditMessage}
-                onRegenerateMessage={
-                  recoveryDraft ? undefined : onRegenerateMessage
-                }
-                onDeleteMessage={recoveryDraft ? undefined : onDeleteMessage}
-                onEditAssistantMessage={
-                  recoveryDraft ? undefined : onEditAssistantMessage
-                }
-                onContinueAssistantMessage={
-                  recoveryDraft ? undefined : onContinueAssistantMessage
-                }
-                onRetryToolCall={recoveryDraft ? undefined : onRetryToolCall}
+                hideActions={readOnly}
+                {...(recoveryDraft ? {} : messageActions)}
               />
               {showRecoveryStatusAfter(message) && <RecoveryMessage />}
               {renderRecoveryAfter(message, archivedMessages.length + i)}

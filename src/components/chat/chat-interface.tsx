@@ -29,7 +29,12 @@ import { useChatRouter } from '@/hooks/use-chat-router'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
-import { useSafeguardsLoader } from '@/hooks/use-safeguards'
+import {
+  useFlaggedChatIds,
+  useSafeguardsLoaded,
+  useSafeguardsLoader,
+  useSafeguardStatusNotification,
+} from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
@@ -541,6 +546,9 @@ export function ChatInterface({
   >(undefined)
   const syncNeedsAttention = useSyncHealthAttention()
   useSafeguardsLoader()
+  useSafeguardStatusNotification()
+  const flaggedChatIds = useFlaggedChatIds()
+  const safeguardsLoaded = useSafeguardsLoaded()
 
   // State for share modal
   const [isShareModalOpen, setIsShareModalOpen] = useState(false)
@@ -1248,6 +1256,13 @@ export function ChatInterface({
 
   const isTemporaryMode = currentChat?.isTemporary === true
   const currentChatId = currentChat?.id
+  const currentChatIsFlagged = Boolean(
+    currentChatId && flaggedChatIds[currentChatId],
+  )
+  const safeguardGenerationBlocked =
+    !isAuthLoaded ||
+    currentChatIsFlagged ||
+    (Boolean(isSignedIn) && !safeguardsLoaded)
   const recoveryDrafts = useChatRecoveryDrafts(currentChatId ?? '')
   const activeRecoveryTurnIds = useChatRecoveryActiveTurnIds(
     currentChatId ?? '',
@@ -1356,6 +1371,7 @@ export function ChatInterface({
     queuedMessages,
     submit: submitMessage,
     removeQueuedMessage,
+    clearQueuedMessages,
     sendQueuedMessage,
     notifyGenerationCancelled,
   } = useMessageQueue({
@@ -1371,15 +1387,30 @@ export function ChatInterface({
       models.length === 0 ||
       isChatHydrating ||
       hasPendingRecoveryRef.current ||
+      safeguardGenerationBlocked ||
       (currentChatId ? isChatRecoveryActive(currentChatId) : false),
     dispatchBlocked:
       models.length === 0 ||
       isChatHydrating ||
       hasPendingRecovery ||
-      activeRecoveryTurnIds.length > 0,
+      activeRecoveryTurnIds.length > 0 ||
+      safeguardGenerationBlocked,
     onRateLimited: handleQueueRateLimited,
     cancelGeneration,
   })
+
+  useEffect(() => {
+    if (!currentChatIsFlagged || !currentChatId) return
+    clearQueuedMessages()
+    notifyGenerationCancelled(currentChatId)
+    void cancelGeneration(currentChatId)
+  }, [
+    cancelGeneration,
+    clearQueuedMessages,
+    currentChatId,
+    currentChatIsFlagged,
+    notifyGenerationCancelled,
+  ])
 
   // Stop button path: tell the queue about the cancellation first so its
   // pump abandons the cancelled dispatch (whose promise may never settle)
@@ -1407,6 +1438,12 @@ export function ChatInterface({
     webSearchEnabled: effectiveWebSearchEnabled,
     piiCheckEnabled,
   })
+
+  useEffect(() => {
+    if (!currentChatIsFlagged) return
+    setIsAskSidebarOpen(false)
+    sidebarChat.reset()
+  }, [currentChatIsFlagged, sidebarChat.reset])
 
   // Sync URL with current chat state
   useEffect(() => {
@@ -3201,7 +3238,7 @@ export function ChatInterface({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (isChatHydrating) return
+    if (isChatHydrating || safeguardGenerationBlocked) return
 
     if (rateLimit && rateLimit.remaining <= 0 && rateLimit.kind !== 'hourly') {
       setIsSubscribePromptOpen(true)
@@ -3855,6 +3892,7 @@ export function ChatInterface({
           !isLoadingConfig && isClient && !!currentChat && hasValidatedModel
         }
         onMessageReady={(message) => {
+          if (safeguardGenerationBlocked) return
           handleQuery(message)
         }}
       />
@@ -4356,7 +4394,11 @@ export function ChatInterface({
 
             {/* Messages Area */}
             <QuoteSelectionPopover
-              enabled={showChatHeader && !isSettingsModalOpen}
+              enabled={
+                showChatHeader &&
+                !isSettingsModalOpen &&
+                !safeguardGenerationBlocked
+              }
               containerRef={scrollContainerRef}
               onQuote={(text) => {
                 setQuote(text)
@@ -4433,6 +4475,7 @@ export function ChatInterface({
                       activeArtifactToolCallId={
                         isArtifactSidebarOpen ? activeArtifactToolCallId : null
                       }
+                      readOnly={safeguardGenerationBlocked}
                       isPremium={showPremiumComposerControls}
                       models={models}
                       onSubmit={handleSubmit}
@@ -4521,7 +4564,9 @@ export function ChatInterface({
                       }
                     />
                   </div>
-                  {selectPendingInputToolCallFromChat(currentChat) ? (
+                  {safeguardGenerationBlocked ? null : selectPendingInputToolCallFromChat(
+                      currentChat,
+                    ) ? (
                     <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 @3xl/conversation:px-8">
                       <GenUIInputAreaRenderer
                         pending={selectPendingInputToolCallFromChat(

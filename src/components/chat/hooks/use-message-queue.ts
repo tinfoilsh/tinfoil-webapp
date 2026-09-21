@@ -36,6 +36,7 @@ type UseMessageQueueReturn = {
   queuedMessages: QueuedMessage[]
   submit: (input: QueueSubmitInput) => void
   removeQueuedMessage: (id: string) => void
+  clearQueuedMessages: () => void
   sendQueuedMessage: (id: string) => void
   notifyGenerationCancelled: (chatId: string) => void
 }
@@ -547,6 +548,12 @@ export function useMessageQueue({
     [getQueue, setQueueFor],
   )
 
+  const clearQueuedMessages = useCallback((): void => {
+    const id = currentQueueIdRef.current
+    if (id == null) return
+    setQueueFor(id, [])
+  }, [setQueueFor])
+
   // Explicit "send now" for a single queued message: promote it to the
   // front of the queue and let the pump dispatch it, so every send stays
   // serialized and the rest of the queue keeps draining afterwards. The
@@ -582,6 +589,7 @@ export function useMessageQueue({
     queuedMessages: queue,
     submit,
     removeQueuedMessage,
+    clearQueuedMessages,
     sendQueuedMessage,
     notifyGenerationCancelled,
   }

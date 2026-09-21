@@ -1,8 +1,8 @@
 import {
   getSafeguardsSnapshot,
   refreshSafeguards,
+  refreshSafeguardsAfterMutation,
   resetSafeguards,
-  simulateSafeguardFlag,
   subscribeSafeguards,
 } from '@/services/safeguards'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,8 +14,9 @@ vi.mock('@/services/auth', () => ({
   AuthTokenUnavailableError: class extends Error {},
 }))
 
-vi.mock('@/config', () => ({ API_BASE_URL: 'https://api.test', IS_DEV: false }))
+vi.mock('@/config', () => ({ API_BASE_URL: 'https://api.test' }))
 
+const SAFEGUARDS_URL = 'https://api.test/api/users/me/safeguard-flags'
 const RESPONSE = {
   flags: [
     { id: 'v1', conversation_id: 'chat-a', created_at: '2026-09-16T12:00:00Z' },
@@ -26,6 +27,12 @@ const RESPONSE = {
   window_hours: 168,
   warn_threshold: 8,
   ban_threshold: 10,
+}
+
+function mockSafeguardsResponse(response = RESPONSE) {
+  return vi
+    .spyOn(globalThis, 'fetch')
+    .mockResolvedValue(new Response(JSON.stringify(response)))
 }
 
 // A fetch mock whose response the test controls, plus a `called` promise that
@@ -53,21 +60,27 @@ describe('safeguards store', () => {
     resetSafeguards()
   })
 
-  it('does not allow a simulated flag outside local dev mode', () => {
-    expect(simulateSafeguardFlag('chat-a')).toBe(false)
-    expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
-    expect(getSafeguardsSnapshot().isPreview).toBe(false)
+  it('has no simulator or preview surface on the exported store', async () => {
+    const mod = await import('@/services/safeguards')
+    expect(mod).not.toHaveProperty('simulateSafeguardFlag')
+    expect(getSafeguardsSnapshot()).not.toHaveProperty('isPreview')
+  })
+
+  it('always fetches the configured API base URL', async () => {
+    const fetchSpy = mockSafeguardsResponse()
+    await refreshSafeguards()
+    expect(fetchSpy).toHaveBeenCalledWith(SAFEGUARDS_URL, expect.any(Object))
   })
 
   it('loads flagged chats and indexes them by conversation id', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(RESPONSE)),
-    )
+    expect(getSafeguardsSnapshot().hasLoaded).toBe(false)
+    mockSafeguardsResponse()
 
     await refreshSafeguards()
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('ready')
+    expect(snapshot.hasLoaded).toBe(true)
     expect(snapshot.policy).toEqual({
       inWindow: 1,
       windowHours: 168,
@@ -81,7 +94,7 @@ describe('safeguards store', () => {
     ])
     expect(snapshot.flaggedChatIds).toEqual({ 'chat-a': true, 'chat-b': true })
     expect(fetch).toHaveBeenCalledWith(
-      'https://api.test/api/users/me/safeguard-flags',
+      SAFEGUARDS_URL,
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer t' }),
       }),
@@ -101,17 +114,37 @@ describe('safeguards store', () => {
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('error')
+    expect(snapshot.hasLoaded).toBe(true)
     expect(snapshot.flaggedChats).toHaveLength(3)
   })
 
   it('shares one request between concurrent refreshes', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(new Response(JSON.stringify(RESPONSE)))
+    const fetchSpy = mockSafeguardsResponse()
 
     await Promise.all([refreshSafeguards(), refreshSafeguards()])
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('forces a post-mutation request after an in-flight refresh', async () => {
+    const deferred = deferredFetch()
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(deferred.impl)
+      .mockResolvedValueOnce(new Response(JSON.stringify(RESPONSE)))
+
+    const first = refreshSafeguards()
+    await deferred.called
+    const forced = refreshSafeguardsAfterMutation()
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+    deferred.resolve(
+      new Response(JSON.stringify({ ...RESPONSE, in_window: 9 })),
+    )
+    await Promise.all([first, forced])
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+    expect(getSafeguardsSnapshot().policy?.inWindow).toBe(1)
   })
 
   it('rejects a response missing policy fields instead of publishing it', async () => {
@@ -123,6 +156,7 @@ describe('safeguards store', () => {
 
     const snapshot = getSafeguardsSnapshot()
     expect(snapshot.status).toBe('error')
+    expect(snapshot.hasLoaded).toBe(false)
     expect(snapshot.policy).toBeNull()
     expect(snapshot.flaggedChats).toEqual([])
   })
@@ -161,9 +195,7 @@ describe('safeguards store', () => {
   })
 
   it('notifies subscribers and clears on reset', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify(RESPONSE)),
-    )
+    mockSafeguardsResponse()
     const listener = vi.fn()
     subscribeSafeguards(listener)
 

@@ -17,7 +17,7 @@ const DEV_PAGES = [
   {
     href: '/',
     title: 'Flagged Chat Preview',
-    description: `Select Dev Simulator in chat and send "${DEV_SAFEGUARD_FLAG_COMMAND}" to preview the sidebar flag and Safeguards settings. Nothing is reported to your account.`,
+    description: `Select Dev Simulator in chat and send "${DEV_SAFEGUARD_FLAG_COMMAND}" to flag the current chat via the local mock controlplane, then exercise the sidebar flag and Safeguards settings. Nothing is sent to the real controlplane.`,
   },
   {
     href: '/dev/onboarding-flow',
