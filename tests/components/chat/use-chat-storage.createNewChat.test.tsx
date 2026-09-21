@@ -10,7 +10,7 @@ const { mockLoadChats } = vi.hoisted(() => ({
   mockLoadChats: vi.fn(),
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => ({
     isSignedIn: true,
     getToken: vi.fn(),

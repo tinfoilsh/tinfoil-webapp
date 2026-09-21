@@ -28,7 +28,7 @@ import {
 } from '@/utils/cloud-sync-settings'
 import { logInfo } from '@/utils/error-handling'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
-import { useAuth, useUser } from '@clerk/nextjs'
+import { useAuth, useUser } from '@clerk/react'
 import {
   ChevronDownIcon,
   ChevronRightIcon,

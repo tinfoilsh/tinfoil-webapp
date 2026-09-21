@@ -26,7 +26,7 @@ import {
   reportSignoutStep,
   SIGNOUT_STEPS,
 } from '@/utils/signout-progress'
-import { useAuth, useUser } from '@clerk/nextjs'
+import { useAuth, useUser } from '@clerk/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const SIGNOUT_CLEANUP_GRACE_MS = 2000

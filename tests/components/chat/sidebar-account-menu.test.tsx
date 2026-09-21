@@ -12,7 +12,7 @@ vi.mock('next/router', () => ({
   useRouter: () => ({ asPath: routerAsPath }),
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useUser: () => userState,
 }))
 

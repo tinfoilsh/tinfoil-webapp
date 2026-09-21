@@ -41,7 +41,7 @@ import { passkeyEvents } from '@/services/sync-enclave/passkey-events'
 import { keyCurrent as enclaveKeyCurrent } from '@/services/sync-enclave/sync-api'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
-import type { useUser } from '@clerk/nextjs'
+import type { useUser } from '@clerk/react'
 import type { PRFResult } from '@tinfoilsh/passkey-kit'
 import { useCallback, useEffect, useRef, useState } from 'react'
 

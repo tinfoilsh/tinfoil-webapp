@@ -42,7 +42,7 @@ import {
   getNewChatPath,
   isPlainPrimaryClick,
 } from '@/utils/navigation'
-import { useAuth } from '@clerk/nextjs'
+import { useAuth } from '@clerk/react'
 import {
   ArrowLeftIcon,
   ChatBubbleLeftRightIcon,

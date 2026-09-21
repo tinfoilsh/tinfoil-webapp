@@ -42,7 +42,7 @@ const {
   scanPendingChatRecoveriesMock: vi.fn(),
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => authState,
 }))
 

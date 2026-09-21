@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   projectEventHandlers: new Map<string, (event: unknown) => void>(),
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => ({ isSignedIn: true }),
 }))
 

@@ -8,7 +8,7 @@ import {
 } from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
-import { useUser } from '@clerk/nextjs'
+import { useUser } from '@clerk/react'
 import { TfLock, TfShieldCheck, TfUnlockOpen } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'

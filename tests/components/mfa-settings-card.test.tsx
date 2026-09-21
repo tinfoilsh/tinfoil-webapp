@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useUser: () => ({
     isLoaded: true,
     user: mocks.user,
@@ -29,7 +29,7 @@ vi.mock('@clerk/nextjs', () => ({
   useReverification: (operation: (...args: unknown[]) => unknown) => operation,
 }))
 
-vi.mock('@clerk/nextjs/errors', () => ({
+vi.mock('@clerk/react/errors', () => ({
   isReverificationCancelledError: () => false,
 }))
 

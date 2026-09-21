@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   cacheState: { generation: 0, refreshGeneration: 0 },
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => mocks.auth,
 }))
 

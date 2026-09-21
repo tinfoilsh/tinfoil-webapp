@@ -1,6 +1,6 @@
 'use client'
 
-import { useUser } from '@clerk/nextjs'
+import { useUser } from '@clerk/react'
 import Avatar from 'boring-avatars'
 
 const AVATAR_COLORS = ['#004444', '#F9F8F6']
