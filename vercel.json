@@ -10,36 +10,34 @@
     }
   ],
   "rewrites": [
-    { "source": "/chat", "destination": "/chat/%5B%5B...slug%5D%5D.html" },
-    { "source": "/chat/", "destination": "/chat/%5B%5B...slug%5D%5D.html" },
     {
-      "source": "/chat/local",
-      "destination": "/chat/%5B%5B...slug%5D%5D.html"
+      "source": "/newchat",
+      "destination": "/newchat.html"
     },
     {
-      "source": "/chat/local/",
-      "destination": "/chat/%5B%5B...slug%5D%5D.html"
+      "source": "/newchat/",
+      "destination": "/newchat.html"
     },
     {
-      "source": "/chat/:path*",
-      "destination": "/chat/%5B%5B...slug%5D%5D.html"
+      "source": "/signin",
+      "destination": "/signin.html"
     },
     {
-      "source": "/project/:path*",
-      "destination": "/project/%5B%5B...slug%5D%5D.html"
+      "source": "/signin/",
+      "destination": "/signin.html"
     },
-    { "source": "/share", "destination": "/share/%5B%5B...slug%5D%5D.html" },
-    { "source": "/share/", "destination": "/share/%5B%5B...slug%5D%5D.html" },
     {
-      "source": "/share/:path*",
-      "destination": "/share/%5B%5B...slug%5D%5D.html"
+      "source": "/sso-callback",
+      "destination": "/sso-callback.html"
     },
-    { "source": "/newchat", "destination": "/newchat.html" },
-    { "source": "/newchat/", "destination": "/newchat.html" },
-    { "source": "/signin", "destination": "/signin.html" },
-    { "source": "/signin/", "destination": "/signin.html" },
-    { "source": "/sso-callback", "destination": "/sso-callback.html" },
-    { "source": "/sso-callback/", "destination": "/sso-callback.html" }
+    {
+      "source": "/sso-callback/",
+      "destination": "/sso-callback.html"
+    },
+    {
+      "source": "/:path((?!\\.well-known/).*)",
+      "destination": "/%5B...slug%5D.html"
+    }
   ],
   "headers": [
     {

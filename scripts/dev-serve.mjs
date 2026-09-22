@@ -90,7 +90,7 @@ function serveStatic(req, res) {
       filePath = withHtml
     } else {
       // SPA fallback: serve the chat page for unmatched routes
-      const fallback = path.join(OUT_DIR, 'chat.html')
+      const fallback = path.join(OUT_DIR, '[...slug].html')
       if (fs.existsSync(fallback)) {
         filePath = fallback
       } else {

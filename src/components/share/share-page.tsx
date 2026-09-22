@@ -15,7 +15,6 @@ import {
 } from '@/utils/share-payload'
 import Head from 'next/head'
 import Link from 'next/link'
-import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
 
 const SHARE_PREVIEW_TITLE = 'Shared Chat \u2022 Tinfoil'
@@ -28,8 +27,7 @@ const V2_SHARE_FRAGMENT = /^v2:([0-9a-f]{64})$/
 const UNSUPPORTED_SHARE_LINK_MESSAGE =
   'This share link uses an unsupported format. Ask the sender to create a new link.'
 
-export default function SharePage() {
-  const router = useRouter()
+export default function SharePage({ chatId }: { chatId?: string }) {
   const [loadingState, setLoadingState] = useState<LoadingState>('loading')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [chatData, setChatData] = useState<ShareableChatData | null>(null)
@@ -70,14 +68,7 @@ export default function SharePage() {
   }, [])
 
   useEffect(() => {
-    if (!router.isReady) return
-
     const loadData = async () => {
-      const slug = router.query.slug
-      const parts =
-        typeof slug === 'string' ? [slug] : Array.isArray(slug) ? slug : []
-      const chatId = parts[0]
-
       if (!chatId) {
         setErrorMessage('No chat ID provided')
         setLoadingState('error')
@@ -147,7 +138,7 @@ export default function SharePage() {
     }
 
     loadData()
-  }, [router.isReady, router.query.slug])
+  }, [chatId])
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString(undefined, {
