@@ -256,6 +256,21 @@ const isChatModel = (m: BaseModel): boolean =>
   (m.type === 'chat' || m.type === 'code') && m.chat === true
 
 /**
+ * Chat models a picker offers for selection. A deprecated model stays listed
+ * only while it is the current selection so the menu agrees with the value it
+ * displays for chats that already use it.
+ */
+export const getSelectableChatModels = (
+  models: BaseModel[],
+  selectedModel: string | undefined,
+): BaseModel[] =>
+  models.filter(
+    (model) =>
+      isChatModel(model) &&
+      (model.deprecated !== true || model.modelName === selectedModel),
+  )
+
+/**
  * Real chat models the router may pick for Auto. The router only routes
  * across models with published intelligence scores, which today are the chat
  * models; the picker mirrors that so its Auto entry is offered exactly when

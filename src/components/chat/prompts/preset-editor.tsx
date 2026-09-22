@@ -49,7 +49,7 @@ type PresetEditorProps = {
   onSave: () => void
 }
 
-const SELECT_CLASS_NAME =
+const FIELD_CLASS_NAME =
   'rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-2 text-sm text-content-primary focus:border-brand-accent-dark focus:outline-none'
 
 export function PresetEditor({
@@ -112,7 +112,7 @@ export function PresetEditor({
             value={editor.name}
             onChange={(e) => onChange({ ...editor, name: e.target.value })}
             placeholder="e.g. SQL Buddy"
-            className="rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-2 text-sm text-content-primary focus:border-brand-accent-dark focus:outline-none"
+            className={FIELD_CLASS_NAME}
           />
         </label>
         <label className="flex flex-col gap-1">
@@ -126,7 +126,7 @@ export function PresetEditor({
               onChange({ ...editor, description: e.target.value })
             }
             placeholder="What does this prompt do?"
-            className="rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-2 text-sm text-content-primary focus:border-brand-accent-dark focus:outline-none"
+            className={FIELD_CLASS_NAME}
           />
         </label>
         <div className="grid gap-4 sm:grid-cols-2">
@@ -137,7 +137,7 @@ export function PresetEditor({
             <select
               value={editor.model ?? PRESET_SETTING_UNSET}
               onChange={(e) => handleModelChange(e.target.value)}
-              className={SELECT_CLASS_NAME}
+              className={FIELD_CLASS_NAME}
             >
               <option value={PRESET_SETTING_UNSET}>No change</option>
               {modelOptions.map((model) => (
@@ -156,7 +156,7 @@ export function PresetEditor({
               onChange={(e) =>
                 handleWebSearchChange(e.target.value as PresetWebSearchOption)
               }
-              className={SELECT_CLASS_NAME}
+              className={FIELD_CLASS_NAME}
             >
               <option value={PRESET_SETTING_UNSET}>No change</option>
               <option value={PRESET_WEB_SEARCH_ON}>On</option>

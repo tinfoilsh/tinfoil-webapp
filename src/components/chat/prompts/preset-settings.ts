@@ -1,6 +1,7 @@
 import {
   findSelectableModel,
   getAutoModel,
+  getSelectableChatModels,
   type BaseModel,
 } from '@/config/models'
 import type { PromptPresetSettings } from './types'
@@ -32,20 +33,14 @@ export const optionToWebSearch = (
 }
 
 /**
- * Models offered in the preset editor: Auto followed by the chat models the
- * picker shows. A deprecated model stays listed only while it is the value
- * being edited so the editor agrees with the saved preset.
+ * Models offered in the preset editor: Auto followed by the same chat models
+ * the picker shows for the value being edited.
  */
 export const getPresetModelOptions = (
   models: BaseModel[],
   currentModel: string | undefined,
 ): BaseModel[] => {
-  const chatModels = models.filter(
-    (model) =>
-      (model.type === 'chat' || model.type === 'code') &&
-      model.chat === true &&
-      (model.deprecated !== true || model.modelName === currentModel),
-  )
+  const chatModels = getSelectableChatModels(models, currentModel)
   const auto = getAutoModel(models)
   return auto ? [auto, ...chatModels] : chatModels
 }
