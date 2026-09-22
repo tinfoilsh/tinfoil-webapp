@@ -1,9 +1,13 @@
 import {
   adoptLegacyCustomPrompt,
+  isUserPromptPreset,
   migrateLegacyCustomPrompt,
+  pruneUnavailablePresetModels,
   readDefaultPresetId,
   readUserPresets,
 } from '@/components/chat/prompts/default-preset'
+import type { UserPromptPreset } from '@/components/chat/prompts/types'
+import { AUTO_MODEL_ID, type BaseModel } from '@/config/models'
 import {
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
@@ -134,5 +138,97 @@ describe('migrateLegacyCustomPrompt', () => {
 
     expect(readUserPresets()).toEqual([])
     expect(readDefaultPresetId()).toBeNull()
+  })
+})
+
+const basePreset = (
+  overrides: Partial<UserPromptPreset> = {},
+): UserPromptPreset => ({
+  id: 'user:p1',
+  name: 'Proofreader',
+  description: '',
+  systemPrompt: '<system>\nFix typos.\n</system>',
+  createdAt: 1,
+  updatedAt: 1,
+  ...overrides,
+})
+
+describe('isUserPromptPreset', () => {
+  it('accepts presets with and without chat settings', () => {
+    expect(isUserPromptPreset(basePreset())).toBe(true)
+    expect(
+      isUserPromptPreset(
+        basePreset({ model: 'gpt-oss-120b', webSearchEnabled: false }),
+      ),
+    ).toBe(true)
+  })
+
+  it('rejects malformed chat settings', () => {
+    expect(isUserPromptPreset({ ...basePreset(), model: 42 })).toBe(false)
+    expect(isUserPromptPreset({ ...basePreset(), model: null })).toBe(false)
+    expect(
+      isUserPromptPreset({ ...basePreset(), webSearchEnabled: 'off' }),
+    ).toBe(false)
+  })
+})
+
+describe('pruneUnavailablePresetModels', () => {
+  const chatModel = (modelName: string): BaseModel => ({
+    modelName,
+    image: '',
+    name: modelName,
+    nameShort: modelName,
+    description: '',
+    type: 'chat',
+    chat: true,
+  })
+  const catalog = [chatModel('gpt-oss-120b')]
+
+  const writePresets = (presets: UserPromptPreset[]) =>
+    localStorage.setItem(
+      USER_PREFS_CUSTOM_PROMPT_PRESETS,
+      JSON.stringify(presets),
+    )
+
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('clears models missing from the catalog and bumps updatedAt', () => {
+    writePresets([
+      basePreset({ id: 'user:stale', model: 'retired-model' }),
+      basePreset({ id: 'user:fresh', model: 'gpt-oss-120b' }),
+    ])
+
+    const pruned = pruneUnavailablePresetModels(catalog)
+
+    expect(pruned).toEqual(['user:stale'])
+    const [stale, fresh] = readUserPresets()
+    expect(stale.model).toBeUndefined()
+    expect('model' in stale).toBe(false)
+    expect(stale.updatedAt).toBeGreaterThan(1)
+    expect(fresh.model).toBe('gpt-oss-120b')
+    expect(fresh.updatedAt).toBe(1)
+  })
+
+  it('keeps Auto and presets without a model', () => {
+    const presets = [
+      basePreset({ id: 'user:auto', model: AUTO_MODEL_ID }),
+      basePreset({ id: 'user:none', webSearchEnabled: false }),
+    ]
+    writePresets(presets)
+
+    expect(pruneUnavailablePresetModels(catalog)).toEqual([])
+    expect(readUserPresets()).toEqual(presets)
+  })
+
+  it('does not rewrite storage when nothing is stale', () => {
+    const presets = [basePreset({ model: 'gpt-oss-120b' })]
+    writePresets(presets)
+    const before = localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_PRESETS)
+
+    pruneUnavailablePresetModels(catalog)
+
+    expect(localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_PRESETS)).toBe(before)
   })
 })
