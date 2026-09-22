@@ -59,7 +59,8 @@ export type PresetSettingsSummary = {
 
 /**
  * Human-readable values for a preset's chat settings in the detail pane.
- * Unset settings read as "No change" so the pane always shows both rows.
+ * Unset settings read as PRESET_SETTING_UNSET_LABEL so the pane always shows
+ * both rows.
  */
 export const describePresetSettings = (
   settings: PromptPresetSettings,
