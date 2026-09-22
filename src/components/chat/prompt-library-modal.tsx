@@ -705,10 +705,12 @@ function PresetDetail({
               Chat settings
             </span>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-4 py-3 text-sm">
-              <dt className="text-content-secondary">Model</dt>
-              <dd className="text-content-primary">{settingsSummary.model}</dd>
-              <dt className="text-content-secondary">Web search</dt>
-              <dd className="text-content-primary">
+              <dt className="font-semibold text-content-primary">Model</dt>
+              <dd className="text-content-secondary">
+                {settingsSummary.model}
+              </dd>
+              <dt className="font-semibold text-content-primary">Web search</dt>
+              <dd className="text-content-secondary">
                 {settingsSummary.webSearch}
               </dd>
             </dl>

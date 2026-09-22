@@ -50,7 +50,7 @@ export const getPresetModelLabel = (
   models: BaseModel[],
 ): string => findSelectableModel(modelName, models)?.name ?? modelName
 
-export const PRESET_SETTING_UNSET_LABEL = 'No change'
+export const PRESET_SETTING_UNSET_LABEL = 'No override set'
 
 export type PresetSettingsSummary = {
   model: string
