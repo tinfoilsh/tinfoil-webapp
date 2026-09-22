@@ -1,4 +1,5 @@
 import { cn } from '@/components/ui/utils'
+import type { BaseModel } from '@/config/models'
 import { acquireInteractionLock } from '@/utils/interaction-lock'
 import {
   ArrowLeftIcon,
@@ -31,6 +32,7 @@ import {
   stripSystemTags,
   type PresetEditorState,
 } from './prompts/preset-editor'
+import { describePresetSettings } from './prompts/preset-settings'
 import type { PromptPreset } from './prompts/types'
 
 type PromptLibraryModalProps = {
@@ -38,6 +40,7 @@ type PromptLibraryModalProps = {
   onClose: () => void
   activePresetId: string | null
   onSelectPreset: (presetId: string | null) => void
+  models: BaseModel[]
   isSidebarOpen?: boolean
   isRightSidebarOpen?: boolean
 }
@@ -47,6 +50,7 @@ export function PromptLibraryModal({
   onClose,
   activePresetId,
   onSelectPreset,
+  models,
   isSidebarOpen = false,
   isRightSidebarOpen = false,
 }: PromptLibraryModalProps) {
@@ -123,14 +127,20 @@ export function PromptLibraryModal({
     setMobileView('detail')
   }
 
+  const toEditorState = (preset: PromptPreset): PresetEditorState => ({
+    mode: 'edit',
+    presetId: preset.id,
+    name: preset.name,
+    description: preset.description,
+    systemPrompt: stripSystemTags(preset.systemPrompt),
+    ...(preset.model !== undefined && { model: preset.model }),
+    ...(preset.webSearchEnabled !== undefined && {
+      webSearchEnabled: preset.webSearchEnabled,
+    }),
+  })
+
   const startEdit = (preset: PromptPreset) => {
-    setEditor({
-      mode: 'edit',
-      presetId: preset.id,
-      name: preset.name,
-      description: preset.description,
-      systemPrompt: stripSystemTags(preset.systemPrompt),
-    })
+    setEditor(toEditorState(preset))
     setMobileView('detail')
   }
 
@@ -138,13 +148,7 @@ export function PromptLibraryModal({
     const copy = duplicatePreset(preset.id)
     if (copy) {
       setSelectedId(copy.id)
-      setEditor({
-        mode: 'edit',
-        presetId: copy.id,
-        name: copy.name,
-        description: copy.description,
-        systemPrompt: stripSystemTags(copy.systemPrompt),
-      })
+      setEditor(toEditorState(copy))
       setMobileView('detail')
     }
   }
@@ -185,19 +189,18 @@ export function PromptLibraryModal({
     const promptWithTags = ensureSystemTags(editor.systemPrompt)
     if (!promptWithTags) return
 
+    const input = {
+      name,
+      description: editor.description.trim(),
+      systemPrompt: promptWithTags,
+      model: editor.model,
+      webSearchEnabled: editor.webSearchEnabled,
+    }
     if (editor.mode === 'create') {
-      const created = createUserPreset({
-        name,
-        description: editor.description.trim(),
-        systemPrompt: promptWithTags,
-      })
+      const created = createUserPreset(input)
       setSelectedId(created.id)
     } else if (editor.presetId) {
-      updateUserPreset(editor.presetId, {
-        name,
-        description: editor.description.trim(),
-        systemPrompt: promptWithTags,
-      })
+      updateUserPreset(editor.presetId, input)
       setSelectedId(editor.presetId)
     }
     setEditor(null)
@@ -379,6 +382,7 @@ export function PromptLibraryModal({
                   {editor ? (
                     <PresetEditor
                       editor={editor}
+                      models={models}
                       onChange={setEditor}
                       onCancel={() => {
                         setEditor(null)
@@ -393,6 +397,10 @@ export function PromptLibraryModal({
                     <PresetDetail
                       key={selectedPreset.id}
                       preset={selectedPreset}
+                      settingsSummary={describePresetSettings(
+                        selectedPreset,
+                        models,
+                      )}
                       isActive={activePresetId === selectedPreset.id}
                       isFavorite={isFavorite(selectedPreset.id)}
                       canAddFavorite={canAddFavorite}
@@ -445,6 +453,7 @@ export function PromptLibraryModal({
 
 type PresetDetailProps = {
   preset: PromptPreset
+  settingsSummary: string | null
   isActive: boolean
   isFavorite: boolean
   canAddFavorite: boolean
@@ -461,6 +470,7 @@ type PresetDetailProps = {
 
 function PresetDetail({
   preset,
+  settingsSummary,
   isActive,
   isFavorite,
   canAddFavorite,
@@ -540,6 +550,11 @@ function PresetDetail({
             {preset.description && (
               <p className="mt-0.5 px-1.5 text-sm text-content-secondary">
                 {preset.description}
+              </p>
+            )}
+            {settingsSummary && (
+              <p className="mt-1 px-1.5 text-xs text-content-muted">
+                {settingsSummary}
               </p>
             )}
             <div className="mt-3 flex items-center px-1.5 md:hidden">

@@ -1,4 +1,16 @@
-export type PresetEditorState = {
+import type { BaseModel } from '@/config/models'
+import {
+  PRESET_SETTING_UNSET,
+  PRESET_WEB_SEARCH_OFF,
+  PRESET_WEB_SEARCH_ON,
+  getPresetModelOptions,
+  optionToWebSearch,
+  webSearchToOption,
+  type PresetWebSearchOption,
+} from './preset-settings'
+import type { PromptPresetSettings } from './types'
+
+export type PresetEditorState = PromptPresetSettings & {
   mode: 'create' | 'edit'
   presetId: string | null
   name: string
@@ -31,19 +43,40 @@ export const ensureSystemTags = (prompt: string): string => {
 
 type PresetEditorProps = {
   editor: PresetEditorState
+  models: BaseModel[]
   onChange: (editor: PresetEditorState) => void
   onCancel: () => void
   onSave: () => void
 }
 
+const SELECT_CLASS_NAME =
+  'rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-2 text-sm text-content-primary focus:border-brand-accent-dark focus:outline-none'
+
 export function PresetEditor({
   editor,
+  models,
   onChange,
   onCancel,
   onSave,
 }: PresetEditorProps) {
   const canSave =
     editor.name.trim().length > 0 && editor.systemPrompt.trim().length > 0
+  const modelOptions = getPresetModelOptions(models, editor.model)
+
+  const handleModelChange = (value: string) => {
+    const next = { ...editor }
+    if (value === PRESET_SETTING_UNSET) delete next.model
+    else next.model = value
+    onChange(next)
+  }
+
+  const handleWebSearchChange = (value: PresetWebSearchOption) => {
+    const next = { ...editor }
+    const webSearchEnabled = optionToWebSearch(value)
+    if (webSearchEnabled === undefined) delete next.webSearchEnabled
+    else next.webSearchEnabled = webSearchEnabled
+    onChange(next)
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -96,6 +129,45 @@ export function PresetEditor({
             className="rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-2 text-sm text-content-primary focus:border-brand-accent-dark focus:outline-none"
           />
         </label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+              Model
+            </span>
+            <select
+              value={editor.model ?? PRESET_SETTING_UNSET}
+              onChange={(e) => handleModelChange(e.target.value)}
+              className={SELECT_CLASS_NAME}
+            >
+              <option value={PRESET_SETTING_UNSET}>No change</option>
+              {modelOptions.map((model) => (
+                <option key={model.modelName} value={model.modelName}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+              Web search
+            </span>
+            <select
+              value={webSearchToOption(editor.webSearchEnabled)}
+              onChange={(e) =>
+                handleWebSearchChange(e.target.value as PresetWebSearchOption)
+              }
+              className={SELECT_CLASS_NAME}
+            >
+              <option value={PRESET_SETTING_UNSET}>No change</option>
+              <option value={PRESET_WEB_SEARCH_ON}>On</option>
+              <option value={PRESET_WEB_SEARCH_OFF}>Off</option>
+            </select>
+          </label>
+        </div>
+        <span className="-mt-2 text-[11px] text-content-muted">
+          Applied to the chat when this prompt is selected. You can still change
+          either afterwards.
+        </span>
         <label className="flex min-h-0 flex-1 flex-col gap-1">
           <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
             System prompt

@@ -4363,6 +4363,7 @@ export function ChatInterface({
           onClose={handleClosePromptLibrary}
           activePresetId={activePresetId}
           onSelectPreset={handleSetActivePreset}
+          models={models}
           isSidebarOpen={
             isSidebarOpen && windowWidth >= CONSTANTS.MOBILE_BREAKPOINT
           }
