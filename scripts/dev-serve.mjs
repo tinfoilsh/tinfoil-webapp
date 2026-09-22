@@ -58,7 +58,7 @@ function serveStatic(req, res) {
     if (fs.existsSync(withHtml)) {
       filePath = withHtml
     } else {
-      const fallback = path.join(OUT_DIR, 'chat.html')
+      const fallback = path.join(OUT_DIR, '[...slug].html')
       if (fs.existsSync(fallback)) {
         filePath = fallback
       } else {

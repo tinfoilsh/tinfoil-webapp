@@ -13,15 +13,7 @@ import localFont from 'next/font/local'
 import Head from 'next/head'
 import Script from 'next/script'
 
-const ANALYTICS_EXCLUDED_ROUTES = new Set([
-  '/',
-  '/newchat',
-  '/share/[[...slug]]',
-  '/chat/[[...slug]]',
-  '/chat/[chatId]',
-  '/chat/local/[chatId]',
-  '/project/[projectId]/chat/[chatId]',
-])
+const ANALYTICS_EXCLUDED_ROUTES = new Set(['/', '/newchat', '/[...slug]'])
 
 const aeonikFono = localFont({
   src: [

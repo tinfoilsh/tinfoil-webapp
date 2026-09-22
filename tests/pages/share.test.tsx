@@ -1,4 +1,4 @@
-import SharePage from '@/pages/share/[[...slug]]'
+import SharePage from '@/components/share/share-page'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -82,7 +82,7 @@ describe('SharePage', () => {
     const shareKey = VALID_SHARE_KEY
     window.location.hash = `#v2:${shareKey}`
 
-    render(<SharePage />)
+    render(<SharePage chatId="chat-id" />)
 
     expect(await screen.findByText('Rendered shared chat')).toBeInTheDocument()
     expect(mocks.fetchSharedChat).toHaveBeenCalledWith('chat-id')
@@ -105,7 +105,7 @@ describe('SharePage', () => {
   ])('rejects %s as unsupported (%s)', async (hash) => {
     window.location.hash = hash
 
-    render(<SharePage />)
+    render(<SharePage chatId="chat-id" />)
 
     expect(
       await screen.findByRole('heading', { name: 'Unsupported Share Link' }),
@@ -124,7 +124,7 @@ describe('SharePage', () => {
     )
 
     await act(async () => {
-      render(<SharePage />)
+      render(<SharePage chatId="chat-id" />)
     })
 
     await waitFor(() =>
@@ -139,7 +139,7 @@ describe('SharePage', () => {
     window.location.hash = `#v2:${VALID_SHARE_KEY}`
     const { SharedChatNotFoundError } = await import('@/services/share-api')
     mocks.fetchSharedChat.mockRejectedValue(new SharedChatNotFoundError())
-    render(<SharePage />)
+    render(<SharePage chatId="chat-id" />)
     expect(
       await screen.findByRole('heading', { name: 'Invalid Share Link' }),
     ).toBeVisible()
