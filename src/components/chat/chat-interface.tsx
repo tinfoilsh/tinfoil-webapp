@@ -3321,7 +3321,7 @@ export function ChatInterface({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (isChatHydrating || safeguardGenerationBlocked) return
+    if (isChatHydrating || currentChatIsFlagged) return
 
     if (rateLimit && rateLimit.remaining <= 0 && rateLimit.kind !== 'hourly') {
       setIsSubscribePromptOpen(true)
@@ -4478,9 +4478,7 @@ export function ChatInterface({
             {/* Messages Area */}
             <QuoteSelectionPopover
               enabled={
-                showChatHeader &&
-                !isSettingsModalOpen &&
-                !safeguardGenerationBlocked
+                showChatHeader && !isSettingsModalOpen && !currentChatIsFlagged
               }
               containerRef={scrollContainerRef}
               onQuote={(text) => {
@@ -4559,7 +4557,7 @@ export function ChatInterface({
                       activeArtifactToolCallId={
                         isArtifactSidebarOpen ? activeArtifactToolCallId : null
                       }
-                      readOnly={safeguardGenerationBlocked}
+                      readOnly={currentChatIsFlagged}
                       isPremium={showPremiumComposerControls}
                       models={models}
                       onSubmit={handleSubmit}
@@ -4665,7 +4663,7 @@ export function ChatInterface({
                       }
                     />
                   </div>
-                  {safeguardGenerationBlocked ? null : selectPendingInputToolCallFromChat(
+                  {currentChatIsFlagged ? null : selectPendingInputToolCallFromChat(
                       currentChat,
                     ) ? (
                     <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 @3xl/conversation:px-8">
