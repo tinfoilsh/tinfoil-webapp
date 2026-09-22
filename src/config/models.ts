@@ -520,6 +520,14 @@ export function getCachedSystemPromptAndRules(): SystemPromptAndRules | null {
   }
 }
 
+/**
+ * True when `getAIModels` serves the hardcoded dev catalog instead of the
+ * controlplane's. Callers that treat the catalog as authoritative (e.g. to
+ * clear references to models that no longer exist) must skip that case.
+ */
+export const isUsingDevModelCatalog = (): boolean =>
+  IS_DEV && isLocalDevelopment()
+
 // Fetch models from the API. Returns null when the controlplane is
 // unreachable so callers can block rather than proceed without config.
 export const getAIModels = async (): Promise<BaseModel[] | null> => {

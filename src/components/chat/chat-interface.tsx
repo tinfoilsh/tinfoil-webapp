@@ -7,6 +7,7 @@ import {
   getResolvedModelContextWindowTokens,
   getSelectedModelLabel,
   getSystemPromptAndRules,
+  isUsingDevModelCatalog,
   resolveModelSelection,
   type BaseModel,
 } from '@/config/models'
@@ -108,7 +109,7 @@ import {
   isCloudSyncEnabled,
   setCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
-import { logError } from '@/utils/error-handling'
+import { logError, logInfo } from '@/utils/error-handling'
 import { isProbablyTextFile, isSupportedFile } from '@/utils/file-types'
 import { getNewChatPath, isPlainPrimaryClick } from '@/utils/navigation'
 import {
@@ -187,6 +188,7 @@ import { getBlankQueueId } from './message-queue-identity'
 import { ModelSelector } from './model-selector'
 import { ModelSelectorTriggerLabel } from './model-selector-trigger-label'
 import { openProjectChat } from './project-navigation'
+import { pruneUnavailablePresetModels } from './prompts/default-preset'
 import { QuoteSelectionPopover } from './quote-selection-popover'
 import { initializeRenderers } from './renderers/client'
 import type { ProcessedDocument } from './renderers/types'
@@ -533,6 +535,9 @@ export function ChatInterface({
   const [systemPrompt, setSystemPrompt] = useState<string>('')
   const [rules, setRules] = useState<string>('')
   const [isLoadingConfig, setIsLoadingConfig] = useState(true)
+  // Set once the controlplane has answered; a cached catalog may seed
+  // `models` earlier but must not drive catalog-dependent cleanup.
+  const [hasAuthoritativeModels, setHasAuthoritativeModels] = useState(false)
   const [configLoadFailed, setConfigLoadFailed] = useState(false)
   const [logoAnimDone, setLogoAnimDone] = useState(false)
   const handleLogoAnimFinished = useCallback(() => {
@@ -715,8 +720,23 @@ export function ChatInterface({
   const [isPromptLibraryModalOpen, setIsPromptLibraryModalOpen] =
     useState(false)
   const [hasMountedPromptLibrary, setHasMountedPromptLibrary] = useState(false)
-  const { getPresetById, defaultPreset } = usePromptLibrary()
+  const { getPresetById, defaultPreset, userPresets } = usePromptLibrary()
   const activePreset = getPresetById(activePresetId)
+
+  // A preset may name a model the controlplane has since retired. Once the
+  // authoritative catalog is in (not the cached seed, not the hardcoded dev
+  // list), drop such models from the presets so they do not linger locally or
+  // in the synced profile. Re-runs when presets arrive from another device.
+  useEffect(() => {
+    if (!hasAuthoritativeModels || isUsingDevModelCatalog()) return
+    const prunedIds = pruneUnavailablePresetModels(models)
+    if (prunedIds.length > 0) {
+      logInfo('Cleared unavailable models from prompt presets', {
+        component: 'ChatInterface',
+        metadata: { presetIds: prunedIds },
+      })
+    }
+  }, [hasAuthoritativeModels, models, userPresets])
 
   const { effectiveSystemPrompt, processedRules } = useCustomSystemPrompt(
     systemPrompt,
@@ -855,6 +875,7 @@ export function ChatInterface({
         setSystemPrompt(promptData.systemPrompt)
         setRules(promptData.rules)
         setModels(models)
+        setHasAuthoritativeModels(true)
         setIsLoadingConfig(false)
         recordConfigReady()
       } catch (error) {
