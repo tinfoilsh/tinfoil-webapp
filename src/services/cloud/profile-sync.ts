@@ -116,6 +116,11 @@ export interface ProfilePromptPreset {
   systemPrompt: string
   createdAt: number
   updatedAt: number
+  // Optional chat settings applied when the preset is selected. Omitted
+  // (never null) when unset so Swift's nil-dropping encoder and JSON.stringify
+  // produce the same shape.
+  model?: string
+  webSearchEnabled?: boolean
 }
 
 export class ProfileSyncService {

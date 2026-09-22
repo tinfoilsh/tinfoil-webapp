@@ -24,20 +24,18 @@ export const MAX_FAVORITE_PRESETS = 3
 
 const DEFAULT_USER_PRESET_ICON = PiNotePencil
 
+export type UserPresetInput = Pick<
+  UserPromptPreset,
+  'name' | 'description' | 'systemPrompt' | 'model' | 'webSearchEnabled'
+>
+
 type UsePromptLibraryReturn = {
   builtInPresets: PromptPreset[]
   userPresets: PromptPreset[]
   allPresets: PromptPreset[]
   getPresetById: (id: string | null | undefined) => PromptPreset | null
-  createUserPreset: (
-    input: Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'>,
-  ) => PromptPreset
-  updateUserPreset: (
-    id: string,
-    patch: Partial<
-      Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'>
-    >,
-  ) => void
+  createUserPreset: (input: UserPresetInput) => PromptPreset
+  updateUserPreset: (id: string, patch: Partial<UserPresetInput>) => void
   deleteUserPreset: (id: string) => void
   duplicatePreset: (sourceId: string) => PromptPreset | null
   favoritePresetIds: string[]
@@ -89,7 +87,27 @@ function toPromptPreset(stored: UserPromptPreset): PromptPreset {
     Icon: DEFAULT_USER_PRESET_ICON,
     systemPrompt: stored.systemPrompt,
     isBuiltIn: false,
+    model: stored.model,
+    webSearchEnabled: stored.webSearchEnabled,
   }
+}
+
+// Optional settings are omitted rather than written as undefined so the
+// serialized preset matches the wire format shared with the iOS app.
+function withPresetSettings<T extends object>(
+  base: T,
+  input: Partial<UserPresetInput>,
+): T {
+  const next = { ...base } as T & Partial<UserPresetInput>
+  if ('model' in input) {
+    if (input.model === undefined) delete next.model
+    else next.model = input.model
+  }
+  if ('webSearchEnabled' in input) {
+    if (input.webSearchEnabled === undefined) delete next.webSearchEnabled
+    else next.webSearchEnabled = input.webSearchEnabled
+  }
+  return next
 }
 
 export function usePromptLibrary(): UsePromptLibraryReturn {
@@ -146,18 +164,19 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
   )
 
   const createUserPreset = useCallback(
-    (
-      input: Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'>,
-    ): PromptPreset => {
+    (input: UserPresetInput): PromptPreset => {
       const now = Date.now()
-      const newPreset: UserPromptPreset = {
-        id: generateUserPresetId(),
-        name: input.name,
-        description: input.description,
-        systemPrompt: input.systemPrompt,
-        createdAt: now,
-        updatedAt: now,
-      }
+      const newPreset: UserPromptPreset = withPresetSettings(
+        {
+          id: generateUserPresetId(),
+          name: input.name,
+          description: input.description,
+          systemPrompt: input.systemPrompt,
+          createdAt: now,
+          updatedAt: now,
+        },
+        input,
+      )
       const next = [...readUserPresets(), newPreset]
       writeUserPresets(next)
       return toPromptPreset(newPreset)
@@ -166,20 +185,24 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
   )
 
   const updateUserPreset = useCallback(
-    (
-      id: string,
-      patch: Partial<
-        Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'>
-      >,
-    ) => {
+    (id: string, patch: Partial<UserPresetInput>) => {
       const current = readUserPresets()
       const idx = current.findIndex((p) => p.id === id)
       if (idx === -1) return
-      const updated: UserPromptPreset = {
-        ...current[idx],
-        ...patch,
-        updatedAt: Date.now(),
-      }
+      const updated: UserPromptPreset = withPresetSettings(
+        {
+          ...current[idx],
+          ...(patch.name !== undefined && { name: patch.name }),
+          ...(patch.description !== undefined && {
+            description: patch.description,
+          }),
+          ...(patch.systemPrompt !== undefined && {
+            systemPrompt: patch.systemPrompt,
+          }),
+          updatedAt: Date.now(),
+        },
+        patch,
+      )
       const next = [...current]
       next[idx] = updated
       writeUserPresets(next)
@@ -215,6 +238,8 @@ export function usePromptLibrary(): UsePromptLibraryReturn {
         name: `${userSource.name} (copy)`,
         description: userSource.description,
         systemPrompt: userSource.systemPrompt,
+        model: userSource.model,
+        webSearchEnabled: userSource.webSearchEnabled,
       })
     },
     [createUserPreset],

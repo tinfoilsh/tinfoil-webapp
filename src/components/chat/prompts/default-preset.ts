@@ -39,7 +39,10 @@ export function isUserPromptPreset(value: unknown): value is UserPromptPreset {
     typeof p.description === 'string' &&
     typeof p.systemPrompt === 'string' &&
     typeof p.createdAt === 'number' &&
-    typeof p.updatedAt === 'number'
+    typeof p.updatedAt === 'number' &&
+    (p.model === undefined || typeof p.model === 'string') &&
+    (p.webSearchEnabled === undefined ||
+      typeof p.webSearchEnabled === 'boolean')
   )
 }
 

@@ -59,7 +59,10 @@ function safeParsePromptPresets(raw: string | null): ProfilePromptPreset[] {
         typeof preset.description === 'string' &&
         typeof preset.systemPrompt === 'string' &&
         typeof preset.createdAt === 'number' &&
-        typeof preset.updatedAt === 'number',
+        typeof preset.updatedAt === 'number' &&
+        (preset.model === undefined || typeof preset.model === 'string') &&
+        (preset.webSearchEnabled === undefined ||
+          typeof preset.webSearchEnabled === 'boolean'),
     )
   } catch {
     return []
