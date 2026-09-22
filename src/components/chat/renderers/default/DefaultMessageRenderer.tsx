@@ -300,7 +300,6 @@ const DefaultMessageComponent = ({
         ariaLabel: 'Edit response',
         icon: <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />,
         onSelect: handleStartEdit,
-        buttonRef: editButtonRef,
       })
     }
     if (onForkMessage) {
@@ -952,6 +951,7 @@ const DefaultMessageComponent = ({
                 <MessageOverflowMenu
                   isDarkMode={isDarkMode}
                   items={assistantOverflowItems}
+                  triggerRef={editButtonRef}
                 />
               </>
             )}

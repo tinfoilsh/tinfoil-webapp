@@ -16,22 +16,29 @@ export interface MessageOverflowMenuItem {
   icon: React.ReactNode
   onSelect: () => void
   destructive?: boolean
-  buttonRef?: React.Ref<HTMLButtonElement>
 }
+
+const menuItemButtons = (menu: HTMLElement) =>
+  Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
 
 export function MessageOverflowMenu({
   items,
   isDarkMode,
+  triggerRef: externalTriggerRef,
 }: {
   items: MessageOverflowMenuItem[]
   isDarkMode?: boolean
+  // Exposed so callers can return focus to the trigger after a menu action
+  // completes, since the menu items themselves unmount on selection.
+  triggerRef?: React.RefObject<HTMLButtonElement | null>
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [position, setPosition] = useState<{
     top: number
     left: number
   } | null>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
+  const internalTriggerRef = useRef<HTMLButtonElement>(null)
+  const triggerRef = externalTriggerRef ?? internalTriggerRef
   const menuRef = useRef<HTMLDivElement>(null)
   const menuId = useId()
 
@@ -59,7 +66,7 @@ export function MessageOverflowMenu({
     const left = Math.max(margin, Math.min(triggerRect.left, maxLeft))
 
     setPosition({ top, left })
-  }, [isOpen])
+  }, [isOpen, triggerRef])
 
   useEffect(() => {
     if (!isOpen) return
@@ -75,22 +82,51 @@ export function MessageOverflowMenu({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setIsOpen(false)
-      triggerRef.current?.focus()
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+        triggerRef.current?.focus()
+        return
+      }
+      if (event.key === 'Tab') {
+        setIsOpen(false)
+        return
+      }
+
+      const menu = menuRef.current
+      if (!menu) return
+      const buttons = menuItemButtons(menu)
+      if (buttons.length === 0) return
+      const currentIndex = buttons.findIndex(
+        (button) => button === document.activeElement,
+      )
+
+      let nextIndex: number | null = null
+      if (event.key === 'ArrowDown') {
+        nextIndex = (currentIndex + 1) % buttons.length
+      } else if (event.key === 'ArrowUp') {
+        nextIndex = currentIndex <= 0 ? buttons.length - 1 : currentIndex - 1
+      } else if (event.key === 'Home') {
+        nextIndex = 0
+      } else if (event.key === 'End') {
+        nextIndex = buttons.length - 1
+      }
+      if (nextIndex === null) return
+
+      event.preventDefault()
+      buttons[nextIndex]?.focus()
     }
 
     document.addEventListener('mousedown', handleClickOutside)
     document.addEventListener('keydown', handleKeyDown)
     const frame = requestAnimationFrame(() => {
-      menuRef.current?.querySelector('button')?.focus()
+      if (menuRef.current) menuItemButtons(menuRef.current)[0]?.focus()
     })
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
       document.removeEventListener('keydown', handleKeyDown)
       cancelAnimationFrame(frame)
     }
-  }, [isOpen])
+  }, [isOpen, triggerRef])
 
   if (items.length === 0) return null
 
@@ -142,7 +178,6 @@ export function MessageOverflowMenu({
             {items.map((item) => (
               <button
                 key={item.label}
-                ref={item.buttonRef}
                 type="button"
                 role="menuitem"
                 aria-label={item.ariaLabel}
