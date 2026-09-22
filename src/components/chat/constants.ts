@@ -46,6 +46,8 @@ export const CONSTANTS = {
   COPY_TIMEOUT_MS: 2000,
   // Gap between a message's overflow menu trigger and the dropdown
   OVERFLOW_MENU_OFFSET_PX: 4,
+  // Minimum distance kept between an overflow menu and the viewport edges
+  OVERFLOW_MENU_VIEWPORT_MARGIN_PX: 8,
   // Maximum width for table columns in pixels
   TABLE_COLUMN_MAX_WIDTH_PX: 300,
   // State update delay for async operations

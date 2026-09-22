@@ -1,5 +1,11 @@
 import { cn } from '@/components/ui/utils'
-import React, { useEffect, useId, useRef, useState } from 'react'
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { RxDotsVertical } from 'react-icons/rx'
 import { CONSTANTS } from '../../constants'
@@ -21,10 +27,39 @@ export function MessageOverflowMenu({
   isDarkMode?: boolean
 }) {
   const [isOpen, setIsOpen] = useState(false)
-  const [position, setPosition] = useState({ top: 0, left: 0 })
+  const [position, setPosition] = useState<{
+    top: number
+    left: number
+  } | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuId = useId()
+
+  // Position after mount so the menu's real size is known: open upward when
+  // there is not enough room below the trigger, and keep it inside the viewport.
+  useLayoutEffect(() => {
+    if (!isOpen) return
+    const trigger = triggerRef.current
+    const menu = menuRef.current
+    if (!trigger || !menu) return
+
+    const triggerRect = trigger.getBoundingClientRect()
+    const menuRect = menu.getBoundingClientRect()
+    const offset = CONSTANTS.OVERFLOW_MENU_OFFSET_PX
+    const margin = CONSTANTS.OVERFLOW_MENU_VIEWPORT_MARGIN_PX
+
+    const fitsBelow =
+      triggerRect.bottom + offset + menuRect.height <=
+      window.innerHeight - margin
+    const top = fitsBelow
+      ? triggerRect.bottom + offset
+      : Math.max(margin, triggerRect.top - offset - menuRect.height)
+
+    const maxLeft = window.innerWidth - margin - menuRect.width
+    const left = Math.max(margin, Math.min(triggerRect.left, maxLeft))
+
+    setPosition({ top, left })
+  }, [isOpen])
 
   useEffect(() => {
     if (!isOpen) return
@@ -64,16 +99,12 @@ export function MessageOverflowMenu({
       <button
         ref={triggerRef}
         type="button"
-        onClick={(e) => {
+        onClick={() => {
           if (isOpen) {
             setIsOpen(false)
             return
           }
-          const rect = e.currentTarget.getBoundingClientRect()
-          setPosition({
-            top: rect.bottom + CONSTANTS.OVERFLOW_MENU_OFFSET_PX,
-            left: rect.left,
-          })
+          setPosition(null)
           setIsOpen(true)
         }}
         aria-label="More actions"
@@ -102,7 +133,11 @@ export function MessageOverflowMenu({
                 ? 'border-border-subtle bg-surface-chat'
                 : 'border-border-subtle bg-white',
             )}
-            style={{ top: position.top, left: position.left }}
+            style={
+              position
+                ? { top: position.top, left: position.left }
+                : { top: 0, left: 0, visibility: 'hidden' }
+            }
           >
             {items.map((item) => (
               <button
