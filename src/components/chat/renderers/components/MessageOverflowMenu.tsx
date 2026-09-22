@@ -82,7 +82,7 @@ export function MessageOverflowMenu({
         aria-controls={isOpen ? menuId : undefined}
         className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
       >
-        <RxDotsVertical className="h-4 w-4" aria-hidden="true" />
+        <RxDotsVertical className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
       {!isOpen && (
         <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/more:opacity-100">
