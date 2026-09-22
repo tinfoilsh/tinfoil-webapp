@@ -342,7 +342,7 @@ export function PromptLibraryModal({
                 >
                   <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-8">
                     <div className="flex items-center justify-between px-4 pt-4">
-                      <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                      <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
                         Built-in
                       </span>
                     </div>
@@ -351,7 +351,7 @@ export function PromptLibraryModal({
                     </div>
 
                     <div className="mt-2 flex items-center justify-between px-4 pt-2">
-                      <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                      <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
                         Your prompts
                       </span>
                       <button
@@ -569,7 +569,7 @@ function PresetDetail({
                 <button
                   type="button"
                   onClick={onUseThis}
-                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-brand-accent-dark px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90"
+                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-accent-blue px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-accent-blue-hover"
                 >
                   <SparklesIcon className="h-4 w-4" />
                   Use for this chat
@@ -594,7 +594,7 @@ function PresetDetail({
             <button
               type="button"
               onClick={onUseThis}
-              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-brand-accent-dark px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90 md:w-auto"
+              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-accent-blue px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-accent-blue-hover md:w-auto"
             >
               <SparklesIcon className="h-4 w-4" />
               Use for this chat
@@ -687,7 +687,7 @@ function PresetDetail({
         <div className="flex min-h-0 flex-1 flex-col">
           <span
             id={systemPromptLabelId}
-            className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted"
+            className="mb-2 text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light"
           >
             System prompt
           </span>
@@ -701,7 +701,7 @@ function PresetDetail({
         </div>
         {settingsSummary && (
           <div className="flex flex-none flex-col">
-            <span className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted">
+            <span className="mb-2 text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
               Chat settings
             </span>
             <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-4 py-3 text-sm">

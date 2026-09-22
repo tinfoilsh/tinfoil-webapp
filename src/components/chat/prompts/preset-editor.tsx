@@ -105,7 +105,7 @@ export function PresetEditor({
       </div>
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+          <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
             Name
           </span>
           <input
@@ -117,7 +117,7 @@ export function PresetEditor({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+          <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
             Short description
           </span>
           <input
@@ -132,7 +132,7 @@ export function PresetEditor({
         </label>
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+            <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
               Model
             </span>
             <select
@@ -151,7 +151,7 @@ export function PresetEditor({
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+            <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
               Web search
             </span>
             <select
@@ -174,7 +174,7 @@ export function PresetEditor({
           either afterwards.
         </span>
         <label className="flex min-h-0 flex-1 flex-col gap-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+          <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
             System prompt
           </span>
           <textarea
