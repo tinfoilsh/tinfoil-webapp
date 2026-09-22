@@ -1,5 +1,5 @@
 import { sanitizeRelativeRedirect } from '@/utils/redirect-url'
-import { AuthenticateWithRedirectCallback } from '@clerk/nextjs'
+import { AuthenticateWithRedirectCallback } from '@clerk/react'
 import { useRouter } from 'next/router'
 
 const SIGNIN_RESUME_URL = '/signin?resume=1'

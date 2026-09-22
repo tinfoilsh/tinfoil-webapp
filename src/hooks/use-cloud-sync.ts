@@ -23,7 +23,7 @@ import {
 } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import { hasPasskeyBackup } from '@/utils/signout-cleanup'
-import { useAuth } from '@clerk/nextjs'
+import { useAuth } from '@clerk/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 export interface CloudSyncState {

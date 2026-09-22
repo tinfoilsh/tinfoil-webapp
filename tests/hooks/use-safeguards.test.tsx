@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   reset: vi.fn(),
 }))
 
-vi.mock('@clerk/nextjs', () => ({ useAuth: mocks.useAuth }))
+vi.mock('@clerk/react', () => ({ useAuth: mocks.useAuth }))
 vi.mock('@/services/safeguards', () => ({
   getSafeguardsServerSnapshot: vi.fn(),
   getSafeguardsSnapshot: vi.fn(),

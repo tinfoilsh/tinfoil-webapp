@@ -27,7 +27,7 @@ let userState: { user: { id: string } | null } = {
   user: null,
 }
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => authState,
   useUser: () => userState,
 }))

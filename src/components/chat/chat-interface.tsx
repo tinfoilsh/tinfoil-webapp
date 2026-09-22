@@ -46,7 +46,7 @@ import {
   invalidateSessionCache,
 } from '@/services/inference/tinfoil-client'
 import { generateTitle, getTitleContent } from '@/services/inference/title'
-import { useAuth, useUser } from '@clerk/nextjs'
+import { useAuth, useUser } from '@clerk/react'
 import {
   ArrowDownIcon,
   ChatBubbleLeftRightIcon,

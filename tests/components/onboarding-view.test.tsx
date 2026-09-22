@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   logError: vi.fn(),
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useUser: mocks.useUser,
 }))
 

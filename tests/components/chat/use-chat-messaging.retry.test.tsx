@@ -27,7 +27,7 @@ vi.mock('@/components/chat/genui/retry', async () => {
   }
 })
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useAuth: () => ({
     isSignedIn: false,
   }),

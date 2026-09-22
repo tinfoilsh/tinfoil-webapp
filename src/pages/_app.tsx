@@ -5,7 +5,9 @@ import { Toaster } from '@/components/ui/toaster'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { migrateStorageKeys } from '@/utils/storage-migration'
-import { ClerkProvider } from '@clerk/nextjs'
+import { Clerk } from '@clerk/clerk-js/no-rhc'
+import { ClerkProvider } from '@clerk/react'
+import { ui as clerkUi } from '@clerk/ui/no-rhc'
 import type { AppProps } from 'next/app'
 import localFont from 'next/font/local'
 import Head from 'next/head'
@@ -194,7 +196,13 @@ export default function App({ Component, pageProps, router }: AppProps) {
       <div
         className={`${aeonikFono.variable} ${aeonik.variable} ${openDyslexic.variable} ${lora.variable}`}
       >
+        {/* Bundled from npm (no-rhc): nothing fetched from clerk.tinfoil.sh at runtime. */}
         <ClerkProvider
+          Clerk={Clerk}
+          ui={clerkUi}
+          publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? ''}
+          routerPush={(to) => router.push(to)}
+          routerReplace={(to) => router.replace(to)}
           telemetry={false}
           afterSignOutUrl="/"
           signInUrl="/signin"

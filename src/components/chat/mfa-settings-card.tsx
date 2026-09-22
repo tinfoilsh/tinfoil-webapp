@@ -1,8 +1,8 @@
 import { cn } from '@/components/ui/utils'
 import { getClerkErrorMessage } from '@/utils/clerk-errors'
 import { logError, logWarning } from '@/utils/error-handling'
-import { useReverification, useUser } from '@clerk/nextjs'
-import { isReverificationCancelledError } from '@clerk/nextjs/errors'
+import { useReverification, useUser } from '@clerk/react'
+import { isReverificationCancelledError } from '@clerk/react/errors'
 import {
   ArrowDownTrayIcon,
   CheckCircleIcon,

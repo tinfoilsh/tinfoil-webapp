@@ -16,7 +16,7 @@ const clerkState = vi.hoisted(() => ({
   user: null as null | { id: string; publicMetadata: Record<string, unknown> },
 }))
 
-vi.mock('@clerk/nextjs', () => ({
+vi.mock('@clerk/react', () => ({
   useUser: () => clerkState,
 }))
 
