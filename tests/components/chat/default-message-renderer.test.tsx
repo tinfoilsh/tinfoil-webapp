@@ -2,7 +2,7 @@ import { DefaultMessageRenderer } from '@/components/chat/renderers/default/Defa
 import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import { ForwardIcon } from '@heroicons/react/24/outline'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const model = {
@@ -15,6 +15,9 @@ const model = {
 } satisfies BaseModel
 
 const Renderer = DefaultMessageRenderer.render
+
+const openMoreActions = () =>
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
 
 const renderMessage = (message: Message, hideActions = false) =>
   render(
@@ -203,7 +206,8 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+    openMoreActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete message' }))
     expect(onDeleteMessage).toHaveBeenCalledWith(3)
   })
 
@@ -241,8 +245,9 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
+    openMoreActions()
     fireEvent.click(
-      screen.getByRole('button', { name: 'Fork conversation from here' }),
+      screen.getByRole('menuitem', { name: 'Fork conversation from here' }),
     )
     expect(onForkMessage).toHaveBeenCalledWith(5)
   })
@@ -258,8 +263,9 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
+    openMoreActions()
     expect(
-      screen.queryByRole('button', { name: 'Fork conversation from here' }),
+      screen.queryByRole('menuitem', { name: 'Fork conversation from here' }),
     ).not.toBeInTheDocument()
   })
 
@@ -275,7 +281,8 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
-    const continueButton = screen.getByRole('button', {
+    openMoreActions()
+    const continueButton = screen.getByRole('menuitem', {
       name: 'Continue response',
     })
     const expectedIcon = render(<ForwardIcon />)
@@ -300,7 +307,8 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit response' }))
+    openMoreActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit response' }))
     const textarea = screen.getByRole('textbox', { name: 'Edit response' })
     fireEvent.change(textarea, { target: { value: 'Cleaned up answer' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -310,6 +318,60 @@ describe('DefaultMessageRenderer message actions', () => {
     expect(
       screen.queryByRole('textbox', { name: 'Edit response' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('returns focus to the more menu trigger after cancelling an edit', () => {
+    vi.useFakeTimers()
+    try {
+      render(
+        <Renderer
+          message={assistantMessage}
+          messageIndex={3}
+          model={model}
+          isDarkMode={false}
+          onEditAssistantMessage={vi.fn()}
+        />,
+      )
+
+      openMoreActions()
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Edit response' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      act(() => {
+        vi.runAllTimers()
+      })
+
+      expect(screen.getByRole('button', { name: 'More actions' })).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('supports arrow key navigation and tab dismissal in the more menu', () => {
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={3}
+        model={model}
+        isDarkMode={false}
+        onEditAssistantMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    )
+
+    openMoreActions()
+    const editItem = screen.getByRole('menuitem', { name: 'Edit response' })
+    const deleteItem = screen.getByRole('menuitem', { name: 'Delete message' })
+    editItem.focus()
+
+    fireEvent.keyDown(document, { key: 'ArrowDown' })
+    expect(deleteItem).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'ArrowDown' })
+    expect(editItem).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'ArrowUp' })
+    expect(deleteItem).toHaveFocus()
+
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
   it('does not offer edit or continue on rate limit errors', () => {
@@ -331,14 +393,15 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
+    openMoreActions()
     expect(
-      screen.queryByRole('button', { name: 'Edit response' }),
+      screen.queryByRole('menuitem', { name: 'Edit response' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: 'Continue response' }),
+      screen.queryByRole('menuitem', { name: 'Continue response' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Delete message' }),
+      screen.getByRole('menuitem', { name: 'Delete message' }),
     ).toBeInTheDocument()
   })
 })
