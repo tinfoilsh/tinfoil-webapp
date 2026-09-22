@@ -50,20 +50,29 @@ export const getPresetModelLabel = (
   models: BaseModel[],
 ): string => findSelectableModel(modelName, models)?.name ?? modelName
 
+export const PRESET_SETTING_UNSET_LABEL = 'No change'
+
+export type PresetSettingsSummary = {
+  model: string
+  webSearch: string
+}
+
 /**
- * Short human-readable summary of a preset's settings for the detail pane,
- * or null when the preset carries none.
+ * Human-readable values for a preset's chat settings in the detail pane.
+ * Unset settings read as "No change" so the pane always shows both rows.
  */
 export const describePresetSettings = (
   settings: PromptPresetSettings,
   models: BaseModel[],
-): string | null => {
-  const parts: string[] = []
-  if (settings.model !== undefined) {
-    parts.push(`Model: ${getPresetModelLabel(settings.model, models)}`)
-  }
-  if (settings.webSearchEnabled !== undefined) {
-    parts.push(`Web search: ${settings.webSearchEnabled ? 'on' : 'off'}`)
-  }
-  return parts.length > 0 ? parts.join(' · ') : null
-}
+): PresetSettingsSummary => ({
+  model:
+    settings.model === undefined
+      ? PRESET_SETTING_UNSET_LABEL
+      : getPresetModelLabel(settings.model, models),
+  webSearch:
+    settings.webSearchEnabled === undefined
+      ? PRESET_SETTING_UNSET_LABEL
+      : settings.webSearchEnabled
+        ? 'On'
+        : 'Off',
+})

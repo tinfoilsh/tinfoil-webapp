@@ -32,7 +32,10 @@ import {
   stripSystemTags,
   type PresetEditorState,
 } from './prompts/preset-editor'
-import { describePresetSettings } from './prompts/preset-settings'
+import {
+  describePresetSettings,
+  type PresetSettingsSummary,
+} from './prompts/preset-settings'
 import type { PromptPreset } from './prompts/types'
 
 type PromptLibraryModalProps = {
@@ -397,10 +400,11 @@ export function PromptLibraryModal({
                     <PresetDetail
                       key={selectedPreset.id}
                       preset={selectedPreset}
-                      settingsSummary={describePresetSettings(
-                        selectedPreset,
-                        models,
-                      )}
+                      settingsSummary={
+                        selectedPreset.isBuiltIn
+                          ? null
+                          : describePresetSettings(selectedPreset, models)
+                      }
                       isActive={activePresetId === selectedPreset.id}
                       isFavorite={isFavorite(selectedPreset.id)}
                       canAddFavorite={canAddFavorite}
@@ -453,7 +457,7 @@ export function PromptLibraryModal({
 
 type PresetDetailProps = {
   preset: PromptPreset
-  settingsSummary: string | null
+  settingsSummary: PresetSettingsSummary | null
   isActive: boolean
   isFavorite: boolean
   canAddFavorite: boolean
@@ -550,11 +554,6 @@ function PresetDetail({
             {preset.description && (
               <p className="mt-0.5 px-1.5 text-sm text-content-secondary">
                 {preset.description}
-              </p>
-            )}
-            {settingsSummary && (
-              <p className="mt-1 px-1.5 text-xs text-content-muted">
-                {settingsSummary}
               </p>
             )}
             <div className="mt-3 flex items-center px-1.5 md:hidden">
@@ -684,20 +683,37 @@ function PresetDetail({
         )}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col px-6 py-4">
-        <span
-          id={systemPromptLabelId}
-          className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted"
-        >
-          System prompt
-        </span>
-        <pre
-          tabIndex={0}
-          aria-labelledby={systemPromptLabelId}
-          className="flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-4 font-mono text-[13px] text-content-primary"
-        >
-          {preset.systemPrompt}
-        </pre>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <span
+            id={systemPromptLabelId}
+            className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted"
+          >
+            System prompt
+          </span>
+          <pre
+            tabIndex={0}
+            aria-labelledby={systemPromptLabelId}
+            className="min-h-[160px] flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-4 font-mono text-[13px] text-content-primary"
+          >
+            {preset.systemPrompt}
+          </pre>
+        </div>
+        {settingsSummary && (
+          <div className="flex flex-none flex-col">
+            <span className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted">
+              Chat settings
+            </span>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-4 py-3 text-sm">
+              <dt className="text-content-secondary">Model</dt>
+              <dd className="text-content-primary">{settingsSummary.model}</dd>
+              <dt className="text-content-secondary">Web search</dt>
+              <dd className="text-content-primary">
+                {settingsSummary.webSearch}
+              </dd>
+            </dl>
+          </div>
+        )}
       </div>
     </div>
   )

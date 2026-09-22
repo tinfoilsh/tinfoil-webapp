@@ -1,6 +1,7 @@
 import type { BaseModel } from '@/config/models'
 import {
   PRESET_SETTING_UNSET,
+  PRESET_SETTING_UNSET_LABEL,
   PRESET_WEB_SEARCH_OFF,
   PRESET_WEB_SEARCH_ON,
   getPresetModelOptions,
@@ -139,7 +140,9 @@ export function PresetEditor({
               onChange={(e) => handleModelChange(e.target.value)}
               className={FIELD_CLASS_NAME}
             >
-              <option value={PRESET_SETTING_UNSET}>No change</option>
+              <option value={PRESET_SETTING_UNSET}>
+                {PRESET_SETTING_UNSET_LABEL}
+              </option>
               {modelOptions.map((model) => (
                 <option key={model.modelName} value={model.modelName}>
                   {model.name}
@@ -158,7 +161,9 @@ export function PresetEditor({
               }
               className={FIELD_CLASS_NAME}
             >
-              <option value={PRESET_SETTING_UNSET}>No change</option>
+              <option value={PRESET_SETTING_UNSET}>
+                {PRESET_SETTING_UNSET_LABEL}
+              </option>
               <option value={PRESET_WEB_SEARCH_ON}>On</option>
               <option value={PRESET_WEB_SEARCH_OFF}>Off</option>
             </select>
