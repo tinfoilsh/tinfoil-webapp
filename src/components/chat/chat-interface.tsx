@@ -4396,8 +4396,10 @@ export function ChatInterface({
         />
       )}
 
-      {/* Prompt Library Modal */}
-      {hasMountedPromptLibrary && (
+      {/* Prompt Library Modal. Also mounted (closed) alongside Settings so its
+          lazy chunk is already loaded when Settings hands off to it; otherwise
+          the overlay drops for a frame while the chunk resolves. */}
+      {(hasMountedPromptLibrary || hasMountedSettingsModal) && (
         <PromptLibraryModalLazy
           isOpen={isPromptLibraryModalOpen}
           onClose={handleClosePromptLibrary}
