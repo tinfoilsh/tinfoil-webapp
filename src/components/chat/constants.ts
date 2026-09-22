@@ -44,6 +44,8 @@ export const CONSTANTS = {
   RECORDING_WAVEFORM_FFT_SIZE: 512,
   // Copy button timeout in milliseconds (2 seconds)
   COPY_TIMEOUT_MS: 2000,
+  // Gap between a message's overflow menu trigger and the dropdown
+  OVERFLOW_MENU_OFFSET_PX: 4,
   // Maximum width for table columns in pixels
   TABLE_COLUMN_MAX_WIDTH_PX: 300,
   // State update delay for async operations

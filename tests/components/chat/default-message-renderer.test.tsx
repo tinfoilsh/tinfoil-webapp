@@ -16,6 +16,9 @@ const model = {
 
 const Renderer = DefaultMessageRenderer.render
 
+const openMoreActions = () =>
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+
 const renderMessage = (message: Message, hideActions = false) =>
   render(
     <Renderer
@@ -203,7 +206,8 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+    openMoreActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete message' }))
     expect(onDeleteMessage).toHaveBeenCalledWith(3)
   })
 
@@ -241,8 +245,9 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
+    openMoreActions()
     fireEvent.click(
-      screen.getByRole('button', { name: 'Fork conversation from here' }),
+      screen.getByRole('menuitem', { name: 'Fork conversation from here' }),
     )
     expect(onForkMessage).toHaveBeenCalledWith(5)
   })
@@ -258,8 +263,9 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
+    openMoreActions()
     expect(
-      screen.queryByRole('button', { name: 'Fork conversation from here' }),
+      screen.queryByRole('menuitem', { name: 'Fork conversation from here' }),
     ).not.toBeInTheDocument()
   })
 
@@ -275,7 +281,8 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
-    const continueButton = screen.getByRole('button', {
+    openMoreActions()
+    const continueButton = screen.getByRole('menuitem', {
       name: 'Continue response',
     })
     const expectedIcon = render(<ForwardIcon />)
@@ -300,7 +307,8 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit response' }))
+    openMoreActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit response' }))
     const textarea = screen.getByRole('textbox', { name: 'Edit response' })
     fireEvent.change(textarea, { target: { value: 'Cleaned up answer' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -331,14 +339,15 @@ describe('DefaultMessageRenderer message actions', () => {
       />,
     )
 
+    openMoreActions()
     expect(
-      screen.queryByRole('button', { name: 'Edit response' }),
+      screen.queryByRole('menuitem', { name: 'Edit response' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: 'Continue response' }),
+      screen.queryByRole('menuitem', { name: 'Continue response' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Delete message' }),
+      screen.getByRole('menuitem', { name: 'Delete message' }),
     ).toBeInTheDocument()
   })
 })

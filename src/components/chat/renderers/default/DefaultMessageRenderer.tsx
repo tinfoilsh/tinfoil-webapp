@@ -26,6 +26,10 @@ import { isImeComposition } from '../../keyboard-utils'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
+import {
+  MessageOverflowMenu,
+  type MessageOverflowMenuItem,
+} from '../components/MessageOverflowMenu'
 import { ReadAloudButton } from '../components/ReadAloudButton'
 import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
@@ -277,6 +281,57 @@ const DefaultMessageComponent = ({
   }, [message.timestamp])
   const showAssistantFooter =
     !isUser && showMetadata && !(isStreaming && isLastMessage)
+
+  const assistantOverflowItems = React.useMemo<
+    MessageOverflowMenuItem[]
+  >(() => {
+    const items: MessageOverflowMenuItem[] = []
+    if (onContinueAssistantMessage && !isLimitError) {
+      items.push({
+        label: 'Continue',
+        ariaLabel: 'Continue response',
+        icon: <ForwardIcon className="h-4 w-4" aria-hidden="true" />,
+        onSelect: handleContinue,
+      })
+    }
+    if (onEditAssistantMessage && !isLimitError) {
+      items.push({
+        label: 'Edit',
+        ariaLabel: 'Edit response',
+        icon: <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />,
+        onSelect: handleStartEdit,
+        buttonRef: editButtonRef,
+      })
+    }
+    if (onForkMessage) {
+      items.push({
+        label: 'Fork from here',
+        ariaLabel: 'Fork conversation from here',
+        icon: <GitFork className="h-4 w-4" aria-hidden="true" />,
+        onSelect: handleFork,
+      })
+    }
+    if (onDeleteMessage) {
+      items.push({
+        label: 'Delete',
+        ariaLabel: 'Delete message',
+        icon: <TrashIcon className="h-4 w-4" aria-hidden="true" />,
+        onSelect: handleDelete,
+        destructive: true,
+      })
+    }
+    return items
+  }, [
+    onContinueAssistantMessage,
+    onEditAssistantMessage,
+    onForkMessage,
+    onDeleteMessage,
+    isLimitError,
+    handleContinue,
+    handleStartEdit,
+    handleFork,
+    handleDelete,
+  ])
 
   return (
     <div
@@ -894,66 +949,10 @@ const DefaultMessageComponent = ({
                     </span>
                   </div>
                 )}
-                {onContinueAssistantMessage && !isLimitError && (
-                  <div className="group/continue relative">
-                    <button
-                      onClick={handleContinue}
-                      aria-label="Continue response"
-                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
-                    >
-                      <ForwardIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/continue:opacity-100">
-                      Continue
-                    </span>
-                  </div>
-                )}
-                {onEditAssistantMessage && !isLimitError && (
-                  <div className="group/edit relative">
-                    <button
-                      ref={editButtonRef}
-                      onClick={handleStartEdit}
-                      aria-label="Edit response"
-                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
-                    >
-                      <PencilSquareIcon
-                        className="h-3.5 w-3.5"
-                        aria-hidden="true"
-                      />
-                    </button>
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
-                      Edit
-                    </span>
-                  </div>
-                )}
-                {onForkMessage && (
-                  <div className="group/fork relative">
-                    <button
-                      onClick={handleFork}
-                      aria-label="Fork conversation from here"
-                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
-                    >
-                      <GitFork className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100">
-                      Fork from here
-                    </span>
-                  </div>
-                )}
-                {onDeleteMessage && (
-                  <div className="group/delete relative">
-                    <button
-                      onClick={handleDelete}
-                      aria-label="Delete message"
-                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-red-500"
-                    >
-                      <TrashIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                    </button>
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100">
-                      Delete
-                    </span>
-                  </div>
-                )}
+                <MessageOverflowMenu
+                  isDarkMode={isDarkMode}
+                  items={assistantOverflowItems}
+                />
               </>
             )}
           </div>
