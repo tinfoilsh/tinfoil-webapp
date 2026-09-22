@@ -165,6 +165,7 @@ import {
   type ArtifactPreviewSidebarEventDetail,
 } from './genui/widgets/ArtifactPreview'
 import {
+  applyPresetSettingsToChat,
   canToggleTemporaryChat,
   createTemporaryChat,
   resolveWebSearchEnabled,
@@ -1299,20 +1300,28 @@ export function ChatInterface({
     if (previous === defaultPresetId) return
     const restamp = (chat: Chat): Chat =>
       chat.isBlankChat && chat.presetId === previous
-        ? { ...chat, presetId: defaultPresetId }
+        ? applyPresetSettingsToChat(
+            { ...chat, presetId: defaultPresetId },
+            defaultPreset,
+            models,
+          )
         : chat
     setChats((prev) => prev.map(restamp))
     setCurrentChat((prev) => restamp(prev))
-  }, [defaultPresetId, setChats, setCurrentChat])
+  }, [defaultPresetId, defaultPreset, models, setChats, setCurrentChat])
 
   const handleSetActivePreset = useCallback(
     (presetId: string | null) => {
       setActivePresetId(presetId)
       if (!currentChat) return
-      const updatedChat: Chat = {
-        ...currentChat,
-        presetId: presetId ?? undefined,
-      }
+      const updatedChat: Chat = applyPresetSettingsToChat(
+        {
+          ...currentChat,
+          presetId: presetId ?? undefined,
+        },
+        getPresetById(presetId),
+        models,
+      )
       setCurrentChat(updatedChat)
       // Blank chats share an empty id (one per storage mode), so also match
       // the mode to avoid rewriting the other blank entry.
@@ -1335,7 +1344,7 @@ export function ChatInterface({
         })
       }
     },
-    [currentChat, setCurrentChat, setChats, isSignedIn],
+    [currentChat, getPresetById, models, setCurrentChat, setChats, isSignedIn],
   )
 
   const handleOpenPromptLibrary = useCallback(() => {
@@ -2545,6 +2554,7 @@ export function ChatInterface({
       : null
     const tempChat = createTemporaryChat({
       presetId: currentChat?.presetId,
+      model: currentChat?.model,
       webSearchEnabled: currentChat?.webSearchEnabled,
       isLocalOnly: currentChat?.isLocalOnly,
     })

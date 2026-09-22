@@ -1,10 +1,12 @@
+import { isModelNameAvailable, type BaseModel } from '@/config/models'
 import { TEMPORARY_CHAT_TITLE } from '@/constants/chat'
 import { chatStorage } from '@/services/storage/chat-storage'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { sessionChatStorage } from '@/services/storage/session-storage'
 import { logError } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
-import { readDefaultPresetId } from '../prompts/default-preset'
+import { readDefaultPresetId, readUserPresets } from '../prompts/default-preset'
+import type { PromptPresetSettings } from '../prompts/types'
 import type { Chat, Message } from '../types'
 
 /**
@@ -18,20 +20,64 @@ import type { Chat, Message } from '../types'
  * changes later, and the user can still clear it for this chat alone.
  */
 export function createBlankChat(isLocalOnly = false): Chat {
-  return {
-    id: '', // Blank chats have no ID
-    title: 'New Chat',
-    titleState: 'placeholder',
-    messages: [],
-    createdAt: new Date(),
-    isBlankChat: true,
-    isLocalOnly,
-    presetId: readDefaultPresetId() ?? undefined,
+  const presetId = readDefaultPresetId() ?? undefined
+  return applyPresetSettingsToChat(
+    {
+      id: '', // Blank chats have no ID
+      title: 'New Chat',
+      titleState: 'placeholder',
+      messages: [],
+      createdAt: new Date(),
+      isBlankChat: true,
+      isLocalOnly,
+      presetId,
+    },
+    readUserPresetSettings(presetId),
+  )
+}
+
+/**
+ * Settings carried by a user preset, or null for built-ins and unknown ids
+ * (built-in presets never carry settings).
+ */
+export function readUserPresetSettings(
+  presetId: string | undefined,
+): PromptPresetSettings | null {
+  if (!presetId) return null
+  return readUserPresets().find((p) => p.id === presetId) ?? null
+}
+
+/**
+ * Stamps a preset's optional model and web search choice onto a chat. The
+ * settings are applied once, when the preset is selected, so the user can
+ * still change either for that chat afterwards. A model that is not in the
+ * catalog is skipped; when `models` is omitted (config not loaded yet) the
+ * model is stamped as is and `resolveChatModel` falls back at render time.
+ */
+export function applyPresetSettingsToChat(
+  chat: Chat,
+  settings: PromptPresetSettings | null | undefined,
+  models?: BaseModel[],
+): Chat {
+  if (!settings) return chat
+  const next = { ...chat }
+  if (
+    settings.model !== undefined &&
+    (models === undefined || isModelNameAvailable(settings.model, models))
+  ) {
+    next.model = settings.model
   }
+  if (settings.webSearchEnabled !== undefined) {
+    next.webSearchEnabled = settings.webSearchEnabled
+  }
+  return next
 }
 
 export function createTemporaryChat(
-  metadata: Pick<Chat, 'presetId' | 'webSearchEnabled' | 'isLocalOnly'> = {},
+  metadata: Pick<
+    Chat,
+    'presetId' | 'model' | 'webSearchEnabled' | 'isLocalOnly'
+  > = {},
 ): Chat {
   const { id } = generateReverseId()
   return {
