@@ -1,3 +1,4 @@
+import { isModelNameAvailable, type BaseModel } from '@/config/models'
 import {
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
@@ -39,7 +40,10 @@ export function isUserPromptPreset(value: unknown): value is UserPromptPreset {
     typeof p.description === 'string' &&
     typeof p.systemPrompt === 'string' &&
     typeof p.createdAt === 'number' &&
-    typeof p.updatedAt === 'number'
+    typeof p.updatedAt === 'number' &&
+    (p.model === undefined || typeof p.model === 'string') &&
+    (p.webSearchEnabled === undefined ||
+      typeof p.webSearchEnabled === 'boolean')
   )
 }
 
@@ -72,6 +76,33 @@ export function writeUserPresets(presets: UserPromptPreset[]): void {
       component: COMPONENT,
     })
   }
+}
+
+/**
+ * Clears the model choice from any user preset whose model is no longer in
+ * the catalog, so a retired model does not linger in prompt settings. The
+ * write goes through `writeUserPresets`, which notifies the profile sync so
+ * the cleanup reaches other devices. Returns the ids of the presets changed.
+ */
+export function pruneUnavailablePresetModels(models: BaseModel[]): string[] {
+  const presets = readUserPresets()
+  const prunedIds: string[] = []
+  const now = Date.now()
+  const next = presets.map((preset) => {
+    if (
+      preset.model === undefined ||
+      isModelNameAvailable(preset.model, models)
+    ) {
+      return preset
+    }
+    prunedIds.push(preset.id)
+    const { model: _unavailableModel, ...rest } = preset
+    return { ...rest, updatedAt: now }
+  })
+  if (prunedIds.length > 0) {
+    writeUserPresets(next)
+  }
+  return prunedIds
 }
 
 export function readDefaultPresetId(): string | null {

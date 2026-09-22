@@ -1,4 +1,5 @@
 import { cn } from '@/components/ui/utils'
+import type { BaseModel } from '@/config/models'
 import { acquireInteractionLock } from '@/utils/interaction-lock'
 import {
   ArrowLeftIcon,
@@ -31,6 +32,10 @@ import {
   stripSystemTags,
   type PresetEditorState,
 } from './prompts/preset-editor'
+import {
+  describePresetSettings,
+  type PresetSettingsSummary,
+} from './prompts/preset-settings'
 import type { PromptPreset } from './prompts/types'
 
 type PromptLibraryModalProps = {
@@ -38,6 +43,7 @@ type PromptLibraryModalProps = {
   onClose: () => void
   activePresetId: string | null
   onSelectPreset: (presetId: string | null) => void
+  models: BaseModel[]
   isSidebarOpen?: boolean
   isRightSidebarOpen?: boolean
 }
@@ -47,6 +53,7 @@ export function PromptLibraryModal({
   onClose,
   activePresetId,
   onSelectPreset,
+  models,
   isSidebarOpen = false,
   isRightSidebarOpen = false,
 }: PromptLibraryModalProps) {
@@ -123,14 +130,20 @@ export function PromptLibraryModal({
     setMobileView('detail')
   }
 
+  const toEditorState = (preset: PromptPreset): PresetEditorState => ({
+    mode: 'edit',
+    presetId: preset.id,
+    name: preset.name,
+    description: preset.description,
+    systemPrompt: stripSystemTags(preset.systemPrompt),
+    ...(preset.model !== undefined && { model: preset.model }),
+    ...(preset.webSearchEnabled !== undefined && {
+      webSearchEnabled: preset.webSearchEnabled,
+    }),
+  })
+
   const startEdit = (preset: PromptPreset) => {
-    setEditor({
-      mode: 'edit',
-      presetId: preset.id,
-      name: preset.name,
-      description: preset.description,
-      systemPrompt: stripSystemTags(preset.systemPrompt),
-    })
+    setEditor(toEditorState(preset))
     setMobileView('detail')
   }
 
@@ -138,13 +151,7 @@ export function PromptLibraryModal({
     const copy = duplicatePreset(preset.id)
     if (copy) {
       setSelectedId(copy.id)
-      setEditor({
-        mode: 'edit',
-        presetId: copy.id,
-        name: copy.name,
-        description: copy.description,
-        systemPrompt: stripSystemTags(copy.systemPrompt),
-      })
+      setEditor(toEditorState(copy))
       setMobileView('detail')
     }
   }
@@ -185,19 +192,18 @@ export function PromptLibraryModal({
     const promptWithTags = ensureSystemTags(editor.systemPrompt)
     if (!promptWithTags) return
 
+    const input = {
+      name,
+      description: editor.description.trim(),
+      systemPrompt: promptWithTags,
+      model: editor.model,
+      webSearchEnabled: editor.webSearchEnabled,
+    }
     if (editor.mode === 'create') {
-      const created = createUserPreset({
-        name,
-        description: editor.description.trim(),
-        systemPrompt: promptWithTags,
-      })
+      const created = createUserPreset(input)
       setSelectedId(created.id)
     } else if (editor.presetId) {
-      updateUserPreset(editor.presetId, {
-        name,
-        description: editor.description.trim(),
-        systemPrompt: promptWithTags,
-      })
+      updateUserPreset(editor.presetId, input)
       setSelectedId(editor.presetId)
     }
     setEditor(null)
@@ -336,7 +342,7 @@ export function PromptLibraryModal({
                 >
                   <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-8">
                     <div className="flex items-center justify-between px-4 pt-4">
-                      <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                      <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
                         Built-in
                       </span>
                     </div>
@@ -345,7 +351,7 @@ export function PromptLibraryModal({
                     </div>
 
                     <div className="mt-2 flex items-center justify-between px-4 pt-2">
-                      <span className="text-xs font-medium uppercase tracking-wide text-content-muted">
+                      <span className="text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
                         Your prompts
                       </span>
                       <button
@@ -379,6 +385,7 @@ export function PromptLibraryModal({
                   {editor ? (
                     <PresetEditor
                       editor={editor}
+                      models={models}
                       onChange={setEditor}
                       onCancel={() => {
                         setEditor(null)
@@ -393,6 +400,11 @@ export function PromptLibraryModal({
                     <PresetDetail
                       key={selectedPreset.id}
                       preset={selectedPreset}
+                      settingsSummary={
+                        selectedPreset.isBuiltIn
+                          ? null
+                          : describePresetSettings(selectedPreset, models)
+                      }
                       isActive={activePresetId === selectedPreset.id}
                       isFavorite={isFavorite(selectedPreset.id)}
                       canAddFavorite={canAddFavorite}
@@ -445,6 +457,7 @@ export function PromptLibraryModal({
 
 type PresetDetailProps = {
   preset: PromptPreset
+  settingsSummary: PresetSettingsSummary | null
   isActive: boolean
   isFavorite: boolean
   canAddFavorite: boolean
@@ -461,6 +474,7 @@ type PresetDetailProps = {
 
 function PresetDetail({
   preset,
+  settingsSummary,
   isActive,
   isFavorite,
   canAddFavorite,
@@ -555,7 +569,7 @@ function PresetDetail({
                 <button
                   type="button"
                   onClick={onUseThis}
-                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-brand-accent-dark px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90"
+                  className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-accent-blue px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-accent-blue-hover"
                 >
                   <SparklesIcon className="h-4 w-4" />
                   Use for this chat
@@ -580,7 +594,7 @@ function PresetDetail({
             <button
               type="button"
               onClick={onUseThis}
-              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-brand-accent-dark px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90 md:w-auto"
+              className="flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-tinfoil-accent-blue px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-tinfoil-accent-blue-hover md:w-auto"
             >
               <SparklesIcon className="h-4 w-4" />
               Use for this chat
@@ -669,20 +683,39 @@ function PresetDetail({
         )}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col px-6 py-4">
-        <span
-          id={systemPromptLabelId}
-          className="mb-2 text-xs font-medium uppercase tracking-wide text-content-muted"
-        >
-          System prompt
-        </span>
-        <pre
-          tabIndex={0}
-          aria-labelledby={systemPromptLabelId}
-          className="flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-4 font-mono text-[13px] text-content-primary"
-        >
-          {preset.systemPrompt}
-        </pre>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <span
+            id={systemPromptLabelId}
+            className="mb-2 text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light"
+          >
+            System prompt
+          </span>
+          <pre
+            tabIndex={0}
+            aria-labelledby={systemPromptLabelId}
+            className="min-h-[160px] flex-1 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-surface-chat-background p-4 font-mono text-[13px] text-content-primary"
+          >
+            {preset.systemPrompt}
+          </pre>
+        </div>
+        {settingsSummary && (
+          <div className="flex flex-none flex-col">
+            <span className="mb-2 text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
+              Chat settings
+            </span>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-4 py-3 text-sm">
+              <dt className="font-semibold text-content-primary">Model</dt>
+              <dd className="text-content-secondary">
+                {settingsSummary.model}
+              </dd>
+              <dt className="font-semibold text-content-primary">Web search</dt>
+              <dd className="text-content-secondary">
+                {settingsSummary.webSearch}
+              </dd>
+            </dl>
+          </div>
+        )}
       </div>
     </div>
   )

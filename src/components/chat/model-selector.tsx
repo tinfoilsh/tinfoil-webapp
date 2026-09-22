@@ -3,6 +3,7 @@ import {
   AUTO_INTELLIGENCE_LEVELS,
   getAutoIntelligenceLevel,
   getAutoModel,
+  getSelectableChatModels,
   isAutoModelId,
   resolveModelSelection,
   type AutoIntelligenceLevelId,
@@ -318,12 +319,7 @@ export function ModelSelector({
 
   // A deprecated model stays visible while it is the active selection so the
   // menu agrees with the trigger label for chats that already use it.
-  const displayModels = models.filter(
-    (model) =>
-      (model.type === 'chat' || model.type === 'code') &&
-      model.chat === true &&
-      (model.deprecated !== true || model.modelName === selectedModel),
-  )
+  const displayModels = getSelectableChatModels(models, selectedModel)
 
   const availableHeight = Number.parseInt(dynamicStyles.maxHeight, 10) || 0
   const fixedHeight =

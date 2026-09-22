@@ -1,4 +1,5 @@
 import {
+  applyPresetSettingsToChat,
   canToggleTemporaryChat,
   createBlankChat,
   createTemporaryChat,
@@ -6,8 +7,22 @@ import {
   upsertChatById,
 } from '@/components/chat/hooks/chat-operations'
 import type { Chat } from '@/components/chat/types'
-import { USER_PREFS_DEFAULT_PROMPT_PRESET_ID } from '@/constants/storage-keys'
+import type { BaseModel } from '@/config/models'
+import {
+  USER_PREFS_CUSTOM_PROMPT_PRESETS,
+  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
+} from '@/constants/storage-keys'
 import { beforeEach, describe, expect, it } from 'vitest'
+
+const chatModel = (modelName: string): BaseModel => ({
+  modelName,
+  image: '',
+  name: modelName,
+  nameShort: modelName,
+  description: '',
+  type: 'chat',
+  chat: true,
+})
 
 const createChat = (overrides: Partial<Chat> = {}): Chat => ({
   id: 'chat-1',
@@ -54,6 +69,77 @@ describe('createBlankChat', () => {
     localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'user:abc')
     expect(createBlankChat().presetId).toBe('user:abc')
     expect(createBlankChat(true).presetId).toBe('user:abc')
+  })
+
+  it('carries the default preset model and web search choice onto the chat', () => {
+    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'user:abc')
+    localStorage.setItem(
+      USER_PREFS_CUSTOM_PROMPT_PRESETS,
+      JSON.stringify([
+        {
+          id: 'user:abc',
+          name: 'Proofreader',
+          description: '',
+          systemPrompt: '<system>\nFix typos.\n</system>',
+          createdAt: 1,
+          updatedAt: 1,
+          model: 'gpt-oss-120b',
+          webSearchEnabled: false,
+        },
+      ]),
+    )
+
+    const chat = createBlankChat()
+
+    expect(chat.model).toBe('gpt-oss-120b')
+    expect(chat.webSearchEnabled).toBe(false)
+  })
+
+  it('leaves model and web search untouched for a default preset without settings', () => {
+    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'builtin:tutor')
+
+    const chat = createBlankChat()
+
+    expect(chat.model).toBeUndefined()
+    expect(chat.webSearchEnabled).toBeUndefined()
+  })
+})
+
+describe('applyPresetSettingsToChat', () => {
+  const chat = createChat({ model: 'existing-model', webSearchEnabled: true })
+
+  it('returns the chat unchanged when the preset carries no settings', () => {
+    expect(applyPresetSettingsToChat(chat, null)).toBe(chat)
+    expect(applyPresetSettingsToChat(chat, {})).toEqual(chat)
+  })
+
+  it('overrides only the settings the preset defines', () => {
+    expect(
+      applyPresetSettingsToChat(chat, { webSearchEnabled: false }),
+    ).toEqual({ ...chat, webSearchEnabled: false })
+    expect(applyPresetSettingsToChat(chat, { model: 'gpt-oss-120b' })).toEqual({
+      ...chat,
+      model: 'gpt-oss-120b',
+    })
+  })
+
+  it('skips a model that is not in the catalog', () => {
+    const result = applyPresetSettingsToChat(
+      chat,
+      { model: 'retired-model', webSearchEnabled: false },
+      [chatModel('gpt-oss-120b')],
+    )
+
+    expect(result.model).toBe('existing-model')
+    expect(result.webSearchEnabled).toBe(false)
+  })
+
+  it('applies the model when it is in the catalog', () => {
+    const result = applyPresetSettingsToChat(chat, { model: 'gpt-oss-120b' }, [
+      chatModel('gpt-oss-120b'),
+    ])
+
+    expect(result.model).toBe('gpt-oss-120b')
   })
 })
 

@@ -138,6 +138,8 @@ export const ProfileDataSchema = z
             systemPrompt: z.string(),
             createdAt: z.number(),
             updatedAt: z.number(),
+            model: z.string().optional(),
+            webSearchEnabled: z.boolean().optional(),
           })
           .passthrough(),
       )

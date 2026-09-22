@@ -169,6 +169,8 @@ describe('profile-settings-serializer', () => {
         systemPrompt: '<system>\nReview carefully.\n</system>',
         createdAt: 1,
         updatedAt: 2,
+        model: 'gpt-oss-120b',
+        webSearchEnabled: false,
       },
     ]
 
@@ -248,6 +250,8 @@ describe('profile-settings-serializer', () => {
         systemPrompt: '<system>\nTeach.\n</system>',
         createdAt: 3,
         updatedAt: 4,
+        model: 'auto',
+        webSearchEnabled: true,
       },
     ]
 
