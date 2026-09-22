@@ -22,11 +22,13 @@ import { BLANK_LOCAL_QUEUE_ID, isBlankQueueId } from '../message-queue-identity'
 import { readDefaultPresetId } from '../prompts/default-preset'
 import type { Chat, PendingRecoveryEnvelope } from '../types'
 import {
+  applyPresetSettingsToChat,
   createBlankChat,
   deleteChat as deleteChatFromStorage,
   ensureAtLeastOneChat,
   getBlankChat,
   loadChats,
+  readUserPresetSettings,
   sortChats,
 } from './chat-operations'
 import { ChatPersistenceManager } from './chat-persistence-manager'
@@ -583,17 +585,23 @@ export function useChatStorage({
         if (fromUserAction || currentChat.isBlankChat) {
           // A reused blank represents a fresh chat, so drop any per-chat
           // web search override left behind by an earlier visit and start
-          // from the user's current default prompt preset.
+          // from the user's current default prompt preset, including any
+          // model or web search choice that preset carries.
           const defaultPresetId = readDefaultPresetId() ?? undefined
+          const defaultPresetSettings = readUserPresetSettings(defaultPresetId)
           const freshBlank =
             blankChat.webSearchEnabled === undefined &&
-            blankChat.presetId === defaultPresetId
+            blankChat.presetId === defaultPresetId &&
+            !defaultPresetSettings
               ? blankChat
-              : {
-                  ...blankChat,
-                  webSearchEnabled: undefined,
-                  presetId: defaultPresetId,
-                }
+              : applyPresetSettingsToChat(
+                  {
+                    ...blankChat,
+                    webSearchEnabled: undefined,
+                    presetId: defaultPresetId,
+                  },
+                  defaultPresetSettings,
+                )
           if (freshBlank !== blankChat) {
             // Blank chats share an empty id, so match by mode to avoid
             // touching the other mode's blank entry.
