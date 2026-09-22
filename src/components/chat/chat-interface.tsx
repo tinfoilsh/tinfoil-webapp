@@ -723,6 +723,12 @@ export function ChatInterface({
   const { getPresetById, defaultPreset, userPresets } = usePromptLibrary()
   const activePreset = getPresetById(activePresetId)
 
+  // Catalog used to validate a preset's model before stamping it on a chat.
+  // Undefined until the controlplane has answered so a preset selected during
+  // startup is not rejected against an empty or stale cached list; the chat's
+  // model is then resolved lazily by resolveChatModel once models load.
+  const presetModelCatalog = hasAuthoritativeModels ? models : undefined
+
   // A preset may name a model the controlplane has since retired. Once the
   // authoritative catalog is in (not the cached seed, not the hardcoded dev
   // list), drop such models from the presets so they do not linger locally or
@@ -1324,12 +1330,18 @@ export function ChatInterface({
         ? applyPresetSettingsToChat(
             { ...chat, presetId: defaultPresetId },
             defaultPreset,
-            models,
+            presetModelCatalog,
           )
         : chat
     setChats((prev) => prev.map(restamp))
     setCurrentChat((prev) => restamp(prev))
-  }, [defaultPresetId, defaultPreset, models, setChats, setCurrentChat])
+  }, [
+    defaultPresetId,
+    defaultPreset,
+    presetModelCatalog,
+    setChats,
+    setCurrentChat,
+  ])
 
   const handleSetActivePreset = useCallback(
     (presetId: string | null) => {
@@ -1341,7 +1353,7 @@ export function ChatInterface({
           presetId: presetId ?? undefined,
         },
         getPresetById(presetId),
-        models,
+        presetModelCatalog,
       )
       setCurrentChat(updatedChat)
       // Blank chats share an empty id (one per storage mode), so also match
@@ -1365,7 +1377,14 @@ export function ChatInterface({
         })
       }
     },
-    [currentChat, getPresetById, models, setCurrentChat, setChats, isSignedIn],
+    [
+      currentChat,
+      getPresetById,
+      presetModelCatalog,
+      setCurrentChat,
+      setChats,
+      isSignedIn,
+    ],
   )
 
   const handleOpenPromptLibrary = useCallback(() => {
