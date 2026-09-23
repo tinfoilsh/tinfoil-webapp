@@ -194,6 +194,36 @@ describe('code previews', () => {
     },
   )
 
+  it.each([
+    { reason: 'too many lines', output: Array(1001).fill('a') },
+    { reason: 'too many characters', output: ['a'.repeat(100_001)] },
+    { reason: 'invalid output', output: { text: 'Unexpected' } },
+  ])('finishes loading Python after $reason', ({ output }) => {
+    const { getByRole, getByTitle, queryByText } = render(
+      <CodeBlock code={'print("ready")\nprint("done")'} language="python" />,
+    )
+    fireEvent.click(getByRole('button', { name: 'Run' }))
+    const frame = getByTitle('Python preview') as HTMLIFrameElement
+    expect(queryByText('Loading Python...')).not.toBeNull()
+
+    previewMessage(frame, 'python-preview-output', {
+      instanceId: 'another-preview',
+      output,
+    })
+    expect(queryByText('Loading Python...')).not.toBeNull()
+
+    previewMessage(frame, 'python-preview-output', { output })
+    expect(queryByText('Loading Python...')).toBeNull()
+    expect(queryByText('No output')).not.toBeNull()
+
+    previewMessage(frame, 'python-preview-output', { output: ['Ready'] })
+    previewMessage(frame, 'python-preview-loading', {})
+    expect(queryByText('Loading Python...')).not.toBeNull()
+    previewMessage(frame, 'python-preview-output', { output })
+    expect(queryByText('Loading Python...')).toBeNull()
+    expect(queryByText('Ready')).not.toBeNull()
+  })
+
   it.each(['html', 'css'])('bounds %s preview heights', (language) => {
     const code =
       language === 'html'

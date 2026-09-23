@@ -554,12 +554,11 @@ parent.postMessage({ type: 'python-preview-output', instanceId: '${instanceId}',
       if (event.data?.type === 'python-preview-loading') {
         setIsLoading(true)
       }
-      if (
-        event.data?.type === 'python-preview-output' &&
-        isPreviewOutput(event.data.output)
-      ) {
-        setOutput(event.data.output)
+      if (event.data?.type === 'python-preview-output') {
         setIsLoading(false)
+        if (isPreviewOutput(event.data.output)) {
+          setOutput(event.data.output)
+        }
       }
     }
     window.addEventListener('message', handleMessage)
