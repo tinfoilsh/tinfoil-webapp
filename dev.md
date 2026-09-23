@@ -186,3 +186,36 @@ The `logs/` directory is gitignored.
 - **Port 8090 unavailable:** only optional local-router models fail. Dev Simulator still works.
 - **Safeguard command asks for sign-in:** authenticate with Clerk locally.
 - **Stale mock flags:** send `reset safeguards` from an unflagged chat or restart `dev:backend`.
+
+## Releases
+
+Releases use a two-step local command so package versions are committed before the matching tag is created. Start with a clean `main` branch and an authenticated GitHub CLI (`gh auth status`).
+
+### 1. Prepare the version
+
+```bash
+git switch main
+npm run release -- prepare 1.0.3
+```
+
+The command:
+
+1. Updates `package.json` and `package-lock.json`.
+2. Creates and pushes a release branch.
+3. Opens a version pull request.
+4. Verifies the pull request head and immediately squash-merges it.
+
+The merge does not wait for CI checks. If it fails, the command prints the pull request URL and a manual recovery command.
+
+### 2. Publish the tag
+
+After preparation finishes, publish the same version:
+
+```bash
+git switch main
+npm run release -- publish 1.0.3
+```
+
+This updates local `main`, verifies the committed package version, creates one annotated tag, and pushes only that tag. The tag push starts the GitHub workflow that publishes the release and generated release notes.
+
+Do not use `git push --tags`; GitHub does not emit workflow events when more than three tags are pushed together. If a valid tag misses its release, run the **Create Release** workflow manually with that tag.
