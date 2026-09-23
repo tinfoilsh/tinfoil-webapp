@@ -558,6 +558,8 @@ parent.postMessage({ type: 'python-preview-output', instanceId: '${instanceId}',
         setIsLoading(false)
         if (isPreviewOutput(event.data.output)) {
           setOutput(event.data.output)
+        } else {
+          setOutput([])
         }
       }
     }

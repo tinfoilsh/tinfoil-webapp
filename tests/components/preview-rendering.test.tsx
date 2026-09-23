@@ -175,8 +175,14 @@ describe('code previews', () => {
         Array(1001).fill('a'),
         ['a'.repeat(100_001)],
       ]) {
+        previewMessage(frame, type, { output: ['Ready'] })
         previewMessage(frame, type, { output })
-        expect(queryByText('Ready')).not.toBeNull()
+        if (language === 'python') {
+          expect(queryByText('Ready')).toBeNull()
+          expect(queryByText('No output')).not.toBeNull()
+        } else {
+          expect(queryByText('Ready')).not.toBeNull()
+        }
       }
       previewMessage(frame, type, {
         instanceId: 'another-preview',
@@ -199,7 +205,7 @@ describe('code previews', () => {
     { reason: 'too many characters', output: ['a'.repeat(100_001)] },
     { reason: 'invalid output', output: { text: 'Unexpected' } },
   ])('finishes loading Python after $reason', ({ output }) => {
-    const { getByRole, getByTitle, queryByText } = render(
+    const { getByRole, getByTitle, queryByText, rerender } = render(
       <CodeBlock code={'print("ready")\nprint("done")'} language="python" />,
     )
     fireEvent.click(getByRole('button', { name: 'Run' }))
@@ -217,11 +223,25 @@ describe('code previews', () => {
     expect(queryByText('No output')).not.toBeNull()
 
     previewMessage(frame, 'python-preview-output', { output: ['Ready'] })
+    expect(queryByText('Ready')).not.toBeNull()
+    const previousSrc = frame.src
+    rerender(
+      <CodeBlock code={'print("next run")\nprint("done")'} language="python" />,
+    )
+    expect(getByTitle('Python preview')).toBe(frame)
+    expect(frame.src).not.toBe(previousSrc)
     previewMessage(frame, 'python-preview-loading', {})
     expect(queryByText('Loading Python...')).not.toBeNull()
     previewMessage(frame, 'python-preview-output', { output })
     expect(queryByText('Loading Python...')).toBeNull()
-    expect(queryByText('Ready')).not.toBeNull()
+    expect(queryByText('Ready')).toBeNull()
+    expect(queryByText('No output')).not.toBeNull()
+
+    previewMessage(frame, 'python-preview-output', {
+      output: ['Latest result'],
+    })
+    expect(queryByText('Latest result')).not.toBeNull()
+    expect(queryByText('No output')).toBeNull()
   })
 
   it.each(['html', 'css'])('bounds %s preview heights', (language) => {
