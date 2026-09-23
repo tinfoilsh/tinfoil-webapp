@@ -31,8 +31,17 @@ async function loadPlugins(): Promise<PluginState> {
     import('rehype-katex'),
     import('remark-breaks'),
     import('rehype-raw'),
+    import('rehype-sanitize'),
   ])
-    .then(([remarkMathMod, rehypeKatexMod, remarkBreaksMod, rehypeRawMod]) => {
+    .then((plugins) => {
+      const [
+        remarkMathMod,
+        rehypeKatexMod,
+        remarkBreaksMod,
+        rehypeRawMod,
+        rehypeSanitizeMod,
+      ] = plugins
+      const { defaultSchema } = rehypeSanitizeMod
       cachedPlugins = {
         remarkPlugins: [
           [remarkMathMod.default, { singleDollarTextMath: false }],
@@ -41,6 +50,18 @@ async function loadPlugins(): Promise<PluginState> {
         ],
         rehypePlugins: [
           rehypeRawMod.default,
+          [
+            rehypeSanitizeMod.default,
+            {
+              ...defaultSchema,
+              attributes: {
+                ...defaultSchema.attributes,
+                code: [
+                  ['className', /^language-./, 'math-inline', 'math-display'],
+                ],
+              },
+            },
+          ],
           [
             rehypeKatexMod.default,
             {

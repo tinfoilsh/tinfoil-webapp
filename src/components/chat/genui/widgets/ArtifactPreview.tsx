@@ -246,7 +246,7 @@ function FocusableIframe({
       title={title}
       src={src}
       srcDoc={srcDoc}
-      sandbox="allow-forms allow-modals allow-popups allow-scripts"
+      sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       className={className}
       onLoad={shouldAutoFocus ? focusIframe : undefined}
