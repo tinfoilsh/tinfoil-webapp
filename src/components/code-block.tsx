@@ -1,6 +1,6 @@
+import { SvgPreview } from '@/components/preview/svg-preview'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
-import DOMPurify from 'isomorphic-dompurify'
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
@@ -76,6 +76,12 @@ const PYODIDE_CDN_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.27.0/full/'
 
 const createIframeDataUrl = (html: string): string =>
   `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+
+const isPreviewOutput = (value: unknown): value is string[] =>
+  Array.isArray(value) &&
+  value.length <= 1000 &&
+  value.every((line) => typeof line === 'string') &&
+  value.reduce((size, line) => size + line.length, 0) <= 100_000
 
 const DARK_THEME = {
   ...oneDark,
@@ -274,20 +280,6 @@ const PreviewContainer = ({
   </div>
 )
 
-const SvgPreview = ({ code }: { code: string }) => {
-  const sanitizedSvg = DOMPurify.sanitize(code, {
-    USE_PROFILES: { svg: true, svgFilters: true },
-    ADD_TAGS: ['style'],
-  })
-
-  return (
-    <div
-      className="flex w-full items-center justify-center [&>svg]:h-auto [&>svg]:max-h-[400px] [&>svg]:w-full [&>svg]:max-w-full"
-      dangerouslySetInnerHTML={{ __html: sanitizedSvg }}
-    />
-  )
-}
-
 const HtmlPreview = ({ code }: { code: string }) => {
   const [height, setHeight] = useState(100)
   const instanceId = useId()
@@ -300,9 +292,10 @@ const HtmlPreview = ({ code }: { code: string }) => {
       }
       if (
         event.data?.type === 'html-preview-height' &&
-        event.data?.instanceId === instanceId
+        event.data?.instanceId === instanceId &&
+        Number.isFinite(event.data.height)
       ) {
-        setHeight(event.data.height)
+        setHeight(Math.min(2000, Math.max(100, event.data.height)))
       }
     }
     window.addEventListener('message', handleMessage)
@@ -310,9 +303,7 @@ const HtmlPreview = ({ code }: { code: string }) => {
   }, [instanceId])
 
   const iframeSrc = useMemo(() => {
-    // CSP blocks network requests (fetch, XHR, WebSocket, etc.)
-    // Data URL ensures complete CSP isolation from parent page (null origin)
-    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data:;">`
+    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none';">`
 
     const heightReporter = `
 <script>
@@ -326,14 +317,7 @@ new MutationObserver(reportHeight).observe(document.body, { childList: true, sub
 setTimeout(reportHeight, 100);
 </script>`
 
-    let html
-    if (code.includes('<head>')) {
-      html = code.replace('<head>', `<head>${csp}`) + heightReporter
-    } else if (code.includes('</head>')) {
-      html = code.replace('</head>', `${csp}${heightReporter}</head>`)
-    } else {
-      html = `${csp}${code}${heightReporter}`
-    }
+    const html = `<!DOCTYPE html><html><head>${csp}</head><body>${code}${heightReporter}</body></html>`
     return createIframeDataUrl(html)
   }, [code, instanceId])
 
@@ -344,6 +328,7 @@ setTimeout(reportHeight, 100);
       className="w-full rounded border-0"
       style={{ height: `${height}px`, minHeight: '100px' }}
       sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
       title="HTML preview"
     />
   )
@@ -411,12 +396,12 @@ const JavaScriptPreview = ({ code }: { code: string }) => {
   const iframeSrc = useMemo(() => {
     const strippedCode = stripModuleSyntax(code)
     const jsonEscapedCode = JSON.stringify(strippedCode).replace(
-      /<\/script>/gi,
-      '<\\/script>',
+      /</g,
+      '\\u003c',
     )
 
     // CSP blocks network requests (fetch, XHR, WebSocket, etc.)
-    // Data URL ensures complete CSP isolation from parent page (null origin)
+    // The sandbox gives the preview an opaque origin.
     const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -452,7 +437,8 @@ parent.postMessage({ type: 'js-preview-output', instanceId: '${instanceId}', out
       }
       if (
         event.data?.type === 'js-preview-output' &&
-        event.data?.instanceId === instanceId
+        event.data?.instanceId === instanceId &&
+        isPreviewOutput(event.data.output)
       ) {
         setOutput(event.data.output)
       }
@@ -497,10 +483,7 @@ const PythonPreview = ({ code }: { code: string }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   const iframeSrc = useMemo(() => {
-    const jsonEscapedCode = JSON.stringify(code).replace(
-      /<\/script>/gi,
-      '<\\/script>',
-    )
+    const jsonEscapedCode = JSON.stringify(code).replace(/</g, '\\u003c')
 
     // CSP allows loading Pyodide from CDN
     // Data URL ensures isolation from parent page
@@ -571,7 +554,10 @@ parent.postMessage({ type: 'python-preview-output', instanceId: '${instanceId}',
       if (event.data?.type === 'python-preview-loading') {
         setIsLoading(true)
       }
-      if (event.data?.type === 'python-preview-output') {
+      if (
+        event.data?.type === 'python-preview-output' &&
+        isPreviewOutput(event.data.output)
+      ) {
         setOutput(event.data.output)
         setIsLoading(false)
       }
@@ -814,9 +800,10 @@ const CssPreview = ({ code }: { code: string }) => {
       }
       if (
         event.data?.type === 'css-preview-height' &&
-        event.data?.instanceId === instanceId
+        event.data?.instanceId === instanceId &&
+        Number.isFinite(event.data.height)
       ) {
-        setHeight(event.data.height)
+        setHeight(Math.min(2000, Math.max(150, event.data.height)))
       }
     }
     window.addEventListener('message', handleMessage)
@@ -825,7 +812,7 @@ const CssPreview = ({ code }: { code: string }) => {
 
   const iframeSrc = useMemo(() => {
     const escapedCode = code.replace(/<\//g, '<\\/')
-    // Data URL ensures complete CSP isolation from parent page (null origin)
+    // The sandbox gives the preview an opaque origin.
     const html = `<!DOCTYPE html>
 <html>
 <head>
