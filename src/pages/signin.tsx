@@ -1,8 +1,8 @@
 'use client'
 
+import { LegalConsent } from '@/components/legal-consent'
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
-import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { getClerkErrorMessage } from '@/utils/clerk-errors'
 import { logError } from '@/utils/error-handling'
 import { sanitizeRelativeRedirect } from '@/utils/redirect-url'
@@ -22,6 +22,8 @@ const SUPPORTED_MISSING_FIELDS = new Set([
   'legal_accepted',
 ])
 const AUTH_ERROR_MESSAGE = 'Something went wrong. Please try again.'
+const LEGAL_CONSENT_REQUIRED_MESSAGE =
+  'Please confirm that you have read and agree to the Terms of Service and Privacy Policy.'
 const UNSUPPORTED_REQUIREMENTS_MESSAGE =
   'Your account needs additional setup. Please contact support.'
 
@@ -70,6 +72,7 @@ export default function SignInPage({
   const [lastName, setLastName] = useState('')
   const [password, setPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [legalAccepted, setLegalAccepted] = useState(false)
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [emailMfaAvailable, setEmailMfaAvailable] = useState(false)
@@ -133,21 +136,6 @@ export default function SignInPage({
     if (missingFields.some((field) => !SUPPORTED_MISSING_FIELDS.has(field))) {
       setErrorMessage(UNSUPPORTED_REQUIREMENTS_MESSAGE)
       return
-    }
-
-    if (
-      missingFields.length === 1 &&
-      missingFields.includes('legal_accepted')
-    ) {
-      const { error } = await signUp.update({ legalAccepted: true })
-      if (error) {
-        setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
-        return
-      }
-      if (signUp.status === 'complete') {
-        await finalizeSignUp()
-        return
-      }
     }
 
     setStep('details')
@@ -237,6 +225,10 @@ export default function SignInPage({
   const handleSocialSignIn = async (
     strategy: 'oauth_google' | 'oauth_apple',
   ) => {
+    if (mode === 'signup' && !legalAccepted) {
+      setErrorMessage(LEGAL_CONSENT_REQUIRED_MESSAGE)
+      return
+    }
     const provider = strategy === 'oauth_google' ? 'google' : 'apple'
     await runAuthAction(
       provider,
@@ -249,11 +241,14 @@ export default function SignInPage({
           postAuthRedirectUrl === POST_AUTH_REDIRECT_URL
             ? SSO_CALLBACK_URL
             : `${SSO_CALLBACK_URL}?redirect_url=${encodeURIComponent(postAuthRedirectUrl)}`
-        const { error } = await (mode === 'signup' ? signUp : signIn).sso({
+        const params = {
           strategy,
           redirectCallbackUrl,
           redirectUrl: postAuthRedirectUrl,
-        })
+        }
+        const { error } = await (mode === 'signup'
+          ? signUp.sso({ ...params, legalAccepted })
+          : signIn.sso(params))
         if (error) {
           setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
         }
@@ -263,6 +258,10 @@ export default function SignInPage({
 
   const handleEmailSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (mode === 'signup' && !legalAccepted) {
+      setErrorMessage(LEGAL_CONSENT_REQUIRED_MESSAGE)
+      return
+    }
     await runAuthAction(
       'email',
       mode === 'signup' ? 'Could not create account' : 'Could not sign in',
@@ -274,6 +273,7 @@ export default function SignInPage({
             password,
             firstName: firstName || undefined,
             lastName: lastName || undefined,
+            legalAccepted,
           })
           if (error) {
             setErrorMessage(getClerkErrorMessage(error, AUTH_ERROR_MESSAGE))
@@ -435,6 +435,10 @@ export default function SignInPage({
 
   const handleDetailsSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (signUp.missingFields.includes('legal_accepted') && !legalAccepted) {
+      setErrorMessage(LEGAL_CONSENT_REQUIRED_MESSAGE)
+      return
+    }
     await runAuthAction(
       'details',
       'Could not complete sign-up',
@@ -448,7 +452,7 @@ export default function SignInPage({
             ? lastName
             : undefined,
           legalAccepted: signUp.missingFields.includes('legal_accepted')
-            ? true
+            ? legalAccepted
             : undefined,
         })
         if (error) {
@@ -546,7 +550,7 @@ export default function SignInPage({
   // instead of dropping the user on the blank email form.
   const resumeAttemptedRef = useRef(false)
   useEffect(() => {
-    if (!router.isReady || router.query.resume !== '1') return
+    if (!router.isReady || !clerk.loaded || router.query.resume !== '1') return
     if (resumeAttemptedRef.current) return
 
     if (
@@ -605,7 +609,7 @@ export default function SignInPage({
       )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, router.query.resume, signIn, signUp])
+  }, [clerk.loaded, router.isReady, router.query.resume, signIn, signUp])
 
   const startOver = () => {
     signIn.reset()
@@ -613,6 +617,7 @@ export default function SignInPage({
     setCode('')
     setPassword('')
     setNewPassword('')
+    setLegalAccepted(false)
     setErrorMessage(null)
     setVerificationKind('primary')
     setEmailMfaAvailable(false)
@@ -667,7 +672,7 @@ export default function SignInPage({
                 ? 'Sign up with Google, Apple, or email'
                 : 'Sign in with Google, Apple, or email'
               : step === 'details'
-                ? 'Your email is verified'
+                ? 'Complete the required information below'
                 : step === 'reset-email'
                   ? 'Enter the email address for your account'
                   : step === 'reset-password'
@@ -682,12 +687,21 @@ export default function SignInPage({
 
         {step === 'email' && (
           <>
+            {mode === 'signup' && (
+              <div className="mb-6">
+                <LegalConsent
+                  checked={legalAccepted}
+                  disabled={isPending}
+                  onChange={setLegalAccepted}
+                />
+              </div>
+            )}
             <div className="space-y-3">
               <Button
                 type="button"
                 variant="landingOutline"
                 size="landing"
-                disabled={isPending}
+                disabled={isPending || (mode === 'signup' && !legalAccepted)}
                 onClick={() => handleSocialSignIn('oauth_google')}
                 className="w-full"
               >
@@ -702,7 +716,7 @@ export default function SignInPage({
                 type="button"
                 variant="landingOutline"
                 size="landing"
-                disabled={isPending}
+                disabled={isPending || (mode === 'signup' && !legalAccepted)}
                 onClick={() => handleSocialSignIn('oauth_apple')}
                 className="w-full"
               >
@@ -811,7 +825,7 @@ export default function SignInPage({
                 variant="solid"
                 size="landing"
                 chevron
-                disabled={isPending}
+                disabled={isPending || (mode === 'signup' && !legalAccepted)}
                 className="w-full"
               >
                 {pendingAction === 'email' && (
@@ -1063,12 +1077,23 @@ export default function SignInPage({
                 />
               </div>
             )}
+            {signUp.missingFields.includes('legal_accepted') && (
+              <LegalConsent
+                checked={legalAccepted}
+                disabled={isPending}
+                onChange={setLegalAccepted}
+              />
+            )}
             <Button
               type="submit"
               variant="solid"
               size="landing"
               chevron
-              disabled={isPending}
+              disabled={
+                isPending ||
+                (signUp.missingFields.includes('legal_accepted') &&
+                  !legalAccepted)
+              }
               className="w-full"
             >
               {pendingAction === 'details' && (
@@ -1083,7 +1108,8 @@ export default function SignInPage({
           signInErrors.fields.identifier ||
           signInErrors.fields.code ||
           signUpErrors.fields.emailAddress ||
-          signUpErrors.fields.password) && (
+          signUpErrors.fields.password ||
+          signUpErrors.fields.legalAccepted) && (
           <p
             id="auth-error"
             role="alert"
@@ -1093,31 +1119,10 @@ export default function SignInPage({
               signInErrors.fields.identifier?.longMessage ||
               signInErrors.fields.code?.longMessage ||
               signUpErrors.fields.emailAddress?.longMessage ||
-              signUpErrors.fields.password?.longMessage}
+              signUpErrors.fields.password?.longMessage ||
+              signUpErrors.fields.legalAccepted?.longMessage}
           </p>
         )}
-
-        <p className="mt-8 text-balance text-center text-xs leading-relaxed text-content-muted">
-          By continuing, you agree to our{' '}
-          <a
-            href={TERMS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline transition-colors hover:text-content-primary"
-          >
-            Terms
-          </a>{' '}
-          and acknowledge our{' '}
-          <a
-            href={PRIVACY_POLICY_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline transition-colors hover:text-content-primary"
-          >
-            Privacy Policy
-          </a>
-          .
-        </p>
 
         <div id="clerk-captcha" />
       </section>

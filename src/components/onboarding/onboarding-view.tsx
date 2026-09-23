@@ -1,11 +1,7 @@
 import { Logo } from '@/components/logo'
 import { Button } from '@/components/ui/button'
 import { GridTexture } from '@/components/ui/grid-texture'
-import {
-  PRIVACY_POLICY_URL,
-  SAFEGUARDS_INFO_URL,
-  TERMS_URL,
-} from '@/constants/external-links'
+import { SAFEGUARDS_INFO_URL } from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/react'
@@ -137,27 +133,6 @@ export function OnboardingView({
           </div>
         </div>
       </div>
-
-      <p className="relative z-10 text-balance px-6 pb-4 text-center text-sm text-content-muted">
-        By continuing, you agree to our{' '}
-        <a
-          href={TERMS_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-brand-accent-dark underline underline-offset-2 hover:opacity-80 dark:text-brand-accent-light"
-        >
-          Terms
-        </a>{' '}
-        and have read our{' '}
-        <a
-          href={PRIVACY_POLICY_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-brand-accent-dark underline underline-offset-2 hover:opacity-80 dark:text-brand-accent-light"
-        >
-          Privacy Policy
-        </a>
-      </p>
     </motion.div>
   )
 }
