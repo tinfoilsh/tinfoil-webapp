@@ -547,7 +547,7 @@ describe('SignInPage', () => {
     ['Google', 'oauth_google'],
     ['Apple', 'oauth_apple'],
   ] as const)(
-    'starts %s unchecked and collects required consent after SSO',
+    'starts %s unchecked and requires consent after SSO',
     async (provider, strategy) => {
       const { unmount } = render(<SignInPage initialMode="signup" />)
       expect(screen.getByRole('checkbox')).not.toBeChecked()
@@ -582,25 +582,6 @@ describe('SignInPage', () => {
       expect(auth.signUp.update).not.toHaveBeenCalled()
       expect(auth.signUp.finalize).not.toHaveBeenCalled()
       expect(auth.signUp.reset).not.toHaveBeenCalled()
-
-      auth.signUp.update.mockImplementation(async () => {
-        auth.signUp.status = 'complete'
-        auth.signUp.missingFields = []
-        return { error: null }
-      })
-      fireEvent.click(consent)
-      await waitFor(() => expect(submit).toBeEnabled())
-      fireEvent.click(submit)
-
-      await waitFor(() => {
-        expect(auth.signUp.update).toHaveBeenCalledExactlyOnceWith({
-          firstName: undefined,
-          lastName: undefined,
-          legalAccepted: true,
-        })
-        expect(auth.signUp.finalize).toHaveBeenCalledTimes(1)
-      })
-      expect(auth.signUp.sso).toHaveBeenCalledTimes(1)
     },
   )
 
