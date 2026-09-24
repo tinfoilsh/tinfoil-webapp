@@ -1,5 +1,11 @@
 import SignInPage from '@/pages/signin'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const auth = vi.hoisted(() => {
@@ -537,21 +543,85 @@ describe('SignInPage', () => {
     },
   )
 
-  it('requires an unchecked consent box for every sign-up method', () => {
+  it.each([
+    ['Google', 'oauth_google'],
+    ['Apple', 'oauth_apple'],
+  ] as const)(
+    'starts %s unchecked and collects required consent after SSO',
+    async (provider, strategy) => {
+      const { unmount } = render(<SignInPage initialMode="signup" />)
+      expect(screen.getByRole('checkbox')).not.toBeChecked()
+      const providerButton = screen.getByRole('button', {
+        name: `Continue with ${provider}`,
+      })
+      expect(providerButton).toBeEnabled()
+      fireEvent.click(providerButton)
+
+      await waitFor(() => {
+        expect(auth.signUp.sso).toHaveBeenCalledExactlyOnceWith({
+          strategy,
+          redirectCallbackUrl: '/sso-callback',
+          redirectUrl: '/',
+          legalAccepted: false,
+        })
+      })
+      expect(auth.signUp.password).not.toHaveBeenCalled()
+      expect(auth.signUp.finalize).not.toHaveBeenCalled()
+      unmount()
+
+      auth.router.query = { resume: '1' }
+      auth.signUp.id = 'social-sign-up'
+      auth.signUp.missingFields = ['legal_accepted']
+      render(<SignInPage />)
+
+      await screen.findByRole('heading', { name: 'Complete your account' })
+      const consent = screen.getByRole('checkbox')
+      const submit = screen.getByRole('button', { name: 'Create account' })
+      expect(consent).not.toBeChecked()
+      expect(submit).toBeDisabled()
+      expect(auth.signUp.update).not.toHaveBeenCalled()
+      expect(auth.signUp.finalize).not.toHaveBeenCalled()
+      expect(auth.signUp.reset).not.toHaveBeenCalled()
+
+      auth.signUp.update.mockImplementation(async () => {
+        auth.signUp.status = 'complete'
+        auth.signUp.missingFields = []
+        return { error: null }
+      })
+      fireEvent.click(consent)
+      await waitFor(() => expect(submit).toBeEnabled())
+      fireEvent.click(submit)
+
+      await waitFor(() => {
+        expect(auth.signUp.update).toHaveBeenCalledExactlyOnceWith({
+          firstName: undefined,
+          lastName: undefined,
+          legalAccepted: true,
+        })
+        expect(auth.signUp.finalize).toHaveBeenCalledTimes(1)
+      })
+      expect(auth.signUp.sso).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('keeps the email consent checkbox separate from SSO buttons', () => {
     render(<SignInPage initialMode="signup" />)
 
     const consent = screen.getByRole('checkbox', {
       name: /I have read and agree to the Terms of Service and Privacy Policy/,
     })
     expect(consent).not.toBeChecked()
-    const buttons = [
+    const socialButtons = [
       screen.getByRole('button', { name: 'Continue with Google' }),
       screen.getByRole('button', { name: 'Continue with Apple' }),
-      screen.getByRole('button', { name: 'Create account' }),
     ]
-    for (const button of buttons) {
-      expect(button).toBeDisabled()
-      fireEvent.click(button)
+    const emailButton = screen.getByRole('button', { name: 'Create account' })
+    const emailForm = emailButton.closest('form')!
+    expect(within(emailForm).getByRole('checkbox')).toBe(consent)
+    expect(emailButton).toBeDisabled()
+    for (const button of socialButtons) {
+      expect(button).toBeEnabled()
+      expect(button.closest('form')).toBeNull()
     }
     const terms = screen.getByRole('link', { name: 'Terms of Service' })
     const privacy = screen.getByRole('link', { name: 'Privacy Policy' })
@@ -564,7 +634,7 @@ describe('SignInPage', () => {
     }
     expect(consent).not.toBeChecked()
 
-    fireEvent.submit(screen.getByLabelText('Password').closest('form')!)
+    fireEvent.submit(emailForm)
     expect(screen.getByRole('alert')).toHaveTextContent(
       /Please confirm that you have read and agree/,
     )
@@ -572,9 +642,11 @@ describe('SignInPage', () => {
     expect(auth.signUp.sso).not.toHaveBeenCalled()
 
     fireEvent.click(consent)
-    for (const button of buttons) expect(button).toBeEnabled()
+    expect(emailButton).toBeEnabled()
+    for (const button of socialButtons) expect(button).toBeEnabled()
     fireEvent.click(consent)
-    for (const button of buttons) expect(button).toBeDisabled()
+    expect(emailButton).toBeDisabled()
+    for (const button of socialButtons) expect(button).toBeEnabled()
   })
 
   it('waits for Clerk to load before resuming social consent', async () => {

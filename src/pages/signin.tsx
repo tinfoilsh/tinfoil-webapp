@@ -225,10 +225,6 @@ export default function SignInPage({
   const handleSocialSignIn = async (
     strategy: 'oauth_google' | 'oauth_apple',
   ) => {
-    if (mode === 'signup' && !legalAccepted) {
-      setErrorMessage(LEGAL_CONSENT_REQUIRED_MESSAGE)
-      return
-    }
     const provider = strategy === 'oauth_google' ? 'google' : 'apple'
     await runAuthAction(
       provider,
@@ -687,21 +683,12 @@ export default function SignInPage({
 
         {step === 'email' && (
           <>
-            {mode === 'signup' && (
-              <div className="mb-6">
-                <LegalConsent
-                  checked={legalAccepted}
-                  disabled={isPending}
-                  onChange={setLegalAccepted}
-                />
-              </div>
-            )}
             <div className="space-y-3">
               <Button
                 type="button"
                 variant="landingOutline"
                 size="landing"
-                disabled={isPending || (mode === 'signup' && !legalAccepted)}
+                disabled={isPending}
                 onClick={() => handleSocialSignIn('oauth_google')}
                 className="w-full"
               >
@@ -716,7 +703,7 @@ export default function SignInPage({
                 type="button"
                 variant="landingOutline"
                 size="landing"
-                disabled={isPending || (mode === 'signup' && !legalAccepted)}
+                disabled={isPending}
                 onClick={() => handleSocialSignIn('oauth_apple')}
                 className="w-full"
               >
@@ -820,6 +807,13 @@ export default function SignInPage({
                   className="h-11 w-full rounded-lg border border-border-subtle bg-surface-chat px-3 text-sm text-content-primary outline-none transition-colors focus:border-border-strong"
                 />
               </div>
+              {mode === 'signup' && (
+                <LegalConsent
+                  checked={legalAccepted}
+                  disabled={isPending}
+                  onChange={setLegalAccepted}
+                />
+              )}
               <Button
                 type="submit"
                 variant="solid"
