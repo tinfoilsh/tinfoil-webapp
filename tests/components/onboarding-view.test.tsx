@@ -43,6 +43,12 @@ describe('OnboardingView', () => {
     vi.restoreAllMocks()
   })
 
+  it('does not imply legal consent when continuing onboarding', () => {
+    render(<OnboardingView onComplete={vi.fn()} />)
+
+    expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
+  })
+
   it('reserves space for the intro artwork', () => {
     render(<OnboardingView onComplete={vi.fn()} />)
 

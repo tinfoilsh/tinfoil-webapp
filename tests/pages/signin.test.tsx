@@ -1,5 +1,11 @@
 import SignInPage from '@/pages/signin'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const auth = vi.hoisted(() => {
@@ -173,10 +179,8 @@ describe('SignInPage', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Email' })).toBeInTheDocument()
     expect(document.querySelector('#clerk-captcha')).toBeInTheDocument()
-    expect(screen.getByText(/By continuing, you agree to our/)).toHaveClass(
-      'text-balance',
-      'text-center',
-    )
+    expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
   })
 
   it('redirects an already signed-in user to the requested page', async () => {
@@ -266,6 +270,7 @@ describe('SignInPage', () => {
     fireEvent.change(screen.getByLabelText('Password'), {
       target: { value: 'new account password' },
     })
+    fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
 
     await waitFor(() => {
@@ -274,6 +279,7 @@ describe('SignInPage', () => {
         password: 'new account password',
         firstName: 'New',
         lastName: 'Person',
+        legalAccepted: true,
       })
       expect(auth.signUp.verifications.sendEmailCode).toHaveBeenCalledTimes(1)
     })
@@ -510,21 +516,327 @@ describe('SignInPage', () => {
     },
   )
 
-  it('starts social sign-up from the create-account page', async () => {
+  it.each([
+    ['Google', 'oauth_google'],
+    ['Apple', 'oauth_apple'],
+  ] as const)(
+    'sends explicit consent when starting %s sign-up',
+    async (provider, strategy) => {
+      auth.router.query = { redirect_url: '/project/example' }
+      render(<SignInPage initialMode="signup" />)
+
+      fireEvent.click(screen.getByRole('checkbox'))
+      fireEvent.click(
+        screen.getByRole('button', { name: `Continue with ${provider}` }),
+      )
+
+      await waitFor(() => {
+        expect(auth.signUp.sso).toHaveBeenCalledWith({
+          strategy,
+          redirectCallbackUrl:
+            '/sso-callback?redirect_url=%2Fproject%2Fexample',
+          redirectUrl: '/project/example',
+          legalAccepted: true,
+        })
+        expect(auth.signIn.sso).not.toHaveBeenCalled()
+      })
+    },
+  )
+
+  it.each([
+    ['Google', 'oauth_google'],
+    ['Apple', 'oauth_apple'],
+  ] as const)(
+    'starts %s unchecked and requires consent after SSO',
+    async (provider, strategy) => {
+      const { unmount } = render(<SignInPage initialMode="signup" />)
+      expect(screen.getByRole('checkbox')).not.toBeChecked()
+      const providerButton = screen.getByRole('button', {
+        name: `Continue with ${provider}`,
+      })
+      expect(providerButton).toBeEnabled()
+      fireEvent.click(providerButton)
+
+      await waitFor(() => {
+        expect(auth.signUp.sso).toHaveBeenCalledExactlyOnceWith({
+          strategy,
+          redirectCallbackUrl: '/sso-callback',
+          redirectUrl: '/',
+          legalAccepted: false,
+        })
+      })
+      expect(auth.signUp.password).not.toHaveBeenCalled()
+      expect(auth.signUp.finalize).not.toHaveBeenCalled()
+      unmount()
+
+      auth.router.query = { resume: '1' }
+      auth.signUp.id = 'social-sign-up'
+      auth.signUp.missingFields = ['legal_accepted']
+      render(<SignInPage />)
+
+      await screen.findByRole('heading', { name: 'Complete your account' })
+      const consent = screen.getByRole('checkbox')
+      const submit = screen.getByRole('button', { name: 'Create account' })
+      expect(consent).not.toBeChecked()
+      expect(submit).toBeDisabled()
+      expect(auth.signUp.update).not.toHaveBeenCalled()
+      expect(auth.signUp.finalize).not.toHaveBeenCalled()
+      expect(auth.signUp.reset).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps the email consent checkbox separate from SSO buttons', () => {
     render(<SignInPage initialMode="signup" />)
 
-    fireEvent.click(
+    const consent = screen.getByRole('checkbox', {
+      name: /I have read and agree to the Terms of Service and Privacy Policy/,
+    })
+    expect(consent).not.toBeChecked()
+    const socialButtons = [
       screen.getByRole('button', { name: 'Continue with Google' }),
+      screen.getByRole('button', { name: 'Continue with Apple' }),
+    ]
+    const emailButton = screen.getByRole('button', { name: 'Create account' })
+    const emailForm = emailButton.closest('form')!
+    expect(within(emailForm).getByRole('checkbox')).toBe(consent)
+    expect(emailButton).toBeDisabled()
+    for (const button of socialButtons) {
+      expect(button).toBeEnabled()
+      expect(button.closest('form')).toBeNull()
+    }
+    const terms = screen.getByRole('link', { name: 'Terms of Service' })
+    const privacy = screen.getByRole('link', { name: 'Privacy Policy' })
+    expect(terms).toHaveAttribute('href', 'https://tinfoil.sh/terms')
+    expect(privacy).toHaveAttribute('href', 'https://tinfoil.sh/privacy')
+    for (const link of [terms, privacy]) {
+      expect(link).toHaveAttribute('target', '_blank')
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+      fireEvent.click(link)
+    }
+    expect(consent).not.toBeChecked()
+
+    fireEvent.submit(emailForm)
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /Please confirm that you have read and agree/,
     )
+    expect(auth.signUp.password).not.toHaveBeenCalled()
+    expect(auth.signUp.sso).not.toHaveBeenCalled()
+
+    fireEvent.click(consent)
+    expect(emailButton).toBeEnabled()
+    for (const button of socialButtons) expect(button).toBeEnabled()
+    fireEvent.click(consent)
+    expect(emailButton).toBeDisabled()
+    for (const button of socialButtons) expect(button).toBeEnabled()
+  })
+
+  it('waits for Clerk to load before resuming social consent', async () => {
+    auth.router.query = { resume: '1' }
+    auth.clerkLoaded = false
+    auth.signUp.missingFields = ['legal_accepted']
+    const { rerender } = render(<SignInPage />)
+
+    expect(
+      screen.queryByRole('heading', { name: 'Complete your account' }),
+    ).not.toBeInTheDocument()
+    expect(auth.signUp.update).not.toHaveBeenCalled()
+
+    auth.clerkLoaded = true
+    rerender(<SignInPage />)
+
+    await screen.findByRole('heading', { name: 'Complete your account' })
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(auth.signUp.update).not.toHaveBeenCalled()
+  })
+
+  it('never auto-accepts consent when resuming a social sign-up', async () => {
+    auth.router.query = { resume: '1' }
+    auth.signUp.id = 'social-sign-up'
+    auth.signUp.missingFields = ['legal_accepted']
+    render(<SignInPage />)
+
+    await screen.findByRole('heading', { name: 'Complete your account' })
+    const consent = screen.getByRole('checkbox')
+    expect(consent).not.toBeChecked()
+    expect(auth.signUp.reset).not.toHaveBeenCalled()
+    expect(auth.signUp.update).not.toHaveBeenCalled()
+    expect(auth.signUp.finalize).not.toHaveBeenCalled()
+    const submit = screen.getByRole('button', { name: 'Create account' })
+    expect(submit).toBeDisabled()
+
+    fireEvent.submit(submit.closest('form')!)
+    expect(auth.signUp.update).not.toHaveBeenCalled()
+
+    auth.signUp.update.mockImplementation(async () => {
+      auth.signUp.status = 'complete'
+      auth.signUp.missingFields = []
+      return { error: null }
+    })
+    fireEvent.click(consent)
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
 
     await waitFor(() => {
-      expect(auth.signUp.sso).toHaveBeenCalledWith({
-        strategy: 'oauth_google',
-        redirectCallbackUrl: '/sso-callback',
-        redirectUrl: '/',
+      expect(auth.signUp.update).toHaveBeenCalledExactlyOnceWith({
+        firstName: undefined,
+        lastName: undefined,
+        legalAccepted: true,
       })
-      expect(auth.signIn.sso).not.toHaveBeenCalled()
+      expect(auth.signUp.finalize).toHaveBeenCalledTimes(1)
     })
+    expect(auth.signUp.password).not.toHaveBeenCalled()
+    expect(auth.signUp.sso).not.toHaveBeenCalled()
+  })
+
+  it('collects consent together with missing social profile details', async () => {
+    auth.router.query = { resume: '1' }
+    auth.signUp.missingFields = ['first_name', 'last_name', 'legal_accepted']
+    render(<SignInPage />)
+
+    await screen.findByRole('heading', { name: 'Complete your account' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
+      target: { value: 'New' },
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Last name' }), {
+      target: { value: 'Person' },
+    })
+    const submit = screen.getByRole('button', { name: 'Create account' })
+    expect(submit).toBeDisabled()
+    fireEvent.submit(submit.closest('form')!)
+    expect(auth.signUp.update).not.toHaveBeenCalled()
+
+    auth.signUp.update.mockImplementation(async () => {
+      auth.signUp.status = 'complete'
+      auth.signUp.missingFields = []
+      return { error: null }
+    })
+    fireEvent.click(screen.getByRole('checkbox'))
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+
+    await waitFor(() => {
+      expect(auth.signUp.update).toHaveBeenCalledWith({
+        firstName: 'New',
+        lastName: 'Person',
+        legalAccepted: true,
+      })
+      expect(auth.signUp.finalize).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('does not ask again when Clerk has already recorded social consent', async () => {
+    auth.router.query = { resume: '1' }
+    auth.signUp.missingFields = ['first_name']
+    render(<SignInPage />)
+
+    await screen.findByRole('heading', { name: 'Complete your account' })
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
+      target: { value: 'New' },
+    })
+    auth.signUp.update.mockImplementation(async () => {
+      auth.signUp.status = 'complete'
+      auth.signUp.missingFields = []
+      return { error: null }
+    })
+    const submit = screen.getByRole('button', { name: 'Create account' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+
+    await waitFor(() => {
+      expect(auth.signUp.update).toHaveBeenCalledWith({
+        firstName: 'New',
+        lastName: undefined,
+        legalAccepted: undefined,
+      })
+      expect(auth.signUp.finalize).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('keeps a failed consent update retryable without restarting SSO', async () => {
+    auth.router.query = { resume: '1' }
+    auth.signUp.missingFields = ['legal_accepted']
+    auth.signUp.update.mockResolvedValueOnce({
+      error: { longMessage: 'Could not save your consent. Please try again.' },
+    })
+    render(<SignInPage />)
+
+    await screen.findByRole('heading', { name: 'Complete your account' })
+    fireEvent.click(screen.getByRole('checkbox'))
+    const submit = screen.getByRole('button', { name: 'Create account' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not save your consent. Please try again.',
+    )
+    expect(auth.signUp.finalize).not.toHaveBeenCalled()
+    expect(screen.getByRole('checkbox')).toBeChecked()
+
+    auth.signUp.update.mockImplementation(async () => {
+      auth.signUp.status = 'complete'
+      auth.signUp.missingFields = []
+      return { error: null }
+    })
+    fireEvent.click(submit)
+
+    await waitFor(() => {
+      expect(auth.signUp.update).toHaveBeenCalledTimes(2)
+      expect(auth.signUp.finalize).toHaveBeenCalledTimes(1)
+    })
+    expect(auth.signUp.sso).not.toHaveBeenCalled()
+    expect(auth.signUp.reset).not.toHaveBeenCalled()
+  })
+
+  it('does not finalize when consent is accepted but requirements remain', async () => {
+    auth.router.query = { resume: '1' }
+    auth.signUp.missingFields = ['legal_accepted']
+    render(<SignInPage />)
+
+    await screen.findByRole('heading', { name: 'Complete your account' })
+    fireEvent.click(screen.getByRole('checkbox'))
+    auth.signUp.update.mockImplementation(async () => {
+      auth.signUp.missingFields = []
+      auth.signUp.unverifiedFields = ['phone_number']
+      return { error: null }
+    })
+    const submit = screen.getByRole('button', { name: 'Create account' })
+    await waitFor(() => expect(submit).toBeEnabled())
+    fireEvent.click(submit)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Your account needs additional setup. Please contact support.',
+    )
+    expect(auth.signUp.finalize).not.toHaveBeenCalled()
+  })
+
+  it('clears consent when starting an email sign-up over', async () => {
+    auth.signUp.password.mockImplementation(async () => {
+      auth.signUp.unverifiedFields = ['email_address']
+      return { error: null }
+    })
+    render(<SignInPage initialMode="signup" />)
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.submit(screen.getByLabelText('Password').closest('form')!)
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Use another email' }),
+    )
+
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(
+      screen.getByRole('button', { name: 'Create account' }),
+    ).toBeDisabled()
+  })
+
+  it('shows legal acceptance validation errors from Clerk', () => {
+    auth.signUpErrors.legalAccepted = {
+      longMessage: 'You must accept the legal documents.',
+    }
+    render(<SignInPage initialMode="signup" />)
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'You must accept the legal documents.',
+    )
   })
 
   it('shows the Clerk error when social sign-in cannot start', async () => {
