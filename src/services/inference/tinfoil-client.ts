@@ -572,20 +572,29 @@ export function createStreamUsageTracker(): (usage: StreamUsage) => void {
   }
 }
 
-// Re-reads a subscriber's hourly usage without touching the cached session
+// Re-reads a subscriber's hourly usage without rotating a still-entitled session
 // JWT. Every mint returns a distinct JWT, and a changed session token makes
 // ensureInitialized rebuild the OpenAI client and re-run attestation, so the
 // usage refresh must not rotate the token the way the free-tier path does.
 // If the read fails the usage simply stays stale until the next refresh; the
 // JWT remains valid until its own expiry, at which point the regular mint
-// path re-resolves the account's tier.
+// path re-resolves the account's tier. An explicit subscription-required
+// response clears the subscriber cache and re-resolves the tier immediately.
 async function refreshHourlyUsage(cacheGeneration: number): Promise<void> {
   const authBearer = await resolveAuthBearer()
   assertSessionCacheGeneration(cacheGeneration)
   if (!authBearer) return
   const jwt = await fetchChatJWT(authBearer, cacheGeneration)
   assertSessionCacheGeneration(cacheGeneration)
-  if (jwt.key === null) return
+  if (jwt.key === null) {
+    cachedSessionToken = null
+    cachedSessionTokenExpiresAt = null
+    cachedSessionTokenWasAuthenticated = false
+    cachedRateLimit = null
+    dispatchRateLimitUpdate()
+    await fetchSessionTokenForGeneration(cacheGeneration)
+    return
+  }
   cachedRateLimit = jwt.rateLimit
   dispatchRateLimitUpdate()
 }

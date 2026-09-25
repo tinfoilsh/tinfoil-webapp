@@ -281,6 +281,71 @@ describe('chat session entitlement', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('replaces subscriber access after an explicit subscription loss during usage refresh', async () => {
+    fetchMock.mockResolvedValueOnce(subscriberResponse())
+    await getSessionToken()
+
+    fetchMock
+      .mockResolvedValueOnce(errorResponse(402))
+      .mockResolvedValueOnce(errorResponse(402))
+      .mockResolvedValueOnce(freeResponse())
+    await refreshRateLimit()
+
+    expect(getRateLimitInfo()).toMatchObject({
+      kind: 'free_daily',
+      remaining: 0,
+    })
+    await expect(getSessionToken()).resolves.toBe('free-key')
+    expect(fetchMock).toHaveBeenLastCalledWith(FREE_KEY_URL, {
+      headers: { Authorization: `Bearer ${CLERK_TOKEN}` },
+      signal: undefined,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('does not retain a revoked subscriber token if resolving the new tier fails', async () => {
+    fetchMock.mockResolvedValueOnce(subscriberResponse())
+    await getSessionToken()
+
+    fetchMock
+      .mockResolvedValueOnce(errorResponse(402))
+      .mockResolvedValueOnce(errorResponse(503))
+    await refreshRateLimit()
+
+    expect(getRateLimitInfo()).toBeNull()
+    fetchMock.mockResolvedValueOnce(errorResponse(503))
+    await expect(getSessionToken()).rejects.toMatchObject({ status: 503 })
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      CHAT_TOKEN_URL,
+      CHAT_TOKEN_URL,
+      CHAT_TOKEN_URL,
+      CHAT_TOKEN_URL,
+    ])
+  })
+
+  it('does not apply a stale subscription loss to a newly selected account', async () => {
+    fetchMock.mockResolvedValueOnce(subscriberResponse())
+    await getSessionToken()
+    let resolveResponse!: (response: Response) => void
+    fetchMock.mockImplementationOnce(
+      () => new Promise<Response>((resolve) => (resolveResponse = resolve)),
+    )
+    const refresh = refreshRateLimit()
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    invalidateSessionCache()
+    authTokenManager.initialize(vi.fn().mockResolvedValue('new-account-token'))
+    fetchMock.mockResolvedValueOnce(subscriberResponse())
+    await getSessionToken()
+    const budget = getRateLimitInfo()
+    resolveResponse(errorResponse(402))
+    await refresh
+
+    expect(getRateLimitInfo()).toEqual(budget)
+    await expect(getSessionToken()).resolves.toBe('subscriber-token')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
   it('replaces an exhausted anonymous session once authentication is available', async () => {
     authTokenManager.reset()
     await expect(getSessionToken()).resolves.toBe('free-key')
