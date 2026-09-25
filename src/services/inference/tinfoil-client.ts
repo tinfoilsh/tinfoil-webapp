@@ -20,8 +20,11 @@ import {
   type SessionRecoveryToken,
   type VerificationDocument,
 } from 'tinfoil'
-import { authTokenManager } from '../auth'
-import { INFERENCE_CLIENT_INITIALIZATION_TIMEOUT_MS } from './constants'
+import { AuthTokenUnavailableError, authTokenManager } from '../auth'
+import {
+  CHAT_TOKEN_HTTP_STATUS,
+  INFERENCE_CLIENT_INITIALIZATION_TIMEOUT_MS,
+} from './constants'
 
 /** One dimension (input or output) of a token budget. */
 export interface TokenBudget {
@@ -64,6 +67,13 @@ let idleRecoverableTransports: RecoverableTinfoilTransport[] = []
 let recoverableTransportPoolGeneration = 0
 
 class SessionCacheInvalidatedError extends Error {}
+
+class ChatSessionTokenError extends Error {
+  constructor(public readonly status: number) {
+    super('Unable to verify chat access. Please try again.')
+    this.name = 'ChatSessionTokenError'
+  }
+}
 
 export class TinfoilClientInitializationTimeoutError extends Error {
   constructor() {
@@ -232,75 +242,87 @@ function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
 }
 
 // Mints a stateless JWT inference token for a signed-in user via
-// /api/chat/token. Returns the token on success, or null on any non-rate-limit
-// failure (no active subscription, endpoint disabled, network error) so the
-// caller falls back to the opaque /api/keys/chat path. A subscriber over the
+// /api/chat/token. Returns a null key only when the server explicitly reports
+// no active subscription, so auth and service failures cannot downgrade a
+// subscriber to the free-tier /api/keys/chat path. A subscriber over the
 // hourly cap is surfaced here and not fallen back, so the cap cannot be bypassed
 // through the opaque path.
 async function fetchChatJWT(
   authBearer: string,
   cacheGeneration: number,
   signal?: AbortSignal,
-): Promise<{
-  key: string
-  expiresAt: number | null
-  rateLimit: RateLimitInfo | null
-} | null> {
-  let response: Response
-  try {
-    response = await fetch(`${API_BASE_URL}/api/chat/token`, {
+): Promise<
+  | {
+      key: string
+      expiresAt: number | null
+      rateLimit: RateLimitInfo | null
+      authBearer: string
+    }
+  | { key: null; authBearer: string }
+> {
+  const send = async () => {
+    assertSessionCacheGeneration(cacheGeneration)
+    signal?.throwIfAborted()
+    const response = await fetch(`${API_BASE_URL}/api/chat/token`, {
       headers: { Authorization: `Bearer ${authBearer}` },
       signal,
     })
-  } catch {
-    return null
+    assertSessionCacheGeneration(cacheGeneration)
+    signal?.throwIfAborted()
+    return response
+  }
+
+  let response = await send()
+  if (response.status === CHAT_TOKEN_HTTP_STATUS.UNAUTHORIZED) {
+    const refresh = authTokenManager.refreshToken(authBearer)
+    authBearer = await (signal ? waitForSignal(refresh, signal) : refresh)
+    response = await send()
   }
 
   if (response.ok) {
+    let data
     try {
-      const data = await response.json()
-      if (typeof data?.key === 'string' && data.key !== '') {
-        const expiresAtMs = data.expires_at
-          ? new Date(data.expires_at).getTime()
-          : null
-        return {
-          key: data.key,
-          expiresAt:
-            expiresAtMs !== null && !Number.isNaN(expiresAtMs)
-              ? expiresAtMs
-              : null,
-          rateLimit: data.rate_limit
-            ? parseRateLimit(data.rate_limit, 'hourly')
-            : null,
-        }
-      }
+      data = await response.json()
     } catch {
-      // Malformed / non-JSON 200 body: treat as a miss and fall back to the
-      // opaque /api/keys/chat path rather than throwing.
+      assertSessionCacheGeneration(cacheGeneration)
+      signal?.throwIfAborted()
+      throw new ChatSessionTokenError(CHAT_TOKEN_HTTP_STATUS.INVALID_RESPONSE)
     }
-    return null
+    assertSessionCacheGeneration(cacheGeneration)
+    signal?.throwIfAborted()
+    if (typeof data?.key !== 'string' || data.key.trim() === '') {
+      throw new ChatSessionTokenError(CHAT_TOKEN_HTTP_STATUS.INVALID_RESPONSE)
+    }
+    const expiresAtMs = data.expires_at
+      ? new Date(data.expires_at).getTime()
+      : null
+    return {
+      key: data.key,
+      expiresAt:
+        expiresAtMs !== null && !Number.isNaN(expiresAtMs) ? expiresAtMs : null,
+      rateLimit: data.rate_limit
+        ? parseRateLimit(data.rate_limit, 'hourly')
+        : null,
+      authBearer,
+    }
   }
 
   const parsedError = parseErrorBody(await response.text())
+  assertSessionCacheGeneration(cacheGeneration)
+  signal?.throwIfAborted()
   if (isHourlyLimit(response.status, parsedError)) {
-    assertSessionCacheGeneration(cacheGeneration)
     surfaceHourlyLimit(parsedError)
   }
-  return null
+  if (response.status === CHAT_TOKEN_HTTP_STATUS.SUBSCRIPTION_REQUIRED) {
+    return { key: null, authBearer }
+  }
+  throw new ChatSessionTokenError(response.status)
 }
 
 async function resolveAuthBearer(signal?: AbortSignal): Promise<string | null> {
   if (!authTokenManager.isInitialized()) return null
-  try {
-    const validToken = authTokenManager.getValidToken()
-    return await (signal ? waitForSignal(validToken, signal) : validToken)
-  } catch (error) {
-    logError('Failed to get auth token, falling back to anonymous key', error, {
-      component: 'tinfoil-client',
-      action: 'fetchSessionToken',
-    })
-    return null
-  }
+  const validToken = authTokenManager.getValidToken()
+  return await (signal ? waitForSignal(validToken, signal) : validToken)
 }
 
 async function fetchSessionTokenForGeneration(
@@ -322,16 +344,20 @@ async function fetchSessionTokenForGeneration(
     localStorage.getItem(AUTH_ACTIVE_USER_ID) !== null
   ) {
     const authInitialization = authTokenManager.waitForInit(AUTH_INIT_WAIT_MS)
-    await (signal
+    const initialized = await (signal
       ? waitForSignal(authInitialization, signal)
       : authInitialization)
+    assertSessionCacheGeneration(cacheGeneration)
+    if (!initialized) {
+      throw new AuthTokenUnavailableError('not-initialized')
+    }
   }
 
   // Resolve the auth bearer (if any) up front so the cache-validity
   // check and the actual request use the same authenticated/anonymous
   // decision.  This avoids a stale-cache loop when getValidToken()
   // intermittently fails for a signed-in user.
-  const authBearer = await resolveAuthBearer(signal)
+  let authBearer = await resolveAuthBearer(signal)
   assertSessionCacheGeneration(cacheGeneration)
   const usedAuthHeader = authBearer !== null
 
@@ -367,7 +393,8 @@ async function fetchSessionTokenForGeneration(
   if (authBearer) {
     const jwt = await fetchChatJWT(authBearer, cacheGeneration, signal)
     assertSessionCacheGeneration(cacheGeneration)
-    if (jwt !== null) {
+    authBearer = jwt.authBearer
+    if (jwt.key !== null) {
       cachedSessionToken = jwt.key
       cachedSessionTokenWasAuthenticated = true
       cachedSessionTokenExpiresAt = jwt.expiresAt
@@ -558,7 +585,7 @@ async function refreshHourlyUsage(cacheGeneration: number): Promise<void> {
   if (!authBearer) return
   const jwt = await fetchChatJWT(authBearer, cacheGeneration)
   assertSessionCacheGeneration(cacheGeneration)
-  if (jwt === null) return
+  if (jwt.key === null) return
   cachedRateLimit = jwt.rateLimit
   dispatchRateLimitUpdate()
 }
