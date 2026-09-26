@@ -5,6 +5,7 @@ import {
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
+import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
 import { USER_PREFS_NICKNAME } from '@/constants/storage-keys'
 import { useUser } from '@clerk/react'
 import { motion } from 'framer-motion'
@@ -256,7 +257,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   onOpenPromptLibrary,
   onSelectPromptPreset,
 }: WelcomeScreenProps) {
-  const { user } = useUser()
+  const { user, isSignedIn } = useUser()
   const [nickname, setNickname] = useState<string>('')
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false)
   const fallbackInputRef = useRef<HTMLTextAreaElement>(null)
@@ -521,6 +522,29 @@ export const WelcomeScreen = memo(function WelcomeScreen({
                   onOpenLibrary={onOpenPromptLibrary}
                 />
               </motion.div>
+            )}
+            {isSignedIn === false && (
+              <p className="mt-4 px-4 text-center text-xs leading-relaxed text-content-secondary">
+                By using this chat, you agree to our{' '}
+                <a
+                  href={TERMS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline transition-colors hover:text-content-primary"
+                >
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a
+                  href={PRIVACY_POLICY_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline transition-colors hover:text-content-primary"
+                >
+                  Privacy Policy
+                </a>
+                .
+              </p>
             )}
           </div>
         </div>
