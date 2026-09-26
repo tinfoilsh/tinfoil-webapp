@@ -2,7 +2,11 @@
 
 import { cn } from '@/components/ui/utils'
 import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
-import type { RateLimitInfo } from '@/services/inference/tinfoil-client'
+import {
+  refreshRateLimit,
+  type RateLimitInfo,
+} from '@/services/inference/tinfoil-client'
+import { useState } from 'react'
 
 const RATE_LIMIT_WARNING_THRESHOLD = 3
 
@@ -36,9 +40,19 @@ export function RateLimitBanner({
   className,
   pillClassName,
 }: RateLimitBannerProps) {
+  const [isChecking, setIsChecking] = useState(false)
   const exhausted = rateLimit.remaining <= 0
   const isHourly = rateLimit.kind === 'hourly'
   const resetLabel = formatResetTime(rateLimit.resetsAt)
+
+  const checkAgain = async () => {
+    setIsChecking(true)
+    try {
+      await refreshRateLimit({ force: true })
+    } finally {
+      setIsChecking(false)
+    }
+  }
 
   return (
     <div
@@ -65,6 +79,16 @@ export function RateLimitBanner({
               ? DAILY_RATE_LIMIT_MESSAGE
               : `You have ${rateLimit.remaining} free request${rateLimit.remaining === 1 ? '' : 's'} left today`}
         </span>
+        {isHourly && (
+          <button
+            type="button"
+            onClick={checkAgain}
+            disabled={isChecking}
+            className="shrink-0 font-aeonik text-xs underline underline-offset-2 disabled:opacity-50"
+          >
+            {isChecking ? 'Checking…' : 'Check again'}
+          </button>
+        )}
       </div>
     </div>
   )

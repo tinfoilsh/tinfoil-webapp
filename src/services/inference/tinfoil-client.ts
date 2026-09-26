@@ -23,7 +23,10 @@ import {
 import { AuthTokenUnavailableError, authTokenManager } from '../auth'
 import {
   CHAT_TOKEN_HTTP_STATUS,
+  CHAT_TOKEN_MAX_COOLDOWN_MS,
+  CHAT_TOKEN_RATE_LIMIT_FALLBACK_MS,
   INFERENCE_CLIENT_INITIALIZATION_TIMEOUT_MS,
+  MILLISECONDS_PER_SECOND,
 } from './constants'
 
 /** One dimension (input or output) of a token budget. */
@@ -61,6 +64,8 @@ let remainingBeforeRequest: number | null = null
 let refreshInFlight: Promise<void> | null = null
 let sessionCacheGeneration = 0
 let initializationInFlight: InitializationTask | null = null
+let chatTokenRequestInFlight: ChatTokenRequest | null = null
+let chatTokenCooldown: ChatTokenCooldown | null = null
 let cachedVerificationDocument: VerificationDocument | null = null
 const MAX_IDLE_RECOVERABLE_TRANSPORTS = 1
 let idleRecoverableTransports: RecoverableTinfoilTransport[] = []
@@ -92,6 +97,85 @@ interface InitializationTask {
   controller: AbortController
   timeoutId: ReturnType<typeof setTimeout>
   promise: Promise<void>
+}
+
+type ChatJWTResult =
+  | {
+      key: string
+      expiresAt: number | null
+      rateLimit: RateLimitInfo | null
+      authBearer: string
+    }
+  | { key: null; authBearer: string }
+
+interface ChatTokenRequest {
+  generation: number
+  controller: AbortController
+  promise: Promise<ChatJWTResult>
+}
+
+interface ChatTokenCooldown {
+  error: ChatError
+  retryAt: number
+  timeoutId: ReturnType<typeof setTimeout>
+}
+
+function clearChatTokenCooldown(): void {
+  if (chatTokenCooldown) clearTimeout(chatTokenCooldown.timeoutId)
+  chatTokenCooldown = null
+}
+
+function getActiveChatTokenCooldown(): ChatTokenCooldown | null {
+  if (chatTokenCooldown && Date.now() >= chatTokenCooldown.retryAt) {
+    clearChatTokenCooldown()
+  }
+  return chatTokenCooldown
+}
+
+function resetChatTokenRequests(): void {
+  const request = chatTokenRequestInFlight
+  chatTokenRequestInFlight = null
+  request?.controller.abort(new SessionCacheInvalidatedError())
+  clearChatTokenCooldown()
+}
+
+function cacheChatTokenCooldown(
+  error: ChatError,
+  response: Response,
+  resetsAt: string,
+): void {
+  const now = Date.now()
+  const serverDate = Date.parse(response.headers.get('Date') ?? '')
+  const referenceTime = Number.isFinite(serverDate) ? serverDate : now
+  const resetTime = Date.parse(resetsAt)
+  const retryAfter = response.headers.get('Retry-After')?.trim() ?? ''
+  let delay = resetTime - referenceTime
+  if (!Number.isFinite(delay) || delay <= 0) {
+    delay = /^\d+$/.test(retryAfter)
+      ? Number(retryAfter) * MILLISECONDS_PER_SECOND
+      : Date.parse(retryAfter) - referenceTime
+  }
+  if (!Number.isFinite(delay) || delay <= 0) {
+    delay = CHAT_TOKEN_RATE_LIMIT_FALLBACK_MS
+  }
+  delay = Math.min(delay, CHAT_TOKEN_MAX_COOLDOWN_MS)
+
+  clearChatTokenCooldown()
+  const generation = sessionCacheGeneration
+  const cooldown: ChatTokenCooldown = {
+    error,
+    retryAt: now + delay,
+    timeoutId: setTimeout(() => {
+      if (
+        chatTokenCooldown !== cooldown ||
+        generation !== sessionCacheGeneration
+      )
+        return
+      clearChatTokenCooldown()
+      void refreshRateLimit()
+    }, delay),
+  }
+  chatTokenCooldown = cooldown
 }
 
 function abortInitialization(reason: unknown): void {
@@ -221,7 +305,10 @@ function isHourlyLimit(
 // Surfaces the per-account hourly usage cap through the shared rate-limit
 // channel (so the banner renders) and throws a typed error the chat
 // classifies as a rate limit rather than a generic failure. Never returns.
-function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
+function surfaceHourlyLimit(
+  parsedError: ServerErrorBody | null,
+  response?: Response,
+): never {
   const budget = parsedError?.rate_limit
     ? parseRateLimit(parsedError.rate_limit, 'hourly')
     : null
@@ -233,12 +320,57 @@ function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
     resetsAt: parsedError?.resets_at ?? budget?.resetsAt ?? '',
     kind: 'hourly',
   }
-  dispatchRateLimitUpdate()
-  throw new ChatError(
+  const error = new ChatError(
     parsedError?.error ?? 'You have reached your hourly usage limit.',
     'HOURLY_LIMIT',
     { status: 429 },
   )
+  if (response) {
+    cacheChatTokenCooldown(error, response, cachedRateLimit.resetsAt)
+  }
+  dispatchRateLimitUpdate()
+  throw error
+}
+
+async function fetchChatJWT(
+  authBearer: string,
+  cacheGeneration: number,
+  signal?: AbortSignal,
+  forceRefresh = false,
+): Promise<ChatJWTResult> {
+  assertSessionCacheGeneration(cacheGeneration)
+  signal?.throwIfAborted()
+  const cooldown = getActiveChatTokenCooldown()
+  if (cooldown && !forceRefresh) throw cooldown.error
+
+  let task = chatTokenRequestInFlight
+  if (!task || task.generation !== cacheGeneration) {
+    // A caller's initialization timeout must not cancel another caller's mint.
+    // The shared request has its own deadline, including auth and body reads.
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => {
+      controller.abort(
+        new ChatSessionTokenError(CHAT_TOKEN_HTTP_STATUS.REQUEST_TIMEOUT),
+      )
+    }, INFERENCE_CLIENT_INITIALIZATION_TIMEOUT_MS)
+    const request = waitForSignal(
+      requestChatJWT(authBearer, cacheGeneration, controller.signal),
+      controller.signal,
+    )
+    const currentTask: ChatTokenRequest = {
+      generation: cacheGeneration,
+      controller,
+      promise: request.finally(() => {
+        clearTimeout(timeoutId)
+        if (chatTokenRequestInFlight === currentTask) {
+          chatTokenRequestInFlight = null
+        }
+      }),
+    }
+    chatTokenRequestInFlight = currentTask
+    task = currentTask
+  }
+  return signal ? waitForSignal(task.promise, signal) : task.promise
 }
 
 // Mints a stateless JWT inference token for a signed-in user via
@@ -247,35 +379,27 @@ function surfaceHourlyLimit(parsedError: ServerErrorBody | null): never {
 // subscriber to the free-tier /api/keys/chat path. A subscriber over the
 // hourly cap is surfaced here and not fallen back, so the cap cannot be bypassed
 // through the opaque path.
-async function fetchChatJWT(
+async function requestChatJWT(
   authBearer: string,
   cacheGeneration: number,
-  signal?: AbortSignal,
-): Promise<
-  | {
-      key: string
-      expiresAt: number | null
-      rateLimit: RateLimitInfo | null
-      authBearer: string
-    }
-  | { key: null; authBearer: string }
-> {
+  signal: AbortSignal,
+): Promise<ChatJWTResult> {
   const send = async () => {
     assertSessionCacheGeneration(cacheGeneration)
-    signal?.throwIfAborted()
+    signal.throwIfAborted()
     const response = await fetch(`${API_BASE_URL}/api/chat/token`, {
       headers: { Authorization: `Bearer ${authBearer}` },
       signal,
     })
     assertSessionCacheGeneration(cacheGeneration)
-    signal?.throwIfAborted()
+    signal.throwIfAborted()
     return response
   }
 
   let response = await send()
   if (response.status === CHAT_TOKEN_HTTP_STATUS.UNAUTHORIZED) {
     const refresh = authTokenManager.refreshToken(authBearer)
-    authBearer = await (signal ? waitForSignal(refresh, signal) : refresh)
+    authBearer = await waitForSignal(refresh, signal)
     response = await send()
   }
 
@@ -285,14 +409,15 @@ async function fetchChatJWT(
       data = await response.json()
     } catch {
       assertSessionCacheGeneration(cacheGeneration)
-      signal?.throwIfAborted()
+      signal.throwIfAborted()
       throw new ChatSessionTokenError(CHAT_TOKEN_HTTP_STATUS.INVALID_RESPONSE)
     }
     assertSessionCacheGeneration(cacheGeneration)
-    signal?.throwIfAborted()
+    signal.throwIfAborted()
     if (typeof data?.key !== 'string' || data.key.trim() === '') {
       throw new ChatSessionTokenError(CHAT_TOKEN_HTTP_STATUS.INVALID_RESPONSE)
     }
+    clearChatTokenCooldown()
     const expiresAtMs = data.expires_at
       ? new Date(data.expires_at).getTime()
       : null
@@ -309,11 +434,12 @@ async function fetchChatJWT(
 
   const parsedError = parseErrorBody(await response.text())
   assertSessionCacheGeneration(cacheGeneration)
-  signal?.throwIfAborted()
+  signal.throwIfAborted()
   if (isHourlyLimit(response.status, parsedError)) {
-    surfaceHourlyLimit(parsedError)
+    surfaceHourlyLimit(parsedError, response)
   }
   if (response.status === CHAT_TOKEN_HTTP_STATUS.SUBSCRIPTION_REQUIRED) {
+    clearChatTokenCooldown()
     return { key: null, authBearer }
   }
   throw new ChatSessionTokenError(response.status)
@@ -323,6 +449,13 @@ async function resolveAuthBearer(signal?: AbortSignal): Promise<string | null> {
   if (!authTokenManager.isInitialized()) return null
   const validToken = authTokenManager.getValidToken()
   return await (signal ? waitForSignal(validToken, signal) : validToken)
+}
+
+function isCachedSessionTokenExpired(): boolean {
+  return (
+    cachedSessionTokenExpiresAt !== null &&
+    Date.now() > cachedSessionTokenExpiresAt - SESSION_TOKEN_EXPIRY_BUFFER_MS
+  )
 }
 
 async function fetchSessionTokenForGeneration(
@@ -377,10 +510,7 @@ async function fetchSessionTokenForGeneration(
   }
 
   if (cachedSessionToken) {
-    const isExpired =
-      cachedSessionTokenExpiresAt !== null &&
-      Date.now() > cachedSessionTokenExpiresAt - SESSION_TOKEN_EXPIRY_BUFFER_MS
-    if (!isExpired) {
+    if (!isCachedSessionTokenExpired()) {
       return cachedSessionToken
     }
     cachedSessionToken = null
@@ -580,11 +710,19 @@ export function createStreamUsageTracker(): (usage: StreamUsage) => void {
 // JWT remains valid until its own expiry, at which point the regular mint
 // path re-resolves the account's tier. An explicit subscription-required
 // response clears the subscriber cache and re-resolves the tier immediately.
-async function refreshHourlyUsage(cacheGeneration: number): Promise<void> {
+async function refreshHourlyUsage(
+  cacheGeneration: number,
+  forceRefresh: boolean,
+): Promise<void> {
   const authBearer = await resolveAuthBearer()
   assertSessionCacheGeneration(cacheGeneration)
   if (!authBearer) return
-  const jwt = await fetchChatJWT(authBearer, cacheGeneration)
+  const jwt = await fetchChatJWT(
+    authBearer,
+    cacheGeneration,
+    undefined,
+    forceRefresh,
+  )
   assertSessionCacheGeneration(cacheGeneration)
   if (jwt.key === null) {
     cachedSessionToken = null
@@ -594,6 +732,11 @@ async function refreshHourlyUsage(cacheGeneration: number): Promise<void> {
     dispatchRateLimitUpdate()
     await fetchSessionTokenForGeneration(cacheGeneration)
     return
+  }
+  if (!cachedSessionToken || isCachedSessionTokenExpired()) {
+    cachedSessionToken = jwt.key
+    cachedSessionTokenExpiresAt = jwt.expiresAt
+    cachedSessionTokenWasAuthenticated = true
   }
   cachedRateLimit = jwt.rateLimit
   dispatchRateLimitUpdate()
@@ -608,8 +751,11 @@ async function refreshHourlyUsage(cacheGeneration: number): Promise<void> {
  * falls back to snapshot - 1 so the UI stays accurate.
  * Concurrent calls are coalesced into a single in-flight request.
  */
-export async function refreshRateLimit(): Promise<void> {
+export async function refreshRateLimit({
+  force = false,
+}: { force?: boolean } = {}): Promise<void> {
   if (refreshInFlight) return refreshInFlight
+  if (!force && getActiveChatTokenCooldown()) return
 
   const refresh = (async () => {
     const refreshGeneration = sessionCacheGeneration
@@ -617,7 +763,7 @@ export async function refreshRateLimit(): Promise<void> {
     remainingBeforeRequest = null
     try {
       if (cachedRateLimit?.kind === 'hourly') {
-        await refreshHourlyUsage(refreshGeneration)
+        await refreshHourlyUsage(refreshGeneration, force)
         return
       }
       cachedSessionToken = null
@@ -656,6 +802,7 @@ export async function refreshRateLimit(): Promise<void> {
 
 export function resetTinfoilClient(): void {
   sessionCacheGeneration++
+  resetChatTokenRequests()
   // Abort with the same retryable error as invalidateSessionCache so
   // concurrent waiters in ensureInitialized re-initialize against the new
   // generation instead of surfacing what downstream would classify as a
@@ -681,6 +828,7 @@ export function resetTinfoilClient(): void {
 
 export function invalidateSessionCache(): void {
   sessionCacheGeneration++
+  resetChatTokenRequests()
   abortInitialization(new SessionCacheInvalidatedError())
   refreshInFlight = null
   cachedSessionToken = null

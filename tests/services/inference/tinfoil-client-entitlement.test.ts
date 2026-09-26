@@ -140,7 +140,7 @@ describe('chat session entitlement', () => {
     expect(getToken.mock.calls).toEqual([[], [{ skipCache: true }]])
     expect(fetchMock).toHaveBeenNthCalledWith(2, CHAT_TOKEN_URL, {
       headers: { Authorization: `Bearer ${REFRESHED_CLERK_TOKEN}` },
-      signal: undefined,
+      signal: expect.any(AbortSignal),
     })
     expect(getRateLimitInfo()).toMatchObject({ kind: 'hourly' })
   })
@@ -421,7 +421,7 @@ describe('chat session entitlement', () => {
     expect(getToken).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenLastCalledWith(CHAT_TOKEN_URL, {
       headers: { Authorization: 'Bearer new-account-token' },
-      signal: undefined,
+      signal: expect.any(AbortSignal),
     })
     expect(getRateLimitInfo()).toMatchObject({ kind: 'hourly' })
   })
