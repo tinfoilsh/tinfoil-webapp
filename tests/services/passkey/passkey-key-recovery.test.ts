@@ -170,13 +170,16 @@ describe('recoverPasskeyKeyBundle', () => {
     expect(recovered?.keyBundle.alternatives).toEqual([])
   })
 
-  it('unwraps an evaluated current bundle without reading the PRF cache', async () => {
+  it.each([
+    { format: 'buffer', first: PRF_OUTPUT.buffer },
+    { format: '1Password byte array', first: Array.from(PRF_OUTPUT) },
+  ])('recovers with $format PRF output', async ({ first }) => {
     localStorage.clear()
     const get = vi.fn(async () => ({
       rawId: new Uint8Array([1, 2, 3]).buffer,
       authenticatorAttachment: 'platform',
       getClientExtensionResults: () => ({
-        prf: { results: { first: PRF_OUTPUT.buffer } },
+        prf: { results: { first } },
       }),
     }))
     Object.defineProperty(navigator, 'credentials', {
