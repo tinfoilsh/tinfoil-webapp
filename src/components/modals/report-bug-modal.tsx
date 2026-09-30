@@ -5,7 +5,7 @@ import { cn } from '@/components/ui/utils'
 import { APP_VERSION } from '@/config'
 import { SUPPORT_EMAIL } from '@/constants/external-links'
 import { useToast } from '@/hooks/use-toast'
-import { CheckIcon, ClipboardIcon } from '@heroicons/react/24/outline'
+import { TfBoxCheckmark, TfCopy } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState } from 'react'
 
 const COPIED_FEEDBACK_MS = 2000
@@ -138,9 +138,12 @@ export function ReportBugModal({
             {SUPPORT_EMAIL}
           </span>
           {copied ? (
-            <CheckIcon className="h-3.5 w-3.5 text-green-500" aria-hidden />
+            <TfBoxCheckmark
+              className="h-3.5 w-3.5 text-green-500"
+              aria-hidden
+            />
           ) : (
-            <ClipboardIcon className="h-3.5 w-3.5" aria-hidden />
+            <TfCopy className="h-3.5 w-3.5" aria-hidden />
           )}
         </button>
       </div>

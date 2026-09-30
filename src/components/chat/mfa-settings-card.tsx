@@ -3,9 +3,9 @@ import { getClerkErrorMessage } from '@/utils/clerk-errors'
 import { logError, logWarning } from '@/utils/error-handling'
 import { useReverification, useUser } from '@clerk/react'
 import { isReverificationCancelledError } from '@clerk/react/errors'
-import { ArrowDownTrayIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
+import { ArrowDownTrayIcon } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { TfCopy, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark, TfCopy, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
 import { memo, useCallback, useRef, useState, type FormEvent } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
@@ -212,7 +212,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
       >
         <div className="flex items-start gap-3">
           <TfShieldCheck
-            className="mt-0.5 h-5 w-5 shrink-0 !text-content-muted"
+            className="mt-0.5 h-5 w-5 shrink-0 text-content-muted"
             aria-hidden="true"
           />
           <div className="min-w-0 flex-1">
@@ -255,7 +255,10 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                 )}
               >
                 {(isStartingSetup || isDisabling) && (
-                  <PiSpinner className="h-4 w-4 animate-spin" />
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 )}
                 {isStartingSetup
                   ? 'Starting setup...'
@@ -306,7 +309,10 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                     className="shrink-0 text-content-muted transition-colors hover:text-content-primary"
                   >
                     {copiedTarget === 'setup-key' ? (
-                      <CheckCircleIcon className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light" />
+                      <TfBoxCheckmark
+                        className="h-4 w-4 text-brand-accent-dark dark:text-brand-accent-light"
+                        aria-hidden="true"
+                      />
                     ) : (
                       <TfCopy className="h-4 w-4" aria-hidden="true" />
                     )}
@@ -361,7 +367,12 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                 }
                 className="flex flex-1 items-center justify-center gap-2 rounded-md bg-brand-accent-dark px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isVerifying && <PiSpinner className="h-4 w-4 animate-spin" />}
+                {isVerifying && (
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                )}
                 {isVerifying ? 'Verifying...' : 'Verify and enable'}
               </button>
             </div>
@@ -396,7 +407,10 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
             )}
           >
             <div className="flex items-start gap-3">
-              <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-brand-accent-dark dark:text-brand-accent-light" />
+              <TfBoxCheckmark
+                className="mt-0.5 h-5 w-5 shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
+                aria-hidden="true"
+              />
               <div>
                 <DialogPrimitive.Title className="font-aeonik text-base font-medium text-content-primary">
                   Authenticator app enabled
@@ -440,7 +454,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                     onClick={handleDownloadBackupCodes}
                     className="flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
                   >
-                    <ArrowDownTrayIcon className="h-4 w-4" />
+                    <ArrowDownTrayIcon className="h-4 w-4" aria-hidden="true" />
                     Download .txt
                   </button>
                 </div>

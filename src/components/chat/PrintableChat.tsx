@@ -5,7 +5,7 @@ import {
 } from '@/utils/latex-processing'
 import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { LockClosedIcon } from '@heroicons/react/24/outline'
+import { TfLockLocked } from '@tinfoilsh/tinfoil-icons'
 import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import {
@@ -253,7 +253,7 @@ const PrintableMessage = memo(function PrintableMessage({
       )}
       <div className="flex items-center gap-1 text-xs text-gray-500">
         {!isUser && modelDisplayName ? `${modelDisplayName} · ` : ''}
-        <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
+        <TfLockLocked className="h-3 w-3" aria-hidden="true" />
         Encrypted
       </div>
     </div>

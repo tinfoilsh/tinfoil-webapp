@@ -1,6 +1,6 @@
 import { cn } from '@/components/ui/utils'
 import { formatFileSize } from '@/utils/format-file-size'
-import { XMarkIcon } from '@heroicons/react/24/outline'
+import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import { FilePreview } from './components/file-preview'
 
 interface ImportFileListProps {
@@ -60,7 +60,7 @@ export function ImportFileList({
               aria-label={`Remove ${file.name}`}
               className="shrink-0 rounded p-1 text-content-muted transition-colors hover:bg-surface-chat-background hover:text-content-primary"
             >
-              <XMarkIcon className="h-4 w-4" />
+              <TfBoxX className="h-4 w-4" aria-hidden="true" />
             </button>
           </li>
         ))}

@@ -1,4 +1,4 @@
-import type { IconType } from 'react-icons'
+import type { IconType } from '@tinfoilsh/tinfoil-icons'
 
 // Optional per-preset chat settings applied once when the preset is
 // selected for a chat. Undefined means "leave the chat as is". Shared with

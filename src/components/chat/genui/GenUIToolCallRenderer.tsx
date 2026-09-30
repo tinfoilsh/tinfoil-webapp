@@ -405,10 +405,14 @@ function ParseFailureCard({
             disabled={isRetrying}
             className="inline-flex w-full flex-shrink-0 items-center justify-center gap-1.5 rounded-md border border-brand-accent-dark bg-brand-accent-dark px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-default disabled:opacity-60 md:w-auto"
           >
-            <TfRefresh1
-              className={`h-3.5 w-3.5 ${isRetrying ? 'animate-spin' : ''}`}
-              aria-hidden="true"
-            />
+            {isRetrying ? (
+              <PiSpinner
+                className="h-3.5 w-3.5 animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
             {isRetrying ? 'Fixing widget...' : 'Retry widget'}
           </button>
         )}

@@ -111,20 +111,19 @@ import { useAuth, useUser } from '@clerk/react'
 import { Dialog } from '@headlessui/react'
 import {
   ArrowDownTrayIcon,
-  ArrowPathIcon,
   ArrowTopRightOnSquareIcon,
   ArrowUpTrayIcon,
-  CheckCircleIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleStackIcon,
   EyeIcon,
   EyeSlashIcon,
   ShieldExclamationIcon,
-  XMarkIcon,
 } from '@heroicons/react/24/outline'
 import {
   TfAdjustmentToggle,
+  TfBoxCheckmark,
+  TfBoxX,
   TfCard,
   TfChat2,
   TfCloudSync,
@@ -139,6 +138,7 @@ import {
   TfNumber4,
   TfPerson,
   TfPersonKey,
+  TfPlus,
   TfShieldCheck,
   TfSunLightMode,
   TfTools,
@@ -369,7 +369,7 @@ function StepNumber({ step }: { step: keyof typeof STEP_ICONS }) {
   return (
     <>
       <Icon
-        className="mt-1 h-3 w-3 shrink-0 !text-content-secondary"
+        className="mt-1 h-3 w-3 shrink-0 text-content-secondary"
         aria-hidden="true"
       />
       <span className="sr-only">Step {step}:</span>
@@ -507,7 +507,10 @@ function PasskeyBundleInventory({
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <TfPersonKey className="h-4 w-4 shrink-0 text-content-secondary" />
+                  <TfPersonKey
+                    className="h-4 w-4 shrink-0 text-content-secondary"
+                    aria-hidden="true"
+                  />
                   <span className="truncate text-sm font-medium text-content-primary">
                     {isCurrentPlatform ? 'This platform' : 'Other platform'}
                   </span>
@@ -1425,7 +1428,10 @@ export function SettingsModal({
           )}
         >
           <div className="flex items-center gap-3">
-            <ArrowPathIcon className="h-5 w-5 animate-spin text-brand-accent-light" />
+            <PiSpinner
+              className="h-5 w-5 animate-spin text-brand-accent-light"
+              aria-hidden="true"
+            />
             <div className="flex-1">
               <div className="font-aeonik text-sm font-medium text-content-primary">
                 {title}
@@ -1462,9 +1468,15 @@ export function SettingsModal({
         >
           <div className="flex items-start gap-3">
             {importResult.success ? (
-              <CheckCircleIcon className="h-5 w-5 shrink-0 text-brand-accent-dark dark:text-brand-accent-light" />
+              <TfBoxCheckmark
+                className="h-5 w-5 shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
+                aria-hidden="true"
+              />
             ) : (
-              <XMarkIcon className="h-5 w-5 shrink-0 text-red-500" />
+              <TfBoxX
+                className="h-5 w-5 shrink-0 text-red-500"
+                aria-hidden="true"
+              />
             )}
             <div className="flex-1">
               <div
@@ -1511,7 +1523,7 @@ export function SettingsModal({
               aria-label="Dismiss"
               className="shrink-0 rounded p-0.5 text-content-muted transition-colors hover:text-content-primary"
             >
-              <XMarkIcon className="h-4 w-4" />
+              <TfBoxX className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -2505,7 +2517,7 @@ ${encryptionKey.replace('key_', '')}
                 aria-label="Close settings"
                 className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
               >
-                <XMarkIcon className="h-5 w-5" />
+                <TfBoxX className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -2556,7 +2568,7 @@ ${encryptionKey.replace('key_', '')}
               aria-label="Close settings"
               className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
             >
-              <XMarkIcon className="h-5 w-5" />
+              <TfBoxX className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
 
@@ -2670,7 +2682,7 @@ ${encryptionKey.replace('key_', '')}
                             )}
                           >
                             <theme.icon
-                              className="h-5 w-5 !text-content-primary"
+                              className="h-5 w-5 text-content-primary"
                               aria-hidden="true"
                             />
                             <span className="text-xs text-content-secondary">
@@ -3196,6 +3208,7 @@ ${encryptionKey.replace('key_', '')}
                               <button
                                 key={trait}
                                 onClick={() => handleTraitToggle(trait)}
+                                aria-pressed={selectedTraits.includes(trait)}
                                 className={cn(
                                   'rounded-site-control px-3 py-1.5 text-sm transition-colors',
                                   selectedTraits.includes(trait)
@@ -3205,7 +3218,17 @@ ${encryptionKey.replace('key_', '')}
                                       : 'border border-border-subtle bg-surface-sidebar text-content-secondary hover:bg-surface-chat',
                                 )}
                               >
-                                {selectedTraits.includes(trait) ? '✓ ' : '+ '}
+                                {selectedTraits.includes(trait) ? (
+                                  <TfBoxCheckmark
+                                    className="inline-block h-3 w-3"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <TfPlus
+                                    className="inline-block h-3 w-3"
+                                    aria-hidden="true"
+                                  />
+                                )}{' '}
                                 {trait}
                               </button>
                             ))}
@@ -3405,7 +3428,7 @@ ${encryptionKey.replace('key_', '')}
                     >
                       <div className="flex items-center gap-2">
                         <TfLightbulb
-                          className="h-4 w-4 !text-content-muted"
+                          className="h-4 w-4 text-content-muted"
                           aria-hidden="true"
                         />
                         <h3 className="font-aeonik text-sm font-medium text-content-secondary">
@@ -3417,6 +3440,7 @@ ${encryptionKey.replace('key_', '')}
                           'h-4 w-4 text-content-muted transition-transform',
                           isHowItWorksOpen && 'rotate-180',
                         )}
+                        aria-hidden="true"
                       />
                     </button>
                     {isHowItWorksOpen && (
@@ -3525,7 +3549,10 @@ ${encryptionKey.replace('key_', '')}
                     >
                       <div className="flex w-full items-center justify-between p-4">
                         <div className="flex items-center gap-2">
-                          <TfKey className="h-4 w-4 text-content-muted" />
+                          <TfKey
+                            className="h-4 w-4 text-content-muted"
+                            aria-hidden="true"
+                          />
                           <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                             Your Personal Encryption Key
                           </h3>
@@ -3572,9 +3599,15 @@ ${encryptionKey.replace('key_', '')}
                                     className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
                                   >
                                     {isKeyVisible ? (
-                                      <EyeSlashIcon className="h-4 w-4" />
+                                      <EyeSlashIcon
+                                        className="h-4 w-4"
+                                        aria-hidden="true"
+                                      />
                                     ) : (
-                                      <EyeIcon className="h-4 w-4" />
+                                      <EyeIcon
+                                        className="h-4 w-4"
+                                        aria-hidden="true"
+                                      />
                                     )}
                                   </button>
                                   <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
@@ -3677,7 +3710,10 @@ ${encryptionKey.replace('key_', '')}
                                       : 'text-content-muted',
                                   )}
                                 >
-                                  <BsQrCode className="h-4 w-4" />
+                                  <BsQrCode
+                                    className="h-4 w-4"
+                                    aria-hidden="true"
+                                  />
                                 </button>
                                 <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                                   QR code
@@ -3689,7 +3725,10 @@ ${encryptionKey.replace('key_', '')}
                                   aria-label="Download encryption key as PEM file"
                                   className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
                                 >
-                                  <ArrowDownTrayIcon className="h-4 w-4" />
+                                  <ArrowDownTrayIcon
+                                    className="h-4 w-4"
+                                    aria-hidden="true"
+                                  />
                                 </button>
                                 <span className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                                   Download
@@ -3730,7 +3769,10 @@ ${encryptionKey.replace('key_', '')}
                             )}
                           >
                             <div className="flex items-start gap-2">
-                              <TfPersonKey className="mt-0.5 h-4 w-4 shrink-0 !text-tinfoil-accent-blue dark:!text-blue-400" />
+                              <TfPersonKey
+                                className="mt-0.5 h-4 w-4 shrink-0 text-tinfoil-accent-blue dark:text-blue-400"
+                                aria-hidden="true"
+                              />
                               <div>
                                 <span className="text-sm font-medium text-content-primary">
                                   Sync and backup using Passkeys
@@ -3743,7 +3785,7 @@ ${encryptionKey.replace('key_', '')}
                             </div>
                             <div className="ml-6 mt-2 flex items-center gap-1.5">
                               <TfShieldCheck
-                                className="h-3.5 w-3.5 !text-tinfoil-accent-blue dark:!text-blue-400"
+                                className="h-3.5 w-3.5 text-tinfoil-accent-blue dark:text-blue-400"
                                 aria-hidden="true"
                               />
                               <span className="text-xs font-medium text-tinfoil-accent-blue dark:text-blue-400">
@@ -3849,7 +3891,10 @@ ${encryptionKey.replace('key_', '')}
                               )}
                             >
                               <div className="flex gap-2">
-                                <TfPersonKey className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary" />
+                                <TfPersonKey
+                                  className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary"
+                                  aria-hidden="true"
+                                />
                                 <div>
                                   <span className="text-sm font-medium leading-tight text-content-primary">
                                     {isSettingUpPasskey
@@ -3903,7 +3948,10 @@ ${encryptionKey.replace('key_', '')}
                               )}
                             >
                               <div className="flex gap-2">
-                                <TfPersonKey className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary" />
+                                <TfPersonKey
+                                  className="mt-[3px] h-4 w-4 shrink-0 text-content-secondary"
+                                  aria-hidden="true"
+                                />
                                 <div>
                                   <span className="text-sm font-medium leading-tight text-content-primary">
                                     {isSettingUpPasskey
@@ -4324,7 +4372,10 @@ ${encryptionKey.replace('key_', '')}
                                     : 'bg-surface-sidebar text-content-primary',
                                 )}
                               >
-                                <ArrowUpTrayIcon className="h-4 w-4" />
+                                <ArrowUpTrayIcon
+                                  className="h-4 w-4"
+                                  aria-hidden="true"
+                                />
                                 Select File
                               </button>
                             )}
@@ -4461,7 +4512,10 @@ ${encryptionKey.replace('key_', '')}
                                       : 'bg-surface-sidebar text-content-primary',
                                   )}
                                 >
-                                  <ArrowUpTrayIcon className="h-4 w-4" />
+                                  <ArrowUpTrayIcon
+                                    className="h-4 w-4"
+                                    aria-hidden="true"
+                                  />
                                   Conversations
                                 </button>
                                 {isPremium && (
@@ -4480,7 +4534,10 @@ ${encryptionKey.replace('key_', '')}
                                         : 'bg-surface-sidebar text-content-primary',
                                     )}
                                   >
-                                    <ArrowUpTrayIcon className="h-4 w-4" />
+                                    <ArrowUpTrayIcon
+                                      className="h-4 w-4"
+                                      aria-hidden="true"
+                                    />
                                     Projects
                                   </button>
                                 )}
@@ -4537,7 +4594,10 @@ ${encryptionKey.replace('key_', '')}
                                   : 'bg-surface-sidebar text-content-primary',
                               )}
                             >
-                              <ArrowUpTrayIcon className="h-4 w-4" />
+                              <ArrowUpTrayIcon
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
                               Select Tinfoil Export
                             </button>
                           )}
@@ -4576,9 +4636,12 @@ ${encryptionKey.replace('key_', '')}
                       >
                         {(isExporting || isPreparingExport) &&
                         exportType === 'chats' ? (
-                          <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                          <PiSpinner
+                            className="h-4 w-4 animate-spin"
+                            aria-hidden="true"
+                          />
                         ) : (
-                          <TfDownload className="h-4 w-4" />
+                          <TfDownload className="h-4 w-4" aria-hidden="true" />
                         )}
                         {isPreparingExport && exportType === 'chats'
                           ? 'Please wait while we prepare the export...'
@@ -4622,9 +4685,15 @@ ${encryptionKey.replace('key_', '')}
                           )}
                         >
                           {isExporting && exportType === 'projects' ? (
-                            <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                            <PiSpinner
+                              className="h-4 w-4 animate-spin"
+                              aria-hidden="true"
+                            />
                           ) : (
-                            <TfDownload className="h-4 w-4" />
+                            <TfDownload
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                           )}
                           {isExporting && exportType === 'projects'
                             ? 'Exporting...'
@@ -4710,7 +4779,10 @@ ${encryptionKey.replace('key_', '')}
                             )}
                           >
                             {isSigningOut && (
-                              <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                              <PiSpinner
+                                className="h-4 w-4 animate-spin"
+                                aria-hidden="true"
+                              />
                             )}
                             {isSigningOut ? 'Signing out...' : 'Sign out'}
                           </button>
@@ -4785,7 +4857,7 @@ ${encryptionKey.replace('key_', '')}
                             <div className="text-left">
                               <div className="flex items-center gap-3">
                                 <TfCard
-                                  className="h-5 w-5 !text-content-muted"
+                                  className="h-5 w-5 text-content-muted"
                                   aria-hidden="true"
                                 />
                                 <div className="font-aeonik text-sm font-medium text-content-primary">
@@ -4835,7 +4907,7 @@ ${encryptionKey.replace('key_', '')}
                           <div className="text-left">
                             <div className="flex items-center gap-3">
                               <TfPerson
-                                className="h-5 w-5 !text-content-muted"
+                                className="h-5 w-5 text-content-muted"
                                 aria-hidden="true"
                               />
                               <div className="font-aeonik text-sm font-medium text-content-primary">
@@ -4862,7 +4934,7 @@ ${encryptionKey.replace('key_', '')}
                         )}
                       >
                         <TfPerson
-                          className="mx-auto h-12 w-12 !text-content-muted"
+                          className="mx-auto h-12 w-12 text-content-muted"
                           aria-hidden="true"
                         />
                         <h3 className="mt-3 font-aeonik text-base font-medium text-content-primary">
@@ -4876,7 +4948,7 @@ ${encryptionKey.replace('key_', '')}
                           href="/signin"
                           className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90"
                         >
-                          <PiSignIn className="h-4 w-4" />
+                          <PiSignIn className="h-4 w-4" aria-hidden="true" />
                           Sign in or sign up
                         </Link>
                       </div>
@@ -4976,7 +5048,10 @@ ${encryptionKey.replace('key_', '')}
                 )}
               >
                 {isSigningOut && (
-                  <ArrowPathIcon className="h-4 w-4 animate-spin" />
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 )}
                 {isSigningOut ? 'Signing out...' : 'Sign Out'}
               </button>

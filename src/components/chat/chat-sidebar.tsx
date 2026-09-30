@@ -29,32 +29,29 @@ import {
 import { logInfo } from '@/utils/error-handling'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/react'
+import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  CloudIcon,
-  MagnifyingGlassIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
-import {
+  TfBoxX,
   TfChat2,
+  TfCloud,
   TfFloppyDisk,
   TfFolder,
   TfFolderPlus,
   TfLockLocked,
+  TfMagnifyingGlass,
   TfMicrophone,
   TfSetting,
+  TfSidebarClose,
+  TfSidebarOpen,
   TfSparkle,
+  TfThumbtack,
   TfTrash,
   TfWarning,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useRouter } from 'next/router'
-import { FaLock } from 'react-icons/fa6'
-import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
-import { IoChatbubblesOutline } from 'react-icons/io5'
-import { PiPushPin, PiSpinner } from 'react-icons/pi'
+import { PiSpinner } from 'react-icons/pi'
 import { ChatList, type ChatItemData } from './chat-list'
 import { formatRelativeTime } from './chat-list-utils'
 import { CONSTANTS } from './constants'
@@ -887,7 +884,10 @@ export function ChatSidebar({
                 alt=""
                 className="h-6 w-6 group-hover/logo:opacity-0"
               />
-              <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 group-hover/logo:opacity-100" />
+              <TfSidebarOpen
+                className="absolute inset-0 m-auto h-5 w-5 -scale-x-100 text-content-secondary opacity-0 group-hover/logo:opacity-100"
+                aria-hidden="true"
+              />
             </button>
           </div>
           {/* Action buttons */}
@@ -940,7 +940,7 @@ export function ChatSidebar({
                   )}
                   aria-label="Favorites"
                 >
-                  <PiPushPin className="h-5 w-5" />
+                  <TfThumbtack className="h-5 w-5" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   Favorites
@@ -1044,7 +1044,10 @@ export function ChatSidebar({
               className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-secondary"
               aria-label="Close sidebar"
             >
-              <GoSidebarExpand className="h-5 w-5" />
+              <TfSidebarClose
+                className="h-5 w-5 -scale-x-100"
+                aria-hidden="true"
+              />
             </button>
             <span className="pointer-events-none absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
               Close sidebar{' '}
@@ -1133,17 +1136,26 @@ export function ChatSidebar({
                 ) : (
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <IoChatbubblesOutline className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <TfChat2
+                        className="h-4 w-4 flex-shrink-0 text-content-muted"
+                        aria-hidden="true"
+                      />
                       <span>Keep your chat history</span>
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <CloudIcon className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <TfCloud
+                        className="h-4 w-4 flex-shrink-0 text-content-muted"
+                        aria-hidden="true"
+                      />
                       <span>Encrypted sync across devices</span>
                     </div>
 
                     <div className="flex items-center gap-3 text-xs text-content-secondary">
-                      <PiPushPin className="h-4 w-4 flex-shrink-0 text-content-muted" />
+                      <TfThumbtack
+                        className="h-4 w-4 flex-shrink-0 text-content-muted"
+                        aria-hidden="true"
+                      />
                       <span>Save your favorite chats</span>
                     </div>
                   </div>
@@ -1229,7 +1241,7 @@ export function ChatSidebar({
                       className="-mr-1 -mt-1 flex-shrink-0 rounded p-1 text-content-muted transition-colors hover:bg-amber-500/10 hover:text-content-secondary"
                       aria-label="Dismiss"
                     >
-                      <XMarkIcon className="h-3.5 w-3.5" />
+                      <TfBoxX className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                   )}
                 </div>
@@ -1282,7 +1294,7 @@ export function ChatSidebar({
                 )}
               >
                 <span className="flex items-center gap-2">
-                  <PiPushPin className="h-4 w-4" aria-hidden="true" />
+                  <TfThumbtack className="h-4 w-4" aria-hidden="true" />
                   <span
                     role="heading"
                     aria-level={2}
@@ -1488,7 +1500,10 @@ export function ChatSidebar({
                             onClick={openCloudSyncSetup}
                             className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                           >
-                            <CloudIcon className="h-3.5 w-3.5" />
+                            <TfCloud
+                              className="h-3.5 w-3.5"
+                              aria-hidden="true"
+                            />
                             Enable Cloud Sync
                           </button>
                         </div>
@@ -1520,7 +1535,10 @@ export function ChatSidebar({
                               )}
                             >
                               {isCreatingProject ? (
-                                <div className="h-4 w-4 animate-spin rounded-full border-2 border-content-muted border-t-transparent" />
+                                <PiSpinner
+                                  className="h-4 w-4 animate-spin text-content-muted"
+                                  aria-hidden="true"
+                                />
                               ) : (
                                 <TfFolderPlus className="h-4 w-4 shrink-0" />
                               )}
@@ -1915,7 +1933,7 @@ export function ChatSidebar({
                       aria-label="Search chats"
                       className="rounded-md p-1.5 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-primary"
                     >
-                      <MagnifyingGlassIcon
+                      <TfMagnifyingGlass
                         className="h-4 w-4"
                         aria-hidden="true"
                       />
@@ -2032,7 +2050,7 @@ export function ChatSidebar({
                               STORAGE_TAB_DROP_TARGET_CLASS_NAME,
                           )}
                         >
-                          <CloudIcon className="h-3.5 w-3.5" />
+                          <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
                           Cloud
                         </button>
                         <button
@@ -2130,7 +2148,7 @@ export function ChatSidebar({
                               }
                               className="flex w-full items-center gap-2 text-left transition-colors hover:text-content-secondary"
                             >
-                              <FaLock
+                              <TfLockLocked
                                 className="h-3 w-3 shrink-0"
                                 aria-hidden="true"
                               />
@@ -2184,7 +2202,7 @@ export function ChatSidebar({
                           onClick={openCloudSyncSetup}
                           className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-chat px-3 py-2 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat/80"
                         >
-                          <CloudIcon className="h-3.5 w-3.5" />
+                          <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
                           Enable Cloud Sync
                         </button>
                       </div>
@@ -2454,7 +2472,7 @@ export function ChatSidebar({
               aria-label="Dismiss"
               className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center text-content-muted transition-colors hover:text-content-primary"
             >
-              <XMarkIcon className="h-4 w-4" />
+              <TfBoxX className="h-4 w-4" aria-hidden="true" />
             </button>
             <div className="text-center">
               <p

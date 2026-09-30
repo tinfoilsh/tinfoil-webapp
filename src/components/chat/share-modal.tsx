@@ -7,10 +7,17 @@ import {
 } from '@/services/share-api'
 import { shareSeal as enclaveShareSeal } from '@/services/sync-enclave/sync-api'
 import type { ShareableChatData } from '@/utils/share-payload'
-import { CheckIcon, LinkIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { LinkIcon } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { TfCopy, TfGlobe, TfLockLocked } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxCheckmark,
+  TfBoxX,
+  TfCopy,
+  TfGlobe,
+  TfLockLocked,
+} from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useRef, useState } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 import { Card, CardContent } from '../ui/card'
 import {
   getMessageAttachments,
@@ -439,7 +446,7 @@ function ShareModalContent({
               aria-label="Close share dialog"
               className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
             >
-              <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+              <TfBoxX className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
 
@@ -454,7 +461,7 @@ function ShareModalContent({
                     <div className="flex items-start gap-4 p-4">
                       <div className="mt-1 rounded-full bg-surface-chat p-2 text-content-secondary">
                         {hasShare === null ? (
-                          <LinkIcon className="h-5 w-5" />
+                          <LinkIcon className="h-5 w-5" aria-hidden="true" />
                         ) : hasShare ? (
                           <TfGlobe className="h-5 w-5" aria-hidden="true" />
                         ) : (
@@ -506,7 +513,7 @@ function ShareModalContent({
                               aria-label="Make this conversation shareable with anyone who has the link"
                               className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-border-subtle bg-surface-chat transition-all checked:border-brand-accent-dark checked:bg-brand-accent-dark"
                             />
-                            <CheckIcon
+                            <TfBoxCheckmark
                               className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 text-white opacity-0 peer-checked:opacity-100"
                               aria-hidden="true"
                             />
@@ -539,7 +546,10 @@ function ShareModalContent({
                             >
                               {isUploading ? (
                                 <>
-                                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                                  <PiSpinner
+                                    className="h-4 w-4 animate-spin"
+                                    aria-hidden="true"
+                                  />
                                   Uploading...
                                 </>
                               ) : (
@@ -575,7 +585,7 @@ function ShareModalContent({
                             >
                               {isLinkCopied ? (
                                 <>
-                                  <CheckIcon
+                                  <TfBoxCheckmark
                                     className="h-4 w-4"
                                     aria-hidden="true"
                                   />
@@ -612,7 +622,10 @@ function ShareModalContent({
                     >
                       {isCopied ? (
                         <>
-                          <CheckIcon className="h-3 w-3" />
+                          <TfBoxCheckmark
+                            className="h-3 w-3"
+                            aria-hidden="true"
+                          />
                           Copied!
                         </>
                       ) : (

@@ -3,10 +3,10 @@
 import { cn } from '@/components/ui/utils'
 import { useProjects } from '@/hooks/use-projects'
 import type { Project } from '@/types/project'
-import { XMarkIcon } from '@heroicons/react/24/outline'
-import { TfFolder, TfFolderPlus } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX, TfFolder, TfFolderPlus } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 import { useProject } from './project-context'
 
 interface ProjectSelectorModalProps {
@@ -115,6 +115,7 @@ export function ProjectSelectorModal({
                 </h2>
                 <button
                   onClick={handleClose}
+                  aria-label="Close"
                   className={cn(
                     'rounded-md p-1.5 transition-colors',
                     isDarkMode
@@ -122,7 +123,7 @@ export function ProjectSelectorModal({
                       : 'text-content-muted hover:bg-surface-sidebar hover:text-content-secondary',
                   )}
                 >
-                  <XMarkIcon className="h-5 w-5" />
+                  <TfBoxX className="h-5 w-5" aria-hidden="true" />
                 </button>
               </div>
 
@@ -141,7 +142,7 @@ export function ProjectSelectorModal({
                           : 'hover:bg-surface-sidebar',
                       )}
                     >
-                      <TfFolderPlus className="h-6 w-6" />
+                      <TfFolderPlus className="h-6 w-6" aria-hidden="true" />
                       <span className="font-aeonik font-medium">
                         New Project
                       </span>
@@ -150,7 +151,10 @@ export function ProjectSelectorModal({
                     {/* Projects list */}
                     {loadingList && projects.length === 0 ? (
                       <div className="py-8 text-center">
-                        <div className="mx-auto mb-2 h-6 w-6 animate-spin rounded-full border-2 border-brand-accent-dark border-t-transparent dark:border-brand-accent-light dark:border-t-transparent" />
+                        <PiSpinner
+                          className="mx-auto mb-2 h-6 w-6 animate-spin text-brand-accent-dark dark:text-brand-accent-light"
+                          aria-hidden="true"
+                        />
                         <p className="font-aeonik-fono text-sm text-content-muted">
                           Loading projects...
                         </p>

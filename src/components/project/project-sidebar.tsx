@@ -45,26 +45,27 @@ import {
 import { useAuth } from '@clerk/react'
 import {
   ArrowLeftIcon,
-  ChatBubbleLeftRightIcon,
-  CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   ChevronUpIcon,
-  DocumentPlusIcon,
   NoSymbolIcon,
 } from '@heroicons/react/24/outline'
 import {
+  TfBoxCheckmark,
+  TfChat2,
   TfDocument,
+  TfDocumentPlus,
   TfFolder,
   TfSetting,
+  TfSidebarClose,
+  TfSidebarOpen,
+  TfThumbtack,
   TfTrash,
   TfWriting,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { GoSidebarCollapse, GoSidebarExpand } from 'react-icons/go'
-import { PiPushPin } from 'react-icons/pi'
 import { useProject } from './project-context'
 
 const MOBILE_BREAKPOINT = 1024
@@ -710,7 +711,10 @@ export function ProjectSidebar({
                 className="h-6 w-6 !text-content-secondary group-hover/logo:opacity-0"
                 aria-hidden="true"
               />
-              <GoSidebarCollapse className="absolute inset-0 m-auto h-5 w-5 text-content-secondary opacity-0 group-hover/logo:opacity-100" />
+              <TfSidebarOpen
+                className="absolute inset-0 m-auto h-5 w-5 -scale-x-100 text-content-secondary opacity-0 group-hover/logo:opacity-100"
+                aria-hidden="true"
+              />
             </button>
           </div>
           {/* Action buttons */}
@@ -763,7 +767,7 @@ export function ProjectSidebar({
                   )}
                   aria-label="Favorites"
                 >
-                  <PiPushPin className="h-5 w-5" />
+                  <TfThumbtack className="h-5 w-5" aria-hidden="true" />
                 </button>
                 <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                   Favorites
@@ -861,7 +865,10 @@ export function ProjectSidebar({
               className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-secondary"
               aria-label="Close sidebar"
             >
-              <GoSidebarExpand className="h-5 w-5" />
+              <TfSidebarClose
+                className="h-5 w-5 -scale-x-100"
+                aria-hidden="true"
+              />
             </button>
             <span className="pointer-events-none absolute right-full top-1/2 z-50 mr-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
               Close sidebar{' '}
@@ -931,7 +938,7 @@ export function ProjectSidebar({
                   'bg-tinfoil-accent-blue-darker ring-2 ring-tinfoil-accent-blue-soft',
               )}
             >
-              <ArrowLeftIcon className="h-4 w-4" />
+              <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" />
               <span className="font-aeonik font-medium">Exit Project</span>
             </button>
           </div>
@@ -991,7 +998,7 @@ export function ProjectSidebar({
                 )}
               >
                 <span className="flex items-center gap-2">
-                  <PiPushPin className="h-4 w-4" aria-hidden="true" />
+                  <TfThumbtack className="h-4 w-4" aria-hidden="true" />
                   <span
                     role="heading"
                     aria-level={2}
@@ -1175,7 +1182,10 @@ export function ProjectSidebar({
                                 style={{ backgroundColor: projectColor.hex }}
                               >
                                 {isSelected && (
-                                  <CheckIcon className="h-4 w-4 text-black/70" />
+                                  <TfBoxCheckmark
+                                    className="h-4 w-4 text-black/70"
+                                    aria-hidden="true"
+                                  />
                                 )}
                               </button>
                             )
@@ -1192,7 +1202,10 @@ export function ProjectSidebar({
                                 'ring-2 ring-content-primary ring-offset-2 ring-offset-surface-sidebar',
                             )}
                           >
-                            <NoSymbolIcon className="h-4 w-4" />
+                            <NoSymbolIcon
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                           </button>
                         </div>
                       </div>
@@ -1290,7 +1303,7 @@ export function ProjectSidebar({
               )}
             >
               <span className="flex items-center gap-2">
-                <TfDocument className="h-4 w-4" />
+                <TfDocument className="h-4 w-4" aria-hidden="true" />
                 <span className="font-aeonik font-medium">
                   Documents {isLoading ? '' : `(${projectDocuments.length})`}
                 </span>
@@ -1327,6 +1340,7 @@ export function ProjectSidebar({
                     {/* Drag and drop zone - at top */}
                     <button
                       type="button"
+                      aria-label="Upload documents"
                       onClick={() =>
                         !contextLoading && fileInputRef.current?.click()
                       }
@@ -1345,7 +1359,7 @@ export function ProjectSidebar({
                           : 'border-border-subtle hover:border-brand-accent-dark/50 hover:bg-surface-sidebar',
                       )}
                     >
-                      <DocumentPlusIcon
+                      <TfDocumentPlus
                         className={cn(
                           'h-5 w-5',
                           projectDocuments.length === 0 &&
@@ -1355,6 +1369,7 @@ export function ProjectSidebar({
                             ? 'text-content-muted'
                             : 'text-content-muted',
                         )}
+                        aria-hidden="true"
                       />
                       {projectDocuments.length === 0 &&
                         contextUploadingFiles.length === 0 && (
@@ -1463,10 +1478,7 @@ export function ProjectSidebar({
           <section className="relative z-10 mt-2 flex min-h-48 flex-1 flex-col">
             <div className="relative z-10 mx-2 flex-none rounded-lg border border-border-subtle bg-surface-sidebar px-4 py-3">
               <h3 className="flex items-center gap-2 font-aeonik text-sm font-medium text-content-primary">
-                <ChatBubbleLeftRightIcon
-                  className="h-4 w-4"
-                  aria-hidden="true"
-                />
+                <TfChat2 className="h-4 w-4" aria-hidden="true" />
                 <span>Project Chats</span>
               </h3>
             </div>

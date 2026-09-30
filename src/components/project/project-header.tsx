@@ -38,7 +38,7 @@ export function ProjectHeader({
           )}
           title="Exit project mode"
         >
-          <ArrowLeftIcon className="h-4 w-4" />
+          <ArrowLeftIcon className="h-4 w-4" aria-hidden="true" />
           <span className="hidden sm:inline">Exit</span>
         </button>
 

@@ -4,14 +4,14 @@ import { cn } from '@/components/ui/utils'
 import { useChatSearch } from '@/hooks/use-chat-search'
 import type { Project } from '@/types/project'
 import { isSearchableChat } from '@/utils/chat-search-visibility'
-import {
-  FolderIcon,
-  MagnifyingGlassIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
+import {
+  TfBoxX,
+  TfChat2,
+  TfFolder,
+  TfMagnifyingGlass,
+} from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { IoChatbubbleOutline } from 'react-icons/io5'
 import { CONSTANTS } from './constants'
 import type { Chat } from './types'
 
@@ -249,7 +249,7 @@ export function ChatSearchModal({
             </DialogPrimitive.Title>
 
             <div className="flex items-center gap-3 border-b border-border-subtle px-4 py-3">
-              <MagnifyingGlassIcon
+              <TfMagnifyingGlass
                 className="h-4 w-4 flex-none text-content-muted"
                 aria-hidden="true"
               />
@@ -267,7 +267,7 @@ export function ChatSearchModal({
                 aria-label="Close search"
                 className="rounded-md p-1 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-primary"
               >
-                <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+                <TfBoxX className="h-5 w-5" aria-hidden="true" />
               </DialogPrimitive.Close>
             </div>
 
@@ -332,12 +332,12 @@ export function ChatSearchModal({
                       )}
                     >
                       {row.kind === 'project' ? (
-                        <FolderIcon
+                        <TfFolder
                           className="h-4 w-4 flex-none"
                           aria-hidden="true"
                         />
                       ) : (
-                        <IoChatbubbleOutline
+                        <TfChat2
                           className="h-4 w-4 flex-none"
                           aria-hidden="true"
                         />
