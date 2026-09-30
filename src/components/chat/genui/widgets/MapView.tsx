@@ -2,8 +2,9 @@ import { Card } from '@/components/ui/card'
 import { getMapKitToken } from '@/services/mapkit-token'
 import { logError } from '@/utils/error-handling'
 import { load as loadMapKitJs, type MapKit } from '@apple/mapkit-loader'
+import { TfCopy } from '@tinfoilsh/tinfoil-icons'
 import type { LucideIcon } from 'lucide-react'
-import { Copy, ExternalLink, MapPin, Navigation } from 'lucide-react'
+import { ExternalLink, MapPin, Navigation } from 'lucide-react'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { Location, Props } from './Map'
 
@@ -551,7 +552,7 @@ export default function MapWidget(props: Props & { isDarkMode?: boolean }) {
               onClick={copyAddress}
               className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs text-content-primary transition-colors hover:border-content-primary/40"
             >
-              <Copy className="h-3.5 w-3.5" />
+              <TfCopy className="h-3.5 w-3.5" />
               {copied ? 'Copied' : 'Copy address'}
             </button>
           )}

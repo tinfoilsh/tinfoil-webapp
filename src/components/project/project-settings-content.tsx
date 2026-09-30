@@ -2,7 +2,8 @@
 
 import { cn } from '@/components/ui/utils'
 import { PROJECT_COLORS } from '@/constants/project-colors'
-import { CheckIcon, NoSymbolIcon } from '@heroicons/react/24/outline'
+import { NoSymbolIcon } from '@heroicons/react/24/outline'
+import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useState } from 'react'
 import { useProject } from './project-context'
 
@@ -183,7 +184,12 @@ export function ProjectSettingsContent({
                 )}
                 style={{ backgroundColor: projectColor.hex }}
               >
-                {isSelected && <CheckIcon className="h-4 w-4 text-black/70" />}
+                {isSelected && (
+                  <TfBoxCheckmark
+                    className="h-4 w-4 text-black/70"
+                    aria-hidden="true"
+                  />
+                )}
               </button>
             )
           })}
@@ -201,7 +207,7 @@ export function ProjectSettingsContent({
               !color && 'ring-2 ring-content-primary',
             )}
           >
-            <NoSymbolIcon className="h-4 w-4" />
+            <NoSymbolIcon className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       </div>

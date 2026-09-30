@@ -1,5 +1,5 @@
 import { Dialog, Transition } from '@headlessui/react'
-import { XMarkIcon } from '@heroicons/react/24/outline'
+import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import { Fragment, type ReactNode } from 'react'
 import { Button } from './button'
 import { cn } from './utils'
@@ -72,7 +72,7 @@ export function Modal({
                     aria-label="Close"
                     className="absolute right-4 top-4 z-30 h-7 w-7 text-content-secondary hover:bg-surface-chat hover:text-content-secondary"
                   >
-                    <XMarkIcon className="h-5 w-5" />
+                    <TfBoxX className="h-5 w-5" aria-hidden="true" />
                   </Button>
                 )}
                 {children}

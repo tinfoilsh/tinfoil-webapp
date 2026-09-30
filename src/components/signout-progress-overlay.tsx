@@ -4,7 +4,7 @@ import {
   subscribeToSignoutProgress,
   type SignoutStep,
 } from '@/utils/signout-progress'
-import { CheckIcon } from '@heroicons/react/24/outline'
+import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -86,7 +86,10 @@ function StepRow({ step, index }: { step: SignoutStep; index: number }) {
     >
       <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
         {step.status === 'done' ? (
-          <CheckIcon className="h-4 w-4 text-content-primary" />
+          <TfBoxCheckmark
+            className="h-4 w-4 text-content-primary"
+            aria-hidden="true"
+          />
         ) : step.status === 'active' ? (
           prefersReducedMotion ? (
             <span className="h-2 w-2 rounded-full bg-content-primary" />

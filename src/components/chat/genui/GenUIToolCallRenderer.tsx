@@ -10,7 +10,7 @@
  * via `GenUIInputAreaRenderer`.
  */
 import { logError } from '@/utils/error-handling'
-import { RefreshCw, Sparkles } from 'lucide-react'
+import { TfRefresh1, TfStars } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useEffect, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import { tryParsePartialJson } from './partial-json'
@@ -133,8 +133,8 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
               key={tc.id}
               className="my-4 flex items-start gap-2.5 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-2.5 text-sm"
             >
-              <Sparkles
-                className="mt-0.5 h-4 w-4 flex-shrink-0 text-orange-500"
+              <TfStars
+                className="mt-0.5 h-4 w-4 flex-shrink-0 !text-orange-500"
                 aria-hidden
               />
               <div className="flex flex-col">
@@ -405,9 +405,14 @@ function ParseFailureCard({
             disabled={isRetrying}
             className="inline-flex w-full flex-shrink-0 items-center justify-center gap-1.5 rounded-md border border-brand-accent-dark bg-brand-accent-dark px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-default disabled:opacity-60 md:w-auto"
           >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${isRetrying ? 'animate-spin' : ''}`}
-            />
+            {isRetrying ? (
+              <PiSpinner
+                className="h-3.5 w-3.5 animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
+            )}
             {isRetrying ? 'Fixing widget...' : 'Retry widget'}
           </button>
         )}

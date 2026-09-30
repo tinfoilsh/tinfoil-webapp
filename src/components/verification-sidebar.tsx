@@ -3,7 +3,7 @@ import {
   getVerificationDocument,
 } from '@/services/inference/tinfoil-client'
 import { logError, logInfo } from '@/utils/error-handling'
-import { XMarkIcon } from '@heroicons/react/24/outline'
+import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CONSTANTS } from './chat/constants'
 
@@ -233,7 +233,7 @@ export function VerifierSidebar({
             aria-label="Close verification panel"
             className="rounded-lg border border-border-subtle bg-surface-chat p-2 text-content-secondary shadow-sm transition-all duration-200 hover:bg-surface-chat/80"
           >
-            <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+            <TfBoxX className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
       </div>

@@ -12,7 +12,8 @@ import {
   type ArtifactPreviewSidebarDetail,
 } from '@/components/chat/genui/widgets/ArtifactPreview'
 import { cn } from '@/components/ui/utils'
-import { EyeIcon, XMarkIcon } from '@heroicons/react/24/outline'
+import { EyeIcon } from '@heroicons/react/24/outline'
+import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import {
   useCallback,
   useEffect,
@@ -165,7 +166,7 @@ export function ArtifactSidebar({
 
         <div className="flex flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 py-3">
           <div className="flex items-center gap-2 text-content-primary">
-            <EyeIcon className="h-5 w-5" />
+            <EyeIcon className="h-5 w-5" aria-hidden="true" />
             <span className="text-sm font-medium">Preview</span>
           </div>
           <button
@@ -174,7 +175,7 @@ export function ArtifactSidebar({
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-surface-chat text-content-secondary transition-colors hover:bg-surface-chat-background"
             aria-label="Close artifact sidebar"
           >
-            <XMarkIcon className="h-4 w-4" />
+            <TfBoxX className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

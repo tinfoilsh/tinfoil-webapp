@@ -1,7 +1,8 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Card } from '@/components/ui/card'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { Check, Clock, Flame, Printer, RotateCcw, Users } from 'lucide-react'
+import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import { Check, Clock, Flame, Printer, Users } from 'lucide-react'
 import { useState, type Dispatch, type SetStateAction } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -272,7 +273,7 @@ function Recipe({
                 className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-surface-chat-background px-2.5 py-1 text-xs text-content-muted transition-colors hover:bg-surface-card hover:text-content-primary"
                 aria-label="Reset checklist"
               >
-                <RotateCcw className="h-3.5 w-3.5" />
+                <TfRefresh1 className="h-3.5 w-3.5" />
                 Reset
               </button>
             )}

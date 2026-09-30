@@ -5,6 +5,7 @@ import { useDocumentUploader } from '@/components/chat/document-uploader'
 import { cn } from '@/components/ui/utils'
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import { useCallback, useRef, useState } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 import { useProject } from './project-context'
 
 interface ProjectDocumentUploadProps {
@@ -106,12 +107,15 @@ export function ProjectDocumentUpload({
       >
         {isUploading ? (
           <>
-            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            <PiSpinner
+              className="h-3.5 w-3.5 animate-spin"
+              aria-hidden="true"
+            />
             <span>{uploadStatus || 'Uploading...'}</span>
           </>
         ) : (
           <>
-            <ArrowUpTrayIcon className="h-3.5 w-3.5" />
+            <ArrowUpTrayIcon className="h-3.5 w-3.5" aria-hidden="true" />
             <span>Upload Document</span>
           </>
         )}

@@ -37,18 +37,26 @@ function Harness({
   onQuote = vi.fn(),
   onAsk = vi.fn(),
   text = 'Selected text',
+  messageRole = 'assistant',
 }: {
   enabled: boolean
   onQuote?: (text: string) => void
   onAsk?: (text: string) => void
   text?: string
+  messageRole?: 'user' | 'assistant'
 }) {
   const ref = useRef<HTMLDivElement>(null)
   return (
     <>
       <div ref={ref}>
-        <span>{text}</span>
-        <span>Do not read this surrounding text.</span>
+        <div data-message-role={messageRole}>
+          <span>{text}</span>
+          <span>Do not read this surrounding text.</span>
+        </div>
+        <div data-message-role={messageRole}>
+          <span>Another message</span>
+        </div>
+        <span>Outside message</span>
       </div>
       <QuoteSelectionPopover
         enabled={enabled}
@@ -104,6 +112,60 @@ afterEach(() => {
 })
 
 describe('QuoteSelectionPopover', () => {
+  it.each(['user', 'assistant'] as const)(
+    'allows element-node selection endpoints within a %s message',
+    (messageRole) => {
+      const onQuote = vi.fn()
+      render(<Harness enabled messageRole={messageRole} onQuote={onQuote} />)
+      selectText()
+      const range = window.getSelection()!.getRangeAt(0)
+      range.selectNodeContents(screen.getByText('Selected text'))
+      flushFrames()
+      fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
+      expect(onQuote).toHaveBeenCalledWith('Selected text')
+    },
+  )
+
+  it('allows a selection across nested elements in the same message', () => {
+    const onQuote = vi.fn()
+    render(<Harness enabled onQuote={onQuote} />)
+    selectText()
+    const range = window.getSelection()!.getRangeAt(0)
+    const endNode = screen.getByText(
+      'Do not read this surrounding text.',
+    ).firstChild!
+    range.setEnd(endNode, endNode.textContent!.length)
+    flushFrames()
+    fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
+    expect(onQuote).toHaveBeenCalledWith(
+      'Selected textDo not read this surrounding text.',
+    )
+  })
+
+  it('does not show actions for non-message text inside the container', () => {
+    render(<Harness enabled />)
+    selectText('Outside message')
+    flushFrames()
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
+  })
+
+  it.each(['Another message', 'Outside message'])(
+    'hides existing actions when a selection extends into %s',
+    (endText) => {
+      render(<Harness enabled />)
+      selectText()
+      flushFrames()
+      expect(screen.getByRole('toolbar')).toBeInTheDocument()
+
+      const range = window.getSelection()!.getRangeAt(0)
+      const endNode = screen.getByText(endText).firstChild!
+      range.setEnd(endNode, endText.length)
+      fireEvent(document, new Event('selectionchange'))
+      flushFrames()
+      expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
+    },
+  )
+
   it('reads only the highlighted portion and keeps a stop control in the menu', async () => {
     render(<Harness enabled />)
     selectText('Selected text', 9)

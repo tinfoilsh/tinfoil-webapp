@@ -4,20 +4,22 @@ import { cn } from '@/components/ui/utils'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
 import {
-  ArrowPathIcon,
   ArrowUturnLeftIcon,
   ChevronDownIcon,
   ForwardIcon,
   InformationCircleIcon,
-  LockClosedIcon,
-  PencilSquareIcon,
-  TrashIcon,
 } from '@heroicons/react/24/outline'
-import { GitFork } from 'lucide-react'
+import {
+  TfBoxCheckmark,
+  TfCopy,
+  TfFork,
+  TfLockLocked,
+  TfRefresh1,
+  TfTrash,
+  TfWriting,
+} from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useState, type JSX } from 'react'
-import { BsCheckLg } from 'react-icons/bs'
 import { GoClockFill } from 'react-icons/go'
-import { RxCopy } from 'react-icons/rx'
 import { hasMessageAttachments } from '../../attachment-helpers'
 import { CONSTANTS } from '../../constants'
 import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
@@ -53,7 +55,7 @@ const MessageMetadata = ({
       </>
     )}
     <span className="flex items-center gap-1 text-[10px]">
-      <LockClosedIcon className="h-3 w-3" aria-hidden="true" />
+      <TfLockLocked className="h-3 w-3" aria-hidden="true" />
       Encrypted
     </span>
   </div>
@@ -298,7 +300,7 @@ const DefaultMessageComponent = ({
       items.push({
         label: 'Edit',
         ariaLabel: 'Edit response',
-        icon: <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />,
+        icon: <TfWriting className="h-4 w-4" aria-hidden="true" />,
         onSelect: handleStartEdit,
       })
     }
@@ -306,7 +308,7 @@ const DefaultMessageComponent = ({
       items.push({
         label: 'Fork from here',
         ariaLabel: 'Fork conversation from here',
-        icon: <GitFork className="h-4 w-4" aria-hidden="true" />,
+        icon: <TfFork className="h-4 w-4" aria-hidden="true" />,
         onSelect: handleFork,
       })
     }
@@ -314,7 +316,7 @@ const DefaultMessageComponent = ({
       items.push({
         label: 'Delete',
         ariaLabel: 'Delete message',
-        icon: <TrashIcon className="h-4 w-4" aria-hidden="true" />,
+        icon: <TfTrash className="h-4 w-4" aria-hidden="true" />,
         onSelect: handleDelete,
         destructive: true,
       })
@@ -344,7 +346,10 @@ const DefaultMessageComponent = ({
       {isUser && message.quote && !isEditing && (
         <div className="flex w-full justify-end px-4 pb-1 pt-2">
           <div className="flex max-w-[95%] items-start gap-2 opacity-70">
-            <ArrowUturnLeftIcon className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-content-secondary" />
+            <ArrowUturnLeftIcon
+              className="mt-1 h-3.5 w-3.5 flex-shrink-0 text-content-secondary"
+              aria-hidden="true"
+            />
             <div className="min-w-0">
               <p
                 className={cn(
@@ -618,7 +623,10 @@ const DefaultMessageComponent = ({
                   {message.isHourlyRateLimitError && (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center gap-2">
-                        <GoClockFill className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light" />
+                        <GoClockFill
+                          className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
+                          aria-hidden="true"
+                        />
                         <span className="font-semibold text-brand-accent-dark dark:text-brand-accent-light">
                           Hourly usage limit reached
                         </span>
@@ -632,7 +640,10 @@ const DefaultMessageComponent = ({
                   {message.isRateLimitError && (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center gap-2">
-                        <GoClockFill className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light" />
+                        <GoClockFill
+                          className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
+                          aria-hidden="true"
+                        />
                         <span className="font-semibold text-brand-accent-dark dark:text-brand-accent-light">
                           Daily rate limit reached
                         </span>
@@ -716,6 +727,7 @@ const DefaultMessageComponent = ({
                             {isUserMessageExpanded ? 'Show less' : 'Show more'}
                           </span>
                           <ChevronDownIcon
+                            aria-hidden="true"
                             className={cn(
                               'h-3 w-3 transition-transform',
                               isUserMessageExpanded && 'rotate-180',
@@ -766,7 +778,10 @@ const DefaultMessageComponent = ({
                   />
                   <div className="mt-3 flex items-center justify-between">
                     <div className="hidden items-center gap-2 text-sm text-content-muted sm:flex">
-                      <InformationCircleIcon className="h-4 w-4 shrink-0" />
+                      <InformationCircleIcon
+                        className="h-4 w-4 shrink-0"
+                        aria-hidden="true"
+                      />
                       <span>
                         Editing this message will restart the conversation from
                         this point.
@@ -816,10 +831,7 @@ const DefaultMessageComponent = ({
                           aria-label="Regenerate response"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <ArrowPathIcon
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          />
+                          <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
                         </button>
                         <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
                           Regenerate
@@ -834,10 +846,7 @@ const DefaultMessageComponent = ({
                           aria-label="Edit message"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <PencilSquareIcon
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          />
+                          <TfWriting className="h-4 w-4" aria-hidden="true" />
                         </button>
                         <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
                           Edit
@@ -851,7 +860,7 @@ const DefaultMessageComponent = ({
                           aria-label="Fork conversation from here"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                         >
-                          <GitFork className="h-4 w-4" aria-hidden="true" />
+                          <TfFork className="h-4 w-4" aria-hidden="true" />
                         </button>
                         <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100">
                           Fork from here
@@ -865,7 +874,7 @@ const DefaultMessageComponent = ({
                           aria-label="Delete message"
                           className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-red-500"
                         >
-                          <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                          <TfTrash className="h-4 w-4" aria-hidden="true" />
                         </button>
                         <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100">
                           Delete
@@ -884,11 +893,14 @@ const DefaultMessageComponent = ({
                       >
                         {copiedUser ? (
                           <>
-                            <BsCheckLg className="h-4 w-4" aria-hidden="true" />
+                            <TfBoxCheckmark
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                             <span>Copied!</span>
                           </>
                         ) : (
-                          <RxCopy className="h-4 w-4" aria-hidden="true" />
+                          <TfCopy className="h-4 w-4" aria-hidden="true" />
                         )}
                       </button>
                       {!copiedUser && (
@@ -938,10 +950,7 @@ const DefaultMessageComponent = ({
                       aria-label="Regenerate response"
                       className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
                     >
-                      <ArrowPathIcon
-                        className="h-3.5 w-3.5"
-                        aria-hidden="true"
-                      />
+                      <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                     <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
                       Regenerate

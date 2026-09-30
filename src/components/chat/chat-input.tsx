@@ -1,17 +1,23 @@
-import { FiArrowUp } from '@/components/icons/lazy-icons'
 import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
+import { StopIcon } from '@heroicons/react/24/outline'
 import {
-  FolderIcon,
-  MicrophoneIcon,
-  Squares2X2Icon,
-  StopIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
+  TfAttachment,
+  TfBoxCheckmark,
+  TfBoxX,
+  TfFolder,
+  TfGlobe,
+  TfGlobeX,
+  TfMicrophone,
+  TfPlus,
+  TfQuote,
+  TfTerminal,
+  TfTools,
+} from '@tinfoilsh/tinfoil-icons'
 import type { FormEvent, RefObject } from 'react'
 import {
   useCallback,
@@ -20,15 +26,8 @@ import {
   useRef,
   useState,
 } from 'react'
-import {
-  PiGlobe,
-  PiGlobeX,
-  PiPaperclipLight,
-  PiPlusLight,
-  PiQuotes,
-  PiSpinner,
-  PiTerminalWindow,
-} from 'react-icons/pi'
+import { FiArrowUp } from 'react-icons/fi'
+import { PiSpinner } from 'react-icons/pi'
 import {
   ContextUsageIndicator,
   type ContextUsage,
@@ -41,18 +40,6 @@ import type { PromptPreset } from './prompts/types'
 import { RecordingWaveform } from './recording-waveform'
 import type { ProcessedDocument } from './renderers/types'
 import type { LoadingState } from './types'
-
-function MenuCheckmark({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" fill="currentColor">
-      <path
-        fillRule="evenodd"
-        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-        clipRule="evenodd"
-      />
-    </svg>
-  )
-}
 
 // Tracks every mounted textarea per shared external ref so an unmounting
 // instance can hand the shared ref over to a surviving instance.
@@ -756,7 +743,7 @@ export function ChatInput({
                     )}
                     style={colorStyle}
                   >
-                    <FolderIcon className="h-3 w-3" />
+                    <TfFolder className="h-3 w-3" aria-hidden="true" />
                     <span className="text-xs font-medium">
                       {activeProject.name}
                     </span>
@@ -778,7 +765,10 @@ export function ChatInput({
                       className="flex items-center gap-1.5 transition-colors hover:text-content-primary"
                       aria-label={`Change prompt (currently ${activePromptPreset.name})`}
                     >
-                      <ActivePresetIcon className="h-3 w-3" />
+                      <ActivePresetIcon
+                        className="h-3 w-3"
+                        aria-hidden="true"
+                      />
                       <span className="text-xs font-medium">
                         {activePromptPreset.name}
                       </span>
@@ -790,7 +780,7 @@ export function ChatInput({
                         aria-label="Stop using this prompt"
                         className="ml-0.5 rounded-full p-0.5 transition-colors hover:text-content-primary"
                       >
-                        <XMarkIcon className="h-3 w-3" />
+                        <TfBoxX className="h-3 w-3" aria-hidden="true" />
                       </button>
                     )}
                   </div>
@@ -810,7 +800,10 @@ export function ChatInput({
 
           {quote && (
             <div className="mb-3 mt-1 flex items-start gap-2 rounded-2xl border border-border-subtle bg-surface-chat-background px-3 py-2">
-              <PiQuotes className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary" />
+              <TfQuote
+                className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary"
+                aria-hidden="true"
+              />
               <p className="line-clamp-3 flex-1 whitespace-pre-wrap text-sm text-content-secondary">
                 {quote.length > QUOTE_PREVIEW_MAX_LENGTH
                   ? `${quote.slice(0, QUOTE_PREVIEW_MAX_LENGTH).trimEnd()}…`
@@ -823,18 +816,7 @@ export function ChatInput({
                   aria-label="Remove quote"
                   className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
                 >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
+                  <TfBoxX className="h-3.5 w-3.5" aria-hidden="true" />
                 </button>
               )}
             </div>
@@ -875,18 +857,7 @@ export function ChatInput({
                       )}
                       aria-label={`Remove ${doc.name}`}
                     >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="h-3 w-3"
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
+                      <TfBoxX className="h-3 w-3" aria-hidden="true" />
                     </button>
                   )}
                   <div className="flex items-center gap-2">
@@ -1269,7 +1240,7 @@ export function ChatInput({
                     aria-haspopup="menu"
                     className="flex h-7 w-7 items-center justify-center rounded-lg text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
                   >
-                    <PiPlusLight className="h-5 w-5" />
+                    <TfPlus className="h-5 w-5" aria-hidden="true" />
                   </button>
                   {isInputMenuOpen && (
                     <>
@@ -1293,7 +1264,10 @@ export function ChatInput({
                           }}
                           className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                         >
-                          <PiPaperclipLight className="h-5 w-5 text-content-secondary" />
+                          <TfAttachment
+                            className="h-5 w-5 !text-content-secondary"
+                            aria-hidden="true"
+                          />
                           Add files or photos
                         </button>
                         {onOpenPromptLibrary && (
@@ -1306,7 +1280,10 @@ export function ChatInput({
                             }}
                             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                           >
-                            <Squares2X2Icon className="h-5 w-5 text-content-secondary" />
+                            <TfTools
+                              className="h-5 w-5 text-content-secondary"
+                              aria-hidden="true"
+                            />
                             Change system prompt
                           </button>
                         )}
@@ -1325,13 +1302,22 @@ export function ChatInput({
                             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                           >
                             {webSearchEnabled ? (
-                              <PiGlobe className="h-5 w-5 text-content-secondary" />
+                              <TfGlobe
+                                className="h-5 w-5 !text-content-secondary"
+                                aria-hidden="true"
+                              />
                             ) : (
-                              <PiGlobeX className="h-5 w-5 text-content-secondary" />
+                              <TfGlobeX
+                                className="h-5 w-5 text-content-secondary"
+                                aria-hidden="true"
+                              />
                             )}
                             <span className="flex-1">Web search</span>
                             {webSearchEnabled && (
-                              <MenuCheckmark className="h-4 w-4 text-brand-accent-light" />
+                              <TfBoxCheckmark
+                                className="h-4 w-4 text-brand-accent-light"
+                                aria-hidden="true"
+                              />
                             )}
                           </button>
                         )}
@@ -1346,10 +1332,16 @@ export function ChatInput({
                             }}
                             className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm text-content-primary hover:bg-surface-chat-background"
                           >
-                            <PiTerminalWindow className="h-5 w-5 text-content-secondary" />
+                            <TfTerminal
+                              className="h-5 w-5 !text-content-secondary"
+                              aria-hidden="true"
+                            />
                             <span className="flex-1">Code execution</span>
                             {codeExecutionEnabled && (
-                              <MenuCheckmark className="h-4 w-4 text-brand-accent-light" />
+                              <TfBoxCheckmark
+                                className="h-4 w-4 text-brand-accent-light"
+                                aria-hidden="true"
+                              />
                             )}
                           </button>
                         )}
@@ -1399,7 +1391,7 @@ export function ChatInput({
                   >
                     {isRecording ? (
                       <StopIcon
-                        className="h-6 w-6 md:h-5 md:w-5"
+                        className="h-6 w-6 md:h-4 md:w-4"
                         aria-hidden="true"
                       />
                     ) : isTranscribing ? (
@@ -1408,8 +1400,8 @@ export function ChatInput({
                         aria-hidden="true"
                       />
                     ) : (
-                      <MicrophoneIcon
-                        className="h-6 w-6 md:h-5 md:w-5"
+                      <TfMicrophone
+                        className="h-6 w-6 md:h-4 md:w-4"
                         aria-hidden="true"
                       />
                     )}
@@ -1469,7 +1461,10 @@ export function ChatInput({
                       {showStopAction ? (
                         <div className="h-3.5 w-3.5 bg-white/80 transition-colors md:h-3 md:w-3" />
                       ) : (
-                        <FiArrowUp className="h-6 w-6 text-current transition-colors md:h-5 md:w-5" />
+                        <FiArrowUp
+                          className="h-6 w-6 text-current transition-colors md:h-5 md:w-5"
+                          aria-hidden="true"
+                        />
                       )}
                     </button>
                   )

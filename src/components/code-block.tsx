@@ -1,6 +1,7 @@
 import { SvgPreview } from '@/components/preview/svg-preview'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
+import { TfBoxCheckmark, TfCode, TfCopy } from '@tinfoilsh/tinfoil-icons'
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
@@ -13,20 +14,7 @@ import remarkGfm from 'remark-gfm'
 import { CONSTANTS } from './chat/constants'
 
 const CodeIcon = () => (
-  <svg
-    className="h-4 w-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    focusable="false"
-  >
-    <polyline points="16 18 22 12 16 6" />
-    <polyline points="8 6 2 12 8 18" />
-  </svg>
+  <TfCode className="h-4 w-4" aria-hidden="true" focusable="false" />
 )
 
 const EyeIcon = () => (
@@ -1046,38 +1034,15 @@ export const CodeBlock = memo(function CodeBlock({
           <button
             onClick={copyToClipboard}
             aria-label={copied ? 'Copied' : 'Copy code'}
-            className="rounded-lg bg-surface-input p-2 hover:bg-surface-input/80"
+            className="rounded-lg bg-surface-input p-2 text-content-muted hover:bg-surface-input/80"
           >
             {copied ? (
-              <svg
+              <TfBoxCheckmark
                 className="h-5 w-5 text-green-400"
-                fill="none"
-                strokeWidth="1.5"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
                 aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4.5 12.75l6 6 9-13.5"
-                />
-              </svg>
+              />
             ) : (
-              <svg
-                className="h-5 w-5 text-content-muted"
-                fill="none"
-                strokeWidth="1.5"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
-                />
-              </svg>
+              <TfCopy className="h-5 w-5" aria-hidden="true" />
             )}
           </button>
           <span className="pointer-events-none absolute -top-8 right-0 hidden whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary shadow-sm group-hover/copy:block">

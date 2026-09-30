@@ -15,17 +15,14 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
 import { setCloudSyncEnabled as persistCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
+import { ArrowDownTrayIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import {
-  ArrowDownTrayIcon,
-  ArrowUpTrayIcon,
-  CheckIcon,
-  DocumentDuplicateIcon,
-} from '@heroicons/react/24/outline'
-import {
+  TfBoxCheckmark,
   TfCloud,
+  TfCopy,
   TfFingerprint,
   TfKey,
-  TfLock,
+  TfLockLocked,
   TfRefresh,
   TfShieldCheck,
   TfTinSad,
@@ -485,7 +482,7 @@ ${generatedKey.replace('key_', '')}
 
   const renderIntroStep = () => (
     <div className="flex h-full flex-col gap-6">
-      <TfCloud className={ILLUSTRATION_ICON_CLASS_NAME} />
+      <TfCloud className={ILLUSTRATION_ICON_CLASS_NAME} aria-hidden="true" />
 
       <div className="space-y-3">
         <ModalTitle
@@ -503,7 +500,10 @@ ${generatedKey.replace('key_', '')}
       <div className="flex flex-1 items-center justify-center">
         <div className="grid w-full max-w-xs grid-cols-1 gap-8">
           <Card dashedLines texture className="relative z-10 space-y-1 p-4">
-            <TfLock className="mx-auto h-5 w-5 text-content-secondary" />
+            <TfLockLocked
+              className="mx-auto h-5 w-5 text-content-secondary"
+              aria-hidden="true"
+            />
             <p className="text-balance text-center text-sm font-medium text-content-primary">
               End-to-End Encrypted
             </p>
@@ -513,7 +513,10 @@ ${generatedKey.replace('key_', '')}
           </Card>
 
           <Card dashedLines texture className="relative z-10 space-y-1 p-4">
-            <TfKey className="mx-auto h-5 w-5 text-content-secondary" />
+            <TfKey
+              className="mx-auto h-5 w-5 text-content-secondary"
+              aria-hidden="true"
+            />
             <p className="text-balance text-center text-sm font-medium text-content-primary">
               You Control Your Key
             </p>
@@ -553,7 +556,7 @@ ${generatedKey.replace('key_', '')}
 
   const renderGenerateOrRestoreStep = () => (
     <div className="flex h-full flex-col gap-5">
-      <TfKey className={ILLUSTRATION_ICON_CLASS_NAME} />
+      <TfKey className={ILLUSTRATION_ICON_CLASS_NAME} aria-hidden="true" />
 
       <div className="space-y-2">
         <ModalTitle
@@ -617,7 +620,10 @@ ${generatedKey.replace('key_', '')}
 
   const renderKeyDisplayStep = () => (
     <div className="flex h-full flex-col gap-8">
-      <TfShieldCheck className={ILLUSTRATION_ICON_CLASS_NAME} />
+      <TfShieldCheck
+        className={ILLUSTRATION_ICON_CLASS_NAME}
+        aria-hidden="true"
+      />
 
       <div className="space-y-3">
         <ModalTitle
@@ -672,12 +678,12 @@ ${generatedKey.replace('key_', '')}
             >
               {isCopied ? (
                 <>
-                  <CheckIcon className="h-4 w-4" />
+                  <TfBoxCheckmark className="h-4 w-4" aria-hidden="true" />
                   Copied
                 </>
               ) : (
                 <>
-                  <DocumentDuplicateIcon className="h-4 w-4" />
+                  <TfCopy className="h-4 w-4" aria-hidden="true" />
                   Copy
                 </>
               )}
@@ -700,7 +706,7 @@ ${generatedKey.replace('key_', '')}
 
   const renderRestoreKeyStep = () => (
     <div className="flex h-full flex-col gap-8">
-      <TfRefresh className={ILLUSTRATION_ICON_CLASS_NAME} />
+      <TfRefresh className={ILLUSTRATION_ICON_CLASS_NAME} aria-hidden="true" />
 
       <div className="space-y-3">
         <ModalTitle
@@ -796,7 +802,10 @@ ${generatedKey.replace('key_', '')}
 
   const renderRestoreSuccessStep = () => (
     <div className="flex h-full flex-col gap-8">
-      <TfShieldCheck className={ILLUSTRATION_ICON_CLASS_NAME} />
+      <TfShieldCheck
+        className={ILLUSTRATION_ICON_CLASS_NAME}
+        aria-hidden="true"
+      />
 
       <div className="space-y-3">
         <ModalTitle
@@ -826,7 +835,7 @@ ${generatedKey.replace('key_', '')}
 
   const renderSetupFailedStep = () => (
     <div className="flex h-full flex-col gap-8">
-      <TfTinSad className={ILLUSTRATION_ICON_CLASS_NAME} />
+      <TfTinSad className={ILLUSTRATION_ICON_CLASS_NAME} aria-hidden="true" />
 
       <div className="space-y-3">
         <ModalTitle
@@ -931,7 +940,10 @@ ${generatedKey.replace('key_', '')}
 
   const renderPasskeyRecoveryStep = () => (
     <div className="flex h-full flex-col gap-8">
-      <TfLock className={ILLUSTRATION_ICON_CLASS_NAME} />
+      <TfLockLocked
+        className={ILLUSTRATION_ICON_CLASS_NAME}
+        aria-hidden="true"
+      />
 
       <div className="space-y-3">
         <ModalTitle
@@ -966,7 +978,7 @@ ${generatedKey.replace('key_', '')}
           disabled={isRecovering}
           className="min-w-[11rem]"
         >
-          <TfFingerprint className="h-4 w-4" />
+          <TfFingerprint className="h-4 w-4" aria-hidden="true" />
           {isRecovering ? 'Authenticating...' : 'Unlock with Passkey'}
         </Button>
 
@@ -988,7 +1000,7 @@ ${generatedKey.replace('key_', '')}
             disabled={isRecovering || isStartingFresh}
             className="w-full"
           >
-            <TfKey className="h-4 w-4" />
+            <TfKey className="h-4 w-4" aria-hidden="true" />
             Enter Key Manually
           </Button>
 
@@ -1004,7 +1016,7 @@ ${generatedKey.replace('key_', '')}
               disabled={isRecovering || isStartingFresh}
               className="w-full"
             >
-              <TfRefresh className="h-4 w-4" />
+              <TfRefresh className="h-4 w-4" aria-hidden="true" />
               Start Fresh
             </Button>
           )}
@@ -1048,7 +1060,7 @@ ${generatedKey.replace('key_', '')}
 
   const renderConfirmStartFreshStep = () => (
     <div className="flex h-full flex-col gap-8">
-      <TfTinSad className={ILLUSTRATION_ICON_CLASS_NAME} />
+      <TfTinSad className={ILLUSTRATION_ICON_CLASS_NAME} aria-hidden="true" />
 
       <div className="space-y-3">
         <ModalTitle

@@ -9,11 +9,8 @@ import {
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-} from '@heroicons/react/24/outline'
+import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
+import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
 import {
   useCallback,
   useLayoutEffect,
@@ -401,7 +398,7 @@ export function ModelSelector({
             )}
             <span className="flex-1" />
             {isActive && (
-              <CheckIcon
+              <TfBoxCheckmark
                 className="h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
                 aria-hidden="true"
               />
@@ -460,7 +457,7 @@ export function ModelSelector({
           {!model.isAuto && <ModelLifecycleBadges model={model} />}
         </div>
         {isSelected && (
-          <CheckIcon
+          <TfBoxCheckmark
             className="mt-0.5 h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
             aria-hidden="true"
           />
