@@ -1,6 +1,6 @@
-import { FiArrowUp } from '@/components/icons/lazy-icons'
 import { cn } from '@/components/ui/utils'
 import { TfTrash } from '@tinfoilsh/tinfoil-icons'
+import { FiArrowUp } from 'react-icons/fi'
 import { HiOutlineQueueList } from 'react-icons/hi2'
 import type { Attachment, QueuedMessage } from './types'
 
@@ -72,7 +72,10 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
               'group flex w-full items-start gap-2 rounded-2xl border border-border-subtle bg-surface-chat px-3 py-2 shadow-sm',
             )}
           >
-            <HiOutlineQueueList className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary" />
+            <HiOutlineQueueList
+              className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary"
+              aria-hidden="true"
+            />
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <QueuedImagePreview attachments={item.attachments} />
               <p className="line-clamp-2 whitespace-pre-wrap break-words text-sm text-content-secondary">
@@ -85,7 +88,7 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
               aria-label="Send queued message now"
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
             >
-              <FiArrowUp className="h-4 w-4" />
+              <FiArrowUp className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"

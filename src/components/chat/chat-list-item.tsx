@@ -3,24 +3,23 @@
 import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { canRequestChatPin } from '@/services/storage/pinned-chats'
 import { isPlainPrimaryClick } from '@/utils/navigation'
-import {
-  CheckIcon,
-  CloudIcon,
-  EllipsisVerticalIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
+import { EllipsisVerticalIcon } from '@heroicons/react/24/outline'
 import { FlagIcon } from '@heroicons/react/24/solid'
 import {
+  TfBoxCheckmark,
+  TfBoxX,
+  TfCloud,
   TfFloppyDisk,
   TfFolder,
   TfLockLocked,
+  TfThumbtack,
   TfTrash,
   TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { PiPushPin, PiPushPinFill, PiSpinner } from 'react-icons/pi'
+import { PiSpinner } from 'react-icons/pi'
 import { RedactedText } from '../ui/redacted-text'
 import { cn } from '../ui/utils'
 import { getBlankQueueId } from './message-queue-identity'
@@ -370,7 +369,7 @@ export function ChatListItem({
               title="Save"
               aria-label="Save chat title"
             >
-              <CheckIcon className="h-4 w-4" aria-hidden="true" />
+              <TfBoxCheckmark className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -382,7 +381,7 @@ export function ChatListItem({
               title="Cancel"
               aria-label="Cancel rename"
             >
-              <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+              <TfBoxX className="h-4 w-4" aria-hidden="true" />
             </button>
           </form>
         </div>
@@ -448,7 +447,7 @@ export function ChatListItem({
                 )
               )}
               {isPinned && showPinnedIndicator && !isStreaming && (
-                <PiPushPinFill
+                <TfThumbtack
                   className="h-3.5 w-3.5 flex-shrink-0 text-content-muted"
                   title="Pinned to Favorites"
                   aria-label="Pinned to Favorites"
@@ -497,15 +496,12 @@ export function ChatListItem({
                   aria-label={
                     isPinned ? 'Remove from Favorites' : 'Pin to Favorites'
                   }
+                  aria-pressed={isPinned}
                   title={
                     isPinned ? 'Remove from Favorites' : 'Pin to Favorites'
                   }
                 >
-                  {isPinned ? (
-                    <PiPushPinFill className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <PiPushPin className="h-4 w-4" aria-hidden="true" />
-                  )}
+                  <TfThumbtack className="h-4 w-4" aria-hidden="true" />
                 </button>
               )}
             {hasRealTitle && (
@@ -638,17 +634,10 @@ export function ChatListItem({
                               void onTogglePin()
                             }}
                           >
-                            {isPinned ? (
-                              <PiPushPinFill
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <PiPushPin
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                            )}
+                            <TfThumbtack
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                             {isPinned
                               ? 'Remove from Favorites'
                               : 'Pin to Favorites'}
@@ -742,10 +731,7 @@ export function ChatListItem({
                                 onConvertToCloud()
                               }}
                             >
-                              <CloudIcon
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
+                              <TfCloud className="h-4 w-4" aria-hidden="true" />
                               Move to cloud
                             </button>
                           )}

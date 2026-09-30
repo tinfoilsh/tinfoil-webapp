@@ -1,7 +1,7 @@
 import { SvgPreview } from '@/components/preview/svg-preview'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
-import { TfCode, TfCopy } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark, TfCode, TfCopy } from '@tinfoilsh/tinfoil-icons'
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
@@ -1037,20 +1037,10 @@ export const CodeBlock = memo(function CodeBlock({
             className="rounded-lg bg-surface-input p-2 text-content-muted hover:bg-surface-input/80"
           >
             {copied ? (
-              <svg
+              <TfBoxCheckmark
                 className="h-5 w-5 text-green-400"
-                fill="none"
-                strokeWidth="1.5"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
                 aria-hidden="true"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M4.5 12.75l6 6 9-13.5"
-                />
-              </svg>
+              />
             ) : (
               <TfCopy className="h-5 w-5" aria-hidden="true" />
             )}

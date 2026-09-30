@@ -78,10 +78,9 @@ describe('settings opening', () => {
         'text-tinfoil-accent-blue',
         'dark:text-blue-400',
       )
-      expect(status.parentElement?.querySelector('svg')).toHaveClass(
-        '!text-tinfoil-accent-blue',
-        'dark:!text-blue-400',
-      )
+      const icon = status.parentElement?.querySelector('svg')
+      expect(icon).toHaveClass('text-tinfoil-accent-blue', 'dark:text-blue-400')
+      expect(icon?.style.color).toBe('')
     },
   )
 

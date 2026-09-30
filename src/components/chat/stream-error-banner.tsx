@@ -2,8 +2,8 @@
 
 import type { StreamErrorInfo } from '@/components/chat/hooks/use-chat-streams'
 import { cn } from '@/components/ui/utils'
-import { ChevronDownIcon, XMarkIcon } from '@heroicons/react/24/outline'
-import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import { ChevronDownIcon } from '@heroicons/react/24/outline'
+import { TfBoxX, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import { useState, useSyncExternalStore } from 'react'
 
 interface StreamErrorBannerProps {
@@ -239,7 +239,7 @@ export function StreamErrorBanner({
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
             )}
           >
-            <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+            <TfBoxX className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"

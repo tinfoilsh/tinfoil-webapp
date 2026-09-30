@@ -1,7 +1,6 @@
 import { cn } from '@/components/ui/utils'
 import { findSelectableModel, type BaseModel } from '@/config/models'
-import { XMarkIcon } from '@heroicons/react/24/outline'
-import { TfChat2 } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX, TfChat2 } from '@tinfoilsh/tinfoil-icons'
 import { memo, useRef } from 'react'
 import { LoadingDots } from '../loading-dots'
 import { CONSTANTS } from './constants'
@@ -101,7 +100,7 @@ export function AskSidebar({
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-surface-chat text-content-secondary transition-colors hover:bg-surface-chat-background"
             aria-label="Close ask sidebar"
           >
-            <XMarkIcon className="h-4 w-4" />
+            <TfBoxX className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
 

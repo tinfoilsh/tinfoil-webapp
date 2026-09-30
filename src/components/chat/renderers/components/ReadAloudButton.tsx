@@ -1,12 +1,9 @@
 import { speechPlayer } from '@/services/speech/player'
 import type { SpeechTextFormat } from '@/services/speech/text'
-import {
-  ArrowPathIcon,
-  PlayIcon,
-  SpeakerWaveIcon,
-  StopIcon,
-} from '@heroicons/react/24/outline'
+import { PlayIcon, StopIcon } from '@heroicons/react/24/outline'
+import { TfAudio } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 
 export function ReadAloudButton({
   content,
@@ -63,7 +60,7 @@ export function ReadAloudButton({
         }`}
       >
         {status === 'loading' ? (
-          <ArrowPathIcon
+          <PiSpinner
             className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
             aria-hidden="true"
           />
@@ -72,7 +69,7 @@ export function ReadAloudButton({
         ) : active ? (
           <StopIcon className="h-3.5 w-3.5" aria-hidden="true" />
         ) : (
-          <SpeakerWaveIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfAudio className="h-3.5 w-3.5" aria-hidden="true" />
         )}
         {variant === 'icon' && (
           <span

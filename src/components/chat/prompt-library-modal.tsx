@@ -1,20 +1,19 @@
 import { cn } from '@/components/ui/utils'
 import type { BaseModel } from '@/config/models'
 import { acquireInteractionLock } from '@/utils/interaction-lock'
-import {
-  ArrowLeftIcon,
-  BookmarkIcon,
-  CheckIcon,
-  PlusIcon,
-  StarIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
-import {
-  BookmarkIcon as BookmarkIconSolid,
-  StarIcon as StarIconSolid,
-} from '@heroicons/react/24/solid'
+import { ArrowLeftIcon, BookmarkIcon } from '@heroicons/react/24/outline'
+import { BookmarkIcon as BookmarkIconSolid } from '@heroicons/react/24/solid'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { TfStars, TfTools, TfTrash, TfWriting } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxCheckmark,
+  TfBoxX,
+  TfPlus,
+  TfStar,
+  TfStars,
+  TfTools,
+  TfTrash,
+  TfWriting,
+} from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 import { CONSTANTS } from './constants'
@@ -245,22 +244,31 @@ export function PromptLibraryModal({
         {(isPinned || isActive || isDefault) && (
           <span className="absolute right-2 top-2 flex items-center gap-1">
             {isDefault && (
-              <BookmarkIconSolid
-                className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
-                aria-label="Default for new chats"
-              />
+              <>
+                <BookmarkIconSolid
+                  className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
+                  aria-hidden="true"
+                />
+                <span className="sr-only">Default for new chats</span>
+              </>
             )}
             {isPinned && (
-              <StarIconSolid
-                className="h-3.5 w-3.5 text-yellow-500"
-                aria-label="Favorite"
-              />
+              <>
+                <TfStar
+                  className="h-3.5 w-3.5 text-yellow-500 [stroke-width:initial]"
+                  aria-hidden="true"
+                />
+                <span className="sr-only">Favorite</span>
+              </>
             )}
             {isActive && (
-              <CheckIcon
-                className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
-                aria-label="Active"
-              />
+              <>
+                <TfBoxCheckmark
+                  className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
+                  aria-hidden="true"
+                />
+                <span className="sr-only">Active</span>
+              </>
             )}
           </span>
         )}
@@ -314,7 +322,7 @@ export function PromptLibraryModal({
                     </button>
                   )}
                   <TfTools
-                    className="hidden h-5 w-5 !text-content-secondary md:block"
+                    className="hidden h-5 w-5 text-content-secondary md:block"
                     aria-hidden="true"
                   />
                   <DialogPrimitive.Title className="truncate text-base font-semibold text-content-primary md:text-lg">
@@ -326,7 +334,7 @@ export function PromptLibraryModal({
                   className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
                   aria-label="Close prompt library"
                 >
-                  <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+                  <TfBoxX className="h-5 w-5" aria-hidden="true" />
                 </button>
               </div>
 
@@ -356,7 +364,7 @@ export function PromptLibraryModal({
                         onClick={startCreate}
                         className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
                       >
-                        <PlusIcon className="h-3.5 w-3.5" />
+                        <TfPlus className="h-3.5 w-3.5" aria-hidden="true" />
                         New
                       </button>
                     </div>
@@ -620,11 +628,13 @@ function PresetDetail({
               'cursor-not-allowed opacity-50 hover:bg-transparent',
           )}
         >
-          {isFavorite ? (
-            <StarIconSolid className="h-3.5 w-3.5" />
-          ) : (
-            <StarIcon className="h-3.5 w-3.5" />
-          )}
+          <TfStar
+            className={cn(
+              'h-3.5 w-3.5',
+              isFavorite && '[stroke-width:initial]',
+            )}
+            aria-hidden="true"
+          />
           {isFavorite ? 'Favorited' : 'Favorite'}
         </button>
         <button
@@ -644,9 +654,9 @@ function PresetDetail({
           )}
         >
           {isDefault ? (
-            <BookmarkIconSolid className="h-3.5 w-3.5" />
+            <BookmarkIconSolid className="h-3.5 w-3.5" aria-hidden="true" />
           ) : (
-            <BookmarkIcon className="h-3.5 w-3.5" />
+            <BookmarkIcon className="h-3.5 w-3.5" aria-hidden="true" />
           )}
           {isDefault ? 'Default for new chats' : 'Set as default'}
         </button>
@@ -665,7 +675,7 @@ function PresetDetail({
           onClick={onDuplicate}
           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-content-secondary transition-colors hover:bg-surface-chat hover:text-content-primary"
         >
-          <PlusIcon className="h-3.5 w-3.5" />
+          <TfPlus className="h-3.5 w-3.5" aria-hidden="true" />
           Duplicate
         </button>
         {!preset.isBuiltIn && (

@@ -24,7 +24,10 @@ function getDisplayUrl(url: string): string {
 
 function FetchSpinner() {
   return (
-    <PiSpinner className="h-3.5 w-3.5 shrink-0 animate-spin text-content-primary/50" />
+    <PiSpinner
+      className="h-3.5 w-3.5 shrink-0 animate-spin text-content-primary/50"
+      aria-hidden="true"
+    />
   )
 }
 
@@ -109,13 +112,17 @@ export const URLFetchProcess = memo(function URLFetchProcess({
       >
         <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true">
           {anyFetching ? (
-            <PiSpinner className="h-3.5 w-3.5 animate-spin text-content-primary/50" />
+            <PiSpinner
+              className="h-3.5 w-3.5 animate-spin text-content-primary/50"
+              aria-hidden="true"
+            />
           ) : (
             <svg
               className={`h-3.5 w-3.5 transform text-content-primary/40 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
+              aria-hidden="true"
             >
               <path
                 strokeLinecap="round"

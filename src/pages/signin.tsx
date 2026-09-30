@@ -626,7 +626,10 @@ export default function SignInPage({
   if (!isAuthLoaded || isSignedIn) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-surface-chat-background font-aeonik">
-        <PiSpinner className="h-6 w-6 animate-spin text-content-secondary" />
+        <PiSpinner
+          className="h-6 w-6 animate-spin text-content-secondary"
+          aria-hidden="true"
+        />
       </main>
     )
   }
@@ -693,9 +696,12 @@ export default function SignInPage({
                 className="w-full"
               >
                 {pendingAction === 'google' ? (
-                  <PiSpinner className="h-4 w-4 animate-spin" />
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <FcGoogle className="h-4 w-4" />
+                  <FcGoogle className="h-4 w-4" aria-hidden="true" />
                 )}
                 Continue with Google
               </Button>
@@ -708,9 +714,12 @@ export default function SignInPage({
                 className="w-full"
               >
                 {pendingAction === 'apple' ? (
-                  <PiSpinner className="h-4 w-4 animate-spin" />
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <FaApple className="h-4 w-4" />
+                  <FaApple className="h-4 w-4" aria-hidden="true" />
                 )}
                 Continue with Apple
               </Button>
@@ -823,7 +832,10 @@ export default function SignInPage({
                 className="w-full"
               >
                 {pendingAction === 'email' && (
-                  <PiSpinner className="h-4 w-4 animate-spin" />
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 )}
                 {mode === 'signup' ? 'Create account' : 'Sign in'}
               </Button>
@@ -897,7 +909,10 @@ export default function SignInPage({
               className="w-full"
             >
               {pendingAction === 'verify' && (
-                <PiSpinner className="h-4 w-4 animate-spin" />
+                <PiSpinner
+                  className="h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
               )}
               Verify
             </Button>
@@ -977,7 +992,10 @@ export default function SignInPage({
               className="w-full"
             >
               {pendingAction === 'reset' && (
-                <PiSpinner className="h-4 w-4 animate-spin" />
+                <PiSpinner
+                  className="h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
               )}
               Send reset code
             </Button>
@@ -1022,7 +1040,10 @@ export default function SignInPage({
               className="w-full"
             >
               {pendingAction === 'reset' && (
-                <PiSpinner className="h-4 w-4 animate-spin" />
+                <PiSpinner
+                  className="h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
               )}
               Reset password
             </Button>
@@ -1091,7 +1112,10 @@ export default function SignInPage({
               className="w-full"
             >
               {pendingAction === 'details' && (
-                <PiSpinner className="h-4 w-4 animate-spin" />
+                <PiSpinner
+                  className="h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
               )}
               Create account
             </Button>

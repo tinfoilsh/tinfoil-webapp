@@ -50,8 +50,7 @@ import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
-import { GoSidebarCollapse } from 'react-icons/go'
-import { PiFilePlusLight, PiSpinner } from 'react-icons/pi'
+import { PiSpinner } from 'react-icons/pi'
 import { getMessageImages } from './attachment-helpers'
 
 import {
@@ -121,11 +120,13 @@ import {
 } from '@/utils/token-estimation'
 import {
   TfChat2,
-  TfGhost,
+  TfDocumentPlus,
+  TfGhost2,
   TfLockLocked,
   TfLockOpened,
   TfPerson,
   TfShare,
+  TfSidebarOpen,
   TfTinSad,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
@@ -3829,7 +3830,7 @@ export function ChatInterface({
           }}
           aria-label="Open sidebar"
         >
-          <GoSidebarCollapse className="h-5 w-5" />
+          <TfSidebarOpen className="h-5 w-5 -scale-x-100" aria-hidden="true" />
         </button>
         <span
           className={cn(
@@ -3889,7 +3890,7 @@ export function ChatInterface({
                     : 'border-transparent bg-surface-chat-background text-content-secondary hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary',
                 )}
               >
-                <TfGhost className="h-4 w-4" aria-hidden="true" />
+                <TfGhost2 className="h-4 w-4" aria-hidden="true" />
               </button>
               <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 {label}
@@ -4014,7 +4015,10 @@ export function ChatInterface({
       {isGlobalDragActive && (
         <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-4">
-            <PiFilePlusLight className="h-20 w-20 text-white" />
+            <TfDocumentPlus
+              className="h-20 w-20 text-white"
+              aria-hidden="true"
+            />
             <p className="text-lg font-medium text-white">
               Drop files here to add to chat
             </p>
@@ -4074,7 +4078,7 @@ export function ChatInterface({
             })(),
           }}
         >
-          <TfGhost className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <TfGhost2 className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span>Temporary chat</span>
         </div>
       )}

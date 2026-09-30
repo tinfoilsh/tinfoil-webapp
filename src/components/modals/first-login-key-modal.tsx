@@ -1,6 +1,6 @@
 import { Modal, ModalTitle } from '@/components/ui/modal'
-import { ArrowUpTrayIcon, XMarkIcon } from '@heroicons/react/24/outline'
-import { TfKey, TfStars } from '@tinfoilsh/tinfoil-icons'
+import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
+import { TfBoxX, TfKey, TfStars } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useRef, useState } from 'react'
 
 interface FirstLoginKeyModalProps {
@@ -199,7 +199,7 @@ export function FirstLoginKeyModal({
               aria-label="Back"
               className="rounded-lg p-1 text-content-secondary transition-colors hover:bg-surface-chat"
             >
-              <XMarkIcon className="h-5 w-5" />
+              <TfBoxX className="h-5 w-5" aria-hidden="true" />
             </button>
           </ModalTitle>
 

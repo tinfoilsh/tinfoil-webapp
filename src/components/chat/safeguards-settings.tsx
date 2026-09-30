@@ -8,12 +8,13 @@ import {
 } from '@/services/safeguards'
 import { getChatPath } from '@/utils/navigation'
 import {
-  ArrowPathIcon,
   ArrowTopRightOnSquareIcon,
   FlagIcon,
 } from '@heroicons/react/24/outline'
+import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
 import { useEffect } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 import { Progress } from '../ui/progress'
 import { cn } from '../ui/utils'
 import type { Chat } from './types'
@@ -143,10 +144,11 @@ export function SafeguardsSettings({
             aria-label="Refresh flagged chats"
             className="rounded-md p-1 text-content-muted transition-colors hover:text-content-primary disabled:opacity-50"
           >
-            <ArrowPathIcon
-              className={cn('h-4 w-4', status === 'loading' && 'animate-spin')}
-              aria-hidden="true"
-            />
+            {status === 'loading' ? (
+              <PiSpinner className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
+            )}
           </button>
         </div>
 

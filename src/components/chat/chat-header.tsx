@@ -1,10 +1,13 @@
 'use client'
 
 import { useSyncFailedChats } from '@/hooks/use-sync-health'
-import { CloudArrowUpIcon, CloudIcon } from '@heroicons/react/24/outline'
-import { ExclamationTriangleIcon } from '@heroicons/react/24/solid'
-import { CiFloppyDisk } from 'react-icons/ci'
-import { SlGhost } from 'react-icons/sl'
+import { CloudArrowUpIcon } from '@heroicons/react/24/outline'
+import {
+  TfCloud,
+  TfFloppyDisk,
+  TfGhost2,
+  TfWarning,
+} from '@tinfoilsh/tinfoil-icons'
 import { cn } from '../ui/utils'
 import { formatRelativeTime } from './chat-list-utils'
 import type { Chat } from './types'
@@ -97,17 +100,17 @@ export function ChatHeader({
       <span key="sync" className="flex items-center gap-1">
         {syncStatus.kind === 'temporary' ? (
           <span className="flex items-center gap-1 text-orange-500">
-            <SlGhost className="h-3 w-3" aria-hidden="true" />
+            <TfGhost2 className="h-3 w-3" aria-hidden="true" />
             Temporary chat
           </span>
         ) : syncStatus.kind === 'local' ? (
           <>
-            <CiFloppyDisk className="h-3.5 w-3.5" aria-hidden="true" />
+            <TfFloppyDisk className="h-3.5 w-3.5" aria-hidden="true" />
             Only saved locally
           </>
         ) : syncStatus.kind === 'failed' ? (
           <span className="flex items-center gap-1 text-orange-500">
-            <ExclamationTriangleIcon className="h-3 w-3" aria-hidden="true" />
+            <TfWarning className="h-3 w-3" aria-hidden="true" />
             Couldn&apos;t sync
           </span>
         ) : syncStatus.kind === 'syncing' ? (
@@ -117,7 +120,7 @@ export function ChatHeader({
           </span>
         ) : (
           <>
-            <CloudIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
             Synced
           </>
         )}
