@@ -388,6 +388,6 @@ describe('mermaid preview', () => {
     expect(frame.style.height).toBe('320px')
     previewMessage(frame, 'mermaid-preview-error', { message: 'Parse error' })
     expect(queryByText('Mermaid error: Parse error')).not.toBeNull()
-    expect(frame.className).toContain('hidden')
+    expect(frame).toHaveClass('hidden')
   })
 })

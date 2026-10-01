@@ -63,10 +63,15 @@ describe('Content-Security-Policy in vercel.json', () => {
         b.headers.some((h) => h.key === 'Content-Security-Policy'),
     )
     expect(more).toEqual([])
+    expect(block).toBeDefined()
     expect(block.source).toBe(page)
     const mermaidCsp = cspOf(block)
     expect(mermaidCsp.startsWith("default-src 'none'; ")).toBe(true)
-    expect(mermaidCsp).toContain("script-src 'self'")
+    const scriptSrc = mermaidCsp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('script-src '))
+    expect(scriptSrc).toBe("script-src 'self'")
     expect(mermaidCsp).toContain("style-src 'unsafe-inline'")
     expect(mermaidCsp).toContain('sandbox allow-scripts')
     expect(mermaidCsp).not.toMatch(/'unsafe-eval'|'unsafe-hashes'|https?:|,/)
