@@ -57,3 +57,6 @@ napkin.md
 # test results
 /coverage
 /public/js/plausible.upstream.js*
+
+# Pinned Pyodide/Mermaid copies made by scripts/copy-vendor.mjs
+/public/vendor/

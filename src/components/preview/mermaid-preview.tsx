@@ -1,10 +1,12 @@
 /**
- * Mermaid preview — lazy-loads the mermaid library and renders a diagram
- * from source code. Shared between the code-block renderer and the
- * `render_image` GenUI component.
+ * Mermaid preview. Renders in an in-origin srcdoc frame: the diagram source
+ * is JSON data processed by `/preview/mermaid-run.js` with the pinned
+ * Mermaid build under `/vendor/mermaid/`, so no inline script, no eval, and
+ * the payload stays within the verified origin. Output is SVG; the frame
+ * reports its height or an error.
  */
-import DOMPurify from 'isomorphic-dompurify'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { buildRunnerDocument } from './runner-frame'
 
 interface MermaidPreviewProps {
   code: string
@@ -17,67 +19,59 @@ export function MermaidPreview({
   isDarkMode,
   className,
 }: MermaidPreviewProps) {
-  const [svg, setSvg] = useState<string>('')
+  const [height, setHeight] = useState(100)
   const [error, setError] = useState<string | null>(null)
-  const reactId = useId()
-  const idRef = useMemo(
-    () => `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-    [reactId],
+  const instanceId = useId()
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  const srcDoc = useMemo(
+    () =>
+      buildRunnerDocument({
+        script: '/preview/mermaid-run.js',
+        data: { code, isDarkMode, instanceId },
+        styles: true,
+        head: '<style>body{margin:0;display:flex;justify-content:center;background:transparent}svg{max-width:100%;height:auto}</style>',
+      }),
+    [code, isDarkMode, instanceId],
   )
 
   useEffect(() => {
-    let cancelled = false
-
-    const renderMermaid = async () => {
-      try {
-        const mermaid = (await import('mermaid')).default
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: isDarkMode ? 'dark' : 'default',
-          securityLevel: 'strict',
-          // Render labels as SVG <text> nodes instead of wrapping them in
-          // <foreignObject><div>...</div></foreignObject>, which DOMPurify
-          // strips under its SVG profile.
-          htmlLabels: false,
-          flowchart: { htmlLabels: false },
-          class: { htmlLabels: false },
-        })
-
-        const { svg: renderedSvg } = await mermaid.render(idRef, code)
-        if (!cancelled) {
-          setSvg(renderedSvg)
-          setError(null)
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : String(e))
-          setSvg('')
-        }
+    setError(null)
+    const handleMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return
+      if (event.data?.instanceId !== instanceId) return
+      if (
+        event.data?.type === 'mermaid-preview-height' &&
+        Number.isFinite(event.data.height)
+      ) {
+        setHeight(Math.min(2000, Math.max(50, event.data.height)))
+      }
+      if (
+        event.data?.type === 'mermaid-preview-error' &&
+        typeof event.data.message === 'string'
+      ) {
+        setError(event.data.message.slice(0, 500))
       }
     }
-
-    renderMermaid()
-    return () => {
-      cancelled = true
-    }
-  }, [code, isDarkMode, idRef])
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [instanceId, srcDoc])
 
   if (error) {
     return <div className="text-sm text-red-500">Mermaid error: {error}</div>
   }
 
-  const sanitized = DOMPurify.sanitize(svg, {
-    USE_PROFILES: { svg: true, svgFilters: true },
-    ADD_TAGS: ['style'],
-  })
-
   return (
-    <div
-      className={
-        className ??
-        'flex w-full items-center justify-center [&>svg]:max-w-full'
-      }
-      dangerouslySetInnerHTML={{ __html: sanitized }}
-    />
+    <div className={className ?? 'w-full'}>
+      <iframe
+        ref={iframeRef}
+        srcDoc={srcDoc}
+        className="w-full border-0"
+        style={{ height: `${height}px` }}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        title="Mermaid preview"
+      />
+    </div>
   )
 }

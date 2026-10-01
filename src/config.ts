@@ -63,3 +63,8 @@ export const CLOUD_SYNC = {
 export const PASSKEY = {
   CREDENTIAL_SAVE_MAX_ATTEMPTS: 3,
 } as const
+
+// Origin of the unverified sandbox that runs model-authored HTML and JavaScript
+// previews (github.com/tinfoilsh/tinfoil-webapp-sandbox).
+export const SANDBOX_ORIGIN =
+  process.env.NEXT_PUBLIC_SANDBOX_ORIGIN ?? 'https://webapp-sandbox.tinfoil.sh'
