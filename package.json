@@ -19,7 +19,7 @@
     "test:coverage": "vitest run --coverage",
     "prebuild": "node scripts/copy-vendor.mjs",
     "predev": "node scripts/copy-vendor.mjs",
-    "postinstall": "node scripts/patch-clerk-worker.mjs"
+    "postinstall": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs"
   },
   "dependencies": {
     "@apple/mapkit-loader": "^0.2.1",

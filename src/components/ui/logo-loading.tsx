@@ -10,11 +10,9 @@ const animationDataPromise =
     : Promise.resolve(null)
 
 function LogoAnimation({
-  size = 80,
   isLoading = true,
   onFinished,
 }: {
-  size?: number
   isLoading?: boolean
   onFinished?: () => void
 }) {
@@ -59,34 +57,20 @@ function LogoAnimation({
     }
   }, [isLoading])
 
-  return <div ref={containerRef} style={{ width: size, height: size }} />
+  return <div ref={containerRef} className="h-20 w-20" />
 }
 
 export function LogoLoading({
-  size = 80,
   isLoading = true,
   onFinished,
 }: {
-  size?: number
   isLoading?: boolean
   onFinished?: () => void
 }) {
   return (
-    <div
-      className="flex overflow-hidden bg-surface-chat-background"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        height: 'var(--app-height, 100dvh)',
-        minHeight: '-webkit-fill-available',
-      }}
-    >
+    <div className="app-shell flex overflow-hidden bg-surface-chat-background">
       <div className="flex flex-1 items-center justify-center">
-        <LogoAnimation
-          size={size}
-          isLoading={isLoading}
-          onFinished={onFinished}
-        />
+        <LogoAnimation isLoading={isLoading} onFinished={onFinished} />
       </div>
     </div>
   )

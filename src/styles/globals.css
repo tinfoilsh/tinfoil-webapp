@@ -558,3 +558,36 @@ html[data-chat-font='dyslexic'] {
   background: #f5f5f5;
   font-weight: 600;
 }
+
+/* Font variables for portals rendered outside the next/font wrapper (Radix,
+   toasts). The main tree gets them from the `.variable` classes in _app.tsx;
+   the family names below are the ones next/font generates for those files. */
+:root {
+  --font-aeonik-fono: aeonikFono, 'aeonikFono Fallback';
+  --font-aeonik: aeonik, 'aeonik Fallback';
+  --font-opendyslexic: openDyslexic, 'openDyslexic Fallback';
+  --font-lora: lora, 'lora Fallback';
+}
+
+/* Full-viewport app shell; --app-height is set before first paint by
+   public/js/boot.js. A class rather than inline styles so the prerendered
+   HTML needs no style-src 'unsafe-inline'. */
+.app-shell {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+  min-height: -webkit-fill-available;
+  overscroll-behavior: none;
+}
+
+@keyframes df-dash {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+.df-animated-arrow {
+  animation: df-dash 2.4s linear infinite;
+}

@@ -3987,17 +3987,7 @@ export function ChatInterface({
 
   return (
     <div
-      className="flex overflow-hidden bg-surface-chat-background"
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 'var(--app-height, 100dvh)',
-        maxHeight: 'var(--app-height, 100dvh)',
-        minHeight: '-webkit-fill-available',
-        overscrollBehavior: 'none',
-      }}
+      className="app-shell flex overflow-hidden bg-surface-chat-background"
       onDragEnter={handleGlobalDragEnter}
       onDragOver={handleGlobalDragOver}
       onDragLeave={handleGlobalDragLeave}

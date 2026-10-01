@@ -78,15 +78,6 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
         visibility: scale !== null ? 'visible' : 'hidden',
       }}
     >
-      <style>{`
-        @keyframes df-dash {
-          to { stroke-dashoffset: -18; }
-        }
-        .df-animated-arrow {
-          animation: df-dash 2.4s linear infinite;
-        }
-      `}</style>
-
       <div
         className="absolute left-0 top-0 origin-top-left"
         style={{
