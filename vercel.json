@@ -77,7 +77,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://*.tinfoil.sh https://tinfoilsh.github.io https://vercel.live https://cdn.jsdelivr.net https://*.apple-mapkit.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' data: https://*.tinfoil.sh https://tinfoilsh.github.io https://plausible.io https://vitals.vercel-insights.com https://cdn.jsdelivr.net https://*.apple-mapkit.com https://*.ls.apple.com; frame-src 'self' data: https://vercel.live https://verification-center.tinfoil.sh https://webapp-sandbox.tinfoil.sh https://tinfoil-webapp-sandbox-tinfoil.vercel.app; frame-ancestors https://tinfoil.sh https://www.tinfoil.sh; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
+          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://*.apple-mapkit.com; object-src 'none'; worker-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' data: https://*.tinfoil.sh https://plausible.io https://vitals.vercel-insights.com https://*.apple-mapkit.com https://*.ls.apple.com; frame-src 'self' data: https://verification-center.tinfoil.sh https://webapp-sandbox.tinfoil.sh https://tinfoil-webapp-sandbox-tinfoil.vercel.app; frame-ancestors https://tinfoil.sh https://www.tinfoil.sh; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
         },
         {
           "key": "X-Content-Type-Options",
