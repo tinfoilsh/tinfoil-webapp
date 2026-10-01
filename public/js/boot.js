@@ -38,30 +38,26 @@ try {
 
 try {
   ;(function () {
-    try {
-      var font =
-        localStorage.getItem('tinfoil-settings-chat-font') ||
-        localStorage.getItem('chatFont')
-      if (font === 'serif' || font === 'mono' || font === 'dyslexic') {
-        document.documentElement.setAttribute('data-chat-font', font)
-      }
-    } catch (_) {}
+    var font =
+      localStorage.getItem('tinfoil-settings-chat-font') ||
+      localStorage.getItem('chatFont')
+    if (font === 'serif' || font === 'mono' || font === 'dyslexic') {
+      document.documentElement.setAttribute('data-chat-font', font)
+    }
   })()
 } catch (_) {}
 
 try {
   ;(function () {
-    try {
-      var h =
-        (window.visualViewport && window.visualViewport.height) ||
-        window.innerHeight ||
-        document.documentElement.clientHeight
-      if (h) {
-        document.documentElement.style.setProperty(
-          '--app-height',
-          Math.round(h) + 'px',
-        )
-      }
-    } catch (_) {}
+    var h =
+      (window.visualViewport && window.visualViewport.height) ||
+      window.innerHeight ||
+      document.documentElement.clientHeight
+    if (h) {
+      document.documentElement.style.setProperty(
+        '--app-height',
+        Math.round(h) + 'px',
+      )
+    }
   })()
 } catch (_) {}

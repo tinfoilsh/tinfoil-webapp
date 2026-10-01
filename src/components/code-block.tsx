@@ -5,10 +5,13 @@ import {
   useSandboxRunner,
 } from '@/components/preview/sandbox-frame'
 import { SvgPreview } from '@/components/preview/svg-preview'
-import { usePreviewMessages } from '@/components/preview/use-preview-messages'
+import {
+  usePreviewInstanceId,
+  usePreviewMessages,
+} from '@/components/preview/use-preview-messages'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
-import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -284,7 +287,7 @@ const PreviewContainer = ({
 
 const HtmlPreview = ({ code }: { code: string }) => {
   const [height, setHeight] = useState(100)
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   usePreviewMessages(iframeRef, instanceId, (message) => {
@@ -382,7 +385,7 @@ const stripModuleSyntax = (code: string): string => {
 
 const JavaScriptPreview = ({ code }: { code: string }) => {
   const [output, setOutput] = useState<string[]>([])
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   // Runs on the unverified sandbox origin: the snippet is eval'd there.
@@ -444,7 +447,7 @@ const JavaScriptPreview = ({ code }: { code: string }) => {
 const PythonPreview = ({ code }: { code: string }) => {
   const [output, setOutput] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   // In-origin runner: the code is data for Pyodide, so no inline script or
@@ -631,7 +634,7 @@ const JsonPreview = ({ code }: { code: string }) => {
 
 const CssPreview = ({ code }: { code: string }) => {
   const [height, setHeight] = useState(150)
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   usePreviewMessages(iframeRef, instanceId, (message) => {

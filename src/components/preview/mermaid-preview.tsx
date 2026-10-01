@@ -5,9 +5,12 @@
  * inline styles, and the payload stays within the verified origin. Output is
  * SVG; the frame reports its height or an error.
  */
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildRunnerDocument } from './runner-frame'
-import { usePreviewMessages } from './use-preview-messages'
+import {
+  usePreviewInstanceId,
+  usePreviewMessages,
+} from './use-preview-messages'
 
 interface MermaidPreviewProps {
   code: string
@@ -22,7 +25,7 @@ export function MermaidPreview({
 }: MermaidPreviewProps) {
   const [height, setHeight] = useState(100)
   const [error, setError] = useState<string | null>(null)
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   const srcDoc = useMemo(

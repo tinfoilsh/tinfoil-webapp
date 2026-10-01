@@ -270,11 +270,18 @@ describe('code previews', () => {
     previewMessage(frame, 'python-preview-output', { output: ['Ready'] })
     expect(queryByText('Ready')).not.toBeNull()
     const previousDoc = frame.srcdoc
+    const previousId = instanceIdOf(frame)
     rerender(
       <CodeBlock code={'print("next run")\nprint("done")'} language="python" />,
     )
     expect(getByTitle('Python preview')).toBe(frame)
     expect(frame.srcdoc).not.toBe(previousDoc)
+    // A late result from the replaced document must not reach the new one.
+    previewMessage(frame, 'python-preview-output', {
+      instanceId: previousId,
+      output: ['Stale result'],
+    })
+    expect(queryByText('Stale result')).toBeNull()
     previewMessage(frame, 'python-preview-loading', {})
     expect(queryByText('Loading Python...')).not.toBeNull()
     previewMessage(frame, 'python-preview-output', { output })
