@@ -302,6 +302,70 @@ describe('useChatMessaging message edits', () => {
     },
   )
 
+  it.each(['edit', 'regenerate'])(
+    'preserves attachments when applying %s to an attachment-only prompt',
+    async (action) => {
+      const chat = makeChat()
+      const messageIndex = 2
+      const originalMessage: Chat['messages'][number] = {
+        ...chat.messages[messageIndex],
+        content: '',
+        attachments: [
+          {
+            id: 'document-1',
+            type: 'document',
+            fileName: 'notes.txt',
+            textContent: 'Meeting notes',
+          },
+          {
+            id: 'image-1',
+            type: 'image',
+            fileName: 'photo.png',
+            mimeType: 'image/png',
+            base64: 'aW1hZ2U=',
+          },
+        ],
+      }
+      chat.messages[messageIndex] = originalMessage
+      const stream = createOpenStream()
+      stream.send({ choices: [{ delta: { content: 'New answer' } }] })
+      stream.send({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+      stream.close()
+      sendChatStreamMock.mockResolvedValue(stream.stream)
+      const { result } = renderMessaging(chat)
+      const expectedContent = action === 'edit' ? 'Summarize these files' : ''
+
+      await act(async () => {
+        if (action === 'edit') {
+          result.current.messaging.editMessage(messageIndex, expectedContent)
+        } else {
+          result.current.messaging.regenerateMessage(messageIndex)
+        }
+      })
+
+      await vi.waitFor(() => {
+        expect(result.current.currentChat.messages.at(-1)?.content).toBe(
+          'New answer',
+        )
+        expect(sessionSaveMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            messages: result.current.currentChat.messages,
+          }),
+        )
+      })
+      const request = sendChatStreamMock.mock.calls[0][0] as {
+        updatedMessages: Chat['messages']
+      }
+      expect(request.updatedMessages[messageIndex]).toMatchObject({
+        content: expectedContent,
+        attachments: originalMessage.attachments,
+      })
+      expect(result.current.currentChat.messages[messageIndex]).toEqual(
+        request.updatedMessages[messageIndex],
+      )
+    },
+  )
+
   it('deletes a single message and persists the shortened history', () => {
     const { result } = renderMessaging(makeChat())
 
