@@ -1,3 +1,1 @@
 wasm_exec.js
-# Extracted verbatim from the pinned @clerk/clerk-js bundle; a test compares it byte-for-byte after whitespace stripping
-/public/workers/clerk-timers.js

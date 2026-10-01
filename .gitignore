@@ -58,5 +58,6 @@ napkin.md
 /coverage
 /public/js/plausible.upstream.js*
 
-# Pinned Pyodide/Mermaid copies made by scripts/copy-vendor.mjs
+# Generated on install/build: scripts/copy-vendor.mjs, scripts/patch-clerk-worker.mjs
 /public/vendor/
+/public/workers/clerk-timers.js
