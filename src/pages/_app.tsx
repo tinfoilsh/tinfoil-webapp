@@ -3,6 +3,7 @@ import { useChatFontSync } from '@/components/chat/hooks/use-chat-font'
 import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
+import { analyticsExcluded } from '@/utils/analytics-routes'
 import { migrateStorageKeys } from '@/utils/storage-migration'
 import { Clerk } from '@clerk/clerk-js/no-rhc'
 import { ClerkProvider } from '@clerk/react'
@@ -12,8 +13,6 @@ import dynamic from 'next/dynamic'
 import localFont from 'next/font/local'
 import Head from 'next/head'
 import Script from 'next/script'
-
-const ANALYTICS_EXCLUDED_ROUTES = new Set(['/', '/newchat', '/[...slug]'])
 
 const aeonikFono = localFont({
   src: [
@@ -173,7 +172,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
           content="Private AI chat application supporting open source models through Tinfoil"
         />
       </Head>
-      {!ANALYTICS_EXCLUDED_ROUTES.has(router.pathname) && (
+      {router.isReady && !analyticsExcluded(router.asPath) && (
         <Script
           defer
           data-domain="chat.tinfoil.sh"

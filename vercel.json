@@ -35,7 +35,7 @@
       "destination": "/sso-callback.html"
     },
     {
-      "source": "/:path((?!\\.well-known/).*)",
+      "source": "/:path((?!\\.well-known/|_next/|.*\\.[^/]+$).*)",
       "destination": "/%5B...slug%5D.html"
     }
   ],
