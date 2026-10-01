@@ -1,7 +1,8 @@
 /**
  * Previews that must execute model-authored code (HTML, JavaScript, HTML
  * artifacts) run on the unverified sandbox origin, in a sandboxed iframe
- * with an opaque origin. Protocol (github.com/tinfoilsh/tinfoil-webapp-sandbox):
+ * with an opaque origin; the Mermaid page on this origin speaks the same
+ * protocol. Protocol (github.com/tinfoilsh/tinfoil-webapp-sandbox):
  * the frame is loaded with a per-frame nonce in the URL fragment and keeps
  * announcing `tinfoil-sandbox-ready` with that nonce until it receives a run;
  * we post one `tinfoil-sandbox-run` once a ready message echoes our nonce.
@@ -11,11 +12,13 @@
 import { SANDBOX_ORIGIN } from '@/config'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 
+/** Model code runs here (opaque frame). */
 export const SANDBOX_PREVIEW_URL = `${SANDBOX_ORIGIN}/preview`
+/** Tinfoil's Apple Maps embed (same-origin frame). */
+export const SANDBOX_MAP_URL = `${SANDBOX_ORIGIN}/map`
+/** Mermaid, on this origin: a verified page whose own CSP allows the inline styles Mermaid needs. */
+export const MERMAID_PREVIEW_URL = '/preview/mermaid.html'
 const READY_TIMEOUT_MS = 15_000
-
-/** Sandbox pages: `/preview` hosts model code (opaque frame); `/map` is Tinfoil's Apple Maps embed (same-origin frame). */
-export type SandboxPage = 'preview' | 'map'
 
 export type SandboxRun =
   | {
@@ -32,6 +35,13 @@ export type SandboxRun =
     }
   | {
       type: 'tinfoil-sandbox-run'
+      kind: 'mermaid'
+      instanceId: string
+      code: string
+      isDarkMode: boolean
+    }
+  | {
+      type: 'tinfoil-sandbox-run'
       kind: 'map'
       instanceId: string
       locations: Array<Record<string, unknown>>
@@ -44,7 +54,7 @@ export type SandboxRun =
 export function useSandboxRunner(
   iframeRef: RefObject<HTMLIFrameElement | null>,
   run: SandboxRun | null,
-  page: SandboxPage = 'preview',
+  url: string = SANDBOX_PREVIEW_URL,
 ) {
   // Generated after mount so server and client never disagree about the
   // nonce the frame was loaded with; the frame has no src until then.
@@ -66,7 +76,9 @@ export function useSandboxRunner(
       if (!target || event.source !== target) return
       if (event.data?.type !== 'tinfoil-sandbox-ready') return
       if (event.data.nonce !== nonce) return
-      if (readyRef.current) return
+      // The frame keeps announcing until it gets a run; a remounted frame
+      // element is a new window and gets the run again.
+      if (readyRef.current === target) return
       readyRef.current = target
       setFailed(false)
       if (runRef.current) target.postMessage(runRef.current, '*')
@@ -87,7 +99,7 @@ export function useSandboxRunner(
   }, [run])
 
   return {
-    src: nonce ? `${SANDBOX_ORIGIN}/${page}#${nonce}` : undefined,
+    src: nonce ? `${url}#${nonce}` : undefined,
     failed,
   }
 }
@@ -95,7 +107,7 @@ export function useSandboxRunner(
 export function SandboxUnavailable() {
   return (
     <div className="text-sm text-content-muted">
-      Preview unavailable: the sandbox did not respond.
+      Preview unavailable: the preview frame did not respond.
     </div>
   )
 }

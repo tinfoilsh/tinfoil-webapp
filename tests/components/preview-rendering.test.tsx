@@ -3,7 +3,10 @@ import { ArtifactPreviewPanel } from '@/components/chat/genui/widgets/ArtifactPr
 import { MessageContent } from '@/components/chat/renderers/components/MessageContent'
 import { CodeBlock } from '@/components/code-block'
 import { MermaidPreview } from '@/components/preview/mermaid-preview'
-import { SANDBOX_PREVIEW_URL } from '@/components/preview/sandbox-frame'
+import {
+  MERMAID_PREVIEW_URL,
+  SANDBOX_PREVIEW_URL,
+} from '@/components/preview/sandbox-frame'
 import {
   act,
   cleanup,
@@ -369,20 +372,22 @@ it('frames URL artifacts directly with the same sandbox permissions', () => {
 })
 
 describe('mermaid preview', () => {
-  it('renders in-origin and surfaces runner errors', () => {
+  it('renders in the in-origin Mermaid page and relays height and errors', () => {
     const { getByTitle, queryByText } = render(
       <MermaidPreview code="graph TD; A-->B" isDarkMode={true} />,
     )
     const frame = getByTitle('Mermaid preview') as HTMLIFrameElement
+    expect(frame.src).toContain(`${MERMAID_PREVIEW_URL}#`)
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
-    const data = runnerData(frame)
-    expect(data).toMatchObject({ code: 'graph TD; A-->B', isDarkMode: true })
-    expect(frame.srcdoc).toContain(`${data.origin}/preview/mermaid-run.js`)
-    expect(frame.srcdoc).not.toContain("'unsafe-eval'")
-    expect(frame.srcdoc).not.toContain("'unsafe-inline'")
+    expect(sandboxRun(frame)).toMatchObject({
+      kind: 'mermaid',
+      code: 'graph TD; A-->B',
+      isDarkMode: true,
+    })
     previewMessage(frame, 'mermaid-preview-height', { height: 320 })
     expect(frame.style.height).toBe('320px')
     previewMessage(frame, 'mermaid-preview-error', { message: 'Parse error' })
     expect(queryByText('Mermaid error: Parse error')).not.toBeNull()
+    expect(frame.className).toContain('hidden')
   })
 })

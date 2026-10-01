@@ -1,4 +1,5 @@
 import {
+  SANDBOX_MAP_URL,
   useSandboxRunner,
   type SandboxRun,
 } from '@/components/preview/sandbox-frame'
@@ -141,7 +142,7 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- locations via signature
     [instanceId, locationsSignature, mode, query, mapType, isDarkMode],
   )
-  const sandbox = useSandboxRunner(iframeRef, run, 'map')
+  const sandbox = useSandboxRunner(iframeRef, run, SANDBOX_MAP_URL)
 
   usePreviewMessages(iframeRef, instanceId, (message) => {
     if (
