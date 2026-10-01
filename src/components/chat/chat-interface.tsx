@@ -4022,12 +4022,15 @@ export function ChatInterface({
       {/* URL Hash Message Handler */}
       <UrlHashMessageHandler
         isReady={
-          !isLoadingConfig && isClient && !!currentChat && hasValidatedModel
+          isAuthLoaded &&
+          !isInitialLoad &&
+          !isLoadingConfig &&
+          isClient &&
+          !!currentChat &&
+          hasValidatedModel &&
+          !currentChatIsFlagged
         }
-        onMessageReady={(message) => {
-          if (safeguardGenerationBlocked) return
-          handleQuery(message)
-        }}
+        onSubmit={submitMessage}
       />
 
       {/* URL Hash Settings Handler */}

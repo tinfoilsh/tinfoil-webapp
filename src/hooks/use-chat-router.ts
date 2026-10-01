@@ -1,4 +1,5 @@
 import { getChatPath, getNewChatPath } from '@/utils/navigation'
+import { MESSAGE_HASH_PREFIX, MESSAGE_QUERY_PARAM } from '@/utils/redirect-url'
 import { useRouter } from 'next/router'
 import { useCallback, useEffect, useState } from 'react'
 
@@ -11,6 +12,17 @@ interface UseChatRouterReturn {
   updateUrlForLocalChat: (chatId: string) => void
   updateUrlForProject: (projectId: string) => void
   clearUrl: () => void
+}
+
+function preservePendingMessage(path: string): string {
+  const next = new URL(path, window.location.origin)
+  const query = new URLSearchParams(window.location.search)
+  const message = query.get(MESSAGE_QUERY_PARAM)
+  if (message !== null) next.searchParams.set(MESSAGE_QUERY_PARAM, message)
+  if (window.location.hash.startsWith(MESSAGE_HASH_PREFIX)) {
+    next.hash = window.location.hash
+  }
+  return next.pathname + next.search + next.hash
 }
 
 export function useChatRouter(): UseChatRouterReturn {
@@ -43,10 +55,11 @@ export function useChatRouter(): UseChatRouterReturn {
     const newPath = getChatPath(chatId, { projectId })
 
     if (window.location.pathname !== newPath) {
+      const nextUrl = preservePendingMessage(newPath)
       window.history.replaceState(
-        { ...window.history.state, as: newPath, url: newPath },
+        { ...window.history.state, as: nextUrl, url: nextUrl },
         '',
-        newPath,
+        nextUrl,
       )
     }
   }, [])
@@ -57,10 +70,11 @@ export function useChatRouter(): UseChatRouterReturn {
     const newPath = getChatPath(chatId, { isLocalOnly: true })
 
     if (window.location.pathname !== newPath) {
+      const nextUrl = preservePendingMessage(newPath)
       window.history.replaceState(
-        { ...window.history.state, as: newPath, url: newPath },
+        { ...window.history.state, as: nextUrl, url: nextUrl },
         '',
-        newPath,
+        nextUrl,
       )
     }
   }, [])
@@ -71,10 +85,11 @@ export function useChatRouter(): UseChatRouterReturn {
     const newPath = getNewChatPath({ projectId })
 
     if (window.location.pathname !== newPath) {
+      const nextUrl = preservePendingMessage(newPath)
       window.history.replaceState(
-        { ...window.history.state, as: newPath, url: newPath },
+        { ...window.history.state, as: nextUrl, url: nextUrl },
         '',
-        newPath,
+        nextUrl,
       )
     }
   }, [])
@@ -83,10 +98,11 @@ export function useChatRouter(): UseChatRouterReturn {
     if (typeof window === 'undefined') return
 
     if (window.location.pathname !== '/') {
+      const nextUrl = preservePendingMessage('/')
       window.history.replaceState(
-        { ...window.history.state, as: '/', url: '/' },
+        { ...window.history.state, as: nextUrl, url: nextUrl },
         '',
-        '/',
+        nextUrl,
       )
     }
   }, [])

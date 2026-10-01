@@ -28,11 +28,11 @@ afterEach(() => {
 describe('UrlHashMessageHandler', () => {
   it('sends the ?q= message and clears the marker through the router', () => {
     setLocation('/newchat?q=hello+world&view=compact')
-    const onMessageReady = vi.fn()
+    const onSubmit = vi.fn()
 
-    render(<UrlHashMessageHandler onMessageReady={onMessageReady} isReady />)
+    render(<UrlHashMessageHandler onSubmit={onSubmit} isReady />)
 
-    expect(onMessageReady).toHaveBeenCalledExactlyOnceWith('hello world')
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ text: 'hello world' })
     expect(routerReplace).toHaveBeenCalledExactlyOnceWith(
       '/newchat?view=compact',
       undefined,
@@ -43,11 +43,11 @@ describe('UrlHashMessageHandler', () => {
   it('sends the #send= message and drops both markers', () => {
     const encoded = Buffer.from('what is 2+2?').toString('base64')
     setLocation(`/?q=ignored#send=${encoded}`)
-    const onMessageReady = vi.fn()
+    const onSubmit = vi.fn()
 
-    render(<UrlHashMessageHandler onMessageReady={onMessageReady} isReady />)
+    render(<UrlHashMessageHandler onSubmit={onSubmit} isReady />)
 
-    expect(onMessageReady).toHaveBeenCalledExactlyOnceWith('what is 2+2?')
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ text: 'what is 2+2?' })
     expect(routerReplace).toHaveBeenCalledExactlyOnceWith('/', undefined, {
       shallow: true,
     })
@@ -58,7 +58,7 @@ describe('UrlHashMessageHandler', () => {
     setLocation('/newchat?q=secret')
     const replaceState = vi.spyOn(window.history, 'replaceState')
 
-    render(<UrlHashMessageHandler onMessageReady={vi.fn()} isReady />)
+    render(<UrlHashMessageHandler onSubmit={vi.fn()} isReady />)
     await vi.waitFor(() =>
       expect(replaceState).toHaveBeenCalledWith(null, '', '/newchat'),
     )
@@ -66,19 +66,44 @@ describe('UrlHashMessageHandler', () => {
 
   it('waits until ready and does nothing without a marker', () => {
     setLocation('/newchat?q=later')
-    const onMessageReady = vi.fn()
+    const onSubmit = vi.fn()
     const { rerender } = render(
-      <UrlHashMessageHandler onMessageReady={onMessageReady} isReady={false} />,
+      <UrlHashMessageHandler onSubmit={onSubmit} isReady={false} />,
     )
-    expect(onMessageReady).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
     expect(routerReplace).not.toHaveBeenCalled()
 
-    rerender(<UrlHashMessageHandler onMessageReady={onMessageReady} isReady />)
-    expect(onMessageReady).toHaveBeenCalledOnce()
+    rerender(<UrlHashMessageHandler onSubmit={onSubmit} isReady />)
+    expect(onSubmit).toHaveBeenCalledOnce()
 
     routerReplace.mockClear()
     setLocation('/settings#settings/privacy')
-    render(<UrlHashMessageHandler onMessageReady={vi.fn()} isReady />)
+    render(<UrlHashMessageHandler onSubmit={vi.fn()} isReady />)
     expect(routerReplace).not.toHaveBeenCalled()
   })
+
+  it.each(['fragment', 'query'])(
+    'does not consume a %s message if enqueueing fails',
+    (format) => {
+      const path = format === 'fragment' ? '/#send=aGVsbG8=' : '/?q=hello'
+      setLocation(path)
+      const onSubmit = vi.fn().mockImplementationOnce(() => {
+        throw new Error('Queue unavailable')
+      })
+      const { rerender } = render(
+        <UrlHashMessageHandler onSubmit={onSubmit} isReady />,
+      )
+      expect(routerReplace).not.toHaveBeenCalled()
+      expect(
+        window.location.pathname +
+          window.location.search +
+          window.location.hash,
+      ).toBe(path)
+      rerender(<UrlHashMessageHandler onSubmit={onSubmit} isReady={false} />)
+      rerender(<UrlHashMessageHandler onSubmit={onSubmit} isReady />)
+      expect(onSubmit).toHaveBeenCalledTimes(2)
+      expect(onSubmit).toHaveBeenLastCalledWith({ text: 'hello' })
+      expect(routerReplace).toHaveBeenCalledOnce()
+    },
+  )
 })

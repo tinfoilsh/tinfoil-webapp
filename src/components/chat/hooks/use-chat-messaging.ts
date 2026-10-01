@@ -127,7 +127,6 @@ interface UseChatMessagingReturn {
   streamError: StreamErrorInfo | null
   dismissStreamError: () => void
   setInput: (input: string) => void
-  handleSubmit: (e: React.FormEvent) => void
   handleQuery: (
     query: string,
     attachments?: import('@/components/chat/types').Attachment[],
@@ -1750,15 +1749,6 @@ export function useChatMessaging({
     ],
   )
 
-  const handleSubmit = useCallback(
-    (e: React.FormEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      handleQuery(input)
-    },
-    [input, handleQuery],
-  )
-
   // Edit a message and re-submit - truncates conversation after the edited message
   const editMessage = useCallback(
     (messageIndex: number, newContent: string) => {
@@ -2188,7 +2178,6 @@ export function useChatMessaging({
     streamError,
     dismissStreamError,
     setInput,
-    handleSubmit,
     handleQuery,
     cancelGeneration,
     editMessage,

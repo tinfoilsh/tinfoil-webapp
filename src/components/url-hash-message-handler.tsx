@@ -1,3 +1,4 @@
+import type { QueueSubmitInput } from '@/components/chat/hooks/use-message-queue'
 import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError, logInfo, logWarning } from '@/utils/error-handling'
 import {
@@ -9,7 +10,7 @@ import { useRouter, type NextRouter } from 'next/router'
 import { useEffect, useRef } from 'react'
 
 interface UrlHashMessageHandlerProps {
-  onMessageReady: (message: string) => void
+  onSubmit: (input: QueueSubmitInput) => void
   isReady: boolean
 }
 
@@ -73,7 +74,7 @@ function sanitizeMessage(decodedMessage: string): string | null {
  * other chat tools (e.g., ChatGPT's ?q=).
  */
 export function UrlHashMessageHandler({
-  onMessageReady,
+  onSubmit,
   isReady,
 }: UrlHashMessageHandlerProps) {
   const router = useRouter()
@@ -113,8 +114,8 @@ export function UrlHashMessageHandler({
             metadata: { messageLength: normalizedMessage.length },
           })
 
+          onSubmit({ text: normalizedMessage })
           hasProcessed.current = true
-          onMessageReady(normalizedMessage)
 
           clearMessageMarkersFromUrl(router)
           return true
@@ -157,8 +158,8 @@ export function UrlHashMessageHandler({
           metadata: { messageLength: normalizedMessage.length },
         })
 
+        onSubmit({ text: normalizedMessage })
         hasProcessed.current = true
-        onMessageReady(normalizedMessage)
 
         clearMessageMarkersFromUrl(router)
         return true
@@ -173,7 +174,7 @@ export function UrlHashMessageHandler({
     if (!processHashMessage()) {
       processQueryMessage()
     }
-  }, [isReady, onMessageReady, router])
+  }, [isReady, onSubmit, router])
 
   return null
 }

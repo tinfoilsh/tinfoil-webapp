@@ -1,9 +1,17 @@
 import { useChatMessaging } from '@/components/chat/hooks/use-chat-messaging'
+import { useMessageQueue } from '@/components/chat/hooks/use-message-queue'
 import type { Chat } from '@/components/chat/types'
+import { UrlHashMessageHandler } from '@/components/url-hash-message-handler'
 import type { ChatChunk } from '@/services/inference/chat-stream'
-import { act, renderHook } from '@testing-library/react'
-import { useState } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
+import { StrictMode, useState } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   getChatMock,
@@ -23,6 +31,15 @@ const {
 
 vi.mock('@clerk/react', () => ({
   useAuth: () => ({ isSignedIn: true, userId: 'user-1' }),
+}))
+
+vi.mock('next/router', () => ({
+  useRouter: () => ({
+    replace: async (path: string) => {
+      window.history.replaceState(null, '', path)
+      return true
+    },
+  }),
 }))
 
 vi.mock('@/components/project', () => ({
@@ -425,5 +442,134 @@ describe('useChatMessaging model availability', () => {
     expect(result.current.currentChat.messages).toHaveLength(
       storedMessages.length,
     )
+  })
+})
+
+function UrlMessageChat({
+  blocked,
+  ready = true,
+}: {
+  blocked: boolean
+  ready?: boolean
+}) {
+  const [currentChat, setCurrentChat] = useState<Chat>(() => ({
+    id: '',
+    title: 'New Chat',
+    createdAt: new Date(),
+    messages: [],
+    isBlankChat: true,
+    isLocalOnly: true,
+  }))
+  const [chats, setChats] = useState([currentChat])
+  const messaging = useChatMessaging({
+    systemPrompt: '',
+    storeHistory: false,
+    models: [
+      {
+        modelName: 'gpt-oss-120b',
+        name: 'GPT-OSS',
+        nameShort: 'GPT-OSS',
+        description: '',
+        image: '',
+        type: 'chat',
+      },
+    ],
+    selectedModel: 'gpt-oss-120b',
+    chats,
+    currentChat,
+    setChats,
+    setCurrentChat,
+  })
+  const queue = useMessageQueue({
+    chatId: currentChat.id,
+    loadingState: messaging.loadingState,
+    handleQuery: messaging.handleQuery,
+    isRateLimited: () => false,
+    isDispatchBlocked: () => blocked,
+    dispatchBlocked: blocked,
+  })
+  return (
+    <>
+      <UrlHashMessageHandler isReady={ready} onSubmit={queue.submit} />
+      <output data-testid="queued">
+        {queue.queuedMessages.map((item) => item.text).join('\n')}
+      </output>
+      <output data-testid="messages">
+        {currentChat.messages.map((item) => item.content).join('\n')}
+      </output>
+    </>
+  )
+}
+
+describe('URL messages through the chat send pipeline', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    window.sessionStorage.clear()
+    sendChatStreamMock.mockImplementation(async () => completedStream())
+  })
+
+  afterEach(() => {
+    window.history.replaceState(null, '', '/')
+    window.sessionStorage.clear()
+  })
+
+  it.each(['fragment', 'query'])(
+    'retains a %s message until dispatch is unblocked, then streams exactly once',
+    async (format) => {
+      const message = 'Hello 👋 from the marketing page'
+      window.history.replaceState(
+        null,
+        '',
+        format === 'fragment'
+          ? `/#send=${Buffer.from(message).toString('base64')}`
+          : `/?q=${encodeURIComponent(message)}`,
+      )
+      const { rerender } = render(
+        <StrictMode>
+          <UrlMessageChat blocked />
+        </StrictMode>,
+      )
+      await waitFor(() =>
+        expect(screen.getByTestId('queued')).toHaveTextContent(message),
+      )
+      expect(sendChatStreamMock).not.toHaveBeenCalled()
+      expect(window.location.hash).toBe('')
+      expect(window.location.search).toBe('')
+
+      rerender(
+        <StrictMode>
+          <UrlMessageChat blocked={false} />
+        </StrictMode>,
+      )
+      await waitFor(() =>
+        expect(screen.getByTestId('messages')).toHaveTextContent('Response'),
+      )
+      expect(sendChatStreamMock).toHaveBeenCalledOnce()
+      expect(sendChatStreamMock.mock.calls[0][0].updatedMessages).toEqual([
+        expect.objectContaining({ role: 'user', content: message }),
+      ])
+      expect(screen.getByTestId('queued')).toHaveTextContent('')
+      expect(screen.getByTestId('messages')).toHaveTextContent(message)
+    },
+  )
+
+  it('leaves the fragment untouched until the receiving chat is ready', async () => {
+    const message = 'Wait for initialization'
+    const hash = `#send=${Buffer.from(message).toString('base64')}`
+    window.history.replaceState(null, '', `/${hash}`)
+    const { rerender } = render(
+      <UrlMessageChat ready={false} blocked={false} />,
+    )
+    expect(window.location.hash).toBe(hash)
+    expect(sendChatStreamMock).not.toHaveBeenCalled()
+    rerender(<UrlMessageChat ready blocked={false} />)
+    await waitFor(() =>
+      expect(screen.getByTestId('messages')).toHaveTextContent('Response'),
+    )
+    expect(sendChatStreamMock).toHaveBeenCalledOnce()
+    expect(window.location.hash).toBe('')
+    expect(sendChatStreamMock.mock.calls[0][0].updatedMessages).toEqual([
+      expect.objectContaining({ role: 'user', content: message }),
+    ])
   })
 })
