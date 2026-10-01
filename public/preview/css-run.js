@@ -4,7 +4,8 @@
 const data = JSON.parse(document.getElementById('data').textContent)
 const baseline = new CSSStyleSheet()
 baseline.replaceSync(
-  'body{margin:0;padding:16px;font-family:system-ui,sans-serif}',
+  'body{margin:0;padding:16px;font-family:system-ui,sans-serif}' +
+    '.box{margin-top:16px;padding:16px;border:1px solid #ccc;border-radius:4px}',
 )
 const sheet = new CSSStyleSheet()
 sheet.replaceSync(String(data.css))

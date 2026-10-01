@@ -9,7 +9,7 @@
  * listeners keep working.
  */
 import { SANDBOX_ORIGIN } from '@/config'
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 
 export const SANDBOX_PREVIEW_URL = `${SANDBOX_ORIGIN}/preview`
 const READY_TIMEOUT_MS = 15_000
@@ -46,13 +46,19 @@ export function useSandboxRunner(
   run: SandboxRun | null,
   page: SandboxPage = 'preview',
 ) {
-  const nonce = useMemo(() => crypto.randomUUID(), [])
+  // Generated after mount so server and client never disagree about the
+  // nonce the frame was loaded with; the frame has no src until then.
+  const [nonce, setNonce] = useState<string | null>(null)
+  useEffect(() => setNonce(crypto.randomUUID()), [])
   const runRef = useRef(run)
-  runRef.current = run
+  useEffect(() => {
+    runRef.current = run
+  })
   const readyRef = useRef<Window | null>(null)
   const [failed, setFailed] = useState(false)
 
   useEffect(() => {
+    if (!nonce) return
     // The frame's origin is opaque, so the target origin has to be '*'; the
     // nonce check is what ties the ready message to the document we loaded.
     const onMessage = (event: MessageEvent) => {
@@ -80,7 +86,10 @@ export function useSandboxRunner(
     if (run && readyRef.current) readyRef.current.postMessage(run, '*')
   }, [run])
 
-  return { src: `${SANDBOX_ORIGIN}/${page}#${nonce}`, failed }
+  return {
+    src: nonce ? `${SANDBOX_ORIGIN}/${page}#${nonce}` : undefined,
+    failed,
+  }
 }
 
 export function SandboxUnavailable() {

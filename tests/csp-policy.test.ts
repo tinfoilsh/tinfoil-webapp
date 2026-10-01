@@ -1,3 +1,4 @@
+import { SANDBOX_ORIGIN } from '@/config'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
@@ -27,6 +28,14 @@ describe('Content-Security-Policy in vercel.json', () => {
     expect(directive('worker-src')).toBe("'self'")
     expect(directive('object-src')).toBe("'none'")
     expect(directive('default-src')).toBe("'self'")
+  })
+
+  it('has no -elem / -attr overrides that could loosen the base directives', () => {
+    expect(csp).not.toMatch(/\b(script|style)-src-(elem|attr)\b/)
+  })
+
+  it('frames the sandbox origin the app is configured to use', () => {
+    expect(directive('frame-src')?.split(/\s+/)).toContain(SANDBOX_ORIGIN)
   })
 
   it('frames only the enrolled verification center and the sandbox', () => {

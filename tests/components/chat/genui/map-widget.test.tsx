@@ -92,10 +92,10 @@ describe('MapWidget', () => {
   })
 
   it('keeps the Apple Maps links without loading any map code', () => {
-    localStorage.setItem('tinfoil:apple-maps-consent', 'granted')
-    const { getByRole } = render(
+    const { getByRole, queryByTitle } = render(
       <MapWidget locations={locations} mode="directions" />,
     )
+    expect(queryByTitle('Apple Maps')).toBeNull()
     const link = getByRole('link', { name: /open directions in apple maps/i })
     expect(link.getAttribute('href')).toMatch(
       /^https:\/\/maps\.apple\.com\/directions\?/,

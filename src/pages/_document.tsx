@@ -1,12 +1,14 @@
 import { Head, Html, Main, NextScript } from 'next/document'
-import Script from 'next/script'
 
 export default function Document() {
   return (
     <Html lang="en" data-theme="light" className="overflow-x-hidden">
       <Head>
-        {/* Theme, chat font and --app-height before first paint; see public/js/boot.js */}
-        <Script src="/js/boot.js" strategy="beforeInteractive" />
+        {/* Theme, chat font and --app-height must apply before first paint, so
+            this is a plain parser-blocking script (beforeInteractive would defer
+            it); see public/js/boot.js. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script src="/js/boot.js" />
         <link rel="manifest" href="/site.webmanifest" />
 
         <meta

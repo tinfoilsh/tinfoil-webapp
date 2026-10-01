@@ -2,10 +2,11 @@ import {
   useSandboxRunner,
   type SandboxRun,
 } from '@/components/preview/sandbox-frame'
+import { usePreviewMessages } from '@/components/preview/use-preview-messages'
 import { Card } from '@/components/ui/card'
 import type { LucideIcon } from 'lucide-react'
 import { Copy, ExternalLink, MapPin, Navigation } from 'lucide-react'
-import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useId, useMemo, useRef, useState } from 'react'
 import type { Location, Props } from './Map'
 
 const APPLE_MAPS_CONSENT_KEY = 'tinfoil:apple-maps-consent'
@@ -142,18 +143,14 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
   )
   const sandbox = useSandboxRunner(iframeRef, run, 'map')
 
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return
-      if (event.data?.instanceId !== instanceId) return
-      if (event.data?.type !== 'map-preview-status') return
-      if (['loading', 'ready', 'error'].includes(event.data.status)) {
-        setStatus(event.data.status)
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'map-preview-status' &&
+      ['loading', 'ready', 'error'].includes(message.status as string)
+    ) {
+      setStatus(message.status as 'loading' | 'ready' | 'error')
     }
-    window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
-  }, [instanceId])
+  })
 
   const failed = status === 'error' || sandbox.failed
 
@@ -187,6 +184,8 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
 const MapView = memo(MapViewImpl, (prev, next) => {
   return (
     prev.mapType === next.mapType &&
+    prev.mode === next.mode &&
+    prev.query === next.query &&
     prev.isDarkMode === next.isDarkMode &&
     locationsKey(prev.locations) === locationsKey(next.locations)
   )

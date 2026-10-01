@@ -23,7 +23,7 @@ fs.writeFileSync(
   "// Clerk's timer worker, extracted verbatim from @clerk/clerk-js by\n" +
     '// scripts/patch-clerk-worker.mjs. Served from this origin so it runs under\n' +
     "// worker-src 'self' and is hashed like any other asset.\n" +
-    workerSource.replace(/;/g, ';\n') +
+    workerSource +
     '\n',
 )
 

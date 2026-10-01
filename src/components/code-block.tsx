@@ -5,6 +5,7 @@ import {
   useSandboxRunner,
 } from '@/components/preview/sandbox-frame'
 import { SvgPreview } from '@/components/preview/svg-preview'
+import { usePreviewMessages } from '@/components/preview/use-preview-messages'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
 import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
@@ -286,22 +287,14 @@ const HtmlPreview = ({ code }: { code: string }) => {
   const instanceId = useId()
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return
-      }
-      if (
-        event.data?.type === 'html-preview-height' &&
-        event.data?.instanceId === instanceId &&
-        Number.isFinite(event.data.height)
-      ) {
-        setHeight(Math.min(2000, Math.max(100, event.data.height)))
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'html-preview-height' &&
+      Number.isFinite(message.height)
+    ) {
+      setHeight(Math.min(2000, Math.max(100, message.height as number)))
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId])
+  })
 
   // Runs on the unverified sandbox origin: HTML previews execute inline
   // model-authored scripts, which the app's own CSP forbids.
@@ -406,22 +399,14 @@ const JavaScriptPreview = ({ code }: { code: string }) => {
     ),
   )
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return
-      }
-      if (
-        event.data?.type === 'js-preview-output' &&
-        event.data?.instanceId === instanceId &&
-        isPreviewOutput(event.data.output)
-      ) {
-        setOutput(event.data.output)
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'js-preview-output' &&
+      isPreviewOutput(message.output)
+    ) {
+      setOutput(message.output)
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId])
+  })
 
   return (
     <div className="font-mono text-sm">
@@ -474,29 +459,13 @@ const PythonPreview = ({ code }: { code: string }) => {
     [code, instanceId],
   )
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return
-      }
-      if (event.data?.instanceId !== instanceId) {
-        return
-      }
-      if (event.data?.type === 'python-preview-loading') {
-        setIsLoading(true)
-      }
-      if (event.data?.type === 'python-preview-output') {
-        setIsLoading(false)
-        if (isPreviewOutput(event.data.output)) {
-          setOutput(event.data.output)
-        } else {
-          setOutput([])
-        }
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (message.type === 'python-preview-loading') setIsLoading(true)
+    if (message.type === 'python-preview-output') {
+      setIsLoading(false)
+      setOutput(isPreviewOutput(message.output) ? message.output : [])
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId])
+  })
 
   return (
     <div className="font-mono text-sm">
@@ -665,22 +634,14 @@ const CssPreview = ({ code }: { code: string }) => {
   const instanceId = useId()
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return
-      }
-      if (
-        event.data?.type === 'css-preview-height' &&
-        event.data?.instanceId === instanceId &&
-        Number.isFinite(event.data.height)
-      ) {
-        setHeight(Math.min(2000, Math.max(150, event.data.height)))
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'css-preview-height' &&
+      Number.isFinite(message.height)
+    ) {
+      setHeight(Math.min(2000, Math.max(150, message.height as number)))
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId])
+  })
 
   // In-origin runner: the stylesheet is data applied through the CSSOM, and
   // the height reporter is a script served from this origin.
@@ -694,7 +655,7 @@ const CssPreview = ({ code }: { code: string }) => {
           '<p>This is a <strong>paragraph</strong> with <em>formatted</em> text and a <a href="#">link</a>.</p>' +
           '<ul><li>List item 1</li><li>List item 2</li></ul>' +
           '<button>Button</button> <input type="text" placeholder="Input field">' +
-          '<div class="box" style="margin-top:16px;padding:16px;border:1px solid #ccc;border-radius:4px"><p>A div with class "box"</p></div>',
+          '<div class="box"><p>A div with class "box"</p></div>',
       }),
     [code, instanceId],
   )

@@ -7,6 +7,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { buildRunnerDocument } from './runner-frame'
+import { usePreviewMessages } from './use-preview-messages'
 
 interface MermaidPreviewProps {
   code: string
@@ -33,27 +34,21 @@ export function MermaidPreview({
     [code, isDarkMode, instanceId],
   )
 
-  useEffect(() => {
-    setError(null)
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) return
-      if (event.data?.instanceId !== instanceId) return
-      if (
-        event.data?.type === 'mermaid-preview-height' &&
-        Number.isFinite(event.data.height)
-      ) {
-        setHeight(Math.min(2000, Math.max(50, event.data.height)))
-      }
-      if (
-        event.data?.type === 'mermaid-preview-error' &&
-        typeof event.data.message === 'string'
-      ) {
-        setError(event.data.message.slice(0, 500))
-      }
+  useEffect(() => setError(null), [srcDoc])
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'mermaid-preview-height' &&
+      Number.isFinite(message.height)
+    ) {
+      setHeight(Math.min(2000, Math.max(50, message.height as number)))
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId, srcDoc])
+    if (
+      message.type === 'mermaid-preview-error' &&
+      typeof message.message === 'string'
+    ) {
+      setError(message.message.slice(0, 500))
+    }
+  })
 
   if (error) {
     return <div className="text-sm text-red-500">Mermaid error: {error}</div>

@@ -19,7 +19,7 @@ describe('iframes', () => {
     for (const file of sourceFiles('src')) {
       const src = readFileSync(file, 'utf8')
       for (const match of src.matchAll(/<iframe\b[\s\S]*?(?:\/>|>)/g)) {
-        if (!/\bsandbox=/.test(match[0])) {
+        if (!/(?:^|\s)sandbox=/.test(match[0])) {
           offenders.push(`${file}: ${match[0].split('\n')[0].slice(0, 60)}`)
         }
       }
