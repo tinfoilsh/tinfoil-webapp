@@ -567,5 +567,9 @@ describe('URL messages through the chat send pipeline', () => {
       expect(screen.getByTestId('messages')).toHaveTextContent('Response'),
     )
     expect(sendChatStreamMock).toHaveBeenCalledOnce()
+    expect(window.location.hash).toBe('')
+    expect(sendChatStreamMock.mock.calls[0][0].updatedMessages).toEqual([
+      expect.objectContaining({ role: 'user', content: message }),
+    ])
   })
 })
