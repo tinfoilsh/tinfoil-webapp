@@ -49,7 +49,6 @@ interface UseChatStateReturn {
   setCurrentChat: React.Dispatch<React.SetStateAction<Chat>>
 
   // Actions
-  handleSubmit: (e: React.FormEvent) => void
   handleQuery: (
     query: string,
     attachments?: import('@/components/chat/types').Attachment[],
@@ -235,7 +234,6 @@ export function useChatState({
     streamError,
     dismissStreamError,
     setInput,
-    handleSubmit,
     handleQuery,
     cancelGeneration,
     editMessage,
@@ -376,7 +374,6 @@ export function useChatState({
     setCurrentChat,
 
     // Actions
-    handleSubmit,
     handleQuery,
     createNewChat,
     deleteChat,
