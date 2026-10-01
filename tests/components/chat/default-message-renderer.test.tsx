@@ -149,6 +149,167 @@ describe('DefaultMessageRenderer message actions', () => {
     ],
   }
 
+  describe.each<{ name: string; attachmentFields: Partial<Message> }>([
+    {
+      name: 'document',
+      attachmentFields: {
+        attachments: [
+          {
+            id: 'document-1',
+            type: 'document',
+            fileName: 'notes.txt',
+            textContent: 'Meeting notes',
+          },
+        ],
+      },
+    },
+    {
+      name: 'image',
+      attachmentFields: {
+        attachments: [
+          {
+            id: 'image-1',
+            type: 'image',
+            fileName: 'photo.png',
+            mimeType: 'image/png',
+            base64: 'aW1hZ2U=',
+          },
+        ],
+      },
+    },
+    {
+      name: 'legacy document',
+      attachmentFields: { documents: [{ name: 'notes.txt' }] },
+    },
+    {
+      name: 'legacy image',
+      attachmentFields: {
+        imageData: [{ base64: 'aW1hZ2U=', mimeType: 'image/png' }],
+      },
+    },
+  ])('$name-only messages', ({ attachmentFields }) => {
+    const message: Message = {
+      role: 'user',
+      content: '',
+      timestamp: new Date('2026-08-07T00:00:00.000Z'),
+      ...attachmentFields,
+    }
+
+    it('offers message actions without a text bubble or copy button', () => {
+      const messageIndex = 2
+      const onDeleteMessage = vi.fn()
+      const onForkMessage = vi.fn()
+      const onRegenerateMessage = vi.fn()
+      const onEditMessage = vi.fn()
+      const props = {
+        message,
+        messageIndex,
+        model,
+        isDarkMode: false,
+        onDeleteMessage,
+        onForkMessage,
+        onRegenerateMessage,
+        onEditMessage,
+      }
+      const { container, rerender } = render(<Renderer {...props} />)
+
+      expect(screen.getByRole('button', { name: 'Edit message' })).toBeVisible()
+      expect(
+        screen.queryByRole('button', { name: 'Copy message' }),
+      ).not.toBeInTheDocument()
+      expect(container.querySelector('.prose')).not.toBeInTheDocument()
+      for (const [name, handler] of [
+        ['Delete message', onDeleteMessage],
+        ['Fork conversation from here', onForkMessage],
+        ['Regenerate response', onRegenerateMessage],
+      ] as const) {
+        fireEvent.click(screen.getByRole('button', { name }))
+        expect(handler).toHaveBeenCalledWith(messageIndex)
+      }
+
+      rerender(<Renderer {...props} hideActions />)
+      for (const name of [
+        'Edit message',
+        'Delete message',
+        'Fork conversation from here',
+        'Regenerate response',
+        'Copy message',
+      ]) {
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+      }
+      expect(
+        screen.getByText(
+          message.timestamp.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+          }),
+        ),
+      ).toBeVisible()
+    })
+
+    it('lets the user cancel editing or add text to the prompt', () => {
+      const messageIndex = 2
+      const onEditMessage = vi.fn()
+      render(
+        <Renderer
+          message={message}
+          messageIndex={messageIndex}
+          model={model}
+          isDarkMode={false}
+          onEditMessage={onEditMessage}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+      expect(screen.getByRole('textbox', { name: 'Edit message' })).toHaveValue(
+        '',
+      )
+      expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(onEditMessage).not.toHaveBeenCalled()
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Edit message' }))
+      fireEvent.change(screen.getByRole('textbox', { name: 'Edit message' }), {
+        target: { value: '  Summarize this attachment  ' },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+      expect(onEditMessage).toHaveBeenCalledWith(
+        messageIndex,
+        'Summarize this attachment',
+      )
+      expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    })
+
+    it('keeps the copy button when the attachment has accompanying text', () => {
+      renderMessage({ ...message, content: 'Summarize this attachment' })
+      expect(screen.getByRole('button', { name: 'Copy message' })).toBeVisible()
+      expect(screen.getByText('Summarize this attachment')).toBeVisible()
+    })
+  })
+
+  it('does not show actions for a message without text or attachments', () => {
+    render(
+      <Renderer
+        message={{
+          role: 'user',
+          content: '',
+          timestamp: new Date(),
+          attachments: [],
+        }}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        onEditMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
+        onForkMessage={vi.fn()}
+        onRegenerateMessage={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
   it('deletes a user message with its own index', () => {
     const onDeleteMessage = vi.fn()
     render(

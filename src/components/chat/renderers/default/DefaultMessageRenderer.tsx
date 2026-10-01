@@ -76,6 +76,7 @@ const DefaultMessageComponent = ({
   onRetryToolCall,
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
+  const hasUserAttachments = isUser && hasMessageAttachments(message)
   const enterToNewline = useEnterToNewline()
   const [isEditing, setIsEditing] = React.useState(false)
   const [editContent, setEditContent] = React.useState(message.content || '')
@@ -369,7 +370,7 @@ const DefaultMessageComponent = ({
       )}
 
       {/* Display documents and images for user messages */}
-      {isUser && hasMessageAttachments(message) && (
+      {hasUserAttachments && (
         <DocumentList
           messageIndex={messageIndex}
           attachments={message.attachments}
@@ -599,10 +600,10 @@ const DefaultMessageComponent = ({
       )}
 
       {/* User message content (or assistant without timeline, e.g. rate limit errors) */}
-      {message.content &&
+      {(message.content || hasUserAttachments) &&
         !(!isUser && message.timeline && message.timeline.length > 0) && (
           <>
-            {!isEditing && (
+            {!isEditing && message.content && (
               <div
                 className={`w-full ${isUser ? 'flex justify-end px-4 pb-8 pt-2' : 'px-4 py-2'}`}
               >
@@ -794,7 +795,12 @@ const DefaultMessageComponent = ({
 
             {/* Action bar for user messages */}
             {isUser && !isEditing && (
-              <div className="flex h-0 items-center justify-end gap-1 overflow-visible px-4">
+              <div
+                className={cn(
+                  'flex items-center justify-end gap-1 overflow-visible px-4',
+                  message.content ? 'h-0' : 'min-h-8',
+                )}
+              >
                 {formattedDate && (
                   <div className="group/date relative">
                     <span className="px-2 py-1 text-sm text-content-muted">
@@ -872,31 +878,36 @@ const DefaultMessageComponent = ({
                         </span>
                       </div>
                     )}
-                    <div className="group/copy relative">
-                      <button
-                        onClick={handleCopyUser}
-                        aria-label={copiedUser ? 'Copied' : 'Copy message'}
-                        className={`flex items-center gap-1.5 rounded-lg p-2 text-xs font-medium transition-all ${
-                          copiedUser
-                            ? 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400'
-                            : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
-                        }`}
-                      >
-                        {copiedUser ? (
-                          <>
-                            <BsCheckLg className="h-4 w-4" aria-hidden="true" />
-                            <span>Copied!</span>
-                          </>
-                        ) : (
-                          <RxCopy className="h-4 w-4" aria-hidden="true" />
+                    {message.content && (
+                      <div className="group/copy relative">
+                        <button
+                          onClick={handleCopyUser}
+                          aria-label={copiedUser ? 'Copied' : 'Copy message'}
+                          className={`flex items-center gap-1.5 rounded-lg p-2 text-xs font-medium transition-all ${
+                            copiedUser
+                              ? 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400'
+                              : 'text-content-secondary hover:bg-surface-chat-background hover:text-content-primary'
+                          }`}
+                        >
+                          {copiedUser ? (
+                            <>
+                              <BsCheckLg
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
+                              <span>Copied!</span>
+                            </>
+                          ) : (
+                            <RxCopy className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </button>
+                        {!copiedUser && (
+                          <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/copy:opacity-100">
+                            Copy
+                          </span>
                         )}
-                      </button>
-                      {!copiedUser && (
-                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/copy:opacity-100">
-                          Copy
-                        </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
