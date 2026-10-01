@@ -14,17 +14,37 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 export const SANDBOX_PREVIEW_URL = `${SANDBOX_ORIGIN}/preview`
 const READY_TIMEOUT_MS = 15_000
 
-export type SandboxRun = {
-  type: 'tinfoil-sandbox-run'
-  kind: 'html' | 'js' | 'artifact'
-  instanceId: string
-  code?: string
-  html?: string
-}
+/** Sandbox pages: `/preview` hosts model code (opaque frame); `/map` is Tinfoil's Apple Maps embed (same-origin frame). */
+export type SandboxPage = 'preview' | 'map'
+
+export type SandboxRun =
+  | {
+      type: 'tinfoil-sandbox-run'
+      kind: 'html' | 'js'
+      instanceId: string
+      code: string
+    }
+  | {
+      type: 'tinfoil-sandbox-run'
+      kind: 'artifact'
+      instanceId: string
+      html: string
+    }
+  | {
+      type: 'tinfoil-sandbox-run'
+      kind: 'map'
+      instanceId: string
+      locations: Array<Record<string, unknown>>
+      mode?: string
+      query?: string
+      mapType?: string
+      isDarkMode?: boolean
+    }
 
 export function useSandboxRunner(
   iframeRef: RefObject<HTMLIFrameElement | null>,
   run: SandboxRun | null,
+  page: SandboxPage = 'preview',
 ) {
   const nonce = useMemo(() => crypto.randomUUID(), [])
   const runRef = useRef(run)
@@ -60,7 +80,7 @@ export function useSandboxRunner(
     if (run && readyRef.current) readyRef.current.postMessage(run, '*')
   }, [run])
 
-  return { src: `${SANDBOX_PREVIEW_URL}#${nonce}`, failed }
+  return { src: `${SANDBOX_ORIGIN}/${page}#${nonce}`, failed }
 }
 
 export function SandboxUnavailable() {
