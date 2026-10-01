@@ -6,6 +6,7 @@
  * strict app-wide policy stays intact. The frame reports its height or an
  * error.
  */
+import { cn } from '@/components/ui/utils'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   MERMAID_PREVIEW_URL,
@@ -72,7 +73,7 @@ export function MermaidPreview({
       <iframe
         ref={iframeRef}
         src={src}
-        className={`w-full border-0${error || failed ? 'hidden' : ''}`}
+        className={cn('w-full border-0', (error || failed) && 'hidden')}
         style={{ height: `${height}px` }}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
