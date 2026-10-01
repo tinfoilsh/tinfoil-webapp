@@ -3,7 +3,7 @@
 // document needs only scripts from the app origin plus 'wasm-unsafe-eval'.
 const data = JSON.parse(document.getElementById('data').textContent)
 const post = (m) =>
-  parent.postMessage({ ...m, instanceId: data.instanceId }, '*')
+  parent.postMessage({ ...m, instanceId: data.instanceId }, data.origin)
 const output = []
 
 post({ type: 'python-preview-loading' })

@@ -1,9 +1,9 @@
 /**
  * Mermaid preview. Renders in an in-origin srcdoc frame: the diagram source
  * is JSON data processed by `/preview/mermaid-run.js` with the pinned
- * Mermaid build under `/vendor/mermaid/`, so no inline script, no eval, and
- * the payload stays within the verified origin. Output is SVG; the frame
- * reports its height or an error.
+ * Mermaid build under `/vendor/mermaid/`, so no inline script, no eval, no
+ * inline styles, and the payload stays within the verified origin. Output is
+ * SVG; the frame reports its height or an error.
  */
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { buildRunnerDocument } from './runner-frame'
@@ -29,8 +29,6 @@ export function MermaidPreview({
       buildRunnerDocument({
         script: '/preview/mermaid-run.js',
         data: { code, isDarkMode, instanceId },
-        styles: true,
-        head: '<style>body{margin:0;display:flex;justify-content:center;background:transparent}svg{max-width:100%;height:auto}</style>',
       }),
     [code, isDarkMode, instanceId],
   )

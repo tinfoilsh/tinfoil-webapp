@@ -67,4 +67,4 @@ export const PASSKEY = {
 // Origin of the unverified sandbox that runs model-authored HTML and JavaScript
 // previews (github.com/tinfoilsh/tinfoil-webapp-sandbox).
 export const SANDBOX_ORIGIN =
-  process.env.NEXT_PUBLIC_SANDBOX_ORIGIN ?? 'https://webapp-sandbox.tinfoil.sh'
+  process.env.NEXT_PUBLIC_SANDBOX_ORIGIN || 'https://webapp-sandbox.tinfoil.sh'

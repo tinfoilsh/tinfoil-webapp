@@ -12,7 +12,7 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import CopyButton from '@/components/copy-button'
 import {
-  SANDBOX_PREVIEW_URL,
+  SandboxUnavailable,
   useSandboxRunner,
   type SandboxRun,
 } from '@/components/preview/sandbox-frame'
@@ -235,7 +235,7 @@ function FocusableIframe({
   shouldAutoFocus: boolean
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  useSandboxRunner(iframeRef, run)
+  const sandbox = useSandboxRunner(iframeRef, run)
 
   const focusIframe = useCallback(() => {
     iframeRef.current?.contentWindow?.focus()
@@ -246,11 +246,13 @@ function FocusableIframe({
     focusIframe()
   }, [focusIframe, shouldAutoFocus, src, run])
 
+  if (run && sandbox.failed) return <SandboxUnavailable />
+
   return (
     <iframe
       ref={iframeRef}
       title={title}
-      src={src}
+      src={run ? sandbox.src : src}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       className={className}
@@ -279,7 +281,7 @@ function HtmlArtifactFrame({
   return (
     <FocusableIframe
       title={title}
-      src={SANDBOX_PREVIEW_URL}
+      src=""
       run={run}
       className={className}
       shouldAutoFocus={shouldAutoFocus}
@@ -365,10 +367,12 @@ export function ArtifactPreviewPanel({
   className,
   layout = 'card',
 }: ArtifactPreviewPanelProps) {
-  // HTML runs on the unverified sandbox, so it waits for an explicit click.
-  const [mode, setMode] = useState<ViewMode>(
-    source.type === 'html' ? 'source' : 'preview',
-  )
+  // HTML runs on the unverified sandbox, so it waits for an explicit click,
+  // for every artifact shown in this panel.
+  const initialMode = (s: ArtifactSource): ViewMode =>
+    s.type === 'html' ? 'source' : 'preview'
+  const [mode, setMode] = useState<ViewMode>(() => initialMode(source))
+  useEffect(() => setMode(initialMode(source)), [source])
   const isSidebarLayout = layout === 'sidebar'
   const copyText = sourceToCopyString(source)
 

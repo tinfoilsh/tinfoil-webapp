@@ -4,7 +4,7 @@
  * The preview payload is embedded as a JSON data block and processed by a
  * script served from this origin (`/preview/*-run.js`), so the nested
  * document runs under the app's own CSP: scripts from this origin only, no
- * inline code, no eval. Under WEBCAT the runner and its libraries are hashed
+ * inline code, no eval, no inline styles (runners style through the CSSOM). Under WEBCAT the runner and its libraries are hashed
  * in the manifest and the payload never leaves the verified origin.
  *
  * The frame is `srcdoc` + `sandbox="allow-scripts"`, so its origin is opaque;
@@ -18,8 +18,6 @@ export type RunnerDocumentOptions = {
   data: Record<string, unknown>
   /** Allow WebAssembly compilation (Pyodide). */
   wasm?: boolean
-  /** Allow inline styles (Mermaid output, CSS preview). */
-  styles?: boolean
   /** Extra markup for <head> and <body>. */
   head?: string
   body?: string
@@ -29,7 +27,6 @@ export function buildRunnerDocument({
   script,
   data,
   wasm = false,
-  styles = false,
   head = '',
   body = '',
 }: RunnerDocumentOptions): string {
@@ -38,7 +35,6 @@ export function buildRunnerDocument({
     "default-src 'none'",
     `script-src ${origin}${wasm ? " 'wasm-unsafe-eval'" : ''}`,
     `connect-src ${origin}`,
-    styles ? "style-src 'unsafe-inline'" : null,
     'img-src data:',
     'font-src data:',
   ]

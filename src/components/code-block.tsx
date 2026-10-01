@@ -1,7 +1,7 @@
 import { MermaidPreview } from '@/components/preview/mermaid-preview'
 import { buildRunnerDocument } from '@/components/preview/runner-frame'
 import {
-  SANDBOX_PREVIEW_URL,
+  SandboxUnavailable,
   useSandboxRunner,
 } from '@/components/preview/sandbox-frame'
 import { SvgPreview } from '@/components/preview/svg-preview'
@@ -305,7 +305,7 @@ const HtmlPreview = ({ code }: { code: string }) => {
 
   // Runs on the unverified sandbox origin: HTML previews execute inline
   // model-authored scripts, which the app's own CSP forbids.
-  useSandboxRunner(
+  const sandbox = useSandboxRunner(
     iframeRef,
     useMemo(
       () => ({
@@ -318,10 +318,12 @@ const HtmlPreview = ({ code }: { code: string }) => {
     ),
   )
 
+  if (sandbox.failed) return <SandboxUnavailable />
+
   return (
     <iframe
       ref={iframeRef}
-      src={SANDBOX_PREVIEW_URL}
+      src={sandbox.src}
       className="w-full rounded border-0"
       style={{ height: `${height}px`, minHeight: '100px' }}
       sandbox="allow-scripts"
@@ -391,7 +393,7 @@ const JavaScriptPreview = ({ code }: { code: string }) => {
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   // Runs on the unverified sandbox origin: the snippet is eval'd there.
-  useSandboxRunner(
+  const sandbox = useSandboxRunner(
     iframeRef,
     useMemo(
       () => ({
@@ -425,7 +427,7 @@ const JavaScriptPreview = ({ code }: { code: string }) => {
     <div className="font-mono text-sm">
       <iframe
         ref={iframeRef}
-        src={SANDBOX_PREVIEW_URL}
+        src={sandbox.src}
         className="hidden"
         sandbox="allow-scripts"
         title="JavaScript preview"
@@ -443,8 +445,12 @@ const JavaScriptPreview = ({ code }: { code: string }) => {
           {line}
         </div>
       ))}
-      {output.length === 0 && (
-        <div className="italic text-content-muted">No output</div>
+      {sandbox.failed ? (
+        <SandboxUnavailable />
+      ) : (
+        output.length === 0 && (
+          <div className="italic text-content-muted">No output</div>
+        )
       )}
     </div>
   )
@@ -676,23 +682,19 @@ const CssPreview = ({ code }: { code: string }) => {
     return () => window.removeEventListener('message', handleMessage)
   }, [instanceId])
 
-  // In-origin runner: the stylesheet is a <style> element and the height
-  // reporter is a script served from this origin.
+  // In-origin runner: the stylesheet is data applied through the CSSOM, and
+  // the height reporter is a script served from this origin.
   const srcDoc = useMemo(
     () =>
       buildRunnerDocument({
         script: '/preview/css-run.js',
-        data: { instanceId },
-        styles: true,
-        head: `<style>${code.replace(/<\//g, '<\\/')}</style>`,
+        data: { css: code, instanceId },
         body:
-          '<div style="margin:0;padding:16px;font-family:system-ui,sans-serif">' +
           '<h1>Heading 1</h1><h2>Heading 2</h2>' +
           '<p>This is a <strong>paragraph</strong> with <em>formatted</em> text and a <a href="#">link</a>.</p>' +
           '<ul><li>List item 1</li><li>List item 2</li></ul>' +
           '<button>Button</button> <input type="text" placeholder="Input field">' +
-          '<div class="box" style="margin-top:16px;padding:16px;border:1px solid #ccc;border-radius:4px"><p>A div with class "box"</p></div>' +
-          '</div>',
+          '<div class="box" style="margin-top:16px;padding:16px;border:1px solid #ccc;border-radius:4px"><p>A div with class "box"</p></div>',
       }),
     [code, instanceId],
   )
