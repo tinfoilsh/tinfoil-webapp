@@ -4,6 +4,11 @@ import { describe, expect, it } from 'vitest'
 
 // Every page URL falls back to the single exported shell; files, Next assets
 // and the WEBCAT well-known directory must 404 for real instead.
+// Vercel evaluates `source` with path-to-regexp 6.x (@vercel/routing-utils
+// pins 6.1.0); Next bundles the same major, so this parses the pattern the
+// way the platform does. Custom regex groups like the one below were removed
+// in v7+, so a major mismatch would throw here rather than pass silently.
+// Cross-checked against the deployed rewrite on 2026-10-01.
 const shell = (
   JSON.parse(readFileSync('vercel.json', 'utf8')).rewrites as Array<{
     source: string
