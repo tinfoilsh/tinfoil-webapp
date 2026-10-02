@@ -3,10 +3,14 @@
 import type { AnimationItem } from 'lottie-web'
 import { useEffect, useRef } from 'react'
 
-// Eagerly fetch the animation JSON so it's ready by the time the component mounts
-const animationDataPromise =
+// Eagerly fetch the animation JSON so it's ready by the time the component
+// mounts. Resolve to null on failure: the loader then shows no animation, and
+// a rejection here would otherwise be unhandled until a component mounts.
+const animationDataPromise: Promise<unknown> =
   typeof window !== 'undefined'
-    ? fetch('/logo-loading-loop.json').then((res) => res.json())
+    ? fetch('/logo-loading-loop.json')
+        .then((res) => res.json())
+        .catch(() => null)
     : Promise.resolve(null)
 
 function LogoAnimation({

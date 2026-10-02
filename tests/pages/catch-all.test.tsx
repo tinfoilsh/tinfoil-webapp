@@ -65,9 +65,10 @@ describe('CatchAllPage', () => {
     expect(screen.getByText('Page not found')).toBeInTheDocument()
   })
 
-  it('renders nothing route-specific before the router is ready', () => {
+  it('shows the full-screen loader, nothing route-specific, before the router is ready', () => {
     mocks.router = { isReady: false, query: {} }
     const { container } = render(<CatchAllPage />)
     expect(container.textContent).toBe('')
+    expect(container.querySelector('.app-shell')).not.toBeNull()
   })
 })
