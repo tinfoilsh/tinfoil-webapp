@@ -12,6 +12,11 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import CopyButton from '@/components/copy-button'
 import {
+  SandboxUnavailable,
+  useSandboxRunner,
+  type SandboxRun,
+} from '@/components/preview/sandbox-frame'
+import {
   Card,
   CardContent,
   CardDescription,
@@ -21,11 +26,10 @@ import {
 import { cn } from '@/components/ui/utils'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import { Code2, Download, ExternalLink, Eye, FileText } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
-import { injectArtifactPolyfills } from './artifact-polyfills'
 
 export const OPEN_ARTIFACT_PREVIEW_EVENT = 'openArtifactPreviewSidebar'
 
@@ -219,17 +223,19 @@ type ArtifactPreviewPanelLayout = 'card' | 'sidebar'
 function FocusableIframe({
   title,
   src,
-  srcDoc,
+  run = null,
   className,
   shouldAutoFocus,
 }: {
   title: string
-  src?: string
-  srcDoc?: string
+  src: string
+  /** When set, the frame is the sandbox runner and receives this run. */
+  run?: SandboxRun | null
   className: string
   shouldAutoFocus: boolean
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const sandbox = useSandboxRunner(iframeRef, run)
 
   const focusIframe = useCallback(() => {
     iframeRef.current?.contentWindow?.focus()
@@ -238,19 +244,47 @@ function FocusableIframe({
   useEffect(() => {
     if (!shouldAutoFocus) return
     focusIframe()
-  }, [focusIframe, shouldAutoFocus, src, srcDoc])
+  }, [focusIframe, shouldAutoFocus, src, run])
+
+  if (run && sandbox.failed) return <SandboxUnavailable />
 
   return (
     <iframe
       ref={iframeRef}
       title={title}
-      src={src}
-      srcDoc={srcDoc}
+      src={run ? sandbox.src : src}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       className={className}
       onLoad={shouldAutoFocus ? focusIframe : undefined}
       onMouseEnter={shouldAutoFocus ? focusIframe : undefined}
+    />
+  )
+}
+
+function HtmlArtifactFrame({
+  title,
+  html,
+  className,
+  shouldAutoFocus,
+}: {
+  title: string
+  html: string
+  className: string
+  shouldAutoFocus: boolean
+}) {
+  const instanceId = useId()
+  const run = useMemo<SandboxRun>(
+    () => ({ type: 'tinfoil-sandbox-run', kind: 'artifact', instanceId, html }),
+    [html, instanceId],
+  )
+  return (
+    <FocusableIframe
+      title={title}
+      src=""
+      run={run}
+      className={className}
+      shouldAutoFocus={shouldAutoFocus}
     />
   )
 }
@@ -279,10 +313,11 @@ function Preview({
         />
       )
     case 'html':
+      // Model-authored HTML runs on the unverified sandbox origin.
       return (
-        <FocusableIframe
+        <HtmlArtifactFrame
           title={title ?? 'Artifact preview'}
-          srcDoc={injectArtifactPolyfills(source.html)}
+          html={source.html}
           className={
             className ?? 'h-[420px] w-full rounded-md border-0 bg-white'
           }
@@ -332,7 +367,12 @@ export function ArtifactPreviewPanel({
   className,
   layout = 'card',
 }: ArtifactPreviewPanelProps) {
-  const [mode, setMode] = useState<ViewMode>('preview')
+  // HTML runs on the unverified sandbox, so it waits for an explicit click,
+  // for every artifact shown in this panel.
+  const initialMode = (s: ArtifactSource): ViewMode =>
+    s.type === 'html' ? 'source' : 'preview'
+  const [mode, setMode] = useState<ViewMode>(() => initialMode(source))
+  useEffect(() => setMode(initialMode(source)), [source])
   const isSidebarLayout = layout === 'sidebar'
   const copyText = sourceToCopyString(source)
 

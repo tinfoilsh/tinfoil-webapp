@@ -25,6 +25,7 @@ vi.mock('@/config', () => ({
   API_BASE_URL: '',
   IS_DEV: true,
   DEV_API_KEY: '',
+  SANDBOX_ORIGIN: 'https://webapp-sandbox.tinfoil.sh',
 }))
 
 const { getAuthHeaders } = vi.hoisted(() => ({

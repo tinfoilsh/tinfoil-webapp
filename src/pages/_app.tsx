@@ -1,27 +1,18 @@
 import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
 import { useChatFontSync } from '@/components/chat/hooks/use-chat-font'
 import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
-import { Toaster } from '@/components/ui/toaster'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
+import { analyticsExcluded } from '@/utils/analytics-routes'
 import { migrateStorageKeys } from '@/utils/storage-migration'
 import { Clerk } from '@clerk/clerk-js/no-rhc'
 import { ClerkProvider } from '@clerk/react'
 import { ui as clerkUi } from '@clerk/ui/no-rhc'
 import type { AppProps } from 'next/app'
+import dynamic from 'next/dynamic'
 import localFont from 'next/font/local'
 import Head from 'next/head'
 import Script from 'next/script'
-
-const ANALYTICS_EXCLUDED_ROUTES = new Set([
-  '/',
-  '/newchat',
-  '/share/[[...slug]]',
-  '/chat/[[...slug]]',
-  '/chat/[chatId]',
-  '/chat/local/[chatId]',
-  '/project/[projectId]/chat/[chatId]',
-])
 
 const aeonikFono = localFont({
   src: [
@@ -135,6 +126,13 @@ const openDyslexic = localFont({
 
 migrateStorageKeys()
 
+// Client-only: the toast viewport carries an inline style attribute, which
+// the CSP would block in prerendered HTML and React would not reapply.
+const Toaster = dynamic(
+  () => import('@/components/ui/toaster').then((m) => m.Toaster),
+  { ssr: false },
+)
+
 export default function App({ Component, pageProps, router }: AppProps) {
   useChatFontSync()
 
@@ -174,7 +172,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
           content="Private AI chat application supporting open source models through Tinfoil"
         />
       </Head>
-      {!ANALYTICS_EXCLUDED_ROUTES.has(router.pathname) && (
+      {router.isReady && !analyticsExcluded(router.asPath) && (
         <Script
           defer
           data-domain="chat.tinfoil.sh"
@@ -185,14 +183,6 @@ export default function App({ Component, pageProps, router }: AppProps) {
           strategy="afterInteractive"
         />
       )}
-      <style jsx global>{`
-        :root {
-          --font-aeonik-fono: ${aeonikFono.style.fontFamily};
-          --font-aeonik: ${aeonik.style.fontFamily};
-          --font-opendyslexic: ${openDyslexic.style.fontFamily};
-          --font-lora: ${lora.style.fontFamily};
-        }
-      `}</style>
       <div
         className={`${aeonikFono.variable} ${aeonik.variable} ${openDyslexic.variable} ${lora.variable}`}
       >

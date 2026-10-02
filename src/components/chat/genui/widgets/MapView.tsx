@@ -1,51 +1,18 @@
+import {
+  SANDBOX_MAP_URL,
+  useSandboxRunner,
+  type SandboxRun,
+} from '@/components/preview/sandbox-frame'
+import { usePreviewMessages } from '@/components/preview/use-preview-messages'
 import { Card } from '@/components/ui/card'
-import { getMapKitToken } from '@/services/mapkit-token'
-import { logError } from '@/utils/error-handling'
-import { load as loadMapKitJs, type MapKit } from '@apple/mapkit-loader'
 import type { LucideIcon } from 'lucide-react'
 import { Copy, ExternalLink, MapPin, Navigation } from 'lucide-react'
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useId, useMemo, useRef, useState } from 'react'
 import type { Location, Props } from './Map'
-
-type MapKitMap = InstanceType<MapKit['Map']>
-type MapKitMarkerAnnotation = InstanceType<MapKit['MarkerAnnotation']>
 
 const APPLE_MAPS_CONSENT_KEY = 'tinfoil:apple-maps-consent'
 const APPLE_MAPS_PRIVACY_URL =
   'https://www.apple.com/legal/privacy/data/en/apple-maps/'
-
-function colorSchemeFor(mk: MapKit, isDarkMode?: boolean) {
-  return isDarkMode === true
-    ? mk.Map.ColorSchemes.Dark
-    : isDarkMode === false
-      ? mk.Map.ColorSchemes.Light
-      : mk.Map.ColorSchemes.Adaptive
-}
-
-// Cache the loader promise across mounts so multiple maps on the same page
-// share a single MapKit JS download and initialization.
-let mapKitLoader: Promise<MapKit> | null = null
-
-function loadMapKit(): Promise<MapKit> {
-  if (typeof window === 'undefined') {
-    return Promise.reject(new Error('MapKit can only load in the browser'))
-  }
-  if (mapKitLoader) return mapKitLoader
-
-  mapKitLoader = (async () => {
-    const token = await getMapKitToken()
-    return loadMapKitJs({
-      token,
-      libraries: ['services', 'full-map'],
-    })
-  })().catch((error) => {
-    // Clear the cached rejection so a later mount can retry from scratch.
-    mapKitLoader = null
-    throw error
-  })
-
-  return mapKitLoader
-}
 
 function encodeAddressOrCoord(loc: Location): string | null {
   if (typeof loc.latitude === 'number' && typeof loc.longitude === 'number') {
@@ -130,61 +97,6 @@ function MapPlaceholder({ message }: { message: string }) {
   )
 }
 
-// Resolve a free-form location string to a coordinate by trying the
-// address geocoder first, then falling back to Search for place-name
-// queries like "Paris, France" or "Eiffel Tower". Logs both failures so
-// the underlying error never gets silently swallowed.
-function resolveCoordinate(
-  mk: MapKit,
-  query: string,
-): Promise<InstanceType<MapKit['Coordinate']> | null> {
-  return new Promise((resolve) => {
-    const geocoder = new mk.Geocoder()
-    geocoder.lookup(query, (geoErr, geoData) => {
-      const geoResult = geoData?.results?.[0]
-      if (geoResult?.coordinate) {
-        resolve(
-          new mk.Coordinate(
-            geoResult.coordinate.latitude,
-            geoResult.coordinate.longitude,
-          ),
-        )
-        return
-      }
-      if (geoErr) {
-        logError('MapKit geocoder lookup failed', geoErr, {
-          component: 'MapWidget',
-          action: 'resolveCoordinate.geocoder',
-          metadata: { queryLength: query.length },
-        })
-      }
-      const search = new mk.Search()
-      search.search(query, (searchErr, searchData) => {
-        const place = searchData?.places?.[0]
-        if (place?.coordinate) {
-          resolve(
-            new mk.Coordinate(
-              place.coordinate.latitude,
-              place.coordinate.longitude,
-            ),
-          )
-          return
-        }
-        logError(
-          'MapKit search returned no places',
-          searchErr ?? new Error('empty places response'),
-          {
-            component: 'MapWidget',
-            action: 'resolveCoordinate.search',
-            metadata: { queryLength: query.length },
-          },
-        )
-        resolve(null)
-      })
-    })
-  })
-}
-
 // Build a stable identity for the locations array so streaming re-renders
 // (which produce a fresh `locations` reference every token) don't tear
 // down and rebuild the live MapKit instance — that was causing the chat
@@ -204,157 +116,61 @@ function locationsKey(locations: Location[]): string {
 }
 
 function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
-  const { locations, mapType, isDarkMode } = props
-  const containerRef = useRef<HTMLDivElement | null>(null)
-  const mapRef = useRef<MapKitMap | null>(null)
-  const mapKitRef = useRef<MapKit | null>(null)
+  const { locations, mapType, mode, query, isDarkMode } = props
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const instanceId = useId()
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
 
+  // Apple's MapKit JS runs on the sandbox origin's /map page, which fetches
+  // its own origin-bound token; the chat only sends the locations. The frame
+  // keeps a real origin (allow-same-origin) because Apple binds tokens to it.
+  // `locations` is keyed by content so streaming re-renders don't re-post.
   const locationsSignature = useMemo(() => locationsKey(locations), [locations])
-  // Refs let the effect read the current `locations` array without
-  // listing it as a dep (which would re-fire on every parent render).
   const locationsRef = useRef(locations)
   locationsRef.current = locations
-  // The map-build effect runs async (MapKit loads over the network) and does
-  // not depend on `isDarkMode`. Read the latest theme from a ref at creation
-  // time so a toggle during the load isn't lost: the separate `isDarkMode`
-  // effect is a no-op while `mapRef` is still null.
-  const isDarkModeRef = useRef(isDarkMode)
-  isDarkModeRef.current = isDarkMode
+  const run = useMemo<SandboxRun>(
+    () => ({
+      type: 'tinfoil-sandbox-run',
+      kind: 'map',
+      instanceId,
+      locations: locationsRef.current,
+      mode,
+      query,
+      mapType,
+      isDarkMode,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- locations via signature
+    [instanceId, locationsSignature, mode, query, mapType, isDarkMode],
+  )
+  const sandbox = useSandboxRunner(iframeRef, run, SANDBOX_MAP_URL)
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    let cancelled = false
-
-    loadMapKit()
-      .then((mk) => {
-        if (cancelled || !containerRef.current) return
-
-        const map = new mk.Map(containerRef.current, {
-          showsCompass: 'adaptive',
-          showsZoomControl: true,
-          showsMapTypeControl: false,
-          colorScheme: colorSchemeFor(mk, isDarkModeRef.current),
-        })
-
-        if (mapType) {
-          const desired =
-            mapType === 'hybrid'
-              ? mk.Map.MapTypes.Hybrid
-              : mapType === 'satellite'
-                ? mk.Map.MapTypes.Satellite
-                : mapType === 'muted'
-                  ? mk.Map.MapTypes.MutedStandard
-                  : mk.Map.MapTypes.Standard
-          if (desired) map.mapType = desired
-        }
-
-        mapKitRef.current = mk
-        mapRef.current = map
-
-        const annotations: MapKitMarkerAnnotation[] = []
-        const pendingLookups: Array<Promise<MapKitMarkerAnnotation | null>> = []
-
-        for (const loc of locationsRef.current) {
-          if (
-            typeof loc.latitude === 'number' &&
-            typeof loc.longitude === 'number'
-          ) {
-            const coord = new mk.Coordinate(loc.latitude, loc.longitude)
-            const annotation = new mk.MarkerAnnotation(coord, {
-              title: loc.name,
-              subtitle: loc.description ?? loc.address ?? '',
-            })
-            annotations.push(annotation)
-          } else if (loc.address || loc.name) {
-            // The geocoder targets street addresses; Search handles
-            // place names like "Paris, France" or "Eiffel Tower". Try
-            // the geocoder first and fall back to Search so we cover
-            // both shapes from the model.
-            const lookupTarget = loc.address ?? loc.name
-            const promise = resolveCoordinate(mk, lookupTarget).then(
-              (coord) => {
-                if (!coord) return null
-                return new mk.MarkerAnnotation(coord, {
-                  title: loc.name,
-                  subtitle: loc.description ?? loc.address ?? '',
-                })
-              },
-            )
-            pendingLookups.push(promise)
-          }
-        }
-
-        const finalize = () => {
-          if (cancelled || !mapRef.current) return
-          // The map itself is always usable (drag, zoom, pan), so flip
-          // to 'ready' as soon as it mounts. Annotations are best-effort
-          // — if every geocode fails we still show a working world map
-          // and the "Open in Apple Maps" button which uses the original
-          // string and lets Apple Maps resolve it server-side.
-          for (const a of annotations) mapRef.current.addAnnotation(a)
-          if (annotations.length > 0) {
-            mapRef.current.showItems(annotations, { animate: false })
-          }
-          setStatus('ready')
-        }
-
-        if (pendingLookups.length === 0) {
-          finalize()
-        } else {
-          Promise.all(pendingLookups).then((resolved) => {
-            for (const a of resolved) {
-              if (a) annotations.push(a)
-            }
-            finalize()
-          })
-        }
-      })
-      .catch((error) => {
-        if (cancelled) return
-        logError('Failed to initialize MapKit', error, {
-          component: 'MapWidget',
-          action: 'loadMapKit',
-        })
-        setStatus('error')
-      })
-
-    return () => {
-      cancelled = true
-      if (mapRef.current) {
-        try {
-          mapRef.current.destroy()
-        } catch {
-          // Map may already be torn down on hot reload
-        }
-        mapRef.current = null
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'map-preview-status' &&
+      ['loading', 'ready', 'error'].includes(message.status as string)
+    ) {
+      setStatus(message.status as 'loading' | 'ready' | 'error')
     }
-    // Only rebuild the map when the actual content changes — `locations`
-    // is referenced via a ref above so a new array reference per render
-    // doesn't tear down the live MapKit instance. `isDarkMode` is read from a
-    // ref at creation time and otherwise handled by a separate effect that
-    // mutates the existing instance.
-  }, [locationsSignature, mapType])
+  })
 
-  // Update the existing map's color scheme without tearing it down when
-  // the user toggles between light and dark themes mid-session.
-  useEffect(() => {
-    const map = mapRef.current
-    const mk = mapKitRef.current
-    if (!map || !mk) return
-    map.colorScheme = colorSchemeFor(mk, isDarkMode)
-  }, [isDarkMode])
+  const failed = status === 'error' || sandbox.failed
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
-      {status === 'loading' && (
+      <iframe
+        ref={iframeRef}
+        src={sandbox.src}
+        title="Apple Maps"
+        className="h-full w-full border-0"
+        sandbox="allow-scripts allow-same-origin"
+        referrerPolicy="no-referrer"
+      />
+      {status === 'loading' && !failed && (
         <div className="absolute inset-0">
           <MapPlaceholder message="Loading map…" />
         </div>
       )}
-      {status === 'error' && (
+      {failed && (
         <div className="absolute inset-0">
           <MapPlaceholder message="Map unavailable" />
         </div>
@@ -369,6 +185,8 @@ function MapViewImpl(props: Props & { isDarkMode?: boolean }) {
 const MapView = memo(MapViewImpl, (prev, next) => {
   return (
     prev.mapType === next.mapType &&
+    prev.mode === next.mode &&
+    prev.query === next.query &&
     prev.isDarkMode === next.isDarkMode &&
     locationsKey(prev.locations) === locationsKey(next.locations)
   )

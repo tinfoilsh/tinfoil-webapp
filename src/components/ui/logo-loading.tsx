@@ -3,18 +3,20 @@
 import type { AnimationItem } from 'lottie-web'
 import { useEffect, useRef } from 'react'
 
-// Eagerly fetch the animation JSON so it's ready by the time the component mounts
-const animationDataPromise =
+// Eagerly fetch the animation JSON so it's ready by the time the component
+// mounts. Resolve to null on failure: the loader then shows no animation, and
+// a rejection here would otherwise be unhandled until a component mounts.
+const animationDataPromise: Promise<unknown> =
   typeof window !== 'undefined'
-    ? fetch('/logo-loading-loop.json').then((res) => res.json())
+    ? fetch('/logo-loading-loop.json')
+        .then((res) => res.json())
+        .catch(() => null)
     : Promise.resolve(null)
 
 function LogoAnimation({
-  size = 80,
   isLoading = true,
   onFinished,
 }: {
-  size?: number
   isLoading?: boolean
   onFinished?: () => void
 }) {
@@ -59,34 +61,20 @@ function LogoAnimation({
     }
   }, [isLoading])
 
-  return <div ref={containerRef} style={{ width: size, height: size }} />
+  return <div ref={containerRef} className="h-20 w-20" />
 }
 
 export function LogoLoading({
-  size = 80,
   isLoading = true,
   onFinished,
 }: {
-  size?: number
   isLoading?: boolean
   onFinished?: () => void
 }) {
   return (
-    <div
-      className="flex overflow-hidden bg-surface-chat-background"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        height: 'var(--app-height, 100dvh)',
-        minHeight: '-webkit-fill-available',
-      }}
-    >
+    <div className="app-shell flex overflow-hidden bg-surface-chat-background">
       <div className="flex flex-1 items-center justify-center">
-        <LogoAnimation
-          size={size}
-          isLoading={isLoading}
-          onFinished={onFinished}
-        />
+        <LogoAnimation isLoading={isLoading} onFinished={onFinished} />
       </div>
     </div>
   )

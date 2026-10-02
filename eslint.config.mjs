@@ -15,6 +15,7 @@ const eslintConfig = [
       '.next/**',
       '.vercel/**',
       'out/**',
+      'public/vendor/**',
       'node_modules/**',
       'coverage/**',
     ],

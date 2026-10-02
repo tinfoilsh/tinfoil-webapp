@@ -16,10 +16,12 @@
     "find-unused": "ts-unused-exports tsconfig.json",
     "test": "vitest run",
     "test:unit": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prebuild": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs && node scripts/copy-vendor.mjs",
+    "predev": "node scripts/copy-vendor.mjs",
+    "postinstall": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs"
   },
   "dependencies": {
-    "@apple/mapkit-loader": "^0.2.1",
     "@braintree/sanitize-url": "^7.1.1",
     "@clerk/clerk-js": "6.32.1",
     "@clerk/react": "6.16.1",
@@ -51,8 +53,9 @@
     "katex": "^0.16.22",
     "lottie-web": "^5.13.0",
     "lucide-react": "^0.473.0",
-    "mermaid": "^11.15.0",
+    "mermaid": "11.16.1",
     "next": "^16.2.6",
+    "pyodide": "0.27.8",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-icons": "^5.5.0",

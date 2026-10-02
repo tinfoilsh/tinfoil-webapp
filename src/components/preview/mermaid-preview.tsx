@@ -1,10 +1,23 @@
 /**
- * Mermaid preview — lazy-loads the mermaid library and renders a diagram
- * from source code. Shared between the code-block renderer and the
- * `render_image` GenUI component.
+ * Mermaid preview. Renders in `/preview/mermaid.html`, a verified page on
+ * this origin framed with an opaque origin. The page has its own CSP that
+ * allows the inline styles Mermaid writes while rendering (scripts stay
+ * 'self'), so the diagram source never leaves the verified origin and the
+ * strict app-wide policy stays intact. The frame reports its height or an
+ * error.
  */
-import DOMPurify from 'isomorphic-dompurify'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { cn } from '@/components/ui/utils'
+import { useMemo, useRef, useState } from 'react'
+import {
+  MERMAID_PREVIEW_URL,
+  SandboxUnavailable,
+  useSandboxRunner,
+  type SandboxRun,
+} from './sandbox-frame'
+import {
+  usePreviewInstanceId,
+  usePreviewMessages,
+} from './use-preview-messages'
 
 interface MermaidPreviewProps {
   code: string
@@ -17,67 +30,57 @@ export function MermaidPreview({
   isDarkMode,
   className,
 }: MermaidPreviewProps) {
-  const [svg, setSvg] = useState<string>('')
+  const [height, setHeight] = useState(100)
   const [error, setError] = useState<string | null>(null)
-  const reactId = useId()
-  const idRef = useMemo(
-    () => `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-    [reactId],
+  const instanceId = usePreviewInstanceId(code)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+
+  const run = useMemo<SandboxRun>(
+    () => ({
+      type: 'tinfoil-sandbox-run',
+      kind: 'mermaid',
+      instanceId,
+      code,
+      isDarkMode,
+    }),
+    [instanceId, code, isDarkMode],
   )
+  const { src, failed } = useSandboxRunner(iframeRef, run, MERMAID_PREVIEW_URL)
 
-  useEffect(() => {
-    let cancelled = false
-
-    const renderMermaid = async () => {
-      try {
-        const mermaid = (await import('mermaid')).default
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: isDarkMode ? 'dark' : 'default',
-          securityLevel: 'strict',
-          // Render labels as SVG <text> nodes instead of wrapping them in
-          // <foreignObject><div>...</div></foreignObject>, which DOMPurify
-          // strips under its SVG profile.
-          htmlLabels: false,
-          flowchart: { htmlLabels: false },
-          class: { htmlLabels: false },
-        })
-
-        const { svg: renderedSvg } = await mermaid.render(idRef, code)
-        if (!cancelled) {
-          setSvg(renderedSvg)
-          setError(null)
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : String(e))
-          setSvg('')
-        }
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'mermaid-preview-height' &&
+      Number.isFinite(message.height)
+    ) {
+      setHeight(Math.min(2000, Math.max(50, message.height as number)))
+      // A successful render (new code, or a theme re-render) clears a
+      // previous error; a persistent error never flashes the frame.
+      setError(null)
     }
-
-    renderMermaid()
-    return () => {
-      cancelled = true
+    if (
+      message.type === 'mermaid-preview-error' &&
+      typeof message.message === 'string'
+    ) {
+      setError(message.message.slice(0, 500))
     }
-  }, [code, isDarkMode, idRef])
-
-  if (error) {
-    return <div className="text-sm text-red-500">Mermaid error: {error}</div>
-  }
-
-  const sanitized = DOMPurify.sanitize(svg, {
-    USE_PROFILES: { svg: true, svgFilters: true },
-    ADD_TAGS: ['style'],
   })
 
   return (
-    <div
-      className={
-        className ??
-        'flex w-full items-center justify-center [&>svg]:max-w-full'
-      }
-      dangerouslySetInnerHTML={{ __html: sanitized }}
-    />
+    <div className={className ?? 'w-full'}>
+      {error && (
+        <div className="text-sm text-red-500">Mermaid error: {error}</div>
+      )}
+      {failed && <SandboxUnavailable />}
+      {/* Stays mounted through errors so the next diagram reuses the frame. */}
+      <iframe
+        ref={iframeRef}
+        src={src}
+        className={cn('w-full border-0', (error || failed) && 'hidden')}
+        style={{ height: `${height}px` }}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        title="Mermaid preview"
+      />
+    </div>
   )
 }

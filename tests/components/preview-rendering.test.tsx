@@ -2,6 +2,11 @@
 import { ArtifactPreviewPanel } from '@/components/chat/genui/widgets/ArtifactPreview'
 import { MessageContent } from '@/components/chat/renderers/components/MessageContent'
 import { CodeBlock } from '@/components/code-block'
+import { MermaidPreview } from '@/components/preview/mermaid-preview'
+import {
+  MERMAID_PREVIEW_URL,
+  SANDBOX_PREVIEW_URL,
+} from '@/components/preview/sandbox-frame'
 import {
   act,
   cleanup,
@@ -31,11 +36,40 @@ beforeAll(() =>
 afterAll(() => vi.unstubAllGlobals())
 afterEach(cleanup)
 
-function previewDocument(frame: HTMLIFrameElement) {
-  return new DOMParser().parseFromString(
-    decodeURIComponent(frame.src.slice(frame.src.indexOf(',') + 1)),
-    'text/html',
-  )
+/** In-origin runner frames embed their payload as a JSON data block in srcdoc. */
+function runnerData(frame: HTMLIFrameElement): Record<string, unknown> {
+  const document = new DOMParser().parseFromString(frame.srcdoc, 'text/html')
+  return JSON.parse(document.getElementById('data')!.textContent!)
+}
+
+/** Sandbox frames receive one run message after announcing themselves ready. */
+// Later ready messages are ignored by the hook, so remember the run per frame.
+const sandboxRuns = new WeakMap<HTMLIFrameElement, Record<string, unknown>>()
+function sandboxRun(frame: HTMLIFrameElement): Record<string, unknown> {
+  const remembered = sandboxRuns.get(frame)
+  if (remembered) return remembered
+  const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+  act(() => {
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: frame.contentWindow,
+        data: {
+          type: 'tinfoil-sandbox-ready',
+          nonce: new URL(frame.src).hash.slice(1),
+        },
+      }),
+    )
+  })
+  const [message, targetOrigin] = post.mock.calls.at(-1)!
+  expect(targetOrigin).toBe('*')
+  post.mockRestore()
+  sandboxRuns.set(frame, message as Record<string, unknown>)
+  return message as Record<string, unknown>
+}
+
+function instanceIdOf(frame: HTMLIFrameElement): string {
+  return (frame.srcdoc ? runnerData(frame) : sandboxRun(frame))
+    .instanceId as string
 }
 
 function previewMessage(
@@ -43,9 +77,7 @@ function previewMessage(
   type: string,
   value: Record<string, unknown>,
 ) {
-  const instanceId = previewDocument(frame).documentElement.textContent!.match(
-    /instanceId: '([^']+)'/,
-  )![1]
+  const instanceId = instanceIdOf(frame)
   act(() => {
     window.dispatchEvent(
       new MessageEvent('message', {
@@ -124,26 +156,35 @@ describe('code previews', () => {
     ).toBe('#base')
   })
 
-  it.each([
-    '<!doctype html><html><head lang="en"><script>void 0</script></head><body><p>Preview</p></body></html>',
-    '<!-- <head> -->\n<h1>Preview</h1>\n<script>void 0</script>',
-  ])('places the HTML policy before document content', (code) => {
+  it('runs HTML previews on the sandbox origin, only after it is ready', () => {
+    const code = '<h1>Preview</h1>\n<script>void 0</script>'
     const { getByRole, getByTitle } = render(
       <CodeBlock code={code} language="html" />,
     )
     fireEvent.click(getByRole('button', { name: 'Run' }))
     const frame = getByTitle('HTML preview') as HTMLIFrameElement
-    const document = previewDocument(frame)
+    expect(frame.src.startsWith(`${SANDBOX_PREVIEW_URL}#`)).toBe(true)
+    expect(new URL(frame.src).hash.length).toBeGreaterThan(20)
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
-    expect(document.head.firstElementChild?.getAttribute('http-equiv')).toBe(
-      'Content-Security-Policy',
-    )
-    expect(document.head.firstElementChild?.getAttribute('content')).toContain(
-      "default-src 'none'",
-    )
-    expect(document.head.querySelector('script')).toBeNull()
-    expect(document.body.querySelector('script')?.textContent).toBe('void 0')
+    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
+    expect(post).not.toHaveBeenCalled()
+    // A ready message without our nonce is ignored.
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          data: { type: 'tinfoil-sandbox-ready', nonce: 'someone-else' },
+        }),
+      )
+    })
+    expect(post).not.toHaveBeenCalled()
+    post.mockRestore()
+    expect(sandboxRun(frame)).toMatchObject({
+      type: 'tinfoil-sandbox-run',
+      kind: 'html',
+      code,
+    })
   })
 
   it.each(['javascript', 'python'])(
@@ -162,10 +203,17 @@ describe('code previews', () => {
       ) as HTMLIFrameElement
       const type =
         language === 'python' ? 'python-preview-output' : 'js-preview-output'
-      const document = previewDocument(frame)
       expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
-      expect(document.scripts).toHaveLength(1)
-      expect(document.scripts[0].textContent).toContain('\\u003c/script >')
+      if (language === 'python') {
+        // In-origin runner: code is JSON data, with `<` escaped so it can
+        // never close the data block; the policy names this origin only.
+        expect(frame.srcdoc).toContain('\\u003c/script >')
+        expect(frame.srcdoc).not.toContain("'unsafe-inline'")
+        expect(runnerData(frame)).toMatchObject({ code })
+      } else {
+        expect(frame.src.startsWith(`${SANDBOX_PREVIEW_URL}#`)).toBe(true)
+        expect(sandboxRun(frame)).toMatchObject({ kind: 'js', code })
+      }
       previewMessage(frame, type, { output: ['Ready'] })
       expect(queryByText('Ready')).not.toBeNull()
       for (const output of [
@@ -224,12 +272,19 @@ describe('code previews', () => {
 
     previewMessage(frame, 'python-preview-output', { output: ['Ready'] })
     expect(queryByText('Ready')).not.toBeNull()
-    const previousSrc = frame.src
+    const previousDoc = frame.srcdoc
+    const previousId = instanceIdOf(frame)
     rerender(
       <CodeBlock code={'print("next run")\nprint("done")'} language="python" />,
     )
     expect(getByTitle('Python preview')).toBe(frame)
-    expect(frame.src).not.toBe(previousSrc)
+    expect(frame.srcdoc).not.toBe(previousDoc)
+    // A late result from the replaced document must not reach the new one.
+    previewMessage(frame, 'python-preview-output', {
+      instanceId: previousId,
+      output: ['Stale result'],
+    })
+    expect(queryByText('Stale result')).toBeNull()
     previewMessage(frame, 'python-preview-loading', {})
     expect(queryByText('Loading Python...')).not.toBeNull()
     previewMessage(frame, 'python-preview-output', { output })
@@ -271,16 +326,72 @@ describe('code previews', () => {
   })
 })
 
-it.each([
-  { type: 'html' as const, html: '<h1>Artifact</h1>' },
-  { type: 'url' as const, url: 'https://example.com/preview' },
-])('keeps artifact frames on the same sandbox permissions', (source) => {
+it('shows HTML artifacts only on request and runs them on the sandbox', () => {
+  const html = '<h1>Artifact</h1>'
+  const { getByRole, getByTitle, queryByTitle } = render(
+    <ArtifactPreviewPanel source={{ type: 'html', html }} title="Artifact" />,
+  )
+  expect(queryByTitle('Artifact')).toBeNull()
+  fireEvent.click(getByRole('button', { name: 'Preview' }))
+  const frame = getByTitle('Artifact') as HTMLIFrameElement
+  expect(frame.src.startsWith(`${SANDBOX_PREVIEW_URL}#`)).toBe(true)
+  expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+  expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
+  expect(sandboxRun(frame)).toMatchObject({ kind: 'artifact', html })
+})
+
+it('returns HTML artifacts to source view when the panel shows a new one', () => {
+  const { getByRole, getByTitle, queryByTitle, rerender } = render(
+    <ArtifactPreviewPanel
+      source={{ type: 'html', html: '<p>a</p>' }}
+      title="Artifact"
+    />,
+  )
+  fireEvent.click(getByRole('button', { name: 'Preview' }))
+  expect(getByTitle('Artifact')).not.toBeNull()
+  rerender(
+    <ArtifactPreviewPanel
+      source={{ type: 'html', html: '<p>b</p>' }}
+      title="Artifact"
+    />,
+  )
+  expect(queryByTitle('Artifact')).toBeNull()
+})
+
+it('frames URL artifacts directly with the same sandbox permissions', () => {
   const { getByTitle } = render(
-    <ArtifactPreviewPanel source={source} title="Artifact" />,
+    <ArtifactPreviewPanel
+      source={{ type: 'url', url: 'https://example.com/preview' }}
+      title="Artifact"
+    />,
   )
-  expect(getByTitle('Artifact')).toHaveAttribute('sandbox', 'allow-scripts')
-  expect(getByTitle('Artifact')).toHaveAttribute(
-    'referrerpolicy',
-    'no-referrer',
-  )
+  const frame = getByTitle('Artifact') as HTMLIFrameElement
+  expect(frame.src).toBe('https://example.com/preview')
+  expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+  expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
+})
+
+describe('mermaid preview', () => {
+  it('renders in the in-origin Mermaid page and relays height and errors', () => {
+    const { getByTitle, queryByText } = render(
+      <MermaidPreview code="graph TD; A-->B" isDarkMode={true} />,
+    )
+    const frame = getByTitle('Mermaid preview') as HTMLIFrameElement
+    expect(frame.src).toContain(`${MERMAID_PREVIEW_URL}#`)
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(sandboxRun(frame)).toMatchObject({
+      kind: 'mermaid',
+      code: 'graph TD; A-->B',
+      isDarkMode: true,
+    })
+    previewMessage(frame, 'mermaid-preview-height', { height: 320 })
+    expect(frame.style.height).toBe('320px')
+    previewMessage(frame, 'mermaid-preview-error', { message: 'Parse error' })
+    expect(queryByText('Mermaid error: Parse error')).not.toBeNull()
+    expect(frame).toHaveClass('hidden')
+    // A later successful render (e.g. after a theme change) clears the error.
+    previewMessage(frame, 'mermaid-preview-height', { height: 200 })
+    expect(queryByText('Mermaid error: Parse error')).toBeNull()
+    expect(frame).not.toHaveClass('hidden')
+  })
 })
