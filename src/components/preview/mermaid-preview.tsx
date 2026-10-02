@@ -7,7 +7,7 @@
  * error.
  */
 import { cn } from '@/components/ui/utils'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   MERMAID_PREVIEW_URL,
   SandboxUnavailable,
@@ -47,13 +47,15 @@ export function MermaidPreview({
   )
   const { src, failed } = useSandboxRunner(iframeRef, run, MERMAID_PREVIEW_URL)
 
-  useEffect(() => setError(null), [code])
   usePreviewMessages(iframeRef, instanceId, (message) => {
     if (
       message.type === 'mermaid-preview-height' &&
       Number.isFinite(message.height)
     ) {
       setHeight(Math.min(2000, Math.max(50, message.height as number)))
+      // A successful render (new code, or a theme re-render) clears a
+      // previous error; a persistent error never flashes the frame.
+      setError(null)
     }
     if (
       message.type === 'mermaid-preview-error' &&

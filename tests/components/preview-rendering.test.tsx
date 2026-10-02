@@ -389,5 +389,9 @@ describe('mermaid preview', () => {
     previewMessage(frame, 'mermaid-preview-error', { message: 'Parse error' })
     expect(queryByText('Mermaid error: Parse error')).not.toBeNull()
     expect(frame).toHaveClass('hidden')
+    // A later successful render (e.g. after a theme change) clears the error.
+    previewMessage(frame, 'mermaid-preview-height', { height: 200 })
+    expect(queryByText('Mermaid error: Parse error')).toBeNull()
+    expect(frame).not.toHaveClass('hidden')
   })
 })
