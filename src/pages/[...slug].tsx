@@ -4,6 +4,7 @@ import { ChatInterface } from '@/components/chat'
 import { ProjectProvider } from '@/components/project'
 import { PremiumProjectRoute } from '@/components/project/premium-project-route'
 import SharePage from '@/components/share/share-page'
+import { LogoLoading } from '@/components/ui/logo-loading'
 import { useRouter } from 'next/router'
 import NotFound from './404'
 
@@ -13,7 +14,9 @@ import NotFound from './404'
 // requires.
 export default function CatchAllPage() {
   const router = useRouter()
-  if (!router.isReady) return <div className="h-screen font-aeonik" />
+  // Prerendered state: the same full-screen loader the chat page showed on
+  // main, so the first paint is not a bare page.
+  if (!router.isReady) return <LogoLoading />
 
   const slug = router.query.slug
   const [section, ...rest] = Array.isArray(slug) ? slug : slug ? [slug] : []

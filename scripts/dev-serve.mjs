@@ -28,6 +28,9 @@ const OUT_DIR = path.join(PROJECT_ROOT, 'out')
 const MIME_TYPES = {
   '.html': 'text/html',
   '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.wasm': 'application/wasm',
+  '.zip': 'application/zip',
   '.css': 'text/css',
   '.json': 'application/json',
   '.png': 'image/png',
@@ -72,7 +75,11 @@ function serveStatic(req, res) {
   const contentType =
     MIME_TYPES[path.extname(filePath)] || 'application/octet-stream'
   const stream = fs.createReadStream(filePath)
-  res.writeHead(200, { 'Content-Type': contentType })
+  // Opaque-origin preview frames import these as CORS module fetches.
+  const cors = /^\/(preview|vendor)\//.test(urlPath)
+    ? { 'Access-Control-Allow-Origin': '*' }
+    : {}
+  res.writeHead(200, { 'Content-Type': contentType, ...cors })
   stream.pipe(res)
   stream.on('error', () => {
     if (!res.headersSent) res.writeHead(500)

@@ -9,6 +9,7 @@ import {
   usePreviewInstanceId,
   usePreviewMessages,
 } from '@/components/preview/use-preview-messages'
+import { cn } from '@/components/ui/utils'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
@@ -314,18 +315,20 @@ const HtmlPreview = ({ code }: { code: string }) => {
     ),
   )
 
-  if (sandbox.failed) return <SandboxUnavailable />
-
+  // The frame stays mounted on failure so a late ready message can recover it.
   return (
-    <iframe
-      ref={iframeRef}
-      src={sandbox.src}
-      className="w-full rounded border-0"
-      style={{ height: `${height}px`, minHeight: '100px' }}
-      sandbox="allow-scripts"
-      referrerPolicy="no-referrer"
-      title="HTML preview"
-    />
+    <>
+      {sandbox.failed && <SandboxUnavailable />}
+      <iframe
+        ref={iframeRef}
+        src={sandbox.src}
+        className={cn('w-full rounded border-0', sandbox.failed && 'hidden')}
+        style={{ height: `${height}px`, minHeight: '100px' }}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        title="HTML preview"
+      />
+    </>
   )
 }
 

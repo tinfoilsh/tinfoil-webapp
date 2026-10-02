@@ -7,6 +7,6 @@ export function analyticsExcluded(asPath: string): boolean {
     path === '/' ||
     path === '/newchat' ||
     /^\/(chat|share)(\/|$)/.test(path) ||
-    /^\/project\/[^/]+\/chat(\/|$)/.test(path)
+    /^\/project\/[^/]+\/chat\/[^/]+/.test(path)
   )
 }

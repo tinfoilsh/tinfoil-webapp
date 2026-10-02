@@ -11,8 +11,11 @@ describe('analyticsExcluded', () => {
     '/share/abc#f',
     '/project/p1/chat/c1',
   ])('excludes %s', (path) => expect(analyticsExcluded(path)).toBe(true))
-  it.each(['/project', '/project/p1', '/signin', '/no-such-page'])(
-    'tracks %s',
-    (path) => expect(analyticsExcluded(path)).toBe(false),
-  )
+  it.each([
+    '/project',
+    '/project/p1',
+    '/project/p1/chat',
+    '/signin',
+    '/no-such-page',
+  ])('tracks %s', (path) => expect(analyticsExcluded(path)).toBe(false))
 })

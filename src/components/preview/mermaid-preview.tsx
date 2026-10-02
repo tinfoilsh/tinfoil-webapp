@@ -47,7 +47,7 @@ export function MermaidPreview({
   )
   const { src, failed } = useSandboxRunner(iframeRef, run, MERMAID_PREVIEW_URL)
 
-  useEffect(() => setError(null), [run])
+  useEffect(() => setError(null), [code])
   usePreviewMessages(iframeRef, instanceId, (message) => {
     if (
       message.type === 'mermaid-preview-height' &&

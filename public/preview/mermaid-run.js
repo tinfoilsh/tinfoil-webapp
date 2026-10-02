@@ -45,10 +45,9 @@ window.addEventListener('message', async (event) => {
       flowchart: { htmlLabels: false },
       class: { htmlLabels: false },
     })
-    rendered = false
-    document.body.innerHTML = ''
     const { svg } = await mermaid.render('diagram' + mine, String(run.code))
     if (mine !== seq) return
+    // Replace only now, so a re-render never flashes an empty frame.
     document.body.innerHTML = svg
     rendered = true
     report()
