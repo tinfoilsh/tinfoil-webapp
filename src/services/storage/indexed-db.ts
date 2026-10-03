@@ -520,7 +520,6 @@ function inheritMissingPayloadContent(
 
 function isLazilyRetrievableAttachment(attachment: Attachment): boolean {
   return (
-    attachment.type === 'image' &&
     attachment.id.trim().length > 0 &&
     typeof attachment.encryptionKey === 'string' &&
     attachment.encryptionKey.trim().length > 0

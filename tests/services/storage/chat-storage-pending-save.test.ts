@@ -44,7 +44,7 @@ const {
   isDeletedSpy,
   markAsDeletedSpy,
   mutateChatSpy,
-  loadChatImagesSpy,
+  loadChatAttachmentsSpy,
   forkCloudChatSpy,
 } = vi.hoisted(() => ({
   saveChatSpy: vi.fn(async (chat: unknown) => ({
@@ -88,7 +88,10 @@ const {
       _mutation: (chat: unknown) => { chat: unknown; changed: boolean },
     ) => null as unknown,
   ),
-  loadChatImagesSpy: vi.fn(async () => ({}) as Record<string, string>),
+  loadChatAttachmentsSpy: vi.fn(async () => ({
+    images: {} as Record<string, string>,
+    documents: {} as Record<string, { textContent?: string }>,
+  })),
   forkCloudChatSpy: vi.fn(async (_request: ForkCloudChatRequest) => {}),
 }))
 
@@ -130,7 +133,7 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
     listChatIdsByProject: listChatIdsByProjectSpy,
     deleteAllChats: deleteAllCloudChatsSpy,
     isAuthenticated: isCloudAuthenticatedSpy,
-    loadChatImages: loadChatImagesSpy,
+    loadChatAttachments: loadChatAttachmentsSpy,
   },
 }))
 vi.mock('@/services/sync-enclave/sync-api', () => ({
@@ -499,7 +502,10 @@ describe('chatStorage convertChatToLocal', () => {
       syncedImage('att-local', 'LOCAL'),
     )
     getChatSpy.mockResolvedValue(chat as unknown)
-    loadChatImagesSpy.mockResolvedValueOnce({ 'att-remote': 'FETCHED' })
+    loadChatAttachmentsSpy.mockResolvedValueOnce({
+      images: { 'att-remote': 'FETCHED' },
+      documents: {},
+    })
     mutateChatSpy.mockImplementationOnce(async (_chatId, mutation) => {
       const result = mutation(structuredClone(chat))
       return result.chat
@@ -528,7 +534,10 @@ describe('chatStorage convertChatToLocal', () => {
   it('retains legacy inline images and drops their legacy key', async () => {
     const chat = chatWithImages(syncedImage('att-legacy', undefined, 'key'))
     getChatSpy.mockResolvedValue(chat as unknown)
-    loadChatImagesSpy.mockResolvedValueOnce({ 'att-legacy': 'FETCHED' })
+    loadChatAttachmentsSpy.mockResolvedValueOnce({
+      images: { 'att-legacy': 'FETCHED' },
+      documents: {},
+    })
     mutateChatSpy.mockImplementationOnce(async (_chatId, mutation) => {
       return mutation(structuredClone(chat)).chat
     })
@@ -549,7 +558,7 @@ describe('chatStorage convertChatToLocal', () => {
   it('refuses to convert when a synced image cannot be fetched', async () => {
     const chat = chatWithImages(syncedImage('att-remote'))
     getChatSpy.mockResolvedValue(chat as unknown)
-    loadChatImagesSpy.mockResolvedValueOnce({})
+    loadChatAttachmentsSpy.mockResolvedValueOnce({ images: {}, documents: {} })
 
     await expect(
       chatStorage.convertChatToLocal('rev_123_abc'),
@@ -563,7 +572,10 @@ describe('chatStorage convertChatToLocal', () => {
   it('refuses to convert when an image was added between the fetch and the write', async () => {
     const chat = chatWithImages(syncedImage('att-remote'))
     getChatSpy.mockResolvedValue(chat as unknown)
-    loadChatImagesSpy.mockResolvedValueOnce({ 'att-remote': 'FETCHED' })
+    loadChatAttachmentsSpy.mockResolvedValueOnce({
+      images: { 'att-remote': 'FETCHED' },
+      documents: {},
+    })
     const newer = chatWithImages(
       syncedImage('att-remote'),
       syncedImage('att-added-later'),
@@ -583,9 +595,9 @@ describe('chatStorage convertChatToLocal', () => {
   it('aborts when the account changes while images are downloading', async () => {
     const chat = chatWithImages(syncedImage('att-remote'))
     getChatSpy.mockResolvedValue(chat as unknown)
-    loadChatImagesSpy.mockImplementationOnce(async () => {
+    loadChatAttachmentsSpy.mockImplementationOnce(async () => {
       localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-2')
-      return { 'att-remote': 'FETCHED' }
+      return { images: { 'att-remote': 'FETCHED' }, documents: {} }
     })
 
     await expect(chatStorage.convertChatToLocal('rev_123_abc')).rejects.toThrow(

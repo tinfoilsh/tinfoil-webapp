@@ -1,4 +1,8 @@
 import { type BaseModel } from '@/config/models'
+import {
+  decodeDocumentPayload,
+  isOffloadedDocument,
+} from '@/services/cloud/document-payload'
 import { attachmentGetPublic } from '@/services/sync-enclave/sync-api'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import type { ShareableChatData } from '@/utils/share-payload'
@@ -85,11 +89,12 @@ export function SharedChatView({
 
   const [messages, setMessages] = useState<Message[]>(initialMessages)
 
-  // Lazy-load full-resolution images from the public attachment endpoint
+  // Lazy-load full-resolution images and offloaded document content
+  // from the public attachment endpoint.
   useEffect(() => {
     let cancelled = false
 
-    async function loadFullResImages() {
+    async function loadAttachmentContent() {
       const updated = [...initialMessages.map((m) => ({ ...m }))]
       let anyUpdated = false
 
@@ -101,19 +106,21 @@ export function SharedChatView({
 
         for (let ai = 0; ai < atts.length; ai++) {
           const att = atts[ai]
-          if (att.type !== 'image' || !att.encryptionKey) continue
+          const wantsImage = att.type === 'image' && !!att.encryptionKey
+          const wantsDocument = isOffloadedDocument(att)
+          if (!wantsImage && !wantsDocument) continue
 
           const msgIdx = mi
           const attIdx = ai
           tasks.push(
             (async () => {
-              const apply = (base64: string) => {
+              const apply = (patch: Partial<Attachment>) => {
                 if (cancelled) return
                 updated[msgIdx] = { ...updated[msgIdx] }
                 updated[msgIdx].attachments = [...updated[msgIdx].attachments!]
                 updated[msgIdx].attachments![attIdx] = {
                   ...updated[msgIdx].attachments![attIdx],
-                  base64,
+                  ...patch,
                 }
                 anyUpdated = true
               }
@@ -123,7 +130,11 @@ export function SharedChatView({
                   id: att.id,
                   attKeyB64: att.encryptionKey!,
                 })
-                apply(uint8ArrayToBase64(plaintext))
+                apply(
+                  wantsDocument
+                    ? decodeDocumentPayload(att.id, plaintext)
+                    : { base64: uint8ArrayToBase64(plaintext) },
+                )
               } catch {
                 // Silently skip — thumbnail is still visible
               }
@@ -138,7 +149,7 @@ export function SharedChatView({
       }
     }
 
-    loadFullResImages()
+    loadAttachmentContent()
     return () => {
       cancelled = true
     }

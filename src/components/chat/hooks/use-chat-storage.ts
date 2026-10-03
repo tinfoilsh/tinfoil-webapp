@@ -1,5 +1,6 @@
 import { useToast } from '@/hooks/use-toast'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
+import { isOffloadedDocument } from '@/services/cloud/document-payload'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { isChatRecoveryTurnCancelled } from '@/services/inference/chat-recovery'
 import { sameRecoveredResponse } from '@/services/inference/chat-recovery-sync'
@@ -1051,58 +1052,73 @@ export function useChatStorage({
     }
   }, [initialChatId, isSignedIn, isInitialLoad, loadChatById, isLocalChatUrl])
 
-  // Lazy-load full-res images for synced chats with v1 encrypted attachments.
-  // Keyed on the set of attachments still missing bytes rather than on the
-  // chat object, so hydration after a metadata-only selection (same id,
-  // messages arrive later) re-triggers the fetch while streaming updates
-  // that leave the set unchanged do not.
+  // Lazy-load server-held attachment content for synced chats: full-res
+  // image bytes and offloaded document text/pages. Keyed on the set of
+  // attachments still missing content rather than on the chat object, so
+  // hydration after a metadata-only selection (same id, messages arrive
+  // later) re-triggers the fetch while streaming updates that leave the
+  // set unchanged do not.
   const currentChatId = currentChat.id
-  const unfetchedImageKey = currentChat.messages
+  const unfetchedAttachmentKey = currentChat.messages
     .flatMap(
       (msg) =>
         msg.attachments?.filter(
-          (att) => att.type === 'image' && att.encryptionKey && !att.base64,
+          (att) =>
+            (att.type === 'image' && att.encryptionKey && !att.base64) ||
+            isOffloadedDocument(att),
         ) ?? [],
     )
     .map((att) => att.id)
     .sort()
     .join('\n')
   useEffect(() => {
-    if (!unfetchedImageKey) return
+    if (!unfetchedAttachmentKey) return
     const messages = currentChatRef.current.messages
 
     let cancelled = false
 
-    async function loadImages() {
-      const imageMap = await cloudStorage.loadChatImages(
+    async function loadAttachments() {
+      const loaded = await cloudStorage.loadChatAttachments(
         currentChatId,
         messages,
       )
-      if (cancelled || Object.keys(imageMap).length === 0) return
+      if (
+        cancelled ||
+        (Object.keys(loaded.images).length === 0 &&
+          Object.keys(loaded.documents).length === 0)
+      ) {
+        return
+      }
 
-      // Merge loaded base64 data into the current messages by attachment ID,
+      // Merge loaded content into the current messages by attachment ID,
       // rather than replacing the whole array with a stale snapshot.
-      const applyImages = (prev: Chat): Chat => {
+      const applyLoaded = (prev: Chat): Chat => {
         const updated = prev.messages.map((msg) => ({
           ...msg,
-          attachments: msg.attachments?.map((att) =>
-            imageMap[att.id] ? { ...att, base64: imageMap[att.id] } : att,
-          ),
+          attachments: msg.attachments?.map((att) => {
+            if (loaded.images[att.id]) {
+              return { ...att, base64: loaded.images[att.id] }
+            }
+            if (loaded.documents[att.id]) {
+              return { ...att, ...loaded.documents[att.id] }
+            }
+            return att
+          }),
         }))
         return { ...prev, messages: updated }
       }
 
-      setCurrentChat(applyImages)
+      setCurrentChat(applyLoaded)
       setChats((prev) =>
-        prev.map((c) => (c.id === currentChatId ? applyImages(c) : c)),
+        prev.map((c) => (c.id === currentChatId ? applyLoaded(c) : c)),
       )
     }
 
-    loadImages()
+    loadAttachments()
     return () => {
       cancelled = true
     }
-  }, [currentChatId, unfetchedImageKey, setChats, setCurrentChat])
+  }, [currentChatId, unfetchedAttachmentKey, setChats, setCurrentChat])
 
   // Clear the decryption failed state (called after entering correct key)
   const clearInitialChatDecryptionFailed = useCallback(() => {

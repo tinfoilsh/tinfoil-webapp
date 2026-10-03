@@ -188,6 +188,12 @@ describe('Chat Codec - processRemoteChat', () => {
                   fileName: 'legacy.png',
                   key: 'legacy-key',
                 },
+                {
+                  id: 'offloaded-document',
+                  type: 'document',
+                  fileName: 'report.pdf',
+                  encryptionKey: 'doc-key',
+                },
               ],
             },
           ],
@@ -198,6 +204,10 @@ describe('Chat Codec - processRemoteChat', () => {
       expect(result.chat.messages[1].attachments).toEqual([
         expect.objectContaining({ id: 'valid-document' }),
         expect.objectContaining({ id: 'legacy-image', key: 'legacy-key' }),
+        expect.objectContaining({
+          id: 'offloaded-document',
+          encryptionKey: 'doc-key',
+        }),
       ])
     })
 

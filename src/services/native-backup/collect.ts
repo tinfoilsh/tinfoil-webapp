@@ -14,6 +14,10 @@ import {
   CloudBackupReadError,
   cloudStorage,
 } from '@/services/cloud/cloud-storage'
+import {
+  decodeDocumentPayload,
+  isOffloadedDocument,
+} from '@/services/cloud/document-payload'
 import { projectStorage } from '@/services/cloud/project-storage'
 import {
   indexedDBStorage,
@@ -456,6 +460,44 @@ function localInventoryToken(chats: StoredChat[], userId: string): string {
   )
   return JSON.stringify(values)
 }
+// A synced document carries only its enclave key in the chat; the backup
+// format stores document text inline, so fetch and decode the blob before
+// the chat is sanitized. Fetch failures surface through the same
+// omittable path image bytes use.
+async function inflateOffloadedDocuments(
+  chat: StoredChat,
+  deps: NativeBackupCollectionDependencies,
+  signal?: AbortSignal,
+): Promise<StoredChat> {
+  const messages = await Promise.all(
+    chat.messages.map(async (message) => {
+      if (!message.attachments?.some(isOffloadedDocument)) return message
+      const attachments = await Promise.all(
+        message.attachments.map(async (attachment) => {
+          if (!isOffloadedDocument(attachment)) return attachment
+          const bytes = await readRecord(
+            'document',
+            attachment.id,
+            () => deps.getCloudImage(attachment),
+            signal,
+            {
+              detail: 'document content is missing',
+              category: 'unavailable',
+              reason: 'attachment_not_found',
+            },
+          )
+          return {
+            ...attachment,
+            ...decodeDocumentPayload(attachment.id, bytes),
+          }
+        }),
+      )
+      return { ...message, attachments }
+    }),
+  )
+  return { ...chat, messages }
+}
+
 async function collectChat(
   chat: StoredChat,
   cloud: boolean,
@@ -835,7 +877,7 @@ async function collectNativeBackupAttempt(
       try {
         const chat = await readRecord('cloud chat', listed.id, read, signal)
         const capturedChat = {
-          ...chat,
+          ...(await inflateOffloadedDocuments(chat, deps, signal)),
           createdAt: listed.created_at,
           updatedAt: listed.updated_at,
           projectId: listed.project_id,
