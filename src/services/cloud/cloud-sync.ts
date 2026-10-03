@@ -194,6 +194,12 @@ export class CloudSyncService {
   // changes so the periodic drain does not re-serialize and re-reject
   // the same bytes every cycle.
   private oversizedChats = new Map<string, string>()
+  // Chats whose upload failed after at least one attachment had been
+  // stored by the enclave. Each such failure may have left a blob the
+  // chat does not reference; the next successful push triggers one
+  // cleanup pass for the chat.
+  private attachmentCleanupPending = new Set<string>()
+  private attachmentCleanupDone = new Set<string>()
 
   constructor() {
     this.uploadCoalescer = new UploadCoalescer(
@@ -225,6 +231,8 @@ export class CloudSyncService {
       this.uploadCoalescer.clear()
       this.streamingCallbacks.clear()
       this.oversizedChats.clear()
+      this.attachmentCleanupPending.clear()
+      this.attachmentCleanupDone.clear()
       this.legacyMigrationKicked = false
       this.cancelSyncLifecycle('disabled')
       if (this.chatReloadFrame !== null) {
@@ -434,6 +442,48 @@ export class CloudSyncService {
     this.ensureCurrentAccount(generation, userId)
   }
 
+  /**
+   * After a successful push, remove blobs left behind by earlier
+   * failed uploads of this chat. Runs once per chat per session and
+   * only when a failure in this session stored attachments; the
+   * enclave does the actual diff. Failures are logged, never surfaced:
+   * the user's data is already synced, this only reclaims storage.
+   */
+  private scheduleAttachmentCleanup(
+    chatId: string,
+    generation: number,
+    userId: string | null,
+  ): void {
+    if (
+      !this.attachmentCleanupPending.has(chatId) ||
+      this.attachmentCleanupDone.has(chatId)
+    ) {
+      return
+    }
+    this.attachmentCleanupPending.delete(chatId)
+    this.attachmentCleanupDone.add(chatId)
+    void (async () => {
+      try {
+        let remaining = 0
+        do {
+          this.ensureCurrentAccount(generation, userId)
+          const result =
+            await cloudStorage.collectUnreferencedAttachments(chatId)
+          remaining = result.remaining
+        } while (remaining > 0)
+      } catch (error) {
+        logWarning('Attachment cleanup failed', {
+          component: 'CloudSync',
+          action: 'scheduleAttachmentCleanup',
+          metadata: {
+            chatId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        })
+      }
+    })()
+  }
+
   private async assertUploadFinalized(
     chatId: string,
     generation: number,
@@ -454,6 +504,8 @@ export class CloudSyncService {
     this.uploadCoalescer.clear()
     this.streamingCallbacks.clear()
     this.oversizedChats.clear()
+    this.attachmentCleanupPending.clear()
+    this.attachmentCleanupDone.clear()
     this.legacyMigrationKicked = false
     if (this.chatReloadFrame !== null) {
       cancelAnimationFrame(this.chatReloadFrame)
@@ -847,18 +899,21 @@ export class CloudSyncService {
       }
       const preUploadVersion = chat.syncVersion ?? 0
       const attempt: UploadAttempt = async () => {
+        let attachmentsStored = false
         try {
           this.ensureCurrentAccount(generation, userId)
           const { syncVersion, rewrites, projectIntentIncluded } =
             await cloudStorage.uploadChat(chat, {
               idempotencyKey,
-              onAttachmentsUploaded: (uploaded) =>
-                this.persistAttachmentRewrites(
+              onAttachmentsUploaded: async (uploaded) => {
+                attachmentsStored = true
+                await this.persistAttachmentRewrites(
                   chatId,
                   uploaded,
                   generation,
                   userId,
-                ),
+                )
+              },
             })
           this.ensureCurrentAccount(generation, userId)
           await indexedDBStorage.finalizeUpload({
@@ -878,7 +933,9 @@ export class CloudSyncService {
           this.oversizedChats.delete(chatId)
           reportChatSynced(chatId)
           this.queueChatReload()
+          this.scheduleAttachmentCleanup(chatId, generation, userId)
         } catch (error) {
+          if (attachmentsStored) this.attachmentCleanupPending.add(chatId)
           if (this.readActiveUserId() !== userId) throw error
           await this.recoverFromChatUploadError(chatId, generation, error, {
             fingerprint: preUploadFingerprint,

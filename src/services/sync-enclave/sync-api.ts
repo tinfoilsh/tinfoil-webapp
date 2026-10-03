@@ -1260,6 +1260,36 @@ export async function attachmentDelete(req: {
   )
 }
 
+export interface AttachmentGCResponse {
+  ok: true
+  referenced: number
+  indexed: number
+  deleted: number
+  remaining: number
+}
+
+/**
+ * Ask the enclave to remove attachment blobs registered under a chat
+ * that the chat's stored content no longer references. The enclave
+ * needs the CEK to read the chat; the controlplane alone cannot tell
+ * which blobs are live because the chat ciphertext is opaque to it.
+ */
+export async function attachmentGC(req: {
+  chatId: string
+  keyB64: string
+}): Promise<AttachmentGCResponse> {
+  const client = await getSyncEnclaveClient()
+  return client.post<AttachmentGCResponse>(
+    '/v1/attachment/gc',
+    {
+      chat_id: req.chatId,
+      key: req.keyB64,
+    },
+    undefined,
+    { requestScope: 'cloud-sync' },
+  )
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Public chat share (seal + open through the enclave)                       */
 /* -------------------------------------------------------------------------- */

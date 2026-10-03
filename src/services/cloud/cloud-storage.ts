@@ -12,6 +12,7 @@ import { logError, logWarning } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
 import { type AttachmentRewrite, type StoredChat } from '../storage/indexed-db'
 import {
+  attachmentGC as enclaveAttachmentGC,
   attachmentGet as enclaveAttachmentGet,
   attachmentPut as enclaveAttachmentPut,
   deleteRow as enclaveDeleteRow,
@@ -23,6 +24,7 @@ import {
   newIdempotencyKey,
   pullItemPlaintext,
   revisionSnapshot,
+  type AttachmentGCResponse,
   type PullItem,
 } from '../sync-enclave/sync-api'
 import {
@@ -460,6 +462,17 @@ export class CloudStorageService {
       })
     }
     return { syncVersion: etagToSyncVersion(resp.etag) ?? null }
+  }
+
+  /**
+   * Remove attachment blobs under a chat that its stored content no
+   * longer references. Returns the enclave's summary so the caller can
+   * decide whether another pass is needed.
+   */
+  async collectUnreferencedAttachments(
+    chatId: string,
+  ): Promise<AttachmentGCResponse> {
+    return enclaveAttachmentGC({ chatId, keyB64: requirePrimaryKeyB64() })
   }
 
   private async encryptAndUploadAttachments(

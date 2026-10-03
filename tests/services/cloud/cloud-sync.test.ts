@@ -23,6 +23,7 @@ const {
   downloadChat,
   downloadChats,
   forkCloudChat,
+  collectUnreferencedAttachments,
   finalizeUpload,
   recordAttachmentRewrites,
   getPendingUploadChats,
@@ -44,6 +45,7 @@ const {
   downloadChat: vi.fn(),
   downloadChats: vi.fn(),
   forkCloudChat: vi.fn(),
+  collectUnreferencedAttachments: vi.fn(),
   finalizeUpload: vi.fn(),
   recordAttachmentRewrites: vi.fn(),
   getPendingUploadChats: vi.fn(),
@@ -68,6 +70,7 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
     downloadChat,
     downloadChats,
     forkChat: forkCloudChat,
+    collectUnreferencedAttachments,
     listChats,
   },
 }))
@@ -137,6 +140,13 @@ describe('CloudSyncService revision coordinator routing', () => {
     canWriteToCloud.mockResolvedValue(false)
     finalizeUpload.mockResolvedValue(undefined)
     recordAttachmentRewrites.mockResolvedValue(undefined)
+    collectUnreferencedAttachments.mockResolvedValue({
+      ok: true,
+      referenced: 1,
+      indexed: 1,
+      deleted: 0,
+      remaining: 0,
+    })
     getPendingUploadChats.mockResolvedValue([])
     applyRemoteChatIfFresh.mockResolvedValue({ applied: true })
     getAllChats.mockResolvedValue([])
@@ -444,6 +454,93 @@ describe('CloudSyncService revision coordinator routing', () => {
 
     expect(recordAttachmentRewrites).toHaveBeenCalledWith('chat-1', rewrites)
     expect(finalizeUpload).not.toHaveBeenCalled()
+  })
+
+  it('cleans up unreferenced attachments after a push that follows a failed upload with stored attachments', async () => {
+    canWriteToCloud.mockResolvedValue(true)
+    const pendingChat = {
+      id: 'chat-1',
+      syncUserId: 'user-1',
+      locallyModified: true,
+      pendingUpload: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      messages: [
+        {
+          role: 'user',
+          content: 'hello',
+          attachments: [{ id: 'local-att', type: 'image', base64: 'AQID' }],
+        },
+      ],
+    }
+    getChat.mockImplementation(async () => pendingChat)
+    const rewrites = [
+      { clientId: 'local-att', serverId: 'srv-att', encryptionKey: 'k' },
+    ]
+    uploadChat
+      .mockImplementationOnce(async (_chat, options) => {
+        await options.onAttachmentsUploaded?.(rewrites)
+        throw new SyncEnclaveError('push failed', 409, 'IDEMPOTENCY_CONFLICT')
+      })
+      .mockImplementationOnce(async () => {
+        getChat.mockImplementation(async () => ({
+          ...pendingChat,
+          pendingUpload: 0,
+        }))
+        return { syncVersion: 2, rewrites: [], projectIntentIncluded: false }
+      })
+    collectUnreferencedAttachments
+      .mockResolvedValueOnce({
+        ok: true,
+        referenced: 1,
+        indexed: 600,
+        deleted: 500,
+        remaining: 99,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        referenced: 1,
+        indexed: 100,
+        deleted: 99,
+        remaining: 0,
+      })
+
+    const service = new CloudSyncService()
+    await service.backupChat('chat-1')
+    await expect(service.waitForAllUploads()).rejects.toThrow('push failed')
+    expect(collectUnreferencedAttachments).not.toHaveBeenCalled()
+
+    await service.backupChat('chat-1')
+    await service.waitForAllUploads()
+    await vi.waitFor(() =>
+      expect(collectUnreferencedAttachments).toHaveBeenCalledTimes(2),
+    )
+    expect(collectUnreferencedAttachments).toHaveBeenCalledWith('chat-1')
+  })
+
+  it('does not run attachment cleanup after an ordinary successful push', async () => {
+    canWriteToCloud.mockResolvedValue(true)
+    const pendingChat = {
+      id: 'chat-1',
+      syncUserId: 'user-1',
+      locallyModified: true,
+      pendingUpload: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      messages: [{ role: 'user', content: 'hello' }],
+    }
+    getChat
+      .mockResolvedValueOnce(pendingChat)
+      .mockResolvedValue({ ...pendingChat, pendingUpload: 0 })
+    uploadChat.mockResolvedValue({
+      syncVersion: 2,
+      rewrites: [],
+      projectIntentIncluded: false,
+    })
+
+    const service = new CloudSyncService()
+    await service.backupChat('chat-1')
+    await service.waitForAllUploads()
+    await Promise.resolve()
+    expect(collectUnreferencedAttachments).not.toHaveBeenCalled()
   })
 
   it('marks an oversized chat as failed and skips it until its content changes', async () => {

@@ -768,6 +768,22 @@ describe('sync-api (enclave JSON-RPC)', () => {
     await api.attachmentDelete({ id: 'att-1' })
     expect(lastRequest()[0]).toBe('/v1/attachment/delete')
     expect(lastBody()).toEqual({ id: 'att-1' })
+
+    mockFetch.mockResolvedValueOnce(
+      ok({ ok: true, referenced: 1, indexed: 4, deleted: 3, remaining: 0 }),
+    )
+    await expect(
+      api.attachmentGC({ chatId: 'chat-1', keyB64: 'cek' }),
+    ).resolves.toEqual({
+      ok: true,
+      referenced: 1,
+      indexed: 4,
+      deleted: 3,
+      remaining: 0,
+    })
+    expect(lastRequest()[0]).toBe('/v1/attachment/gc')
+    expect(lastBody()).toEqual({ chat_id: 'chat-1', key: 'cek' })
+    expect(lastHeaders().get('Authorization')).toBe('Bearer test-jwt')
   })
 
   it('seals authenticated shares and opens them without leaking a JWT', async () => {
