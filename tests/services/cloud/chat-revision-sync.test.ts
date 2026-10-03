@@ -1,3 +1,4 @@
+import { CLOUD_SYNC } from '@/config'
 import {
   BOOTSTRAP_RECENT_CONTENT_LIMIT,
   drainChatRevisionSync,
@@ -494,6 +495,56 @@ describe('chat revision synchronization', () => {
     expect(pulledIds.filter((id) => id.startsWith('missing-'))).toHaveLength(
       BOOTSTRAP_RECENT_CONTENT_LIMIT,
     )
+  })
+
+  it('stores earlier bootstrap batches before a later batch fails', async () => {
+    getSyncState.mockResolvedValue(null)
+    revisionSummary.mockResolvedValue({
+      current_revision: '60',
+      oldest_replayable_revision: '1',
+    })
+    const batchSize = CLOUD_SYNC.PULL_BATCH_SIZE
+    const items = Array.from({ length: batchSize + 1 }, (_, index) => ({
+      id: `missing-${index}`,
+      etag: '2',
+      key_id: 'key-1',
+      project_id: null,
+      // Descending so the pull order matches the array order.
+      updated_at: `2026-01-${String(31 - index).padStart(2, '0')}T00:00:00Z`,
+    }))
+    revisionSnapshot.mockResolvedValue({
+      snapshot_revision: '60',
+      items,
+    })
+    getChat.mockResolvedValue(null)
+    downloadChats.mockImplementation(async (ids: string[]) => {
+      if (ids.includes(items[batchSize].id)) {
+        throw new Error('request timed out')
+      }
+      return ids.map((id) => ({
+        status: 'ok',
+        id,
+        content: '{}',
+        syncVersion: 2,
+      }))
+    })
+    ingestRemoteChats.mockImplementation(async (chats: { id: string }[]) => ({
+      savedIds: chats.map((chat) => chat.id),
+      downloaded: chats.length,
+      errors: [],
+    }))
+
+    await expect(drainChatRevisionSync(adapter, userId)).rejects.toThrow(
+      'request timed out',
+    )
+
+    expect(downloadChats).toHaveBeenCalledTimes(2)
+    expect(downloadChats.mock.calls[0][0]).toHaveLength(batchSize)
+    expect(ingestRemoteChats).toHaveBeenCalledTimes(1)
+    expect(
+      ingestRemoteChats.mock.calls[0][0].map((c: { id: string }) => c.id),
+    ).toEqual(items.slice(0, batchSize).map((item) => item.id))
+    expect(reconcileRevisionSnapshot).not.toHaveBeenCalled()
   })
 
   it('re-pulls failed-decryption rows whose snapshot ETag still matches', async () => {
