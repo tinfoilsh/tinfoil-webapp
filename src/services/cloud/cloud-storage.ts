@@ -1,5 +1,5 @@
 import type { Attachment, Message } from '@/components/chat/types'
-import { API_BASE_URL } from '@/config'
+import { API_BASE_URL, CLOUD_SYNC } from '@/config'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { isLocalRecoveryEnvelope } from '@/types/chat-recovery'
 import {
@@ -55,6 +55,7 @@ const PROJECT_CHAT_LIST_LIMIT = 500
 const ATTACHMENT_NOT_FOUND_STATUS = 404
 const LEGACY_ATTACHMENT_GONE_STATUS = 410
 const ATTACHMENT_IDEMPOTENCY_KEY_BYTES = 16
+const PAYLOAD_TOO_LARGE_STATUS = 413
 
 /**
  * Lean chat list entry. Anything the caller needs beyond (id,
@@ -338,8 +339,6 @@ export class CloudStorageService {
       }),
     )
 
-    const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
-    const rewrites = await this.encryptAndUploadAttachments(messages, chat.id)
     // Stamp the clock version this push will create so a remote reader
     // can tell the clock is current (etag === clockVersion) versus a
     // later clock-unaware write that would force the updatedAt fallback.
@@ -353,16 +352,35 @@ export class CloudStorageService {
       projectLocallyModified: _projectLocallyModified,
       ...chatContent
     } = chat
-    const strippedChat = {
-      ...chatContent,
-      messages: stripBase64FromMessages(messages),
-      pendingRecoveries:
-        syncedRecoveries && syncedRecoveries.length > 0
-          ? syncedRecoveries
-          : undefined,
-      clockVersion: baseVersion + 1,
+    const buildPlaintext = () =>
+      new TextEncoder().encode(
+        JSON.stringify({
+          ...chatContent,
+          messages: stripBase64FromMessages(messages),
+          pendingRecoveries:
+            syncedRecoveries && syncedRecoveries.length > 0
+              ? syncedRecoveries
+              : undefined,
+          clockVersion: baseVersion + 1,
+        }),
+      )
+
+    // Size the envelope before any attachment leaves the device. The
+    // enclave rejects plaintext over its cap after the attachments have
+    // already been stored, and retrying can never succeed, so fail here
+    // with the same code the enclave would return.
+    const projectedBytes = buildPlaintext().byteLength
+    if (projectedBytes > CLOUD_SYNC.MAX_CHAT_PLAINTEXT_BYTES) {
+      throw new SyncEnclaveError(
+        `chat plaintext is ${projectedBytes} bytes; limit is ${CLOUD_SYNC.MAX_CHAT_PLAINTEXT_BYTES}`,
+        PAYLOAD_TOO_LARGE_STATUS,
+        'PAYLOAD_TOO_LARGE',
+      )
     }
-    const plaintext = new TextEncoder().encode(JSON.stringify(strippedChat))
+
+    const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
+    const rewrites = await this.encryptAndUploadAttachments(messages, chat.id)
+    const plaintext = buildPlaintext()
 
     const metadata: Record<string, unknown> = { messageCount: messages.length }
     const projectIntentIncluded =

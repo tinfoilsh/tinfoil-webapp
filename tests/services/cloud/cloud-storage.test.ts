@@ -1,3 +1,4 @@
+import { CLOUD_SYNC } from '@/config'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { unwrapBackupPullResult } from '@/services/cloud/backup-read-error'
 import {
@@ -1017,6 +1018,41 @@ describe('CloudStorageService auth readiness', () => {
     )
     expect(plaintext).not.toContain('storagePayloadId')
     expect(plaintext).not.toContain('local-payload-reference')
+  })
+
+  it('rejects an oversized chat before uploading any attachment', async () => {
+    const service = new CloudStorageService()
+    const chat = {
+      id: 'chat-1',
+      title: 'Huge chat',
+      messages: [
+        {
+          role: 'user',
+          content: 'x'.repeat(CLOUD_SYNC.MAX_CHAT_PLAINTEXT_BYTES + 1),
+          attachments: [
+            {
+              id: 'local-att',
+              type: 'image',
+              fileName: 'image.png',
+              base64: 'AQID',
+            },
+          ],
+        },
+      ],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      lastAccessedAt: 0,
+    } as any
+
+    const failure = await service
+      .uploadChat(chat, { idempotencyKey: 'upload-idem-1' })
+      .catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(SyncEnclaveError)
+    expect((failure as SyncEnclaveError).code).toBe('PAYLOAD_TOO_LARGE')
+    expect((failure as SyncEnclaveError).status).toBe(413)
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+    expect(mockEnclavePush).not.toHaveBeenCalled()
   })
 
   it('does not re-upload attachments that already have enclave keys', async () => {

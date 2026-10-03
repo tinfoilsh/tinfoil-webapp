@@ -54,6 +54,10 @@ export const PAGINATION = {
 // Cloud sync settings
 export const CLOUD_SYNC = {
   RETRY_DELAY: 100, // milliseconds
+  // Mirrors the sync enclave's envelope plaintext cap. Checked before
+  // any bytes leave the device so an oversized chat fails fast instead
+  // of uploading its attachments and then being rejected by the push.
+  MAX_CHAT_PLAINTEXT_BYTES: 32 * 1024 * 1024,
   CHAT_SYNC_INTERVAL: 20000, // 20 seconds - frequency for syncing chats
   PROFILE_SYNC_INTERVAL: 60000, // 60 seconds (1 minute) - frequency for syncing profile
   PROFILE_SYNC_DEBOUNCE: 2000,
