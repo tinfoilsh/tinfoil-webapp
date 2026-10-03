@@ -72,6 +72,7 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
   },
 }))
 vi.mock('@/services/storage/indexed-db', () => ({
+  applyAttachmentRewritesInPlace: vi.fn(),
   chatContentFingerprint: vi.fn(() => 'content-fingerprint'),
   indexedDBStorage: {
     clearRevisionSyncState,
