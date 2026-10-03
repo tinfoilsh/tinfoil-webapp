@@ -30,6 +30,7 @@ describe('classifyEnclaveError', () => {
       NETWORK: 'RETRYABLE_TRANSIENT',
       NOT_FOUND: 'USER_DECISION',
       LEGACY_BLOB_NOT_MIGRATED: 'RETRYABLE_REFRESH',
+      PAYLOAD_TOO_LARGE: 'TERMINAL',
     }
     for (const [code, kind] of Object.entries(expectations)) {
       const result = classifyEnclaveError(err(code))
@@ -51,6 +52,14 @@ describe('classifyEnclaveError', () => {
     )
     expect(result.kind).toBe('RETRYABLE_TRANSIENT')
     expect(result.code).toBe('AUTH')
+  })
+
+  it('maps 413 without a code to TERMINAL/PAYLOAD_TOO_LARGE', () => {
+    const result = classifyEnclaveError(
+      new SyncEnclaveError('too large', 413, undefined),
+    )
+    expect(result.kind).toBe('TERMINAL')
+    expect(result.code).toBe('PAYLOAD_TOO_LARGE')
   })
 
   it('maps 403 without a code to TERMINAL/FORBIDDEN', () => {
