@@ -894,6 +894,80 @@ describe('CloudStorageService auth readiness', () => {
     expect(mockAttachmentPut.mock.calls[1][0].idempotencyKey).toBe(firstKey)
   })
 
+  it('keeps the attachment idempotency key stable across separate logical uploads', async () => {
+    // A failed chat push leaves the local attachment without an
+    // encryptionKey, so the next sync cycle re-uploads it under a fresh
+    // upload idempotency key. The attachment key must not depend on
+    // that per-upload key or every cycle mints a new server-side blob.
+    const service = new CloudStorageService()
+    const makeChat = () =>
+      ({
+        id: 'chat-1',
+        title: 'Local chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'hi',
+            attachments: [
+              {
+                id: 'local-att',
+                type: 'image',
+                fileName: 'image.png',
+                base64: 'AQID',
+              },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastAccessedAt: 0,
+      }) as any
+
+    await service.uploadChat(makeChat(), { idempotencyKey: 'upload-idem-1' })
+    await service.uploadChat(makeChat(), { idempotencyKey: 'upload-idem-2' })
+
+    expect(mockAttachmentPut).toHaveBeenCalledTimes(2)
+    expect(mockAttachmentPut.mock.calls[1][0].idempotencyKey).toBe(
+      mockAttachmentPut.mock.calls[0][0].idempotencyKey,
+    )
+  })
+
+  it('derives distinct attachment idempotency keys for different bytes or chats', async () => {
+    const service = new CloudStorageService()
+    const makeChat = (chatId: string, base64: string) =>
+      ({
+        id: chatId,
+        title: 'Local chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'hi',
+            attachments: [
+              { id: 'local-att', type: 'image', fileName: 'image.png', base64 },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastAccessedAt: 0,
+      }) as any
+
+    await service.uploadChat(makeChat('chat-1', 'AQID'), {
+      idempotencyKey: 'upload-idem-1',
+    })
+    await service.uploadChat(makeChat('chat-1', 'BAUG'), {
+      idempotencyKey: 'upload-idem-1',
+    })
+    await service.uploadChat(makeChat('chat-2', 'AQID'), {
+      idempotencyKey: 'upload-idem-1',
+    })
+
+    const keys = mockAttachmentPut.mock.calls.map(
+      (call) => call[0].idempotencyKey,
+    )
+    expect(new Set(keys).size).toBe(3)
+  })
+
   it('returns local payload identity without including it in cloud plaintext', async () => {
     const service = new CloudStorageService()
     const result = await service.uploadChat(
