@@ -148,6 +148,7 @@ const UPLOAD_MAX_RETRIES = 3
 const DECRYPTION_RETRY_BATCH_SIZE = 5
 export const CROSS_TAB_SYNC_LOCK = 'tinfoil-cloud-sync'
 export const CROSS_TAB_SYNC_LOCK_OPTIONS = { mode: 'exclusive' } as const
+const PAYLOAD_TOO_LARGE_STATUS = 413
 export const CHAT_TOO_LARGE_MESSAGE =
   'This chat is too large to sync. Remove some attachments or start a new chat to continue syncing.'
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
@@ -786,8 +787,16 @@ export class CloudSyncService {
       const preUploadUpdatedAt = chat.updatedAt
       const preUploadFingerprint = chatContentFingerprint(chat)
       if (this.oversizedChats.get(chatId) === preUploadFingerprint) {
+        // Same bytes the enclave already rejected: fail with the same
+        // terminal error without touching the network, so callers see
+        // a real failure for this chat rather than a silent skip that
+        // never finalizes.
         release()
-        return null
+        throw new SyncEnclaveError(
+          CHAT_TOO_LARGE_MESSAGE,
+          PAYLOAD_TOO_LARGE_STATUS,
+          'PAYLOAD_TOO_LARGE',
+        )
       }
       const preUploadVersion = chat.syncVersion ?? 0
       const attempt: UploadAttempt = async () => {

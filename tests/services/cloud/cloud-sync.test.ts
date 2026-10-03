@@ -438,9 +438,12 @@ describe('CloudSyncService revision coordinator routing', () => {
       CHAT_TOO_LARGE_MESSAGE,
     )
 
-    // Next sync cycle with identical content: nothing goes to the enclave.
+    // Next sync cycle with identical content: nothing goes to the enclave,
+    // but the chat still reports as failed rather than silently skipped.
     await service.backupChat('chat-1')
-    await service.waitForAllUploads()
+    await expect(service.waitForAllUploads()).rejects.toThrow(
+      CHAT_TOO_LARGE_MESSAGE,
+    )
     expect(uploadChat).toHaveBeenCalledTimes(1)
 
     // The user edited the chat: it is attempted again.
