@@ -233,12 +233,10 @@ function hasNextCursor(cursor: string | undefined): boolean {
 async function attachmentIdempotencyKey(
   chatId: string,
   clientAttachmentId: string,
-  plaintext: Uint8Array,
+  plaintext: Uint8Array<ArrayBuffer>,
 ): Promise<string> {
-  const plaintextView = new Uint8Array(plaintext.byteLength)
-  plaintextView.set(plaintext)
   const contentDigest = new Uint8Array(
-    await crypto.subtle.digest('SHA-256', plaintextView),
+    await crypto.subtle.digest('SHA-256', plaintext),
   )
   const digest = new Uint8Array(
     await crypto.subtle.digest(

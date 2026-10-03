@@ -935,9 +935,9 @@ describe('CloudStorageService auth readiness', () => {
     )
   })
 
-  it('derives distinct attachment idempotency keys for different bytes or chats', async () => {
+  it('derives distinct attachment idempotency keys for different bytes, chats, or attachment ids', async () => {
     const service = new CloudStorageService()
-    const makeChat = (chatId: string, base64: string) =>
+    const makeChat = (chatId: string, attachmentId: string, base64: string) =>
       ({
         id: chatId,
         title: 'Local chat',
@@ -946,7 +946,12 @@ describe('CloudStorageService auth readiness', () => {
             role: 'user',
             content: 'hi',
             attachments: [
-              { id: 'local-att', type: 'image', fileName: 'image.png', base64 },
+              {
+                id: attachmentId,
+                type: 'image',
+                fileName: 'image.png',
+                base64,
+              },
             ],
           },
         ],
@@ -955,20 +960,25 @@ describe('CloudStorageService auth readiness', () => {
         lastAccessedAt: 0,
       }) as any
 
-    await service.uploadChat(makeChat('chat-1', 'AQID'), {
+    await service.uploadChat(makeChat('chat-1', 'local-att', 'AQID'), {
       idempotencyKey: 'upload-idem-1',
     })
-    await service.uploadChat(makeChat('chat-1', 'BAUG'), {
+    await service.uploadChat(makeChat('chat-1', 'local-att', 'BAUG'), {
       idempotencyKey: 'upload-idem-1',
     })
-    await service.uploadChat(makeChat('chat-2', 'AQID'), {
+    await service.uploadChat(makeChat('chat-2', 'local-att', 'AQID'), {
+      idempotencyKey: 'upload-idem-1',
+    })
+    // Same chat and bytes under a different client id: two identical
+    // images in one chat must land on distinct slots.
+    await service.uploadChat(makeChat('chat-1', 'local-att-2', 'AQID'), {
       idempotencyKey: 'upload-idem-1',
     })
 
     const keys = mockAttachmentPut.mock.calls.map(
       (call) => call[0].idempotencyKey,
     )
-    expect(new Set(keys).size).toBe(3)
+    expect(new Set(keys).size).toBe(4)
   })
 
   it('returns local payload identity without including it in cloud plaintext', async () => {
