@@ -1,3 +1,4 @@
+import { CLOUD_SYNC } from '@/config'
 import {
   SYNC_ALL_CHATS_STATUS,
   SYNC_CHAT_DELETES_WATERMARK,
@@ -79,8 +80,30 @@ type RemoteChatMetadata = Pick<
  * the server exactly, so a row the enclave could not return is fatal
  * unless it was deleted between the listing and the pull; a later
  * delete event reconciles that case.
+ *
+ * Rows are downloaded and stored one batch at a time. Each stored chat
+ * carries its etag, so when a later batch fails the next sync cycle
+ * recognizes the earlier ones as current and only re-pulls what is
+ * still missing instead of starting the whole download over.
  */
 async function pullAndIngest(
+  rows: readonly RemoteChatMetadata[],
+  userId: string,
+  isCurrent: () => boolean,
+): Promise<number> {
+  let downloaded = 0
+  for (
+    let start = 0;
+    start < rows.length;
+    start += CLOUD_SYNC.PULL_BATCH_SIZE
+  ) {
+    const batch = rows.slice(start, start + CLOUD_SYNC.PULL_BATCH_SIZE)
+    downloaded += await pullAndIngestBatch(batch, userId, isCurrent)
+  }
+  return downloaded
+}
+
+async function pullAndIngestBatch(
   rows: readonly RemoteChatMetadata[],
   userId: string,
   isCurrent: () => boolean,

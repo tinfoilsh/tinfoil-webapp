@@ -1,5 +1,5 @@
 import type { Attachment, Message } from '@/components/chat/types'
-import { API_BASE_URL } from '@/config'
+import { API_BASE_URL, CLOUD_SYNC } from '@/config'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { isLocalRecoveryEnvelope } from '@/types/chat-recovery'
 import {
@@ -51,6 +51,7 @@ import {
 const AUTH_INIT_WAIT_MS = 3000
 const RESTORE_DELETED_CHAT_HEADER = RESTORE_DELETED_HEADERS.Chat
 const ENCLAVE_CHAT_LIST_LIMIT = 100
+const PULL_BATCH_SIZE = Math.min(CLOUD_SYNC.PULL_BATCH_SIZE, MAX_PULL_IDS)
 const PROJECT_CHAT_LIST_LIMIT = 500
 const ATTACHMENT_NOT_FOUND_STATUS = 404
 const LEGACY_ATTACHMENT_GONE_STATUS = 410
@@ -662,11 +663,13 @@ export class CloudStorageService {
 
   /**
    * Pull chat plaintext for every requested id. Requests are split into
-   * enclave-sized batches and results come back in request order, one
-   * per id. Transport and protocol failures (network error, response
-   * missing or duplicating an id, empty plaintext) reject the whole
-   * call; per-row enclave outcomes are settled into the result so one
-   * unreadable chat cannot hide its batch peers from the caller.
+   * small batches so each response can be decrypted and parsed on the
+   * main thread inside the request deadline, and results come back in
+   * request order, one per id. Transport and protocol failures (network
+   * error, response missing or duplicating an id, empty plaintext)
+   * reject the whole call; per-row enclave outcomes are settled into the
+   * result so one unreadable chat cannot hide its batch peers from the
+   * caller.
    */
   async downloadChats(chatIds: readonly string[]): Promise<PulledChatResult[]> {
     if (chatIds.length === 0) return []
@@ -675,8 +678,8 @@ export class CloudStorageService {
       throw new Error('Cloud sync key is unavailable')
     }
     const results: PulledChatResult[] = []
-    for (let start = 0; start < chatIds.length; start += MAX_PULL_IDS) {
-      const batch = chatIds.slice(start, start + MAX_PULL_IDS)
+    for (let start = 0; start < chatIds.length; start += PULL_BATCH_SIZE) {
+      const batch = chatIds.slice(start, start + PULL_BATCH_SIZE)
       const response = await enclavePull({ scope: 'chat', ids: batch, keys })
       results.push(...settlePulledChatBatch(batch, response.items))
     }

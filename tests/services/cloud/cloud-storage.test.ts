@@ -1,3 +1,4 @@
+import { CLOUD_SYNC } from '@/config'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { unwrapBackupPullResult } from '@/services/cloud/backup-read-error'
 import {
@@ -182,8 +183,10 @@ describe('CloudStorageService auth readiness', () => {
     )
   })
 
-  it('splits large downloads into enclave-sized pull requests', async () => {
-    const ids = Array.from({ length: MAX_PULL_IDS + 1 }, (_, i) => `chat-${i}`)
+  it('splits large downloads into small pull requests under the enclave cap', async () => {
+    const batchSize = CLOUD_SYNC.PULL_BATCH_SIZE
+    expect(batchSize).toBeLessThanOrEqual(MAX_PULL_IDS)
+    const ids = Array.from({ length: batchSize + 1 }, (_, i) => `chat-${i}`)
     mockEnclavePull.mockImplementation(async ({ ids: batch }) => ({
       items: batch.map((id: string) => ({
         id,
@@ -197,8 +200,8 @@ describe('CloudStorageService auth readiness', () => {
 
     expect(results.map((result) => result.id)).toEqual(ids)
     expect(mockEnclavePull).toHaveBeenCalledTimes(2)
-    expect(mockEnclavePull.mock.calls[0][0].ids).toHaveLength(MAX_PULL_IDS)
-    expect(mockEnclavePull.mock.calls[1][0].ids).toEqual([ids[MAX_PULL_IDS]])
+    expect(mockEnclavePull.mock.calls[0][0].ids).toHaveLength(batchSize)
+    expect(mockEnclavePull.mock.calls[1][0].ids).toEqual([ids[batchSize]])
   })
 
   it('preserves structured backup attachment failures instead of swallowing them', async () => {
