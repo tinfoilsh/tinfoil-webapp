@@ -665,10 +665,11 @@ export class CloudStorageService {
    * Pull chat plaintext for every requested id. Requests are split into
    * small batches so each response can be decrypted and parsed on the
    * main thread inside the request deadline, and results come back in
-   * request order, one per id. Transport and protocol failures (network error, response
-   * missing or duplicating an id, empty plaintext) reject the whole
-   * call; per-row enclave outcomes are settled into the result so one
-   * unreadable chat cannot hide its batch peers from the caller.
+   * request order, one per id. Transport and protocol failures (network
+   * error, response missing or duplicating an id, empty plaintext)
+   * reject the whole call; per-row enclave outcomes are settled into the
+   * result so one unreadable chat cannot hide its batch peers from the
+   * caller.
    */
   async downloadChats(chatIds: readonly string[]): Promise<PulledChatResult[]> {
     if (chatIds.length === 0) return []
