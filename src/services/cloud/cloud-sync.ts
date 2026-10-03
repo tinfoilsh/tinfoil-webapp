@@ -8,6 +8,7 @@ import { AuthTokenUnavailableError } from '@/services/auth'
 import { chatEvents } from '@/services/storage/chat-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
+  applyAttachmentRewritesInPlace,
   chatContentFingerprint,
   indexedDBStorage,
   type AttachmentRewrite,
@@ -153,6 +154,27 @@ const PAYLOAD_TOO_LARGE_STATUS = 413
 export const CHAT_TOO_LARGE_MESSAGE =
   'This chat is too large to sync. Remove some attachments or start a new chat to continue syncing.'
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
+
+/**
+ * Fingerprint the pre-upload snapshot as it will look once the
+ * enclave-minted attachment ids and keys have been written to the local
+ * row. `persistAttachmentRewrites` applies those before `finalizeUpload`
+ * runs, so the stored row legitimately differs from the raw snapshot in
+ * exactly those fields; comparing against the raw fingerprint would
+ * misread every upload with new attachments as a concurrent edit.
+ */
+function fingerprintAfterRewrites(
+  chat: StoredChat,
+  rewrites: AttachmentRewrite[],
+): string {
+  if (rewrites.length === 0) return chatContentFingerprint(chat)
+  const messages = chat.messages.map((message) => ({
+    ...message,
+    attachments: message.attachments?.map((attachment) => ({ ...attachment })),
+  }))
+  applyAttachmentRewritesInPlace(messages, rewrites)
+  return chatContentFingerprint({ ...chat, messages })
+}
 
 export class CloudSyncService {
   private syncLock: Promise<void> | null = null
@@ -693,7 +715,7 @@ export class CloudSyncService {
         chatId,
         rewrites,
         preUploadUpdatedAt,
-        preUploadFingerprint,
+        preUploadFingerprint: fingerprintAfterRewrites(chat, rewrites),
         syncVersion: syncVersion ?? preUploadVersion + 1,
         uploadedProjectId: chat.projectId,
         projectIntentIncluded,
@@ -843,7 +865,7 @@ export class CloudSyncService {
             chatId,
             rewrites,
             preUploadUpdatedAt,
-            preUploadFingerprint,
+            preUploadFingerprint: fingerprintAfterRewrites(chat, rewrites),
             syncVersion: syncVersion ?? preUploadVersion + 1,
             uploadedProjectId: chat.projectId,
             projectIntentIncluded,

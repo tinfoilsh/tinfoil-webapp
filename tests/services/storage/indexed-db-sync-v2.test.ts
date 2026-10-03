@@ -1,5 +1,7 @@
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import {
+  applyAttachmentRewritesInPlace,
+  chatContentFingerprint,
   derivePendingUpload,
   IndexedDBStorage,
 } from '@/services/storage/indexed-db'
@@ -935,6 +937,62 @@ describe('IndexedDB sync protocol v2 migration', () => {
     expect(after.syncVersion).toBe(before.syncVersion)
     expect(after.updatedAt).toBe(before.updatedAt)
     expect(after.clock).toBe(before.clock)
+  })
+
+  it('finalizes an upload whose attachment rewrites were persisted before the push', async () => {
+    const storage = new IndexedDBStorage()
+    await storage.initialize()
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
+    await storage.saveChat({
+      id: 'chat-1',
+      title: 'Chat',
+      messages: [
+        {
+          role: 'user',
+          content: 'hello',
+          timestamp: new Date('2026-01-01T00:00:00Z'),
+          attachments: [
+            {
+              id: 'local-att',
+              type: 'image',
+              fileName: 'image.png',
+              base64: 'AQID',
+            },
+          ],
+        } as any,
+      ],
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    })
+    const snapshot = (await storage.getChat('chat-1'))!
+    expect(snapshot.pendingUpload).toBe(1)
+    const rewrites = [
+      { clientId: 'local-att', serverId: 'srv-att', encryptionKey: 'k' },
+    ]
+
+    // What the sync service does: persist rewrites as soon as the enclave
+    // stores the bytes, then finalize against the snapshot with those
+    // rewrites applied.
+    await storage.recordAttachmentRewrites('chat-1', rewrites)
+    const expected = structuredClone(snapshot)
+    applyAttachmentRewritesInPlace(expected.messages, rewrites)
+    await storage.finalizeUpload({
+      chatId: 'chat-1',
+      rewrites,
+      preUploadUpdatedAt: snapshot.updatedAt,
+      preUploadFingerprint: chatContentFingerprint(expected),
+      syncVersion: 1,
+      uploadedProjectId: undefined,
+      projectIntentIncluded: false,
+    })
+
+    const finalized = (await storage.getChat('chat-1'))!
+    expect(finalized.pendingUpload).toBe(0)
+    expect(finalized.locallyModified).toBe(false)
+    expect(finalized.syncVersion).toBe(1)
+    expect(finalized.messages[0].attachments?.[0]).toEqual(
+      expect.objectContaining({ id: 'srv-att', encryptionKey: 'k' }),
+    )
   })
 
   it('derives pending uploads only for valid dirty content', () => {
