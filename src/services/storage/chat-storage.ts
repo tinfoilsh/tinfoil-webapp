@@ -630,7 +630,10 @@ export class ChatStorageService {
       // keys for its documents; the local copy drops those keys, so the
       // content has to be on this device before it is copied.
       const fork = buildForkedChat(
-        await this.withOffloadedDocuments(source),
+        await this.withOffloadedDocuments({
+          ...source,
+          messages: source.messages.slice(0, messageCount),
+        }),
         messageCount,
         forkId,
       )
@@ -660,10 +663,12 @@ export class ChatStorageService {
     ) {
       return chat
     }
+    const guard = cloudSync.createAccountOperationGuard()
     const fetched = await cloudStorage.loadChatAttachments(
       chat.id,
       chat.messages,
     )
+    guard.assertCurrent()
     const missing = chat.messages.flatMap(
       (message) =>
         message.attachments

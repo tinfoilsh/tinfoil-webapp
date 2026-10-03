@@ -555,6 +555,62 @@ describe('chatStorage convertChatToLocal', () => {
     expect(deleteFromCloudSpy).toHaveBeenCalled()
   })
 
+  it('restores offloaded document content locally and drops its key', async () => {
+    const document = {
+      id: 'doc-remote',
+      type: 'document' as const,
+      fileName: 'report.pdf',
+      mimeType: 'application/pdf',
+      encryptionKey: 'k'.repeat(44),
+    }
+    const chat = chatWithImages(document as any)
+    getChatSpy.mockResolvedValue(chat as unknown)
+    loadChatAttachmentsSpy.mockResolvedValueOnce({
+      images: {},
+      documents: { 'doc-remote': { textContent: 'quarterly numbers' } },
+    })
+    mutateChatSpy.mockImplementationOnce(async (_chatId, mutation) => {
+      const result = mutation(structuredClone(chat))
+      return result.chat
+    })
+
+    await chatStorage.convertChatToLocal('rev_123_abc')
+
+    const mutation = mutateChatSpy.mock.calls[0][1]
+    const mutated = mutation(structuredClone(chat)) as {
+      chat: Chat
+      changed: boolean
+    }
+    expect(mutated.chat.messages[0].attachments![0]).toEqual(
+      expect.objectContaining({
+        id: 'doc-remote',
+        textContent: 'quarterly numbers',
+      }),
+    )
+    expect(mutated.chat.messages[0].attachments![0]).not.toHaveProperty(
+      'encryptionKey',
+    )
+    expect(deleteFromCloudSpy).toHaveBeenCalled()
+  })
+
+  it('refuses to convert when an offloaded document cannot be fetched', async () => {
+    const document = {
+      id: 'doc-remote',
+      type: 'document' as const,
+      fileName: 'report.pdf',
+      encryptionKey: 'k'.repeat(44),
+    }
+    const chat = chatWithImages(document as any)
+    getChatSpy.mockResolvedValue(chat as unknown)
+    loadChatAttachmentsSpy.mockResolvedValueOnce({ images: {}, documents: {} })
+
+    await expect(
+      chatStorage.convertChatToLocal('rev_123_abc'),
+    ).rejects.toBeInstanceOf(ChatImagesUnavailableError)
+    expect(mutateChatSpy).not.toHaveBeenCalled()
+    expect(deleteFromCloudSpy).not.toHaveBeenCalled()
+  })
+
   it('refuses to convert when a synced image cannot be fetched', async () => {
     const chat = chatWithImages(syncedImage('att-remote'))
     getChatSpy.mockResolvedValue(chat as unknown)
