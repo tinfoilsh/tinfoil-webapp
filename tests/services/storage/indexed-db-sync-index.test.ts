@@ -656,6 +656,46 @@ describe('IndexedDB pending sync index', () => {
     expect(attachment?.base64).toBeUndefined()
   })
 
+  it('keeps offloaded documents metadata-only until lazy loading', async () => {
+    const storage = new IndexedDBStorage()
+    await storage.initialize()
+
+    await expect(
+      storage.applyRemoteChatIfFresh({
+        chat: storedChat('lazy-document', {
+          messages: [
+            {
+              role: 'user',
+              content: 'Summarize this',
+              timestamp: new Date('2026-08-12T00:00:00.000Z'),
+              attachments: [
+                {
+                  id: 'remote-doc',
+                  type: 'document',
+                  fileName: 'report.pdf',
+                  mimeType: 'application/pdf',
+                  encryptionKey: 'remote-doc-key',
+                },
+              ],
+            },
+          ],
+        }),
+        syncVersion: 1,
+        expectedLocalUpdatedAt: null,
+      }),
+    ).resolves.toEqual({ applied: true })
+
+    const attachment = (await storage.getChat('lazy-document'))?.messages[0]
+      .attachments?.[0] as Record<string, unknown> | undefined
+    expect(attachment).toMatchObject({
+      id: 'remote-doc',
+      type: 'document',
+      encryptionKey: 'remote-doc-key',
+    })
+    expect(attachment?.textContent).toBeUndefined()
+    expect(attachment?.pages).toBeUndefined()
+  })
+
   it('rejects remote attachments without payload or retrieval identity', async () => {
     const storage = new IndexedDBStorage()
     await storage.initialize()

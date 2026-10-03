@@ -84,9 +84,11 @@ function isUsableRemoteAttachment(value: unknown): value is StoredAttachment {
   if (hasNonEmptyString(attachment, 'base64')) return true
   if (hasNonEmptyString(attachment, 'thumbnailBase64')) return true
   if (attachment.type === 'document') {
+    // Inline content or an enclave key the content can be fetched by.
     return (
       hasNonEmptyString(attachment, 'textContent') ||
-      hasReadablePages(attachment.pages)
+      hasReadablePages(attachment.pages) ||
+      hasNonEmptyString(attachment, 'encryptionKey')
     )
   }
   return (

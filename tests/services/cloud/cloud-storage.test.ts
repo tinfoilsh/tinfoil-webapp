@@ -1103,6 +1103,140 @@ describe('CloudStorageService auth readiness', () => {
     )
   })
 
+  it('uploads document content as a blob and strips it from the chat envelope', async () => {
+    mockAttachmentPut.mockResolvedValueOnce({ id: 'srv-doc', att_key: 'dk' })
+    const service = new CloudStorageService()
+    const pages = [{ page: 1, text: 'hello', image: 'AQID', is_scanned: true }]
+    const result = await service.uploadChat(
+      {
+        id: 'chat-1',
+        title: 'Doc chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'summarize',
+            attachments: [
+              {
+                id: 'local-doc',
+                type: 'document',
+                fileName: 'scan.pdf',
+                mimeType: 'application/pdf',
+                textContent: 'hello',
+                pages,
+              },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastAccessedAt: 0,
+      } as any,
+      { idempotencyKey: 'upload-idem-1' },
+    )
+
+    expect(mockAttachmentPut).toHaveBeenCalledTimes(1)
+    const put = mockAttachmentPut.mock.calls[0][0]
+    expect(put.chatId).toBe('chat-1')
+    expect(JSON.parse(new TextDecoder().decode(put.plaintext))).toEqual({
+      textContent: 'hello',
+      pages,
+    })
+
+    const plaintext = JSON.parse(
+      new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+    )
+    expect(plaintext.messages[0].attachments[0]).toEqual({
+      id: 'srv-doc',
+      type: 'document',
+      fileName: 'scan.pdf',
+      mimeType: 'application/pdf',
+      encryptionKey: 'dk',
+    })
+    expect(JSON.stringify(plaintext)).not.toContain('AQID')
+    expect(result.rewrites).toEqual([
+      expect.objectContaining({
+        clientId: 'local-doc',
+        serverId: 'srv-doc',
+        encryptionKey: 'dk',
+      }),
+    ])
+  })
+
+  it('does not re-upload a document that already has an enclave key', async () => {
+    const service = new CloudStorageService()
+    await service.uploadChat(
+      {
+        id: 'chat-1',
+        title: 'Doc chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'summarize',
+            attachments: [
+              {
+                id: 'srv-doc',
+                type: 'document',
+                fileName: 'scan.pdf',
+                textContent: 'hello',
+                encryptionKey: 'dk',
+              },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastAccessedAt: 0,
+      } as any,
+      { idempotencyKey: 'upload-idem-1' },
+    )
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+    const plaintext = new TextDecoder().decode(
+      mockEnclavePush.mock.calls[0][0].plaintext,
+    )
+    expect(plaintext).not.toContain('"textContent"')
+  })
+
+  it('loads offloaded document content alongside images', async () => {
+    const encoder = new TextEncoder()
+    mockAttachmentGet.mockImplementation(async ({ id }: { id: string }) =>
+      id === 'srv-doc'
+        ? encoder.encode(JSON.stringify({ textContent: 'from blob' }))
+        : new Uint8Array([1, 2, 3]),
+    )
+    const service = new CloudStorageService()
+    const loaded = await service.loadChatAttachments('chat-1', [
+      {
+        role: 'user',
+        content: 'hi',
+        attachments: [
+          {
+            id: 'srv-doc',
+            type: 'document',
+            fileName: 'a.pdf',
+            encryptionKey: 'dk',
+          },
+          {
+            id: 'srv-img',
+            type: 'image',
+            fileName: 'a.png',
+            encryptionKey: 'ik',
+          },
+          {
+            id: 'inline-doc',
+            type: 'document',
+            fileName: 'b.txt',
+            textContent: 'x',
+          },
+        ],
+      } as any,
+    ])
+    expect(loaded.documents).toEqual({
+      'srv-doc': { textContent: 'from blob' },
+    })
+    expect(Object.keys(loaded.images)).toEqual(['srv-img'])
+    expect(mockAttachmentGet).toHaveBeenCalledTimes(2)
+  })
+
   it('rejects an oversized chat before uploading any attachment', async () => {
     const service = new CloudStorageService()
     const chat = {

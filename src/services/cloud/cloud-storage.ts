@@ -47,6 +47,14 @@ import {
   RemoteChatDecodeError,
   type RemoteChatData,
 } from './chat-codec'
+import {
+  decodeDocumentPayload,
+  encodeDocumentPayload,
+  hasInlineDocumentPayload,
+  isOffloadedDocument,
+  stripDocumentPayload,
+  type DocumentPayload,
+} from './document-payload'
 
 const AUTH_INIT_WAIT_MS = 3000
 const RESTORE_DELETED_CHAT_HEADER = RESTORE_DELETED_HEADERS.Chat
@@ -130,6 +138,13 @@ export interface UploadChatOptions {
    * stops further uploads when the caller cannot persist the minted reference.
    */
   onAttachmentsUploaded?: (rewrites: AttachmentRewrite[]) => Promise<void>
+}
+
+export interface LoadedChatAttachments {
+  /** Attachment id to base64 image bytes. */
+  images: Record<string, string>
+  /** Attachment id to decoded document content. */
+  documents: Record<string, DocumentPayload>
 }
 
 /**
@@ -272,6 +287,11 @@ function stripBase64FromMessages(messages: Message[]): Message[] {
       ) {
         const { base64: _removed, ...rest } = withoutLocalReference
         return rest
+      }
+      // Document content travels as its own blob (see
+      // encryptAndUploadAttachments); only metadata rides in the chat.
+      if (hasInlineDocumentPayload(withoutLocalReference)) {
+        return stripDocumentPayload(withoutLocalReference)
       }
       return withoutLocalReference
     }),
@@ -472,8 +492,14 @@ export class CloudStorageService {
     const rewrites: AttachmentRewrite[] = []
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
-        if (att.type === 'image' && att.base64 && !att.encryptionKey) {
-          const raw = base64ToUint8Array(att.base64)
+        const uploadable =
+          (att.type === 'image' && att.base64 && !att.encryptionKey) ||
+          (hasInlineDocumentPayload(att) && !att.encryptionKey)
+        if (uploadable) {
+          const raw =
+            att.type === 'image'
+              ? base64ToUint8Array(att.base64!)
+              : encodeDocumentPayload(att)
           // The enclave mints both the durable attachment id and a
           // fresh per-attachment AES-256 key. It uploads the raw
           // plaintext to buckets sealed under that key (buckets's
@@ -738,15 +764,31 @@ export class CloudStorageService {
    * without overwriting the entire array with a stale snapshot.
    */
   async loadChatImages(
-    _chatId: string,
+    chatId: string,
     messages: Message[],
   ): Promise<Record<string, string>> {
-    const results: Record<string, string> = {}
+    return (await this.loadChatAttachments(chatId, messages)).images
+  }
+
+  /**
+   * Fetch the server-held content for every attachment in `messages`
+   * that lacks it locally: image bytes (returned as base64) and
+   * offloaded document payloads (returned decoded). Failures are
+   * skipped so one unreachable blob does not block the rest; the
+   * caller re-runs while attachments are still missing.
+   */
+  async loadChatAttachments(
+    _chatId: string,
+    messages: Message[],
+  ): Promise<LoadedChatAttachments> {
+    const results: LoadedChatAttachments = { images: {}, documents: {} }
     const tasks: Promise<void>[] = []
 
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
-        if (att.type !== 'image' || att.base64) {
+        const wantsImage = att.type === 'image' && !att.base64
+        const wantsDocument = isOffloadedDocument(att)
+        if (!wantsImage && !wantsDocument) {
           continue
         }
         const attId = att.id
@@ -771,7 +813,14 @@ export class CloudStorageService {
                 )
               }
               if (!plaintext) return
-              results[attId] = uint8ArrayToBase64(plaintext)
+              if (wantsDocument) {
+                results.documents[attId] = decodeDocumentPayload(
+                  attId,
+                  plaintext,
+                )
+              } else {
+                results.images[attId] = uint8ArrayToBase64(plaintext)
+              }
             } catch {
               // Silently skip failed attachments — thumbnail is still available
             }
@@ -785,7 +834,7 @@ export class CloudStorageService {
   }
 
   async loadChatImageForBackup(value: Attachment): Promise<Uint8Array | null> {
-    if (value.type !== 'image') {
+    if (value.type !== 'image' && !isOffloadedDocument(value)) {
       throw new CloudBackupReadError(
         'item_invalid',
         'attachment_type_invalid',

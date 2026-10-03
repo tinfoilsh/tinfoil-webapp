@@ -2,6 +2,10 @@ import { strToU8, zipSync } from 'fflate'
 
 import { getDocumentTextContent } from '@/components/chat/document-content'
 import type { Attachment, Chat } from '@/components/chat/types'
+import {
+  decodeDocumentPayload,
+  isOffloadedDocument,
+} from '@/services/cloud/document-payload'
 
 /**
  * Off-device-import-compatible chat export. When any exported chat has
@@ -186,9 +190,24 @@ export async function buildChatExport(
           exportedAttachments.push(exported)
         } else {
           attachmentCount++
+          let documentContent: Pick<Attachment, 'textContent' | 'pages'> = att
+          if (isOffloadedDocument(att)) {
+            const bytes = await fetchAttachmentBytes(att)
+            if (bytes) {
+              try {
+                documentContent = decodeDocumentPayload(att.id, bytes)
+              } catch {
+                warnings.push(`Could not read document ${att.id}`)
+              }
+            } else {
+              warnings.push(`Could not fetch document ${att.id}`)
+            }
+          }
           const textContent =
-            getDocumentTextContent(att.textContent ?? '', att.pages) ??
-            undefined
+            getDocumentTextContent(
+              documentContent.textContent ?? '',
+              documentContent.pages,
+            ) ?? undefined
           exportedAttachments.push({
             id: att.id,
             type: 'document',
