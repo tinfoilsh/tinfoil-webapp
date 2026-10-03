@@ -123,6 +123,12 @@ export interface UploadChatOptions {
    * fire-and-forget uploads that have no retry caller above them.
    */
   idempotencyKey?: string
+  /**
+   * Invoked once every attachment has been stored by the enclave and
+   * before the chat push. Lets the caller persist the minted ids and
+   * keys immediately so a failed push does not re-upload the bytes.
+   */
+  onAttachmentsUploaded?: (rewrites: AttachmentRewrite[]) => Promise<void>
 }
 
 /**
@@ -380,6 +386,9 @@ export class CloudStorageService {
 
     const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
     const rewrites = await this.encryptAndUploadAttachments(messages, chat.id)
+    if (rewrites.length > 0 && options.onAttachmentsUploaded) {
+      await options.onAttachmentsUploaded(rewrites)
+    }
     const plaintext = buildPlaintext()
 
     const metadata: Record<string, unknown> = { messageCount: messages.length }

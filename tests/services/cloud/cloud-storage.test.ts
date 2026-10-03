@@ -1020,6 +1020,56 @@ describe('CloudStorageService auth readiness', () => {
     expect(plaintext).not.toContain('local-payload-reference')
   })
 
+  it('reports uploaded attachments before pushing the chat', async () => {
+    const service = new CloudStorageService()
+    const order: string[] = []
+    mockAttachmentPut.mockImplementationOnce(async () => {
+      order.push('attachment-put')
+      return { id: 'srv-att', att_key: 'k' }
+    })
+    mockEnclavePush.mockImplementationOnce(async () => {
+      order.push('push')
+      return { etag: '1' }
+    })
+    const onAttachmentsUploaded = vi.fn(async () => {
+      order.push('persist')
+    })
+
+    await service.uploadChat(
+      {
+        id: 'chat-1',
+        title: 'Local chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'hi',
+            attachments: [
+              {
+                id: 'local-att',
+                type: 'image',
+                fileName: 'image.png',
+                base64: 'AQID',
+              },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastAccessedAt: 0,
+      } as any,
+      { idempotencyKey: 'upload-idem-1', onAttachmentsUploaded },
+    )
+
+    expect(order).toEqual(['attachment-put', 'persist', 'push'])
+    expect(onAttachmentsUploaded).toHaveBeenCalledWith([
+      expect.objectContaining({
+        clientId: 'local-att',
+        serverId: 'srv-att',
+        encryptionKey: 'k',
+      }),
+    ])
+  })
+
   it('rejects an oversized chat before uploading any attachment', async () => {
     const service = new CloudStorageService()
     const chat = {

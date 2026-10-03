@@ -887,6 +887,56 @@ describe('IndexedDB sync protocol v2 migration', () => {
     )
   })
 
+  it('records attachment rewrites without touching sync bookkeeping', async () => {
+    const storage = new IndexedDBStorage()
+    await storage.initialize()
+    await storage.saveChat({
+      id: 'chat-1',
+      title: 'Chat',
+      messages: [
+        {
+          role: 'user',
+          content: 'hello',
+          attachments: [
+            {
+              id: 'local-att',
+              type: 'image',
+              fileName: 'image.png',
+              base64: 'AQID',
+            },
+          ],
+        } as any,
+      ],
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    })
+    await storage.markAsSynced('chat-1', 1)
+    await storage.saveChat({
+      ...(await storage.getChat('chat-1'))!,
+      title: 'Edited',
+    })
+    const before = (await storage.getChat('chat-1'))!
+    expect(before.locallyModified).toBe(true)
+
+    await storage.recordAttachmentRewrites('chat-1', [
+      { clientId: 'local-att', serverId: 'srv-att', encryptionKey: 'k' },
+    ])
+
+    const after = (await storage.getChat('chat-1'))!
+    expect(after.messages[0].attachments?.[0]).toEqual(
+      expect.objectContaining({
+        id: 'srv-att',
+        encryptionKey: 'k',
+        base64: 'AQID',
+      }),
+    )
+    expect(after.locallyModified).toBe(true)
+    expect(after.pendingUpload).toBe(1)
+    expect(after.syncVersion).toBe(before.syncVersion)
+    expect(after.updatedAt).toBe(before.updatedAt)
+    expect(after.clock).toBe(before.clock)
+  })
+
   it('derives pending uploads only for valid dirty content', () => {
     const valid = {
       locallyModified: true,
