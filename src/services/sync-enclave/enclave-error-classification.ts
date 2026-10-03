@@ -37,7 +37,8 @@ import { SyncEnclaveError } from './sync-enclave-client'
  *                         the entry here is defensive in case a raw
  *                         code escapes.)
  *   TERMINAL            — FORBIDDEN, IDEMPOTENCY_CONFLICT, UNKNOWN_KEY,
- *                         ATTESTATION_FAILED, malformed responses, and
+ *                         ATTESTATION_FAILED, PAYLOAD_TOO_LARGE,
+ *                         malformed responses, and
  *                         every otherwise-unmapped error. The caller
  *                         must stop trying and surface a specific UI
  *                         error to the user.
@@ -64,6 +65,7 @@ export type EnclaveErrorCode =
   | 'FORBIDDEN'
   | 'NETWORK'
   | 'NOT_FOUND'
+  | 'PAYLOAD_TOO_LARGE'
 
 export interface EnclaveErrorClassification {
   kind: EnclaveErrorKind
@@ -130,6 +132,7 @@ function classifySyncEnclaveError(
       case 'FORBIDDEN':
       case 'ATTESTATION_FAILED':
       case 'AUTH_PERSISTENT':
+      case 'PAYLOAD_TOO_LARGE':
         return { kind: 'TERMINAL', code, status, message, cause: err }
       case 'LEGACY_BLOB_NOT_MIGRATED':
         // The recovery table runs targeted /v1/blobs/migrate and
@@ -195,6 +198,15 @@ function classifySyncEnclaveError(
       return {
         kind: 'USER_DECISION',
         code: 'NOT_FOUND',
+        status,
+        message,
+        cause: err,
+      }
+    }
+    if (status === 413) {
+      return {
+        kind: 'TERMINAL',
+        code: 'PAYLOAD_TOO_LARGE',
         status,
         message,
         cause: err,

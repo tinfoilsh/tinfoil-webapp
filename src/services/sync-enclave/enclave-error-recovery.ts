@@ -87,7 +87,11 @@ export type RecoveryAction =
   | {
       type: 'abort'
       reason:
-        'IDEMPOTENCY_CONFLICT' | 'FORBIDDEN' | 'AUTH_PERSISTENT' | 'UNKNOWN'
+        | 'IDEMPOTENCY_CONFLICT'
+        | 'FORBIDDEN'
+        | 'AUTH_PERSISTENT'
+        | 'PAYLOAD_TOO_LARGE'
+        | 'UNKNOWN'
     }
 
 export interface RecoveryDecision {
@@ -163,6 +167,10 @@ const ACTIONS: Record<
   FORBIDDEN: () => ({ type: 'abort', reason: 'FORBIDDEN' }),
   NETWORK: () => ({ type: 'retry', reason: 'NETWORK' }),
   NOT_FOUND: () => ({ type: 'surface-not-found' }),
+  // The content itself is over the enclave's plaintext cap; retrying
+  // the same bytes can never succeed. The user has to shrink or split
+  // the chat, so this stays failed until the content changes.
+  PAYLOAD_TOO_LARGE: () => ({ type: 'abort', reason: 'PAYLOAD_TOO_LARGE' }),
 }
 
 /**

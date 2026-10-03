@@ -31,6 +31,7 @@ describe('decideRecovery', () => {
       'FORBIDDEN',
       'NETWORK',
       'NOT_FOUND',
+      'PAYLOAD_TOO_LARGE',
     ]
     for (const code of required) {
       expect(COVERED_CODES, code).toContain(code)
@@ -52,6 +53,7 @@ describe('decideRecovery', () => {
     ['FORBIDDEN', 'abort'],
     ['NETWORK', 'retry'],
     ['NOT_FOUND', 'surface-not-found'],
+    ['PAYLOAD_TOO_LARGE', 'abort'],
   ])('maps %s → %s', (code, type) => {
     const decision = decideRecovery(err(code))
     expect(decision.action.type).toBe(type)
@@ -63,6 +65,14 @@ describe('decideRecovery', () => {
     expect(decision.action.type).toBe('retry')
     if (decision.action.type === 'retry') {
       expect(decision.action.reason).toBe('NETWORK')
+    }
+  })
+
+  it('never retries an oversized payload', () => {
+    const decision = decideRecovery(err('PAYLOAD_TOO_LARGE', 413))
+    expect(decision.action.type).toBe('abort')
+    if (decision.action.type === 'abort') {
+      expect(decision.action.reason).toBe('PAYLOAD_TOO_LARGE')
     }
   })
 
