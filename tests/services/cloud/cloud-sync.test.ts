@@ -24,6 +24,7 @@ const {
   downloadChats,
   forkCloudChat,
   finalizeUpload,
+  recordAttachmentRewrites,
   getPendingUploadChats,
   applyRemoteChatIfFresh,
   listChats,
@@ -44,6 +45,7 @@ const {
   downloadChats: vi.fn(),
   forkCloudChat: vi.fn(),
   finalizeUpload: vi.fn(),
+  recordAttachmentRewrites: vi.fn(),
   getPendingUploadChats: vi.fn(),
   applyRemoteChatIfFresh: vi.fn(),
   listChats: vi.fn(),
@@ -75,6 +77,7 @@ vi.mock('@/services/storage/indexed-db', () => ({
     clearRevisionSyncState,
     getChat,
     finalizeUpload,
+    recordAttachmentRewrites,
     getPendingUploadChats,
     applyRemoteChatIfFresh,
     getAllChats,
@@ -132,6 +135,7 @@ describe('CloudSyncService revision coordinator routing', () => {
     clearRevisionSyncState.mockResolvedValue(undefined)
     canWriteToCloud.mockResolvedValue(false)
     finalizeUpload.mockResolvedValue(undefined)
+    recordAttachmentRewrites.mockResolvedValue(undefined)
     getPendingUploadChats.mockResolvedValue([])
     applyRemoteChatIfFresh.mockResolvedValue({ applied: true })
     getAllChats.mockResolvedValue([])
@@ -407,6 +411,38 @@ describe('CloudSyncService revision coordinator routing', () => {
         errors: [expect.stringContaining('Chat upload did not finalize')],
       },
     )
+  })
+
+  it('persists minted attachment ids before the chat push so a failed push does not re-upload them', async () => {
+    canWriteToCloud.mockResolvedValue(true)
+    getChat.mockResolvedValue({
+      id: 'chat-1',
+      syncUserId: 'user-1',
+      locallyModified: true,
+      pendingUpload: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      messages: [
+        {
+          role: 'user',
+          content: 'hello',
+          attachments: [{ id: 'local-att', type: 'image', base64: 'AQID' }],
+        },
+      ],
+    })
+    const rewrites = [
+      { clientId: 'local-att', serverId: 'srv-att', encryptionKey: 'k' },
+    ]
+    uploadChat.mockImplementation(async (_chat, options) => {
+      await options.onAttachmentsUploaded?.(rewrites)
+      throw new SyncEnclaveError('push failed', 409, 'IDEMPOTENCY_CONFLICT')
+    })
+
+    const service = new CloudSyncService()
+    await service.backupChat('chat-1')
+    await expect(service.waitForAllUploads()).rejects.toThrow('push failed')
+
+    expect(recordAttachmentRewrites).toHaveBeenCalledWith('chat-1', rewrites)
+    expect(finalizeUpload).not.toHaveBeenCalled()
   })
 
   it('marks an oversized chat as failed and skips it until its content changes', async () => {
