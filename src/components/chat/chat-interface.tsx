@@ -2958,7 +2958,7 @@ export function ChatInterface({
           title: 'Failed to move chat to local',
           description:
             error instanceof ChatImagesUnavailableError
-              ? 'Some images in this chat could not be downloaded. Check your connection and try again.'
+              ? 'Some attachments in this chat could not be downloaded. Check your connection and try again.'
               : 'Please try again.',
           variant: 'destructive',
         })

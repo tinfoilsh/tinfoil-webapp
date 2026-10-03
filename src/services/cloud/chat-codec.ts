@@ -88,7 +88,8 @@ function isUsableRemoteAttachment(value: unknown): value is StoredAttachment {
     return (
       hasNonEmptyString(attachment, 'textContent') ||
       hasReadablePages(attachment.pages) ||
-      hasNonEmptyString(attachment, 'encryptionKey')
+      (hasNonEmptyString(attachment, 'id') &&
+        hasNonEmptyString(attachment, 'encryptionKey'))
     )
   }
   return (
