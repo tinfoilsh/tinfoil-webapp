@@ -151,6 +151,8 @@ const DECRYPTION_RETRY_BATCH_SIZE = 5
 export const CROSS_TAB_SYNC_LOCK = 'tinfoil-cloud-sync'
 export const CROSS_TAB_SYNC_LOCK_OPTIONS = { mode: 'exclusive' } as const
 const PAYLOAD_TOO_LARGE_STATUS = 413
+export const PURGED_ATTACHMENTS_MESSAGE =
+  'Some attachments in this chat are no longer available in the cloud'
 export const CHAT_TOO_LARGE_MESSAGE =
   'This chat is too large to sync. Remove some attachments or start a new chat to continue syncing.'
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
@@ -696,12 +698,11 @@ export class CloudSyncService {
     const { chat, release } = prepared
     try {
       const preUploadUpdatedAt = chat.updatedAt
-      const preUploadFingerprint = chatContentFingerprint(chat)
       const preUploadVersion = chat.syncVersion ?? 0
-      const { syncVersion, rewrites, projectIntentIncluded } =
-        await cloudStorage.uploadChat(chat, {
+      const upload = (snapshot: StoredChat, idempotencyKey: string) =>
+        cloudStorage.uploadChat(snapshot, {
           ...options,
-          idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
+          idempotencyKey,
           onAttachmentsUploaded: (uploaded) =>
             this.persistAttachmentRewrites(
               chatId,
@@ -710,6 +711,37 @@ export class CloudSyncService {
               userId,
             ),
         })
+      let result: Awaited<ReturnType<typeof upload>>
+      try {
+        result = await upload(
+          chat,
+          options.idempotencyKey ?? newIdempotencyKey(),
+        )
+      } catch (error) {
+        // The server purged blobs this chat still references. Callers
+        // of this one-shot path await the outcome, so heal in-line:
+        // forget the dead server keys and retry once as a new logical
+        // write with the bytes re-sent.
+        const decision = decideRecovery(error)
+        if (decision.action.type !== 'reupload-attachments-and-retry') {
+          throw error
+        }
+        await this.forgetPurgedAttachmentsOrFail(
+          chatId,
+          generation,
+          userId,
+          decision.action.attachmentIds,
+          error,
+        )
+        const healed = await indexedDBStorage.getChat(chatId)
+        this.ensureCurrentAccount(generation, userId)
+        if (!healed) throw error
+        // Retry against the freshly-read row; its attachments now lack
+        // keys so the upload re-sends them.
+        chat.messages = healed.messages
+        result = await upload(chat, newIdempotencyKey())
+      }
+      const { syncVersion, rewrites, projectIntentIncluded } = result
       this.ensureCurrentAccount(generation, userId)
       await indexedDBStorage.finalizeUpload({
         chatId,
@@ -911,6 +943,15 @@ export class CloudSyncService {
       await this.resolveConflictByPullingRemote(chatId, generation)
       return
     }
+    if (decision.action.type === 'reupload-attachments-and-retry') {
+      await this.reuploadPurgedAttachments(
+        chatId,
+        generation,
+        decision.action.attachmentIds,
+        error,
+      )
+      return
+    }
     if (decision.action.type === 'refresh-current-key-and-retry') {
       reportKeyActionRequired('key-mismatch')
     } else if (decision.action.type === 'trigger-recovery-wizard') {
@@ -936,6 +977,59 @@ export class CloudSyncService {
       }
     }
     throw error
+  }
+
+  /**
+   * The server purged attachment blobs this device still references.
+   * Drop their server identity locally so the next logical upload
+   * re-sends the bytes, then re-enqueue. If a blob cannot be re-sent
+   * (this device only ever held its thumbnail) the chat cannot be
+   * repaired from here: surface it rather than loop.
+   */
+  private async reuploadPurgedAttachments(
+    chatId: string,
+    generation: number,
+    attachmentIds: string[],
+    error: unknown,
+  ): Promise<void> {
+    await this.forgetPurgedAttachmentsOrFail(
+      chatId,
+      generation,
+      this.readActiveUserId(),
+      attachmentIds,
+      error,
+    )
+    // Awaited so the re-enqueue lands before the current coalescer
+    // worker checks `dirty` and resolves its waiters; otherwise a
+    // caller awaiting this upload can be told it failed while the
+    // repair is about to succeed.
+    await this.backupChat(chatId)
+  }
+
+  /**
+   * Drop the server identity of the named attachments so the next
+   * upload re-sends their bytes. Shared by the background recovery
+   * path (which re-enqueues) and the one-shot path (which retries in
+   * place). If any named attachment cannot be re-sent from this device
+   * the chat is reported as failed and the original error rethrown.
+   */
+  private async forgetPurgedAttachmentsOrFail(
+    chatId: string,
+    generation: number,
+    userId: string | null,
+    attachmentIds: string[],
+    error: unknown,
+  ): Promise<void> {
+    this.ensureCurrentAccount(generation, userId)
+    const reset = await indexedDBStorage.forgetServerAttachments(
+      chatId,
+      attachmentIds,
+    )
+    this.ensureCurrentAccount(generation, userId)
+    if (reset.length < attachmentIds.length) {
+      reportChatSyncFailed(chatId, PURGED_ATTACHMENTS_MESSAGE)
+      throw error
+    }
   }
 
   private async resolveConflictByPullingRemote(

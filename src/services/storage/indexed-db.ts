@@ -2798,6 +2798,43 @@ export class IndexedDBStorage {
   }
 
   /**
+   * Forget the server identity of attachments whose blobs the server
+   * no longer holds, so the next upload re-sends their bytes. Only
+   * attachments whose full content is still on this device are reset:
+   * an image known only by its thumbnail cannot be re-uploaded, and
+   * keeping its stale key makes that visible to the caller. Returns
+   * the ids that were reset. Sync bookkeeping (`locallyModified`,
+   * `syncVersion`) is untouched; the chat is already dirty when this
+   * runs because the push that revealed the gap failed.
+   */
+  async forgetServerAttachments(
+    chatId: string,
+    attachmentIds: readonly string[],
+  ): Promise<string[]> {
+    if (attachmentIds.length === 0) return []
+    const wanted = new Set(attachmentIds)
+    const reset: string[] = []
+    await this.mutateChat(chatId, (chat) => {
+      for (const message of chat.messages ?? []) {
+        for (const attachment of message.attachments ?? []) {
+          if (!wanted.has(attachment.id)) continue
+          const canReupload =
+            attachment.type === 'image'
+              ? attachment.base64 !== undefined
+              : attachment.textContent !== undefined ||
+                attachment.pages !== undefined
+          if (!canReupload) continue
+          delete (attachment as { encryptionKey?: string }).encryptionKey
+          delete (attachment as { key?: string }).key
+          reset.push(attachment.id)
+        }
+      }
+      return { chat, changed: reset.length > 0 }
+    })
+    return reset
+  }
+
+  /**
    * Atomic upload finalization (§C6 / §H5).
    *
    * Runs inside `saveQueue` so it is serialized with any concurrent

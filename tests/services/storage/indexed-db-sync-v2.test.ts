@@ -995,6 +995,74 @@ describe('IndexedDB sync protocol v2 migration', () => {
     )
   })
 
+  it('forgets server identity only for attachments it can re-upload', async () => {
+    const storage = new IndexedDBStorage()
+    await storage.initialize()
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
+    await storage.saveChat({
+      id: 'chat-1',
+      title: 'Chat',
+      messages: [
+        {
+          role: 'user',
+          content: 'hello',
+          timestamp: new Date('2026-01-01T00:00:00Z'),
+          attachments: [
+            {
+              id: 'srv-full',
+              type: 'image',
+              fileName: 'full.png',
+              base64: 'AQID',
+              encryptionKey: 'k-full',
+            },
+            {
+              id: 'srv-thumb-only',
+              type: 'image',
+              fileName: 'thumb.png',
+              thumbnailBase64: 'dGh1bWI=',
+              encryptionKey: 'k-thumb',
+            },
+            {
+              id: 'srv-doc',
+              type: 'document',
+              fileName: 'doc.txt',
+              textContent: 'text',
+              encryptionKey: 'k-doc',
+            },
+            {
+              id: 'srv-untouched',
+              type: 'image',
+              fileName: 'other.png',
+              base64: 'BAUG',
+              encryptionKey: 'k-other',
+            },
+          ],
+        } as any,
+      ],
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    })
+
+    const reset = await storage.forgetServerAttachments('chat-1', [
+      'srv-full',
+      'srv-thumb-only',
+      'srv-doc',
+    ])
+
+    expect(reset).toEqual(['srv-full', 'srv-doc'])
+    const after = (await storage.getChat('chat-1'))!
+    const byId = Object.fromEntries(
+      after.messages[0].attachments!.map((a) => [a.id, a]),
+    )
+    expect(byId['srv-full']).not.toHaveProperty('encryptionKey')
+    expect(byId['srv-full'].base64).toBe('AQID')
+    expect(byId['srv-doc']).not.toHaveProperty('encryptionKey')
+    expect(byId['srv-doc'].textContent).toBe('text')
+    expect(byId['srv-thumb-only'].encryptionKey).toBe('k-thumb')
+    expect(byId['srv-untouched'].encryptionKey).toBe('k-other')
+    expect(after.locallyModified).toBe(true)
+  })
+
   it('derives pending uploads only for valid dirty content', () => {
     const valid = {
       locallyModified: true,

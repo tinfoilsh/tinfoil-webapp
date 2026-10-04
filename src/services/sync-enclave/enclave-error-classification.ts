@@ -66,6 +66,8 @@ export type EnclaveErrorCode =
   | 'NETWORK'
   | 'NOT_FOUND'
   | 'PAYLOAD_TOO_LARGE'
+  | 'MISSING_ATTACHMENT'
+  | 'ATTACHMENT_PURGE_IN_PROGRESS'
 
 export interface EnclaveErrorClassification {
   kind: EnclaveErrorKind
@@ -127,6 +129,27 @@ function classifySyncEnclaveError(
       case 'EXISTING_DATA_UNDER_OTHER_KEY':
       case 'NOT_FOUND':
         return { kind: 'USER_DECISION', code, status, message, cause: err }
+      case 'MISSING_ATTACHMENT':
+        // The server purged blobs this device still references. The
+        // bytes are still local; the recovery driver drops the stale
+        // server keys so the next logical upload re-sends them.
+        return {
+          kind: 'RETRYABLE_REFRESH',
+          code,
+          status,
+          message,
+          cause: err,
+        }
+      case 'ATTACHMENT_PURGE_IN_PROGRESS':
+        // Another enclave holds a short lease on this id's previous
+        // blob; the same upload succeeds once it settles.
+        return {
+          kind: 'RETRYABLE_TRANSIENT',
+          code,
+          status,
+          message,
+          cause: err,
+        }
       case 'IDEMPOTENCY_CONFLICT':
       case 'UNKNOWN_KEY':
       case 'FORBIDDEN':
