@@ -113,6 +113,20 @@ describe('document hydration at sendChatStream', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
+  it.each([false, true])(
+    'classifies an unkeyed missing document as unavailable with sync enabled=%s',
+    async (enabled) => {
+      setCloudSyncEnabled(enabled)
+      for (const encryptionKey of [undefined, '']) {
+        await expect(
+          send([{ ...document, encryptionKey }]),
+        ).rejects.toMatchObject({ reason: 'unavailable' })
+      }
+      expect(attachmentGet).not.toHaveBeenCalled()
+      expect(create).not.toHaveBeenCalled()
+    },
+  )
+
   it('allows guest inline inference after explicit sign-out has completed', async () => {
     localStorage.removeItem(AUTH_ACTIVE_USER_ID)
     setCloudSyncEnabled(false)

@@ -63,6 +63,12 @@ describe('document payload codec', () => {
     { pages: [{ page: 1, text: {}, image: '', is_scanned: false }] },
     { pages: [{ page: 1, text: '', image: 4, is_scanned: false }] },
     { pages: [{ page: 1, text: '', image: '', is_scanned: 'false' }] },
+    { pages: [{ page: -1, text: 'text', image: '', is_scanned: false }] },
+    { pages: [{ page: 0.5, text: 'text', image: '', is_scanned: false }] },
+    { pages: [{ page: 1, image: '', is_scanned: false }] },
+    { pages: [{ page: 1, text: 'text', image: '' }] },
+    { pages: [{ page: 1, text: 'OCR text', is_scanned: true }] },
+    { pages: [{ page: 1, text: 'OCR text', image: '', is_scanned: true }] },
   ])('rejects missing content or malformed pages: %j', (payload) => {
     expect(() =>
       decodeDocumentPayload(

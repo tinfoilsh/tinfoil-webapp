@@ -54,13 +54,15 @@ export async function hydrateDocumentAttachments(
           continue
         }
         if (hasInlineDocumentPayload(attachment)) {
-          validateDocumentPayload(attachment.id, attachment)
-          attachments.push(attachment)
+          attachments.push({
+            ...attachment,
+            ...validateDocumentPayload(attachment.id, attachment),
+          })
           continue
         }
-        requireDocumentCloudRead()
         if (!isServerKeyedDocument(attachment))
           throw new DocumentHydrationError('unavailable')
+        requireDocumentCloudRead()
         try {
           const bytes = await attachmentGet(
             { id: attachment.id, attKeyB64: attachment.encryptionKey! },
