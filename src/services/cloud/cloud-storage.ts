@@ -47,6 +47,7 @@ import {
   RemoteChatDecodeError,
   type RemoteChatData,
 } from './chat-codec'
+import { hydrateDocumentAttachments } from './document-hydration'
 import {
   decodeDocumentPayload,
   encodeDocumentPayload,
@@ -289,7 +290,10 @@ function stripBase64FromMessages(messages: Message[]): Message[] {
       }
       // Document content travels as its own blob (see
       // encryptAndUploadAttachments); only metadata rides in the chat.
-      if (hasInlineDocumentPayload(withoutLocalReference)) {
+      if (
+        CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED &&
+        hasInlineDocumentPayload(withoutLocalReference)
+      ) {
         return stripDocumentPayload(withoutLocalReference)
       }
       return withoutLocalReference
@@ -356,7 +360,7 @@ export class CloudStorageService {
     // The `finalizeUpload` path applies the rewrites against the
     // FRESHEST local copy by stable client id, so an interleaved
     // user edit can't carry the wrong server id back to disk (§H5).
-    const messages: Message[] = ((chat.messages as Message[]) || []).map(
+    let messages: Message[] = ((chat.messages as Message[]) || []).map(
       (msg) => ({
         ...msg,
         attachments: msg.attachments
@@ -364,6 +368,10 @@ export class CloudStorageService {
           : undefined,
       }),
     )
+
+    if (!CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED) {
+      messages = await hydrateDocumentAttachments(messages)
+    }
 
     // Stamp the clock version this push will create so a remote reader
     // can tell the clock is current (etag === clockVersion) versus a
@@ -491,7 +499,9 @@ export class CloudStorageService {
       for (const att of msg.attachments || []) {
         const uploadable =
           (att.type === 'image' && att.base64 && !att.encryptionKey) ||
-          (hasInlineDocumentPayload(att) && !att.encryptionKey)
+          (CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED &&
+            hasInlineDocumentPayload(att) &&
+            !att.encryptionKey)
         if (uploadable) {
           const raw =
             att.type === 'image'

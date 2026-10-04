@@ -1,4 +1,5 @@
 import type { Attachment, DocumentPage } from '@/components/chat/types'
+import { z } from 'zod'
 
 /**
  * Document attachment content stored as an enclave attachment blob.
@@ -16,6 +17,44 @@ export interface DocumentPayload {
   pages?: DocumentPage[]
 }
 
+const documentPayloadSchema = z
+  .object({
+    textContent: z.string().optional(),
+    pages: z
+      .array(
+        z.object({
+          page: z.number().int().positive(),
+          text: z.string(),
+          image: z.string(),
+          is_scanned: z.boolean(),
+        }),
+      )
+      .optional(),
+  })
+  .refine(
+    (payload) =>
+      payload.textContent !== undefined || payload.pages !== undefined,
+  )
+
+export function validateDocumentPayload(
+  attachmentId: string,
+  value: unknown,
+): DocumentPayload {
+  const result = documentPayloadSchema.safeParse(value)
+  if (!result.success) {
+    throw new DocumentPayloadDecodeError(attachmentId)
+  }
+  return result.data
+}
+
+export function isServerKeyedDocument(attachment: Attachment): boolean {
+  return (
+    attachment.type === 'document' &&
+    typeof attachment.encryptionKey === 'string' &&
+    attachment.encryptionKey.length > 0
+  )
+}
+
 export function hasInlineDocumentPayload(attachment: Attachment): boolean {
   return (
     attachment.type === 'document' &&
@@ -30,9 +69,7 @@ export function hasInlineDocumentPayload(attachment: Attachment): boolean {
  */
 export function isOffloadedDocument(attachment: Attachment): boolean {
   return (
-    attachment.type === 'document' &&
-    typeof attachment.encryptionKey === 'string' &&
-    attachment.encryptionKey.length > 0 &&
+    isServerKeyedDocument(attachment) &&
     attachment.textContent === undefined &&
     attachment.pages === undefined
   )
@@ -71,24 +108,7 @@ export function decodeDocumentPayload(
   } catch (error) {
     throw new DocumentPayloadDecodeError(attachmentId, { cause: error })
   }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new DocumentPayloadDecodeError(attachmentId)
-  }
-  const record = parsed as Record<string, unknown>
-  const payload: DocumentPayload = {}
-  if (record.textContent !== undefined) {
-    if (typeof record.textContent !== 'string') {
-      throw new DocumentPayloadDecodeError(attachmentId)
-    }
-    payload.textContent = record.textContent
-  }
-  if (record.pages !== undefined) {
-    if (!Array.isArray(record.pages)) {
-      throw new DocumentPayloadDecodeError(attachmentId)
-    }
-    payload.pages = record.pages as DocumentPage[]
-  }
-  return payload
+  return validateDocumentPayload(attachmentId, parsed)
 }
 
 /**

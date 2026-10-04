@@ -53,6 +53,8 @@ export const PAGINATION = {
 
 // Cloud sync settings
 export const CLOUD_SYNC = {
+  // Requires upgraded readers and a server-enforced writer version boundary.
+  DOCUMENT_ATTACHMENT_WRITES_ENABLED: false,
   RETRY_DELAY: 100, // milliseconds
   // Mirrors the sync enclave's envelope plaintext cap. Checked before
   // any bytes leave the device so an oversized chat fails fast instead
