@@ -55,6 +55,23 @@ describe('document payload codec', () => {
     expect(isOffloadedDocument(image)).toBe(false)
   })
 
+  it.each([
+    {},
+    { pages: [null] },
+    { pages: ['page'] },
+    { pages: [{ page: 1 }] },
+    { pages: [{ page: 1, text: {}, image: '', is_scanned: false }] },
+    { pages: [{ page: 1, text: '', image: 4, is_scanned: false }] },
+    { pages: [{ page: 1, text: '', image: '', is_scanned: 'false' }] },
+  ])('rejects missing content or malformed pages: %j', (payload) => {
+    expect(() =>
+      decodeDocumentPayload(
+        'doc-1',
+        new TextEncoder().encode(JSON.stringify(payload)),
+      ),
+    ).toThrow(DocumentPayloadDecodeError)
+  })
+
   it('rejects payloads that are not a document object', () => {
     const encoder = new TextEncoder()
     for (const bad of ['not json', '[]', '{"textContent":5}', '{"pages":{}}']) {

@@ -53,6 +53,8 @@ export const PAGINATION = {
 
 // Cloud sync settings
 export const CLOUD_SYNC = {
+  // Requires upgraded readers and a server-enforced writer version boundary.
+  DOCUMENT_ATTACHMENT_WRITES_ENABLED: false,
   RETRY_DELAY: 100, // milliseconds
   // Chats per content pull request. The enclave accepts up to MAX_PULL_IDS
   // but that bound protects the server; the client must decrypt and parse
