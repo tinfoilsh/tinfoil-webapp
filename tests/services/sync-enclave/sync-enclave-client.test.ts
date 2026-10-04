@@ -2,6 +2,10 @@ import {
   resetSyncEnclaveClient,
   SyncEnclaveError,
 } from '@/services/sync-enclave/sync-enclave-client'
+import {
+  SYNC_HEADERS,
+  SYNC_PROTOCOL_VERSION,
+} from '@/services/sync-enclave/wire-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock the tinfoil SDK so tests don't try to verify a real enclave.
@@ -160,7 +164,7 @@ describe('SyncEnclaveClient', () => {
     const headers = mockFetch.mock.calls[0][1]?.headers as Headers
     expect(headers.get('Authorization')).toBe('Bearer test-jwt')
     expect(headers.get('Accept')).toBe('application/json')
-    expect(headers.get('X-Sync-Protocol')).toBe('3')
+    expect(headers.get(SYNC_HEADERS.SyncProtocol)).toBe(SYNC_PROTOCOL_VERSION)
   })
 
   it('overwrites a caller-supplied authorization header with the current JWT', async () => {
