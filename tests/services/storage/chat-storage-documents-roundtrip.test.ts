@@ -25,20 +25,22 @@ vi.mock('@/services/sync-enclave/sync-api', async (original) => ({
 vi.mock('@/services/cloud/cek-encoding', () => ({
   requirePrimaryKeyB64: () => 'test-key',
 }))
-vi.mock('@/services/cloud/cloud-sync', () => ({
-  cloudSync: {
-    createAccountOperationGuard: () => {
-      const userId = localStorage.getItem(AUTH_ACTIVE_USER_ID)
-      return { userId, isCurrent: () => true, assertCurrent() {} }
+vi.mock('@/services/cloud/cloud-sync', async (original) => {
+  const { cloudSync } =
+    await original<typeof import('@/services/cloud/cloud-sync')>()
+  return {
+    cloudSync: {
+      createAccountOperationGuard: () =>
+        cloudSync.createAccountOperationGuard(),
+      deleteFromCloud,
+      backupChatNow: async (id: string) => {
+        const chat = await indexedDBStorage.getChat(id)
+        if (!chat) throw new Error('Chat missing')
+        return cloudStorage.uploadChat(chat, { restoreDeleted: true })
+      },
     },
-    deleteFromCloud,
-    backupChatNow: async (id: string) => {
-      const chat = await indexedDBStorage.getChat(id)
-      if (!chat) throw new Error('Chat missing')
-      return cloudStorage.uploadChat(chat, { restoreDeleted: true })
-    },
-  },
-}))
+  }
+})
 
 const CHAT_ID = 'document-roundtrip'
 const pages = [{ page: 1, text: '', image: 'AQID', is_scanned: true }]
@@ -155,6 +157,27 @@ describe('document cloud/local round trips with real IndexedDB', () => {
     expect(deleteFromCloud).not.toHaveBeenCalled()
     expect((await indexedDBStorage.getChat(CHAT_ID))?.isLocalOnly).toBe(false)
   })
+
+  it.each([false, true])(
+    'aborts conversion on opt-out during hydration even if re-enabled=%s',
+    async (reenable) => {
+      await storeDocument({})
+      attachmentGet.mockImplementationOnce(async () => {
+        setCloudSyncEnabled(false)
+        if (reenable) setCloudSyncEnabled(true)
+        return new TextEncoder().encode(
+          JSON.stringify({ textContent: 'fetched content' }),
+        )
+      })
+      await expect(
+        new ChatStorageService().convertChatToLocal(CHAT_ID),
+      ).rejects.toThrow('Cloud account changed')
+      const chat = await indexedDBStorage.getChat(CHAT_ID)
+      expect(chat?.isLocalOnly).toBe(false)
+      expect(chat?.messages[0].attachments![0].encryptionKey).toBe('old-key')
+      expect(deleteFromCloud).not.toHaveBeenCalled()
+    },
+  )
 
   it('forks hydrated documents locally without fetching after opt-out', async () => {
     await storeDocument({ textContent: 'retained prose', pages })
