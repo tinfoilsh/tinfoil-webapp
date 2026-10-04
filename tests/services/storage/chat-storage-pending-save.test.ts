@@ -593,6 +593,41 @@ describe('chatStorage convertChatToLocal', () => {
     expect(deleteFromCloudSpy).toHaveBeenCalled()
   })
 
+  it.each([
+    { textContent: 'retained text' },
+    { pages: [{ page: 1, text: '', image: 'AQID', is_scanned: true }] },
+  ])(
+    'detaches an already hydrated document before cloud deletion: %j',
+    async (payload) => {
+      const document = {
+        id: 'doc',
+        type: 'document',
+        fileName: 'scan.pdf',
+        encryptionKey: 'old-key',
+        ...payload,
+      }
+      const chat = chatWithImages(document as any)
+      getChatSpy.mockResolvedValue(chat)
+      loadChatAttachmentsSpy.mockResolvedValueOnce({
+        images: {},
+        documents: {},
+      })
+      let retained: Chat | undefined
+      mutateChatSpy.mockImplementationOnce(async (_id, mutation) => {
+        retained = mutation(structuredClone(chat)).chat as Chat
+        return retained
+      })
+      deleteFromCloudSpy.mockImplementationOnce(async () => {
+        expect(retained?.messages[0].attachments?.[0]).toMatchObject(payload)
+        expect(retained?.messages[0].attachments?.[0]).not.toHaveProperty(
+          'encryptionKey',
+        )
+      })
+      await chatStorage.convertChatToLocal(chat.id)
+      expect(deleteFromCloudSpy).toHaveBeenCalledTimes(1)
+    },
+  )
+
   it('refuses to convert when an offloaded document cannot be fetched', async () => {
     const document = {
       id: 'doc-remote',
@@ -850,6 +885,38 @@ describe('chatStorage forkChat', () => {
     expect(forkCloudChatSpy).not.toHaveBeenCalled()
     expect(fork.isLocalOnly).toBe(true)
     expect(saveChatSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses missing document forks without fetching after sync opt-out', async () => {
+    setCloudSyncEnabled(false)
+    const source = {
+      ...storedSource,
+      isLocalOnly: false,
+      messages: [
+        {
+          ...storedSource.messages[0],
+          attachments: [
+            {
+              id: 'doc',
+              type: 'document',
+              fileName: 'scan.pdf',
+              encryptionKey: 'key',
+            },
+          ],
+        },
+      ],
+    }
+    getChatSpy.mockResolvedValue(source)
+    loadChatAttachmentsSpy.mockResolvedValueOnce({
+      images: {},
+      documents: { doc: { textContent: 'remote' } },
+    })
+    await expect(chatStorage.forkChat(source.id, 1, 'fork')).rejects.toThrow(
+      /enable cloud sync/i,
+    )
+    expect(loadChatAttachmentsSpy).not.toHaveBeenCalled()
+    expect(saveChatSpy).not.toHaveBeenCalled()
+    expect(forkCloudChatSpy).not.toHaveBeenCalled()
   })
 
   it('rejects a fork point outside a synced conversation before reaching the enclave', async () => {

@@ -9,7 +9,13 @@ import {
   type LoadedChatAttachments,
 } from '../cloud/cloud-storage'
 import { cloudSync } from '../cloud/cloud-sync'
-import { isOffloadedDocument } from '../cloud/document-payload'
+import { requireDocumentCloudRead } from '../cloud/document-hydration'
+import {
+  hasInlineDocumentPayload,
+  isOffloadedDocument,
+  isServerKeyedDocument,
+  validateDocumentPayload,
+} from '../cloud/document-payload'
 import { streamingTracker } from '../cloud/streaming-tracker'
 import { newIdempotencyKey } from '../sync-enclave/sync-api'
 import { chatEvents } from './chat-events'
@@ -48,7 +54,7 @@ function isServerKeyedAttachment(
     StorageChat['messages'][number]['attachments']
   >[number],
 ): boolean {
-  return isServerKeyedImage(attachment) || isOffloadedDocument(attachment)
+  return isServerKeyedImage(attachment) || isServerKeyedDocument(attachment)
 }
 
 function hasLocalContent(
@@ -60,7 +66,13 @@ function hasLocalContent(
   if (attachment.type === 'image') {
     return Boolean(attachment.base64 || fetched.images[attachment.id])
   }
-  return !isOffloadedDocument(attachment) || attachment.id in fetched.documents
+  return (
+    hasInlineDocumentPayload(attachment) ||
+    hasInlineDocumentPayload({
+      ...attachment,
+      ...fetched.documents[attachment.id],
+    })
+  )
 }
 
 export class ChatStorageService {
@@ -500,6 +512,13 @@ export class ChatStorageService {
     const stored = await indexedDBStorage.getChat(chatId)
     if (!stored) return
     const guard = cloudSync.createAccountOperationGuard()
+    if (
+      stored.messages.some((message) =>
+        message.attachments?.some(isOffloadedDocument),
+      )
+    ) {
+      requireDocumentCloudRead()
+    }
     const fetched = await cloudStorage.loadChatAttachments(
       chatId,
       stored.messages,
@@ -546,7 +565,15 @@ export class ChatStorageService {
               base64: attachment.base64 ?? fetched.images[attachment.id],
             }
           }
-          return { ...detached, ...fetched.documents[attachment.id] }
+          return {
+            ...detached,
+            ...validateDocumentPayload(
+              attachment.id,
+              hasInlineDocumentPayload(attachment)
+                ? attachment
+                : fetched.documents[attachment.id],
+            ),
+          }
         }),
       }))
       return { chat: changed ? { ...chat, messages } : chat, changed }
@@ -663,12 +690,14 @@ export class ChatStorageService {
     ) {
       return chat
     }
+    requireDocumentCloudRead()
     const guard = cloudSync.createAccountOperationGuard()
     const fetched = await cloudStorage.loadChatAttachments(
       chat.id,
       chat.messages,
     )
     guard.assertCurrent()
+    requireDocumentCloudRead()
     const missing = chat.messages.flatMap(
       (message) =>
         message.attachments
