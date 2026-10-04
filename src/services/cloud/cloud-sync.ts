@@ -696,12 +696,11 @@ export class CloudSyncService {
     const { chat, release } = prepared
     try {
       const preUploadUpdatedAt = chat.updatedAt
-      const preUploadFingerprint = chatContentFingerprint(chat)
       const preUploadVersion = chat.syncVersion ?? 0
-      const { syncVersion, rewrites, projectIntentIncluded } =
-        await cloudStorage.uploadChat(chat, {
+      const upload = (snapshot: StoredChat, idempotencyKey: string) =>
+        cloudStorage.uploadChat(snapshot, {
           ...options,
-          idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
+          idempotencyKey,
           onAttachmentsUploaded: (uploaded) =>
             this.persistAttachmentRewrites(
               chatId,
@@ -710,6 +709,43 @@ export class CloudSyncService {
               userId,
             ),
         })
+      let result: Awaited<ReturnType<typeof upload>>
+      try {
+        result = await upload(
+          chat,
+          options.idempotencyKey ?? newIdempotencyKey(),
+        )
+      } catch (error) {
+        // The server purged blobs this chat still references. Callers
+        // of this one-shot path await the outcome, so heal in-line:
+        // forget the dead server keys and retry once as a new logical
+        // write with the bytes re-sent.
+        const decision = decideRecovery(error)
+        if (decision.action.type !== 'reupload-attachments-and-retry') {
+          throw error
+        }
+        this.ensureCurrentAccount(generation, userId)
+        const reset = await indexedDBStorage.forgetServerAttachments(
+          chatId,
+          decision.action.attachmentIds,
+        )
+        this.ensureCurrentAccount(generation, userId)
+        if (reset.length < decision.action.attachmentIds.length) {
+          reportChatSyncFailed(
+            chatId,
+            'Some attachments in this chat are no longer available in the cloud',
+          )
+          throw error
+        }
+        const healed = await indexedDBStorage.getChat(chatId)
+        this.ensureCurrentAccount(generation, userId)
+        if (!healed) throw error
+        // Retry against the freshly-read row; its attachments now lack
+        // keys so the upload re-sends them.
+        chat.messages = healed.messages
+        result = await upload(chat, newIdempotencyKey())
+      }
+      const { syncVersion, rewrites, projectIntentIncluded } = result
       this.ensureCurrentAccount(generation, userId)
       await indexedDBStorage.finalizeUpload({
         chatId,

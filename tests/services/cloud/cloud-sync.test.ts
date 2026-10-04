@@ -494,6 +494,66 @@ describe('CloudSyncService revision coordinator routing', () => {
     expect(reportChatSyncFailed).not.toHaveBeenCalled()
   })
 
+  it('heals a purged attachment in-line on a one-shot upload', async () => {
+    canWriteToCloud.mockResolvedValue(true)
+    const chat = {
+      id: 'chat-1',
+      syncUserId: 'user-1',
+      locallyModified: true,
+      pendingUpload: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      messages: [
+        {
+          role: 'user',
+          content: 'hello',
+          attachments: [
+            {
+              id: 'srv-att',
+              type: 'image',
+              base64: 'AQID',
+              encryptionKey: 'k',
+            },
+          ],
+        },
+      ],
+    }
+    const healed = {
+      ...chat,
+      messages: [
+        {
+          role: 'user',
+          content: 'hello',
+          attachments: [{ id: 'srv-att', type: 'image', base64: 'AQID' }],
+        },
+      ],
+    }
+    getChat.mockResolvedValueOnce(chat).mockResolvedValue(healed)
+    uploadChat
+      .mockRejectedValueOnce(
+        new SyncEnclaveError('missing', 409, 'MISSING_ATTACHMENT', {
+          missing_attachments: ['srv-att'],
+        }),
+      )
+      .mockResolvedValueOnce({
+        syncVersion: 2,
+        rewrites: [],
+        projectIntentIncluded: false,
+      })
+
+    await new CloudSyncService().backupChatNow('chat-1')
+
+    expect(forgetServerAttachments).toHaveBeenCalledWith('chat-1', ['srv-att'])
+    expect(uploadChat).toHaveBeenCalledTimes(2)
+    const retried = uploadChat.mock.calls[1][0]
+    expect(retried.messages[0].attachments[0]).not.toHaveProperty(
+      'encryptionKey',
+    )
+    expect(uploadChat.mock.calls[1][1].idempotencyKey).not.toBe(
+      uploadChat.mock.calls[0][1].idempotencyKey,
+    )
+    expect(finalizeUpload).toHaveBeenCalledTimes(1)
+  })
+
   it('surfaces a purged attachment this device cannot re-upload', async () => {
     canWriteToCloud.mockResolvedValue(true)
     getChat.mockResolvedValue({
