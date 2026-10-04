@@ -5,6 +5,7 @@ import {
   CloudBackupReadError,
   CloudStorageService,
 } from '@/services/cloud/cloud-storage'
+import type { AttachmentRewrite } from '@/services/storage/indexed-db'
 import { SyncEnclaveError, SyncNetworkError } from '@/services/sync-enclave'
 import { MAX_PULL_IDS } from '@/services/sync-enclave/sync-api'
 import { EncryptedAttachmentValidationError } from '@/utils/binary-codec'
@@ -1022,22 +1023,29 @@ describe('CloudStorageService auth readiness', () => {
     expect(plaintext).not.toContain('local-payload-reference')
   })
 
-  it('reports uploaded attachments before pushing the chat', async () => {
+  it('awaits each uploaded attachment callback before the next put and chat push', async () => {
     const service = new CloudStorageService()
     const order: string[] = []
     mockAttachmentPut.mockImplementationOnce(async () => {
-      order.push('attachment-put')
+      order.push('attachment-put-a')
       return { id: 'srv-att', att_key: 'k' }
+    })
+    mockAttachmentPut.mockImplementationOnce(async () => {
+      order.push('attachment-put-b')
+      return { id: 'srv-att-b', att_key: 'k-b' }
     })
     mockEnclavePush.mockImplementationOnce(async () => {
       order.push('push')
       return { etag: '1' }
     })
-    const onAttachmentsUploaded = vi.fn(async () => {
-      order.push('persist')
-    })
+    const onAttachmentsUploaded = vi.fn(
+      async (_rewrites: AttachmentRewrite[]) => {
+        await Promise.resolve()
+        order.push('persist')
+      },
+    )
 
-    await service.uploadChat(
+    const result = await service.uploadChat(
       {
         id: 'chat-1',
         title: 'Local chat',
@@ -1052,6 +1060,12 @@ describe('CloudStorageService auth readiness', () => {
                 fileName: 'image.png',
                 base64: 'AQID',
               },
+              {
+                id: 'local-att-b',
+                type: 'image',
+                fileName: 'image-b.png',
+                base64: 'BAUG',
+              },
             ],
           },
         ],
@@ -1062,14 +1076,31 @@ describe('CloudStorageService auth readiness', () => {
       { idempotencyKey: 'upload-idem-1', onAttachmentsUploaded },
     )
 
-    expect(order).toEqual(['attachment-put', 'persist', 'push'])
-    expect(onAttachmentsUploaded).toHaveBeenCalledWith([
+    expect(order).toEqual([
+      'attachment-put-a',
+      'persist',
+      'attachment-put-b',
+      'persist',
+      'push',
+    ])
+    expect(onAttachmentsUploaded).toHaveBeenCalledTimes(2)
+    expect(onAttachmentsUploaded).toHaveBeenNthCalledWith(1, [
       expect.objectContaining({
         clientId: 'local-att',
         serverId: 'srv-att',
         encryptionKey: 'k',
       }),
     ])
+    expect(onAttachmentsUploaded).toHaveBeenNthCalledWith(2, [
+      expect.objectContaining({
+        clientId: 'local-att-b',
+        serverId: 'srv-att-b',
+        encryptionKey: 'k-b',
+      }),
+    ])
+    expect(result.rewrites).toEqual(
+      onAttachmentsUploaded.mock.calls.flatMap(([rewrites]) => rewrites),
+    )
   })
 
   it('rejects an oversized chat before uploading any attachment', async () => {

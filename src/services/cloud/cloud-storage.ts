@@ -125,9 +125,9 @@ export interface UploadChatOptions {
    */
   idempotencyKey?: string
   /**
-   * Invoked once every attachment has been stored by the enclave and
-   * before the chat push. Lets the caller persist the minted ids and
-   * keys immediately so a failed push does not re-upload the bytes.
+   * Invoked with each attachment's rewrite after the enclave stores it,
+   * and awaited before the next attachment or chat push. A rejection
+   * stops further uploads when the caller cannot persist the minted reference.
    */
   onAttachmentsUploaded?: (rewrites: AttachmentRewrite[]) => Promise<void>
 }
@@ -386,10 +386,11 @@ export class CloudStorageService {
     }
 
     const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
-    const rewrites = await this.encryptAndUploadAttachments(messages, chat.id)
-    if (rewrites.length > 0 && options.onAttachmentsUploaded) {
-      await options.onAttachmentsUploaded(rewrites)
-    }
+    const rewrites = await this.encryptAndUploadAttachments(
+      messages,
+      chat.id,
+      options.onAttachmentsUploaded,
+    )
     const plaintext = buildPlaintext()
 
     const metadata: Record<string, unknown> = { messageCount: messages.length }
@@ -466,6 +467,7 @@ export class CloudStorageService {
   private async encryptAndUploadAttachments(
     messages: Message[],
     chatId: string,
+    onAttachmentsUploaded: UploadChatOptions['onAttachmentsUploaded'],
   ): Promise<AttachmentRewrite[]> {
     const rewrites: AttachmentRewrite[] = []
     for (const msg of messages) {
@@ -499,12 +501,14 @@ export class CloudStorageService {
           ).storagePayloadId
           att.id = enclaveID
           att.encryptionKey = att_key
-          rewrites.push({
+          const rewrite: AttachmentRewrite = {
             clientId,
             serverId: enclaveID,
             encryptionKey: att_key,
             storagePayloadId,
-          })
+          }
+          rewrites.push(rewrite)
+          await onAttachmentsUploaded?.([rewrite])
         }
       }
     }

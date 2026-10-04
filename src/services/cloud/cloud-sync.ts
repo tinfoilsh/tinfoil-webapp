@@ -852,13 +852,17 @@ export class CloudSyncService {
           const { syncVersion, rewrites, projectIntentIncluded } =
             await cloudStorage.uploadChat(chat, {
               idempotencyKey,
-              onAttachmentsUploaded: (uploaded) =>
-                this.persistAttachmentRewrites(
+              onAttachmentsUploaded: async (uploaded) => {
+                await this.persistAttachmentRewrites(
                   chatId,
                   uploaded,
                   generation,
                   userId,
-                ),
+                )
+                // Retries retain only persisted references, never newer local
+                // edits, so the frozen envelope and idempotency key still agree.
+                applyAttachmentRewritesInPlace(chat.messages, uploaded)
+              },
             })
           this.ensureCurrentAccount(generation, userId)
           await indexedDBStorage.finalizeUpload({
