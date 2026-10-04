@@ -1,10 +1,11 @@
 import { cn } from '@/components/ui/utils'
 import type { BaseModel } from '@/config/models'
 import { acquireInteractionLock } from '@/utils/interaction-lock'
-import { ArrowLeftIcon, BookmarkIcon } from '@heroicons/react/24/outline'
-import { BookmarkIcon as BookmarkIconSolid } from '@heroicons/react/24/solid'
+import { ArrowLeftIcon } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
+  TfBookmark,
+  TfBookmarkFilled,
   TfBoxCheckmark,
   TfBoxX,
   TfPlus,
@@ -245,7 +246,7 @@ export function PromptLibraryModal({
           <span className="absolute right-2 top-2 flex items-center gap-1">
             {isDefault && (
               <>
-                <BookmarkIconSolid
+                <TfBookmarkFilled
                   className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
                   aria-hidden="true"
                 />
@@ -654,9 +655,9 @@ function PresetDetail({
           )}
         >
           {isDefault ? (
-            <BookmarkIconSolid className="h-3.5 w-3.5" aria-hidden="true" />
+            <TfBookmarkFilled className="h-3.5 w-3.5" aria-hidden="true" />
           ) : (
-            <BookmarkIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            <TfBookmark className="h-3.5 w-3.5" aria-hidden="true" />
           )}
           {isDefault ? 'Default for new chats' : 'Set as default'}
         </button>

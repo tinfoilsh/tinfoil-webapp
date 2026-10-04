@@ -115,10 +115,6 @@ import {
   ArrowUpTrayIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  CircleStackIcon,
-  EyeIcon,
-  EyeSlashIcon,
-  ShieldExclamationIcon,
 } from '@heroicons/react/24/outline'
 import {
   TfAdjustmentToggle,
@@ -129,6 +125,8 @@ import {
   TfCloudSync,
   TfComputer,
   TfDownload,
+  TfEye,
+  TfEyeSlash,
   TfKey,
   TfLightbulb,
   TfMoon,
@@ -140,6 +138,9 @@ import {
   TfPersonKey,
   TfPlus,
   TfShieldCheck,
+  TfShieldWithExclamation,
+  TfSignIn,
+  TfStack,
   TfSunLightMode,
   TfTools,
   TfTrash,
@@ -148,7 +149,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import Link from 'next/link'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { BsQrCode } from 'react-icons/bs'
-import { PiSignIn, PiSpinner } from 'react-icons/pi'
+import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
 import { CloudSyncHealthCard } from './cloud-sync-health-card'
 import { CONSTANTS } from './constants'
@@ -2466,11 +2467,11 @@ ${encryptionKey.replace('key_', '')}
           {
             id: 'safeguards' as const,
             label: 'Safeguards',
-            icon: ShieldExclamationIcon,
+            icon: TfShieldWithExclamation,
           },
         ]
       : []),
-    { id: 'data' as const, label: 'Data', icon: CircleStackIcon },
+    { id: 'data' as const, label: 'Data', icon: TfStack },
   ]
 
   return (
@@ -3599,12 +3600,12 @@ ${encryptionKey.replace('key_', '')}
                                     className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
                                   >
                                     {isKeyVisible ? (
-                                      <EyeSlashIcon
+                                      <TfEyeSlash
                                         className="h-4 w-4"
                                         aria-hidden="true"
                                       />
                                     ) : (
-                                      <EyeIcon
+                                      <TfEye
                                         className="h-4 w-4"
                                         aria-hidden="true"
                                       />
@@ -4948,7 +4949,7 @@ ${encryptionKey.replace('key_', '')}
                           href="/signin"
                           className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-brand-accent-dark px-4 py-2.5 text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90"
                         >
-                          <PiSignIn className="h-4 w-4" aria-hidden="true" />
+                          <TfSignIn className="h-4 w-4" aria-hidden="true" />
                           Sign in or sign up
                         </Link>
                       </div>

@@ -4,11 +4,11 @@ import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { canRequestChatPin } from '@/services/storage/pinned-chats'
 import { isPlainPrimaryClick } from '@/utils/navigation'
 import { EllipsisVerticalIcon } from '@heroicons/react/24/outline'
-import { FlagIcon } from '@heroicons/react/24/solid'
 import {
   TfBoxCheckmark,
   TfBoxX,
   TfCloud,
+  TfFlagFilled,
   TfFloppyDisk,
   TfFolder,
   TfLockLocked,
@@ -454,7 +454,7 @@ export function ChatListItem({
                 />
               )}
               {isFlagged && (
-                <FlagIcon
+                <TfFlagFilled
                   className="h-3.5 w-3.5 flex-shrink-0 -translate-y-px text-red-600"
                   title="Flagged by safeguards"
                   aria-label="Flagged by safeguards"

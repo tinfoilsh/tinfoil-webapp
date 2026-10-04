@@ -8,13 +8,13 @@ import { useUser } from '@clerk/react'
 import {
   ArrowTopRightOnSquareIcon,
   ChevronRightIcon,
-  QuestionMarkCircleIcon,
 } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
   TfBug,
   TfDocument,
   TfPerson,
+  TfQuestionMarkCircle,
   TfRefresh1,
   TfSetting,
   TfShieldCheck,
@@ -579,10 +579,7 @@ export function SidebarAccountMenu({
                   else setIsHelpOpen(isHoverClick(event.detail) || !isHelpOpen)
                 }}
               >
-                <QuestionMarkCircleIcon
-                  className="h-4 w-4"
-                  aria-hidden="true"
-                />
+                <TfQuestionMarkCircle className="h-4 w-4" aria-hidden="true" />
                 <span className="flex-1">Help</span>
                 <ChevronRightIcon
                   className="h-4 w-4 text-content-muted"

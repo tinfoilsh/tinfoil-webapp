@@ -4,7 +4,6 @@ import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
 import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { logError } from '@/utils/error-handling'
-import { StopIcon } from '@heroicons/react/24/outline'
 import {
   TfAttachment,
   TfBoxCheckmark,
@@ -15,6 +14,7 @@ import {
   TfMicrophone,
   TfPlus,
   TfQuote,
+  TfStop,
   TfTerminal,
   TfTools,
 } from '@tinfoilsh/tinfoil-icons'
@@ -1390,7 +1390,7 @@ export function ChatInput({
                     disabled={isTranscribing}
                   >
                     {isRecording ? (
-                      <StopIcon
+                      <TfStop
                         className="h-6 w-6 md:h-4 md:w-4"
                         aria-hidden="true"
                       />
@@ -1459,7 +1459,10 @@ export function ChatInput({
                       aria-label={showStopAction ? 'Stop generation' : 'Send'}
                     >
                       {showStopAction ? (
-                        <div className="h-3.5 w-3.5 bg-white/80 transition-colors md:h-3 md:w-3" />
+                        <TfStop
+                          className="h-3.5 w-3.5 text-white/80 transition-colors md:h-3 md:w-3"
+                          aria-hidden="true"
+                        />
                       ) : (
                         <FiArrowUp
                           className="h-6 w-6 text-current transition-colors md:h-5 md:w-5"

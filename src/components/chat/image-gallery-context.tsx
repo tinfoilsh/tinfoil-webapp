@@ -1,6 +1,6 @@
 'use client'
 
-import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX, TfImageSlash } from '@tinfoilsh/tinfoil-icons'
 import {
   createContext,
   useCallback,
@@ -53,6 +53,12 @@ export function ImageLightbox({
       slides={images.map((image) => ({ src: image.src, alt: image.alt }))}
       render={{
         iconClose: () => <TfBoxX className="yarl__icon" aria-hidden="true" />,
+        iconError: () => (
+          <TfImageSlash
+            className="yarl__icon yarl__slide_error"
+            aria-hidden="true"
+          />
+        ),
         iconLoading: () => (
           <span className="yarl__slide_loading">
             <PiSpinner

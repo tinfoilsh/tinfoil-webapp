@@ -1,7 +1,6 @@
 import { cn } from '@/components/ui/utils'
-import { TfTrash } from '@tinfoilsh/tinfoil-icons'
+import { TfQueue, TfTrash } from '@tinfoilsh/tinfoil-icons'
 import { FiArrowUp } from 'react-icons/fi'
-import { HiOutlineQueueList } from 'react-icons/hi2'
 import type { Attachment, QueuedMessage } from './types'
 
 const QUEUED_PREVIEW_MAX_LENGTH = 240
@@ -72,7 +71,7 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
               'group flex w-full items-start gap-2 rounded-2xl border border-border-subtle bg-surface-chat px-3 py-2 shadow-sm',
             )}
           >
-            <HiOutlineQueueList
+            <TfQueue
               className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary"
               aria-hidden="true"
             />

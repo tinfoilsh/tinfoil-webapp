@@ -1,7 +1,7 @@
 import { speechPlayer } from '@/services/speech/player'
 import type { SpeechTextFormat } from '@/services/speech/text'
-import { PlayIcon, StopIcon } from '@heroicons/react/24/outline'
-import { TfAudio } from '@tinfoilsh/tinfoil-icons'
+import { PlayIcon } from '@heroicons/react/24/outline'
+import { TfAudio, TfStop } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 
@@ -67,7 +67,7 @@ export function ReadAloudButton({
         ) : status === 'paused' ? (
           <PlayIcon className="h-3.5 w-3.5" aria-hidden="true" />
         ) : active ? (
-          <StopIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfStop className="h-3.5 w-3.5" aria-hidden="true" />
         ) : (
           <TfAudio className="h-3.5 w-3.5" aria-hidden="true" />
         )}
@@ -100,7 +100,7 @@ export function ReadAloudButton({
             onClick={() => speechPlayer.stop(owner)}
             className="flex items-center rounded px-2 py-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
           >
-            <StopIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            <TfStop className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
           <span className="sr-only" role="status">
             Speech paused

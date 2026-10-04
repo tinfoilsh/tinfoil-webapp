@@ -10,7 +10,7 @@ import {
   type BaseModel,
 } from '@/config/models'
 import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
-import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark, TfShuffle } from '@tinfoilsh/tinfoil-icons'
 import {
   useCallback,
   useLayoutEffect,
@@ -19,7 +19,6 @@ import {
   type MouseEvent,
   type TouchEvent,
 } from 'react'
-import { PiShuffleAngularBold } from 'react-icons/pi'
 import {
   DEFAULT_EFFORT,
   supportsReasoningEffort,
@@ -427,7 +426,7 @@ export function ModelSelector({
       >
         <div className="relative flex h-5 w-5 flex-none items-center justify-center">
           {model.isAuto ? (
-            <PiShuffleAngularBold
+            <TfShuffle
               className="h-5 w-5 text-brand-accent-dark dark:text-brand-accent-light"
               aria-hidden="true"
             />

@@ -12,8 +12,7 @@ import {
   type ArtifactPreviewSidebarDetail,
 } from '@/components/chat/genui/widgets/ArtifactPreview'
 import { cn } from '@/components/ui/utils'
-import { EyeIcon } from '@heroicons/react/24/outline'
-import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX, TfEye } from '@tinfoilsh/tinfoil-icons'
 import {
   useCallback,
   useEffect,
@@ -166,7 +165,7 @@ export function ArtifactSidebar({
 
         <div className="flex flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 py-3">
           <div className="flex items-center gap-2 text-content-primary">
-            <EyeIcon className="h-5 w-5" aria-hidden="true" />
+            <TfEye className="h-5 w-5" aria-hidden="true" />
             <span className="text-sm font-medium">Preview</span>
           </div>
           <button

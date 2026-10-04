@@ -5,7 +5,7 @@
  * and fades into the image once it reports `onLoad`. Falls back to a muted
  * placeholder tile on error.
  */
-import { ImageOff } from 'lucide-react'
+import { TfImageSlash } from '@tinfoilsh/tinfoil-icons'
 import { useRef, useState, type ImgHTMLAttributes } from 'react'
 
 interface ImageWithSkeletonProps extends Omit<
@@ -47,7 +47,7 @@ export function ImageWithSkeleton({
       )}
       {errored ? (
         <div className="flex h-full w-full items-center justify-center bg-surface-card text-content-muted">
-          <ImageOff className="h-6 w-6" />
+          <TfImageSlash className="h-6 w-6" aria-hidden="true" />
         </div>
       ) : (
         <img

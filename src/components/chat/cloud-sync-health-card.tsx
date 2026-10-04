@@ -5,8 +5,11 @@ import type {
   SyncActionReason,
   SyncHealthSnapshot,
 } from '@/services/cloud/sync-health'
-import { ExclamationCircleIcon } from '@heroicons/react/24/outline'
-import { TfBoxCheckmark, TfWarning } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxCheckmark,
+  TfExclamationCircle,
+  TfWarning,
+} from '@tinfoilsh/tinfoil-icons'
 import { cn } from '../ui/utils'
 import { formatRelativeTime } from './chat-list-utils'
 
@@ -135,7 +138,7 @@ export function CloudSyncHealthCard({
               aria-hidden="true"
             />
           ) : (
-            <ExclamationCircleIcon
+            <TfExclamationCircle
               className="mt-0.5 h-4 w-4 shrink-0 text-orange-500"
               aria-hidden="true"
             />

@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
+  TfClock,
   TfCopy,
   TfFork,
   TfLockLocked,
@@ -19,7 +20,6 @@ import {
   TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useState, type JSX } from 'react'
-import { GoClockFill } from 'react-icons/go'
 import { hasMessageAttachments } from '../../attachment-helpers'
 import { CONSTANTS } from '../../constants'
 import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
@@ -624,7 +624,7 @@ const DefaultMessageComponent = ({
                   {message.isHourlyRateLimitError && (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center gap-2">
-                        <GoClockFill
+                        <TfClock
                           className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
                           aria-hidden="true"
                         />
@@ -641,7 +641,7 @@ const DefaultMessageComponent = ({
                   {message.isRateLimitError && (
                     <div className="flex flex-col gap-3">
                       <div className="flex items-center gap-2">
-                        <GoClockFill
+                        <TfClock
                           className="h-5 w-5 flex-shrink-0 text-brand-accent-dark dark:text-brand-accent-light"
                           aria-hidden="true"
                         />

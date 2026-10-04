@@ -12,7 +12,7 @@ import {
 import { cn } from '@/components/ui/utils'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
-import { TfBoxCheckmark, TfCode, TfCopy } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark, TfCode, TfCopy, TfEye } from '@tinfoilsh/tinfoil-icons'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
@@ -26,23 +26,6 @@ import { CONSTANTS } from './chat/constants'
 
 const CodeIcon = () => (
   <TfCode className="h-4 w-4" aria-hidden="true" focusable="false" />
-)
-
-const EyeIcon = () => (
-  <svg
-    className="h-4 w-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    focusable="false"
-  >
-    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
 )
 
 const PlayIcon = () => (
@@ -123,7 +106,7 @@ const ViewModeToggle = ({
   language: string
 }) => {
   const isExecutable = EXECUTABLE_LANGUAGES.includes(language)
-  const PreviewIcon = isExecutable ? PlayIcon : EyeIcon
+  const PreviewIcon = isExecutable ? PlayIcon : TfEye
 
   return (
     <div
@@ -144,7 +127,7 @@ const ViewModeToggle = ({
         aria-label={isExecutable ? 'Run' : 'Preview'}
         aria-pressed={mode === 'preview'}
       >
-        <PreviewIcon />
+        <PreviewIcon className="h-4 w-4" aria-hidden="true" focusable="false" />
       </button>
       <button
         onClick={() => onModeChange('code')}

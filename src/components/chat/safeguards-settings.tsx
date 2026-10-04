@@ -7,11 +7,8 @@ import {
   type FlaggedChat,
 } from '@/services/safeguards'
 import { getChatPath } from '@/utils/navigation'
-import {
-  ArrowTopRightOnSquareIcon,
-  FlagIcon,
-} from '@heroicons/react/24/outline'
-import { TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
+import { TfFlag, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { PiSpinner } from 'react-icons/pi'
@@ -58,7 +55,7 @@ function FlaggedChatRow({
   const label = flag.conversationId || 'Unknown chat'
   const content = (
     <>
-      <FlagIcon
+      <TfFlag
         className={cn(
           'h-4 w-4 flex-shrink-0',
           inWindow ? 'text-red-600' : 'text-content-muted',
