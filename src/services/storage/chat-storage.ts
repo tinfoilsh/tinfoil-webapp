@@ -639,9 +639,14 @@ export class ChatStorageService {
     messageCount: number,
     forkId: string = generateReverseId().id,
   ): Promise<Chat> {
+    // Scope the whole fork to the account that started it, including
+    // the awaits below; a switch mid-way must not fork the old
+    // account's chat into the new one.
+    const guard = cloudSync.createAccountOperationGuard()
     await this.initialize()
 
     const source = await this.getChat(sourceId)
+    guard.assertCurrent()
     if (!source) {
       throw new Error('Chat not found')
     }
@@ -664,6 +669,7 @@ export class ChatStorageService {
         messageCount,
         forkId,
       )
+      guard.assertCurrent()
       const saved = await this.saveChat(fork, true)
       const stored = await this.getChat(forkId)
       return stored ?? saved
