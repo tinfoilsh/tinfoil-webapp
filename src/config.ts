@@ -54,6 +54,9 @@ export const PAGINATION = {
 // Cloud sync settings
 export const CLOUD_SYNC = {
   RETRY_DELAY: 100, // milliseconds
+  // Live-chat GC requires reference fencing and durable bucket-delete jobs.
+  // An age cutoff cannot protect references retained by offline clients.
+  ATTACHMENT_GC_ENABLED: false,
   // Mirrors the sync enclave's envelope plaintext cap. Checked before
   // any bytes leave the device so an oversized chat fails fast instead
   // of uploading its attachments and then being rejected by the push.

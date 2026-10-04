@@ -456,7 +456,7 @@ describe('CloudSyncService revision coordinator routing', () => {
     expect(finalizeUpload).not.toHaveBeenCalled()
   })
 
-  it('cleans up unreferenced attachments after a push that follows a failed upload with stored attachments', async () => {
+  it('does not run destructive cleanup after a failed upload recovers', async () => {
     canWriteToCloud.mockResolvedValue(true)
     const pendingChat = {
       id: 'chat-1',
@@ -511,10 +511,8 @@ describe('CloudSyncService revision coordinator routing', () => {
 
     await service.backupChat('chat-1')
     await service.waitForAllUploads()
-    await vi.waitFor(() =>
-      expect(collectUnreferencedAttachments).toHaveBeenCalledTimes(2),
-    )
-    expect(collectUnreferencedAttachments).toHaveBeenCalledWith('chat-1')
+    expect(uploadChat).toHaveBeenCalledTimes(2)
+    expect(collectUnreferencedAttachments).not.toHaveBeenCalled()
   })
 
   it('does not run attachment cleanup after an ordinary successful push', async () => {

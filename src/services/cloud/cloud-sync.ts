@@ -1,4 +1,4 @@
-import { PAGINATION } from '@/config'
+import { CLOUD_SYNC, PAGINATION } from '@/config'
 import {
   AUTH_ACTIVE_USER_ID,
   SETTINGS_CLOUD_SYNC_ENABLED,
@@ -454,6 +454,7 @@ export class CloudSyncService {
     generation: number,
     userId: string | null,
   ): void {
+    if (!CLOUD_SYNC.ATTACHMENT_GC_ENABLED) return
     if (
       !this.attachmentCleanupPending.has(chatId) ||
       this.attachmentCleanupDone.has(chatId)
@@ -913,6 +914,9 @@ export class CloudSyncService {
                   generation,
                   userId,
                 )
+                // Retries retain only persisted references, never newer local
+                // edits, so the frozen envelope and idempotency key still agree.
+                applyAttachmentRewritesInPlace(chat.messages, uploaded)
               },
             })
           this.ensureCurrentAccount(generation, userId)
