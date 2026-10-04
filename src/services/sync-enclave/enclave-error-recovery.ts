@@ -181,10 +181,14 @@ const ACTIONS: Record<
   // the same bytes can never succeed. The user has to shrink or split
   // the chat, so this stays failed until the content changes.
   PAYLOAD_TOO_LARGE: () => ({ type: 'abort', reason: 'PAYLOAD_TOO_LARGE' }),
-  MISSING_ATTACHMENT: (c) => ({
-    type: 'reupload-attachments-and-retry',
-    attachmentIds: missingAttachmentIds(c.cause),
-  }),
+  MISSING_ATTACHMENT: (c) => {
+    const attachmentIds = missingAttachmentIds(c.cause)
+    // Without ids there is nothing to re-upload and a retry would
+    // just reproduce the same rejection.
+    return attachmentIds.length > 0
+      ? { type: 'reupload-attachments-and-retry', attachmentIds }
+      : { type: 'abort', reason: 'UNKNOWN' }
+  },
   ATTACHMENT_PURGE_IN_PROGRESS: () => ({
     type: 'retry',
     reason: 'TRANSIENT_5XX',

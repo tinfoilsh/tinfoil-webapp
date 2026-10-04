@@ -56,7 +56,9 @@ describe('decideRecovery', () => {
     ['NETWORK', 'retry'],
     ['NOT_FOUND', 'surface-not-found'],
     ['PAYLOAD_TOO_LARGE', 'abort'],
-    ['MISSING_ATTACHMENT', 'reupload-attachments-and-retry'],
+    // Bare code with no ids: nothing to re-upload, so it aborts. The
+    // populated case is covered below.
+    ['MISSING_ATTACHMENT', 'abort'],
     ['ATTACHMENT_PURGE_IN_PROGRESS', 'retry'],
   ])('maps %s → %s', (code, type) => {
     const decision = decideRecovery(err(code))
@@ -82,6 +84,13 @@ describe('decideRecovery', () => {
       type: 'reupload-attachments-and-retry',
       attachmentIds: ['att-a', 'att-b'],
     })
+  })
+
+  it('aborts a MISSING_ATTACHMENT that names no attachments', () => {
+    const decision = decideRecovery(
+      new SyncEnclaveError('missing', 409, 'MISSING_ATTACHMENT', {}),
+    )
+    expect(decision.action).toEqual({ type: 'abort', reason: 'UNKNOWN' })
   })
 
   it('never retries an oversized payload', () => {

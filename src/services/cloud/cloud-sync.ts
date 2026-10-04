@@ -151,6 +151,8 @@ const DECRYPTION_RETRY_BATCH_SIZE = 5
 export const CROSS_TAB_SYNC_LOCK = 'tinfoil-cloud-sync'
 export const CROSS_TAB_SYNC_LOCK_OPTIONS = { mode: 'exclusive' } as const
 const PAYLOAD_TOO_LARGE_STATUS = 413
+export const PURGED_ATTACHMENTS_MESSAGE =
+  'Some attachments in this chat are no longer available in the cloud'
 export const CHAT_TOO_LARGE_MESSAGE =
   'This chat is too large to sync. Remove some attachments or start a new chat to continue syncing.'
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
@@ -724,19 +726,13 @@ export class CloudSyncService {
         if (decision.action.type !== 'reupload-attachments-and-retry') {
           throw error
         }
-        this.ensureCurrentAccount(generation, userId)
-        const reset = await indexedDBStorage.forgetServerAttachments(
+        await this.forgetPurgedAttachmentsOrFail(
           chatId,
+          generation,
+          userId,
           decision.action.attachmentIds,
+          error,
         )
-        this.ensureCurrentAccount(generation, userId)
-        if (reset.length < decision.action.attachmentIds.length) {
-          reportChatSyncFailed(
-            chatId,
-            'Some attachments in this chat are no longer available in the cloud',
-          )
-          throw error
-        }
         const healed = await indexedDBStorage.getChat(chatId)
         this.ensureCurrentAccount(generation, userId)
         if (!healed) throw error
@@ -996,20 +992,44 @@ export class CloudSyncService {
     attachmentIds: string[],
     error: unknown,
   ): Promise<void> {
-    const userId = this.readActiveUserId()
+    await this.forgetPurgedAttachmentsOrFail(
+      chatId,
+      generation,
+      this.readActiveUserId(),
+      attachmentIds,
+      error,
+    )
+    // Awaited so the re-enqueue lands before the current coalescer
+    // worker checks `dirty` and resolves its waiters; otherwise a
+    // caller awaiting this upload can be told it failed while the
+    // repair is about to succeed.
+    await this.backupChat(chatId)
+  }
+
+  /**
+   * Drop the server identity of the named attachments so the next
+   * upload re-sends their bytes. Shared by the background recovery
+   * path (which re-enqueues) and the one-shot path (which retries in
+   * place). If any named attachment cannot be re-sent from this device
+   * the chat is reported as failed and the original error rethrown.
+   */
+  private async forgetPurgedAttachmentsOrFail(
+    chatId: string,
+    generation: number,
+    userId: string | null,
+    attachmentIds: string[],
+    error: unknown,
+  ): Promise<void> {
+    this.ensureCurrentAccount(generation, userId)
     const reset = await indexedDBStorage.forgetServerAttachments(
       chatId,
       attachmentIds,
     )
     this.ensureCurrentAccount(generation, userId)
     if (reset.length < attachmentIds.length) {
-      reportChatSyncFailed(
-        chatId,
-        'Some attachments in this chat are no longer available in the cloud',
-      )
+      reportChatSyncFailed(chatId, PURGED_ATTACHMENTS_MESSAGE)
       throw error
     }
-    void this.backupChat(chatId)
   }
 
   private async resolveConflictByPullingRemote(
