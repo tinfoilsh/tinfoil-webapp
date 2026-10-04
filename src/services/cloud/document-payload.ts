@@ -22,12 +22,14 @@ const documentPayloadSchema = z
     textContent: z.string().optional(),
     pages: z
       .array(
-        z.object({
-          page: z.number().int().positive(),
-          text: z.string(),
-          image: z.string(),
-          is_scanned: z.boolean(),
-        }),
+        z
+          .object({
+            page: z.number().int().nonnegative(),
+            text: z.string(),
+            image: z.string().default(''),
+            is_scanned: z.boolean(),
+          })
+          .refine((page) => !page.is_scanned || page.image.length > 0),
       )
       .optional(),
   })

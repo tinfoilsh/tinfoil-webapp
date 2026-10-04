@@ -1,3 +1,9 @@
+import { hydrateDocumentAttachments } from '@/services/cloud/document-hydration'
+import {
+  decodeDocumentPayload,
+  encodeDocumentPayload,
+} from '@/services/cloud/document-payload'
+import { ChatQueryBuilder } from '@/services/inference/chat-query-builder'
 import {
   NATIVE_BACKUP_LIMITS,
   forEachNativeBackupLocalImage,
@@ -163,6 +169,109 @@ async function unzip(blob: Blob) {
 }
 
 describe('native backup restore validation and cloud packaging', () => {
+  it.each([
+    { page: 0, is_scanned: true },
+    { page: 1, is_scanned: false },
+    { page: 0, is_scanned: false },
+  ])(
+    'preserves restored document page %j through hydration and inference',
+    async ({ page, is_scanned }) => {
+      const input = backupInput()
+      input.cloudChats[0].messages[0].attachments!.push({
+        id: 'document-attachment',
+        type: 'document',
+        fileName: 'restored.pdf',
+        pages: [
+          {
+            page,
+            text: 'restored page content',
+            is_scanned,
+            ...(is_scanned ? { imageId: 'page-image' } : {}),
+          },
+        ],
+      })
+      if (is_scanned) {
+        input.images.push({
+          metadata: {
+            id: 'page-image',
+            chatId: 'cloud-1',
+            messageIndex: 0,
+            attachmentId: 'document-attachment',
+            page,
+            fileName: 'page.png',
+            mimeType: 'image/png',
+          },
+          bytes: png,
+        })
+        input.relationships.chatImages.push({
+          chatId: 'cloud-1',
+          imageId: 'page-image',
+        })
+      }
+      const formatted = formatNativeBackupV1(input)
+      const result = await validateAndPackageNativeBackup(
+        await zip(formatted.manifestBytes, formatted.files),
+      )
+      const files = await unzip((result.cloud!.upload as { blob: Blob }).blob)
+      const chat = result.cloud!.manifest.entities.find(
+        ({ kind }) => kind === 'chat',
+      )!
+      const restored = JSON.parse(
+        new TextDecoder().decode(files.get(chat.path)),
+      )
+      const attachment = restored.messages[0].attachments.find(
+        (value: { id: string }) => value.id === 'document-attachment',
+      )
+      if (!is_scanned) expect(attachment.pages[0]).not.toHaveProperty('image')
+
+      const messages = await hydrateDocumentAttachments([
+        {
+          role: 'user',
+          content: 'summarize',
+          timestamp: new Date(timestamp),
+          attachments: [attachment],
+        },
+      ])
+      const expectedPage = {
+        page,
+        text: 'restored page content',
+        is_scanned,
+        image: is_scanned ? contract.blobs[0].base64 : '',
+      }
+      expect(messages[0].attachments![0].pages).toEqual([expectedPage])
+      expect(
+        decodeDocumentPayload(
+          attachment.id,
+          encodeDocumentPayload(messages[0].attachments![0]),
+        ),
+      ).toEqual({ pages: [expectedPage] })
+      const query = ChatQueryBuilder.buildMessages({
+        model: {
+          modelName: 'gpt-oss-120b',
+          name: 'Test',
+          nameShort: 'Test',
+          description: '',
+          image: '',
+          type: 'chat',
+          multimodal: true,
+        },
+        systemPrompt: '',
+        messages,
+      })
+      expect(query[0].content).toContainEqual({
+        type: 'text',
+        text: `Page ${page}${is_scanned ? ' (scanned)' : ''}:\nrestored page content`,
+      })
+      if (is_scanned)
+        expect(query[0].content).toContainEqual({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/png;base64,${contract.blobs[0].base64}`,
+          },
+        })
+    },
+  )
+
   it('partitions local records and matches the deployed semantic contract', async () => {
     const formatted = formatNativeBackupV1(backupInput())
     const result = await validateAndPackageNativeBackup(
