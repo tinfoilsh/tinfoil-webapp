@@ -1205,8 +1205,9 @@ export async function attachmentPut(
 /** Fetch an attachment through the sync enclave; returns raw bytes. */
 export async function attachmentGet(
   req: AttachmentGetRequest,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
-  const client = await getSyncEnclaveClient()
+  const client = await getSyncEnclaveClient(signal)
   const resp = await client.post<AttachmentGetResponse>(
     '/v1/attachment/get',
     {
@@ -1214,7 +1215,7 @@ export async function attachmentGet(
       att_key: req.attKeyB64,
     },
     undefined,
-    { requestScope: 'cloud-sync' },
+    { requestScope: 'cloud-sync', signal },
   )
   return b64ToBytes(resp.plaintext)
 }

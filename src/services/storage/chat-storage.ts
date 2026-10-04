@@ -4,8 +4,18 @@ import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import { generateReverseId } from '@/utils/reverse-id'
-import { cloudStorage } from '../cloud/cloud-storage'
+import {
+  cloudStorage,
+  type LoadedChatAttachments,
+} from '../cloud/cloud-storage'
 import { cloudSync } from '../cloud/cloud-sync'
+import { requireDocumentCloudRead } from '../cloud/document-hydration'
+import {
+  hasInlineDocumentPayload,
+  isOffloadedDocument,
+  isServerKeyedDocument,
+  validateDocumentPayload,
+} from '../cloud/document-payload'
 import { streamingTracker } from '../cloud/streaming-tracker'
 import { newIdempotencyKey } from '../sync-enclave/sync-api'
 import { chatEvents } from './chat-events'
@@ -34,6 +44,34 @@ function isServerKeyedImage(
   return (
     attachment.type === 'image' &&
     Boolean(attachment.encryptionKey || (attachment as { key?: string }).key)
+  )
+}
+
+// Attachments whose content lives on the server and must be pulled down
+// before the chat can stand alone as a local-only copy.
+function isServerKeyedAttachment(
+  attachment: NonNullable<
+    StorageChat['messages'][number]['attachments']
+  >[number],
+): boolean {
+  return isServerKeyedImage(attachment) || isServerKeyedDocument(attachment)
+}
+
+function hasLocalContent(
+  attachment: NonNullable<
+    StorageChat['messages'][number]['attachments']
+  >[number],
+  fetched: LoadedChatAttachments,
+): boolean {
+  if (attachment.type === 'image') {
+    return Boolean(attachment.base64 || fetched.images[attachment.id])
+  }
+  return (
+    hasInlineDocumentPayload(attachment) ||
+    hasInlineDocumentPayload({
+      ...attachment,
+      ...fetched.documents[attachment.id],
+    })
   )
 }
 
@@ -474,7 +512,17 @@ export class ChatStorageService {
     const stored = await indexedDBStorage.getChat(chatId)
     if (!stored) return
     const guard = cloudSync.createAccountOperationGuard()
-    const fetched = await cloudStorage.loadChatImages(chatId, stored.messages)
+    if (
+      stored.messages.some((message) =>
+        message.attachments?.some(isOffloadedDocument),
+      )
+    ) {
+      requireDocumentCloudRead()
+    }
+    const fetched = await cloudStorage.loadChatAttachments(
+      chatId,
+      stored.messages,
+    )
     guard.assertCurrent()
     const unfetchedIds = (messages: StorageChat['messages']) =>
       messages.flatMap(
@@ -482,9 +530,8 @@ export class ChatStorageService {
           message.attachments
             ?.filter(
               (attachment) =>
-                isServerKeyedImage(attachment) &&
-                !attachment.base64 &&
-                !fetched[attachment.id],
+                isServerKeyedAttachment(attachment) &&
+                !hasLocalContent(attachment, fetched),
             )
             .map((attachment) => attachment.id) ?? [],
       )
@@ -493,8 +540,8 @@ export class ChatStorageService {
       throw new ChatImagesUnavailableError(unfetched)
     }
     await indexedDBStorage.mutateChat(chatId, (chat) => {
-      // The chat may have gained images since the fetch; those have no
-      // bytes to retain, so the conversion must not proceed.
+      // The chat may have gained attachments since the fetch; those have
+      // no content to retain, so the conversion must not proceed.
       const stale = unfetchedIds(chat.messages)
       if (stale.length > 0) {
         throw new ChatImagesUnavailableError(stale)
@@ -503,7 +550,7 @@ export class ChatStorageService {
       const messages = chat.messages.map((message) => ({
         ...message,
         attachments: message.attachments?.map((attachment) => {
-          if (!isServerKeyedImage(attachment)) {
+          if (!isServerKeyedAttachment(attachment)) {
             return attachment
           }
           changed = true
@@ -512,9 +559,20 @@ export class ChatStorageService {
             key: _key,
             ...detached
           } = attachment as typeof attachment & { key?: string }
+          if (attachment.type === 'image') {
+            return {
+              ...detached,
+              base64: attachment.base64 ?? fetched.images[attachment.id],
+            }
+          }
           return {
             ...detached,
-            base64: attachment.base64 ?? fetched[attachment.id],
+            ...validateDocumentPayload(
+              attachment.id,
+              hasInlineDocumentPayload(attachment)
+                ? attachment
+                : fetched.documents[attachment.id],
+            ),
           }
         }),
       }))
@@ -581,9 +639,14 @@ export class ChatStorageService {
     messageCount: number,
     forkId: string = generateReverseId().id,
   ): Promise<Chat> {
+    // Scope the whole fork to the account that started it, including
+    // the awaits below; a switch mid-way must not fork the old
+    // account's chat into the new one.
+    const guard = cloudSync.createAccountOperationGuard()
     await this.initialize()
 
     const source = await this.getChat(sourceId)
+    guard.assertCurrent()
     if (!source) {
       throw new Error('Chat not found')
     }
@@ -595,7 +658,18 @@ export class ChatStorageService {
     // is disabled nothing may reach the enclave, so even a chat that was
     // synced before the opt-out is copied on this device.
     if (source.isLocalOnly || !isCloudSyncEnabled()) {
-      const fork = buildForkedChat(source, messageCount, forkId)
+      // A chat synced before the opt-out may still hold only enclave
+      // keys for its documents; the local copy drops those keys, so the
+      // content has to be on this device before it is copied.
+      const fork = buildForkedChat(
+        await this.withOffloadedDocuments({
+          ...source,
+          messages: source.messages.slice(0, messageCount),
+        }),
+        messageCount,
+        forkId,
+      )
+      guard.assertCurrent()
       const saved = await this.saveChat(fork, true)
       const stored = await this.getChat(forkId)
       return stored ?? saved
@@ -612,6 +686,48 @@ export class ChatStorageService {
       throw new Error('Forked chat was not stored')
     }
     return fork
+  }
+
+  private async withOffloadedDocuments(chat: Chat): Promise<Chat> {
+    if (
+      !chat.messages.some((message) =>
+        message.attachments?.some(isOffloadedDocument),
+      )
+    ) {
+      return chat
+    }
+    requireDocumentCloudRead()
+    const guard = cloudSync.createAccountOperationGuard()
+    const fetched = await cloudStorage.loadChatAttachments(
+      chat.id,
+      chat.messages,
+    )
+    guard.assertCurrent()
+    requireDocumentCloudRead()
+    const missing = chat.messages.flatMap(
+      (message) =>
+        message.attachments
+          ?.filter(
+            (attachment) =>
+              isOffloadedDocument(attachment) &&
+              !(attachment.id in fetched.documents),
+          )
+          .map((attachment) => attachment.id) ?? [],
+    )
+    if (missing.length > 0) {
+      throw new ChatImagesUnavailableError(missing)
+    }
+    return {
+      ...chat,
+      messages: chat.messages.map((message) => ({
+        ...message,
+        attachments: message.attachments?.map((attachment) =>
+          isOffloadedDocument(attachment)
+            ? { ...attachment, ...fetched.documents[attachment.id] }
+            : attachment,
+        ),
+      })),
+    }
   }
 
   async moveChatToProject(chatId: string, projectId: string): Promise<void> {

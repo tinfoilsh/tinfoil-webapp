@@ -9,6 +9,7 @@ import type { AttachmentRewrite } from '@/services/storage/indexed-db'
 import { SyncEnclaveError, SyncNetworkError } from '@/services/sync-enclave'
 import { MAX_PULL_IDS } from '@/services/sync-enclave/sync-api'
 import { EncryptedAttachmentValidationError } from '@/utils/binary-codec'
+import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockGetAuthHeaders = vi.fn()
@@ -73,6 +74,7 @@ async function downloadChatForBackup(
 describe('CloudStorageService auth readiness', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockAttachmentGet.mockReset()
     localStorage.clear()
     mockGetAuthHeaders.mockResolvedValue({ Authorization: 'Bearer token' })
     mockIsAuthenticated.mockResolvedValue(true)
@@ -119,7 +121,121 @@ describe('CloudStorageService auth readiness', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
+      value: false,
+      configurable: true,
+    })
   })
+
+  function documentChat(payload: Record<string, unknown>) {
+    return {
+      id: 'chat-doc',
+      title: 'Document',
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      lastAccessedAt: 0,
+      messages: [
+        {
+          role: 'user',
+          content: 'summarize',
+          timestamp: new Date(),
+          attachments: [
+            { id: 'doc', type: 'document', fileName: 'scan.pdf', ...payload },
+          ],
+        },
+      ],
+    } as any
+  }
+
+  it('keeps document text and pages inline by default without uploading blobs', async () => {
+    expect(CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED).toBe(false)
+    const payload = {
+      textContent: 'hello',
+      pages: [{ page: 1, text: 'hello', image: 'AQID', is_scanned: true }],
+    }
+    await new CloudStorageService().uploadChat(documentChat(payload))
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+    expect(
+      JSON.parse(
+        new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+      ).messages[0].attachments[0],
+    ).toMatchObject(payload)
+  })
+
+  it('hydrates existing key-only documents before writing inline with the gate disabled', async () => {
+    setCloudSyncEnabled(true)
+    const payload = { textContent: 'recovered document' }
+    mockAttachmentGet.mockResolvedValueOnce(
+      new TextEncoder().encode(JSON.stringify(payload)),
+    )
+    await new CloudStorageService().uploadChat(
+      documentChat({ encryptionKey: 'key' }),
+    )
+    expect(mockAttachmentGet).toHaveBeenCalledTimes(1)
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+    expect(
+      JSON.parse(
+        new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+      ).messages[0].attachments[0],
+    ).toMatchObject(payload)
+  })
+
+  it('never publishes a key-only document if hydration fails', async () => {
+    setCloudSyncEnabled(true)
+    mockAttachmentGet.mockRejectedValueOnce(new Error('unavailable'))
+    await expect(
+      new CloudStorageService().uploadChat(
+        documentChat({ encryptionKey: 'key' }),
+      ),
+    ).rejects.toThrow()
+    expect(mockEnclavePush).not.toHaveBeenCalled()
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+  })
+
+  it('counts inline documents toward the unchanged size cap before any upload', async () => {
+    const chat = documentChat({
+      textContent: 'x'.repeat(CLOUD_SYNC.MAX_CHAT_PLAINTEXT_BYTES),
+    })
+    await expect(
+      new CloudStorageService().uploadChat(chat),
+    ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' })
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+    expect(mockEnclavePush).not.toHaveBeenCalled()
+  })
+
+  it.each(['inline pages', 'hydrated pages'])(
+    'applies the size cap to %s before uploading an image',
+    async (source) => {
+      setCloudSyncEnabled(true)
+      const payload = {
+        pages: [
+          {
+            page: 1,
+            text: '',
+            image: 'A'.repeat(CLOUD_SYNC.MAX_CHAT_PLAINTEXT_BYTES),
+            is_scanned: true,
+          },
+        ],
+      }
+      const chat = documentChat(
+        source === 'inline pages' ? payload : { encryptionKey: 'key' },
+      )
+      chat.messages[0].attachments.push({
+        id: 'image',
+        type: 'image',
+        fileName: 'a.png',
+        base64: 'AQID',
+      })
+      mockAttachmentGet.mockResolvedValue(
+        new TextEncoder().encode(JSON.stringify(payload)),
+      )
+      await expect(
+        new CloudStorageService().uploadChat(chat),
+      ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE', status: 413 })
+      expect(mockAttachmentPut).not.toHaveBeenCalled()
+      expect(mockEnclavePush).not.toHaveBeenCalled()
+    },
+  )
 
   it('settles each pulled chat in request order without hiding batch peers', async () => {
     mockEnclavePull.mockResolvedValue({
@@ -1101,6 +1217,148 @@ describe('CloudStorageService auth readiness', () => {
     expect(result.rewrites).toEqual(
       onAttachmentsUploaded.mock.calls.flatMap(([rewrites]) => rewrites),
     )
+  })
+
+  it('uploads document content as a blob and strips it from the chat envelope', async () => {
+    Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
+      value: true,
+      configurable: true,
+    })
+    mockAttachmentPut.mockResolvedValueOnce({ id: 'srv-doc', att_key: 'dk' })
+    const service = new CloudStorageService()
+    const pages = [{ page: 1, text: 'hello', image: 'AQID', is_scanned: true }]
+    const result = await service.uploadChat(
+      {
+        id: 'chat-1',
+        title: 'Doc chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'summarize',
+            attachments: [
+              {
+                id: 'local-doc',
+                type: 'document',
+                fileName: 'scan.pdf',
+                mimeType: 'application/pdf',
+                textContent: 'hello',
+                pages,
+              },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastAccessedAt: 0,
+      } as any,
+      { idempotencyKey: 'upload-idem-1' },
+    )
+
+    expect(mockAttachmentPut).toHaveBeenCalledTimes(1)
+    const put = mockAttachmentPut.mock.calls[0][0]
+    expect(put.chatId).toBe('chat-1')
+    expect(JSON.parse(new TextDecoder().decode(put.plaintext))).toEqual({
+      textContent: 'hello',
+      pages,
+    })
+
+    const plaintext = JSON.parse(
+      new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+    )
+    expect(plaintext.messages[0].attachments[0]).toEqual({
+      id: 'srv-doc',
+      type: 'document',
+      fileName: 'scan.pdf',
+      mimeType: 'application/pdf',
+      encryptionKey: 'dk',
+    })
+    expect(JSON.stringify(plaintext)).not.toContain('AQID')
+    expect(result.rewrites).toEqual([
+      expect.objectContaining({
+        clientId: 'local-doc',
+        serverId: 'srv-doc',
+        encryptionKey: 'dk',
+      }),
+    ])
+  })
+
+  it('does not re-upload a document that already has an enclave key', async () => {
+    Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
+      value: true,
+      configurable: true,
+    })
+    const service = new CloudStorageService()
+    await service.uploadChat(
+      {
+        id: 'chat-1',
+        title: 'Doc chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'summarize',
+            attachments: [
+              {
+                id: 'srv-doc',
+                type: 'document',
+                fileName: 'scan.pdf',
+                textContent: 'hello',
+                encryptionKey: 'dk',
+              },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastAccessedAt: 0,
+      } as any,
+      { idempotencyKey: 'upload-idem-1' },
+    )
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+    const plaintext = new TextDecoder().decode(
+      mockEnclavePush.mock.calls[0][0].plaintext,
+    )
+    expect(plaintext).not.toContain('"textContent"')
+  })
+
+  it('loads offloaded document content alongside images', async () => {
+    const encoder = new TextEncoder()
+    mockAttachmentGet.mockImplementation(async ({ id }: { id: string }) =>
+      id === 'srv-doc'
+        ? encoder.encode(JSON.stringify({ textContent: 'from blob' }))
+        : new Uint8Array([1, 2, 3]),
+    )
+    const service = new CloudStorageService()
+    const loaded = await service.loadChatAttachments('chat-1', [
+      {
+        role: 'user',
+        content: 'hi',
+        attachments: [
+          {
+            id: 'srv-doc',
+            type: 'document',
+            fileName: 'a.pdf',
+            encryptionKey: 'dk',
+          },
+          {
+            id: 'srv-img',
+            type: 'image',
+            fileName: 'a.png',
+            encryptionKey: 'ik',
+          },
+          {
+            id: 'inline-doc',
+            type: 'document',
+            fileName: 'b.txt',
+            textContent: 'x',
+          },
+        ],
+      } as any,
+    ])
+    expect(loaded.documents).toEqual({
+      'srv-doc': { textContent: 'from blob' },
+    })
+    expect(Object.keys(loaded.images)).toEqual(['srv-img'])
+    expect(mockAttachmentGet).toHaveBeenCalledTimes(2)
   })
 
   it('rejects an oversized chat before uploading any attachment', async () => {
