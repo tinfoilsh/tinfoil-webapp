@@ -218,15 +218,31 @@ function hasNextCursor(cursor: string | undefined): boolean {
   return typeof cursor === 'string' && cursor.length > 0
 }
 
+/**
+ * Content-addressed idempotency key for a single attachment upload.
+ *
+ * The enclave derives the durable attachment id from this key, so the
+ * key must be stable across *every* upload of the same bytes, not just
+ * retries within one logical write. A per-upload key would mint a new
+ * server slot each time the chat push that follows the attachment
+ * upload fails and the chat is re-queued, orphaning the previous blob.
+ * Keying on (chat, client attachment id, byte digest) makes repeated
+ * uploads resolve to the same slot while keeping two identical images
+ * in one chat on distinct slots.
+ */
 async function attachmentIdempotencyKey(
-  uploadIdempotencyKey: string,
-  attachmentIndex: number,
+  chatId: string,
+  clientAttachmentId: string,
+  plaintext: Uint8Array<ArrayBuffer>,
 ): Promise<string> {
+  const contentDigest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', plaintext),
+  )
   const digest = new Uint8Array(
     await crypto.subtle.digest(
       'SHA-256',
       new TextEncoder().encode(
-        `attachment:${uploadIdempotencyKey}:${attachmentIndex}`,
+        `attachment:${chatId}:${clientAttachmentId}:${uint8ArrayToBase64(contentDigest)}`,
       ),
     ),
   )
@@ -324,11 +340,7 @@ export class CloudStorageService {
     )
 
     const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
-    const rewrites = await this.encryptAndUploadAttachments(
-      messages,
-      chat.id,
-      idempotencyKey,
-    )
+    const rewrites = await this.encryptAndUploadAttachments(messages, chat.id)
     // Stamp the clock version this push will create so a remote reader
     // can tell the clock is current (etag === clockVersion) versus a
     // later clock-unaware write that would force the updatedAt fallback.
@@ -427,10 +439,8 @@ export class CloudStorageService {
   private async encryptAndUploadAttachments(
     messages: Message[],
     chatId: string,
-    idempotencyKey: string,
   ): Promise<AttachmentRewrite[]> {
     const rewrites: AttachmentRewrite[] = []
-    let attachmentIndex = 0
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
         if (att.type === 'image' && att.base64 && !att.encryptionKey) {
@@ -446,16 +456,17 @@ export class CloudStorageService {
           // confidential at rest; this is also how sharing keeps
           // working — re-sealing only the chat plaintext for a
           // recipient hands them every attachment key transitively.
+          const clientId = att.id
           const attachmentIdemKey = await attachmentIdempotencyKey(
-            idempotencyKey,
-            attachmentIndex,
+            chatId,
+            clientId,
+            raw,
           )
           const { id: enclaveID, att_key } = await enclaveAttachmentPut({
             chatId,
             plaintext: raw,
             idempotencyKey: attachmentIdemKey,
           })
-          const clientId = att.id
           const storagePayloadId = (
             att as Attachment & { storagePayloadId?: string }
           ).storagePayloadId
@@ -468,7 +479,6 @@ export class CloudStorageService {
             storagePayloadId,
           })
         }
-        attachmentIndex++
       }
     }
     return rewrites
