@@ -2755,6 +2755,49 @@ export class IndexedDBStorage {
   }
 
   /**
+   * Persist enclave-minted attachment ids and keys as soon as the
+   * attachment bytes are stored, before the chat push that follows.
+   * Only the attachment references change: `locallyModified`,
+   * `syncVersion`, `updatedAt`, and the edit clock are left untouched,
+   * so this is invisible to sync bookkeeping. If the push then fails,
+   * the next upload sees the attachments as already uploaded and does
+   * not send the bytes again.
+   */
+  async recordAttachmentRewrites(
+    chatId: string,
+    rewrites: AttachmentRewrite[],
+  ): Promise<void> {
+    if (rewrites.length === 0) return
+    return this.enqueueSave('recordAttachmentRewrites', async () => {
+      const db = await this.ensureDB()
+      return new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction(
+          [CHATS_STORE, CHAT_SUMMARIES_STORE],
+          'readwrite',
+        )
+        const store = transaction.objectStore(CHATS_STORE)
+        const summaryStore = transaction.objectStore(CHAT_SUMMARIES_STORE)
+        const request = store.get(chatId)
+        transaction.oncomplete = () => resolve()
+        transaction.onerror = () =>
+          reject(new Error('Failed to record attachment rewrites'))
+        transaction.onabort = () =>
+          reject(new Error('Attachment rewrite transaction aborted'))
+        request.onerror = () =>
+          reject(new Error('Failed to read chat before recording rewrites'))
+        request.onsuccess = () => {
+          const chat = request.result as StoredChat | undefined
+          if (!chat) return
+          applyAttachmentRewritesInPlace(chat.messages ?? [], rewrites)
+          const putRequest = putStoredChat(store, summaryStore, chat)
+          putRequest.onerror = () =>
+            reject(new Error('Failed to record attachment rewrites'))
+        }
+      })
+    })
+  }
+
+  /**
    * Atomic upload finalization (§C6 / §H5).
    *
    * Runs inside `saveQueue` so it is serialized with any concurrent

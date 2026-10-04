@@ -8,8 +8,10 @@ import { AuthTokenUnavailableError } from '@/services/auth'
 import { chatEvents } from '@/services/storage/chat-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
+  applyAttachmentRewritesInPlace,
   chatContentFingerprint,
   indexedDBStorage,
+  type AttachmentRewrite,
   type StoredChat,
 } from '@/services/storage/indexed-db'
 import { decideRecovery } from '@/services/sync-enclave/enclave-error-recovery'
@@ -152,6 +154,27 @@ const PAYLOAD_TOO_LARGE_STATUS = 413
 export const CHAT_TOO_LARGE_MESSAGE =
   'This chat is too large to sync. Remove some attachments or start a new chat to continue syncing.'
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
+
+/**
+ * Fingerprint the pre-upload snapshot as it will look once the
+ * enclave-minted attachment ids and keys have been written to the local
+ * row. `persistAttachmentRewrites` applies those before `finalizeUpload`
+ * runs, so the stored row legitimately differs from the raw snapshot in
+ * exactly those fields; comparing against the raw fingerprint would
+ * misread every upload with new attachments as a concurrent edit.
+ */
+function fingerprintAfterRewrites(
+  chat: StoredChat,
+  rewrites: AttachmentRewrite[],
+): string {
+  if (rewrites.length === 0) return chatContentFingerprint(chat)
+  const messages = chat.messages.map((message) => ({
+    ...message,
+    attachments: message.attachments?.map((attachment) => ({ ...attachment })),
+  }))
+  applyAttachmentRewritesInPlace(messages, rewrites)
+  return chatContentFingerprint({ ...chat, messages })
+}
 
 export class CloudSyncService {
   private syncLock: Promise<void> | null = null
@@ -392,6 +415,23 @@ export class CloudSyncService {
   private isOwnedByActiveAccount(chat: StoredChat): boolean {
     const userId = this.readActiveUserId()
     return userId !== null && chat.syncUserId === userId
+  }
+
+  /**
+   * Write enclave-minted attachment ids/keys to the local row as soon
+   * as the bytes are stored. Runs before the chat push so a push
+   * failure, or a concurrent-edit rejection in `finalizeUpload`, no
+   * longer causes the next cycle to upload the same bytes again.
+   */
+  private async persistAttachmentRewrites(
+    chatId: string,
+    rewrites: AttachmentRewrite[],
+    generation: number,
+    userId: string | null,
+  ): Promise<void> {
+    this.ensureCurrentAccount(generation, userId)
+    await indexedDBStorage.recordAttachmentRewrites(chatId, rewrites)
+    this.ensureCurrentAccount(generation, userId)
   }
 
   private async assertUploadFinalized(
@@ -662,13 +702,20 @@ export class CloudSyncService {
         await cloudStorage.uploadChat(chat, {
           ...options,
           idempotencyKey: options.idempotencyKey ?? newIdempotencyKey(),
+          onAttachmentsUploaded: (uploaded) =>
+            this.persistAttachmentRewrites(
+              chatId,
+              uploaded,
+              generation,
+              userId,
+            ),
         })
       this.ensureCurrentAccount(generation, userId)
       await indexedDBStorage.finalizeUpload({
         chatId,
         rewrites,
         preUploadUpdatedAt,
-        preUploadFingerprint,
+        preUploadFingerprint: fingerprintAfterRewrites(chat, rewrites),
         syncVersion: syncVersion ?? preUploadVersion + 1,
         uploadedProjectId: chat.projectId,
         projectIntentIncluded,
@@ -803,13 +850,26 @@ export class CloudSyncService {
         try {
           this.ensureCurrentAccount(generation, userId)
           const { syncVersion, rewrites, projectIntentIncluded } =
-            await cloudStorage.uploadChat(chat, { idempotencyKey })
+            await cloudStorage.uploadChat(chat, {
+              idempotencyKey,
+              onAttachmentsUploaded: async (uploaded) => {
+                await this.persistAttachmentRewrites(
+                  chatId,
+                  uploaded,
+                  generation,
+                  userId,
+                )
+                // Retries retain only persisted references, never newer local
+                // edits, so the frozen envelope and idempotency key still agree.
+                applyAttachmentRewritesInPlace(chat.messages, uploaded)
+              },
+            })
           this.ensureCurrentAccount(generation, userId)
           await indexedDBStorage.finalizeUpload({
             chatId,
             rewrites,
             preUploadUpdatedAt,
-            preUploadFingerprint,
+            preUploadFingerprint: fingerprintAfterRewrites(chat, rewrites),
             syncVersion: syncVersion ?? preUploadVersion + 1,
             uploadedProjectId: chat.projectId,
             projectIntentIncluded,
