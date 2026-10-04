@@ -28,6 +28,13 @@ const mockListStatus = vi.fn()
 const mockAttachmentPut = vi.fn()
 const mockAttachmentGet = vi.fn()
 
+function setDocumentWrites(enabled: boolean) {
+  Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
+    value: enabled,
+    configurable: true,
+  })
+}
+
 vi.mock('@/services/auth', () => ({
   authTokenManager: {
     getAuthHeaders: (...args: any[]) => mockGetAuthHeaders(...args),
@@ -122,7 +129,7 @@ describe('CloudStorageService auth readiness', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
-      value: false,
+      value: true,
       configurable: true,
     })
   })
@@ -147,7 +154,8 @@ describe('CloudStorageService auth readiness', () => {
     } as any
   }
 
-  it('keeps document text and pages inline by default without uploading blobs', async () => {
+  it('keeps document text and pages inline when writes are disabled', async () => {
+    setDocumentWrites(false)
     expect(CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED).toBe(false)
     const payload = {
       textContent: 'hello',
@@ -163,6 +171,7 @@ describe('CloudStorageService auth readiness', () => {
   })
 
   it('hydrates existing key-only documents before writing inline with the gate disabled', async () => {
+    setDocumentWrites(false)
     setCloudSyncEnabled(true)
     const payload = { textContent: 'recovered document' }
     mockAttachmentGet.mockResolvedValueOnce(
@@ -181,6 +190,7 @@ describe('CloudStorageService auth readiness', () => {
   })
 
   it('never publishes a key-only document if hydration fails', async () => {
+    setDocumentWrites(false)
     setCloudSyncEnabled(true)
     mockAttachmentGet.mockRejectedValueOnce(new Error('unavailable'))
     await expect(
@@ -193,6 +203,7 @@ describe('CloudStorageService auth readiness', () => {
   })
 
   it('counts inline documents toward the unchanged size cap before any upload', async () => {
+    setDocumentWrites(false)
     const chat = documentChat({
       textContent: 'x'.repeat(CLOUD_SYNC.MAX_CHAT_PLAINTEXT_BYTES),
     })
@@ -206,6 +217,7 @@ describe('CloudStorageService auth readiness', () => {
   it.each(['inline pages', 'hydrated pages'])(
     'applies the size cap to %s before uploading an image',
     async (source) => {
+      setDocumentWrites(false)
       setCloudSyncEnabled(true)
       const payload = {
         pages: [
@@ -1220,10 +1232,7 @@ describe('CloudStorageService auth readiness', () => {
   })
 
   it('uploads document content as a blob and strips it from the chat envelope', async () => {
-    Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
-      value: true,
-      configurable: true,
-    })
+    expect(CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED).toBe(true)
     mockAttachmentPut.mockResolvedValueOnce({ id: 'srv-doc', att_key: 'dk' })
     const service = new CloudStorageService()
     const pages = [{ page: 1, text: 'hello', image: 'AQID', is_scanned: true }]
@@ -1319,6 +1328,37 @@ describe('CloudStorageService auth readiness', () => {
     )
     expect(plaintext).not.toContain('"textContent"')
   })
+
+  it('offloads documents that would otherwise exceed the chat size cap', async () => {
+    const textContent = 'x'.repeat(CLOUD_SYNC.MAX_CHAT_PLAINTEXT_BYTES)
+    await new CloudStorageService().uploadChat(documentChat({ textContent }))
+    expect(mockAttachmentPut).toHaveBeenCalledOnce()
+    expect(
+      JSON.parse(
+        new TextDecoder().decode(mockAttachmentPut.mock.calls[0][0].plaintext),
+      ),
+    ).toEqual({ textContent })
+    const pushed = mockEnclavePush.mock.calls[0][0].plaintext
+    expect(pushed.byteLength).toBeLessThan(CLOUD_SYNC.MAX_CHAT_PLAINTEXT_BYTES)
+    expect(
+      JSON.parse(new TextDecoder().decode(pushed)).messages[0].attachments[0],
+    ).not.toHaveProperty('textContent')
+  })
+
+  it.each([
+    {},
+    { textContent: null },
+    { pages: [{ page: 1, text: '', is_scanned: true }] },
+  ])(
+    'rejects invalid document payload %j before uploading',
+    async (payload) => {
+      await expect(
+        new CloudStorageService().uploadChat(documentChat(payload)),
+      ).rejects.toThrow()
+      expect(mockAttachmentPut).not.toHaveBeenCalled()
+      expect(mockEnclavePush).not.toHaveBeenCalled()
+    },
+  )
 
   it('loads offloaded document content alongside images', async () => {
     const encoder = new TextEncoder()

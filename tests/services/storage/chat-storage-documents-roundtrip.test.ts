@@ -86,7 +86,7 @@ describe('document cloud/local round trips with real IndexedDB', () => {
   })
   afterEach(() => {
     Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
-      value: false,
+      value: true,
       configurable: true,
     })
   })
@@ -132,7 +132,11 @@ describe('document cloud/local round trips with real IndexedDB', () => {
     },
   )
 
-  it('writes retained content inline when converting back with the default gate', async () => {
+  it('writes retained content inline when document writes are disabled', async () => {
+    Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
+      value: false,
+      configurable: true,
+    })
     await storeDocument({ textContent: 'retained prose', pages })
     const storage = new ChatStorageService()
     await storage.convertChatToLocal(CHAT_ID)

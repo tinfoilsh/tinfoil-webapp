@@ -30,7 +30,7 @@ export const SYNC_HEADERS = {
   ProfileSyncProtocol: 'X-Profile-Sync-Protocol',
 } as const
 
-export const SYNC_PROTOCOL_VERSION = '2'
+export const SYNC_PROTOCOL_VERSION = '3'
 
 /** Opt-in headers that bypass the legacy tombstone guard on re-upload. */
 export const RESTORE_DELETED_HEADERS = {

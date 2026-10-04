@@ -160,7 +160,7 @@ describe('SyncEnclaveClient', () => {
     const headers = mockFetch.mock.calls[0][1]?.headers as Headers
     expect(headers.get('Authorization')).toBe('Bearer test-jwt')
     expect(headers.get('Accept')).toBe('application/json')
-    expect(headers.get('X-Sync-Protocol')).toBe('2')
+    expect(headers.get('X-Sync-Protocol')).toBe('3')
   })
 
   it('overwrites a caller-supplied authorization header with the current JWT', async () => {

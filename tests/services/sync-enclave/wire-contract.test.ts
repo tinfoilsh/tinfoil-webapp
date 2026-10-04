@@ -20,7 +20,7 @@ import {
 
 describe('wire-contract', () => {
   it('pins the sync protocol version', () => {
-    expect(SYNC_PROTOCOL_VERSION).toBe('2')
+    expect(SYNC_PROTOCOL_VERSION).toBe('3')
   })
 
   it('headers match controlplane/pkg/contract/headers.go', () => {
