@@ -25,6 +25,7 @@ const {
   forkCloudChat,
   finalizeUpload,
   recordAttachmentRewrites,
+  forgetServerAttachments,
   getPendingUploadChats,
   applyRemoteChatIfFresh,
   listChats,
@@ -46,6 +47,7 @@ const {
   forkCloudChat: vi.fn(),
   finalizeUpload: vi.fn(),
   recordAttachmentRewrites: vi.fn(),
+  forgetServerAttachments: vi.fn(),
   getPendingUploadChats: vi.fn(),
   applyRemoteChatIfFresh: vi.fn(),
   listChats: vi.fn(),
@@ -79,6 +81,7 @@ vi.mock('@/services/storage/indexed-db', () => ({
     getChat,
     finalizeUpload,
     recordAttachmentRewrites,
+    forgetServerAttachments,
     getPendingUploadChats,
     applyRemoteChatIfFresh,
     getAllChats,
@@ -137,6 +140,7 @@ describe('CloudSyncService revision coordinator routing', () => {
     canWriteToCloud.mockResolvedValue(false)
     finalizeUpload.mockResolvedValue(undefined)
     recordAttachmentRewrites.mockResolvedValue(undefined)
+    forgetServerAttachments.mockImplementation(async (_id, ids) => ids)
     getPendingUploadChats.mockResolvedValue([])
     applyRemoteChatIfFresh.mockResolvedValue({ applied: true })
     getAllChats.mockResolvedValue([])
@@ -444,6 +448,77 @@ describe('CloudSyncService revision coordinator routing', () => {
 
     expect(recordAttachmentRewrites).toHaveBeenCalledWith('chat-1', rewrites)
     expect(finalizeUpload).not.toHaveBeenCalled()
+  })
+
+  it('re-uploads attachments the server purged and pushes again', async () => {
+    canWriteToCloud.mockResolvedValue(true)
+    const chat = {
+      id: 'chat-1',
+      syncUserId: 'user-1',
+      locallyModified: true,
+      pendingUpload: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      messages: [
+        {
+          role: 'user',
+          content: 'hello',
+          attachments: [
+            {
+              id: 'srv-att',
+              type: 'image',
+              base64: 'AQID',
+              encryptionKey: 'k',
+            },
+          ],
+        },
+      ],
+    }
+    getChat.mockImplementation(async () => chat)
+    uploadChat
+      .mockRejectedValueOnce(
+        new SyncEnclaveError('missing', 409, 'MISSING_ATTACHMENT', {
+          missing_attachments: ['srv-att'],
+        }),
+      )
+      .mockImplementationOnce(async () => {
+        getChat.mockImplementation(async () => ({ ...chat, pendingUpload: 0 }))
+        return { syncVersion: 2, rewrites: [], projectIntentIncluded: false }
+      })
+
+    const service = new CloudSyncService()
+    await service.backupChat('chat-1')
+    await service.waitForAllUploads()
+    await vi.waitFor(() => expect(uploadChat).toHaveBeenCalledTimes(2))
+
+    expect(forgetServerAttachments).toHaveBeenCalledWith('chat-1', ['srv-att'])
+    expect(reportChatSyncFailed).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a purged attachment this device cannot re-upload', async () => {
+    canWriteToCloud.mockResolvedValue(true)
+    getChat.mockResolvedValue({
+      id: 'chat-1',
+      syncUserId: 'user-1',
+      locallyModified: true,
+      pendingUpload: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      messages: [{ role: 'user', content: 'hello' }],
+    })
+    uploadChat.mockRejectedValue(
+      new SyncEnclaveError('missing', 409, 'MISSING_ATTACHMENT', {
+        missing_attachments: ['srv-thumb-only'],
+      }),
+    )
+    forgetServerAttachments.mockResolvedValue([])
+
+    const service = new CloudSyncService()
+    await service.backupChat('chat-1')
+    await expect(service.waitForAllUploads()).rejects.toThrow('missing')
+    expect(uploadChat).toHaveBeenCalledTimes(1)
+    expect(reportChatSyncFailed).toHaveBeenCalledWith(
+      'chat-1',
+      expect.stringContaining('no longer available'),
+    )
   })
 
   it('marks an oversized chat as failed and skips it until its content changes', async () => {

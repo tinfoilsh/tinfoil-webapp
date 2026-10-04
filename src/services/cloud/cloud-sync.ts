@@ -907,6 +907,15 @@ export class CloudSyncService {
       await this.resolveConflictByPullingRemote(chatId, generation)
       return
     }
+    if (decision.action.type === 'reupload-attachments-and-retry') {
+      await this.reuploadPurgedAttachments(
+        chatId,
+        generation,
+        decision.action.attachmentIds,
+        error,
+      )
+      return
+    }
     if (decision.action.type === 'refresh-current-key-and-retry') {
       reportKeyActionRequired('key-mismatch')
     } else if (decision.action.type === 'trigger-recovery-wizard') {
@@ -932,6 +941,35 @@ export class CloudSyncService {
       }
     }
     throw error
+  }
+
+  /**
+   * The server purged attachment blobs this device still references.
+   * Drop their server identity locally so the next logical upload
+   * re-sends the bytes, then re-enqueue. If a blob cannot be re-sent
+   * (this device only ever held its thumbnail) the chat cannot be
+   * repaired from here: surface it rather than loop.
+   */
+  private async reuploadPurgedAttachments(
+    chatId: string,
+    generation: number,
+    attachmentIds: string[],
+    error: unknown,
+  ): Promise<void> {
+    const userId = this.readActiveUserId()
+    const reset = await indexedDBStorage.forgetServerAttachments(
+      chatId,
+      attachmentIds,
+    )
+    this.ensureCurrentAccount(generation, userId)
+    if (reset.length < attachmentIds.length) {
+      reportChatSyncFailed(
+        chatId,
+        'Some attachments in this chat are no longer available in the cloud',
+      )
+      throw error
+    }
+    void this.backupChat(chatId)
   }
 
   private async resolveConflictByPullingRemote(
