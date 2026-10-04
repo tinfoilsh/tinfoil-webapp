@@ -32,6 +32,8 @@ describe('decideRecovery', () => {
       'NETWORK',
       'NOT_FOUND',
       'PAYLOAD_TOO_LARGE',
+      'MISSING_ATTACHMENT',
+      'ATTACHMENT_PURGE_IN_PROGRESS',
     ]
     for (const code of required) {
       expect(COVERED_CODES, code).toContain(code)
@@ -54,6 +56,8 @@ describe('decideRecovery', () => {
     ['NETWORK', 'retry'],
     ['NOT_FOUND', 'surface-not-found'],
     ['PAYLOAD_TOO_LARGE', 'abort'],
+    ['MISSING_ATTACHMENT', 'reupload-attachments-and-retry'],
+    ['ATTACHMENT_PURGE_IN_PROGRESS', 'retry'],
   ])('maps %s → %s', (code, type) => {
     const decision = decideRecovery(err(code))
     expect(decision.action.type).toBe(type)
@@ -66,6 +70,18 @@ describe('decideRecovery', () => {
     if (decision.action.type === 'retry') {
       expect(decision.action.reason).toBe('NETWORK')
     }
+  })
+
+  it('carries the purged attachment ids into the reupload action', () => {
+    const decision = decideRecovery(
+      new SyncEnclaveError('missing', 409, 'MISSING_ATTACHMENT', {
+        missing_attachments: ['att-a', 'att-b', 42],
+      }),
+    )
+    expect(decision.action).toEqual({
+      type: 'reupload-attachments-and-retry',
+      attachmentIds: ['att-a', 'att-b'],
+    })
   })
 
   it('never retries an oversized payload', () => {

@@ -31,6 +31,8 @@ describe('classifyEnclaveError', () => {
       NOT_FOUND: 'USER_DECISION',
       LEGACY_BLOB_NOT_MIGRATED: 'RETRYABLE_REFRESH',
       PAYLOAD_TOO_LARGE: 'TERMINAL',
+      MISSING_ATTACHMENT: 'RETRYABLE_REFRESH',
+      ATTACHMENT_PURGE_IN_PROGRESS: 'RETRYABLE_TRANSIENT',
     }
     for (const [code, kind] of Object.entries(expectations)) {
       const result = classifyEnclaveError(err(code))

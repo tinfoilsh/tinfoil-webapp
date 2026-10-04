@@ -26,6 +26,7 @@ import {
   type EnclaveErrorClassification,
   type EnclaveErrorCode,
 } from './enclave-error-classification'
+import { SyncEnclaveError } from './sync-enclave-client'
 
 /**
  * Discriminated union of recovery actions. Every variant carries the
@@ -55,6 +56,15 @@ export type RecoveryAction =
    * the caller retries the original pull.
    */
   | { type: 'migrate-legacy-and-retry'; scope?: string }
+  /**
+   * The server no longer holds some attachment blobs this chat
+   * references (they were purged after another device dropped them
+   * and this device, holding an older copy, re-added them). The
+   * bytes are still in local storage: forget their server ids/keys
+   * so the next logical upload re-sends them, then retry as a NEW
+   * logical write.
+   */
+  | { type: 'reupload-attachments-and-retry'; attachmentIds: string[] }
   /**
    * User input required. Surface the conflict UI / register-key
    * arbitration; no automatic retry. STALE_BLOB is mapped here as a
@@ -171,6 +181,22 @@ const ACTIONS: Record<
   // the same bytes can never succeed. The user has to shrink or split
   // the chat, so this stays failed until the content changes.
   PAYLOAD_TOO_LARGE: () => ({ type: 'abort', reason: 'PAYLOAD_TOO_LARGE' }),
+  MISSING_ATTACHMENT: (c) => ({
+    type: 'reupload-attachments-and-retry',
+    attachmentIds: missingAttachmentIds(c.cause),
+  }),
+  ATTACHMENT_PURGE_IN_PROGRESS: () => ({
+    type: 'retry',
+    reason: 'TRANSIENT_5XX',
+  }),
+}
+
+function missingAttachmentIds(cause: unknown): string[] {
+  if (!(cause instanceof SyncEnclaveError)) return []
+  const ids = cause.details?.missing_attachments
+  return Array.isArray(ids)
+    ? ids.filter((id): id is string => typeof id === 'string')
+    : []
 }
 
 /**
