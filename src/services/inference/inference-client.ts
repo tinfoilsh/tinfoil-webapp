@@ -28,6 +28,15 @@ import {
   DEV_SIMULATOR_ERROR_MESSAGE,
 } from '@/constants/dev-simulator'
 import { AuthTokenUnavailableError, authTokenManager } from '@/services/auth'
+import {
+  createActiveAccountGuard,
+  type AccountOperationGuard,
+} from '@/services/cloud/account-operation'
+import {
+  hydrateDocumentAttachments,
+  requireDocumentCloudRead,
+} from '@/services/cloud/document-hydration'
+import { isOffloadedDocument } from '@/services/cloud/document-payload'
 import { refreshSafeguardsAfterMutation } from '@/services/safeguards'
 import { shouldRetryTestFail, simulateStream } from '@/utils/dev-simulator'
 import { logError, logInfo } from '@/utils/error-handling'
@@ -414,6 +423,19 @@ export interface SendChatStreamParams {
 export async function sendChatStream(
   params: SendChatStreamParams,
 ): Promise<ChatChunkStream> {
+  const guard = createActiveAccountGuard(params.signal)
+  try {
+    guard.assertCurrent()
+    return await sendChatStreamForAccount(params, guard)
+  } finally {
+    guard.dispose()
+  }
+}
+
+async function sendChatStreamForAccount(
+  params: SendChatStreamParams,
+  guard: AccountOperationGuard,
+): Promise<ChatChunkStream> {
   const {
     model,
     autoCandidates,
@@ -542,11 +564,19 @@ export async function sendChatStream(
     )
   }
 
+  const needsDocumentRead = updatedMessages.some((message) =>
+    message.attachments?.some(isOffloadedDocument),
+  )
+  const hydratedMessages = await hydrateDocumentAttachments(
+    updatedMessages,
+    signal,
+  )
+  guard.assertCurrent()
   const messages = ChatQueryBuilder.buildMessages({
     model,
     systemPrompt,
     rules,
-    messages: updatedMessages,
+    messages: hydratedMessages,
     autoCandidates,
     includeGenUIHint: genUIEnabled,
     includeTimeReminder: true,
@@ -588,6 +618,8 @@ export async function sendChatStream(
     }
 
     try {
+      guard.assertCurrent()
+      if (needsDocumentRead) requireDocumentCloudRead()
       const requestBody: Record<string, unknown> = {
         model: model.modelName,
         messages,
@@ -670,6 +702,8 @@ export async function sendChatStream(
       // This loop owns retry policy with typed error classification; the
       // SDK's internal retries would stack under it and delay terminal
       // errors such as quota-exhausted 429s.
+      guard.assertCurrent()
+      if (needsDocumentRead) requireDocumentCloudRead()
       const stream = await (client.chat.completions.create as Function)(
         requestBody,
         {
