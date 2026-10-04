@@ -148,6 +148,9 @@ const UPLOAD_MAX_RETRIES = 3
 const DECRYPTION_RETRY_BATCH_SIZE = 5
 export const CROSS_TAB_SYNC_LOCK = 'tinfoil-cloud-sync'
 export const CROSS_TAB_SYNC_LOCK_OPTIONS = { mode: 'exclusive' } as const
+const PAYLOAD_TOO_LARGE_STATUS = 413
+export const CHAT_TOO_LARGE_MESSAGE =
+  'This chat is too large to sync. Remove some attachments or start a new chat to continue syncing.'
 const isStreaming = (id: string) => streamingTracker.isStreaming(id)
 
 export class CloudSyncService {
@@ -163,6 +166,11 @@ export class CloudSyncService {
   private projectBarrierQueues = new Map<string, Promise<void>>()
   private activeProjectUploads = new Map<string, number>()
   private projectUploadDrainWaiters = new Map<string, Set<() => void>>()
+  // Chats rejected as too large, keyed by chat id to the content
+  // fingerprint that was rejected. A chat stays here until its content
+  // changes so the periodic drain does not re-serialize and re-reject
+  // the same bytes every cycle.
+  private oversizedChats = new Map<string, string>()
 
   constructor() {
     this.uploadCoalescer = new UploadCoalescer(
@@ -193,6 +201,7 @@ export class CloudSyncService {
       this.accountGeneration++
       this.uploadCoalescer.clear()
       this.streamingCallbacks.clear()
+      this.oversizedChats.clear()
       this.legacyMigrationKicked = false
       this.cancelSyncLifecycle('disabled')
       if (this.chatReloadFrame !== null) {
@@ -404,6 +413,7 @@ export class CloudSyncService {
     resetSyncEnclaveRequestScope('cloud-sync')
     this.uploadCoalescer.clear()
     this.streamingCallbacks.clear()
+    this.oversizedChats.clear()
     this.legacyMigrationKicked = false
     if (this.chatReloadFrame !== null) {
       cancelAnimationFrame(this.chatReloadFrame)
@@ -776,6 +786,18 @@ export class CloudSyncService {
       const { chat, release } = prepared
       const preUploadUpdatedAt = chat.updatedAt
       const preUploadFingerprint = chatContentFingerprint(chat)
+      if (this.oversizedChats.get(chatId) === preUploadFingerprint) {
+        // Same bytes the enclave already rejected: fail with the same
+        // terminal error without touching the network, so callers see
+        // a real failure for this chat rather than a silent skip that
+        // never finalizes.
+        release()
+        throw new SyncEnclaveError(
+          CHAT_TOO_LARGE_MESSAGE,
+          PAYLOAD_TOO_LARGE_STATUS,
+          'PAYLOAD_TOO_LARGE',
+        )
+      }
       const preUploadVersion = chat.syncVersion ?? 0
       const attempt: UploadAttempt = async () => {
         try {
@@ -797,11 +819,14 @@ export class CloudSyncService {
             throw new Error('Authenticated user ID is unavailable')
           }
           await this.assertUploadFinalized(chatId, generation, userId)
+          this.oversizedChats.delete(chatId)
           reportChatSynced(chatId)
           this.queueChatReload()
         } catch (error) {
           if (this.readActiveUserId() !== userId) throw error
-          await this.recoverFromChatUploadError(chatId, generation, error)
+          await this.recoverFromChatUploadError(chatId, generation, error, {
+            fingerprint: preUploadFingerprint,
+          })
         }
       }
       attempt.dispose = release
@@ -817,6 +842,7 @@ export class CloudSyncService {
     chatId: string,
     generation: number,
     error: unknown,
+    context: { fingerprint?: string } = {},
   ): Promise<void> {
     if (!this.isCurrentGeneration(generation)) throw error
     if (error instanceof AuthTokenUnavailableError) return
@@ -840,6 +866,11 @@ export class CloudSyncService {
     } else if (decision.action.type === 'abort') {
       if (decision.action.reason === 'FORBIDDEN') {
         reportKeyActionRequired('account-blocked')
+      } else if (decision.action.reason === 'PAYLOAD_TOO_LARGE') {
+        if (context.fingerprint) {
+          this.oversizedChats.set(chatId, context.fingerprint)
+        }
+        reportChatSyncFailed(chatId, CHAT_TOO_LARGE_MESSAGE)
       } else if (decision.action.reason !== 'AUTH_PERSISTENT') {
         reportChatSyncFailed(chatId, "This chat couldn't be synced")
       }

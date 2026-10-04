@@ -59,6 +59,10 @@ export const CLOUD_SYNC = {
   // the whole response on the main thread before REQUEST_MS elapses, and
   // chats with attachments can be megabytes each, so keep batches small.
   PULL_BATCH_SIZE: 20,
+  // Mirrors the sync enclave's envelope plaintext cap. Checked before
+  // any bytes leave the device so an oversized chat fails fast instead
+  // of uploading its attachments and then being rejected by the push.
+  MAX_CHAT_PLAINTEXT_BYTES: 32 * 1024 * 1024,
   CHAT_SYNC_INTERVAL: 20000, // 20 seconds - frequency for syncing chats
   PROFILE_SYNC_INTERVAL: 60000, // 60 seconds (1 minute) - frequency for syncing profile
   PROFILE_SYNC_DEBOUNCE: 2000,

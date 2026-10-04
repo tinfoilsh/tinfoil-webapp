@@ -4,6 +4,7 @@ import {
   SETTINGS_CLOUD_SYNC_ENABLED,
 } from '@/constants/storage-keys'
 import {
+  CHAT_TOO_LARGE_MESSAGE,
   CloudSyncService,
   CROSS_TAB_SYNC_LOCK,
   CROSS_TAB_SYNC_LOCK_OPTIONS,
@@ -406,6 +407,50 @@ describe('CloudSyncService revision coordinator routing', () => {
         errors: [expect.stringContaining('Chat upload did not finalize')],
       },
     )
+  })
+
+  it('marks an oversized chat as failed and skips it until its content changes', async () => {
+    canWriteToCloud.mockResolvedValue(true)
+    const { chatContentFingerprint } =
+      await import('@/services/storage/indexed-db')
+    const fingerprint = vi.mocked(chatContentFingerprint)
+    const pendingChat = {
+      id: 'chat-1',
+      syncUserId: 'user-1',
+      locallyModified: true,
+      pendingUpload: 1,
+      updatedAt: '2026-01-01T00:00:00Z',
+      messages: [{ role: 'user', content: 'hello' }],
+    }
+    getChat.mockResolvedValue(pendingChat)
+    uploadChat.mockRejectedValue(
+      new SyncEnclaveError('too large', 413, 'PAYLOAD_TOO_LARGE'),
+    )
+    const service = new CloudSyncService()
+
+    fingerprint.mockReturnValue('fp-oversized')
+    await service.backupChat('chat-1')
+    await expect(service.waitForAllUploads()).rejects.toThrow('too large')
+    // Terminal: no coalescer retries under the same key.
+    expect(uploadChat).toHaveBeenCalledTimes(1)
+    expect(reportChatSyncFailed).toHaveBeenCalledWith(
+      'chat-1',
+      CHAT_TOO_LARGE_MESSAGE,
+    )
+
+    // Next sync cycle with identical content: nothing goes to the enclave,
+    // but the chat still reports as failed rather than silently skipped.
+    await service.backupChat('chat-1')
+    await expect(service.waitForAllUploads()).rejects.toThrow(
+      CHAT_TOO_LARGE_MESSAGE,
+    )
+    expect(uploadChat).toHaveBeenCalledTimes(1)
+
+    // The user edited the chat: it is attempted again.
+    fingerprint.mockReturnValue('fp-edited')
+    await service.backupChat('chat-1')
+    await expect(service.waitForAllUploads()).rejects.toThrow('too large')
+    expect(uploadChat).toHaveBeenCalledTimes(2)
   })
 
   it('resolves an upload conflict by applying the winning remote chat', async () => {
