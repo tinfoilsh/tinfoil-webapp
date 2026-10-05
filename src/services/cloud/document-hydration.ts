@@ -1,27 +1,58 @@
-import type { Message } from '@/components/chat/types'
+import type { Attachment, Message } from '@/components/chat/types'
 import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
+import { logError } from '@/utils/error-handling'
 import { attachmentGet } from '../sync-enclave/sync-api'
 import { createActiveAccountGuard } from './account-operation'
 import {
   decodeDocumentPayload,
+  DocumentPayloadDecodeError,
   hasInlineDocumentPayload,
   isServerKeyedDocument,
   validateDocumentPayload,
 } from './document-payload'
 
+export type DocumentHydrationFailure =
+  'sync_disabled' | 'unavailable' | 'invalid'
+
+function describeHydrationFailure(
+  reason: DocumentHydrationFailure,
+  fileName?: string,
+): string {
+  switch (reason) {
+    case 'sync_disabled':
+      return 'Document content is not on this device. Enable cloud sync to download it, then retry.'
+    case 'unavailable':
+      return 'Document content could not be loaded. Please retry before continuing.'
+    case 'invalid':
+      return `The attachment "${fileName ?? 'document'}" could not be read. Remove it and attach the file again.`
+  }
+}
+
 export class DocumentHydrationError extends Error {
   constructor(
-    readonly reason: 'sync_disabled' | 'unavailable',
-    options?: ErrorOptions,
+    readonly reason: DocumentHydrationFailure,
+    options?: ErrorOptions & { fileName?: string },
   ) {
-    super(
-      reason === 'sync_disabled'
-        ? 'Document content is not on this device. Enable cloud sync to download it, then retry.'
-        : 'Document content could not be loaded. Please retry before continuing.',
-      options,
-    )
+    super(describeHydrationFailure(reason, options?.fileName), options)
     this.name = 'DocumentHydrationError'
   }
+}
+
+function toHydrationError(
+  attachment: Attachment,
+  error: unknown,
+): DocumentHydrationError {
+  if (error instanceof DocumentPayloadDecodeError) {
+    logError('Document attachment failed validation', error, {
+      component: 'DocumentHydration',
+      metadata: { attachmentId: attachment.id, fileName: attachment.fileName },
+    })
+    return new DocumentHydrationError('invalid', {
+      cause: error,
+      fileName: attachment.fileName,
+    })
+  }
+  return new DocumentHydrationError('unavailable', { cause: error })
 }
 
 export function requireDocumentCloudRead(): void {
@@ -54,10 +85,14 @@ export async function hydrateDocumentAttachments(
           continue
         }
         if (hasInlineDocumentPayload(attachment)) {
-          attachments.push({
-            ...attachment,
-            ...validateDocumentPayload(attachment.id, attachment),
-          })
+          try {
+            attachments.push({
+              ...attachment,
+              ...validateDocumentPayload(attachment.id, attachment),
+            })
+          } catch (error) {
+            throw toHydrationError(attachment, error)
+          }
           continue
         }
         if (!isServerKeyedDocument(attachment))
@@ -77,7 +112,7 @@ export async function hydrateDocumentAttachments(
         } catch (error) {
           guard.assertCurrent()
           requireDocumentCloudRead()
-          throw new DocumentHydrationError('unavailable', { cause: error })
+          throw toHydrationError(attachment, error)
         }
       }
       hydrated.push({ ...message, attachments })
