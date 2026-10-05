@@ -158,7 +158,10 @@ describe('document hydration at sendChatStream', () => {
     attachmentGet.mockResolvedValueOnce(
       new TextEncoder().encode('{"pages":[null]}'),
     )
-    await expect(send()).rejects.toThrow(/document/i)
+    await expect(send()).rejects.toMatchObject({
+      name: 'DocumentHydrationError',
+      reason: 'invalid',
+    })
     expect(create).not.toHaveBeenCalled()
   })
 
