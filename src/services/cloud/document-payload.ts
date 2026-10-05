@@ -17,25 +17,28 @@ export interface DocumentPayload {
   pages?: DocumentPage[]
 }
 
+// The document enclave serializes pages with `omitempty` on `text` and
+// `image`: scanned or blank pages carry no `text` key, and a page whose
+// render failed carries no `image` key. Both default to empty here so a
+// valid enclave response is never rejected.
 const documentPayloadSchema = z
   .object({
     textContent: z.string().optional(),
     pages: z
       .array(
-        z
-          .object({
-            page: z.number().int().nonnegative(),
-            text: z.string(),
-            image: z.string().default(''),
-            is_scanned: z.boolean(),
-          })
-          .refine((page) => !page.is_scanned || page.image.length > 0),
+        z.object({
+          page: z.number().int().nonnegative(),
+          text: z.string().default(''),
+          image: z.string().default(''),
+          is_scanned: z.boolean(),
+        }),
       )
       .optional(),
   })
   .refine(
     (payload) =>
       payload.textContent !== undefined || payload.pages !== undefined,
+    { message: 'Document has neither text content nor pages' },
   )
 
 export function validateDocumentPayload(
@@ -44,7 +47,7 @@ export function validateDocumentPayload(
 ): DocumentPayload {
   const result = documentPayloadSchema.safeParse(value)
   if (!result.success) {
-    throw new DocumentPayloadDecodeError(attachmentId)
+    throw new DocumentPayloadDecodeError(attachmentId, { cause: result.error })
   }
   return result.data
 }
@@ -93,9 +96,26 @@ export function encodeDocumentPayload(
   return owned
 }
 
+function describeDecodeCause(cause: unknown): string {
+  if (cause instanceof z.ZodError) {
+    return cause.issues
+      .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
+      .join('; ')
+  }
+  if (cause instanceof Error) return cause.message
+  return ''
+}
+
 export class DocumentPayloadDecodeError extends Error {
-  constructor(attachmentId: string, options?: ErrorOptions) {
-    super(`Document payload for ${attachmentId} is not valid`, options)
+  constructor(
+    readonly attachmentId: string,
+    options?: ErrorOptions,
+  ) {
+    const detail = describeDecodeCause(options?.cause)
+    super(
+      `Document payload for ${attachmentId} is not valid${detail ? `: ${detail}` : ''}`,
+      options,
+    )
     this.name = 'DocumentPayloadDecodeError'
   }
 }

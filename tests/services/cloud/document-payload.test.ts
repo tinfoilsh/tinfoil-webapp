@@ -55,20 +55,47 @@ describe('document payload codec', () => {
     expect(isOffloadedDocument(image)).toBe(false)
   })
 
+  // The document enclave encodes pages with Go's `omitempty`, so a scanned
+  // or blank page has no `text` key and a page whose render failed has no
+  // `image` key. This is the literal shape of a `?mode=images` response
+  // for a two-page PDF whose second page is a scan.
+  it('accepts the enclave response shape with omitted empty fields', () => {
+    const enclaveResponse = {
+      textContent: 'Cover letter\n\n---\n\n',
+      pages: [
+        { page: 1, text: 'Cover letter', image: 'AQID', is_scanned: false },
+        { page: 2, image: 'BAUG', is_scanned: true },
+        { page: 3, is_scanned: true },
+      ],
+    }
+    expect(
+      decodeDocumentPayload(
+        'doc-1',
+        new TextEncoder().encode(JSON.stringify(enclaveResponse)),
+      ),
+    ).toEqual({
+      textContent: 'Cover letter\n\n---\n\n',
+      pages: [
+        { page: 1, text: 'Cover letter', image: 'AQID', is_scanned: false },
+        { page: 2, text: '', image: 'BAUG', is_scanned: true },
+        { page: 3, text: '', image: '', is_scanned: true },
+      ],
+    })
+  })
+
   it.each([
     {},
     { pages: [null] },
     { pages: ['page'] },
     { pages: [{ page: 1 }] },
     { pages: [{ page: 1, text: {}, image: '', is_scanned: false }] },
+    { pages: [{ page: 1, text: null, image: '', is_scanned: false }] },
     { pages: [{ page: 1, text: '', image: 4, is_scanned: false }] },
+    { pages: [{ page: 1, text: '', image: null, is_scanned: false }] },
     { pages: [{ page: 1, text: '', image: '', is_scanned: 'false' }] },
     { pages: [{ page: -1, text: 'text', image: '', is_scanned: false }] },
     { pages: [{ page: 0.5, text: 'text', image: '', is_scanned: false }] },
-    { pages: [{ page: 1, image: '', is_scanned: false }] },
     { pages: [{ page: 1, text: 'text', image: '' }] },
-    { pages: [{ page: 1, text: 'OCR text', is_scanned: true }] },
-    { pages: [{ page: 1, text: 'OCR text', image: '', is_scanned: true }] },
   ])('rejects missing content or malformed pages: %j', (payload) => {
     expect(() =>
       decodeDocumentPayload(
@@ -76,6 +103,18 @@ describe('document payload codec', () => {
         new TextEncoder().encode(JSON.stringify(payload)),
       ),
     ).toThrow(DocumentPayloadDecodeError)
+  })
+
+  it('names the failing field in the decode error', () => {
+    const payload = {
+      pages: [{ page: 1, text: 'x', image: '', is_scanned: 'no' }],
+    }
+    expect(() =>
+      decodeDocumentPayload(
+        'doc-1',
+        new TextEncoder().encode(JSON.stringify(payload)),
+      ),
+    ).toThrow(/pages\.0\.is_scanned/)
   })
 
   it('rejects payloads that are not a document object', () => {
