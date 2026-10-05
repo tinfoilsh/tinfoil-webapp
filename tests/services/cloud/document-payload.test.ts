@@ -117,6 +117,18 @@ describe('document payload codec', () => {
     ).toThrow(/pages\.0\.is_scanned/)
   })
 
+  it('does not echo document bytes when the payload is not JSON', () => {
+    const secret = 'ACCOUNT 4111-1111 confidential'
+    expect(() =>
+      decodeDocumentPayload('doc-1', new TextEncoder().encode(secret)),
+    ).toThrow(
+      expect.objectContaining({
+        message: expect.not.stringContaining('4111'),
+        cause: expect.any(SyntaxError),
+      }),
+    )
+  })
+
   it('rejects payloads that are not a document object', () => {
     const encoder = new TextEncoder()
     for (const bad of ['not json', '[]', '{"textContent":5}', '{"pages":{}}']) {

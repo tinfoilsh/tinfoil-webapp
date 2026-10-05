@@ -96,13 +96,15 @@ export function encodeDocumentPayload(
   return owned
 }
 
+// Only schema issues are described. A JSON.parse SyntaxError quotes a
+// snippet of its input, which here is decrypted document content, so
+// other causes are deliberately not surfaced in the message.
 function describeDecodeCause(cause: unknown): string {
   if (cause instanceof z.ZodError) {
     return cause.issues
       .map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`)
       .join('; ')
   }
-  if (cause instanceof Error) return cause.message
   return ''
 }
 
