@@ -90,7 +90,9 @@ export function encodeDocumentPayload(
   if (attachment.pages !== undefined) {
     payload.pages = attachment.pages
   }
-  const encoded = new TextEncoder().encode(JSON.stringify(payload))
+  const encoded = new TextEncoder().encode(
+    JSON.stringify(validateDocumentPayload(attachment.id, payload)),
+  )
   const owned = new Uint8Array(encoded.byteLength)
   owned.set(encoded)
   return owned

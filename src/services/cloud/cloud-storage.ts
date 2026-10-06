@@ -47,13 +47,17 @@ import {
   RemoteChatDecodeError,
   type RemoteChatData,
 } from './chat-codec'
-import { hydrateDocumentAttachments } from './document-hydration'
+import {
+  DocumentHydrationError,
+  hydrateDocumentAttachments,
+} from './document-hydration'
 import {
   decodeDocumentPayload,
   encodeDocumentPayload,
   hasInlineDocumentPayload,
   isOffloadedDocument,
   stripDocumentPayload,
+  validateDocumentPayload,
   type DocumentPayload,
 } from './document-payload'
 
@@ -372,6 +376,17 @@ export class CloudStorageService {
 
     if (!CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED) {
       messages = await hydrateDocumentAttachments(messages)
+    } else {
+      for (const message of messages) {
+        for (const attachment of message.attachments ?? []) {
+          if (attachment.type !== 'document') continue
+          if (hasInlineDocumentPayload(attachment)) {
+            validateDocumentPayload(attachment.id, attachment)
+          } else if (!isOffloadedDocument(attachment)) {
+            throw new DocumentHydrationError('unavailable')
+          }
+        }
+      }
     }
 
     // Stamp the clock version this push will create so a remote reader
