@@ -20,6 +20,7 @@ vi.mock('@/config', () => ({
   API_BASE_URL: 'https://api.example.com',
   DEV_API_KEY: '',
   IS_DEV: false,
+  SANDBOX_ORIGIN: 'https://webapp-sandbox.tinfoil.sh',
 }))
 
 vi.mock('@/utils/error-handling', () => ({

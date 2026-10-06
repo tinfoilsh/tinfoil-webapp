@@ -10,36 +10,34 @@
     }
   ],
   "rewrites": [
-    { "source": "/chat", "destination": "/chat/%5B%5B...slug%5D%5D.html" },
-    { "source": "/chat/", "destination": "/chat/%5B%5B...slug%5D%5D.html" },
     {
-      "source": "/chat/local",
-      "destination": "/chat/%5B%5B...slug%5D%5D.html"
+      "source": "/newchat",
+      "destination": "/newchat.html"
     },
     {
-      "source": "/chat/local/",
-      "destination": "/chat/%5B%5B...slug%5D%5D.html"
+      "source": "/newchat/",
+      "destination": "/newchat.html"
     },
     {
-      "source": "/chat/:path*",
-      "destination": "/chat/%5B%5B...slug%5D%5D.html"
+      "source": "/signin",
+      "destination": "/signin.html"
     },
     {
-      "source": "/project/:path*",
-      "destination": "/project/%5B%5B...slug%5D%5D.html"
+      "source": "/signin/",
+      "destination": "/signin.html"
     },
-    { "source": "/share", "destination": "/share/%5B%5B...slug%5D%5D.html" },
-    { "source": "/share/", "destination": "/share/%5B%5B...slug%5D%5D.html" },
     {
-      "source": "/share/:path*",
-      "destination": "/share/%5B%5B...slug%5D%5D.html"
+      "source": "/sso-callback",
+      "destination": "/sso-callback.html"
     },
-    { "source": "/newchat", "destination": "/newchat.html" },
-    { "source": "/newchat/", "destination": "/newchat.html" },
-    { "source": "/signin", "destination": "/signin.html" },
-    { "source": "/signin/", "destination": "/signin.html" },
-    { "source": "/sso-callback", "destination": "/sso-callback.html" },
-    { "source": "/sso-callback/", "destination": "/sso-callback.html" }
+    {
+      "source": "/sso-callback/",
+      "destination": "/sso-callback.html"
+    },
+    {
+      "source": "/:path((?!\\.well-known/|_next/|.*\\.[^/]+$).*)",
+      "destination": "/%5B...slug%5D.html"
+    }
   ],
   "headers": [
     {
@@ -47,7 +45,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://*.tinfoil.sh https://tinfoilsh.github.io https://vercel.live https://cdn.jsdelivr.net https://*.apple-mapkit.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' data: https://*.tinfoil.sh https://tinfoilsh.github.io https://plausible.io https://vitals.vercel-insights.com https://cdn.jsdelivr.net https://*.apple-mapkit.com https://*.ls.apple.com; frame-src 'self' data: https://vercel.live https://verification-center.tinfoil.sh; frame-ancestors https://tinfoil.sh https://www.tinfoil.sh; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
+          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; worker-src 'self'; style-src 'self'; font-src 'self' data:; img-src 'self' data: blob: https:; connect-src 'self' data: https://*.tinfoil.sh https://plausible.io https://vitals.vercel-insights.com; frame-src 'self' https://verification-center.tinfoil.sh https://webapp-sandbox.tinfoil.sh https://tinfoil-webapp-sandbox-tinfoil.vercel.app; frame-ancestors https://tinfoil.sh https://www.tinfoil.sh; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
         },
         {
           "key": "X-Content-Type-Options",
@@ -64,6 +62,24 @@
         {
           "key": "Strict-Transport-Security",
           "value": "max-age=31536000; includeSubDomains; preload"
+        }
+      ]
+    },
+    {
+      "source": "/(preview|vendor)/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    },
+    {
+      "source": "/preview/mermaid.html",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; sandbox allow-scripts; frame-ancestors 'self'"
         }
       ]
     }

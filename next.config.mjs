@@ -50,6 +50,24 @@ const nextConfig = {
     optimizePackageImports: ['react-icons', 'lucide-react', '@heroicons/react'],
   },
 
+  // The in-origin preview runners (Python, CSS, Mermaid) run in opaque-origin
+  // frames and import modules from /preview and /vendor, which is a CORS
+  // fetch. Vercel sends this header from vercel.json; `next dev` needs it
+  // here. Only defined in development: export ignores headers and warns
+  // when the hook merely exists.
+  ...(isDev
+    ? {
+        async headers() {
+          return [
+            {
+              source: '/(preview|vendor)/:path*',
+              headers: [{ key: 'Access-Control-Allow-Origin', value: '*' }],
+            },
+          ]
+        },
+      }
+    : {}),
+
   // Local development API gateway. Next only separates model-router traffic;
   // the port-3001 gateway owns mock registration and controlplane forwarding.
   async rewrites() {

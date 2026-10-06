@@ -1,7 +1,18 @@
+import { MermaidPreview } from '@/components/preview/mermaid-preview'
+import { buildRunnerDocument } from '@/components/preview/runner-frame'
+import {
+  SandboxUnavailable,
+  useSandboxRunner,
+} from '@/components/preview/sandbox-frame'
 import { SvgPreview } from '@/components/preview/svg-preview'
+import {
+  usePreviewInstanceId,
+  usePreviewMessages,
+} from '@/components/preview/use-preview-messages'
+import { cn } from '@/components/ui/utils'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
-import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -71,11 +82,6 @@ const EXECUTABLE_LANGUAGES = [
   'python',
   'py',
 ]
-
-const PYODIDE_CDN_BASE = 'https://cdn.jsdelivr.net/pyodide/v0.27.0/full/'
-
-const createIframeDataUrl = (html: string): string =>
-  `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
 
 const isPreviewOutput = (value: unknown): value is string[] =>
   Array.isArray(value) &&
@@ -282,55 +288,47 @@ const PreviewContainer = ({
 
 const HtmlPreview = ({ code }: { code: string }) => {
   const [height, setHeight] = useState(100)
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return
-      }
-      if (
-        event.data?.type === 'html-preview-height' &&
-        event.data?.instanceId === instanceId &&
-        Number.isFinite(event.data.height)
-      ) {
-        setHeight(Math.min(2000, Math.max(100, event.data.height)))
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'html-preview-height' &&
+      Number.isFinite(message.height)
+    ) {
+      setHeight(Math.min(2000, Math.max(100, message.height as number)))
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId])
+  })
 
-  const iframeSrc = useMemo(() => {
-    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none';">`
+  // Runs on the unverified sandbox origin: HTML previews execute inline
+  // model-authored scripts, which the app's own CSP forbids.
+  const sandbox = useSandboxRunner(
+    iframeRef,
+    useMemo(
+      () => ({
+        type: 'tinfoil-sandbox-run' as const,
+        kind: 'html' as const,
+        instanceId,
+        code,
+      }),
+      [code, instanceId],
+    ),
+  )
 
-    const heightReporter = `
-<script>
-function reportHeight() {
-  const height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-  parent.postMessage({ type: 'html-preview-height', instanceId: '${instanceId}', height }, '*');
-}
-window.addEventListener('load', reportHeight);
-window.addEventListener('resize', reportHeight);
-new MutationObserver(reportHeight).observe(document.body, { childList: true, subtree: true });
-setTimeout(reportHeight, 100);
-</script>`
-
-    const html = `<!DOCTYPE html><html><head>${csp}</head><body>${code}${heightReporter}</body></html>`
-    return createIframeDataUrl(html)
-  }, [code, instanceId])
-
+  // The frame stays mounted on failure so a late ready message can recover it.
   return (
-    <iframe
-      ref={iframeRef}
-      src={iframeSrc}
-      className="w-full rounded border-0"
-      style={{ height: `${height}px`, minHeight: '100px' }}
-      sandbox="allow-scripts"
-      referrerPolicy="no-referrer"
-      title="HTML preview"
-    />
+    <>
+      {sandbox.failed && <SandboxUnavailable />}
+      <iframe
+        ref={iframeRef}
+        src={sandbox.src}
+        className={cn('w-full rounded border-0', sandbox.failed && 'hidden')}
+        style={{ height: `${height}px`, minHeight: '100px' }}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        title="HTML preview"
+      />
+    </>
   )
 }
 
@@ -390,68 +388,37 @@ const stripModuleSyntax = (code: string): string => {
 
 const JavaScriptPreview = ({ code }: { code: string }) => {
   const [output, setOutput] = useState<string[]>([])
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  const iframeSrc = useMemo(() => {
-    const strippedCode = stripModuleSyntax(code)
-    const jsonEscapedCode = JSON.stringify(strippedCode).replace(
-      /</g,
-      '\\u003c',
-    )
+  // Runs on the unverified sandbox origin: the snippet is eval'd there.
+  const sandbox = useSandboxRunner(
+    iframeRef,
+    useMemo(
+      () => ({
+        type: 'tinfoil-sandbox-run' as const,
+        kind: 'js' as const,
+        instanceId,
+        code: stripModuleSyntax(code),
+      }),
+      [code, instanceId],
+    ),
+  )
 
-    // CSP blocks network requests (fetch, XHR, WebSocket, etc.)
-    // The sandbox gives the preview an opaque origin.
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval';">
-</head>
-<body>
-<script>
-const output = [];
-const originalLog = console.log;
-console.log = (...args) => {
-  output.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
-};
-try {
-  const result = eval(${jsonEscapedCode});
-  if (result !== undefined) {
-    output.push('→ ' + (typeof result === 'object' ? JSON.stringify(result) : String(result)));
-  }
-} catch (e) {
-  output.push('Error: ' + (e.message || String(e) || 'Unknown error'));
-}
-parent.postMessage({ type: 'js-preview-output', instanceId: '${instanceId}', output }, '*');
-</script>
-</body>
-</html>`
-    return createIframeDataUrl(html)
-  }, [code, instanceId])
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return
-      }
-      if (
-        event.data?.type === 'js-preview-output' &&
-        event.data?.instanceId === instanceId &&
-        isPreviewOutput(event.data.output)
-      ) {
-        setOutput(event.data.output)
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'js-preview-output' &&
+      isPreviewOutput(message.output)
+    ) {
+      setOutput(message.output)
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId])
+  })
 
   return (
     <div className="font-mono text-sm">
       <iframe
         ref={iframeRef}
-        src={iframeSrc}
+        src={sandbox.src}
         className="hidden"
         sandbox="allow-scripts"
         title="JavaScript preview"
@@ -469,8 +436,12 @@ parent.postMessage({ type: 'js-preview-output', instanceId: '${instanceId}', out
           {line}
         </div>
       ))}
-      {output.length === 0 && (
-        <div className="italic text-content-muted">No output</div>
+      {sandbox.failed ? (
+        <SandboxUnavailable />
+      ) : (
+        output.length === 0 && (
+          <div className="italic text-content-muted">No output</div>
+        )
       )}
     </div>
   )
@@ -479,99 +450,34 @@ parent.postMessage({ type: 'js-preview-output', instanceId: '${instanceId}', out
 const PythonPreview = ({ code }: { code: string }) => {
   const [output, setOutput] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  const iframeSrc = useMemo(() => {
-    const jsonEscapedCode = JSON.stringify(code).replace(/</g, '\\u003c')
+  // In-origin runner: the code is data for Pyodide, so no inline script or
+  // eval is needed and the payload stays within the verified origin.
+  const srcDoc = useMemo(
+    () =>
+      buildRunnerDocument({
+        script: '/preview/python-run.js',
+        data: { code, instanceId },
+        wasm: true,
+      }),
+    [code, instanceId],
+  )
 
-    // CSP allows loading Pyodide from CDN
-    // Data URL ensures isolation from parent page
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; connect-src https://cdn.jsdelivr.net;">
-</head>
-<body>
-<script type="module">
-const output = [];
-parent.postMessage({ type: 'python-preview-loading', instanceId: '${instanceId}' }, '*');
-
-try {
-  const { loadPyodide } = await import('${PYODIDE_CDN_BASE}pyodide.mjs');
-  const pyodide = await loadPyodide({
-    indexURL: '${PYODIDE_CDN_BASE}'
-  });
-
-  pyodide.runPython(\`
-import sys
-from io import StringIO
-sys.stdout = StringIO()
-sys.stderr = StringIO()
-\`);
-
-  const userCode = ${jsonEscapedCode};
-  try {
-    const result = pyodide.runPython(userCode);
-    const stdout = pyodide.runPython('sys.stdout.getvalue()');
-    const stderr = pyodide.runPython('sys.stderr.getvalue()');
-    
-    if (stdout) {
-      stdout.split('\\n').filter(line => line).forEach(line => output.push(line));
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (message.type === 'python-preview-loading') setIsLoading(true)
+    if (message.type === 'python-preview-output') {
+      setIsLoading(false)
+      setOutput(isPreviewOutput(message.output) ? message.output : [])
     }
-    if (stderr) {
-      stderr.split('\\n').filter(line => line).forEach(line => output.push('Error: ' + line));
-    }
-    if (result !== undefined && result !== null && !stdout) {
-      const resultStr = String(result);
-      if (resultStr !== 'None') {
-        output.push('→ ' + resultStr);
-      }
-    }
-  } catch (e) {
-    output.push('Error: ' + (e.message || String(e) || 'Unknown error'));
-  }
-} catch (e) {
-  output.push('Error loading Python: ' + (e.message || String(e) || 'Unknown error'));
-}
-
-parent.postMessage({ type: 'python-preview-output', instanceId: '${instanceId}', output }, '*');
-</script>
-</body>
-</html>`
-    return createIframeDataUrl(html)
-  }, [code, instanceId])
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return
-      }
-      if (event.data?.instanceId !== instanceId) {
-        return
-      }
-      if (event.data?.type === 'python-preview-loading') {
-        setIsLoading(true)
-      }
-      if (event.data?.type === 'python-preview-output') {
-        setIsLoading(false)
-        if (isPreviewOutput(event.data.output)) {
-          setOutput(event.data.output)
-        } else {
-          setOutput([])
-        }
-      }
-    }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId])
+  })
 
   return (
     <div className="font-mono text-sm">
       <iframe
         ref={iframeRef}
-        src={iframeSrc}
+        srcDoc={srcDoc}
         className="hidden"
         sandbox="allow-scripts"
         title="Python preview"
@@ -601,66 +507,6 @@ parent.postMessage({ type: 'python-preview-output', instanceId: '${instanceId}',
         </>
       )}
     </div>
-  )
-}
-
-const MermaidPreview = ({
-  code,
-  isDarkMode,
-}: {
-  code: string
-  isDarkMode: boolean
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [error, setError] = useState<string | null>(null)
-  const reactId = useId()
-  const idRef = useMemo(
-    () => `mermaid-${reactId.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
-    [reactId],
-  )
-
-  useEffect(() => {
-    let cancelled = false
-
-    const renderMermaid = async () => {
-      try {
-        const mermaid = (await import('mermaid')).default
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: isDarkMode ? 'dark' : 'default',
-          securityLevel: 'strict',
-        })
-
-        const { svg: renderedSvg } = await mermaid.render(idRef, code)
-        if (!cancelled && containerRef.current) {
-          containerRef.current.innerHTML = renderedSvg
-          setError(null)
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : String(e))
-          if (containerRef.current) {
-            containerRef.current.innerHTML = ''
-          }
-        }
-      }
-    }
-
-    renderMermaid()
-    return () => {
-      cancelled = true
-    }
-  }, [code, isDarkMode, idRef])
-
-  if (error) {
-    return <div className="text-sm text-red-500">Mermaid error: {error}</div>
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      className="flex w-full items-center justify-center [&>svg]:max-w-full"
-    />
   )
 }
 
@@ -791,66 +637,39 @@ const JsonPreview = ({ code }: { code: string }) => {
 
 const CssPreview = ({ code }: { code: string }) => {
   const [height, setHeight] = useState(150)
-  const instanceId = useId()
+  const instanceId = usePreviewInstanceId(code)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return
-      }
-      if (
-        event.data?.type === 'css-preview-height' &&
-        event.data?.instanceId === instanceId &&
-        Number.isFinite(event.data.height)
-      ) {
-        setHeight(Math.min(2000, Math.max(150, event.data.height)))
-      }
+  usePreviewMessages(iframeRef, instanceId, (message) => {
+    if (
+      message.type === 'css-preview-height' &&
+      Number.isFinite(message.height)
+    ) {
+      setHeight(Math.min(2000, Math.max(150, message.height as number)))
     }
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [instanceId])
+  })
 
-  const iframeSrc = useMemo(() => {
-    const escapedCode = code.replace(/<\//g, '<\\/')
-    // The sandbox gives the preview an opaque origin.
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline';">
-  <style>${escapedCode}</style>
-  <script>
-    function reportHeight() {
-      const height = Math.max(document.body.scrollHeight, 150);
-      parent.postMessage({ type: 'css-preview-height', instanceId: '${instanceId}', height }, '*');
-    }
-    window.addEventListener('load', reportHeight);
-    setTimeout(reportHeight, 100);
-  </script>
-</head>
-<body style="margin: 0; padding: 16px; font-family: system-ui, sans-serif;">
-  <h1>Heading 1</h1>
-  <h2>Heading 2</h2>
-  <p>This is a <strong>paragraph</strong> with <em>formatted</em> text and a <a href="#">link</a>.</p>
-  <ul>
-    <li>List item 1</li>
-    <li>List item 2</li>
-  </ul>
-  <button>Button</button>
-  <input type="text" placeholder="Input field" style="margin-left: 8px;">
-  <div class="box" style="margin-top: 16px; padding: 16px; border: 1px solid #ccc; border-radius: 4px;">
-    <p>A div with class "box"</p>
-  </div>
-</body>
-</html>`
-    return createIframeDataUrl(html)
-  }, [code, instanceId])
+  // In-origin runner: the stylesheet is data applied through the CSSOM, and
+  // the height reporter is a script served from this origin.
+  const srcDoc = useMemo(
+    () =>
+      buildRunnerDocument({
+        script: '/preview/css-run.js',
+        data: { css: code, instanceId },
+        body:
+          '<h1>Heading 1</h1><h2>Heading 2</h2>' +
+          '<p>This is a <strong>paragraph</strong> with <em>formatted</em> text and a <a href="#">link</a>.</p>' +
+          '<ul><li>List item 1</li><li>List item 2</li></ul>' +
+          '<button>Button</button> <input type="text" placeholder="Input field">' +
+          '<div class="box"><p>A div with class "box"</p></div>',
+      }),
+    [code, instanceId],
+  )
 
   return (
     <iframe
       ref={iframeRef}
-      src={iframeSrc}
+      srcDoc={srcDoc}
       className="w-full rounded border-0"
       style={{ height: `${height}px`, minHeight: '150px' }}
       sandbox="allow-scripts"
