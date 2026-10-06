@@ -22,6 +22,7 @@ const SUPPORTED_MISSING_FIELDS = new Set([
   'legal_accepted',
 ])
 const AUTH_ERROR_MESSAGE = 'Something went wrong. Please try again.'
+const AUTH_LOADING_NOTICE_DELAY_MS = 15_000
 const LEGAL_CONSENT_REQUIRED_MESSAGE =
   'Please confirm that you have read and agree to the Terms of Service and Privacy Policy.'
 const UNSUPPORTED_REQUIREMENTS_MESSAGE =
@@ -51,6 +52,42 @@ type FinalizeNavigateParams = Parameters<
 
 type SignInPageProps = {
   initialMode?: AuthMode
+}
+
+function AuthLoading() {
+  const [showRecovery, setShowRecovery] = useState(false)
+
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setShowRecovery(true),
+      AUTH_LOADING_NOTICE_DELAY_MS,
+    )
+    return () => clearTimeout(timer)
+  }, [])
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-surface-chat-background px-6 font-aeonik">
+      {showRecovery ? (
+        <div className="max-w-sm space-y-4 text-center">
+          <p role="alert" className="text-content-secondary">
+            Sign-in is taking longer than expected. Reload the page to try
+            again.
+          </p>
+          <Button onClick={() => window.location.reload()}>Reload page</Button>
+          <Link
+            href="/"
+            className="block text-sm text-content-secondary underline"
+          >
+            Back to chat
+          </Link>
+        </div>
+      ) : (
+        <div role="status" aria-label="Loading sign-in">
+          <PiSpinner className="h-6 w-6 animate-spin text-content-secondary" />
+        </div>
+      )}
+    </main>
+  )
 }
 
 export default function SignInPage({
@@ -282,6 +319,9 @@ export default function SignInPage({
           }
 
           if (signUp.unverifiedFields.includes('email_address')) {
+            setVerificationKind('signup')
+            setCode('')
+            setStep('code')
             const { error: sendError } =
               await signUp.verifications.sendEmailCode()
             if (sendError) {
@@ -290,9 +330,6 @@ export default function SignInPage({
               )
               return
             }
-            setVerificationKind('signup')
-            setCode('')
-            setStep('code')
             return
           }
 
@@ -623,7 +660,9 @@ export default function SignInPage({
 
   const isPending = pendingAction !== null
 
-  if (!isAuthLoaded || isSignedIn) {
+  if (!isAuthLoaded) return <AuthLoading />
+
+  if (isSignedIn) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-surface-chat-background font-aeonik">
         <PiSpinner className="h-6 w-6 animate-spin text-content-secondary" />
@@ -677,7 +716,9 @@ export default function SignInPage({
                       ? 'Enter one of your saved recovery codes'
                       : verificationKind === 'totp'
                         ? 'Enter the code from your authenticator app'
-                        : `We sent a verification code to ${emailAddress}`}
+                        : verificationKind === 'signup'
+                          ? `Enter the verification code for ${emailAddress}`
+                          : `We sent a verification code to ${emailAddress}`}
           </p>
         </div>
 

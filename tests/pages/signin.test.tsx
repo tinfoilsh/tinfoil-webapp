@@ -1,5 +1,6 @@
 import SignInPage from '@/pages/signin'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -155,8 +156,150 @@ describe('SignInPage', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
+
+  it('offers a manual reload when auth loading stalls', async () => {
+    vi.useFakeTimers()
+    auth.clerkLoaded = false
+    auth.isAuthLoaded = false
+    const reload = vi
+      .spyOn(window.location, 'reload')
+      .mockImplementation(() => {})
+    const { container } = render(<SignInPage />)
+    expect(container.querySelector('.animate-spin')).not.toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    const noticeDelay = 15_000
+    await act(() => vi.advanceTimersByTimeAsync(noticeDelay - 1))
+    expect(screen.queryByRole('alert')).toBeNull()
+    await act(() => vi.advanceTimersByTimeAsync(1))
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Sign-in is taking longer than expected',
+    )
+    expect(container.querySelector('.animate-spin')).toBeNull()
+    expect(reload).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Reload page' }))
+    expect(reload).toHaveBeenCalledTimes(1)
+    expect(auth.signIn.create).not.toHaveBeenCalled()
+    expect(auth.signUp.password).not.toHaveBeenCalled()
+  })
+
+  it.each([1_000, 120_000])(
+    'shows the sign-in form when Clerk finishes loading after %i ms',
+    async (loadingTime) => {
+      vi.useFakeTimers()
+      auth.clerkLoaded = false
+      auth.isAuthLoaded = false
+      const { rerender, unmount } = render(<SignInPage />)
+      await act(() => vi.advanceTimersByTimeAsync(loadingTime))
+
+      auth.clerkLoaded = true
+      auth.isAuthLoaded = true
+      rerender(<SignInPage />)
+      expect(vi.getTimerCount()).toBe(0)
+      const twoMinutes = 120_000
+      await act(() => vi.advanceTimersByTimeAsync(twoMinutes))
+
+      expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled()
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Reload page' })).toBeNull()
+      unmount()
+      expect(vi.getTimerCount()).toBe(0)
+    },
+  )
+
+  it.each(['returned', 'thrown'] as const)(
+    'recovers a %s verification-email failure without creating another signup',
+    async (failureType) => {
+      auth.signUp.password.mockImplementation(async () => {
+        auth.signUp.id = 'pending-sign-up'
+        auth.signUp.unverifiedFields = ['email_address']
+        return { error: null }
+      })
+      const rateLimitError = {
+        code: 'too_many_requests',
+        longMessage: 'Too many requests. Please try again later.',
+      }
+      if (failureType === 'returned') {
+        auth.signUp.verifications.sendEmailCode.mockResolvedValueOnce({
+          error: rateLimitError,
+        })
+      } else {
+        auth.signUp.verifications.sendEmailCode.mockRejectedValueOnce(
+          new TypeError('Network unavailable'),
+        )
+      }
+      render(<SignInPage initialMode="signup" />)
+      fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
+        target: { value: 'New' },
+      })
+      fireEvent.change(screen.getByRole('textbox', { name: 'Last name' }), {
+        target: { value: 'Person' },
+      })
+      fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
+        target: { value: 'new@example.com' },
+      })
+      fireEvent.change(screen.getByLabelText('Password'), {
+        target: { value: 'new account password' },
+      })
+      fireEvent.click(screen.getByRole('checkbox'))
+      fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+
+      const alert = await screen.findByRole('alert')
+      expect(alert).toHaveTextContent(
+        failureType === 'returned'
+          ? rateLimitError.longMessage
+          : 'Something went wrong. Please try again.',
+      )
+      expect(
+        screen.getByRole('heading', { name: 'Verify your email' }),
+      ).toBeVisible()
+      expect(screen.queryByText(/We sent a verification code/)).toBeNull()
+      expect(
+        screen.queryByRole('button', { name: 'Create account' }),
+      ).toBeNull()
+      expect(auth.signUp.finalize).not.toHaveBeenCalled()
+
+      auth.signUp.verifications.sendEmailCode.mockResolvedValueOnce({
+        error: rateLimitError,
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Resend code' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        rateLimitError.longMessage,
+      )
+      expect(screen.getByRole('button', { name: 'Resend code' })).toBeEnabled()
+      expect(auth.signUp.password).toHaveBeenCalledTimes(1)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Resend code' }))
+      await waitFor(() => {
+        expect(auth.signUp.verifications.sendEmailCode).toHaveBeenCalledTimes(3)
+        expect(screen.getByRole('button', { name: 'Verify' })).toBeEnabled()
+      })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(auth.signUp.password).toHaveBeenCalledTimes(1)
+      expect(auth.signUp.reset).not.toHaveBeenCalled()
+
+      auth.signUp.verifications.verifyEmailCode.mockImplementation(async () => {
+        auth.signUp.status = 'complete'
+        auth.signUp.unverifiedFields = []
+        return { error: null }
+      })
+      fireEvent.change(
+        screen.getByRole('textbox', { name: 'Verification code' }),
+        {
+          target: { value: '654321' },
+        },
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
+      await waitFor(() => expect(auth.signUp.finalize).toHaveBeenCalledTimes(1))
+      expect(auth.signUp.verifications.verifyEmailCode).toHaveBeenCalledWith({
+        code: '654321',
+      })
+    },
+  )
 
   it('uses the branded layout with social and email options', () => {
     const { container } = render(<SignInPage />)
