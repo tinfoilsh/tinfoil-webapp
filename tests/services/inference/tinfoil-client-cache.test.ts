@@ -16,7 +16,8 @@ vi.mock('@/config', () => ({
 }))
 
 const authTokenManagerMock = vi.hoisted(() => ({
-  isInitialized: vi.fn(() => false),
+  isInitialized: () => true,
+  isSignedOut: vi.fn(() => true),
   waitForInit: vi.fn(),
   getValidToken: vi.fn<() => Promise<string>>(),
 }))
@@ -72,7 +73,7 @@ describe('tinfoil-client session cache', () => {
   beforeEach(() => {
     resetTinfoilClient()
     localStorage.clear()
-    authTokenManagerMock.isInitialized.mockReturnValue(false)
+    authTokenManagerMock.isSignedOut.mockReturnValue(true)
   })
 
   afterEach(() => {
@@ -80,7 +81,7 @@ describe('tinfoil-client session cache', () => {
   })
 
   it('surfaces the hourly token budget for subscribers', async () => {
-    authTokenManagerMock.isInitialized.mockReturnValue(true)
+    authTokenManagerMock.isSignedOut.mockReturnValue(false)
     authTokenManagerMock.getValidToken.mockResolvedValue('clerk-jwt')
     const fetchMock = vi
       .fn()

@@ -2,7 +2,6 @@ import {
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   USER_ENCRYPTION_KEY,
 } from '@/constants/storage-keys'
-import { authTokenManager } from '@/services/auth'
 import {
   authorizeCurrentPrimaryKeyOrThrow,
   canWriteToCloud,
@@ -48,7 +47,7 @@ interface UseCloudSyncOptions {
 type CloudKeyActivationMode = 'recoverExisting' | 'explicitStartFresh'
 
 export function useCloudSync(options?: UseCloudSyncOptions) {
-  const { getToken, isSignedIn } = useAuth()
+  const { isSignedIn } = useAuth()
   const [state, setState] = useState<CloudSyncState>({
     syncing: false,
     lastSyncTime: null,
@@ -115,8 +114,6 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
       initializingRef.current = true
 
       try {
-        authTokenManager.initialize(getToken)
-
         const existingKey = localStorage.getItem(USER_ENCRYPTION_KEY)
 
         // Backwards compatibility: if an encryption key exists but cloud sync is not enabled,
@@ -180,7 +177,7 @@ export function useCloudSync(options?: UseCloudSyncOptions) {
     }
 
     initializeSync()
-  }, [isSignedIn, getToken])
+  }, [isSignedIn])
 
   const runChatSync = useCallback((projectId?: string) => {
     syncingRef.current = true

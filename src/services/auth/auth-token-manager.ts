@@ -28,16 +28,19 @@ export class AuthTokenRefreshError extends Error {
 
 export class AuthTokenManager {
   private getToken: TokenGetter | null = null
+  private initialized = false
   private initResolvers: Array<() => void> = []
   private refreshByRejectedToken = new Map<string, Promise<string>>()
   private generation = 0
 
-  initialize(getToken: TokenGetter) {
+  /** A null getter represents a confirmed signed-out session, not loading. */
+  initialize(getToken: TokenGetter | null) {
     if (this.getToken !== getToken) {
       this.generation++
       this.refreshByRejectedToken.clear()
     }
     this.getToken = getToken
+    this.initialized = true
     for (const resolve of this.initResolvers) {
       resolve()
     }
@@ -45,7 +48,11 @@ export class AuthTokenManager {
   }
 
   isInitialized(): boolean {
-    return this.getToken !== null
+    return this.initialized
+  }
+
+  isSignedOut(): boolean {
+    return this.initialized && this.getToken === null
   }
 
   /**
@@ -54,7 +61,7 @@ export class AuthTokenManager {
    * resolves immediately.
    */
   waitForInit(timeoutMs: number): Promise<boolean> {
-    if (this.getToken !== null) return Promise.resolve(true)
+    if (this.initialized) return Promise.resolve(true)
     return new Promise((resolve) => {
       let settled = false
       const resolver = () => {
@@ -78,7 +85,9 @@ export class AuthTokenManager {
     const getToken = this.getToken
     const generation = this.generation
     if (!getToken) {
-      throw new AuthTokenUnavailableError('not-initialized')
+      throw new AuthTokenUnavailableError(
+        this.initialized ? 'unavailable' : 'not-initialized',
+      )
     }
     let token: string | null
     try {
@@ -111,6 +120,7 @@ export class AuthTokenManager {
   reset(): void {
     this.generation++
     this.getToken = null
+    this.initialized = false
     this.refreshByRejectedToken.clear()
   }
 

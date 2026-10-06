@@ -66,7 +66,10 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   projectCache.invalidate()
   cloudSync.resetForAccountChange()
   streamingTracker.reset()
-  authTokenManager.reset()
+  // Clerk's confirmed sign-out remains authoritative while local data is cleared.
+  if (!authTokenManager.isSignedOut()) {
+    authTokenManager.reset()
+  }
 
   // Clear encryption key immediately (in-memory + localStorage) before any
   // async work, so concurrent code cannot re-persist a stale key.

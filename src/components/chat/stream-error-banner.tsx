@@ -21,6 +21,7 @@ interface StreamErrorBannerProps {
 // combination of message and action.
 type ErrorKind =
   | 'connection'
+  | 'auth'
   | 'rate-limit'
   | 'timeout'
   | 'context-length'
@@ -55,6 +56,12 @@ const CLASSIFICATIONS: Record<
   Exclude<ErrorKind, 'unknown'>,
   ErrorClassification
 > = {
+  auth: {
+    kind: 'auth',
+    title: 'Unable to confirm your sign-in',
+    suggestion:
+      'Sign in again, then resend your message. Your message was not lost.',
+  },
   connection: {
     kind: 'connection',
     title: 'Connection problem',
@@ -96,6 +103,7 @@ function classifyError({
   message,
   code,
 }: StreamErrorInfo): ErrorClassification {
+  if (code === 'AUTH_ERROR') return CLASSIFICATIONS.auth
   if (code === 'FETCH_ERROR') return CLASSIFICATIONS.connection
   if (code === 'RATE_LIMIT' || code === 'HOURLY_LIMIT') {
     return CLASSIFICATIONS['rate-limit']

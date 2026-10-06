@@ -6,6 +6,7 @@ import {
   SETTINGS_HAS_SEEN_ONBOARDING,
   USER_PREFS_PINNED_CHAT_IDS,
 } from '@/constants/storage-keys'
+import { authTokenManager } from '@/services/auth'
 import { cloudSync } from '@/services/cloud/cloud-sync'
 import { resetEditClockCache } from '@/services/cloud/edit-clock'
 import { profileSync } from '@/services/cloud/profile-sync'
@@ -117,11 +118,44 @@ describe('performSignoutCleanup', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    authTokenManager.reset()
     localStorage.clear()
     sessionStorage.clear()
   })
 
-  afterEach(() => speechPlayer.stop())
+  afterEach(() => {
+    speechPlayer.stop()
+    authTokenManager.reset()
+  })
+
+  it.each([false, true])(
+    'preserves confirmed sign-out during cleanup with preserveEncryptionKey: %s',
+    async (preserveEncryptionKey) => {
+      authTokenManager.initialize(null)
+
+      await performSignoutCleanup({ preserveEncryptionKey })
+
+      expect(authTokenManager.isInitialized()).toBe(true)
+      expect(authTokenManager.isSignedOut()).toBe(true)
+      await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
+        reason: 'unavailable',
+      })
+    },
+  )
+
+  it('revokes the signed-in token getter during account-switch cleanup', async () => {
+    const getToken = vi.fn(async () => 'old-account-token')
+    authTokenManager.initialize(getToken)
+
+    await performUserSwitchCleanup('user_new')
+
+    expect(authTokenManager.isInitialized()).toBe(false)
+    expect(authTokenManager.isSignedOut()).toBe(false)
+    await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
+      reason: 'not-initialized',
+    })
+    expect(getToken).not.toHaveBeenCalled()
+  })
 
   it.each([
     ['signout', () => performSignoutCleanup()],

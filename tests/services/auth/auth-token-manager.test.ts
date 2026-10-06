@@ -6,6 +6,43 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 
 describe('AuthTokenManager', () => {
+  it('distinguishes a confirmed signed-out session from unresolved auth', async () => {
+    const manager = new AuthTokenManager()
+    expect(manager.isInitialized()).toBe(false)
+    expect(manager.isSignedOut()).toBe(false)
+
+    manager.initialize(null)
+    expect(manager.isInitialized()).toBe(true)
+    expect(manager.isSignedOut()).toBe(true)
+    await expect(manager.getAuthHeaders()).rejects.toMatchObject({
+      reason: 'unavailable',
+    })
+
+    manager.reset()
+    expect(manager.isInitialized()).toBe(false)
+    expect(manager.isSignedOut()).toBe(false)
+  })
+
+  it('releases auth waiters when Clerk confirms sign-out', async () => {
+    const manager = new AuthTokenManager()
+    const initialization = manager.waitForInit(1000)
+    manager.initialize(null)
+
+    await expect(initialization).resolves.toBe(true)
+    await expect(manager.waitForInit(1000)).resolves.toBe(true)
+  })
+
+  it('rejects an in-flight token read after confirmed sign-out', async () => {
+    const manager = new AuthTokenManager()
+    let resolveToken!: (token: string) => void
+    manager.initialize(() => new Promise((resolve) => (resolveToken = resolve)))
+    const token = manager.getValidToken()
+    manager.initialize(null)
+    resolveToken('old-session-token')
+
+    await expect(token).rejects.toBeInstanceOf(AuthTokenUnavailableError)
+  })
+
   it('uses an ordinary Clerk token read by default', async () => {
     const getToken = vi.fn().mockResolvedValue('cached-token')
     const manager = new AuthTokenManager()

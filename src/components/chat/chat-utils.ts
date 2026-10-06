@@ -6,6 +6,7 @@
 export type ChatErrorCode =
   // Transport/network failure (no HTTP response), including exhausted retries.
   | 'FETCH_ERROR'
+  | 'AUTH_ERROR'
   // The server responded with a non-429 error status (5xx, 4xx).
   | 'SERVER_ERROR'
   // Free-tier or per-request rate limit (HTTP 429 family).

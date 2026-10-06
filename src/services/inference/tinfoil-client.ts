@@ -1,7 +1,6 @@
 import { ChatError } from '@/components/chat/chat-utils'
 import { API_BASE_URL, DEV_API_KEY, IS_DEV } from '@/config'
 import { RATE_LIMIT_UPDATED_EVENT } from '@/constants/chat-events'
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import {
   PERFORMANCE_METRICS,
@@ -51,7 +50,6 @@ export interface RateLimitInfo {
 }
 
 const SESSION_TOKEN_EXPIRY_BUFFER_MS = 1 * 60 * 1000
-const AUTH_INIT_WAIT_MS = 3000
 
 let clientInstance: OpenAI | null = null
 let secureClient: SecureClient | null = null
@@ -446,7 +444,18 @@ async function requestChatJWT(
 }
 
 async function resolveAuthBearer(signal?: AbortSignal): Promise<string | null> {
-  if (!authTokenManager.isInitialized()) return null
+  if (!authTokenManager.isInitialized()) {
+    const authInitialization = authTokenManager.waitForInit(
+      INFERENCE_CLIENT_INITIALIZATION_TIMEOUT_MS,
+    )
+    const initialized = await (signal
+      ? waitForSignal(authInitialization, signal)
+      : authInitialization)
+    if (!initialized) {
+      throw new AuthTokenUnavailableError('not-initialized')
+    }
+  }
+  if (authTokenManager.isSignedOut()) return null
   const validToken = authTokenManager.getValidToken()
   return await (signal ? waitForSignal(validToken, signal) : validToken)
 }
@@ -468,24 +477,6 @@ async function fetchSessionTokenForGeneration(
 
   assertSessionCacheGeneration(cacheGeneration)
 
-  // If the user was previously signed in, wait for Clerk to initialize
-  // the auth token manager before fetching — otherwise we'd get an
-  // anonymous free-tier key that gets cached until expiry.
-  if (
-    !authTokenManager.isInitialized() &&
-    typeof window !== 'undefined' &&
-    localStorage.getItem(AUTH_ACTIVE_USER_ID) !== null
-  ) {
-    const authInitialization = authTokenManager.waitForInit(AUTH_INIT_WAIT_MS)
-    const initialized = await (signal
-      ? waitForSignal(authInitialization, signal)
-      : authInitialization)
-    assertSessionCacheGeneration(cacheGeneration)
-    if (!initialized) {
-      throw new AuthTokenUnavailableError('not-initialized')
-    }
-  }
-
   // Resolve the auth bearer (if any) up front so the cache-validity
   // check and the actual request use the same authenticated/anonymous
   // decision.  This avoids a stale-cache loop when getValidToken()
@@ -494,14 +485,11 @@ async function fetchSessionTokenForGeneration(
   assertSessionCacheGeneration(cacheGeneration)
   const usedAuthHeader = authBearer !== null
 
-  // If the cached token was fetched anonymously but we now have an
-  // authenticated bearer, discard it so the next fetch goes out with
-  // the user's token and returns the correct (possibly premium) rate
-  // limit info.
+  // A change between signed-in and signed-out access invalidates the cached
+  // token and quota, even when the previous account's local data is retained.
   if (
     cachedSessionToken &&
-    !cachedSessionTokenWasAuthenticated &&
-    usedAuthHeader
+    cachedSessionTokenWasAuthenticated !== usedAuthHeader
   ) {
     cachedSessionToken = null
     cachedSessionTokenExpiresAt = null
