@@ -1348,7 +1348,7 @@ describe('CloudStorageService auth readiness', () => {
   it.each([
     {},
     { textContent: null },
-    { pages: [{ page: 1, text: '', is_scanned: true }] },
+    { pages: [{ page: 1, text: null, is_scanned: true }] },
   ])(
     'rejects invalid document payload %j before uploading',
     async (payload) => {
@@ -1357,6 +1357,37 @@ describe('CloudStorageService auth readiness', () => {
       ).rejects.toThrow()
       expect(mockAttachmentPut).not.toHaveBeenCalled()
       expect(mockEnclavePush).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { page: 1, text: '', is_scanned: true },
+    { page: 1, image: 'AQID', is_scanned: true },
+    { page: 1, is_scanned: false },
+  ])(
+    'uploads scanned or blank pages with omitted empty fields: %j',
+    async (page) => {
+      await new CloudStorageService().uploadChat(
+        documentChat({ pages: [page] }),
+      )
+
+      expect(mockAttachmentPut).toHaveBeenCalledOnce()
+      expect(
+        JSON.parse(
+          new TextDecoder().decode(
+            mockAttachmentPut.mock.calls[0][0].plaintext,
+          ),
+        ),
+      ).toEqual({ pages: [{ text: '', image: '', ...page }] })
+      expect(mockEnclavePush).toHaveBeenCalledOnce()
+      const pushed = JSON.parse(
+        new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+      )
+      expect(pushed.messages[0].attachments[0]).toMatchObject({
+        id: 'att-v2',
+        encryptionKey: 'k',
+      })
+      expect(pushed.messages[0].attachments[0]).not.toHaveProperty('pages')
     },
   )
 
