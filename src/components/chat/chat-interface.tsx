@@ -1629,6 +1629,8 @@ export function ChatInterface({
 
   // Initialize verification for the current resolved authentication state.
   useEffect(() => {
+    setVerificationStatus('pending')
+    setVerificationDocument(null)
     if (!isAuthLoaded) return
     let active = true
     const initTinfoil = async () => {
