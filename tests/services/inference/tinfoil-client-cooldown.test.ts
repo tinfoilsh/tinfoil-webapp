@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const auth = vi.hoisted(() => ({
   isInitialized: () => true,
+  isSignedOut: () => false,
   getValidToken: vi.fn<() => Promise<string>>(),
   refreshToken: vi.fn<() => Promise<string>>(),
 }))

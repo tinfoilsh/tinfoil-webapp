@@ -1,4 +1,7 @@
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import {
+  AUTH_ACTIVE_USER_ID,
+  USER_ENCRYPTION_KEY,
+} from '@/constants/storage-keys'
 import {
   authTokenManager,
   AuthTokenRefreshError,
@@ -213,7 +216,7 @@ describe('chat session entitlement', () => {
   })
 
   it('keeps anonymous free chat available', async () => {
-    authTokenManager.reset()
+    authTokenManager.initialize(null)
 
     await expect(getSessionToken()).resolves.toBe('free-key')
 
@@ -225,6 +228,39 @@ describe('chat session entitlement', () => {
       kind: 'free_daily',
       remaining: 0,
     })
+  })
+
+  it('allows confirmed signed-out chat without deleting the previous account data', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-subscriber')
+    localStorage.setItem(USER_ENCRYPTION_KEY, 'preserved-key')
+    authTokenManager.initialize(null)
+
+    const token = getSessionToken().catch((error: unknown) => error)
+    await vi.runAllTimersAsync()
+
+    expect(await token).toBe('free-key')
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(FREE_KEY_URL, {
+      headers: {},
+      signal: undefined,
+    })
+    expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user-subscriber')
+    expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe('preserved-key')
+  })
+
+  it('waits for live auth even without a stored account marker', async () => {
+    vi.useFakeTimers()
+    authTokenManager.reset()
+    localStorage.removeItem(AUTH_ACTIVE_USER_ID)
+    fetchMock.mockResolvedValueOnce(subscriberResponse())
+
+    const token = getSessionToken()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).not.toHaveBeenCalled()
+    authTokenManager.initialize(getToken)
+
+    await expect(token).resolves.toBe('subscriber-token')
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([CHAT_TOKEN_URL])
   })
 
   it('uses the free tier only after an explicit subscription-required response', async () => {
@@ -348,7 +384,7 @@ describe('chat session entitlement', () => {
   })
 
   it('replaces an exhausted anonymous session once authentication is available', async () => {
-    authTokenManager.reset()
+    authTokenManager.initialize(null)
     await expect(getSessionToken()).resolves.toBe('free-key')
     expect(getRateLimitInfo()).toMatchObject({
       kind: 'free_daily',

@@ -373,7 +373,12 @@ export function ChatInterface({
         showUpgradeBlockedToast,
       )
   }, [toast])
-  const { isSignedIn, isLoaded: isAuthLoaded, userId: authUserId } = useAuth()
+  const {
+    isSignedIn,
+    isLoaded: isAuthLoaded,
+    userId: authUserId,
+    sessionId: authSessionId,
+  } = useAuth()
   const [authRestorationStartedAt] = useState(startPerformanceTimer)
   useEffect(() => {
     if (isAuthLoaded) {
@@ -1622,8 +1627,9 @@ export function ChatInterface({
     chatIsTemporary,
   ])
 
-  // Initialize tinfoil client once when page loads
+  // Initialize verification for the current resolved authentication state.
   useEffect(() => {
+    if (!isAuthLoaded) return
     let active = true
     const initTinfoil = async () => {
       try {
@@ -1654,7 +1660,7 @@ export function ChatInterface({
     return () => {
       active = false
     }
-  }, [])
+  }, [isAuthLoaded, isSignedIn, authUserId, authSessionId])
 
   // Refresh credentials after sign-in or an entitlement transition so a
   // free-tier token cannot remain cached after upgrade and a premium token

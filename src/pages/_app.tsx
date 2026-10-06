@@ -1,4 +1,5 @@
 import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
+import { AuthTokenSync } from '@/components/auth-token-sync'
 import { useChatFontSync } from '@/components/chat/hooks/use-chat-font'
 import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
 import '@/styles/globals.css'
@@ -202,6 +203,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
             },
           }}
         >
+          <AuthTokenSync />
           <AuthCleanupHandler />
           <SignoutProgressOverlay />
           <Component {...pageProps} />

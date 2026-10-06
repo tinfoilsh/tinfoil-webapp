@@ -11,6 +11,32 @@ const CONNECTION_ERROR: StreamErrorInfo = {
 afterEach(() => vi.restoreAllMocks())
 
 describe('StreamErrorBanner', () => {
+  it('explains an authentication failure without blaming connectivity', () => {
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'AUTH_ERROR',
+          message: 'Authentication is not initialized',
+        }}
+        isDarkMode={false}
+        onRetry={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Unable to confirm your sign-in',
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent('Sign in again')
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      'Check your internet connection',
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Expand error details' }),
+    )
+    expect(screen.getByText('Authentication is not initialized')).toBeVisible()
+  })
+
   it.each([false, true])(
     'supports resend, details, and dismissal in dark mode: %s',
     (isDarkMode) => {

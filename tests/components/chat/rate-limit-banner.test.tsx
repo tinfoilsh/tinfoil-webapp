@@ -17,6 +17,7 @@ vi.mock('@/config', () => ({
 vi.mock('@/services/auth', () => ({
   authTokenManager: {
     isInitialized: () => true,
+    isSignedOut: () => false,
     getValidToken: async () => 'account-a',
   },
 }))

@@ -37,7 +37,12 @@ vi.mock('@/services/inference/tinfoil-client', () => ({
 }))
 
 import { ChatError } from '@/components/chat/chat-utils'
+import {
+  AuthTokenRefreshError,
+  AuthTokenUnavailableError,
+} from '@/services/auth'
 import { sendChatStream } from '@/services/inference/inference-client'
+import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 
 const model: BaseModel = {
   modelName: 'gpt-oss-120b',
@@ -146,4 +151,27 @@ describe('sendChatStream 429 quota classification', () => {
     expect(typeof stream[Symbol.asyncIterator]).toBe('function')
     expect(createCompletion).toHaveBeenCalledTimes(2)
   })
+})
+
+describe('sendChatStream authentication classification', () => {
+  it.each([
+    new AuthTokenUnavailableError('not-initialized'),
+    new AuthTokenUnavailableError('unavailable'),
+    new AuthTokenRefreshError(),
+  ])(
+    'does not label $name as a connection failure or retry it',
+    async (error) => {
+      vi.clearAllMocks()
+      vi.mocked(getTinfoilClient).mockRejectedValueOnce(error)
+      const onRetry = vi.fn()
+
+      await expect(send(onRetry)).rejects.toMatchObject({
+        code: 'AUTH_ERROR',
+        message: error.message,
+      })
+      expect(onRetry).not.toHaveBeenCalled()
+      expect(createCompletion).not.toHaveBeenCalled()
+      expect(getTinfoilClient).toHaveBeenCalledTimes(1)
+    },
+  )
 })

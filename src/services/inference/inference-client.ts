@@ -27,7 +27,11 @@ import {
   DEV_SIMULATOR_ERROR_COMMAND,
   DEV_SIMULATOR_ERROR_MESSAGE,
 } from '@/constants/dev-simulator'
-import { AuthTokenUnavailableError, authTokenManager } from '@/services/auth'
+import {
+  AuthTokenRefreshError,
+  AuthTokenUnavailableError,
+  authTokenManager,
+} from '@/services/auth'
 import {
   createActiveAccountGuard,
   type AccountOperationGuard,
@@ -858,6 +862,12 @@ async function sendChatStreamForAccount(
 function toTerminalChatError(err: unknown, retries?: number): ChatError {
   if (err instanceof ChatError) {
     return err
+  }
+  if (
+    err instanceof AuthTokenUnavailableError ||
+    err instanceof AuthTokenRefreshError
+  ) {
+    return new ChatError(err.message, 'AUTH_ERROR')
   }
   const anyErr = err as { message?: string; status?: unknown }
   const msg = anyErr?.message || 'Unknown network error'
