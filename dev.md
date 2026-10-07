@@ -187,6 +187,25 @@ The `logs/` directory is gitignored.
 - **Safeguard command asks for sign-in:** authenticate with Clerk locally.
 - **Stale mock flags:** send `reset safeguards` from an unflagged chat or restart `dev:backend`.
 
+## Automated tests
+
+```bash
+npm test
+npm run test:shuffle
+npm run test:typecheck
+npm run lint
+npm run build
+```
+
+To reproduce a shuffled failure, pass the seed printed by Vitest:
+`npm run test:shuffle -- --sequence.seed=42`. Keep the workstation's timezone
+for normal validation. CI runs test typechecking and shuffled Vitest tests before
+the production build; `npm run test:unit` is the local watch command.
+
+The suite uses happy-dom, fake IndexedDB, and local HTTP servers for script tests.
+Configuration lints are not browser CSP or layout verification. The separate
+scheduled `check:clerk-privacy` command checks the live Clerk environment.
+
 ## Releases
 
 Releases use a two-step local command so package versions are committed before the matching tag is created. Start with a clean `main` branch and an authenticated GitHub CLI (`gh auth status`).
