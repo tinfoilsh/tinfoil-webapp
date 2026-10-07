@@ -152,7 +152,10 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
           }}
         >
           <div className="flex items-center gap-2 whitespace-nowrap">
-            <TfServer1 className="h-4 w-4 shrink-0 !text-content-muted" />
+            <TfServer1
+              className="h-4 w-4 shrink-0 !text-content-muted"
+              aria-hidden="true"
+            />
             <span className="text-base font-medium text-content-primary">
               Tinfoil Server
             </span>
@@ -175,7 +178,10 @@ export const DataFlowDiagram = memo(function DataFlowDiagram() {
           }}
         >
           <div className="flex items-center gap-2 whitespace-nowrap">
-            <TfLockLocked className="h-3.5 w-3.5 shrink-0 !text-brand-accent-dark dark:!text-brand-accent-light" />
+            <TfLockLocked
+              className="h-3.5 w-3.5 shrink-0 !text-brand-accent-dark dark:!text-brand-accent-light"
+              aria-hidden="true"
+            />
             <span className="text-base font-medium text-content-primary">
               Secure Enclave
             </span>

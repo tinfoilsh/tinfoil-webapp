@@ -665,10 +665,13 @@ export default function SignInPage({
   if (isSignedIn) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-surface-chat-background font-aeonik">
-        <PiSpinner
-          className="h-6 w-6 animate-spin text-content-secondary"
-          aria-hidden="true"
-        />
+        <div role="status">
+          <PiSpinner
+            className="h-6 w-6 animate-spin text-content-secondary"
+            aria-hidden="true"
+          />
+          <span className="sr-only">Loading...</span>
+        </div>
       </main>
     )
   }

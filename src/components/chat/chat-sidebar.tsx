@@ -2124,7 +2124,10 @@ export function ChatSidebar({
                               STORAGE_TAB_DROP_TARGET_CLASS_NAME,
                           )}
                         >
-                          <TfFloppyDisk className="h-3.5 w-3.5" />
+                          <TfFloppyDisk
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
                           Local
                         </button>
                       </div>

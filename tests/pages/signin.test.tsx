@@ -2,6 +2,7 @@ import SignInPage from '@/pages/signin'
 import {
   act,
   fireEvent,
+  isInaccessible,
   render,
   screen,
   waitFor,
@@ -327,10 +328,22 @@ describe('SignInPage', () => {
   })
 
   it('redirects an already signed-in user to the requested page', async () => {
+    auth.isAuthLoaded = true
     auth.isSignedIn = true
     auth.router.query = { redirect_url: '/project/example' }
 
     render(<SignInPage />)
+
+    const status = within(screen.getByRole('main')).getByRole('status', {
+      hidden: false,
+    })
+    const loadingText = within(status).getByText('Loading...')
+    expect(loadingText).toHaveClass('sr-only')
+    expect(isInaccessible(loadingText)).toBe(false)
+    expect(status.querySelector('svg.animate-spin')).toHaveAttribute(
+      'aria-hidden',
+      'true',
+    )
 
     await waitFor(() => {
       expect(auth.routerReplace).toHaveBeenCalledWith('/project/example')
