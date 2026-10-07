@@ -57,32 +57,45 @@ describe('readCachedSubscriptionStatus', () => {
 
   beforeEach(() => localStorage.clear())
 
-  it('restores a recent cache for the same user', () => {
-    localStorage.setItem(
-      SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-      JSON.stringify({
-        userId: 'user_123',
-        chat_subscription_active: true,
-        cachedAt: now,
-      }),
-    )
+  it.each([now, new Date('2026-07-22T12:00:00Z').getTime()])(
+    'restores a recent cache for the same user at %s',
+    (cachedAt) => {
+      localStorage.setItem(
+        SETTINGS_CACHED_SUBSCRIPTION_STATUS,
+        JSON.stringify({
+          userId: 'user_123',
+          chat_subscription_active: true,
+          cachedAt,
+        }),
+      )
 
-    expect(readCachedSubscriptionStatus('user_123', now)).toBe(true)
-  })
+      expect(readCachedSubscriptionStatus('user_123', now)).toBe(true)
+    },
+  )
 
-  it('rejects another user or an expired cache', () => {
-    localStorage.setItem(
-      SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-      JSON.stringify({
-        userId: 'user_123',
-        chat_subscription_active: true,
-        cachedAt: now - 25 * 60 * 60 * 1000,
-      }),
-    )
+  it.each([
+    ['foreign account', 'user_456', now],
+    ['expired cache', 'user_123', new Date('2026-07-22T11:00:00Z').getTime()],
+    [
+      'future timestamp',
+      'user_123',
+      new Date('2026-07-23T12:00:01Z').getTime(),
+    ],
+  ] as const)(
+    'rejects another user or an expired cache (%s)',
+    (_scenario, userId, cachedAt) => {
+      localStorage.setItem(
+        SETTINGS_CACHED_SUBSCRIPTION_STATUS,
+        JSON.stringify({
+          userId: 'user_123',
+          chat_subscription_active: true,
+          cachedAt,
+        }),
+      )
 
-    expect(readCachedSubscriptionStatus('user_456', now)).toBeNull()
-    expect(readCachedSubscriptionStatus('user_123', now)).toBeNull()
-  })
+      expect(readCachedSubscriptionStatus(userId, now)).toBeNull()
+    },
+  )
 })
 
 describe('useSubscriptionStatus cache synchronization', () => {

@@ -1,4 +1,5 @@
 import SignInPage from '@/pages/signin'
+import type { useSignIn } from '@clerk/react'
 import {
   act,
   fireEvent,
@@ -9,6 +10,60 @@ import {
   within,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+type FinalizeParams = NonNullable<
+  Parameters<ReturnType<typeof useSignIn>['signIn']['finalize']>[0]
+>
+type NavigateContext = Parameters<NonNullable<FinalizeParams['navigate']>>[0]
+
+function navigationSession(
+  currentTask?: NavigateContext['session']['currentTask'],
+): NavigateContext['session'] {
+  const unexpected = (): never => {
+    throw new Error('Unexpected session resource call')
+  }
+  const createdAt = new Date('2026-01-01T00:00:00Z')
+  return {
+    id: 'session-completed',
+    pathRoot: '/sessions',
+    status: currentTask ? 'pending' : 'active',
+    createdAt,
+    updatedAt: createdAt,
+    lastActiveAt: createdAt,
+    expireAt: new Date('2027-01-01T00:00:00Z'),
+    abandonAt: new Date('2027-01-01T00:00:00Z'),
+    factorVerificationAge: null,
+    lastActiveToken: null,
+    lastActiveOrganizationId: null,
+    actor: null,
+    agent: null,
+    tasks: currentTask ? [currentTask] : [],
+    currentTask,
+    user: null,
+    publicUserData: {
+      firstName: 'New',
+      lastName: 'Person',
+      imageUrl: '',
+      hasImage: false,
+      identifier: 'person@example.com',
+    },
+    end: unexpected,
+    remove: unexpected,
+    touch: unexpected,
+    getToken: unexpected,
+    checkAuthorization: unexpected,
+    clearCache: unexpected,
+    reload: unexpected,
+    startVerification: unexpected,
+    prepareFirstFactorVerification: unexpected,
+    attemptFirstFactorVerification: unexpected,
+    prepareSecondFactorVerification: unexpected,
+    attemptSecondFactorVerification: unexpected,
+    verifyWithPasskey: unexpected,
+    __internal_toSnapshot: unexpected,
+    __internal_touch: unexpected,
+  }
+}
 
 const auth = vi.hoisted(() => {
   const signIn = {
@@ -34,7 +89,12 @@ const auth = vi.hoisted(() => {
       verifyCode: vi.fn(),
       submitPassword: vi.fn(),
     },
-    finalize: vi.fn(),
+    finalize:
+      vi.fn<
+        (
+          params: FinalizeParams,
+        ) => Promise<{ error: { longMessage: string } | null }>
+      >(),
     reset: vi.fn(),
   }
   const signUp = {
@@ -388,23 +448,66 @@ describe('SignInPage', () => {
     })
   })
 
-  it('signs in an existing account with its password', async () => {
-    auth.signIn.password.mockImplementation(async () => {
-      auth.signIn.status = 'complete'
-      return { error: null }
-    })
-    renderAndSubmitPasswordSignIn('correct horse battery staple')
+  it.each(['relative', 'decorated', 'pending task'] as const)(
+    'signs in an existing account with its password and handles %s navigation',
+    async (navigation) => {
+      const destination = '/project/example'
+      const decoratedDestination =
+        'https://accounts.example.com/redirect?to=project'
+      auth.router.query = { redirect_url: destination }
+      const setLocation = vi
+        .spyOn(window.location, 'href', 'set')
+        .mockImplementation(() => {})
+      auth.signIn.password.mockImplementation(async () => {
+        auth.signIn.status = 'complete'
+        return { error: null }
+      })
+      renderAndSubmitPasswordSignIn('correct horse battery staple')
 
-    await waitFor(() => {
-      expect(auth.signIn.password).toHaveBeenCalledWith({
-        identifier: 'person@example.com',
-        password: 'correct horse battery staple',
+      await waitFor(() => {
+        expect(auth.signIn.password).toHaveBeenCalledWith({
+          identifier: 'person@example.com',
+          password: 'correct horse battery staple',
+        })
+        expect(auth.signIn.finalize).toHaveBeenCalledWith({
+          navigate: expect.any(Function),
+        })
       })
-      expect(auth.signIn.finalize).toHaveBeenCalledWith({
-        navigate: expect.any(Function),
+      const navigate = auth.signIn.finalize.mock.calls[0][0].navigate
+      expect(navigate).toBeTypeOf('function')
+      if (!navigate) throw new Error('Missing finalizer navigation callback')
+      const decorateUrl = vi.fn((url: string) =>
+        navigation === 'decorated' ? decoratedDestination : url,
+      )
+      await act(async () => {
+        await navigate({
+          session: navigationSession(
+            navigation === 'pending task' ? { key: 'setup-mfa' } : undefined,
+          ),
+          decorateUrl,
+        })
       })
-    })
-  })
+      if (navigation === 'pending task') {
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'Your account needs additional setup. Please contact support.',
+        )
+        expect(decorateUrl).not.toHaveBeenCalled()
+        expect(auth.routerPush).not.toHaveBeenCalled()
+        expect(setLocation).not.toHaveBeenCalled()
+      } else {
+        expect(decorateUrl).toHaveBeenCalledExactlyOnceWith(destination)
+        if (navigation === 'decorated') {
+          expect(setLocation).toHaveBeenCalledExactlyOnceWith(
+            decoratedDestination,
+          )
+          expect(auth.routerPush).not.toHaveBeenCalled()
+        } else {
+          expect(auth.routerPush).toHaveBeenCalledExactlyOnceWith(destination)
+          expect(setLocation).not.toHaveBeenCalled()
+        }
+      }
+    },
+  )
 
   it('creates a password account and verifies its email code', async () => {
     auth.signUp.password.mockImplementation(async () => {
@@ -529,10 +632,19 @@ describe('SignInPage', () => {
       await screen.findByRole('textbox', { name: 'Verification code' }),
       { target: { value: '123456' } },
     )
+    expect(auth.signIn.finalize).not.toHaveBeenCalled()
+    expect(screen.queryByLabelText('New password')).not.toBeInTheDocument()
+    expect(
+      auth.signIn.resetPasswordEmailCode.submitPassword,
+    ).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
     fireEvent.change(await screen.findByLabelText('New password'), {
       target: { value: 'replacement password' },
     })
+    expect(
+      auth.signIn.resetPasswordEmailCode.verifyCode,
+    ).toHaveBeenCalledExactlyOnceWith({ code: '123456' })
+    expect(auth.signIn.finalize).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Reset password' }))
 
     await waitFor(() => {
@@ -767,6 +879,9 @@ describe('SignInPage', () => {
     for (const link of [terms, privacy]) {
       expect(link).toHaveAttribute('target', '_blank')
       expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+      link.addEventListener('click', (event) => event.preventDefault(), {
+        once: true,
+      })
       fireEvent.click(link)
     }
     expect(consent).not.toBeChecked()
@@ -972,13 +1087,42 @@ describe('SignInPage', () => {
       return { error: null }
     })
     render(<SignInPage initialMode="signup" />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
+      target: { value: 'New' },
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Last name' }), {
+      target: { value: 'Person' },
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
+      target: { value: 'new@example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'new account password' },
+    })
     fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.submit(screen.getByLabelText('Password').closest('form')!)
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+    fireEvent.change(
+      await screen.findByRole('textbox', { name: 'Verification code' }),
+      { target: { value: '654321' } },
+    )
     fireEvent.click(
       await screen.findByRole('button', { name: 'Use another email' }),
     )
 
     expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.getByLabelText('Password')).toHaveValue('')
+    expect(
+      screen.queryByRole('textbox', { name: 'Verification code' }),
+    ).not.toBeInTheDocument()
+    expect(auth.signIn.reset).toHaveBeenCalledOnce()
+    expect(auth.signUp.reset).toHaveBeenCalledOnce()
+    expect(auth.signUp.password).toHaveBeenCalledExactlyOnceWith({
+      firstName: 'New',
+      lastName: 'Person',
+      emailAddress: 'new@example.com',
+      password: 'new account password',
+      legalAccepted: true,
+    })
     expect(
       screen.getByRole('button', { name: 'Create account' }),
     ).toBeDisabled()

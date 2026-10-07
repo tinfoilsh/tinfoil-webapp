@@ -12,7 +12,10 @@ const blocks = JSON.parse(readFileSync('vercel.json', 'utf8'))
   .headers as HeaderBlock[]
 const cspOf = (block: HeaderBlock) =>
   block.headers.find((h) => h.key === 'Content-Security-Policy')!.value
-const csp = cspOf(blocks[0])
+const baseBlocks = blocks.filter((block) => block.source === '/(.*)')
+expect(baseBlocks).toHaveLength(1)
+const baseBlock = baseBlocks[0]
+const csp = cspOf(baseBlock)
 const directive = (name: string) =>
   csp
     .split(';')
@@ -21,7 +24,7 @@ const directive = (name: string) =>
     ?.slice(name.length)
     .trim()
 
-describe('Content-Security-Policy in vercel.json', () => {
+describe('Content-Security-Policy configuration lint (not browser enforcement)', () => {
   it('allows no inline or eval and no remote script origins', () => {
     expect(csp).not.toMatch(
       /'unsafe-inline'|'unsafe-eval'|'unsafe-hashes'|'strict-dynamic'|nonce-/,
@@ -59,7 +62,7 @@ describe('Content-Security-Policy in vercel.json', () => {
     expect(existsSync('public' + page)).toBe(true)
     const [block, ...more] = blocks.filter(
       (b) =>
-        b !== blocks[0] &&
+        b !== baseBlock &&
         b.headers.some((h) => h.key === 'Content-Security-Policy'),
     )
     expect(more).toEqual([])

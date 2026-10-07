@@ -24,10 +24,6 @@
  * the right action.
  */
 
-const DEFAULT_BASE_DELAY_MS = 1_000
-const DEFAULT_MAX_DELAY_MS = 8_000
-const DEFAULT_MAX_ATTEMPTS = 4
-
 export interface RetryScheduler {
   /** Resolve after `ms` milliseconds. */
   sleep(ms: number): Promise<void>
@@ -38,83 +34,6 @@ export interface RetryScheduler {
 export const realScheduler: RetryScheduler = {
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   random: () => Math.random(),
-}
-
-export interface RetryConfig {
-  /** Lowest delay base, in ms (default 1000). */
-  baseDelayMs?: number
-  /** Maximum capped delay, in ms (default 8000). */
-  maxDelayMs?: number
-  /**
-   * Maximum number of attempts (including the first try). Default 4
-   * — matches §9.6 R3.
-   */
-  maxAttempts?: number
-  /** Hook fired on every observed failure, for logging/metrics. */
-  onAttemptFailed?(info: {
-    attempt: number
-    delayMs: number
-    error: unknown
-  }): void
-  scheduler?: RetryScheduler
-}
-
-/**
- * Run `fn` until it returns or until `maxAttempts` is reached. On a
- * throw, the helper waits `delay(attempt)` ms before the next try.
- *
- * The decision to retry is made by `shouldRetry` — pass a function
- * that consults `classifyEnclaveError` so retries are not blindly
- * triggered on TERMINAL or USER_DECISION errors. If `shouldRetry`
- * returns false the helper re-throws immediately.
- */
-export async function runWithRetry<T>(
-  fn: () => Promise<T>,
-  shouldRetry: (err: unknown, attempt: number) => boolean,
-  config: RetryConfig = {},
-): Promise<T> {
-  const baseDelayMs = config.baseDelayMs ?? DEFAULT_BASE_DELAY_MS
-  const maxDelayMs = config.maxDelayMs ?? DEFAULT_MAX_DELAY_MS
-  // Clamp to at least one attempt so a caller passing 0, a negative
-  // override, or NaN cannot skip execution entirely and end up
-  // throwing `undefined` from the empty for-loop tail. NaN fails the
-  // `Math.max` clamp (`Math.max(1, NaN)` is `NaN`), so it falls back
-  // to the default instead.
-  const maxAttempts = Number.isFinite(config.maxAttempts)
-    ? Math.max(1, Math.floor(config.maxAttempts as number))
-    : DEFAULT_MAX_ATTEMPTS
-  const scheduler = config.scheduler ?? realScheduler
-
-  let lastError: unknown
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      return await fn()
-    } catch (err) {
-      lastError = err
-      const isLast = attempt === maxAttempts - 1
-      const willRetry = !isLast && shouldRetry(err, attempt)
-      const delayMs = willRetry
-        ? computeBackoffDelay(
-            attempt,
-            baseDelayMs,
-            maxDelayMs,
-            scheduler.random(),
-          )
-        : 0
-      // Hook fires on every observed failure, retriable or not, so
-      // callers can count terminal/final errors in the same metric
-      // stream as the transient ones.
-      try {
-        config.onAttemptFailed?.({ attempt, delayMs, error: err })
-      } catch {
-        // The hook is metrics-only; a hook bug must not cancel
-        // retries or replace the original sync failure.
-      }
-      if (!willRetry) break
-      await scheduler.sleep(delayMs)
-    }
-  }
-  throw lastError
 }
 
 /**

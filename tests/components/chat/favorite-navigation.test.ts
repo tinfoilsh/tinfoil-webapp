@@ -3,24 +3,33 @@ import { describe, expect, it, vi } from 'vitest'
 
 describe('openFavoriteChat', () => {
   it('enters project context before opening the chat', async () => {
-    const calls: string[] = []
+    let resolveProject!: (entered: boolean) => void
+    const projectLoad = new Promise<boolean>((resolve) => {
+      resolveProject = resolve
+    })
+    const enterProjectMode = vi.fn(() => projectLoad)
+    const exitProjectMode = vi.fn()
+    const openChat = vi.fn(async () => {})
+    const isCurrent = () => true
 
-    const opened = await openFavoriteChat({
+    const opening = openFavoriteChat({
       favorite: { id: 'chat-a', projectId: 'project-a' },
       isProjectMode: false,
-      enterProjectMode: async () => {
-        calls.push('project')
-        return true
-      },
-      exitProjectMode: vi.fn(),
-      openChat: async () => {
-        calls.push('chat')
-      },
-      isCurrent: () => true,
+      enterProjectMode,
+      exitProjectMode,
+      openChat,
+      isCurrent,
     })
 
-    expect(opened).toBe(true)
-    expect(calls).toEqual(['project', 'chat'])
+    expect(enterProjectMode).toHaveBeenCalledExactlyOnceWith(
+      'project-a',
+      isCurrent,
+    )
+    expect(openChat).not.toHaveBeenCalled()
+    resolveProject(true)
+    await expect(opening).resolves.toBe(true)
+    expect(openChat).toHaveBeenCalledExactlyOnceWith('chat-a')
+    expect(exitProjectMode).not.toHaveBeenCalled()
   })
 
   it('does not open after project failure or superseded navigation', async () => {

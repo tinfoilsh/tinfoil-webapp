@@ -16,8 +16,10 @@ afterEach(() => {
   }
 })
 
-async function requestStreamLog(body) {
-  const logsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stream-log-'))
+async function requestStreamLog(
+  body,
+  logsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stream-log-')),
+) {
   tempDirs.push(logsDir)
   const server = http.createServer((req, res) => {
     if (isDevStreamLogRequest(req)) {
@@ -52,6 +54,9 @@ async function requestStreamLog(body) {
         },
       )
       req.on('error', reject)
+      req.setTimeout(2_000, () =>
+        req.destroy(new Error('Stream log request timed out')),
+      )
       req.end(payload)
     })
     return { status, logsDir }
@@ -71,22 +76,74 @@ describe('development stream logger', () => {
     expect(
       isDevStreamLogRequest({ method: 'GET', url: '/api/dev/stream-log' }),
     ).toBe(false)
+    for (const url of [
+      '/api/other',
+      '/api/dev/stream-log/',
+      '/api/dev/stream-log?x=1',
+    ]) {
+      expect(isDevStreamLogRequest({ method: 'POST', url })).toBe(false)
+    }
   })
 
   it('writes a per-chat transcript', async () => {
     const { status, logsDir } = await requestStreamLog({
-      chatId: 'chat-1',
+      chatId: '../chat-1',
       events: [
         {
           type: 'parsed',
-          data: { choices: [{ delta: { content: 'Hello' } }] },
+          data: { choices: [{ delta: { content: 'Hello ' } }] },
+        },
+        {
+          type: 'parsed',
+          data: { choices: [{ delta: { content: 'world' } }] },
+        },
+        {
+          type: 'parsed',
+          data: { choices: [{ delta: { reasoning_content: 'Consider.' } }] },
+        },
+        {
+          type: 'parsed',
+          data: {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    { index: 0, function: { name: 'calc', arguments: '{}' } },
+                  ],
+                },
+              },
+            ],
+          },
         },
       ],
     })
 
     expect(status).toBe(200)
+    const second = await requestStreamLog(
+      {
+        chatId: '../chat-1',
+        events: [
+          {
+            type: 'parsed',
+            data: { choices: [{ delta: { content: 'Again.' } }] },
+          },
+        ],
+      },
+      logsDir,
+    )
+    expect(second.status).toBe(200)
+    expect(fs.readdirSync(logsDir)).toEqual(['chat-___chat-1.md'])
+    const transcript = fs.readFileSync(
+      path.join(logsDir, 'chat-___chat-1.md'),
+      'utf8',
+    )
     expect(
-      fs.readFileSync(path.join(logsDir, 'chat-chat-1.md'), 'utf8'),
-    ).toContain('Hello')
+      transcript.replace(
+        /^## Turn @ .+ \((\d+) chunks\)$/gm,
+        '## Turn ($1 chunks)',
+      ),
+    ).toBe(
+      '# Chat ../chat-1\n\n\n## Turn (4 chunks)\n\n--- content ---\nHello world\n\n--- reasoning ---\nConsider.\n\n--- tool call args: calc#0 ---\n{}\n\n\n## Turn (1 chunks)\n\n--- content ---\nAgain.\n\n',
+    )
   })
 })

@@ -1,9 +1,9 @@
 import {
   deleteChatRecovery,
   fetchRecoveredChatResponse,
-  getChatRecoveryState,
+  getChatRecoveryStatus,
 } from '@/services/inference/chat-recovery-client'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const decryptResponseWithToken = vi.fn()
 
@@ -24,28 +24,36 @@ describe('chat recovery client', () => {
     decryptResponseWithToken.mockReset()
   })
 
-  it('reads complete recovery status without sending credentials', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ status: 'complete', bytes: 128 }), {
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+  afterEach(() => vi.restoreAllMocks())
 
-    await expect(getChatRecoveryState(SESSION_ID)).resolves.toBe('complete')
-    expect(fetchMock).toHaveBeenCalledWith(
-      `https://api.example/recovery/${SESSION_ID}/status`,
-      expect.objectContaining({
-        credentials: 'omit',
-        referrerPolicy: 'no-referrer',
-      }),
-    )
-  })
+  it.each([0, 128])(
+    'reads complete recovery status with %s bytes without sending credentials',
+    async (bytes) => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ status: 'complete', bytes }), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      await expect(getChatRecoveryStatus(SESSION_ID)).resolves.toEqual({
+        state: 'complete',
+        persistedBytes: bytes,
+      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        `https://api.example/recovery/${SESSION_ID}/status`,
+        expect.objectContaining({
+          credentials: 'omit',
+          referrerPolicy: 'no-referrer',
+        }),
+      )
+    },
+  )
 
   it('preserves the underlying recovery transport error', async () => {
     const networkError = new TypeError('network unavailable')
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(networkError)
 
-    await expect(getChatRecoveryState(SESSION_ID)).rejects.toMatchObject({
+    await expect(getChatRecoveryStatus(SESSION_ID)).rejects.toMatchObject({
       cause: networkError,
       retryable: true,
     })
@@ -58,24 +66,27 @@ describe('chat recovery client', () => {
       }),
     )
 
-    await expect(getChatRecoveryState(SESSION_ID)).rejects.toMatchObject({
+    await expect(getChatRecoveryStatus(SESSION_ID)).rejects.toMatchObject({
       name: 'ChatRecoveryError',
       retryable: false,
     })
   })
 
-  it('rejects recovery status without a persisted byte count', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ status: 'processing' }), {
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+  it.each([undefined, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects recovery status with invalid persisted bytes %s',
+    async (bytes) => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ status: 'processing', bytes }), {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
 
-    await expect(getChatRecoveryState(SESSION_ID)).rejects.toMatchObject({
-      name: 'ChatRecoveryError',
-      retryable: false,
-    })
-  })
+      await expect(getChatRecoveryStatus(SESSION_ID)).rejects.toMatchObject({
+        name: 'ChatRecoveryError',
+        retryable: false,
+      })
+    },
+  )
 
   it('decrypts the recovered encrypted response with the EHBP token', async () => {
     const encrypted = new Response('encrypted')
@@ -131,20 +142,27 @@ describe('chat recovery client', () => {
     )
   })
 
-  it('counts encrypted bytes without splitting the replay stream', async () => {
-    const encryptedBytes = new TextEncoder().encode('replay-and-live')
+  it('counts each encrypted chunk and preserves replay bytes', async () => {
+    const chunks = [new Uint8Array([1, 2]), new Uint8Array([3, 4, 5])]
     const encryptedProgress = vi.fn()
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(encryptedBytes),
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            chunks.forEach((chunk) => controller.enqueue(chunk))
+            controller.close()
+          },
+        }),
+      ),
     )
     decryptResponseWithToken.mockImplementation(async (response: Response) => {
       expect(new Uint8Array(await response.arrayBuffer())).toEqual(
-        encryptedBytes,
+        new Uint8Array([1, 2, 3, 4, 5]),
       )
       return new Response('decrypted')
     })
 
-    await fetchRecoveredChatResponse(
+    const response = await fetchRecoveredChatResponse(
       SESSION_ID,
       {
         exportedSecret: new Uint8Array(32),
@@ -154,7 +172,8 @@ describe('chat recovery client', () => {
       encryptedProgress,
     )
 
-    expect(encryptedProgress).toHaveBeenCalledWith(encryptedBytes.byteLength)
+    expect(await response.text()).toBe('decrypted')
+    expect(encryptedProgress.mock.calls).toEqual([[0], [2], [3]])
   })
 
   it.each([
@@ -174,10 +193,24 @@ describe('chat recovery client', () => {
   })
 
   it('treats deletion of an already-missing session as success', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(null, { status: 404 }),
-    )
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
 
     await expect(deleteChatRecovery(SESSION_ID)).resolves.toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      `https://api.example/recovery/${SESSION_ID}`,
+      {
+        method: 'DELETE',
+        credentials: 'omit',
+        referrerPolicy: 'no-referrer',
+        signal: expect.any(AbortSignal),
+      },
+    )
+    await expect(deleteChatRecovery(SESSION_ID)).rejects.toMatchObject({
+      name: 'ChatRecoveryError',
+      retryable: true,
+    })
   })
 })

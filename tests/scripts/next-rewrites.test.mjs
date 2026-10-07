@@ -67,12 +67,15 @@ describe('next.config.mjs rewrites', () => {
     ])
   })
 
-  it('omits the catch-all outside of dev so hosted builds never proxy /api/* through the frontend', async () => {
-    setConfigEnv({ dev: false, nodeEnv: 'production' })
-    const cfg = await loadConfig()
-    const rules = await cfg.rewrites()
-    expect(rules).toEqual([])
-  })
+  it.each([false, true])(
+    'omits the catch-all in a production build with dev flag %s',
+    async (dev) => {
+      setConfigEnv({ dev, nodeEnv: 'production' })
+      const cfg = await loadConfig()
+      const rules = await cfg.rewrites()
+      expect(rules).toEqual([])
+    },
+  )
 
   it('does not enable the proxy in next dev without the explicit Tinfoil dev flag', async () => {
     setConfigEnv({ dev: false })
@@ -80,11 +83,14 @@ describe('next.config.mjs rewrites', () => {
     expect(await cfg.rewrites()).toEqual([])
   })
 
-  it('refuses NEXT_PUBLIC_DEV=true in a hosted build', async () => {
-    setConfigEnv()
-    process.env.VERCEL = '1'
-    await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_DEV=true/)
-  })
+  it.each(['VERCEL', 'CI'])(
+    'refuses NEXT_PUBLIC_DEV=true in a hosted build detected by %s',
+    async (host) => {
+      setConfigEnv()
+      process.env[host] = '1'
+      await expect(loadConfig()).rejects.toThrow(/NEXT_PUBLIC_DEV=true/)
+    },
+  )
 
   it('sends CORS for the preview runner modules only in development', async () => {
     setConfigEnv()

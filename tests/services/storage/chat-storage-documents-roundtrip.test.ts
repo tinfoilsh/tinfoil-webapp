@@ -43,12 +43,18 @@ vi.mock('@/services/cloud/cloud-sync', async (original) => {
 })
 
 const CHAT_ID = 'document-roundtrip'
+const USER_ID = 'user-1'
+const documentWritesDescriptor = Object.getOwnPropertyDescriptor(
+  CLOUD_SYNC,
+  'DOCUMENT_ATTACHMENT_WRITES_ENABLED',
+)!
 const pages = [{ page: 1, text: '', image: 'AQID', is_scanned: true }]
 async function storeDocument(payload: Partial<Attachment>) {
   await indexedDBStorage.saveChat({
     id: CHAT_ID,
     title: 'Document',
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     isLocalOnly: false,
     messages: [
       {
@@ -67,6 +73,7 @@ async function storeDocument(payload: Partial<Attachment>) {
       },
     ],
   })
+  await indexedDBStorage.markAsSynced(CHAT_ID, 1)
 }
 
 describe('document cloud/local round trips with real IndexedDB', () => {
@@ -76,19 +83,21 @@ describe('document cloud/local round trips with real IndexedDB', () => {
       configurable: true,
       value: indexedDB,
     })
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, USER_ID)
     setCloudSyncEnabled(true)
     await indexedDBStorage.initialize()
     await indexedDBStorage.deleteAllChats()
+    await indexedDBStorage.clearRevisionSyncStateAfterServerWipe(USER_ID)
     attachmentPut.mockResolvedValue({ id: 'fresh-blob', att_key: 'fresh-key' })
     push.mockResolvedValue({ etag: '1' })
     attachmentGet.mockRejectedValue(new Error('deleted blob'))
   })
   afterEach(() => {
-    Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
-      value: true,
-      configurable: true,
-    })
+    Object.defineProperty(
+      CLOUD_SYNC,
+      'DOCUMENT_ATTACHMENT_WRITES_ENABLED',
+      documentWritesDescriptor,
+    )
   })
 
   it.each([
@@ -108,6 +117,20 @@ describe('document cloud/local round trips with real IndexedDB', () => {
       })
       const storage = new ChatStorageService()
       await storage.convertChatToLocal(CHAT_ID)
+      const intents = await indexedDBStorage.getPendingDeletes(USER_ID)
+      expect(intents).toEqual([
+        expect.objectContaining({ id: CHAT_ID, userId: USER_ID }),
+      ])
+      expect(deleteFromCloud).toHaveBeenCalledExactlyOnceWith(
+        CHAT_ID,
+        intents[0].idempotencyKey,
+      )
+      const retained = await indexedDBStorage.getChat(CHAT_ID)
+      expect(retained?.isLocalOnly).toBe(true)
+      expect(retained?.messages[0].attachments?.[0]).toMatchObject(payload)
+      expect(retained?.messages[0].attachments?.[0]).not.toHaveProperty(
+        'encryptionKey',
+      )
       expect(attachmentGet).not.toHaveBeenCalled()
       Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
         value: true,
@@ -151,6 +174,36 @@ describe('document cloud/local round trips with real IndexedDB', () => {
     expect(wire.messages[0].attachments[0]).not.toHaveProperty('encryptionKey')
     expect(attachmentGet).not.toHaveBeenCalled()
     expect(attachmentPut).not.toHaveBeenCalled()
+  })
+
+  it('restores offloaded document content locally and drops its key', async () => {
+    await storeDocument({})
+    attachmentGet.mockResolvedValueOnce(
+      new TextEncoder().encode(
+        JSON.stringify({ textContent: 'quarterly numbers' }),
+      ),
+    )
+    deleteFromCloud.mockImplementationOnce(async () => {
+      const local = await indexedDBStorage.getChat(CHAT_ID)
+      expect(local?.isLocalOnly).toBe(true)
+      expect(local?.messages[0].attachments?.[0]).toMatchObject({
+        id: 'old-blob',
+        textContent: 'quarterly numbers',
+      })
+      expect(local?.messages[0].attachments?.[0]).not.toHaveProperty(
+        'encryptionKey',
+      )
+    })
+    await new ChatStorageService().convertChatToLocal(CHAT_ID)
+    expect(attachmentGet).toHaveBeenCalledExactlyOnceWith({
+      id: 'old-blob',
+      attKeyB64: 'old-key',
+    })
+    const [intent] = await indexedDBStorage.getPendingDeletes(USER_ID)
+    expect(deleteFromCloud).toHaveBeenCalledExactlyOnceWith(
+      CHAT_ID,
+      intent.idempotencyKey,
+    )
   })
 
   it('does not delete cloud data or mark local-only when content is unavailable', async () => {

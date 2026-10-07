@@ -1,11 +1,10 @@
 import {
-  NATIVE_BACKUP_WRITER_LIMITS,
-  NativeBackupWriterError,
   prepareNativeBackupArchiveDestination,
   writeNativeBackupArchive,
   type NativeBackupArchiveInput,
   type NativeBackupWriterDependencies,
 } from '@/services/native-backup'
+import { BlobReader, Uint8ArrayWriter, ZipReader } from '@zip.js/zip.js'
 
 const manifestBytes = new TextEncoder().encode(
   '{"format":"tinfoil-native-backup","created_at":"2026-08-20T12:00:00.000Z"}',
@@ -27,13 +26,14 @@ function mockDependencies(
     file?: boolean
     compressedBytes?: number
     uncompressedBytes?: number
-    afterAdd?: (path: string) => void
+    afterAdd?: (path: string) => void | Promise<void>
     duringClose?: () => void
     onOutputClose?: () => void
   } = {},
 ) {
   const events = {
     paths: [] as string[],
+    payloads: [] as Uint8Array[],
     outputAborts: 0,
     outputCloses: 0,
     blobReads: 0,
@@ -81,9 +81,10 @@ function mockDependencies(
       events.zipEpochs.push(zipOptions.lastModDate.getTime())
       const writer = writable.getWriter()
       return {
-        add: async (path) => {
+        add: async (path, bytes) => {
           events.paths.push(path)
-          options.afterAdd?.(path)
+          events.payloads.push(new Uint8Array(bytes))
+          await options.afterAdd?.(path)
           await writer.write(new Uint8Array([1]))
         },
         close: async () => {
@@ -126,17 +127,83 @@ describe('native backup archive writer', () => {
   })
 
   it('writes the manifest and files one at a time in deterministic path order', async () => {
-    const { dependencies, events } = mockDependencies()
+    const releases: Array<() => void> = []
+    const gates = Array.from(
+      { length: 3 },
+      () =>
+        new Promise<void>((resolve) => {
+          releases.push(resolve)
+        }),
+    )
+    let active = 0
+    let peak = 0
+    let added = 0
+    const { dependencies, events } = mockDependencies({
+      afterAdd: async () => {
+        active++
+        peak = Math.max(peak, active)
+        await gates[added++]
+        active--
+      },
+    })
+    const archive = input()
+    archive.files[0].bytes = new Uint8Array([9, 8])
+    const writing = writeNativeBackupArchive(archive, {}, dependencies)
+    try {
+      for (const index of [0, 1, 2]) {
+        await vi.waitFor(() => expect(events.paths).toHaveLength(index + 1))
+        expect(events.outputCloses).toBe(0)
+        releases[index]()
+      }
+    } finally {
+      releases.forEach((release) => release())
+    }
 
-    const result = await writeNativeBackupArchive(input(), {}, dependencies)
+    const result = await writing
 
+    expect(peak).toBe(1)
     expect(events.paths).toEqual(['manifest.json', 'a.json', 'z.json'])
+    expect(events.payloads).toEqual([
+      manifestBytes,
+      new Uint8Array([1, 2]),
+      new Uint8Array([9, 8]),
+    ])
     expect(events.zipCloses).toBe(1)
     expect(events.outputCloses).toBe(1)
     expect(result).toMatchObject({
       kind: 'blob',
       filename: 'tinfoil-backup-2026-08-20.zip',
     })
+    vi.stubGlobal('showSaveFilePicker', undefined)
+    try {
+      const encoded = await writeNativeBackupArchive(archive)
+      if (encoded.kind !== 'blob') throw new Error('Expected Blob archive')
+      const reader = new ZipReader(new BlobReader(encoded.blob), {
+        useWebWorkers: false,
+      })
+      try {
+        const entries = await reader.getEntries()
+        expect(entries.map(({ filename }) => filename)).toEqual(events.paths)
+        const bytes = []
+        for (const entry of entries) {
+          if (entry.directory) throw new Error('Unexpected directory entry')
+          const date = entry.lastModDate
+          expect([
+            date.getFullYear(),
+            date.getMonth(),
+            date.getDate(),
+            date.getHours(),
+          ]).toEqual([1980, 0, 1, 0])
+          expect(entry.extraFieldExtendedTimestamp).toBeUndefined()
+          bytes.push(await entry.getData(new Uint8ArrayWriter()))
+        }
+        expect(bytes).toEqual(events.payloads)
+      } finally {
+        await reader.close()
+      }
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('reads the filename date from the complete manifest JSON', async () => {
@@ -169,7 +236,7 @@ describe('native backup archive writer', () => {
 
     await expect(
       writeNativeBackupArchive(archive, {}, dependencies),
-    ).rejects.toMatchObject<Partial<NativeBackupWriterError>>({
+    ).rejects.toMatchObject({
       code: 'invalid_manifest',
     })
     expect(events.blobOutputs).toBe(0)
@@ -181,6 +248,8 @@ describe('native backup archive writer', () => {
       file: true,
       uncompressedBytes: archive.manifestBytes.byteLength,
     })
+    dependencies.limits.blob.uncompressedBytes =
+      archive.manifestBytes.byteLength - 1
 
     await expect(
       writeNativeBackupArchive(archive, {}, dependencies),
@@ -190,10 +259,11 @@ describe('native backup archive writer', () => {
     })
     expect(events.fileOutputs).toBe(1)
     expect(events.blobOutputs).toBe(0)
-    expect(NATIVE_BACKUP_WRITER_LIMITS.file).toEqual({
-      compressedBytes: 512 * 1024 * 1024,
-      uncompressedBytes: 1024 * 1024 * 1024,
-    })
+    dependencies.fileSystemAccessSupported = () => false
+    await expect(
+      writeNativeBackupArchive(archive, {}, dependencies),
+    ).rejects.toMatchObject({ code: 'uncompressed_limit' })
+    expect(events.blobOutputs).toBe(0)
   })
 
   it('rejects oversized fallback input before creating a Blob writer', async () => {
@@ -204,14 +274,10 @@ describe('native backup archive writer', () => {
 
     await expect(
       writeNativeBackupArchive(archive, {}, dependencies),
-    ).rejects.toMatchObject<Partial<NativeBackupWriterError>>({
+    ).rejects.toMatchObject({
       code: 'uncompressed_limit',
     })
     expect(events.blobOutputs).toBe(0)
-    expect(NATIVE_BACKUP_WRITER_LIMITS.blob).toEqual({
-      compressedBytes: 128 * 1024 * 1024,
-      uncompressedBytes: 256 * 1024 * 1024,
-    })
   })
 
   it('aborts output and returns no Blob when compressed output exceeds its limit', async () => {
@@ -219,7 +285,7 @@ describe('native backup archive writer', () => {
 
     await expect(
       writeNativeBackupArchive(input(['a.json']), {}, dependencies),
-    ).rejects.toMatchObject<Partial<NativeBackupWriterError>>({
+    ).rejects.toMatchObject({
       code: 'compressed_limit',
     })
     expect(events.outputAborts).toBe(1)
@@ -319,7 +385,8 @@ describe('native backup archive writer', () => {
         epochs.push(events.zipEpochs[0])
       }
     } finally {
-      process.env.TZ = originalTimezone
+      if (originalTimezone === undefined) delete process.env.TZ
+      else process.env.TZ = originalTimezone
     }
 
     expect(components).toEqual([
@@ -336,7 +403,7 @@ describe('native backup archive writer', () => {
 
       await expect(
         writeNativeBackupArchive(input([path]), {}, dependencies),
-      ).rejects.toMatchObject<Partial<NativeBackupWriterError>>({
+      ).rejects.toMatchObject({
         code: 'unsafe_path',
       })
       expect(events.blobOutputs).toBe(0)
@@ -355,7 +422,7 @@ describe('native backup archive writer', () => {
 
       await expect(
         writeNativeBackupArchive(input([other, path]), {}, dependencies),
-      ).rejects.toMatchObject<Partial<NativeBackupWriterError>>({
+      ).rejects.toMatchObject({
         code: 'unsafe_path',
       })
       expect(events.paths).toEqual([])

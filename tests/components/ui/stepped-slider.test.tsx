@@ -93,22 +93,6 @@ describe('SteppedSlider', () => {
     expect(onValueChange).not.toHaveBeenCalled()
   })
 
-  it('uses the patterned fill only at the maximum and removes it when stepping down', () => {
-    const { container } = render(<ControlledSlider />)
-    const thumb = screen.getByRole('slider', { name: 'Intelligence' })
-
-    expect(container.querySelector('.stepped-slider-max-fill')).toBeNull()
-
-    fireEvent.keyDown(thumb, { key: 'End' })
-    expect(
-      container.querySelector('.stepped-slider-max-fill'),
-    ).toBeInTheDocument()
-
-    fireEvent.keyDown(thumb, { key: 'ArrowLeft' })
-    expect(thumb).toHaveAttribute('aria-valuetext', 'Medium')
-    expect(container.querySelector('.stepped-slider-max-fill')).toBeNull()
-  })
-
   describe('computed fill animation', () => {
     let css: string
 
@@ -147,9 +131,20 @@ describe('SteppedSlider', () => {
           )
           const { container } = render(<ControlledSlider />)
           const thumb = screen.getByRole('slider', { name: 'Intelligence' })
+          expect(container.querySelector('.stepped-slider-max-fill')).toBeNull()
 
           for (const key of ['End', 'ArrowLeft']) {
             fireEvent.keyDown(thumb, { key })
+            if (key === 'End') {
+              expect(
+                container.querySelector('.stepped-slider-max-fill'),
+              ).toBeInTheDocument()
+            } else {
+              expect(thumb).toHaveAttribute('aria-valuetext', 'Medium')
+              expect(
+                container.querySelector('.stepped-slider-max-fill'),
+              ).toBeNull()
+            }
             browserWindow.document.body.innerHTML = container.innerHTML
             const fill = browserWindow.document.querySelector(
               '.bg-tinfoil-accent-blue',

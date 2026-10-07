@@ -31,6 +31,15 @@ const schema = {
   required: ['value'],
 }
 
+const model: BaseModel = {
+  modelName: 'gpt-oss-120b',
+  name: 'Test',
+  nameShort: 'Test',
+  image: '',
+  description: '',
+  type: 'chat',
+}
+
 function response(
   content: string | null,
   finishReason: string | null = 'stop',
@@ -52,7 +61,8 @@ describe('sendStructuredCompletion', () => {
   })
 
   it('routes Auto by intelligence level and leaves per-model params to the router', async () => {
-    const candidate = {
+    const candidate: BaseModel = {
+      ...model,
       modelName: 'candidate-a',
       requestParams: {
         temperature: 0.25,
@@ -68,18 +78,20 @@ describe('sendStructuredCompletion', () => {
           },
         },
       },
-    } as BaseModel
+    }
     createMock.mockResolvedValueOnce(response('{"value":"ok"}'))
 
-    await sendStructuredCompletion({
-      model: candidate,
-      autoCandidates: [candidate],
-      autoIntelligence: 'extra',
-      messages: [{ role: 'user', content: 'repair' }],
-      jsonSchema: schema,
-      reasoningEffort: 'high',
-      thinkingEnabled: true,
-    })
+    await expect(
+      sendStructuredCompletion({
+        model: candidate,
+        autoCandidates: [candidate],
+        autoIntelligence: 'extra',
+        messages: [{ role: 'user', content: 'repair' }],
+        jsonSchema: schema,
+        reasoningEffort: 'high',
+        thinkingEnabled: true,
+      }),
+    ).resolves.toEqual({ value: 'ok' })
 
     const body = createMock.mock.calls[0][0]
     expect(body.model).toBe('auto')
@@ -104,7 +116,7 @@ describe('sendStructuredCompletion', () => {
       createMock.mockResolvedValueOnce(apiResponse)
       await expect(
         sendStructuredCompletion({
-          model: { modelName: 'gpt-oss-120b' } as BaseModel,
+          model,
           messages: [{ role: 'user', content: 'repair' }],
           jsonSchema: schema,
         }),
@@ -121,7 +133,7 @@ describe('sendStructuredCompletion', () => {
 
     await expect(
       sendStructuredCompletion({
-        model: { modelName: 'gpt-oss-120b' } as BaseModel,
+        model,
         messages: [{ role: 'user', content: 'repair' }],
         jsonSchema: schema,
       }),
@@ -142,7 +154,7 @@ describe('sendStructuredCompletion', () => {
 
     await expect(
       sendStructuredCompletion({
-        model: { modelName: 'gpt-oss-120b' } as BaseModel,
+        model,
         messages: [{ role: 'user', content: 'repair' }],
         jsonSchema: schema,
       }),

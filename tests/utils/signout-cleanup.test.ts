@@ -4,6 +4,7 @@ import {
   AUTH_ACCOUNT_RESET_FAILED,
   AUTH_ACTIVE_USER_ID,
   SETTINGS_HAS_SEEN_ONBOARDING,
+  USER_ENCRYPTION_KEY,
   USER_PREFS_PINNED_CHAT_IDS,
 } from '@/constants/storage-keys'
 import { authTokenManager } from '@/services/auth'
@@ -126,6 +127,7 @@ describe('performSignoutCleanup', () => {
   afterEach(() => {
     speechPlayer.stop()
     authTokenManager.reset()
+    vi.restoreAllMocks()
   })
 
   it.each([false, true])(
@@ -189,6 +191,7 @@ describe('performSignoutCleanup', () => {
       try {
         expect(speechPlayer.getSnapshot().status).toBe('idle')
         expect(generation.requests[0].signal.aborted).toBe(true)
+        expect(audio.scheduled).toHaveLength(1)
         expect(audio.scheduled.every((source) => source.stopped)).toBe(true)
         expect(audio.close).toHaveBeenCalledOnce()
       } finally {
@@ -222,6 +225,7 @@ describe('performSignoutCleanup', () => {
     await withPinnedChatChanges(performSignoutCleanup, (handle) => {
       expect(localStorage.getItem(USER_PREFS_PINNED_CHAT_IDS)).toBeNull()
       expect(handle).toHaveBeenCalledTimes(1)
+      expect(handle.mock.calls[0][0].detail).toEqual({ pinnedChatIds: [] })
     })
   })
 
@@ -232,7 +236,7 @@ describe('performSignoutCleanup', () => {
     )
   })
 
-  it('clears the encryption key and every user data cache', async () => {
+  it('requests persistent key deletion and every registered cache reset', async () => {
     await performSignoutCleanup()
 
     expect(encryptionService.clearKey).toHaveBeenCalledWith({ persist: true })
@@ -250,8 +254,15 @@ describe('performSignoutCleanup', () => {
   })
 
   it('keeps the encryption key when preserveEncryptionKey is set', async () => {
+    localStorage.setItem(USER_ENCRYPTION_KEY, 'saved-encryption-key')
+    localStorage.setItem('private-chat-state', 'old-account-data')
+
     await performSignoutCleanup({ preserveEncryptionKey: true })
 
+    expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(
+      'saved-encryption-key',
+    )
+    expect(localStorage.getItem('private-chat-state')).toBeNull()
     expect(encryptionService.clearKey).not.toHaveBeenCalled()
     expect(indexedDBStorage.resetForAccountChange).toHaveBeenCalled()
   })
@@ -267,13 +278,15 @@ describe('performSignoutCleanup', () => {
     const clearLocalStorage = vi.spyOn(localStorage, 'clear')
 
     const cleanup = performSignoutCleanup()
-    await Promise.resolve()
+    try {
+      await Promise.resolve()
 
-    expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
-    expect(clearLocalStorage).not.toHaveBeenCalled()
-
-    finishReset()
-    await cleanup
+      expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
+      expect(clearLocalStorage).not.toHaveBeenCalled()
+    } finally {
+      finishReset()
+      await cleanup
+    }
 
     expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBeNull()
   })

@@ -15,7 +15,7 @@ function envelope(ciphertextBytes: number) {
   }
 }
 
-function chatWithEnvelope(recovery: ReturnType<typeof envelope>) {
+function chatWithEnvelope(recovery: unknown) {
   return {
     messages: [],
     pendingRecoveries: [recovery],

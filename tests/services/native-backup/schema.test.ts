@@ -1,7 +1,4 @@
 import {
-  NATIVE_BACKUP_ENTITY_KINDS,
-  NATIVE_BACKUP_FORMAT,
-  NATIVE_BACKUP_VERSION,
   NativeBackupChatSchema,
   classifyNativeBackupChat,
   sanitizeNativeBackupChat,
@@ -29,19 +26,6 @@ function sanitizedFixture() {
 }
 
 describe('native backup v1 schema', () => {
-  it('defines the portable format and entity kinds', () => {
-    expect(NATIVE_BACKUP_FORMAT).toBe('tinfoil-native-backup')
-    expect(NATIVE_BACKUP_VERSION).toBe(1)
-    expect(NATIVE_BACKUP_ENTITY_KINDS).toEqual([
-      'projects',
-      'project_documents',
-      'cloud_chats',
-      'local_chats',
-      'relationships',
-      'images',
-    ])
-  })
-
   it('preserves semantic fields while stripping secrets and transient state', () => {
     const output = sanitizedFixture()
 

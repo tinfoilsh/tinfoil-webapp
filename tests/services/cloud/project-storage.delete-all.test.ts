@@ -1,6 +1,7 @@
-import type { AccountOperationGuard } from '@/services/cloud/account-operation'
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import { createActiveAccountGuard } from '@/services/cloud/account-operation'
 import { ProjectStorageService } from '@/services/cloud/project-storage'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   canWriteToCloud: vi.fn(),
@@ -33,7 +34,7 @@ vi.mock('@/services/sync-enclave/sync-api', () => ({
 }))
 
 describe('ProjectStorageService.deleteAllProjects', () => {
-  let guard: AccountOperationGuard
+  let guard: ReturnType<typeof createActiveAccountGuard>
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -41,11 +42,13 @@ describe('ProjectStorageService.deleteAllProjects', () => {
     mocks.requirePrimaryKeyB64.mockReturnValue('current-cek')
     mocks.newIdempotencyKey.mockReturnValue('delete-projects-idempotency')
     mocks.deleteAllProjects.mockResolvedValue({ ok: true, deleted: 4 })
-    guard = {
-      userId: 'project-user',
-      assertCurrent: vi.fn(),
-      isCurrent: vi.fn().mockReturnValue(true),
-    }
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'project-user')
+    guard = createActiveAccountGuard()
+    vi.spyOn(guard, 'assertCurrent')
+  })
+  afterEach(() => {
+    guard.dispose()
+    vi.restoreAllMocks()
   })
 
   it('deletes all projects in one atomic enclave request', async () => {
@@ -71,6 +74,35 @@ describe('ProjectStorageService.deleteAllProjects', () => {
     )
     expect(mocks.deleteAllProjects).not.toHaveBeenCalled()
   })
+
+  it.each(['authorization', 'deletion'])(
+    'rejects an account change during %s',
+    async (stage) => {
+      let finish!: () => void
+      const gate = new Promise<void>((resolve) => {
+        finish = resolve
+      })
+      const boundary =
+        stage === 'authorization'
+          ? mocks.canWriteToCloud
+          : mocks.deleteAllProjects
+      boundary.mockImplementationOnce(async () => {
+        await gate
+        return stage === 'authorization' ? true : { ok: true, deleted: 4 }
+      })
+      const deletion = new ProjectStorageService().deleteAllProjects(guard)
+      const rejection = expect(deletion).rejects.toMatchObject({
+        name: 'AbortError',
+      })
+      await vi.waitFor(() => expect(boundary).toHaveBeenCalledOnce())
+      localStorage.setItem(AUTH_ACTIVE_USER_ID, 'other-user')
+      finish()
+      await rejection
+      expect(mocks.deleteAllProjects).toHaveBeenCalledTimes(
+        stage === 'authorization' ? 0 : 1,
+      )
+    },
+  )
 
   it('propagates enclave failures without reporting a deletion', async () => {
     const failure = new Error('Enclave unavailable')

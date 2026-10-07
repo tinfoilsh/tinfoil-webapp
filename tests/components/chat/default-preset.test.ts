@@ -1,5 +1,4 @@
 import {
-  adoptLegacyCustomPrompt,
   isUserPromptPreset,
   migrateLegacyCustomPrompt,
   pruneUnavailablePresetModels,
@@ -12,7 +11,9 @@ import {
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
 } from '@/constants/storage-keys'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+afterEach(() => vi.restoreAllMocks())
 
 // Retired keys and the shared migrated id are pinned as literals: the
 // migration must keep reading exactly what older builds and other devices
@@ -34,9 +35,22 @@ describe('migrateLegacyCustomPrompt', () => {
   })
 
   it('does nothing when no legacy keys exist', () => {
+    const existing = basePreset()
+    localStorage.setItem(
+      USER_PREFS_CUSTOM_PROMPT_PRESETS,
+      JSON.stringify([existing]),
+    )
+    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, existing.id)
+    const write = vi.spyOn(localStorage, 'setItem')
+    const remove = vi.spyOn(localStorage, 'removeItem')
+    const dispatch = vi.spyOn(window, 'dispatchEvent')
+
     migrateLegacyCustomPrompt()
-    expect(readUserPresets()).toEqual([])
-    expect(readDefaultPresetId()).toBeNull()
+    expect(readUserPresets()).toEqual([existing])
+    expect(readDefaultPresetId()).toBe(existing.id)
+    expect(write).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(dispatch).not.toHaveBeenCalled()
   })
 
   it('converts an enabled legacy prompt into the default user preset', () => {
@@ -122,22 +136,6 @@ describe('migrateLegacyCustomPrompt', () => {
     expect(readUserPresets()).toEqual([existing])
     expect(readDefaultPresetId()).toBe('builtin:tutor')
     expectLegacyKeysRemoved()
-  })
-
-  it('adopts an enabled prompt carried by an older cloud profile', () => {
-    adoptLegacyCustomPrompt(true, LEGACY_PROMPT)
-
-    const presets = readUserPresets()
-    expect(presets).toHaveLength(1)
-    expect(presets[0].id).toBe(SYNCED_MIGRATED_ID)
-    expect(readDefaultPresetId()).toBe(SYNCED_MIGRATED_ID)
-  })
-
-  it('ignores a disabled prompt carried by an older cloud profile', () => {
-    adoptLegacyCustomPrompt(false, LEGACY_PROMPT)
-
-    expect(readUserPresets()).toEqual([])
-    expect(readDefaultPresetId()).toBeNull()
   })
 })
 
@@ -226,9 +224,13 @@ describe('pruneUnavailablePresetModels', () => {
     const presets = [basePreset({ model: 'gpt-oss-120b' })]
     writePresets(presets)
     const before = localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_PRESETS)
+    const write = vi.spyOn(localStorage, 'setItem')
+    const dispatch = vi.spyOn(window, 'dispatchEvent')
 
     pruneUnavailablePresetModels(catalog)
 
     expect(localStorage.getItem(USER_PREFS_CUSTOM_PROMPT_PRESETS)).toBe(before)
+    expect(write).not.toHaveBeenCalled()
+    expect(dispatch).not.toHaveBeenCalled()
   })
 })

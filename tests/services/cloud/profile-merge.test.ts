@@ -11,7 +11,6 @@
 import {
   changedProfileFields,
   isProfilePopulated,
-  mergeProfiles,
   mergeProfilesThreeWay,
   overlayProfileChanges,
   reconcileDirtyProfileWithoutBaseline,
@@ -26,85 +25,47 @@ function trusted(p: ProfileData): ProfileData {
   return { ...p, version: 10, clockVersion: 10 }
 }
 
-describe('mergeProfiles', () => {
-  it('keeps each side’s field with the higher clock', () => {
-    const local = trusted({
-      nickname: 'local-name',
-      additionalContext: 'old-prompt',
-      fieldClocks: {
+describe('trusted and untrusted three-way profile merges', () => {
+  it.each([false, true])(
+    'keeps each side’s field with the higher clock',
+    (reverse) => {
+      const local = trusted({
+        nickname: 'local-name',
+        additionalContext: 'old-prompt',
+        fieldClocks: {
+          nickname: { v: 5, w: 'A' },
+          additionalContext: { v: 1, w: 'A' },
+        },
+        updatedAt: '2024-01-01T00:00:00.000Z',
+      })
+      const remote = trusted({
+        nickname: 'remote-name',
+        additionalContext: 'new-prompt',
+        fieldClocks: {
+          nickname: { v: 2, w: 'B' },
+          additionalContext: { v: 9, w: 'B' },
+        },
+        updatedAt: '2024-01-02T00:00:00.000Z',
+      })
+
+      const { merged, adoptedRemote, conflicts } = mergeProfilesThreeWay({
+        baseline: {},
+        local: reverse ? remote : local,
+        remote: reverse ? local : remote,
+      })
+
+      // local nickname (clock 5) beats remote (clock 2); remote prompt
+      // (clock 9) beats local (clock 1). Neither edit is lost.
+      expect(merged.nickname).toBe('local-name')
+      expect(merged.additionalContext).toBe('new-prompt')
+      expect(adoptedRemote).toBe(true)
+      expect(conflicts).toEqual([])
+      expect(merged.fieldClocks).toEqual({
         nickname: { v: 5, w: 'A' },
-        additionalContext: { v: 1, w: 'A' },
-      },
-      updatedAt: '2024-01-01T00:00:00.000Z',
-    })
-    const remote = trusted({
-      nickname: 'remote-name',
-      additionalContext: 'new-prompt',
-      fieldClocks: {
-        nickname: { v: 2, w: 'B' },
         additionalContext: { v: 9, w: 'B' },
-      },
-      updatedAt: '2024-01-02T00:00:00.000Z',
-    })
-
-    const { merged, adoptedRemote } = mergeProfiles({ local, remote })
-
-    // local nickname (clock 5) beats remote (clock 2); remote prompt
-    // (clock 9) beats local (clock 1). Neither edit is lost.
-    expect(merged.nickname).toBe('local-name')
-    expect(merged.additionalContext).toBe('new-prompt')
-    expect(adoptedRemote).toBe(true)
-  })
-
-  it('converges regardless of merge direction', () => {
-    const local = trusted({
-      nickname: 'local-name',
-      profession: 'old-job',
-      fieldClocks: {
-        nickname: { v: 5, w: 'A' },
-        profession: { v: 1, w: 'A' },
-      },
-    })
-    const remote = trusted({
-      nickname: 'remote-name',
-      profession: 'new-job',
-      fieldClocks: {
-        nickname: { v: 2, w: 'B' },
-        profession: { v: 9, w: 'B' },
-      },
-    })
-
-    const a = mergeProfiles({ local, remote }).merged
-    const b = mergeProfiles({ local: remote, remote: local }).merged
-
-    expect(a.nickname).toBe(b.nickname)
-    expect(a.profession).toBe(b.profession)
-    expect(a.nickname).toBe('local-name')
-    expect(a.profession).toBe('new-job')
-  })
-
-  it('refuses to let an empty remote wipe a populated local on fallback', () => {
-    // No trusted clocks -> fallback path. Remote is newer by wall clock
-    // but empty; the populated local profile must survive.
-    const local: ProfileData = {
-      nickname: 'real-user',
-      additionalContext: 'my prompt',
-      traits: ['curious'],
-      updatedAt: '2024-01-01T00:00:00.000Z',
-    }
-    const remote: ProfileData = {
-      nickname: '',
-      additionalContext: '',
-      traits: [],
-      updatedAt: '2024-01-02T00:00:00.000Z',
-    }
-
-    const { merged, adoptedRemote } = mergeProfiles({ local, remote })
-
-    expect(merged.nickname).toBe('real-user')
-    expect(merged.additionalContext).toBe('my prompt')
-    expect(adoptedRemote).toBe(false)
-  })
+      })
+    },
+  )
 
   it('does not carry untrusted local clocks into the merged output', () => {
     // Local clocks are untrusted (clockVersion !== version). They must
@@ -130,7 +91,11 @@ describe('mergeProfiles', () => {
       updatedAt: '2024-01-01T00:00:00.000Z',
     }
 
-    const { merged } = mergeProfiles({ local, remote })
+    const { merged } = mergeProfilesThreeWay({
+      baseline: { nickname: 'remote' },
+      local,
+      remote,
+    })
 
     expect(merged.nickname).toBe('local')
     expect(merged.profession).toBe('local-job')
@@ -138,29 +103,32 @@ describe('mergeProfiles', () => {
     expect(merged.fieldClocks).toBeUndefined()
   })
 
-  it('falls back to updatedAt when clocks are untrusted', () => {
-    // clockVersion !== version means a clock-unaware client wrote since,
-    // so the field clocks are ignored and the newer blob wins wholesale.
-    const local: ProfileData = {
-      nickname: 'local',
-      version: 4,
-      clockVersion: 2,
-      fieldClocks: { nickname: { v: 99, w: 'A' } },
-      updatedAt: '2024-01-01T00:00:00.000Z',
-    }
-    const remote: ProfileData = {
-      nickname: 'remote',
-      version: 5,
-      clockVersion: 2,
-      fieldClocks: { nickname: { v: 1, w: 'B' } },
-      updatedAt: '2024-01-02T00:00:00.000Z',
-    }
-
-    const { merged } = mergeProfiles({ local, remote })
-
-    // Despite local's huge clock, it is untrusted; newer remote wins.
-    expect(merged.nickname).toBe('remote')
-  })
+  it.each(['remote', ''])(
+    'reports conflicting edits when clocks are untrusted',
+    (remoteName) => {
+      const result = mergeProfilesThreeWay({
+        baseline: { nickname: 'baseline' },
+        local: {
+          nickname: 'local',
+          version: 4,
+          clockVersion: 2,
+          fieldClocks: { nickname: { v: 99, w: 'A' } },
+          updatedAt: '2024-01-01T00:00:00.000Z',
+        },
+        remote: {
+          nickname: remoteName,
+          version: 5,
+          clockVersion: 2,
+          fieldClocks: { nickname: { v: 1, w: 'B' } },
+          updatedAt: '2024-01-02T00:00:00.000Z',
+        },
+      })
+      expect(result.merged.nickname).toBe('local')
+      expect(result.merged.fieldClocks).toBeUndefined()
+      expect(result.conflicts).toEqual(['nickname'])
+      expect(result.adoptedRemote).toBe(false)
+    },
+  )
 })
 
 describe('isProfilePopulated', () => {
@@ -187,8 +155,31 @@ describe('isProfilePopulated', () => {
 describe('changedProfileFields', () => {
   it('lists every field when there is no baseline', () => {
     const fields = changedProfileFields({ nickname: 'a' }, null)
-    expect(fields).toContain('nickname')
-    expect(fields.length).toBeGreaterThan(1)
+    expect(fields).toEqual([
+      'isDarkMode',
+      'themeMode',
+      'language',
+      'nickname',
+      'profession',
+      'traits',
+      'additionalContext',
+      'isUsingPersonalization',
+      'customPromptPresets',
+      'favoritePromptPresetIds',
+      'defaultPromptPresetId',
+      'pinnedChatIds',
+      'reasoningEffort',
+      'thinkingEnabled',
+      'webSearchEnabled',
+      'webSearchAvailable',
+      'codeExecutionEnabled',
+      'pixelateSidebarChatTitlesEnabled',
+      'browserTabChatTitleEnabled',
+      'piiCheckEnabled',
+      'enterToNewlineEnabled',
+      'genUIEnabled',
+      'chatFont',
+    ])
   })
 
   it('detects primitive and array changes only', () => {

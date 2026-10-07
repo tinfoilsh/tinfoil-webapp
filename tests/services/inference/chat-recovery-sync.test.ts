@@ -7,6 +7,7 @@ import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import {
   MAX_PENDING_RECOVERIES_PER_CHAT,
   type PendingRecoveryEnvelope,
+  type SyncedRecoveryEnvelope,
 } from '@/types/chat-recovery'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -17,7 +18,10 @@ let conflictOnce = false
 let applyFailures = 0
 let cloudSyncEnabled = true
 let uploadRewrites: AttachmentRewrite[] = []
-const downloadChat = vi.fn(async () => structuredClone(remoteChat))
+const downloadChat = vi.fn(async (chatId: string) => {
+  expect(chatId).toBe(remoteChat.id)
+  return structuredClone(remoteChat)
+})
 const uploadChat = vi.fn(async (chat: StoredChat) => {
   uploadAttempts += 1
   if (conflictOnce) {
@@ -34,7 +38,10 @@ const uploadChat = vi.fn(async (chat: StoredChat) => {
     projectIntentIncluded: false,
   }
 })
-const getChat = vi.fn(async () => structuredClone(localChat))
+const getChat = vi.fn(async (chatId: string) => {
+  expect(chatId).toBe(remoteChat.id)
+  return structuredClone(localChat)
+})
 const applyRemoteChatIfFresh = vi.fn(async ({ chat }: { chat: StoredChat }) => {
   if (applyFailures > 0) {
     applyFailures -= 1
@@ -120,28 +127,17 @@ function message(
   return { role, content, turnId, timestamp: timestamp as Date }
 }
 
-function envelope(turnId: string): PendingRecoveryEnvelope {
+function envelope(turnId: string): SyncedRecoveryEnvelope {
   return {
     v: 1,
-    sessionId: '0123456789abcdef0123456789abcdef',
     turnId,
-    keyId: 'key-id',
+    keyId: '0123456789abcdef0123456789abcdef',
     createdAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 60_000).toISOString(),
     nonce: 'AAAAAAAAAAAAAAAA',
     ciphertext: 'AAAAAAAAAAAAAAAAAAAAAAAA',
   }
 }
-
-it('compares recovered model display names', () => {
-  const existing = {
-    ...message('assistant', 'Answer', 'turn-1'),
-    modelDisplayName: 'Model A',
-  }
-  const recovered = { ...existing, modelDisplayName: 'Model B' }
-
-  expect(sameRecoveredResponse(existing, recovered)).toBe(false)
-})
 
 function currentEnvelope(turnId: string): PendingRecoveryEnvelope {
   return (
@@ -176,8 +172,30 @@ describe('chat recovery sync mutations', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       syncVersion: 1,
+      lastAccessedAt: Date.now(),
     }
     localChat = structuredClone(remoteChat)
+  })
+
+  it('persists a changed recovered model display name and ignores an identical replay', async () => {
+    const pending = envelope('turn-1')
+    const existing = {
+      ...message('assistant', 'Answer', 'turn-1'),
+      modelDisplayName: 'Model A',
+    }
+    const recovered = { ...existing, modelDisplayName: 'Model B' }
+    remoteChat.messages.push(existing)
+    remoteChat.pendingRecoveries = [pending]
+    localChat = structuredClone(remoteChat)
+
+    await completePendingRecovery(remoteChat.id, pending, recovered)
+    expect(remoteChat.messages[1]).toEqual(recovered)
+    expect(localChat?.messages[1]).toEqual(recovered)
+    expect(sameRecoveredResponse(remoteChat.messages[1], recovered)).toBe(true)
+    expect(uploadChat).toHaveBeenCalledOnce()
+
+    await completePendingRecovery(remoteChat.id, pending, recovered)
+    expect(uploadChat).toHaveBeenCalledOnce()
   })
 
   it('retries a conflict and synchronizes the encrypted envelope', async () => {
@@ -639,7 +657,6 @@ describe('chat recovery sync mutations', () => {
     const replaced = envelope('turn-1')
     const replacement = {
       ...envelope('turn-1'),
-      sessionId: 'abcdef0123456789abcdef0123456789',
       ciphertext: 'BBBBBBBBBBBBBBBBBBBBBBBB',
     }
     remoteChat.pendingRecoveries = [replacement]
@@ -715,13 +732,14 @@ describe('chat recovery sync mutations', () => {
     remoteChat.pendingRecoveries = [envelope('turn-1')]
     localChat = structuredClone(remoteChat)
     const controller = new AbortController()
-    let finishStalledUpload: ((chat: StoredChat) => void) | undefined
+    let finishStalledUpload:
+      ((result: Awaited<ReturnType<typeof uploadChat>>) => void) | undefined
     let markStalledUploadSettled: (() => void) | undefined
     const stalledUploadSettled = new Promise<void>((resolve) => {
       markStalledUploadSettled = resolve
     })
-    uploadChat.mockImplementationOnce((chat: StoredChat) =>
-      new Promise<StoredChat>((resolve) => {
+    uploadChat.mockImplementationOnce(() =>
+      new Promise<Awaited<ReturnType<typeof uploadChat>>>((resolve) => {
         finishStalledUpload = resolve
       }).then((uploaded) => {
         uploadAttempts += 1
@@ -756,12 +774,9 @@ describe('chat recovery sync mutations', () => {
     expect(localChat?.messages[1].content).toBe('Recovered answer')
 
     const staleUploadResult = {
-      ...structuredClone(remoteChat),
-      messages: [
-        remoteChat.messages[0],
-        message('assistant', 'Stale answer', 'turn-1'),
-      ],
       syncVersion: 2,
+      rewrites: [],
+      projectIntentIncluded: false,
     }
     finishStalledUpload?.(staleUploadResult)
     await stalledUploadSettled

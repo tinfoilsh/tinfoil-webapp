@@ -165,6 +165,9 @@ describe('ProjectProvider documents', () => {
 
     mocks.subscriptionActive = true
     rendered.rerender()
+    expect(rendered.result.current.activeProject).toBeNull()
+    expect(rendered.result.current.projectDocuments).toEqual([])
+    expect(rendered.result.current.getProjectSystemPrompt()).toBe('')
     await act(async () => {
       await rendered.result.current.enterProjectMode(project.id)
     })
@@ -187,11 +190,30 @@ describe('ProjectProvider documents', () => {
 
   it('keeps decoded document sizes after a refresh', async () => {
     const { result } = await renderInProject()
+    expect(result.current.projectDocuments[0].sizeBytes).toBe(2048)
+    const refreshed = {
+      ...persistedDocument,
+      sizeBytes: 4096,
+      content: 'Refreshed project notes',
+      syncVersion: 2,
+    }
+    mocks.listDocuments.mockResolvedValueOnce({
+      documents: [{ ...listedDocument, syncVersion: 2 }],
+    })
+    mocks.getDocuments.mockResolvedValueOnce(
+      new Map([[refreshed.id, refreshed]]),
+    )
     await act(async () => {
       await result.current.refreshDocuments()
     })
 
-    expect(result.current.projectDocuments[0].sizeBytes).toBe(2048)
+    expect(result.current.projectDocuments).toEqual([
+      { ...refreshed, decryptionFailed: false },
+    ])
+    expect(mocks.listDocuments).toHaveBeenLastCalledWith(project.id)
+    expect(mocks.getDocuments).toHaveBeenLastCalledWith(project.id, [
+      refreshed.id,
+    ])
   })
 
   it('does not let a stale refresh remove a completed upload', async () => {

@@ -360,22 +360,6 @@ export interface KeyCurrentResponse {
 /*  Migration                                                                 */
 /* -------------------------------------------------------------------------- */
 
-export interface MigrateRequest {
-  scope: Scope
-  ids?: string[]
-  limit?: number
-  /** Candidate keys the enclave will try when unsealing legacy rows. */
-  keys: PullKey[]
-  target: { key: string /* base64 raw 32-byte target CEK */ }
-}
-
-export interface MigrateResponse {
-  migrated: number
-  retryable_remaining: number
-  blocked_unmigrated: number
-  blocked: string[]
-}
-
 /**
  * MigrateAllRequest tells the enclave to drain every scope under the
  * supplied target CEK in one call. The enclave handles per-scope
@@ -625,11 +609,6 @@ export async function importStatus(
 /*  Health                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export interface HealthResponse {
-  status: string
-  git_sha?: string
-}
-
 /* -------------------------------------------------------------------------- */
 /*  RPC calls                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -844,16 +823,6 @@ export async function backupInventory(
   return validateBackupInventory(response)
 }
 
-export async function pullOne(
-  scope: Scope,
-  id: string,
-  keys: PullKey[],
-): Promise<PullItem | null> {
-  const resp = await pull({ scope, ids: [id], keys })
-  if (resp.items.length === 0) return null
-  return resp.items[0]
-}
-
 export function pullItemPlaintext(item: PullItem): Uint8Array | null {
   if (!item.ok) return null
   if (item.plaintext === null || item.plaintext === undefined) return null
@@ -1055,18 +1024,6 @@ export async function keyCurrent(
   }
 }
 
-export async function migrate(req: MigrateRequest): Promise<MigrateResponse> {
-  const client = await getSyncEnclaveClient()
-  const resp = await client.post<MigrateResponse>('/v1/blobs/migrate', {
-    scope: req.scope,
-    ids: req.ids,
-    limit: req.limit,
-    keys: req.keys,
-    target: req.target,
-  })
-  return { ...resp, blocked: resp.blocked ?? [] }
-}
-
 export async function migrateAll(
   req: MigrateAllRequest,
 ): Promise<MigrateAllResponse> {
@@ -1241,26 +1198,6 @@ export async function attachmentGetPublic(
   return b64ToBytes(resp.plaintext)
 }
 
-/**
- * Delete an attachment from buckets through the sync enclave. No CEK
- * is required: the buckets path is the attachment id and the
- * controlplane's `chat_attachments` row is the source of truth for
- * ownership; deletion is pure addressing.
- */
-export async function attachmentDelete(req: {
-  id: string
-}): Promise<OKResponse> {
-  const client = await getSyncEnclaveClient()
-  return client.post<OKResponse>(
-    '/v1/attachment/delete',
-    {
-      id: req.id,
-    },
-    undefined,
-    { requestScope: 'cloud-sync' },
-  )
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Public chat share (seal + open through the enclave)                       */
 /* -------------------------------------------------------------------------- */
@@ -1318,11 +1255,6 @@ export async function shareOpen(req: ShareOpenRequest): Promise<Uint8Array> {
     },
   )
   return b64ToBytes(resp.plaintext)
-}
-
-export async function health(): Promise<HealthResponse> {
-  const client = await getSyncEnclaveClient()
-  return client.get<HealthResponse>('/v1/health')
 }
 
 /**

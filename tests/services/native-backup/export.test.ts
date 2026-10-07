@@ -12,34 +12,84 @@ import { describe, expect, it, vi } from 'vitest'
 describe('native backup export orchestration', () => {
   it('collects, formats, commits, and only then downloads', async () => {
     const order: string[] = []
+    const signal = new AbortController().signal
+    const collected = {
+      backupId: '123e4567-e89b-42d3-a456-426614174000',
+      createdAt: '2026-08-20T12:00:00.000Z',
+      projects: [],
+      projectDocuments: [],
+      cloudChats: [],
+      localChats: [],
+      images: [],
+      relationships: { projectChats: [], projectDocuments: [], chatImages: [] },
+      omissions: [],
+      warnings: [],
+    }
+    const formatted = { manifestBytes: new Uint8Array([1]), files: [] }
+    const destination: FileSystemFileHandle = {
+      kind: 'file',
+      name: 'backup.zip',
+      isSameEntry: async (other) => other === destination,
+      getFile: async () => {
+        throw new Error('Unexpected file read')
+      },
+      createWritable: async () => {
+        throw new Error('Writer is injected')
+      },
+    }
+    let commit!: () => void
+    const committed = new Promise<void>((resolve) => {
+      commit = resolve
+    })
+    const written = { kind: 'file', filename: 'backup.zip' } as const
     const dependencies = {
       prepare: vi.fn(async () => {
         order.push('prepare')
-        return undefined
+        return destination
       }),
       collect: vi.fn(async () => {
         order.push('collect')
-        return { omissions: [], warnings: [] }
+        return collected
       }),
       format: vi.fn(() => {
         order.push('format')
-        return { manifestBytes: new Uint8Array(), files: [] }
+        return formatted
       }),
       write: vi.fn(async () => {
         order.push('write')
-        return { kind: 'file', filename: 'backup.zip' } as const
+        await committed
+        order.push('commit')
+        return written
       }),
       download: vi.fn(() => order.push('download')),
-    } as unknown as NativeBackupExportDependencies
+    } satisfies NativeBackupExportDependencies
     const progress: string[] = []
 
-    await runNativeBackupExport(
-      new AbortController().signal,
+    const exportResult = runNativeBackupExport(
+      signal,
       (value) => progress.push(value),
       dependencies,
     )
 
-    expect(order).toEqual(['prepare', 'collect', 'format', 'write', 'download'])
+    await vi.waitFor(() => expect(dependencies.write).toHaveBeenCalledOnce())
+    expect(dependencies.download).not.toHaveBeenCalled()
+    expect(dependencies.collect).toHaveBeenCalledExactlyOnceWith(signal)
+    expect(dependencies.format).toHaveBeenCalledExactlyOnceWith(collected)
+    expect(dependencies.write).toHaveBeenCalledExactlyOnceWith(formatted, {
+      signal,
+      destination,
+    })
+    commit()
+    await exportResult
+    expect(order).toEqual([
+      'prepare',
+      'collect',
+      'format',
+      'write',
+      'commit',
+      'download',
+    ])
+    expect(dependencies.download).toHaveBeenCalledExactlyOnceWith(written)
     expect(progress).toEqual(['collecting', 'formatting', 'writing'])
     expect(dependencies.collect).toHaveBeenCalledWith(expect.any(AbortSignal))
   })

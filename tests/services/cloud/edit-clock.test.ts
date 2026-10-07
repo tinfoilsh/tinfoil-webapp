@@ -43,9 +43,9 @@ describe('edit clock', () => {
   })
 
   it('ignores remote values lower than the local counter', () => {
-    const high = nextClock().v
-    observe(high - 1)
-    expect(nextClock().v).toBe(high + 1)
+    expect(nextClock(9).v).toBe(10)
+    observe(4)
+    expect(nextClock().v).toBe(11)
   })
 
   it('advances past an explicit observed maximum on the unit', () => {
@@ -70,10 +70,10 @@ describe('edit clock', () => {
       .spyOn(globalThis.crypto, 'randomUUID')
       .mockReturnValueOnce('11111111-1111-4111-8111-111111111111')
       .mockReturnValueOnce('22222222-2222-4222-8222-222222222222')
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    const getItem = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
       throw new DOMException('Storage unavailable', 'SecurityError')
     })
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage unavailable', 'SecurityError')
     })
 
@@ -84,6 +84,7 @@ describe('edit clock', () => {
     )
     expect(deviceId()).toBe(id)
     expect(randomUUID).toHaveBeenCalledTimes(2)
+    expect(getItem).toHaveBeenCalled()
   })
 
   it('persists the counter across cache resets via storage', () => {

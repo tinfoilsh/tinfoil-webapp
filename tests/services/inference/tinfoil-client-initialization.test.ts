@@ -9,7 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   ready: vi.fn<() => Promise<void>>(),
-  getVerificationDocument: vi.fn(() => ({ securityVerified: true })),
+  getVerificationDocument: vi.fn((_client: object) => ({
+    securityVerified: true,
+  })),
   secureClientConstructed: vi.fn(),
 }))
 
@@ -41,11 +43,11 @@ vi.mock('tinfoil', () => ({
   AuthenticationError: class AuthenticationError extends Error {},
   SecureClient: class SecureClient {
     constructor() {
-      mocks.secureClientConstructed()
+      mocks.secureClientConstructed(this)
     }
 
     ready = mocks.ready
-    getVerificationDocument = mocks.getVerificationDocument
+    getVerificationDocument = () => mocks.getVerificationDocument(this)
     getBaseURL = () => 'https://enclave.example.com'
     fetch = vi.fn()
   },
@@ -59,7 +61,7 @@ describe('tinfoil client initialization', () => {
     resetTinfoilClient()
     mocks.ready.mockReset()
     mocks.ready.mockResolvedValue()
-    mocks.getVerificationDocument.mockClear()
+    mocks.getVerificationDocument.mockReset()
     mocks.secureClientConstructed.mockClear()
     vi.stubGlobal(
       'fetch',
@@ -94,16 +96,25 @@ describe('tinfoil client initialization', () => {
     )
 
     const concurrentWaiter = getVerificationDocument()
+    const secondWaiter = getVerificationDocument()
     await vi.waitFor(() => expect(mocks.ready).toHaveBeenCalledTimes(1))
+    const oldClient = mocks.secureClientConstructed.mock.calls[0][0]
+    const oldDocument = { securityVerified: true }
+    const newDocument = { securityVerified: true }
+    mocks.getVerificationDocument.mockImplementation((client) =>
+      client === oldClient ? oldDocument : newDocument,
+    )
 
     resetTinfoilClient()
-    resolveReady()
 
     // The waiter must not surface an abort: it re-initializes against the
     // post-reset generation (a second SecureClient) and resolves.
-    await expect(concurrentWaiter).resolves.toEqual({
-      securityVerified: true,
-    })
+    await expect(concurrentWaiter).resolves.toBe(newDocument)
+    await expect(secondWaiter).resolves.toBe(newDocument)
+    resolveReady()
+    await expect(getVerificationDocument()).resolves.toBe(newDocument)
+    expect(getCachedVerificationDocument()).toBe(newDocument)
+    expect(mocks.getVerificationDocument).not.toHaveBeenCalledWith(oldClient)
     expect(mocks.secureClientConstructed).toHaveBeenCalledTimes(2)
     expect(mocks.ready).toHaveBeenCalledTimes(2)
   })

@@ -30,7 +30,7 @@ describe('stripMessageMarkers', () => {
 describe('postAuthRedirectTarget', () => {
   it('encodes the stripped path for use in a query string', () => {
     expect(postAuthRedirectTarget('/newchat?q=secret&view=compact')).toBe(
-      encodeURIComponent('/newchat?view=compact'),
+      '%2Fnewchat%3Fview%3Dcompact',
     )
   })
 

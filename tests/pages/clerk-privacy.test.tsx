@@ -1,11 +1,18 @@
 import App from '@/pages/_app'
 import Document from '@/pages/_document'
+import { Clerk } from '@clerk/clerk-js/no-rhc'
+import { ui as clerkUi } from '@clerk/ui/no-rhc'
 import { render } from '@testing-library/react'
 import type { AppProps } from 'next/app'
+import type { ScriptProps } from 'next/script'
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { Children, isValidElement, type ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const clerkProvider = vi.hoisted(() => vi.fn((_props: unknown) => null))
+const script = vi.hoisted(() => vi.fn((_props: ScriptProps) => null))
 
 vi.mock('@clerk/react', () => ({ ClerkProvider: clerkProvider }))
 vi.mock('@/components/auth-cleanup-handler', () => ({
@@ -26,7 +33,16 @@ vi.mock('next/font/local', () => ({
   }),
 }))
 vi.mock('next/head', () => ({ default: () => null }))
-vi.mock('next/script', () => ({ default: () => null }))
+vi.mock('next/script', () => ({ default: script }))
+
+function renderApp() {
+  const appProps = {
+    Component: () => null,
+    pageProps: {},
+    router: { pathname: '/signin', asPath: '/signin', isReady: true },
+  } as unknown as AppProps
+  return render(<App {...appProps} />)
+}
 
 function elementProps(node: ReactNode): Array<Record<string, unknown>> {
   if (!isValidElement(node)) return []
@@ -39,21 +55,17 @@ function elementProps(node: ReactNode): Array<Record<string, unknown>> {
 }
 
 describe('Clerk privacy configuration', () => {
+  beforeEach(() => vi.clearAllMocks())
+
   it('bundles Clerk from npm and disables telemetry on the app-level provider', () => {
-    const Component = () => null
-    const appProps = {
-      Component,
-      pageProps: {},
-      router: { pathname: '/' },
-    } as unknown as AppProps
+    renderApp()
 
-    render(<App {...appProps} />)
-
+    expect(clerkProvider).toHaveBeenCalledTimes(1)
     expect(clerkProvider.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         telemetry: false,
-        Clerk: expect.any(Function),
-        ui: expect.objectContaining({ ClerkUI: expect.any(Function) }),
+        Clerk,
+        ui: clerkUi,
       }),
     )
   })
@@ -65,5 +77,19 @@ describe('Clerk privacy configuration', () => {
         rel: 'preconnect',
       }),
     )
+  })
+
+  it('matches the rendered analytics script integrity to the served asset', () => {
+    renderApp()
+    const analyticsScripts = script.mock.calls
+      .map(([props]) => props)
+      .filter(({ src }) => src === '/js/plausible.js')
+    expect(analyticsScripts).toHaveLength(1)
+    const asset = readFileSync(resolve(process.cwd(), 'public/js/plausible.js'))
+    const digest = createHash('sha384').update(asset).digest('base64')
+    expect(analyticsScripts[0]).toMatchObject({
+      integrity: `sha384-${digest}`,
+      crossOrigin: 'anonymous',
+    })
   })
 })

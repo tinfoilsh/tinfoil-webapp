@@ -1,4 +1,4 @@
-import type { Message } from '@/components/chat/types'
+import type { DocumentPage, Message } from '@/components/chat/types'
 import {
   DocumentHydrationError,
   hydrateDocumentAttachments,

@@ -244,23 +244,6 @@ export class TimelineBuilder {
     }
   }
 
-  resolveToolCall(
-    toolCallId: string,
-    resolution: { text: string; data?: unknown; resolvedAt: number },
-  ): void {
-    for (let i = this.blocks.length - 1; i >= 0; i--) {
-      const block = this.blocks[i]
-      if (block.type === 'tool_call' && block.toolCallId === toolCallId) {
-        this.blocks[i] = {
-          ...block,
-          resolvedAt: resolution.resolvedAt,
-          resolution: { text: resolution.text, data: resolution.data },
-        }
-        return
-      }
-    }
-  }
-
   // -- Code Execution Tool Calls ------------------------------------------
 
   pushCodeExecCall(call: ToolCallState): void {

@@ -33,7 +33,11 @@ describe('pinned chats storage', () => {
       'chat-new',
       ...existing.slice(0, MAX_PINNED_CHATS - 1),
     ])
-    expect(addPinnedChatId(existing, 'chat-3')[0]).toBe('chat-3')
+    expect(addPinnedChatId(existing, 'chat-3')).toEqual([
+      'chat-3',
+      ...existing.slice(0, 3),
+      ...existing.slice(4),
+    ])
   })
 
   it('sanitizes malformed ids and removes confirmed deletions', () => {

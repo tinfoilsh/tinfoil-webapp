@@ -16,7 +16,14 @@ describe('response language', () => {
     expect(resolveResponseLanguage('System', ['fr-CA', 'en-US'])).toBe(
       'Canadian French',
     )
-    expect(resolveResponseLanguage('System', ['ja-JP'])).not.toBe('System')
+    expect(resolveResponseLanguage('System', ['ja-JP'])).toBe(
+      'Japanese (Japan)',
+    )
+    expect(resolveResponseLanguage('System', [])).toBe('English')
+    expect(resolveResponseLanguage('System', ['invalid_locale_!'])).toBe(
+      'English',
+    )
+    expect(resolveResponseLanguage('System', ['fr_CA'])).toBe('Canadian French')
   })
 
   it('preserves known and unknown explicit values', () => {
@@ -25,10 +32,12 @@ describe('response language', () => {
     expect(normalizeResponseLanguage('  Klingon  ')).toBe('  Klingon  ')
   })
 
-  it('matches the current iOS language choices', () => {
+  it('keeps the language catalog unique with System first and expected endpoints', () => {
     expect(RESPONSE_LANGUAGES).toContain('System')
     expect(RESPONSE_LANGUAGES).toContain('Afrikaans')
     expect(RESPONSE_LANGUAGES).toContain('Yiddish')
     expect(RESPONSE_LANGUAGES).toHaveLength(71)
+    expect(RESPONSE_LANGUAGES[0]).toBe('System')
+    expect(new Set(RESPONSE_LANGUAGES).size).toBe(71)
   })
 })

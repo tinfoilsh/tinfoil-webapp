@@ -11,8 +11,12 @@ describe('streamingTracker account reset', () => {
     streamingTracker.startStreaming('chat-1')
     streamingTracker.beginPendingStream('chat-2')
     streamingTracker.onStreamEnd('chat-1', callback)
+    expect(streamingTracker.isStreamingOrPending('chat-1')).toBe(true)
+    expect(streamingTracker.isStreamingOrPending('chat-2')).toBe(true)
 
     streamingTracker.reset()
+    expect(streamingTracker.getStreamingChats()).toEqual([])
+    expect([...streamingTracker.getSnapshot()]).toEqual([])
     streamingTracker.endStreaming('chat-1')
 
     expect(streamingTracker.getStreamingChats()).toEqual([])

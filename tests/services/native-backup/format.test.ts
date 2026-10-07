@@ -1,18 +1,42 @@
 import {
   NATIVE_BACKUP_LIMITS,
   assertNativeBackupSizeLimits,
-  assertValidNativeBackupV1,
-  assertValidNativeBackupV2,
   formatNativeBackupV1,
   formatNativeBackupV2,
+  parseNativeBackupManifest,
+  validateAndPackageNativeBackup,
   type NativeBackupFormatInput,
   type NativeBackupManifestV1,
 } from '@/services/native-backup'
+import { zipSync } from 'fflate'
 import goldenManifest from '../../fixtures/native-backup-manifest-v1.json'
 
 const timestamp = '2026-08-20T12:00:00.000Z'
 
-function input(): NativeBackupFormatInput {
+type MutableInput = {
+  [
+    K in keyof NativeBackupFormatInput
+  ]: NativeBackupFormatInput[K] extends readonly (infer T)[]
+    ? T[]
+    : NativeBackupFormatInput[K]
+}
+
+function archive(formatted: ReturnType<typeof formatNativeBackupV1>): File {
+  return new File(
+    [
+      zipSync(
+        Object.fromEntries([
+          ['manifest.json', formatted.manifestBytes],
+          ...formatted.files.map(({ path, bytes }) => [path, bytes]),
+        ]),
+      ),
+    ],
+    'backup.zip',
+    { type: 'application/zip' },
+  )
+}
+
+function input(): MutableInput {
   return {
     backupId: '123e4567-e89b-42d3-a456-426614174000',
     createdAt: timestamp,
@@ -98,7 +122,7 @@ describe('native backup v1 manifest', () => {
       goldenManifest.files.map(({ path }) => path),
     )
     expect(second.manifestBytes).toEqual(first.manifestBytes)
-    expect(assertValidNativeBackupV1(first.manifestBytes, first.files)).toEqual(
+    expect(parseNativeBackupManifest(first.manifestBytes)).toEqual(
       goldenManifest,
     )
     expectTypeOf<NativeBackupManifestV1['counts']>().toMatchTypeOf<{
@@ -132,17 +156,34 @@ describe('native backup v1 manifest', () => {
   })
 
   it('uses runtime-independent string ordering', () => {
-    const localeCompare = vi
-      .spyOn(String.prototype, 'localeCompare')
-      .mockImplementation(() => {
-        throw new Error('locale-dependent comparison used')
-      })
-
-    try {
-      expect(() => formatNativeBackupV1(input())).not.toThrow()
-    } finally {
-      localeCompare.mockRestore()
+    const value = input()
+    for (const id of ['ä', 'a', 'Z']) {
+      value.projects.push({ ...value.projects[0], id })
+      value.cloudChats.push({ ...value.cloudChats[0], id, messages: [] })
+      value.relationships.projectChats.push({ projectId: 'p', chatId: id })
     }
+    const formatted = formatNativeBackupV1(value)
+    expect(
+      formatted.files
+        .filter(({ kind }) => kind === 'projects')
+        .map(({ path }) => path),
+    ).toEqual([
+      'projects/id-5a.json',
+      'projects/id-61.json',
+      'projects/id-70.json',
+      'projects/id-c3a4.json',
+    ])
+    const relationships = formatted.files.find(
+      ({ kind }) => kind === 'relationships',
+    )!
+    expect(
+      JSON.parse(new TextDecoder().decode(relationships.bytes)).projectChats,
+    ).toEqual([
+      { projectId: 'p', chatId: 'Z' },
+      { projectId: 'p', chatId: 'a' },
+      { projectId: 'p', chatId: 'c' },
+      { projectId: 'p', chatId: 'ä' },
+    ])
   })
 
   it('supports the same document id in different projects', () => {
@@ -160,10 +201,22 @@ describe('native backup v1 manifest', () => {
     const formatted = formatNativeBackupV1(value)
 
     expect(
-      formatted.files.filter(({ path }) =>
-        path.startsWith('project_documents/'),
-      ),
-    ).toHaveLength(2)
+      formatted.files
+        .filter(({ kind }) => kind === 'project_documents')
+        .map(({ path, bytes }) => ({
+          path,
+          payload: JSON.parse(new TextDecoder().decode(bytes)),
+        })),
+    ).toEqual([
+      {
+        path: 'project_documents/id-70/id-64.json',
+        payload: value.projectDocuments[0],
+      },
+      {
+        path: 'project_documents/id-7032/id-64.json',
+        payload: value.projectDocuments[1],
+      },
+    ])
   })
 
   it('counts legacy attachments when portable attachments are absent', () => {
@@ -206,7 +259,7 @@ describe('native backup v1 manifest', () => {
     )
   })
 
-  it('validates near-limit relationship sets without quadratic membership scans', () => {
+  it('formats complete relationship sets near the archive entry limit', () => {
     const nearLimit = input()
     const count = 24_000
     nearLimit.projects = Array.from({ length: count }, (_, index) => ({
@@ -235,10 +288,7 @@ describe('native backup v1 manifest', () => {
     )
 
     const formatted = formatNativeBackupV1(nearLimit)
-    const manifest = assertValidNativeBackupV1(
-      formatted.manifestBytes,
-      formatted.files,
-    )
+    const manifest = parseNativeBackupManifest(formatted.manifestBytes)
     expect(manifest.counts.files).toBe(48_005)
     expect(manifest.counts.relationships).toBe(24_002)
   }, 30_000)
@@ -257,8 +307,6 @@ describe('native backup v1 manifest', () => {
   })
 
   it('enforces parser-aligned image and archive safety limits', () => {
-    expect(NATIVE_BACKUP_LIMITS.archiveBytes).toBe(512 * 1024 * 1024)
-    expect(NATIVE_BACKUP_LIMITS.aggregateJsonBytes).toBe(256 * 1024 * 1024)
     expect(() =>
       assertNativeBackupSizeLimits(1, [
         {
@@ -285,67 +333,111 @@ describe('native backup v1 manifest', () => {
     )
   })
 
-  it('hashes and validates small image byte payloads', () => {
-    const formatted = formatNativeBackupV1(input())
+  it('rejects same-size image tampering through live ZIP restoration', async () => {
+    const value = input()
+    value.images[0].bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])
+    const formatted = formatNativeBackupV1(value)
     const image = formatted.files.find(({ path }) => path.endsWith('.bin'))!
-    image.bytes[0] ^= 1
+    image.bytes[image.bytes.length - 1] ^= 1
 
-    expect(() =>
-      assertValidNativeBackupV1(formatted.manifestBytes, formatted.files),
-    ).toThrow('size or hash mismatch')
+    await expect(
+      validateAndPackageNativeBackup(archive(formatted)),
+    ).rejects.toThrow('hash mismatch')
   })
 
-  it('rejects unsafe or noncanonical paths', () => {
+  it.each([
+    ['projects/../project.json', 'Unsafe filename'],
+    ['projects/not-canonical.json', 'invalid, unknown, or duplicate'],
+  ])('rejects unsafe or noncanonical path %s', async (path, reason) => {
     const formatted = formatNativeBackupV1(input())
     const manifest = JSON.parse(
       new TextDecoder().decode(formatted.manifestBytes),
     )
     const project = formatted.files.find(({ kind }) => kind === 'projects')!
-    project.path = 'projects/../project.json'
+    project.path = path
     manifest.files.find(
       ({ kind }: { kind: string }) => kind === 'projects',
     ).path = project.path
 
-    expect(() =>
-      assertValidNativeBackupV1(
-        new TextEncoder().encode(JSON.stringify(manifest)),
-        formatted.files,
+    await expect(
+      validateAndPackageNativeBackup(
+        archive({
+          manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
+          files: formatted.files,
+        }),
       ),
-    ).toThrow('invalid or unlisted path')
+    ).rejects.toThrow(reason)
   })
 
-  it('detects content, hash, size, count, and completeness tampering', () => {
+  it('detects content, hash, size, count, and completeness tampering', async () => {
     const formatted = formatNativeBackupV1(input())
     const tamperedFiles = formatted.files.map((file) => ({
       ...file,
       bytes: new Uint8Array(file.bytes),
     }))
     tamperedFiles[0].bytes[0] ^= 1
-    expect(() =>
-      assertValidNativeBackupV1(formatted.manifestBytes, tamperedFiles),
-    ).toThrow('size or hash mismatch')
+    await expect(
+      validateAndPackageNativeBackup(
+        archive({ ...formatted, files: tamperedFiles }),
+      ),
+    ).rejects.toThrow('hash mismatch')
 
     type MutableManifest = {
       counts: { images: number; relationships?: number }
       complete: boolean
-      files: unknown[]
+      files: Array<{ sha256: string; size_bytes: number }>
     }
-    for (const mutation of [
-      (manifest: MutableManifest) => manifest.counts.images++,
-      (manifest: MutableManifest) => delete manifest.counts.relationships,
-      (manifest: MutableManifest) => (manifest.complete = false),
-      (manifest: MutableManifest) => manifest.files.pop(),
-    ]) {
+    const mutations: Array<[(manifest: MutableManifest) => void, string]> = [
+      [
+        (manifest) => {
+          manifest.files[0].sha256 = '0'.repeat(64)
+        },
+        'hash mismatch',
+      ],
+      [
+        (manifest) => {
+          manifest.files[0].size_bytes++
+        },
+        'size mismatch',
+      ],
+      [
+        (manifest) => {
+          manifest.counts.images++
+        },
+        'count mismatch',
+      ],
+      [
+        (manifest) => {
+          delete manifest.counts.relationships
+        },
+        'relationships',
+      ],
+      [
+        (manifest) => {
+          manifest.complete = false
+        },
+        'complete',
+      ],
+      [
+        (manifest) => {
+          manifest.files.pop()
+        },
+        'file list mismatch',
+      ],
+    ]
+    for (const [mutation, reason] of mutations) {
       const manifest = JSON.parse(
         new TextDecoder().decode(formatted.manifestBytes),
       ) as MutableManifest
       mutation(manifest)
-      expect(() =>
-        assertValidNativeBackupV1(
-          new TextEncoder().encode(JSON.stringify(manifest)),
-          formatted.files,
+      await expect(
+        validateAndPackageNativeBackup(
+          archive({
+            manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
+            files: formatted.files,
+          }),
         ),
-      ).toThrow()
+      ).rejects.toThrow(reason)
     }
   })
 })
@@ -357,9 +449,12 @@ describe('native backup v2 manifest', () => {
       omissions: [],
       warnings: [],
     })
-    expect(
-      assertValidNativeBackupV2(complete.manifestBytes, complete.files),
-    ).toMatchObject({ version: 2, complete: true, omissions: [], warnings: [] })
+    expect(parseNativeBackupManifest(complete.manifestBytes)).toMatchObject({
+      version: 2,
+      complete: true,
+      omissions: [],
+      warnings: [],
+    })
 
     const partial = formatNativeBackupV2({
       ...input(),
@@ -379,12 +474,13 @@ describe('native backup v2 manifest', () => {
         },
       ],
     })
-    expect(
-      assertValidNativeBackupV2(partial.manifestBytes, partial.files),
-    ).toMatchObject({ version: 2, complete: false })
+    expect(parseNativeBackupManifest(partial.manifestBytes)).toMatchObject({
+      version: 2,
+      complete: false,
+    })
   })
 
-  it('rejects contradictory partial metadata', () => {
+  it('rejects contradictory partial metadata', async () => {
     const formatted = formatNativeBackupV2({
       ...input(),
       omissions: [],
@@ -395,12 +491,14 @@ describe('native backup v2 manifest', () => {
     )
     manifest.complete = false
 
-    expect(() =>
-      assertValidNativeBackupV2(
-        new TextEncoder().encode(JSON.stringify(manifest)),
-        formatted.files,
+    await expect(
+      validateAndPackageNativeBackup(
+        archive({
+          manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
+          files: formatted.files,
+        }),
       ),
-    ).toThrow('completeness')
+    ).rejects.toThrow('completeness')
   })
 
   it('rejects duplicate omissions and warnings not exactly derived from them', () => {
@@ -458,75 +556,46 @@ describe('native backup v2 manifest', () => {
     ).toThrow('warnings do not match')
   })
 
-  it('derives relationship adjustments separately from omitted entities', () => {
-    const value = input()
-    delete value.cloudChats[0].projectId
-    value.relationships.projectChats = []
-    const formatted = formatNativeBackupV2({
-      ...value,
-      omissions: [
-        {
-          kind: 'relationship',
-          source_id: 'c',
-          parent_source_id: 'missing-project',
-          category: 'unavailable',
-          reason: 'project_reference_unavailable',
-        },
-      ],
-      warnings: [
-        {
-          code: 'chats_detached_from_omitted_projects',
-          category: 'relationship_adjustment',
-          count: 1,
-        },
-      ],
-    })
+  it.each([undefined, null])(
+    'derives relationship adjustments for detached projectId %s',
+    (projectId) => {
+      const value = input()
+      value.cloudChats[0].projectId = projectId
+      value.relationships.projectChats = []
+      const formatted = formatNativeBackupV2({
+        ...value,
+        omissions: [
+          {
+            kind: 'relationship',
+            source_id: 'c',
+            parent_source_id: 'missing-project',
+            category: 'unavailable',
+            reason: 'project_reference_unavailable',
+          },
+        ],
+        warnings: [
+          {
+            code: 'chats_detached_from_omitted_projects',
+            category: 'relationship_adjustment',
+            count: 1,
+          },
+        ],
+      })
 
-    expect(
-      assertValidNativeBackupV2(formatted.manifestBytes, formatted.files),
-    ).toMatchObject({
-      complete: false,
-      warnings: [
-        {
-          code: 'chats_detached_from_omitted_projects',
-          category: 'relationship_adjustment',
-          count: 1,
-        },
-      ],
-    })
-  })
+      expect(parseNativeBackupManifest(formatted.manifestBytes)).toMatchObject({
+        complete: false,
+        warnings: [
+          {
+            code: 'chats_detached_from_omitted_projects',
+            category: 'relationship_adjustment',
+            count: 1,
+          },
+        ],
+      })
+    },
+  )
 
-  it('treats a null project ID as detached for relationship adjustments', () => {
-    const value = input()
-    value.cloudChats[0].projectId = null
-    value.relationships.projectChats = []
-
-    const formatted = formatNativeBackupV2({
-      ...value,
-      omissions: [
-        {
-          kind: 'relationship',
-          source_id: 'c',
-          parent_source_id: 'missing-project',
-          category: 'unavailable',
-          reason: 'project_reference_unavailable',
-        },
-      ],
-      warnings: [
-        {
-          code: 'chats_detached_from_omitted_projects',
-          category: 'relationship_adjustment',
-          count: 1,
-        },
-      ],
-    })
-
-    expect(() =>
-      assertValidNativeBackupV2(formatted.manifestBytes, formatted.files),
-    ).not.toThrow()
-  })
-
-  it('rejects omissions contradicted by included entities or relationships', () => {
+  it('rejects omissions contradicted by included entities or relationships', async () => {
     const entityOmission = {
       kind: 'project' as const,
       source_id: 'p',
@@ -608,11 +677,13 @@ describe('native backup v2 manifest', () => {
         count: 1,
       },
     ]
-    expect(() =>
-      assertValidNativeBackupV2(
-        new TextEncoder().encode(JSON.stringify(manifest)),
-        formatted.files,
+    await expect(
+      validateAndPackageNativeBackup(
+        archive({
+          manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
+          files: formatted.files,
+        }),
       ),
-    ).toThrow('project omission conflicts')
+    ).rejects.toThrow('project omission conflicts')
   })
 })

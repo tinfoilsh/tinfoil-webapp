@@ -14,10 +14,8 @@ export {
   addWrappedKeyForCurrentKey,
   decryptKeyBundle,
   deletePasskeyCredential,
-  encryptKeyBundle,
   getPasskeyCredentialState,
   getPasskeyDeviceState,
-  hasPasskeyCredentials,
   loadPasskeyCredentials,
   loadRecoveryCandidates,
   promoteRecoveredCekToEnclave,
@@ -35,4 +33,4 @@ export type {
   StoreEncryptedKeysOptions,
   TinfoilWrappedKeyBundle,
 } from './passkey-key-storage'
-export { isPrfSupported, resetPrfSupportCache } from './prf-support'
+export { isPrfSupported } from './prf-support'

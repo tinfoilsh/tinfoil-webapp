@@ -4,7 +4,7 @@
 
 import { UploadCoalescer } from '@/services/cloud/upload-coalescer'
 import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Mock error handling
 vi.mock('@/utils/error-handling', () => ({
@@ -36,23 +36,14 @@ describe('UploadCoalescer', () => {
   })
 
   describe('Basic enqueue behavior', () => {
-    it('prepares and runs the upload attempt when enqueued', async () => {
-      const attemptFn = vi.fn().mockResolvedValue(undefined)
-      const prepareFn = prepareWith(attemptFn)
-      const coalescer = new UploadCoalescer(prepareFn)
-
-      coalescer.enqueue('chat-1')
-
-      // Let the async worker run
-      await vi.runAllTimersAsync()
-
-      expect(prepareFn).toHaveBeenCalledWith('chat-1', expect.any(String))
-      expect(prepareFn).toHaveBeenCalledTimes(1)
-      expect(attemptFn).toHaveBeenCalledTimes(1)
-    })
-
     it('handles multiple different chats in parallel', async () => {
-      const attemptFn = vi.fn().mockResolvedValue(undefined)
+      const releases: Array<() => void> = []
+      const attemptFn = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            releases.push(resolve)
+          }),
+      )
       const prepareFn = prepareWith(attemptFn)
       const coalescer = new UploadCoalescer(prepareFn)
 
@@ -66,6 +57,9 @@ describe('UploadCoalescer', () => {
       expect(prepareFn).toHaveBeenCalledWith('chat-1', expect.any(String))
       expect(prepareFn).toHaveBeenCalledWith('chat-2', expect.any(String))
       expect(prepareFn).toHaveBeenCalledWith('chat-3', expect.any(String))
+      expect(releases).toHaveLength(3)
+      for (const release of releases) release()
+      await coalescer.waitForAllUploads()
     })
 
     it('bounds concurrent uploads across different chats', async () => {
@@ -93,7 +87,6 @@ describe('UploadCoalescer', () => {
       await vi.advanceTimersByTimeAsync(0)
 
       expect(attemptFn).toHaveBeenCalledTimes(2)
-      expect(coalescer.activeUploadCount).toBe(2)
 
       resolvers.shift()?.()
       await vi.advanceTimersByTimeAsync(0)
@@ -106,7 +99,6 @@ describe('UploadCoalescer', () => {
       await Promise.all(uploads)
 
       expect(peakActive).toBe(2)
-      expect(coalescer.activeUploadCount).toBe(0)
     })
 
     it('waits for uploads that are queued behind the concurrency limit', async () => {
@@ -155,14 +147,15 @@ describe('UploadCoalescer', () => {
       coalescer.enqueue('old-chat-1')
       coalescer.enqueue('old-chat-2')
       await vi.advanceTimersByTimeAsync(0)
-      expect(coalescer.activeUploadCount).toBe(2)
+      expect(attemptFn).toHaveBeenCalledTimes(2)
 
       coalescer.clear()
+      expect(coalescer.hasPendingUpload('old-chat-1')).toBe(false)
+      expect(coalescer.hasPendingUpload('old-chat-2')).toBe(false)
       coalescer.enqueue('new-chat-1')
       coalescer.enqueue('new-chat-2')
       await vi.advanceTimersByTimeAsync(0)
       expect(attemptFn).toHaveBeenCalledTimes(4)
-      expect(coalescer.activeUploadCount).toBe(2)
 
       coalescer.enqueue('new-chat-3')
       await vi.advanceTimersByTimeAsync(0)
@@ -171,12 +164,10 @@ describe('UploadCoalescer', () => {
       resolvers.get('old-chat-1')?.()
       resolvers.get('old-chat-2')?.()
       await vi.advanceTimersByTimeAsync(0)
-      expect(coalescer.activeUploadCount).toBe(2)
       expect(attemptFn).toHaveBeenCalledTimes(4)
 
       resolvers.get('new-chat-1')?.()
       await vi.advanceTimersByTimeAsync(0)
-      expect(coalescer.activeUploadCount).toBe(2)
       expect(attemptFn).toHaveBeenCalledTimes(5)
       expect(attemptFn).toHaveBeenLastCalledWith(
         'new-chat-3',
@@ -186,7 +177,7 @@ describe('UploadCoalescer', () => {
       resolvers.get('new-chat-2')?.()
       resolvers.get('new-chat-3')?.()
       await coalescer.waitForAllUploads()
-      expect(coalescer.activeUploadCount).toBe(0)
+      expect(coalescer.hasPendingUpload('new-chat-3')).toBe(false)
     })
 
     it('completes without an attempt when prepare returns null', async () => {
@@ -202,32 +193,6 @@ describe('UploadCoalescer', () => {
   })
 
   describe('§9.6 R1 — idempotency key ownership', () => {
-    it('reuses the same idempotency key and frozen payload across retries of one logical write', async () => {
-      const attemptFn = vi
-        .fn()
-        .mockRejectedValueOnce(new Error('flake'))
-        .mockRejectedValueOnce(new Error('flake'))
-        .mockResolvedValueOnce(undefined)
-      const prepareFn = prepareWith(attemptFn)
-
-      const coalescer = new UploadCoalescer(prepareFn, {
-        baseDelayMs: 10,
-        maxDelayMs: 40,
-        maxRetries: 3,
-      })
-
-      coalescer.enqueue('chat-1')
-      await vi.runAllTimersAsync()
-
-      expect(attemptFn).toHaveBeenCalledTimes(3)
-      const keys = attemptFn.mock.calls.map((c) => c[1])
-      expect(new Set(keys).size).toBe(1)
-      // The payload is prepared once and every retry replays it, so
-      // the enclave sees byte-identical bytes under the same key
-      // instead of a re-read snapshot that could have changed.
-      expect(prepareFn).toHaveBeenCalledTimes(1)
-    })
-
     it('disposes a frozen upload only after all retries finish', async () => {
       const dispose = vi.fn()
       const run = vi
@@ -270,6 +235,10 @@ describe('UploadCoalescer', () => {
       const coalescer = new UploadCoalescer(prepareFn, {
         baseDelayMs: 10,
         maxRetries: 2,
+        scheduler: {
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          random: () => 0.9999,
+        },
       })
 
       coalescer.enqueue('chat-1')
@@ -307,36 +276,6 @@ describe('UploadCoalescer', () => {
       // Still one logical write: both prepare calls carry the same key
       expect(prepareFn.mock.calls[0][1]).toBe(prepareFn.mock.calls[1][1])
     })
-
-    it('mints a fresh idempotency key for each new logical write', async () => {
-      let resolveFirst: () => void
-      const attemptFn = vi
-        .fn()
-        .mockImplementationOnce(
-          () =>
-            new Promise<void>((resolve) => {
-              resolveFirst = resolve
-            }),
-        )
-        .mockResolvedValueOnce(undefined)
-      const prepareFn = prepareWith(attemptFn)
-
-      const coalescer = new UploadCoalescer(prepareFn)
-
-      coalescer.enqueue('chat-1')
-      // Let prepare resolve so the first attempt is in flight
-      await vi.advanceTimersByTimeAsync(0)
-      // Dirty during in-flight — second logical write.
-      coalescer.enqueue('chat-1')
-
-      resolveFirst!()
-      await vi.runAllTimersAsync()
-
-      expect(attemptFn).toHaveBeenCalledTimes(2)
-      const firstKey = attemptFn.mock.calls[0][1]
-      const secondKey = attemptFn.mock.calls[1][1]
-      expect(firstKey).not.toBe(secondKey)
-    })
   })
 
   describe('Coalescing behavior', () => {
@@ -371,10 +310,19 @@ describe('UploadCoalescer', () => {
 
     it('coalesces rapid enqueues for the same chat', async () => {
       let resolveUpload: () => void
+      let resolveSecond!: () => void
       const uploadPromise = new Promise<void>((resolve) => {
         resolveUpload = resolve
       })
-      const attemptFn = vi.fn().mockReturnValue(uploadPromise)
+      const attemptFn = vi
+        .fn()
+        .mockReturnValueOnce(uploadPromise)
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              resolveSecond = resolve
+            }),
+        )
       const prepareFn = prepareWith(attemptFn)
       const coalescer = new UploadCoalescer(prepareFn)
 
@@ -389,65 +337,26 @@ describe('UploadCoalescer', () => {
 
       // Still only one upload started
       expect(attemptFn).toHaveBeenCalledTimes(1)
-      expect(coalescer.isUploading('chat-1')).toBe(true)
+      expect(coalescer.hasPendingUpload('chat-1')).toBe(true)
 
       // Complete first upload
       resolveUpload!()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(attemptFn).toHaveBeenCalledTimes(2)
+      expect(attemptFn.mock.calls[0][1]).not.toBe(attemptFn.mock.calls[1][1])
+      resolveSecond()
       await vi.runAllTimersAsync()
 
       // Dirty flag was set, so one more upload
-      expect(attemptFn).toHaveBeenCalledTimes(2)
-    })
-
-    it('re-uploads after dirty flag set during upload', async () => {
-      let resolveFirst: () => void
-      let resolveSecond: () => void
-
-      const attemptFn = vi
-        .fn()
-        .mockImplementationOnce(
-          () =>
-            new Promise<void>((resolve) => {
-              resolveFirst = resolve
-            }),
-        )
-        .mockImplementationOnce(
-          () =>
-            new Promise<void>((resolve) => {
-              resolveSecond = resolve
-            }),
-        )
-      const prepareFn = prepareWith(attemptFn)
-
-      const coalescer = new UploadCoalescer(prepareFn)
-
-      // Start first upload
-      coalescer.enqueue('chat-1')
-      await vi.advanceTimersByTimeAsync(0)
-      expect(attemptFn).toHaveBeenCalledTimes(1)
-
-      // Enqueue during upload - sets dirty flag
-      coalescer.enqueue('chat-1')
-      expect(attemptFn).toHaveBeenCalledTimes(1) // Still just one
-
-      // Complete first upload
-      resolveFirst!()
-      await vi.runAllTimersAsync()
-
-      // Second upload should have started
-      expect(attemptFn).toHaveBeenCalledTimes(2)
-
-      // Complete second upload
-      resolveSecond!()
-      await vi.runAllTimersAsync()
-
-      // No more uploads (dirty flag was clear)
       expect(attemptFn).toHaveBeenCalledTimes(2)
     })
   })
 
   describe('Retry behavior', () => {
     it('retries failed uploads with exponential backoff', async () => {
+      const sleep = vi.fn(
+        (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+      )
       const attemptFn = vi
         .fn()
         .mockRejectedValueOnce(new Error('Network error'))
@@ -464,7 +373,7 @@ describe('UploadCoalescer', () => {
         maxDelayMs: 400,
         maxRetries: 3,
         scheduler: {
-          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          sleep,
           random: () => 0.9999,
         },
       })
@@ -486,25 +395,22 @@ describe('UploadCoalescer', () => {
       // All done
       await vi.runAllTimersAsync()
       expect(attemptFn).toHaveBeenCalledTimes(3)
-    })
-
-    it('gives up after max retries', async () => {
-      const attemptFn = vi
+      expect(sleep.mock.calls).toEqual([[99], [199]])
+      const cappedSleep = vi.fn(async (_delay: number) => {})
+      const cappedAttempt = vi
         .fn()
-        .mockRejectedValue(new Error('Permanent failure'))
-      const prepareFn = prepareWith(attemptFn)
-
-      const coalescer = new UploadCoalescer(prepareFn, {
+        .mockRejectedValueOnce(new Error('Retry one'))
+        .mockRejectedValueOnce(new Error('Retry two'))
+        .mockRejectedValueOnce(new Error('Retry three'))
+        .mockResolvedValueOnce(undefined)
+      await new UploadCoalescer(prepareWith(cappedAttempt), {
         baseDelayMs: 100,
-        maxRetries: 2,
-      })
-
-      coalescer.enqueue('chat-1')
-
-      await vi.runAllTimersAsync()
-
-      // 1 initial + 2 retries = 3 total attempts
-      expect(attemptFn).toHaveBeenCalledTimes(3)
+        maxDelayMs: 150,
+        maxRetries: 3,
+        scheduler: { sleep: cappedSleep, random: () => 0.9999 },
+      }).enqueueAndWait('capped-chat')
+      expect(cappedSleep.mock.calls).toEqual([[99], [149], [149]])
+      expect(cappedAttempt).toHaveBeenCalledTimes(4)
     })
 
     it('rejects enqueueAndWait after retries are exhausted', async () => {
@@ -513,7 +419,7 @@ describe('UploadCoalescer', () => {
         .mockRejectedValue(new Error('Permanent failure'))
       const coalescer = new UploadCoalescer(prepareWith(attemptFn), {
         baseDelayMs: 100,
-        maxRetries: 1,
+        maxRetries: 2,
       })
 
       const uploadPromise = coalescer.enqueueAndWait('chat-1')
@@ -522,6 +428,7 @@ describe('UploadCoalescer', () => {
       await vi.runAllTimersAsync()
 
       await expectation
+      expect(attemptFn).toHaveBeenCalledTimes(3)
     })
 
     it('surfaces sync conflicts without retrying under the same idempotency key', async () => {
@@ -549,7 +456,8 @@ describe('UploadCoalescer', () => {
   describe('State tracking', () => {
     it('tracks pending uploads correctly', async () => {
       const attemptFn = vi.fn().mockResolvedValue(undefined)
-      const coalescer = new UploadCoalescer(prepareWith(attemptFn))
+      const prepareFn = prepareWith(attemptFn)
+      const coalescer = new UploadCoalescer(prepareFn)
 
       expect(coalescer.hasPendingUpload('chat-1')).toBe(false)
 
@@ -563,36 +471,11 @@ describe('UploadCoalescer', () => {
 
       // After completion, state should be cleaned up
       expect(coalescer.hasPendingUpload('chat-1')).toBe(false)
-      expect(coalescer.activeUploadCount).toBe(0)
-    })
-
-    it('returns pending chat IDs', async () => {
-      const attemptFn = vi.fn().mockReturnValue(new Promise(() => {})) // Never resolves
-      const coalescer = new UploadCoalescer(prepareWith(attemptFn))
-
-      coalescer.enqueue('chat-1')
-      coalescer.enqueue('chat-2')
-
-      const pendingIds = coalescer.getPendingChatIds()
-
-      expect(pendingIds).toContain('chat-1')
-      expect(pendingIds).toContain('chat-2')
-      expect(pendingIds).toHaveLength(2)
-    })
-
-    it('clears pending state and resets active workers for the new generation', async () => {
-      const attemptFn = vi.fn().mockReturnValue(new Promise(() => {}))
-      const coalescer = new UploadCoalescer(prepareWith(attemptFn))
-
-      coalescer.enqueue('chat-1')
-      coalescer.enqueue('chat-2')
-
-      expect(coalescer.activeUploadCount).toBe(2)
-
-      coalescer.clear()
-
-      expect(coalescer.activeUploadCount).toBe(0)
-      expect(coalescer.getPendingChatIds()).toHaveLength(0)
+      expect(prepareFn).toHaveBeenCalledExactlyOnceWith(
+        'chat-1',
+        expect.any(String),
+      )
+      expect(attemptFn).toHaveBeenCalledOnce()
     })
 
     it('cancels waiters and retries when cleared during backoff', async () => {
@@ -619,64 +502,62 @@ describe('UploadCoalescer', () => {
   })
 
   describe('Edge cases', () => {
-    it('handles synchronous upload success', async () => {
-      const attemptFn = vi.fn().mockResolvedValue(undefined)
-      const coalescer = new UploadCoalescer(prepareWith(attemptFn))
+    it.each([
+      { failures: 1, expected: ['v1', 'v1', 'v2'] },
+      { failures: 2, expected: ['v1', 'v1', 'v1', 'v2'] },
+    ])(
+      'finishes a frozen retry before uploading newer dirty state',
+      async ({ failures, expected }) => {
+        let source = 'v1'
+        const attempts: Array<{ payload: string; idempotencyKey: string }> = []
+        const prepareFn = vi.fn(
+          async (_chatId: string, idempotencyKey: string) => {
+            const payload = source
+            return async () => {
+              attempts.push({ payload, idempotencyKey })
+              if (attempts.length <= failures) throw new Error('Fail')
+            }
+          },
+        )
 
-      coalescer.enqueue('chat-1')
-      await vi.runAllTimersAsync()
+        // Pin the jitter to its upper bound so the backoff window is
+        // deterministic. A random delay of 0 would let the first retry
+        // fire inside advanceTimersByTimeAsync(0) below — before the
+        // enqueue during backoff — completing the worker and triggering
+        // an extra upload.
+        const coalescer = new UploadCoalescer(prepareFn, {
+          baseDelayMs: 1000,
+          maxRetries: 3,
+          scheduler: {
+            sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+            random: () => 0.9999,
+          },
+        })
 
-      expect(attemptFn).toHaveBeenCalledTimes(1)
-      expect(coalescer.hasPendingUpload('chat-1')).toBe(false)
-    })
+        coalescer.enqueue('chat-1')
+        await vi.advanceTimersByTimeAsync(0) // First attempt fails
 
-    it('finishes a frozen retry before uploading newer dirty state', async () => {
-      let source = 'v1'
-      const attempts: Array<{ payload: string; idempotencyKey: string }> = []
-      const prepareFn = vi.fn(
-        async (_chatId: string, idempotencyKey: string) => {
-          const payload = source
-          return async () => {
-            attempts.push({ payload, idempotencyKey })
-            if (attempts.length === 1) throw new Error('Fail')
-          }
-        },
-      )
+        // Enqueue during backoff
+        source = 'v2'
+        coalescer.enqueue('chat-1')
 
-      // Pin the jitter to its upper bound so the backoff window is
-      // deterministic. A random delay of 0 would let the first retry
-      // fire inside advanceTimersByTimeAsync(0) below — before the
-      // enqueue during backoff — completing the worker and triggering
-      // an extra upload.
-      const coalescer = new UploadCoalescer(prepareFn, {
-        baseDelayMs: 1000,
-        maxRetries: 3,
-        scheduler: {
-          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-          random: () => 0.9999,
-        },
-      })
+        // Advance to trigger retry
+        await vi.advanceTimersByTimeAsync(1000)
 
-      coalescer.enqueue('chat-1')
-      await vi.advanceTimersByTimeAsync(0) // First attempt fails
+        await vi.runAllTimersAsync()
 
-      // Enqueue during backoff
-      source = 'v2'
-      coalescer.enqueue('chat-1')
-
-      // Advance to trigger retry
-      await vi.advanceTimersByTimeAsync(1000)
-
-      await vi.runAllTimersAsync()
-
-      expect(attempts.map((attempt) => attempt.payload)).toEqual([
-        'v1',
-        'v1',
-        'v2',
-      ])
-      expect(prepareFn).toHaveBeenCalledTimes(2)
-      expect(attempts[0].idempotencyKey).toBe(attempts[1].idempotencyKey)
-      expect(attempts[2].idempotencyKey).not.toBe(attempts[1].idempotencyKey)
-    })
+        expect(attempts.map((attempt) => attempt.payload)).toEqual(expected)
+        expect(prepareFn).toHaveBeenCalledTimes(2)
+        expect(attempts[0].idempotencyKey).toBe(attempts[1].idempotencyKey)
+        expect(
+          new Set(
+            attempts.slice(0, -1).map((attempt) => attempt.idempotencyKey),
+          ).size,
+        ).toBe(1)
+        expect(attempts.at(-1)!.idempotencyKey).not.toBe(
+          attempts[0].idempotencyKey,
+        )
+      },
+    )
   })
 })

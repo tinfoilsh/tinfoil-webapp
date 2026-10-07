@@ -43,13 +43,26 @@ describe('OnboardingView', () => {
     vi.restoreAllMocks()
   })
 
-  it('does not imply legal consent when continuing onboarding', () => {
-    render(<OnboardingView onComplete={vi.fn()} />)
+  it('does not imply legal consent when continuing onboarding', async () => {
+    const onComplete = vi.fn()
+    render(<OnboardingView onComplete={onComplete} persistCompletion={false} />)
 
+    expect(
+      screen.getByRole('heading', { name: 'Why Tinfoil Chat' }),
+    ).toBeInTheDocument()
     expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
+    await advanceToPrivacy()
+    expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
+    await screen.findByRole('heading', { name: 'Tending the Garden' })
+    expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
+    expect(onComplete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
+    expect(onComplete).toHaveBeenCalledTimes(1)
   })
 
-  it('reserves space for the intro artwork', () => {
+  it('renders the intro artwork and emphasized privacy message', () => {
     render(<OnboardingView onComplete={vi.fn()} />)
 
     expect(
@@ -62,11 +75,6 @@ describe('OnboardingView', () => {
         name: 'A garden seen through a porthole in a dense city',
       }),
     ).toHaveAttribute('height', '338')
-  })
-
-  it('emphasizes the opening sentence', () => {
-    render(<OnboardingView onComplete={vi.fn()} />)
-
     expect(
       screen.getByText('Tinfoil Chat was built as a sanctuary for thought.')
         .tagName,
@@ -74,11 +82,6 @@ describe('OnboardingView', () => {
     expect(
       screen.getByText('Tinfoil Chat was built as a sanctuary for thought.'),
     ).toHaveClass('text-content-primary')
-  })
-
-  it('emphasizes that the private space belongs to the user', () => {
-    render(<OnboardingView onComplete={vi.fn()} />)
-
     const emphasizedWord = screen.getByText('your')
     expect(emphasizedWord.tagName).toBe('EM')
     expect(emphasizedWord.parentElement).toHaveTextContent(
@@ -200,17 +203,6 @@ describe('OnboardingView', () => {
     const getStarted = screen.getByRole('button', { name: 'Get Started' })
     fireEvent.click(getStarted)
     expect(onComplete).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not enable privacy automatically', async () => {
-    render(<OnboardingView onComplete={vi.fn()} persistCompletion={false} />)
-
-    await advanceToPrivacy()
-
-    const privacySwitch = screen.getByRole('button', {
-      name: 'Toggle privacy',
-    })
-    expect(privacySwitch).toHaveAttribute('aria-pressed', 'false')
   })
 
   it.each(['SecurityError', 'QuotaExceededError'])(

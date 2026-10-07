@@ -228,8 +228,16 @@ describe('profile-settings-serializer', () => {
 
     // The baseline the sync layer must store is the round-tripped local
     // snapshot, not the raw remote.
-    const baseline = loadLocalSettings()
+    const baseline = {
+      isDarkMode: true,
+      themeMode: 'dark' as const,
+      nickname: 'Alice',
+      favoritePromptPresetIds: ['builtin:tutor'],
+      defaultPromptPresetId: '',
+      webSearchAvailable: true,
+    }
     const current = loadLocalSettings()
+    expect(current).toEqual(baseline)
 
     // Comparing against the raw remote falsely looks dirty (the
     // themeMode this client derived is absent from the remote), which is

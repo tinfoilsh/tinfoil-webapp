@@ -72,9 +72,10 @@ describe('local API gateway', () => {
 
   it('returns 502 instead of dropping unhandled APIs when no upstream is configured', async () => {
     const res = makeResponse()
+    const proxy = vi.fn()
     const gateway = createLocalApiGateway({
       mockControlplane: { route: () => null },
-      proxy: vi.fn(),
+      proxy,
     })
 
     await gateway.route({ url: '/api/config/models', method: 'GET' }, res)
@@ -82,5 +83,9 @@ describe('local API gateway', () => {
     expect(res.writeHead).toHaveBeenCalledWith(502, {
       'Content-Type': 'text/plain',
     })
+    expect(res.end).toHaveBeenCalledWith(
+      'NEXT_PUBLIC_API_BASE_URL is not configured; cannot forward controlplane request.',
+    )
+    expect(proxy).not.toHaveBeenCalled()
   })
 })

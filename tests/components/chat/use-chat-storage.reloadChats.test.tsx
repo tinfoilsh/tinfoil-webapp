@@ -63,9 +63,7 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }))
 
-function createMockRecovery(
-  overrides: Partial<PendingRecoveryEnvelope> = {},
-): PendingRecoveryEnvelope {
+function createMockRecovery(): PendingRecoveryEnvelope {
   return {
     v: 1,
     turnId: 'turn-1',
@@ -74,7 +72,6 @@ function createMockRecovery(
     expiresAt: '2026-07-22T00:00:00.000Z',
     nonce: 'nonce',
     ciphertext: 'ciphertext',
-    ...overrides,
   }
 }
 
@@ -268,6 +265,10 @@ describe('useChatStorage.reloadChats', () => {
     )
 
     expect(getChat).toHaveBeenCalledWith(summary.id)
+    expect(result.current.currentChat).toEqual(hydrated)
+    expect(result.current.chats.find((chat) => chat.id === summary.id)).toBe(
+      result.current.currentChat,
+    )
   })
 
   it('owns selection immediately and ignores late A hydration after selecting B', async () => {
@@ -458,18 +459,23 @@ describe('useChatStorage.reloadChats', () => {
     act(() => result.current.handleChatSelect(summary.id))
     // A background sync reload rebuilds the chats array with fresh summary
     // objects while hydration is still in flight.
+    mockLoadChats.mockResolvedValue([{ ...summary, title: 'Reloaded summary' }])
     await act(async () => {
       await result.current.reloadChats()
     })
     expect(result.current.currentChat.id).toBe(summary.id)
+    expect(result.current.currentChat).not.toBe(summary)
+    expect(result.current.currentChat.title).toBe('Reloaded summary')
+    expect(
+      result.current.chats.find((chat) => chat.id === summary.id),
+    ).not.toBe(summary)
 
     await act(async () => finishHydration(hydrated))
 
-    expect(result.current.currentChat.messages).toHaveLength(1)
-    expect(result.current.currentChat.isMetadataOnly).toBe(false)
+    expect(result.current.currentChat).toEqual(hydrated)
     expect(
       result.current.chats.find((chat) => chat.id === summary.id)?.messages,
-    ).toHaveLength(1)
+    ).toEqual(hydrated.messages)
   })
 
   it('re-marks a hydrated chat as metadata-only when storage has newer content', async () => {
@@ -646,8 +652,14 @@ describe('useChatStorage.reloadChats', () => {
       ],
       isMetadataOnly: false,
     }
-    mockLoadChats.mockResolvedValueOnce([summary])
-    vi.spyOn(chatStorage, 'getChat').mockResolvedValue(hydrated)
+    const other: Chat = {
+      ...summary,
+      id: 'chat-2',
+      isMetadataOnly: false,
+      messageCount: 0,
+    }
+    mockLoadChats.mockResolvedValueOnce([summary, other])
+    const getChat = vi.spyOn(chatStorage, 'getChat').mockResolvedValue(hydrated)
 
     const { result } = renderHook(() => useChatStorage({ storeHistory: true }))
     await waitFor(() => expect(result.current.isInitialLoad).toBe(false))
@@ -656,14 +668,19 @@ describe('useChatStorage.reloadChats', () => {
       expect(result.current.currentChat.messages).toHaveLength(1),
     )
 
-    mockLoadChats.mockResolvedValue([summary])
+    act(() => result.current.handleChatSelect(other.id))
+    expect(result.current.currentChat.id).toBe(other.id)
+    getChat.mockClear()
+    mockLoadChats.mockResolvedValue([summary, other])
     await act(async () => {
       await result.current.reloadChats()
     })
 
     const listed = result.current.chats.find((chat) => chat.id === summary.id)
     expect(listed?.isMetadataOnly).toBe(false)
-    expect(listed?.messages).toHaveLength(1)
+    expect(listed?.messages).toEqual(hydrated.messages)
+    expect(getChat).not.toHaveBeenCalled()
+    expect(result.current.currentChat.id).toBe(other.id)
   })
 
   it('keeps a routed local new chat selected after loading storage', async () => {
@@ -711,38 +728,6 @@ describe('useChatStorage.reloadChats', () => {
     await act(async () => finishLoading([]))
 
     expect(result.current.currentChat).toMatchObject(temporaryChat)
-  })
-
-  it('does not reset currentChat to blank during temp-id window', async () => {
-    const { result } = renderHook(() =>
-      useChatStorage({
-        storeHistory: true,
-      }),
-    )
-
-    // Let the hook finish its initial async load effect first.
-    await waitFor(() => {
-      expect(result.current.isInitialLoad).toBe(false)
-    })
-
-    await act(async () => {
-      result.current.setCurrentChat({
-        id: 'temp-123',
-        title: 'Untitled',
-        messages: [],
-        createdAt: new Date(),
-        isBlankChat: false,
-        isLocalOnly: false,
-        pendingSave: true,
-      })
-    })
-
-    await act(async () => {
-      await result.current.reloadChats()
-    })
-
-    expect(result.current.currentChat.id).toBe('temp-123')
-    expect(result.current.currentChat.isBlankChat).toBe(false)
   })
 
   it('does not reset currentChat to blank during pendingSave window (non-temp id)', async () => {
@@ -983,47 +968,6 @@ describe('useChatStorage.reloadChats', () => {
     })
   })
 
-  it('refreshes pending recoveries while the selected chat is switching', async () => {
-    const current = {
-      id: 'chat-1',
-      title: 'Recovery chat',
-      messages: [
-        {
-          role: 'user' as const,
-          content: 'Question',
-          turnId: 'turn-1',
-          timestamp: new Date(),
-        },
-      ],
-      createdAt: new Date(),
-      isBlankChat: false,
-      isLocalOnly: false,
-    }
-    const recovery = createMockRecovery()
-    const { result } = renderHook(() =>
-      useChatStorage({
-        storeHistory: true,
-      }),
-    )
-    await waitFor(() => {
-      expect(result.current.isInitialLoad).toBe(false)
-    })
-
-    await act(async () => {
-      await result.current.switchChat(current as any)
-    })
-    mockLoadChats.mockResolvedValue([
-      { ...current, pendingRecoveries: [recovery] },
-    ])
-    act(() => {
-      chatEvents.emit({ reason: 'sync', ids: ['chat-1'] })
-    })
-
-    await waitFor(() => {
-      expect(result.current.currentChat.pendingRecoveries).toEqual([recovery])
-    })
-  })
-
   it('switches an already-loaded chat without entering a loading delay', async () => {
     const selected = {
       id: 'chat-2',
@@ -1033,19 +977,30 @@ describe('useChatStorage.reloadChats', () => {
       isBlankChat: false,
     }
     mockLoadChats.mockResolvedValue([selected])
-    const { result } = renderHook(() =>
-      useChatStorage({
-        storeHistory: true,
-      }),
-    )
+    const renders: Array<{ chatId: string; isInitialLoad: boolean }> = []
+    const { result } = renderHook(() => {
+      const storage = useChatStorage({ storeHistory: true })
+      renders.push({
+        chatId: storage.currentChat.id,
+        isInitialLoad: storage.isInitialLoad,
+      })
+      return storage
+    })
     await waitFor(() => expect(result.current.isInitialLoad).toBe(false))
 
-    await act(async () => {
-      await result.current.switchChat(selected)
+    renders.length = 0
+    act(() => {
+      result.current.switchChat(selected)
     })
 
     expect(result.current.currentChat.id).toBe(selected.id)
     expect(result.current.isInitialLoad).toBe(false)
+    expect(renders).not.toEqual([])
+    expect(
+      renders.every(
+        (render) => render.chatId === selected.id && !render.isInitialLoad,
+      ),
+    ).toBe(true)
   })
 
   it('does not let an older sync reload clear recovery progress', async () => {

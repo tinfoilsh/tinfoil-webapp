@@ -1,7 +1,6 @@
 import type { Message } from '@/components/chat/types'
 import { REASONING_HISTORY_POLICIES } from '@/utils/reasoning-history'
 import {
-  CONTEXT_WINDOW_USAGE_RATIO,
   DEFAULT_CONTEXT_WINDOW_TOKENS,
   estimateMessageTokens,
   estimateTokenCount,
@@ -64,9 +63,7 @@ describe('resolveContextWindowTokens', () => {
 
 describe('getContextTokenBudget', () => {
   it('reserves headroom below the full context window', () => {
-    expect(getContextTokenBudget(100000)).toBe(
-      Math.floor(100000 * CONTEXT_WINDOW_USAGE_RATIO),
-    )
+    expect(getContextTokenBudget(100001)).toBe(80000)
   })
 
   it('reserves pending input tokens before budgeting persisted history', () => {
@@ -80,41 +77,49 @@ describe('estimateMessageTokens', () => {
     const msg: Message = {
       role: 'user',
       content: 'a'.repeat(40),
-      thoughts: 'b'.repeat(40),
-      quote: 'c'.repeat(40),
+      thoughts: 'b'.repeat(80),
+      quote: 'c'.repeat(120),
+      documentContent: 'f'.repeat(24),
       attachments: [
         {
           id: '1',
           type: 'document',
           fileName: 'doc.txt',
-          textContent: 'd'.repeat(40),
+          textContent: 'd'.repeat(160),
+          description: 'e'.repeat(20),
         },
       ],
       timestamp: new Date(),
     }
-    expect(estimateMessageTokens(msg)).toBe(30)
+    expect(estimateMessageTokens(msg)).toBe(91)
     expect(
       estimateMessageTokens(msg, {
         reasoningHistoryPolicy: REASONING_HISTORY_POLICIES.all,
       }),
-    ).toBe(30)
+    ).toBe(91)
+    expect(estimateMessageTokens({ ...msg, quote: undefined })).toBe(61)
+    expect(estimateMessageTokens({ ...msg, attachments: [] })).toBe(46)
   })
 
   it('counts assistant tool calls and search reasoning', () => {
     const msg: Message = {
       role: 'assistant',
       content: 'a'.repeat(40),
-      searchReasoning: 'b'.repeat(40),
+      searchReasoning: 'b'.repeat(80),
       toolCalls: [
         {
           id: 'call_1',
           name: 'cccc',
-          arguments: 'd'.repeat(40),
+          arguments: 'd'.repeat(120),
         },
       ],
       timestamp: new Date(),
     }
-    expect(estimateMessageTokens(msg)).toBe(31)
+    expect(estimateMessageTokens(msg)).toBe(61)
+    expect(estimateMessageTokens({ ...msg, searchReasoning: undefined })).toBe(
+      41,
+    )
+    expect(estimateMessageTokens({ ...msg, toolCalls: [] })).toBe(30)
   })
 })
 

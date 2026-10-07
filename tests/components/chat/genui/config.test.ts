@@ -7,31 +7,38 @@
  * infrastructure limitation that pre-dates these changes.
  */
 import { getGenUIConfig, setGenUIConfig } from '@/components/chat/genui/config'
-import { afterEach, describe, expect, it } from 'vitest'
-import { z } from 'zod'
+import { resolveEnabledWidgets } from '@/components/chat/genui/enabled-widgets'
+import { buildGenUIToolSchemas } from '@/components/chat/genui/registry'
+import { buildGenUIPromptHint } from '@/components/chat/genui/system-prompt'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 afterEach(() => {
   setGenUIConfig(null)
 })
 
-const widgetFixture = [
-  { name: 'render_stat_cards', schema: z.object({}), promptHint: 'kpis' },
-  { name: 'render_timeline', schema: z.object({}), promptHint: 'events' },
-  { name: 'render_chart', schema: z.object({}), promptHint: 'chart' },
-] as const
-
-function filterAllowed<T extends { name: string }>(
-  registry: readonly T[],
-): readonly T[] {
-  const config = getGenUIConfig()
-  if (!config) return []
-  const allowed = new Set(config.enabledWidgets)
-  return registry.filter((w) => allowed.has(w.name))
+function expectEnabledWidgets(names: string[]) {
+  expect(resolveEnabledWidgets().map((widget) => widget.name)).toEqual(names)
+  expect(buildGenUIToolSchemas().map((tool) => tool.function.name)).toEqual(
+    names,
+  )
+  const hint = buildGenUIPromptHint()
+  if (names.length === 0) {
+    expect(hint).toBeNull()
+  } else {
+    expect(
+      hint
+        ?.split('\n')
+        .slice(1)
+        .map((line) => line.split(':')[0]),
+    ).toEqual(names.map((name) => `- ${name}`))
+  }
 }
 
 describe('GenUI runtime config', () => {
-  it('returns null until a config is set', () => {
-    expect(getGenUIConfig()).toBeNull()
+  it('returns null until a config is set', async () => {
+    vi.resetModules()
+    const freshConfig = await import('@/components/chat/genui/config')
+    expect(freshConfig.getGenUIConfig()).toBeNull()
   })
 
   it('stores and returns the provided config', () => {
@@ -51,7 +58,7 @@ describe('GenUI runtime config', () => {
 
 describe('widget allowlist filter', () => {
   it('exposes no widgets when no config is set', () => {
-    expect(filterAllowed(widgetFixture)).toHaveLength(0)
+    expectEnabledWidgets([])
   })
 
   it('restricts widgets to the controlplane allowlist', () => {
@@ -59,10 +66,7 @@ describe('widget allowlist filter', () => {
       header: 'h',
       enabledWidgets: ['render_stat_cards', 'render_timeline'],
     })
-    expect(filterAllowed(widgetFixture).map((w) => w.name)).toEqual([
-      'render_stat_cards',
-      'render_timeline',
-    ])
+    expectEnabledWidgets(['render_stat_cards', 'render_timeline'])
   })
 
   it('ignores widget names the webapp does not register', () => {
@@ -70,13 +74,13 @@ describe('widget allowlist filter', () => {
       header: 'h',
       enabledWidgets: ['render_stat_cards', 'render_future_widget'],
     })
-    expect(filterAllowed(widgetFixture).map((w) => w.name)).toEqual([
-      'render_stat_cards',
-    ])
+    expectEnabledWidgets(['render_stat_cards'])
   })
 
   it('returns nothing with an empty allowlist', () => {
+    setGenUIConfig({ header: 'h', enabledWidgets: ['render_stat_cards'] })
+    expectEnabledWidgets(['render_stat_cards'])
     setGenUIConfig({ header: 'h', enabledWidgets: [] })
-    expect(filterAllowed(widgetFixture)).toHaveLength(0)
+    expectEnabledWidgets([])
   })
 })

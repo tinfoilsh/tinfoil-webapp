@@ -47,17 +47,6 @@ describe('EventNormalizer', () => {
       ])
     })
 
-    it('emits separate deltas after first chunk is flushed', () => {
-      const events = processAll([
-        contentChunk('hello world'),
-        contentChunk(' more'),
-      ])
-      expect(events).toEqual([
-        { type: 'content_delta', content: 'hello world' },
-        { type: 'content_delta', content: ' more' },
-      ])
-    })
-
     it('skips empty content chunks', () => {
       const events = processAll([contentChunk(''), contentChunk('hi')])
       expect(events).toEqual([{ type: 'content_delta', content: 'hi' }])
@@ -153,44 +142,27 @@ describe('EventNormalizer', () => {
       const normalizer = createEventNormalizer()
       const preprocessor = createContentPreprocessor()
 
+      expect(normalizer.flush()).toEqual([])
       normalizer.processChunk(reasoningChunk('thinking'), preprocessor)
 
       expect(normalizer.flush()).toEqual([{ type: 'thinking_end' }])
-    })
-
-    it('handles interleaved reasoning and content', () => {
-      const events = processAll([
-        reasoningChunk('thought1'),
-        reasoningChunk('', 'partial answer'),
-        reasoningChunk('thought2'),
-        { choices: [{ delta: { content: 'final' } }] },
-      ])
-
-      const types = events.map((e) => e.type)
-      // Should see: start, delta, end, content, tail, content — reasoning
-      // arriving after content is the late tail of the previous thinking
-      // block, not a new one.
-      expect(types[0]).toBe('thinking_start')
-      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
-      expect(events).toContainEqual({
-        type: 'thinking_tail_delta',
-        content: 'thought2',
-      })
-      const text = events
-        .filter((e) => e.type === 'content_delta')
-        .map((e) => (e as any).content)
-        .join('')
-      expect(text).toBe('partial answerfinal')
+      expect(normalizer.flush()).toEqual([])
     })
 
     it('handles reasoning with empty string (present but empty)', () => {
       const chunk = {
         choices: [{ delta: { reasoning_content: '' } }],
       }
-      const events = processAll([chunk, reasoningChunk('actual thought')])
+      const normalizer = createEventNormalizer()
+      const preprocessor = createContentPreprocessor()
       // First chunk has reasoning_content present (not null), so enters reasoning format
-      const types = events.map((e) => e.type)
-      expect(types[0]).toBe('thinking_start')
+      expect(normalizer.processChunk(chunk, preprocessor)).toEqual([
+        { type: 'thinking_start' },
+      ])
+      expect(
+        normalizer.processChunk(reasoningChunk('actual thought'), preprocessor),
+      ).toEqual([{ type: 'thinking_delta', content: 'actual thought' }])
+      expect(normalizer.flush()).toEqual([{ type: 'thinking_end' }])
     })
 
     it('emits content carried on the same chunk as the first reasoning', () => {
@@ -239,87 +211,53 @@ describe('EventNormalizer', () => {
       expect(text).toBe('It’s clear and polite, but honestly?')
     })
 
-    it('does not restart thinking for whitespace-only reasoning tails after content started', () => {
-      const events = processAll([
-        reasoningChunk('thinking...'),
-        {
-          choices: [{ delta: { reasoning_content: '. ', content: 'It' } }],
-        },
-        {
-          choices: [{ delta: { reasoning_content: ' ', content: '’s clear' } }],
-        },
-        { choices: [{ delta: { content: ' and polite.' } }] },
-      ])
+    it.each([' for.', '. '])(
+      'merges substantive reasoning tails arriving after content into the previous thinking block',
+      (tail) => {
+        // Upstream splits the think-close boundary, so the final reasoning
+        // fragment (" for.") can land after the answer already started.
+        const events = processAll([
+          reasoningChunk('I should account'),
+          { choices: [{ delta: { content: 'The' } }] },
+          reasoningChunk(tail),
+          { choices: [{ delta: { content: ' main things were:' } }] },
+        ])
 
-      const types = events.map((e) => e.type)
-      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
-      const text = events
-        .filter((e) => e.type === 'content_delta')
-        .map((e) => (e as any).content)
-        .join('')
-      expect(text).toBe('It’s clear and polite.')
-    })
+        const types = events.map((e) => e.type)
+        expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
+        expect(types.filter((t) => t === 'thinking_end').length).toBe(1)
+        expect(events).toContainEqual({
+          type: 'thinking_tail_delta',
+          content: tail,
+        })
+        const text = events
+          .filter((e) => e.type === 'content_delta')
+          .map((e) => (e as any).content)
+          .join('')
+        expect(text).toBe('The main things were:')
+      },
+    )
 
-    it('does not create a phantom thinking block for punctuation-only reasoning crumbs after content started', () => {
-      const events = processAll([
-        reasoningChunk('thinking...'),
-        { choices: [{ delta: { content: 'Hello' } }] },
-        reasoningChunk('. '),
-        { choices: [{ delta: { content: ' world' } }] },
-      ])
+    it.each(['offs. ', ' '])(
+      'merges a reasoning tail carried on the same chunk as content',
+      (tail) => {
+        const events = processAll([
+          reasoningChunk('thinking about trade'),
+          reasoningChunk('. ', 'Answer start'),
+          reasoningChunk(tail, ' **TCP** is reliable'),
+        ])
 
-      const types = events.map((e) => e.type)
-      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
-      const text = events
-        .filter((e) => e.type === 'content_delta')
-        .map((e) => (e as any).content)
-        .join('')
-      expect(text).toBe('Hello world')
-    })
-
-    it('merges substantive reasoning tails arriving after content into the previous thinking block', () => {
-      // Upstream splits the think-close boundary, so the final reasoning
-      // fragment (" for.") can land after the answer already started.
-      const events = processAll([
-        reasoningChunk('I should account'),
-        { choices: [{ delta: { content: 'The' } }] },
-        reasoningChunk(' for.'),
-        { choices: [{ delta: { content: ' main things were:' } }] },
-      ])
-
-      const types = events.map((e) => e.type)
-      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
-      expect(types.filter((t) => t === 'thinking_end').length).toBe(1)
-      expect(events).toContainEqual({
-        type: 'thinking_tail_delta',
-        content: ' for.',
-      })
-      const text = events
-        .filter((e) => e.type === 'content_delta')
-        .map((e) => (e as any).content)
-        .join('')
-      expect(text).toBe('The main things were:')
-    })
-
-    it('merges a reasoning tail carried on the same chunk as content', () => {
-      const events = processAll([
-        reasoningChunk('thinking about trade'),
-        { choices: [{ delta: { content: 'Answer start' } }] },
-        reasoningChunk('offs. ', ' **TCP** is reliable'),
-      ])
-
-      const types = events.map((e) => e.type)
-      expect(types.filter((t) => t === 'thinking_start').length).toBe(1)
-      expect(events).toContainEqual({
-        type: 'thinking_tail_delta',
-        content: 'offs. ',
-      })
-      const text = events
-        .filter((e) => e.type === 'content_delta')
-        .map((e) => (e as any).content)
-        .join('')
-      expect(text).toBe('Answer start **TCP** is reliable')
-    })
+        expect(events).toEqual([
+          { type: 'thinking_start' },
+          { type: 'thinking_delta', content: 'thinking about trade' },
+          { type: 'thinking_delta', content: '. ' },
+          { type: 'thinking_end' },
+          { type: 'content_delta', content: 'Answer start' },
+          { type: 'thinking_tail_delta', content: tail },
+          { type: 'content_delta', content: ' **TCP** is reliable' },
+        ])
+      },
+    )
 
     it('opens a new thinking block when reasoning resumes after a tool call', () => {
       const events = processAll([
@@ -580,17 +518,18 @@ describe('EventNormalizer', () => {
         },
       ])
 
-      const types = events.map((e) => e.type)
-      const thinkEndIdx = types.indexOf('thinking_end')
-      const searchIdx = types.indexOf('web_search')
-      expect(thinkEndIdx).toBeLessThan(searchIdx)
-    })
-  })
-
-  describe('flush', () => {
-    it('returns empty when nothing buffered', () => {
-      const normalizer = createEventNormalizer()
-      expect(normalizer.flush()).toEqual([])
+      expect(events).toEqual([
+        { type: 'thinking_start' },
+        { type: 'thinking_delta', content: 'thinking' },
+        { type: 'thinking_end' },
+        {
+          type: 'web_search',
+          id: 'ws_1',
+          status: 'in_progress',
+          query: 'q',
+          reason: undefined,
+        },
+      ])
     })
   })
 })

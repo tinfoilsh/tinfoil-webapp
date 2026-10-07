@@ -20,6 +20,10 @@ describe('sync-health store', () => {
   })
 
   it('starts healthy with no failures', () => {
+    reportChatSyncFailed('chat-1', 'failure')
+    reportKeyActionRequired('key-recovery')
+    reportSyncSuccess()
+    resetSyncHealth()
     const snapshot = getSyncHealthSnapshot()
     expect(snapshot.gate.kind).toBe('ok')
     expect(snapshot.failedChats).toEqual({})
@@ -90,6 +94,12 @@ describe('sync-health store', () => {
     const snapshot = getSyncHealthSnapshot()
     if (snapshot.gate.kind !== 'paused') throw new Error('expected paused')
     expect(syncHealthNeedsAttention(snapshot, snapshot.gate.since)).toBe(false)
+    expect(
+      syncHealthNeedsAttention(
+        snapshot,
+        snapshot.gate.since + SYNC_PAUSED_ATTENTION_AFTER_MS - 1,
+      ),
+    ).toBe(false)
     expect(
       syncHealthNeedsAttention(
         snapshot,

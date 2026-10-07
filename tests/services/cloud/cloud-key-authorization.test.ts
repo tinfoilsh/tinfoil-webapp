@@ -111,9 +111,21 @@ describe('cloud-key-authorization', () => {
         canWrite: true,
         probe: 'none',
       })
-      mockRegisterKey.mockResolvedValue({ ok: true, key_id: 'new-key-id' })
-
-      expect(await canWriteToCloud()).toBe(true)
+      let finishRegistration!: () => void
+      mockRegisterKey.mockReturnValue(
+        new Promise<void>((resolve) => {
+          finishRegistration = resolve
+        }),
+      )
+      let settled = false
+      const writable = canWriteToCloud().then((result) => {
+        settled = true
+        return result
+      })
+      await vi.waitFor(() => expect(mockRegisterKey).toHaveBeenCalledOnce())
+      expect(settled).toBe(false)
+      finishRegistration()
+      expect(await writable).toBe(true)
 
       expect(mockRegisterKey).toHaveBeenCalledTimes(1)
       const arg = mockRegisterKey.mock.calls[0][0]
@@ -146,6 +158,12 @@ describe('cloud-key-authorization', () => {
     })
 
     it('adopts the local key before writing legacy data with no registered key', async () => {
+      let finishAdoption!: (value: boolean) => void
+      mockAdoptLocalKey.mockReturnValue(
+        new Promise<boolean>((resolve) => {
+          finishAdoption = resolve
+        }),
+      )
       mockValidateCurrentPrimaryKey.mockResolvedValue({
         remoteState: 'exists',
         canWrite: true,
@@ -153,7 +171,15 @@ describe('cloud-key-authorization', () => {
         needsAdoption: true,
       })
 
-      expect(await canWriteToCloud()).toBe(true)
+      let settled = false
+      const writable = canWriteToCloud().then((result) => {
+        settled = true
+        return result
+      })
+      await vi.waitFor(() => expect(mockAdoptLocalKey).toHaveBeenCalledOnce())
+      expect(settled).toBe(false)
+      finishAdoption(true)
+      expect(await writable).toBe(true)
       expect(mockAdoptLocalKey).toHaveBeenCalledTimes(1)
     })
 

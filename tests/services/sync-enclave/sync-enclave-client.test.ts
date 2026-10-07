@@ -1,12 +1,11 @@
 import {
-  resetSyncEnclaveClient,
-  SyncEnclaveError,
-} from '@/services/sync-enclave/sync-enclave-client'
-import {
   SYNC_HEADERS,
   SYNC_PROTOCOL_VERSION,
 } from '@/services/sync-enclave/wire-contract'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const REQUEST_BUDGET_MS = 25
+const AUTH_PHASE_MS = 10
 
 // Mock the tinfoil SDK so tests don't try to verify a real enclave.
 // vi.hoisted runs before vi.mock factory evaluation, which is the only
@@ -66,7 +65,9 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 }
 
 describe('SyncEnclaveClient', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { resetSyncEnclaveClient } =
+      await import('@/services/sync-enclave/sync-enclave-client')
     resetSyncEnclaveClient()
     mockSecureClientConstructor.mockReset()
     mockReady.mockReset().mockResolvedValue(undefined)
@@ -74,9 +75,13 @@ describe('SyncEnclaveClient', () => {
     mockGetValidToken.mockReset().mockResolvedValue('test-jwt')
     mockRefreshToken.mockReset().mockResolvedValue('fresh-jwt')
     mockReportSyncPaused.mockReset()
+    mockGetVerificationDocument.mockClear()
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    const { resetSyncEnclaveClient } =
+      await import('@/services/sync-enclave/sync-enclave-client')
+    resetSyncEnclaveClient()
     vi.useRealTimers()
     vi.clearAllMocks()
     vi.doUnmock('@/config')
@@ -84,11 +89,28 @@ describe('SyncEnclaveClient', () => {
   })
 
   it('verifies attestation before issuing the first request', async () => {
+    vi.useFakeTimers()
+    let finishVerification!: () => void
+    mockReady.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishVerification = resolve
+      }),
+    )
     const { getSyncEnclaveClient } =
       await import('@/services/sync-enclave/sync-enclave-client')
     mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true }))
-    const client = await getSyncEnclaveClient()
-    await client.get('/api/keys/current')
+    const request = getSyncEnclaveClient().then((client) =>
+      client.get('/v1/key/current'),
+    )
+    request.catch(() => {})
+    await vi.advanceTimersByTimeAsync(0)
+    try {
+      expect(mockGetValidToken).not.toHaveBeenCalled()
+      expect(mockFetch).not.toHaveBeenCalled()
+    } finally {
+      finishVerification()
+    }
+    await expect(request).resolves.toEqual({ ok: true })
     expect(mockReady).toHaveBeenCalledTimes(1)
     expect(mockFetch).toHaveBeenCalledOnce()
   })
@@ -121,23 +143,13 @@ describe('SyncEnclaveClient', () => {
     expect(mockReady).not.toHaveBeenCalled()
   })
 
-  it('rejects absolute request URLs so calls stay on the verified enclave', async () => {
-    const { getSyncEnclaveClient } =
-      await import('@/services/sync-enclave/sync-enclave-client')
-    const client = await getSyncEnclaveClient()
-    await expect(
-      client.get('https://example.com/v1/health'),
-    ).rejects.toMatchObject({
-      name: 'SyncEnclaveError',
-      code: 'INVALID_SYNC_ENCLAVE_PATH',
-    })
-    expect(mockFetch).not.toHaveBeenCalled()
-  })
-
   it.each([
     'https://example.com/v1/health',
     'HTTPS://example.com/v1/health',
     '//example.com/v1/health',
+    '/\\example.com/v1/health',
+    '/\t/example.com/v1/health',
+    '/\n/example.com/v1/health',
     'javascript:alert(1)',
     'data:application/json,{}',
     'v1/health',
@@ -153,6 +165,22 @@ describe('SyncEnclaveClient', () => {
     })
     expect(mockGetValidToken).not.toHaveBeenCalled()
     expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('allows same-origin paths whose query contains an external URL', async () => {
+    const { getSyncEnclaveClient } =
+      await import('@/services/sync-enclave/sync-enclave-client')
+    mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true }))
+    const client = await getSyncEnclaveClient()
+    await expect(
+      client.get('/v1/key/current?next=https://example.com'),
+    ).resolves.toEqual({ ok: true })
+    expect(mockFetch.mock.calls[0][0]).toBe(
+      'https://sync.tinfoil.sh/v1/key/current?next=https://example.com',
+    )
+    expect(
+      new Headers(mockFetch.mock.calls[0][1]?.headers).get('Authorization'),
+    ).toBe('Bearer test-jwt')
   })
 
   it('injects the Clerk JWT into outgoing requests', async () => {
@@ -189,11 +217,22 @@ describe('SyncEnclaveClient', () => {
       await import('@/services/sync-enclave/sync-enclave-client')
     mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true }))
     const client = await getSyncEnclaveClient()
-    await client.postPublic('/v1/share/open', { ciphertext: 'abc' })
+    const suppliedHeaders = {
+      Authorization: 'Bearer caller-token',
+      'X-Request-Tag': 'public-request',
+    }
+    await client.postPublic(
+      '/v1/share/open',
+      { ciphertext: 'abc' },
+      suppliedHeaders,
+    )
     const headers = mockFetch.mock.calls[0][1]?.headers as Headers
     expect(headers.has('Authorization')).toBe(false)
     expect(headers.get('Accept')).toBe('application/json')
+    expect(headers.get('X-Request-Tag')).toBe('public-request')
+    expect(suppliedHeaders.Authorization).toBe('Bearer caller-token')
     expect(mockRefreshToken).not.toHaveBeenCalled()
+    expect(mockGetValidToken).not.toHaveBeenCalled()
   })
 
   it('does not refresh authentication for public 401 responses', async () => {
@@ -227,21 +266,30 @@ describe('SyncEnclaveClient', () => {
   })
 
   it('cancels while authentication is pending without sending a request', async () => {
+    vi.useFakeTimers()
     const { getSyncEnclaveClient, SyncRequestAbortedError } =
       await import('@/services/sync-enclave/sync-enclave-client')
-    mockGetValidToken.mockReturnValueOnce(new Promise(() => {}))
+    let resolveToken!: (token: string) => void
+    mockGetValidToken.mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        resolveToken = resolve
+      }),
+    )
     const client = await getSyncEnclaveClient()
     const controller = new AbortController()
     const request = client.request('/v1/sync/pull', {
       signal: controller.signal,
     })
-    await vi.waitFor(() => expect(mockGetValidToken).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockGetValidToken).toHaveBeenCalledOnce()
 
     controller.abort(new SyncRequestAbortedError())
 
     await expect(request).rejects.toMatchObject({
       name: 'SyncRequestAbortedError',
     })
+    resolveToken('stale-user-token')
+    await vi.advanceTimersByTimeAsync(0)
     expect(mockFetch).not.toHaveBeenCalled()
   })
 
@@ -253,17 +301,29 @@ describe('SyncEnclaveClient', () => {
       .mockResolvedValueOnce(jsonResponse({ ok: true }))
     const client = await getSyncEnclaveClient()
     const body = JSON.stringify({ ciphertext: 'same-body' })
+    const headers = { 'Idempotency-Key': 'same-key' }
     await client.request('/v1/blobs/push', {
       method: 'POST',
       body,
-      headers: { 'Idempotency-Key': 'same-key' },
+      headers,
     })
 
     expect(mockRefreshToken).toHaveBeenCalledWith('test-jwt')
+    expect(mockRefreshToken).toHaveBeenCalledOnce()
     expect(mockFetch).toHaveBeenCalledTimes(2)
     const firstInit = mockFetch.mock.calls[0][1]
     const secondInit = mockFetch.mock.calls[1][1]
     expect(secondInit?.body).toBe(firstInit?.body)
+    for (const [url, init] of mockFetch.mock.calls) {
+      expect(url).toBe('https://sync.tinfoil.sh/v1/blobs/push')
+      expect(init?.method).toBe('POST')
+      expect(init?.body).toBe(body)
+      expect((init?.headers as Headers).get('Idempotency-Key')).toBe('same-key')
+    }
+    expect((firstInit?.headers as Headers).get('Authorization')).toBe(
+      'Bearer test-jwt',
+    )
+    expect(headers).toEqual({ 'Idempotency-Key': 'same-key' })
     expect((secondInit?.headers as Headers).get('Idempotency-Key')).toBe(
       'same-key',
     )
@@ -304,7 +364,7 @@ describe('SyncEnclaveClient', () => {
   })
 
   it('parses non-2xx responses into SyncEnclaveError with code + details', async () => {
-    const { getSyncEnclaveClient } =
+    const { getSyncEnclaveClient, SyncEnclaveError } =
       await import('@/services/sync-enclave/sync-enclave-client')
     mockFetch.mockResolvedValueOnce(
       jsonResponse(
@@ -317,10 +377,12 @@ describe('SyncEnclaveClient', () => {
       ),
     )
     const client = await getSyncEnclaveClient()
-    await expect(
-      client.put('/api/profile/', { data: 'x' }),
-    ).rejects.toMatchObject({
+    const request = client.put('/api/profile/', { data: 'x' })
+    await expect(request).rejects.toBeInstanceOf(Error)
+    await expect(request).rejects.toBeInstanceOf(SyncEnclaveError)
+    await expect(request).rejects.toMatchObject({
       name: 'SyncEnclaveError',
+      message: 'STALE_BLOB',
       status: 412,
       code: 'PRECONDITION_FAILED',
       details: { current_etag: '7' },
@@ -384,20 +446,17 @@ describe('SyncEnclaveClient', () => {
   it('classifies transport TypeErrors without hiding non-network failures', async () => {
     const { getSyncEnclaveClient } =
       await import('@/services/sync-enclave/sync-enclave-client')
-    mockFetch
-      .mockRejectedValueOnce(new TypeError('connection reset'))
-      .mockRejectedValueOnce(new RangeError('sdk invariant failed'))
+    const network = new TypeError('localized opaque failure')
+    const invariant = new RangeError('network connection reset')
+    mockFetch.mockRejectedValueOnce(network).mockRejectedValueOnce(invariant)
     const client = await getSyncEnclaveClient()
 
     await expect(client.get('/v1/health')).rejects.toMatchObject({
       name: 'SyncNetworkError',
       code: 'NETWORK',
-      cause: expect.any(TypeError),
+      cause: network,
     })
-    await expect(client.get('/v1/health')).rejects.toMatchObject({
-      name: 'RangeError',
-      message: 'sdk invariant failed',
-    })
+    await expect(client.get('/v1/health')).rejects.toBe(invariant)
   })
 
   it('reuses the verified client across calls', async () => {
@@ -435,15 +494,72 @@ describe('SyncEnclaveClient', () => {
     expect(mockSecureClientConstructor).toHaveBeenCalledOnce()
   })
 
+  it('reverifies after reset without reusing previous verification state', async () => {
+    vi.useFakeTimers()
+    const { getSyncEnclaveClient, resetSyncEnclaveClient } =
+      await import('@/services/sync-enclave/sync-enclave-client')
+    const previousDocument = {
+      securityVerified: true,
+      enclaveHost: 'previous-enclave',
+    }
+    const freshDocument = {
+      securityVerified: true,
+      enclaveHost: 'fresh-enclave',
+    }
+    mockGetVerificationDocument
+      .mockReturnValueOnce(previousDocument)
+      .mockReturnValueOnce(freshDocument)
+    const previous = await getSyncEnclaveClient()
+    expect(previous.verification).toEqual(previousDocument)
+    resetSyncEnclaveClient()
+    let finishVerification!: () => void
+    mockReady.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishVerification = resolve
+      }),
+    )
+    let settled = false
+    const pending = getSyncEnclaveClient()
+    void pending.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      },
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    try {
+      expect(settled).toBe(false)
+      expect(mockGetVerificationDocument).toHaveBeenCalledOnce()
+      expect(mockFetch).not.toHaveBeenCalled()
+    } finally {
+      finishVerification()
+    }
+    const fresh = await pending
+    expect(fresh).not.toBe(previous)
+    expect(fresh.verification).toEqual(freshDocument)
+    expect(mockReady).toHaveBeenCalledTimes(2)
+    expect(mockSecureClientConstructor).toHaveBeenCalledTimes(2)
+  })
+
   it('drops the cache when verification fails so the next call can retry', async () => {
     const { getSyncEnclaveClient } =
       await import('@/services/sync-enclave/sync-enclave-client')
     mockReady.mockRejectedValueOnce(new Error('attestation failed'))
-    await expect(getSyncEnclaveClient()).rejects.toThrow('attestation failed')
+    await expect(
+      getSyncEnclaveClient().then((client) => client.get('/v1/key/current')),
+    ).rejects.toThrow('attestation failed')
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(mockGetValidToken).not.toHaveBeenCalled()
     mockReady.mockResolvedValueOnce(undefined)
     mockFetch.mockResolvedValueOnce(jsonResponse({ ok: true }))
     const client = await getSyncEnclaveClient()
     expect(client).toBeDefined()
+    expect(mockReady).toHaveBeenCalledTimes(2)
+    expect(mockSecureClientConstructor).toHaveBeenCalledTimes(2)
+    await expect(client.get('/v1/key/current')).resolves.toEqual({ ok: true })
+    expect(mockFetch).toHaveBeenCalledOnce()
   })
 
   it('bounds hung attestation and allows a fresh client retry', async () => {
@@ -507,23 +623,53 @@ describe('SyncEnclaveClient', () => {
     vi.doMock('@/config', () => ({
       SYNC_ENCLAVE_URL: 'https://sync.tinfoil.sh',
       SYNC_ENCLAVE_REPO: 'tinfoilsh/confidential-sync',
-      SYNC_ENCLAVE_TIMEOUTS: { READY_MS: 25, REQUEST_MS: 25 },
+      SYNC_ENCLAVE_TIMEOUTS: {
+        READY_MS: REQUEST_BUDGET_MS,
+        REQUEST_MS: REQUEST_BUDGET_MS,
+      },
     }))
-    mockFetch.mockResolvedValueOnce(
-      jsonResponse({ code: 'AUTH' }, { status: 401 }),
+    let replaySignal: AbortSignal | null | undefined
+    mockFetch
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, AUTH_PHASE_MS))
+        return jsonResponse({ code: 'AUTH' }, { status: 401 })
+      })
+      .mockImplementationOnce((_url, init) => {
+        replaySignal = init?.signal
+        return new Promise(() => {})
+      })
+    mockRefreshToken.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve('fresh-jwt'), AUTH_PHASE_MS),
+        ),
     )
-    mockRefreshToken.mockReturnValueOnce(new Promise(() => {}))
     const { getSyncEnclaveClient } =
       await import('@/services/sync-enclave/sync-enclave-client')
     const client = await getSyncEnclaveClient()
 
     const request = client.get('/api/keys/current')
+    let settled = false
+    void request.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      },
+    )
     const assertion = expect(request).rejects.toMatchObject({
       name: 'SyncRequestTimeoutError',
     })
-    await vi.advanceTimersByTimeAsync(25)
+    await vi.advanceTimersByTimeAsync(AUTH_PHASE_MS * 2)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+    expect(replaySignal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(REQUEST_BUDGET_MS - AUTH_PHASE_MS * 2 - 1)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
     await assertion
-    expect(mockFetch).toHaveBeenCalledOnce()
+    expect(replaySignal?.aborted).toBe(true)
+    expect(mockRefreshToken).toHaveBeenCalledOnce()
   })
 
   it('cleans up request timers after a successful response', async () => {
@@ -636,13 +782,5 @@ describe('SyncEnclaveClient', () => {
     await expect(freshClient).resolves.toBeDefined()
     expect(getSyncEnclaveClient()).toBe(freshClient)
     expect(mockSecureClientConstructor).toHaveBeenCalledTimes(2)
-  })
-
-  it('exposes SyncEnclaveError as a real Error subclass', () => {
-    const err = new SyncEnclaveError('boom', 409, 'CONFLICT', { foo: 'bar' })
-    expect(err).toBeInstanceOf(Error)
-    expect(err.status).toBe(409)
-    expect(err.code).toBe('CONFLICT')
-    expect(err.details).toEqual({ foo: 'bar' })
   })
 })

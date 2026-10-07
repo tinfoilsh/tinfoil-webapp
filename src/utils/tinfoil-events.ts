@@ -113,6 +113,8 @@ export function createTinfoilEventParser(): {
   // router's leading pad and must be retroactively removed from `text`
   // (we only know it was a pad after seeing the open tag).
   let trailingNewlineOnText = false
+  // Hold the last newline until another chunk identifies it as padding or text.
+  let pendingText = ''
 
   /**
    * Given a non-marker chunk suffix, return how many trailing bytes
@@ -140,13 +142,14 @@ export function createTinfoilEventParser(): {
 
   const consume = (chunk: string): TinfoilEventConsumeResult => {
     buffer += chunk
-    let text = ''
+    let text = pendingText
+    pendingText = ''
     const events: TinfoilEvent[] = []
 
     // Drain a deferred trailing-pad `\n` left over from the previous
     // `consume` call. Only applies to the very first byte so we do not
     // accidentally eat model-emitted newlines further downstream.
-    if (pendingStripLeadingNewline) {
+    if (pendingStripLeadingNewline && buffer.length > 0) {
       pendingStripLeadingNewline = false
       if (buffer.charCodeAt(0) === 0x0a) {
         buffer = buffer.slice(1)
@@ -222,6 +225,10 @@ export function createTinfoilEventParser(): {
       if (event) events.push(event)
     }
 
+    if (text.endsWith('\n')) {
+      pendingText = '\n'
+      text = text.slice(0, -1)
+    }
     return { text, events }
   }
 
@@ -230,7 +237,8 @@ export function createTinfoilEventParser(): {
     // the raw tail as plain text so at least the user sees something
     // rather than silently dropping bytes. Callers can still decide
     // whether to strip residual tags before display.
-    const tail = buffer
+    const tail = pendingText + buffer
+    pendingText = ''
     buffer = ''
     insideMarker = false
     pendingStripLeadingNewline = false
@@ -258,21 +266,4 @@ function parseMarkerPayload(raw: string): TinfoilEvent | null {
   } catch {
     return null
   }
-}
-
-/**
- * One-shot helper for non-streaming content: runs a fresh parser across
- * the full string and returns both the cleaned text and the decoded
- * events. Use this for final assistant messages returned by the
- * non-streaming chat / responses paths, where the whole payload lands
- * in one chunk.
- */
-export function extractTinfoilEventsFromText(input: string): {
-  text: string
-  events: TinfoilEvent[]
-} {
-  const parser = createTinfoilEventParser()
-  const { text, events } = parser.consume(input)
-  const tail = parser.flush()
-  return { text: text + tail, events }
 }

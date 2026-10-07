@@ -67,11 +67,6 @@ describe('cloud-key-preflight', () => {
   })
 
   describe('inspectRemoteEncryptedState', () => {
-    it('returns empty when the enclave has no key', async () => {
-      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
-      expect(await inspectRemoteEncryptedState()).toBe('empty')
-    })
-
     it('returns exists when the enclave has a key', async () => {
       mockKeyCurrent.mockResolvedValue({ key_id: 'abc', bundles: {} })
       expect(await inspectRemoteEncryptedState()).toBe('exists')
@@ -86,14 +81,17 @@ describe('cloud-key-preflight', () => {
       expect(await inspectRemoteEncryptedState()).toBe('exists')
     })
 
-    it('returns empty when there is no key and no data', async () => {
-      mockKeyCurrent.mockResolvedValue({
-        key_id: null,
-        bundles: {},
-        has_data: false,
-      })
-      expect(await inspectRemoteEncryptedState()).toBe('empty')
-    })
+    it.each([undefined, false])(
+      'returns empty when there is no key and no data',
+      async (hasData) => {
+        mockKeyCurrent.mockResolvedValue({
+          key_id: null,
+          bundles: {},
+          has_data: hasData,
+        })
+        expect(await inspectRemoteEncryptedState()).toBe('empty')
+      },
+    )
 
     it('returns unknown when the enclave probe fails', async () => {
       mockKeyCurrent.mockRejectedValue(new Error('network'))

@@ -2,610 +2,308 @@ import {
   indentCodeBlocksInLists,
   preprocessMarkdown,
 } from '@/utils/markdown-preprocessing'
+import remarkParse from 'remark-parse'
+import { unified } from 'unified'
 import { describe, expect, it } from 'vitest'
 
 describe('markdown-preprocessing', () => {
   describe('preprocessMarkdown', () => {
-    describe('HTML to markdown conversion', () => {
-      it('converts <a> tags to markdown links', () => {
-        const input = '<a href="https://example.com">Example</a>'
-        expect(preprocessMarkdown(input)).toBe('[Example](https://example.com)')
-      })
-
-      it('uses URL as text when <a> tag has empty text', () => {
-        const input = '<a href="https://example.com"></a>'
-        expect(preprocessMarkdown(input)).toBe(
-          '[https://example.com](https://example.com)',
-        )
-      })
-
-      it('converts <b> tags to bold markdown', () => {
-        expect(preprocessMarkdown('<b>bold text</b>')).toBe('**bold text**')
-      })
-
-      it('converts <strong> tags to bold markdown', () => {
-        expect(preprocessMarkdown('<strong>bold text</strong>')).toBe(
-          '**bold text**',
-        )
-      })
-
-      it('converts multiple HTML tags in one string', () => {
-        const input =
-          'Click <a href="https://x.com">here</a> for <b>details</b>'
-        expect(preprocessMarkdown(input)).toBe(
-          'Click [here](https://x.com) for **details**',
-        )
-      })
+    it.each([
+      '__CODE_BLOCK_0__',
+      '__INLINE_CODE_0__',
+      '__CODE_BLOCK_0__\n```\nreal code\n```',
+      '__INLINE_CODE_0__ and `real code`',
+      '__MARKDOWN_CODE_0__ and __MARKDOWN_CODE__0__',
+      '__MARKDOWN_CODE_0__INLINE_CODE_0__ __MARKDOWN_CODE_1__CODE_BLOCK_0__ and `real code`',
+      '____CODE_BLOCK_0__ and `__INLINE_CODE_0__`',
+    ])('preserves literal placeholder-like text: %s', (input) => {
+      expect(preprocessMarkdown(input)).toBe(input)
     })
 
-    describe('code block preservation', () => {
-      it('preserves HTML inside fenced code blocks', () => {
-        const input = '```html\n<a href="url">link</a>\n```'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
-
-      it('preserves HTML inside inline code', () => {
-        const input = 'Use `<b>bold</b>` for emphasis'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
-
-      it('converts HTML outside code blocks while preserving code', () => {
-        const input = '<b>bold</b>\n```\n<b>not bold</b>\n```\n<b>bold</b>'
-        const result = preprocessMarkdown(input)
-        expect(result).toBe('**bold**\n```\n<b>not bold</b>\n```\n**bold**')
-      })
-
-      it('preserves HTML inside tilde-fenced code blocks', () => {
-        const input = '~~~html\n<a href="url">link</a>\n~~~'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
-
-      it('converts HTML outside tilde code blocks while preserving code', () => {
-        const input = '<b>bold</b>\n~~~\n<b>not bold</b>\n~~~\n<b>bold</b>'
-        const result = preprocessMarkdown(input)
-        expect(result).toBe('**bold**\n~~~\n<b>not bold</b>\n~~~\n**bold**')
-      })
-
-      it('preserves code blocks closed with a longer fence than the opening', () => {
-        const input = '```\n<b>code</b>\n`````'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
-
-      it('does not close a block when closing fence is indented 4+ spaces', () => {
-        // Per CommonMark, a closing fence indented 4+ spaces is content, not a fence
-        const input =
-          '```\n<b>still code</b>\n    ```\n<b>still code</b>\n```\n<b>bold</b>'
-        const result = preprocessMarkdown(input)
-        expect(result).toBe(
-          '```\n<b>still code</b>\n    ```\n<b>still code</b>\n```\n**bold**',
-        )
-      })
-
-      it('does not close a block with a shorter fence than the opening', () => {
-        const input =
-          '`````\n<b>still code</b>\n```\n<b>still code</b>\n`````\n<b>bold</b>'
-        const result = preprocessMarkdown(input)
-        expect(result).toBe(
-          '`````\n<b>still code</b>\n```\n<b>still code</b>\n`````\n**bold**',
-        )
-      })
-
-      it('preserves HTML inside blockquoted code fences', () => {
-        const input = '> ```html\n> <a href="url">link</a>\n> ```'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
-
-      it('converts HTML outside blockquoted code fences', () => {
-        const input =
-          '<b>bold</b>\n> ```\n> <b>not bold</b>\n> ```\n<b>bold</b>'
-        const result = preprocessMarkdown(input)
-        expect(result).toBe(
-          '**bold**\n> ```\n> <b>not bold</b>\n> ```\n**bold**',
-        )
-      })
-
-      it('preserves nested blockquoted code fences', () => {
-        const input = '> > ```\n> > <b>code</b>\n> > ```'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
-
-      it('does not treat backtick fence with backtick in info string as code block', () => {
-        const input = '``` foo `bar`\n<b>bold</b>\n```'
-        const result = preprocessMarkdown(input)
-        // The opening fence is invalid, so <b> should be converted
-        expect(result).toContain('**bold**')
-      })
-
-      it('allows backticks in tilde fence info strings', () => {
-        const input = '~~~ foo `bar`\n<b>not bold</b>\n~~~'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
+    it.each([
+      [
+        '10: anchor conversion',
+        '<a href="https://example.com">Example</a>',
+        '[Example](https://example.com)',
+      ],
+      [
+        '15: empty anchor text',
+        '<a href="https://example.com"></a>',
+        '[https://example.com](https://example.com)',
+      ],
+      ['22: bold tag', '<b>bold text</b>', '**bold text**'],
+      ['26: strong tag', '<strong>bold text</strong>', '**bold text**'],
+      [
+        '32: multiple HTML tags',
+        'Click <a href="https://x.com">here</a> for <b>details</b>',
+        'Click [here](https://x.com) for **details**',
+      ],
+      [
+        '42: fenced HTML',
+        '```html\n<a href="url">link</a>\n```',
+        '```html\n<a href="url">link</a>\n```',
+      ],
+      [
+        '47: inline HTML code',
+        'Use `<b>bold</b>` for emphasis',
+        'Use `<b>bold</b>` for emphasis',
+      ],
+      [
+        '52: HTML outside fenced code',
+        '<b>bold</b>\n```\n<b>not bold</b>\n```\n<b>bold</b>',
+        '**bold**\n```\n<b>not bold</b>\n```\n**bold**',
+      ],
+      [
+        '58: tilde fenced HTML',
+        '~~~html\n<a href="url">link</a>\n~~~',
+        '~~~html\n<a href="url">link</a>\n~~~',
+      ],
+      [
+        '63: HTML outside tilde fence',
+        '<b>bold</b>\n~~~\n<b>not bold</b>\n~~~\n<b>bold</b>',
+        '**bold**\n~~~\n<b>not bold</b>\n~~~\n**bold**',
+      ],
+      [
+        '69: longer closing fence resumes conversion',
+        '```\n<b>code</b>\n`````\n<b>outside</b>',
+        '```\n<b>code</b>\n`````\n**outside**',
+      ],
+      [
+        '74: deeply indented false closer',
+        '```\n<b>still code</b>\n    ```\n<b>still code</b>\n```\n<b>bold</b>',
+        '```\n<b>still code</b>\n    ```\n<b>still code</b>\n```\n**bold**',
+      ],
+      [
+        '84: shorter false closer',
+        '`````\n<b>still code</b>\n```\n<b>still code</b>\n`````\n<b>bold</b>',
+        '`````\n<b>still code</b>\n```\n<b>still code</b>\n`````\n**bold**',
+      ],
+      [
+        '93: blockquoted fence',
+        '> ```html\n> <a href="url">link</a>\n> ```',
+        '> ```html\n> <a href="url">link</a>\n> ```',
+      ],
+      [
+        '98: HTML outside blockquoted fence',
+        '<b>bold</b>\n> ```\n> <b>not bold</b>\n> ```\n<b>bold</b>',
+        '**bold**\n> ```\n> <b>not bold</b>\n> ```\n**bold**',
+      ],
+      [
+        '107: nested blockquotes',
+        '> > ```\n> > <b>code</b>\n> > ```',
+        '> > ```\n> > <b>code</b>\n> > ```',
+      ],
+      [
+        '112: invalid backtick info',
+        '``` foo `bar`\n<b>bold</b>\n```',
+        '``` foo `bar`\n**bold**\n```',
+      ],
+      [
+        '119: valid tilde info with backticks',
+        '~~~ foo `bar`\n<b>not bold</b>\n~~~',
+        '~~~ foo `bar`\n<b>not bold</b>\n~~~',
+      ],
+      [
+        '126: plain text',
+        'Just some plain text without any special formatting',
+        'Just some plain text without any special formatting',
+      ],
+      ['131: empty text', '', ''],
+      [
+        '135: existing Markdown',
+        '**bold** and *italic* and [link](url)',
+        '**bold** and *italic* and [link](url)',
+      ],
+    ])('%s', (_name, input, expected) => {
+      expect(preprocessMarkdown(input)).toBe(expected)
     })
 
-    describe('pass-through behavior', () => {
-      it('returns plain text unchanged', () => {
-        const input = 'Just some plain text without any special formatting'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
-
-      it('returns empty string unchanged', () => {
-        expect(preprocessMarkdown('')).toBe('')
-      })
-
-      it('preserves existing markdown formatting', () => {
-        const input = '**bold** and *italic* and [link](url)'
-        expect(preprocessMarkdown(input)).toBe(input)
-      })
-    })
-
-    describe('integration with indentCodeBlocksInLists', () => {
-      it('indents code blocks in lists AND converts HTML', () => {
-        const input =
-          '1. <b>Step one</b>:\n```bash\necho hello\n```\n2. Step two'
-        const result = preprocessMarkdown(input)
-        expect(result).toContain('**Step one**')
-        // The code block should be indented inside the list item
-        expect(result).toMatch(/^\s+```bash/m)
-      })
+    it('142: indents list code and converts HTML into a nested code node', () => {
+      const result = preprocessMarkdown(
+        '1. <b>Step one</b>:\n```bash\necho hello\n```\n2. Step two',
+      )
+      expect(result).toBe(
+        '1. **Step one**:\n   ```bash\n   echo hello\n   ```\n2. Step two',
+      )
+      const tree = unified().use(remarkParse).parse(result)
+      expect(tree.children).toMatchObject([
+        {
+          type: 'list',
+          ordered: true,
+          children: [
+            {
+              type: 'listItem',
+              children: [
+                { type: 'paragraph' },
+                { type: 'code', lang: 'bash', value: 'echo hello' },
+              ],
+            },
+            { type: 'listItem', children: [{ type: 'paragraph' }] },
+          ],
+        },
+      ])
     })
   })
 
   describe('indentCodeBlocksInLists', () => {
-    describe('ordered lists', () => {
-      it('indents unindented code fence in ordered list', () => {
-        const input = [
-          '1. Check this:',
-          '```bash',
-          'echo hello',
-          '```',
-          '2. Next step',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // "1. " is 3 chars, so content indent is 3
-        expect(lines[1]).toBe('   ```bash')
-        expect(lines[2]).toBe('   echo hello')
-        expect(lines[3]).toBe('   ```')
-      })
-
-      it('indents code fence in list with wider marker', () => {
-        // "1.  " (with extra space) = 4 chars content indent
-        const input = [
-          '1.  Check this:',
-          '```bash',
-          'grep microcode /proc/cpuinfo | sort | uniq',
-          '```',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        expect(lines[1]).toBe('    ```bash')
-        expect(lines[2]).toBe('    grep microcode /proc/cpuinfo | sort | uniq')
-        expect(lines[3]).toBe('    ```')
-      })
-
-      it('handles double-digit list numbers', () => {
-        const input = ['10. Step ten:', '```', 'code here', '```'].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        // "10. " = 4 chars
-        expect(result.split('\n')[1]).toBe('    ```')
-      })
-
-      it('does not modify already properly indented code fences', () => {
-        const input = [
-          '1. Check this:',
-          '   ```bash',
-          '   echo hello',
-          '   ```',
-        ].join('\n')
-        expect(indentCodeBlocksInLists(input)).toBe(input)
-      })
-    })
-
-    describe('unordered lists', () => {
-      it('indents code fence in dash list', () => {
-        const input = ['- Step one:', '```python', 'print("hi")', '```'].join(
-          '\n',
-        )
-        const result = indentCodeBlocksInLists(input)
-        // "- " = 2 chars
-        expect(result.split('\n')[1]).toBe('  ```python')
-        expect(result.split('\n')[2]).toBe('  print("hi")')
-        expect(result.split('\n')[3]).toBe('  ```')
-      })
-
-      it('indents code fence in asterisk list', () => {
-        const input = ['* Step one:', '```', 'code', '```'].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        expect(result.split('\n')[1]).toBe('  ```')
-      })
-
-      it('indents code fence in plus list', () => {
-        const input = ['+ Step one:', '```', 'code', '```'].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        expect(result.split('\n')[1]).toBe('  ```')
-      })
-    })
-
-    describe('multiple code blocks', () => {
-      it('indents multiple code blocks in the same list item', () => {
-        const input = [
-          '1. Do this:',
-          '```bash',
-          'first command',
-          '```',
-          '   Then run:',
-          '```bash',
-          'second command',
-          '```',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        expect(lines[1]).toBe('   ```bash')
-        expect(lines[2]).toBe('   first command')
-        expect(lines[3]).toBe('   ```')
-        expect(lines[5]).toBe('   ```bash')
-        expect(lines[6]).toBe('   second command')
-        expect(lines[7]).toBe('   ```')
-      })
-
-      it('indents code blocks across different list items', () => {
-        const input = [
-          '1. First:',
-          '```bash',
-          'cmd1',
-          '```',
-          '2. Second:',
-          '```bash',
-          'cmd2',
-          '```',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        expect(lines[1]).toBe('   ```bash')
-        expect(lines[5]).toBe('   ```bash')
-      })
-    })
-
-    describe('continuation text after code blocks', () => {
-      it('allows continuation text to remain in list after code block', () => {
-        // This is the key bug: indented text after an unindented code fence
-        // was being rendered as an indented code block
-        const input = [
-          '1. Check:',
-          '```bash',
-          'some command',
-          '```',
-          '   Or do something else.',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // Code fence should be indented
-        expect(lines[1]).toBe('   ```bash')
-        expect(lines[3]).toBe('   ```')
-        // Continuation text should be unchanged (already at list indent)
-        expect(lines[4]).toBe('   Or do something else.')
-      })
-    })
-
-    describe('tilde fences', () => {
-      it('handles tilde code fences in lists', () => {
-        const input = ['1. Check:', '~~~bash', 'echo hi', '~~~'].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        expect(lines[1]).toBe('   ~~~bash')
-        expect(lines[2]).toBe('   echo hi')
-        expect(lines[3]).toBe('   ~~~')
-      })
-    })
-
-    describe('fence type and length matching', () => {
-      it('does not close a backtick block with tildes', () => {
-        const input = [
-          '1. Example:',
-          '```',
-          'line with ~~~',
-          '~~~',
-          'still in block',
-          '```',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // ~~~ should be treated as content, not a closing fence
-        expect(lines[3]).toBe('   ~~~')
-        expect(lines[4]).toBe('   still in block')
-        // ``` is the real closing fence
-        expect(lines[5]).toBe('   ```')
-      })
-
-      it('does not close a tilde block with backticks', () => {
-        const input = [
-          '1. Example:',
-          '~~~',
-          'line with ```',
-          '```',
-          'still in block',
-          '~~~',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // ``` should be treated as content, not a closing fence
-        expect(lines[3]).toBe('   ```')
-        expect(lines[4]).toBe('   still in block')
-        // ~~~ is the real closing fence
-        expect(lines[5]).toBe('   ~~~')
-      })
-
-      it('requires closing fence to be at least as long as opening', () => {
-        const input = [
-          '1. Example:',
-          '`````python',
-          'code',
-          '```',
-          'still in block',
-          '`````',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // ``` (3 backticks) is too short to close ````` (5 backticks)
-        expect(lines[3]).toBe('   ```')
-        expect(lines[4]).toBe('   still in block')
-        // ````` closes the block
-        expect(lines[5]).toBe('   `````')
-      })
-
-      it('allows closing fence longer than opening', () => {
-        const input = ['1. Example:', '```python', 'code', '`````'].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // ````` (5) >= ``` (3), so it closes the block
-        expect(lines[3]).toBe('   `````')
-      })
-    })
-
-    describe('backtick info string validation (CommonMark)', () => {
-      it('does not treat backtick fence as opening if info string contains backtick', () => {
-        const input = [
-          '1. Example:',
-          '``` foo `bar`',
-          'this is not code',
-          '```',
-        ].join('\n')
-        // The first line with backticks has a backtick in the info string,
-        // so it's not a valid fence — nothing should be reindented
-        expect(indentCodeBlocksInLists(input)).toBe(input)
-      })
-
-      it('tilde fence info string may contain backticks', () => {
-        const input = [
-          '1. Example:',
-          '~~~ foo `bar`',
-          'this is code',
-          '~~~',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // Tilde fences allow backticks in info strings
-        expect(lines[1]).toBe('   ~~~ foo `bar`')
-        expect(lines[2]).toBe('   this is code')
-        expect(lines[3]).toBe('   ~~~')
-      })
-    })
-
-    describe('code blocks outside lists', () => {
-      it('does not modify code blocks that are not in a list', () => {
-        const input = ['Some text:', '```bash', 'echo hello', '```'].join('\n')
-        expect(indentCodeBlocksInLists(input)).toBe(input)
-      })
-
-      it('does not modify standalone code blocks', () => {
-        const input = '```python\nprint("hi")\n```'
-        expect(indentCodeBlocksInLists(input)).toBe(input)
-      })
-
-      it('does not corrupt list-like content inside a top-level code block', () => {
-        const input = [
-          '```markdown',
-          '1. Item',
-          '```bash',
-          'echo hello',
-          '```',
-        ].join('\n')
-        expect(indentCodeBlocksInLists(input)).toBe(input)
-      })
-    })
-
-    describe('properly indented code blocks in lists', () => {
-      it('does not corrupt content that looks like list items inside a code block', () => {
-        const input = [
-          '1. Example:',
-          '   ```markdown',
-          '   1. list inside code',
-          '   ```bash',
-          '   echo hello',
-          '   ```',
-        ].join('\n')
-        expect(indentCodeBlocksInLists(input)).toBe(input)
-      })
-    })
-
-    describe('closing fence indentation', () => {
-      it('does not treat a 4+ space indented fence as closing fence in column-0 block', () => {
-        const input = [
-          '1. Example:',
-          '```',
-          '    ```',
-          'still in block',
-          '```',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // "    ```" is content (4 spaces beyond column-0 opening), not a closing fence
-        expect(lines[2]).toBe('       ```')
-        expect(lines[3]).toBe('   still in block')
-        // Real closing fence
-        expect(lines[4]).toBe('   ```')
-      })
-
-      it('correctly closes fences in nested lists where indent > 3', () => {
-        const input = [
-          '  1. Inner item:',
-          '     ```python',
-          '     code here',
-          '     ```',
-          '  2. Next item:',
-        ].join('\n')
-        // Fences at column 5 are properly indented — should pass through unchanged
-        expect(indentCodeBlocksInLists(input)).toBe(input)
-      })
-    })
-
-    describe('empty code blocks', () => {
-      it('handles empty code blocks in lists', () => {
-        const input = ['1. Empty block:', '```', '```'].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        expect(lines[1]).toBe('   ```')
-        expect(lines[2]).toBe('   ```')
-      })
-    })
-
-    describe('code content with indentation', () => {
-      it('preserves code content indentation while adding list indent', () => {
-        const input = [
-          '1. Python example:',
-          '```python',
-          'def foo():',
-          '    return 42',
-          '```',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // Original indent preserved, list indent added
-        expect(lines[2]).toBe('   def foo():')
-        expect(lines[3]).toBe('       return 42')
-      })
-    })
-
-    describe('partially indented fences', () => {
-      it('adds only the missing indentation for partially indented fences', () => {
-        // Fence at 1 space, list needs 3 spaces
-        const input = ['1. Check:', ' ```bash', ' echo hello', ' ```'].join(
-          '\n',
-        )
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // Should add 2 more spaces (3 - 1 = 2)
-        expect(lines[1]).toBe('   ```bash')
-        expect(lines[2]).toBe('   echo hello')
-      })
-    })
-
-    describe('list exit detection', () => {
-      it('stops indenting after leaving list context', () => {
-        const input = [
-          '1. In list:',
-          '```bash',
-          'cmd1',
-          '```',
-          '',
-          'Not in list anymore.',
-          '',
-          '```bash',
-          'standalone code',
-          '```',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        // First code block should be indented
-        expect(lines[1]).toBe('   ```bash')
-        // "Not in list" exits the list
-        // Standalone code block should NOT be indented
-        expect(lines[7]).toBe('```bash')
-      })
-
-      it('does not reindent a fence after a blank line', () => {
-        const input = ['1. Item', '', '```bash', 'echo hello', '```'].join('\n')
-        expect(indentCodeBlocksInLists(input)).toBe(input)
-      })
-
-      it('still reindents after a blank line + new list item', () => {
-        const input = [
-          '1. First item',
-          '',
-          '2. Second item:',
-          '```bash',
-          'echo hello',
-          '```',
-        ].join('\n')
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-        expect(lines[3]).toBe('   ```bash')
-        expect(lines[4]).toBe('   echo hello')
-        expect(lines[5]).toBe('   ```')
-      })
-    })
-
-    describe('real-world LLM output pattern', () => {
-      it('fixes the Intel microcode example from the bug report', () => {
-        const input = [
-          '1.  **Check the running version:**',
-          '```bash',
-          'grep microcode /proc/cpuinfo | sort | uniq',
-          '```',
-          '2.  **Check the version available in the installed package:**',
-          '    You can use `iucode_tool` to list the microcode revisions contained in the package files:',
-          '```bash',
-          'sudo apt install iucode-tool',
-          'iucode_tool -l /lib/firmware/intel-ucode/* | grep -E "signature|revision"',
-          '```',
-          '    Or manually inspect the binary for your specific CPU signature (e.g., `06-55-04`).',
-        ].join('\n')
-
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-
-        // First code block indented to 4 (matching "1.  " content indent)
-        expect(lines[1]).toBe('    ```bash')
-        expect(lines[2]).toBe('    grep microcode /proc/cpuinfo | sort | uniq')
-        expect(lines[3]).toBe('    ```')
-
-        // Second code block also indented to 4
-        expect(lines[6]).toBe('    ```bash')
-        expect(lines[7]).toBe('    sudo apt install iucode-tool')
-        expect(lines[9]).toBe('    ```')
-
-        // Continuation text should be unchanged
-        expect(lines[10]).toBe(
-          '    Or manually inspect the binary for your specific CPU signature (e.g., `06-55-04`).',
-        )
-      })
-
-      it('handles mixed list items with and without code blocks', () => {
-        const input = [
-          '1. First item with no code.',
-          '2. Second item has code:',
-          '```js',
-          'console.log("hi")',
-          '```',
-          '3. Third item is plain text.',
-          '4. Fourth item also has code:',
-          '```python',
-          'print("hello")',
-          '```',
-        ].join('\n')
-
-        const result = indentCodeBlocksInLists(input)
-        const lines = result.split('\n')
-
-        // Item 1 unchanged
-        expect(lines[0]).toBe('1. First item with no code.')
-        // Item 2's code block indented
-        expect(lines[2]).toBe('   ```js')
-        // Item 3 unchanged
-        expect(lines[5]).toBe('3. Third item is plain text.')
-        // Item 4's code block indented
-        expect(lines[7]).toBe('   ```python')
-      })
+    it.each([
+      [
+        '155: ordered list',
+        '1. Check this:\n```bash\necho hello\n```\n2. Next step',
+        '1. Check this:\n   ```bash\n   echo hello\n   ```\n2. Next step',
+      ],
+      [
+        '171: wider marker',
+        '1.  Check this:\n```bash\ngrep microcode /proc/cpuinfo | sort | uniq\n```',
+        '1.  Check this:\n    ```bash\n    grep microcode /proc/cpuinfo | sort | uniq\n    ```',
+      ],
+      [
+        '186: double-digit marker',
+        '10. Step ten:\n```\ncode here\n```',
+        '10. Step ten:\n    ```\n    code here\n    ```',
+      ],
+      [
+        '193: correctly indented block',
+        '1. Check this:\n   ```bash\n   echo hello\n   ```',
+        '1. Check this:\n   ```bash\n   echo hello\n   ```',
+      ],
+      [
+        '205: dash marker',
+        '- Step one:\n```python\nprint("hi")\n```',
+        '- Step one:\n  ```python\n  print("hi")\n  ```',
+      ],
+      [
+        '216: asterisk marker',
+        '* Step one:\n```\ncode\n```',
+        '* Step one:\n  ```\n  code\n  ```',
+      ],
+      [
+        '222: plus marker',
+        '+ Step one:\n```\ncode\n```',
+        '+ Step one:\n  ```\n  code\n  ```',
+      ],
+      [
+        '230: multiple blocks in one item',
+        '1. Do this:\n```bash\nfirst command\n```\n   Then run:\n```bash\nsecond command\n```',
+        '1. Do this:\n   ```bash\n   first command\n   ```\n   Then run:\n   ```bash\n   second command\n   ```',
+      ],
+      [
+        '251: different list item widths',
+        '1. First:\n```bash\ncmd1\n```\n10. Second:\n```bash\ncmd2\n```',
+        '1. First:\n   ```bash\n   cmd1\n   ```\n10. Second:\n    ```bash\n    cmd2\n    ```',
+      ],
+      [
+        '270: continuation after closed fence',
+        '1. Check:\n```bash\nsome command\n```\n   Or do something else.',
+        '1. Check:\n   ```bash\n   some command\n   ```\n   Or do something else.',
+      ],
+      [
+        '291: tilde fence',
+        '1. Check:\n~~~bash\necho hi\n~~~',
+        '1. Check:\n   ~~~bash\n   echo hi\n   ~~~',
+      ],
+      [
+        '302: tilde does not close backticks',
+        '1. Example:\n```\nline with ~~~\n~~~\nstill in block\n```',
+        '1. Example:\n   ```\n   line with ~~~\n   ~~~\n   still in block\n   ```',
+      ],
+      [
+        '320: backticks do not close tildes',
+        '1. Example:\n~~~\nline with ```\n```\nstill in block\n~~~',
+        '1. Example:\n   ~~~\n   line with ```\n   ```\n   still in block\n   ~~~',
+      ],
+      [
+        '338: shorter fence is content',
+        '1. Example:\n`````python\ncode\n```\nstill in block\n`````',
+        '1. Example:\n   `````python\n   code\n   ```\n   still in block\n   `````',
+      ],
+      [
+        '356: longer fence closes before prose',
+        '1. Example:\n```python\ncode\n`````\nOutside',
+        '1. Example:\n   ```python\n   code\n   `````\nOutside',
+      ],
+      [
+        '366: invalid backtick info',
+        '1. Example:\n``` foo `bar`\nthis is not code\n```',
+        '1. Example:\n``` foo `bar`\nthis is not code\n```',
+      ],
+      [
+        '378: tilde info may contain backticks',
+        '1. Example:\n~~~ foo `bar`\nthis is code\n~~~',
+        '1. Example:\n   ~~~ foo `bar`\n   this is code\n   ~~~',
+      ],
+      [
+        '395: code outside list',
+        'Some text:\n```bash\necho hello\n```',
+        'Some text:\n```bash\necho hello\n```',
+      ],
+      [
+        '400: standalone code',
+        '```python\nprint("hi")\n```',
+        '```python\nprint("hi")\n```',
+      ],
+      [
+        '405: list-like top-level code',
+        '```markdown\n1. Item\n```bash\necho hello\n```',
+        '```markdown\n1. Item\n```bash\necho hello\n```',
+      ],
+      [
+        '418: list-like correctly indented code',
+        '1. Example:\n   ```markdown\n   1. list inside code\n   ```bash\n   echo hello\n   ```',
+        '1. Example:\n   ```markdown\n   1. list inside code\n   ```bash\n   echo hello\n   ```',
+      ],
+      [
+        '432: indented false closer',
+        '1. Example:\n```\n    ```\nstill in block\n```',
+        '1. Example:\n   ```\n       ```\n   still in block\n   ```',
+      ],
+      [
+        '449: nested close permits next block repair',
+        '  1. Inner item:\n     ```python\n     code here\n     ```\n  2. Next item:\n```python\nnext\n```',
+        '  1. Inner item:\n     ```python\n     code here\n     ```\n  2. Next item:\n     ```python\n     next\n     ```',
+      ],
+      [
+        '463: empty block',
+        '1. Empty block:\n```\n```',
+        '1. Empty block:\n   ```\n   ```',
+      ],
+      [
+        '473: preserve code indentation',
+        '1. Python example:\n```python\ndef foo():\n    return 42\n```',
+        '1. Python example:\n   ```python\n   def foo():\n       return 42\n   ```',
+      ],
+      [
+        '490: partial indentation',
+        '1. Check:\n ```bash\n echo hello\n ```',
+        '1. Check:\n   ```bash\n   echo hello\n   ```',
+      ],
+      [
+        '504: exit list without blank-line masking',
+        '1. In list:\n```bash\ncmd1\n```\nNot in list anymore.\n```bash\nstandalone code\n```',
+        '1. In list:\n   ```bash\n   cmd1\n   ```\nNot in list anymore.\n```bash\nstandalone code\n```',
+      ],
+      [
+        '526: blank before fence',
+        '1. Item\n\n```bash\necho hello\n```',
+        '1. Item\n\n```bash\necho hello\n```',
+      ],
+      [
+        '531: new item after blank',
+        '1. First item\n\n2. Second item:\n```bash\necho hello\n```',
+        '1. First item\n\n2. Second item:\n   ```bash\n   echo hello\n   ```',
+      ],
+      [
+        '549: microcode regression',
+        '1.  **Check the running version:**\n```bash\ngrep microcode /proc/cpuinfo | sort | uniq\n```\n2.  **Check the version available in the installed package:**\n    You can use `iucode_tool` to list the microcode revisions contained in the package files:\n```bash\nsudo apt install iucode-tool\niucode_tool -l /lib/firmware/intel-ucode/* | grep -E "signature|revision"\n```\n    Or manually inspect the binary for your specific CPU signature (e.g., `06-55-04`).',
+        '1.  **Check the running version:**\n    ```bash\n    grep microcode /proc/cpuinfo | sort | uniq\n    ```\n2.  **Check the version available in the installed package:**\n    You can use `iucode_tool` to list the microcode revisions contained in the package files:\n    ```bash\n    sudo apt install iucode-tool\n    iucode_tool -l /lib/firmware/intel-ucode/* | grep -E "signature|revision"\n    ```\n    Or manually inspect the binary for your specific CPU signature (e.g., `06-55-04`).',
+      ],
+      [
+        '583: mixed code and plain items',
+        '1. First item with no code.\n2. Second item has code:\n```js\nconsole.log("hi")\n```\n3. Third item is plain text.\n4. Fourth item also has code:\n```python\nprint("hello")\n```',
+        '1. First item with no code.\n2. Second item has code:\n   ```js\n   console.log("hi")\n   ```\n3. Third item is plain text.\n4. Fourth item also has code:\n   ```python\n   print("hello")\n   ```',
+      ],
+    ])('%s', (_name, input, expected) => {
+      expect(indentCodeBlocksInLists(input)).toBe(expected)
     })
   })
 })

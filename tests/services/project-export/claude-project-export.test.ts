@@ -92,6 +92,17 @@ describe('buildClaudeProjectExport', () => {
     const result = await buildClaudeProjectExport(testStorage)
 
     expect(JSON.parse(result.json)).toHaveLength(2)
+    expect(testStorage.listProjects).toHaveBeenNthCalledWith(1, {
+      limit: 100,
+      continuationToken: undefined,
+    })
+    expect(testStorage.listProjects).toHaveBeenNthCalledWith(2, {
+      limit: 100,
+      continuationToken: 'next',
+    })
+    expect(
+      JSON.parse(result.json).map(({ uuid }: { uuid: string }) => uuid),
+    ).toEqual(['project-1', 'project-2'])
     expect(calls).toEqual([
       'list-1',
       'list-2',
@@ -230,7 +241,12 @@ describe('buildClaudeProjectExport', () => {
       listDocuments: vi.fn().mockImplementation(async (id: string) => {
         if (id === 'docs-unavailable') throw new Error('unavailable')
         return {
-          documents: ['good', 'bad'].map((documentId) => ({
+          documents: [
+            'good',
+            'bad',
+            'missing-document',
+            'encrypted-document',
+          ].map((documentId) => ({
             ...listItem(documentId),
             projectId: id,
             sizeBytes: 1,
@@ -239,6 +255,12 @@ describe('buildClaudeProjectExport', () => {
       }),
       getDocument: vi.fn().mockImplementation(async (_projectId, id) => {
         if (id === 'bad') throw new Error('unavailable')
+        if (id === 'missing-document') return null
+        if (
+          _projectId !== 'partial' ||
+          !['good', 'encrypted-document'].includes(id)
+        )
+          throw new Error('Unexpected document read')
         return {
           id,
           projectId: 'partial',
@@ -249,6 +271,7 @@ describe('buildClaudeProjectExport', () => {
           createdAt,
           updatedAt,
           content: 'text',
+          decryptionFailed: id === 'encrypted-document',
         }
       }),
     })
@@ -259,11 +282,39 @@ describe('buildClaudeProjectExport', () => {
       exportedProjects: 2,
       skippedProjects: 1,
       exportedDocuments: 1,
-      skippedDocuments: 1,
+      skippedDocuments: 3,
       failedDocumentListings: 1,
     })
-    expect(result.warnings).toHaveLength(3)
-    expect(JSON.parse(result.json)).toHaveLength(2)
+    expect([...result.warnings].sort()).toEqual(
+      [
+        'Skipped project missing.',
+        'Documents for project docs-unavailable could not be listed, so their skipped count is unknown.',
+        'Skipped document bad in project partial.',
+        'Skipped document missing-document in project partial.',
+        'Skipped document encrypted-document in project partial.',
+      ].sort(),
+    )
+    expect(
+      JSON.parse(result.json).map(
+        ({ uuid, docs }: { uuid: string; docs?: unknown[] }) => ({
+          uuid,
+          docs,
+        }),
+      ),
+    ).toEqual([
+      { uuid: 'docs-unavailable', docs: undefined },
+      {
+        uuid: 'partial',
+        docs: [
+          {
+            uuid: 'good',
+            filename: 'good.txt',
+            content: 'text',
+            created_at: createdAt,
+          },
+        ],
+      },
+    ])
   })
 
   it('reports unknown skipped documents when a document listing fails', () => {
@@ -380,27 +431,47 @@ describe('buildClaudeProjectExport', () => {
       projectId: 'project-1',
       sizeBytes: 100,
     }))
-    const getDocument = vi.fn().mockImplementation(async (_projectId, id) => ({
-      id,
-      projectId: 'project-1',
-      filename: `${id}.txt`,
-      contentType: 'text/plain',
-      sizeBytes: 100,
-      syncVersion: 1,
-      createdAt,
-      updatedAt,
-      content: 'x'.repeat(100),
-    }))
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const getDocument = vi.fn().mockImplementation(async (_projectId, id) => {
+      await gate
+      return {
+        id,
+        projectId: 'project-1',
+        filename: `${id}.txt`,
+        contentType: 'text/plain',
+        sizeBytes: 100,
+        syncVersion: 1,
+        createdAt,
+        updatedAt,
+        content: 'x'.repeat(100),
+      }
+    })
 
-    await expect(
-      buildClaudeProjectExport(
-        storage({
-          listDocuments: vi.fn().mockResolvedValue({ documents }),
-          getDocument,
-        }),
-        { maxEncodedBytes: 300 },
-      ),
-    ).rejects.toBeInstanceOf(ClaudeProjectExportSizeError)
-    expect(getDocument.mock.calls.length).toBeLessThan(documents.length)
+    const exporting = buildClaudeProjectExport(
+      storage({
+        listDocuments: vi.fn().mockResolvedValue({ documents }),
+        getDocument,
+      }),
+      { maxEncodedBytes: 300 },
+    )
+    const rejected = expect(exporting).rejects.toBeInstanceOf(
+      ClaudeProjectExportSizeError,
+    )
+    try {
+      await vi.waitFor(() => expect(getDocument).toHaveBeenCalledTimes(4))
+    } finally {
+      release()
+    }
+    await rejected
+    await Promise.allSettled(getDocument.mock.results.map(({ value }) => value))
+    expect(getDocument.mock.calls.map(([, id]) => id)).toEqual([
+      'document-0',
+      'document-1',
+      'document-2',
+      'document-3',
+    ])
   })
 })

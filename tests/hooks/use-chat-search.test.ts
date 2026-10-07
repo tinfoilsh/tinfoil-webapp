@@ -142,34 +142,85 @@ describe('useChatSearch', () => {
     expect(result.current.failed).toBe(true)
   })
 
-  it('marks the search failed when the rebuild it waited on does not complete', async () => {
-    searchSyncedChats.mockResolvedValueOnce(
-      indexingOutcome(Promise.resolve('failed')),
-    )
-    const { result } = renderHook(() => useChatSearch('duck', true))
-    await flushDebounce()
+  it.each(['failed', 'skipped'] as const)(
+    'marks the search failed without re-querying when the rebuild is %s',
+    async (settled) => {
+      searchSyncedChats.mockResolvedValueOnce(
+        indexingOutcome(Promise.resolve(settled)),
+      )
+      const { result } = renderHook(() => useChatSearch('duck', true))
+      await flushDebounce()
 
-    expect(result.current.isIndexing).toBe(false)
-    expect(result.current.failed).toBe(true)
-  })
+      expect(result.current.isIndexing).toBe(false)
+      expect(result.current.failed).toBe(true)
+      await flushDebounce()
+      expect(searchSyncedChats).toHaveBeenCalledTimes(1)
+    },
+  )
 
-  it('re-queries after a completed rebuild and clears the failed flag on success', async () => {
+  it('re-queries after a completed rebuild and publishes the refreshed hits', async () => {
     searchSyncedChats
       .mockResolvedValueOnce(indexingOutcome(Promise.resolve('completed')))
       .mockResolvedValueOnce(readyOutcome())
+    const rebuiltHits = [
+      { id: 'rebuilt', title: 'Rebuilt result', messageCount: 2 },
+    ]
+    resolveSearchResultChats
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(rebuiltHits)
     const { result } = renderHook(() => useChatSearch('duck', true))
     await flushDebounce()
     await flushDebounce()
 
     expect(searchSyncedChats).toHaveBeenCalledTimes(2)
+    expect(searchSyncedChats).toHaveBeenNthCalledWith(1, 'duck', 20)
+    expect(searchSyncedChats).toHaveBeenNthCalledWith(2, 'duck', 20)
+    expect(result.current.results).toEqual(rebuiltHits)
+    expect(result.current.isSearching).toBe(false)
     expect(result.current.isIndexing).toBe(false)
     expect(result.current.failed).toBe(false)
+  })
+
+  it('ignores a completed rebuild after the search term changes', async () => {
+    let finishRebuild!: (outcome: 'completed') => void
+    const rebuild = new Promise<'completed'>((resolve) => {
+      finishRebuild = resolve
+    })
+    const currentHits = [
+      { id: 'current', title: 'Current result', messageCount: 2 },
+    ]
+    searchSyncedChats
+      .mockResolvedValueOnce(indexingOutcome(rebuild))
+      .mockResolvedValue(readyOutcome())
+    resolveSearchResultChats
+      .mockResolvedValueOnce([])
+      .mockResolvedValue(currentHits)
+    const { result, rerender } = renderHook(
+      ({ term }) => useChatSearch(term, true),
+      { initialProps: { term: 'old' } },
+    )
+    await flushDebounce()
+    expect(result.current.isIndexing).toBe(true)
+    rerender({ term: 'current' })
+    await flushDebounce()
+    expect(result.current.results).toEqual(currentHits)
+    await act(async () => finishRebuild('completed'))
+    await flushDebounce()
+    expect(searchSyncedChats).toHaveBeenCalledTimes(2)
+    expect(searchSyncedChats).toHaveBeenLastCalledWith('current', 20)
+    expect(result.current.results).toEqual(currentHits)
+    expect(result.current.isSearching).toBe(false)
+    expect(result.current.isIndexing).toBe(false)
   })
 
   it('clears a previous failure when the term changes and the new run succeeds', async () => {
     searchSyncedChats
       .mockRejectedValueOnce(new Error('enclave timeout'))
       .mockResolvedValueOnce(readyOutcome())
+    const recoveredHits = [
+      { id: 'recovered', title: 'Recovered result', messageCount: 2 },
+    ]
+    resolveSearchResultChats.mockResolvedValueOnce(recoveredHits)
     const { result, rerender } = renderHook(
       ({ term }) => useChatSearch(term, true),
       { initialProps: { term: 'duc' } },
@@ -180,5 +231,8 @@ describe('useChatSearch', () => {
     rerender({ term: 'duck' })
     await flushDebounce()
     expect(result.current.failed).toBe(false)
+    expect(searchSyncedChats).toHaveBeenLastCalledWith('duck', 20)
+    expect(result.current.results).toEqual(recoveredHits)
+    expect(result.current.isSearching).toBe(false)
   })
 })

@@ -68,6 +68,7 @@ function stubRecording(deferStop = false) {
   } as unknown as Awaited<ReturnType<typeof getTinfoilClient>>)
   return {
     transcribe,
+    tracks,
     finishStop: () => {
       pendingStop?.()
       pendingStop = null
@@ -96,7 +97,9 @@ function stubWebAudio() {
   const createMediaStreamSource = vi.fn(() => ({ connect, disconnect }))
   const analyser = {
     fftSize: 2048,
-    getByteTimeDomainData: vi.fn((buffer: Uint8Array) => buffer.fill(128)),
+    getByteTimeDomainData: vi.fn((buffer: Uint8Array) => {
+      buffer.fill(128)
+    }),
   }
   class FakeAudioContext {
     state = 'running'
@@ -122,16 +125,20 @@ function stubCanvasContext(width = 120, height = 28) {
     lineWidth: 0,
     lineCap: '',
   }
-  HTMLCanvasElement.prototype.getContext = vi.fn(
-    () => ctx,
-  ) as unknown as HTMLCanvasElement['getContext']
-  HTMLCanvasElement.prototype.getBoundingClientRect = vi.fn(
-    () => ({ width, height }) as DOMRect,
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+    ctx as unknown as CanvasRenderingContext2D,
   )
+  vi.spyOn(
+    HTMLCanvasElement.prototype,
+    'getBoundingClientRect',
+  ).mockReturnValue(new DOMRect(0, 0, width, height))
   return ctx
 }
 
 beforeEach(() => {
+  vi.mocked(getTinfoilClient)
+    .mockReset()
+    .mockRejectedValue(new Error('Unexpected transcription client request'))
   stubCanvasContext()
 })
 
@@ -184,6 +191,7 @@ describe('RecordingWaveform', () => {
       (order) => order > lastBeginPath,
     ).length
     expect(barsInLastFrame).toBe(3)
+    expect(audio.analyser.getByteTimeDomainData).toHaveBeenCalledTimes(3)
     const [, top] = ctx.moveTo.mock.calls.at(-1) as [number, number]
     const [, bottom] = ctx.lineTo.mock.calls.at(-1) as [number, number]
     // Full-scale input should produce a bar taller than the silence floor.
@@ -191,6 +199,41 @@ describe('RecordingWaveform', () => {
       CONSTANTS.RECORDING_WAVEFORM_MIN_BAR_HEIGHT_PX,
     )
   })
+
+  it.each([
+    { samples: [128], top: 13, bottom: 15 },
+    { samples: [136], top: 10.5625, bottom: 17.4375 },
+    { samples: [120, 136], top: 10.5625, bottom: 17.4375 },
+    { samples: [255], top: 0, bottom: 28 },
+  ])(
+    'draws the measured amplitude for PCM samples $samples',
+    ({ samples, top, bottom }) => {
+      const FRAME_ID = 1
+      let paint!: FrameRequestCallback
+      vi.spyOn(performance, 'now').mockReturnValue(0)
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation(
+        (callback) => {
+          paint = callback
+          return FRAME_ID
+        },
+      )
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+      const ctx = stubCanvasContext()
+      const audio = stubWebAudio()
+      audio.analyser.getByteTimeDomainData.mockImplementation((buffer) => {
+        for (let index = 0; index < buffer.length; index++) {
+          buffer[index] = samples[index % samples.length]
+        }
+      })
+      const stream = { getTracks: () => [] } as unknown as MediaStream
+      render(<RecordingWaveform stream={stream} />)
+      act(() => paint(CONSTANTS.RECORDING_WAVEFORM_SAMPLE_INTERVAL_MS))
+      expect(audio.analyser.getByteTimeDomainData).toHaveBeenCalledOnce()
+      expect(ctx.moveTo).toHaveBeenCalledExactlyOnceWith(118, top)
+      expect(ctx.lineTo).toHaveBeenCalledExactlyOnceWith(118, bottom)
+      expect(ctx.stroke).toHaveBeenCalledOnce()
+    },
+  )
 
   it('keeps rendering when the stream has no audio track', () => {
     const audio = stubWebAudio()
@@ -228,7 +271,7 @@ describe('ChatInput recording UI', () => {
   it.each([false, true])(
     'keeps an expanded draft above repeated recordings (compact: %s)',
     async (hasMessages) => {
-      const { transcribe, finishStop } = stubRecording(true)
+      const { transcribe, finishStop, tracks } = stubRecording(true)
       const expandedHeight = 200
       vi.spyOn(
         HTMLTextAreaElement.prototype,
@@ -321,6 +364,7 @@ describe('ChatInput recording UI', () => {
           finishStop()
         })
         expect(transcribe).toHaveBeenCalledTimes(recording + 1)
+        expect(tracks[0].stop).toHaveBeenCalledTimes(recording + 1)
         expect(textarea).toHaveValue(expectedDraft)
         expect(textarea).toHaveAttribute('readonly')
         expect(textarea).toHaveStyle({ height: `${expandedHeight}px` })

@@ -7,7 +7,7 @@ import {
   refreshRateLimit,
   resetTinfoilClient,
 } from '@/services/inference/tinfoil-client'
-import { act, render, screen } from '@testing-library/react'
+import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/config', () => ({
@@ -67,7 +67,9 @@ describe('formatResetCountdown', () => {
 })
 
 describe('formatTokenCount', () => {
-  it('compacts large counts', () => {
+  it('clamps negative counts and preserves compact rounding', () => {
+    expect(formatTokenCount(-1)).toBe('0')
+    expect(formatTokenCount(-750_000)).toBe('0')
     expect(formatTokenCount(750_000)).toBe('750K')
     expect(formatTokenCount(2_000_000)).toBe('2M')
     expect(formatTokenCount(1_250_000)).toBe('1.3M')
@@ -85,6 +87,8 @@ describe('RateLimitUsage', () => {
   })
 
   afterEach(() => {
+    cleanup()
+    resetTinfoilClient()
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })

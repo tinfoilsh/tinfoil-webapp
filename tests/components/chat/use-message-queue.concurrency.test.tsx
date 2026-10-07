@@ -142,34 +142,6 @@ describe('useMessageQueue concurrency', () => {
     resolveA?.()
   })
 
-  it('dispatches the first message of a blank chat (empty string id)', async () => {
-    const handleQuery = vi.fn((_text: string) => Promise.resolve())
-
-    const { result } = renderHook(() =>
-      useMessageQueue({
-        chatId: '',
-        loadingState: 'idle' as LoadingState,
-        handleQuery,
-        isRateLimited: () => false,
-      }),
-    )
-
-    act(() => {
-      result.current.submit({ text: 'hello' })
-    })
-    await flushMicrotasks()
-
-    expect(handleQuery).toHaveBeenCalledTimes(1)
-    expect(handleQuery).toHaveBeenLastCalledWith(
-      'hello',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      expect.any(Function),
-    )
-  })
-
   it('keeps local and cloud blank queues isolated while dispatch is blocked', async () => {
     const handleQuery = vi.fn((_text: string) => Promise.resolve())
     let blocked = true
@@ -257,6 +229,11 @@ describe('useMessageQueue concurrency', () => {
     rerender({ queueId: 'permanent-chat', persistQueue: true })
     expect(result.current.queuedMessages).toEqual([])
     expect(window.sessionStorage.length).toBe(0)
+
+    rerender({ queueId: 'temporary-chat', persistQueue: false })
+    expect(result.current.queuedMessages).toEqual([])
+    expect(window.sessionStorage.length).toBe(0)
+    expect(handleQuery).not.toHaveBeenCalled()
   })
 
   it('requeues the complete item once when dispatch never starts', async () => {
@@ -427,6 +404,15 @@ describe('useMessageQueue concurrency', () => {
     })
     await flushMicrotasks()
     expect(handleQuery).toHaveBeenCalledTimes(1)
+
+    expect(handleQuery).toHaveBeenLastCalledWith(
+      'A',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      expect.any(Function),
+    )
 
     // The blank chat converts to a real id and keeps streaming.
     rerender({ chatId: 'real-1', loadingState: 'loading' as LoadingState })

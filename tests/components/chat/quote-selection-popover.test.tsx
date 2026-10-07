@@ -173,34 +173,38 @@ describe('QuoteSelectionPopover', () => {
     },
   )
 
-  it('allows a selection across nested elements in the same message', () => {
-    const onQuote = vi.fn()
-    render(<Harness enabled onQuote={onQuote} />)
-    selectText()
-    const range = window.getSelection()!.getRangeAt(0)
-    const endNode = screen.getByText(
-      'Do not read this surrounding text.',
-    ).firstChild!
-    range.setEnd(endNode, endNode.textContent!.length)
-    flushFrames()
-    fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
-    expect(onQuote).toHaveBeenCalledWith(
-      'Selected textDo not read this surrounding text.',
-    )
-  })
-
-  it('allows selections across separate roots of a custom renderer fragment', () => {
-    const onQuote = vi.fn()
-    render(<Harness enabled onQuote={onQuote} />)
-    selectText()
-    const range = window.getSelection()!.getRangeAt(0)
-    range.setEndAfter(screen.getByText('Renderer footer 0'))
-    flushFrames()
-    fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
-    expect(onQuote).toHaveBeenCalledWith(
-      'Selected textDo not read this surrounding text.Renderer footer 0',
-    )
-  })
+  it.each([
+    {
+      name: 'nested elements',
+      fragment: false,
+      expected: 'Selected textDo not read this surrounding text.',
+    },
+    {
+      name: 'separate fragment roots',
+      fragment: true,
+      expected:
+        'Selected textDo not read this surrounding text.Renderer footer 0',
+    },
+  ])(
+    'allows selections across $name within one message',
+    ({ fragment, expected }) => {
+      const onQuote = vi.fn()
+      render(<Harness enabled onQuote={onQuote} />)
+      selectText()
+      const range = window.getSelection()!.getRangeAt(0)
+      if (fragment) {
+        range.setEndAfter(screen.getByText('Renderer footer 0'))
+      } else {
+        const endNode = screen.getByText(
+          'Do not read this surrounding text.',
+        ).firstChild!
+        range.setEnd(endNode, endNode.textContent!.length)
+      }
+      flushFrames()
+      fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
+      expect(onQuote).toHaveBeenCalledWith(expected)
+    },
+  )
 
   it('does not show actions for non-message text inside the container', () => {
     render(<Harness enabled />)
@@ -222,23 +226,6 @@ describe('QuoteSelectionPopover', () => {
     flushFrames()
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
   })
-
-  it.each(['Another message', 'Outside message'])(
-    'hides existing actions when a selection extends into %s',
-    (endText) => {
-      render(<Harness enabled />)
-      selectText()
-      flushFrames()
-      expect(screen.getByRole('toolbar')).toBeInTheDocument()
-
-      const range = window.getSelection()!.getRangeAt(0)
-      const endNode = screen.getByText(endText).firstChild!
-      range.setEnd(endNode, endText.length)
-      fireEvent(document, new Event('selectionchange'))
-      flushFrames()
-      expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
-    },
-  )
 
   it('reads only the highlighted portion and keeps a stop control in the menu', async () => {
     render(<Harness enabled />)

@@ -160,9 +160,7 @@ describe('ProjectStorageService documents', () => {
 
     const documents = await storage.getDocuments('project-1', ['doc-1'])
 
-    expect(documents.get('doc-1')?.sizeBytes).toBe(
-      new TextEncoder().encode(content).length,
-    )
+    expect(documents.get('doc-1')?.sizeBytes).toBe(8)
   })
 
   it('strictly distinguishes malformed document data from runtime failures', async () => {

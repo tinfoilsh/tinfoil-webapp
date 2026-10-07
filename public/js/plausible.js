@@ -60,14 +60,15 @@
     return u ? s + (Date.now() - u) : s
   }
   function x() {
+    var path = location.pathname.replace(/\/+$/, '') || '/'
     return (
-      '/' === location.pathname ||
-      '/newchat' === location.pathname ||
-      '/share' === location.pathname ||
-      0 === location.pathname.indexOf('/share/') ||
-      '/chat' === location.pathname ||
-      0 === location.pathname.indexOf('/chat/') ||
-      /^\/project\/[^/]+\/chat(?:\/|$)/.test(location.pathname)
+      '/' === path ||
+      '/newchat' === path ||
+      '/share' === path ||
+      0 === path.indexOf('/share/') ||
+      '/chat' === path ||
+      0 === path.indexOf('/chat/') ||
+      /^\/project\/[^/]+\/chat(?:\/|$)/.test(path)
     )
   }
   function f() {

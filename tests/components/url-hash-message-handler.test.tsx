@@ -74,12 +74,18 @@ describe('UrlHashMessageHandler', () => {
     expect(routerReplace).not.toHaveBeenCalled()
 
     rerender(<UrlHashMessageHandler onSubmit={onSubmit} isReady />)
-    expect(onSubmit).toHaveBeenCalledOnce()
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ text: 'later' })
+    rerender(<UrlHashMessageHandler onSubmit={onSubmit} isReady />)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+    expect(routerReplace).toHaveBeenCalledTimes(1)
 
     routerReplace.mockClear()
     setLocation('/settings#settings/privacy')
-    render(<UrlHashMessageHandler onSubmit={vi.fn()} isReady />)
+    const withoutMarker = vi.fn()
+    render(<UrlHashMessageHandler onSubmit={withoutMarker} isReady />)
+    expect(withoutMarker).not.toHaveBeenCalled()
     expect(routerReplace).not.toHaveBeenCalled()
+    expect(window.location.hash).toBe('#settings/privacy')
   })
 
   it.each(['fragment', 'query'])(

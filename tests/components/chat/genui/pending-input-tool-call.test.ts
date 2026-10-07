@@ -3,29 +3,26 @@ import type { Message } from '@/components/chat/types'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 const { registryMock } = vi.hoisted(() => ({
-  registryMock: () => {
-    const input: Partial<GenUIWidget> = {
+  registryMock: async () => {
+    const { z } = await import('zod')
+    const MIN_INPUT_OPTIONS = 2
+    const schema = z
+      .object({
+        question: z.string(),
+        options: z
+          .array(z.object({ label: z.string() }).strict())
+          .min(MIN_INPUT_OPTIONS),
+      })
+      .strict()
+    const input: GenUIWidget = {
       name: 'ask_user_input',
+      description: 'Synthetic input widget for selector contracts',
       surface: 'input',
       renderInputArea: () => null,
-      schema: {
-        safeParse: (value: unknown) => {
-          const valid =
-            !!value &&
-            typeof value === 'object' &&
-            !Array.isArray(value) &&
-            'question' in value &&
-            typeof value.question === 'string' &&
-            'options' in value &&
-            Array.isArray(value.options) &&
-            value.options.length >= 2
-          return valid
-            ? { success: true, data: value }
-            : { success: false, error: {} }
-        },
-      } as any,
+      schema,
     }
-    const inline: Partial<GenUIWidget> = {
+    const inline: GenUIWidget = {
+      ...input,
       name: 'render_callout',
       surface: 'inline',
     }
@@ -41,10 +38,13 @@ const { registryMock } = vi.hoisted(() => ({
 // The selector consults the registry to identify input-surface widgets;
 // stub it before importing anything that depends on it.
 vi.mock('@/components/chat/genui/registry', registryMock)
-vi.mock('@/components/chat/genui/registry.ts', registryMock)
-vi.mock('src/components/chat/genui/registry.ts', registryMock)
 
 let selectPendingInputToolCall: typeof import('@/components/chat/genui/pending-input-tool-call').selectPendingInputToolCall
+
+const validInputArguments = JSON.stringify({
+  question: 'Pick one',
+  options: [{ label: 'A' }, { label: 'B' }],
+})
 
 function assistantMessage(
   blocks: Array<{
@@ -56,12 +56,13 @@ function assistantMessage(
     resolvedAt?: number
     content?: string
   }>,
+  turnId = 'assistant-turn',
 ): Message {
   return {
-    id: 'm',
+    turnId,
     role: 'assistant',
     content: '',
-    timestamp: Date.now(),
+    timestamp: new Date(0),
     timeline: blocks.map((b) => {
       if (b.type === 'tool_call') {
         return {
@@ -84,9 +85,8 @@ function assistantMessage(
 
 describe('selectPendingInputToolCall', () => {
   beforeAll(async () => {
-    ;({ selectPendingInputToolCall } = await import(
-      '@/components/chat/genui/pending-input-tool-call'
-    ))
+    ;({ selectPendingInputToolCall } =
+      await import('@/components/chat/genui/pending-input-tool-call'))
   })
 
   it('returns null when there are no messages', () => {
@@ -101,7 +101,7 @@ describe('selectPendingInputToolCall', () => {
           id: 'b1',
           name: 'render_callout',
           toolCallId: 't1',
-          args: '{}',
+          args: validInputArguments,
         },
       ]),
     ]
@@ -122,6 +122,8 @@ describe('selectPendingInputToolCall', () => {
     ]
     const result = selectPendingInputToolCall(msgs)
     expect(result).toMatchObject({
+      messageIndex: 0,
+      blockId: 'b1',
       toolCallId: 't1',
       name: 'ask_user_input',
     })
@@ -146,7 +148,11 @@ describe('selectPendingInputToolCall', () => {
     expect(selectPendingInputToolCall(msgs)).toBeNull()
   })
 
-  it('returns null for schema-invalid input tool arguments', () => {
+  it.each([
+    '{"question":"Pick one"}',
+    '{"question":"Pick one","options":[{"label":"A"},{"label":7}]}',
+    '{"question":"Pick one","options":[{"label":"A"},{"label":"B"}],"unexpected":true}',
+  ])('returns null for schema-invalid input tool arguments: %s', (args) => {
     const msgs: Message[] = [
       assistantMessage([
         {
@@ -154,7 +160,7 @@ describe('selectPendingInputToolCall', () => {
           id: 'b1',
           name: 'ask_user_input',
           toolCallId: 't1',
-          args: '{"question":"Pick one"}',
+          args,
         },
       ]),
     ]
@@ -169,12 +175,17 @@ describe('selectPendingInputToolCall', () => {
           id: 'b1',
           name: 'ask_user_input',
           toolCallId: 't1',
-          args: '{}',
+          args: validInputArguments,
           resolvedAt: 1,
         },
       ]),
     ]
     expect(selectPendingInputToolCall(msgs)).toBeNull()
+    const block = msgs[0].timeline?.[0]
+    if (!block || block.type !== 'tool_call')
+      throw new Error('Missing tool fixture')
+    block.resolvedAt = undefined
+    expect(selectPendingInputToolCall(msgs)).toMatchObject({ toolCallId: 't1' })
   })
 
   it('only inspects the LAST assistant message', () => {
@@ -185,16 +196,19 @@ describe('selectPendingInputToolCall', () => {
           id: 'b1',
           name: 'ask_user_input',
           toolCallId: 'old',
-          args: '{}',
+          args: validInputArguments,
         },
       ]),
       {
-        id: 'u',
+        turnId: 'user-turn',
         role: 'user',
         content: 'hello',
-        timestamp: Date.now(),
+        timestamp: new Date(1),
       },
-      assistantMessage([{ type: 'content', id: 'c1', content: 'hi' }]),
+      assistantMessage(
+        [{ type: 'content', id: 'c1', content: 'hi' }],
+        'latest-turn',
+      ),
     ]
     expect(selectPendingInputToolCall(msgs)).toBeNull()
   })

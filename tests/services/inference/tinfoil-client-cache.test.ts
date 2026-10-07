@@ -173,10 +173,21 @@ describe('tinfoil-client session cache', () => {
     const currentRefresh = refreshRateLimit()
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
 
-    resolveStaleResponse(chatKeyResponse('stale-key', 1))
-    await staleRefresh
     resolveCurrentResponse(chatKeyResponse('current-key', 6))
     await currentRefresh
+    expect(getRateLimitInfo()?.remaining).toBe(6)
+    expect(await getSessionToken()).toBe('current-key')
+
+    const listener = vi.fn()
+    window.addEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+    try {
+      resolveStaleResponse(chatKeyResponse('stale-key', 1))
+      await staleRefresh
+      expect(listener).not.toHaveBeenCalled()
+      expect(await getSessionToken()).toBe('current-key')
+    } finally {
+      window.removeEventListener(RATE_LIMIT_UPDATED_EVENT, listener)
+    }
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(getRateLimitInfo()).toMatchObject({

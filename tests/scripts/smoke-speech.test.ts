@@ -60,7 +60,7 @@ describe('speech smoke diagnostics', () => {
   it('accepts whitespace before content-type parameters', async () => {
     createSpeech.mockImplementation(
       async () =>
-        new Response(new Uint8Array([0, 0]), {
+        new Response(new Uint8Array(48000), {
           headers: { 'Content-Type': 'audio/pcm ; charset=binary' },
         }),
     )
@@ -69,6 +69,35 @@ describe('speech smoke diagnostics', () => {
       expect(process.stdout.write).toHaveBeenCalledTimes(2),
     )
     expect(stderr).not.toHaveBeenCalled()
+    const reports = vi
+      .mocked(process.stdout.write)
+      .mock.calls.map(([value]) => JSON.parse(String(value)))
+    expect(
+      reports.map((report) => ({
+        concurrency: report.concurrency,
+        results: report.results.map(
+          (result: { chunks: number; audioSeconds: number }) => ({
+            chunks: result.chunks,
+            audioSeconds: result.audioSeconds,
+          }),
+        ),
+      })),
+    ).toEqual([
+      {
+        concurrency: 1,
+        results: [
+          { chunks: 1, audioSeconds: 1 },
+          { chunks: 1, audioSeconds: 1 },
+        ],
+      },
+      {
+        concurrency: 2,
+        results: [
+          { chunks: 1, audioSeconds: 1 },
+          { chunks: 1, audioSeconds: 1 },
+        ],
+      },
+    ])
   })
   it.each([
     [

@@ -86,10 +86,15 @@ describe('classifyEnclaveError', () => {
 
   it('maps attestation failures to TERMINAL/ATTESTATION_FAILED', () => {
     const result = classifyEnclaveError(
-      new AttestationError('enclave attestation verification failed'),
+      new AttestationError('localized opaque failure'),
     )
     expect(result.kind).toBe('TERMINAL')
     expect(result.code).toBe('ATTESTATION_FAILED')
+    const impostor = classifyEnclaveError(
+      new Error('enclave attestation verification failed'),
+    )
+    expect(impostor.kind).toBe('TERMINAL')
+    expect(impostor.code).toBeUndefined()
   })
 
   it('falls through to TERMINAL for unknown errors', () => {

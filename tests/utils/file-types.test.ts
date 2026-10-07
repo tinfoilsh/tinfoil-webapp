@@ -1,8 +1,4 @@
-import {
-  getDocumentFormat,
-  getFileIconType,
-  hasImageExtension,
-} from '@/utils/file-types'
+import { getFileIconType, hasImageExtension } from '@/utils/file-types'
 import { describe, expect, it } from 'vitest'
 
 describe('file-types', () => {
@@ -16,14 +12,11 @@ describe('file-types', () => {
       'old.bmp',
       'scan.tiff',
       'scan.tif',
+      'PHOTO.JPG',
+      'Photo.PNG',
+      'IMAGE.Jpeg',
     ])('should return true for %s', (filename) => {
       expect(hasImageExtension(filename)).toBe(true)
-    })
-
-    it('should be case insensitive', () => {
-      expect(hasImageExtension('PHOTO.JPG')).toBe(true)
-      expect(hasImageExtension('Photo.PNG')).toBe(true)
-      expect(hasImageExtension('IMAGE.Jpeg')).toBe(true)
     })
 
     it.each([
@@ -101,31 +94,6 @@ describe('file-types', () => {
     it('should return "file" for unknown extensions', () => {
       expect(getFileIconType('unknown.xyz')).toBe('file')
       expect(getFileIconType('noextension')).toBe('file')
-    })
-  })
-
-  describe('getDocumentFormat', () => {
-    it.each([
-      ['document.pdf', 'pdf'],
-      ['file.docx', 'docx'],
-      ['slides.pptx', 'pptx'],
-      ['page.html', 'html'],
-      ['page.htm', 'html'],
-      ['readme.md', 'md'],
-      ['data.csv', 'csv'],
-      ['sheet.xlsx', 'xlsx'],
-      ['notes.txt', 'asciidoc'],
-    ])('should return %s for %s', (filename, expected) => {
-      expect(getDocumentFormat(filename)).toBe(expected)
-    })
-
-    it('should return "image" for image files', () => {
-      expect(getDocumentFormat('photo.jpg')).toBe('image')
-      expect(getDocumentFormat('image.png')).toBe('image')
-    })
-
-    it('should default to "pdf" for unknown formats', () => {
-      expect(getDocumentFormat('unknown.xyz')).toBe('pdf')
     })
   })
 })

@@ -2,7 +2,6 @@ import { createContentPreprocessor } from '@/components/chat/hooks/streaming/con
 import { createEventNormalizer } from '@/components/chat/hooks/streaming/event-normalizer'
 import { MessageAssembler } from '@/components/chat/hooks/streaming/message-assembler'
 import { TimelineBuilder } from '@/components/chat/hooks/streaming/timeline-builder'
-import type { TimelineToolCallBlock } from '@/components/chat/types'
 import { describe, expect, it } from 'vitest'
 
 function buildChunk(
@@ -139,30 +138,29 @@ describe('TimelineBuilder tool_call operations', () => {
     const tb = new TimelineBuilder()
     tb.startToolCall('call_1', 'render_callout')
     tb.appendToolCallArguments('call_1', '{"ti')
+    tb.startToolCall('call_2', 'render_chart')
+    tb.appendToolCallArguments('call_2', '{"data":')
     tb.appendToolCallArguments('call_1', 'tle":"X"}')
+    tb.appendToolCallArguments('call_2', '[]}')
+    tb.appendToolCallArguments('missing', 'orphan')
 
     const snapshot = tb.snapshot()
-    expect(snapshot).toHaveLength(1)
-    const block = snapshot[0] as TimelineToolCallBlock
-    expect(block.type).toBe('tool_call')
-    expect(block.arguments).toBe('{"title":"X"}')
-    expect(block.name).toBe('render_callout')
-  })
-
-  it('resolveToolCall stamps the block with the resolution', () => {
-    const tb = new TimelineBuilder()
-    tb.startToolCall('call_1', 'ask_user_input')
-    tb.appendToolCallArguments('call_1', '{}')
-    tb.resolveToolCall('call_1', {
-      text: 'Option A',
-      data: { value: 'a' },
-      resolvedAt: 1234,
-    })
-
-    const block = tb.snapshot()[0] as TimelineToolCallBlock
-    expect(block.resolvedAt).toBe(1234)
-    expect(block.resolution?.text).toBe('Option A')
-    expect(block.resolution?.data).toEqual({ value: 'a' })
+    expect(snapshot).toEqual([
+      {
+        type: 'tool_call',
+        id: 'tool-call-0',
+        toolCallId: 'call_1',
+        name: 'render_callout',
+        arguments: '{"title":"X"}',
+      },
+      {
+        type: 'tool_call',
+        id: 'tool-call-1',
+        toolCallId: 'call_2',
+        name: 'render_chart',
+        arguments: '{"data":[]}',
+      },
+    ])
   })
 
   it('tool_call arrival closes an open thinking block', () => {
@@ -201,19 +199,9 @@ describe('MessageAssembler tool_call derivation', () => {
       },
     ])
 
-    expect(message.toolCalls).toHaveLength(2)
-    expect(message.toolCalls?.[0]).toEqual({
-      id: 'call_1',
-      name: 'render_callout',
-      arguments: '{"title":"Hi"}',
-    })
-  })
-
-  it('omits toolCalls when the timeline has none', () => {
-    const asm = new MessageAssembler()
-    const message = asm.toMessage([
-      { type: 'content', id: 'c', content: 'plain' },
+    expect(message.toolCalls).toEqual([
+      { id: 'call_1', name: 'render_callout', arguments: '{"title":"Hi"}' },
+      { id: 'call_2', name: 'render_chart', arguments: '{"data":[]}' },
     ])
-    expect(message.toolCalls).toBeUndefined()
   })
 })

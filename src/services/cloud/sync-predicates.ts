@@ -103,57 +103,6 @@ export function isUploadableChat(
 }
 
 /**
- * Determines if a remote chat should be downloaded and stored locally.
- *
- * A remote chat should be ingested if:
- * - No local version exists
- * - Local version failed decryption (retry with potentially new key)
- * - Remote version is newer than local version AND local has no unsynced modifications
- *
- * @param remote The remote chat metadata
- * @param local The local chat (if exists)
- * @returns true if the remote chat should be downloaded
- */
-export function shouldIngestRemoteChat(
-  remote: { id: string; updatedAt?: string | null },
-  local:
-    | Pick<
-        ChatSyncMetadata,
-        'decryptionFailed' | 'locallyModified' | 'syncedAt'
-      >
-    | null
-    | undefined,
-): boolean {
-  // If no local chat exists, always ingest
-  if (!local) {
-    return true
-  }
-
-  // If local chat failed decryption, retry with remote data
-  // (the enclave may now serve a freshly-rewrapped row).
-  if (local.decryptionFailed) {
-    return true
-  }
-
-  // Don't overwrite local changes that haven't been uploaded yet
-  if (local.locallyModified) {
-    return false
-  }
-
-  // Compare timestamps - ingest if remote is newer
-  if (remote.updatedAt) {
-    const remoteTimestamp = new Date(remote.updatedAt).getTime()
-    const localTimestamp = local.syncedAt || 0
-
-    if (!isNaN(remoteTimestamp) && remoteTimestamp > localTimestamp) {
-      return true
-    }
-  }
-
-  return false
-}
-
-/**
  * Last-write-wins arbitration by content modification time, shared by
  * every scope's conflict resolution (chats, profile) so the winner is
  * the same on every device.

@@ -25,11 +25,23 @@ describe('ChatInput streaming action', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('stops a microphone stream granted after unmount', async () => {
+    vi.useFakeTimers()
     let grantPermission!: (stream: MediaStream) => void
     const stop = vi.fn()
+    const constructRecorder = vi.fn()
+    const start = vi.fn()
+    class SupportedMediaRecorder {
+      static isTypeSupported = () => true
+      start = start
+      constructor(stream: MediaStream) {
+        constructRecorder(stream)
+      }
+    }
+    vi.stubGlobal('MediaRecorder', SupportedMediaRecorder)
     vi.stubGlobal('navigator', {
       mediaDevices: {
         getUserMedia: vi.fn(
@@ -65,6 +77,8 @@ describe('ChatInput streaming action', () => {
     })
 
     expect(stop).toHaveBeenCalledOnce()
+    expect(constructRecorder).not.toHaveBeenCalled()
+    expect(start).not.toHaveBeenCalled()
   })
 
   it('shows Stop while a recovered response is streaming', () => {

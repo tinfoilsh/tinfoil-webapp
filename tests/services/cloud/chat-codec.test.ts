@@ -10,7 +10,7 @@ import {
   processRemoteChat,
   type RemoteChatData,
 } from '@/services/cloud/chat-codec'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
   logInfo: vi.fn(),
@@ -21,6 +21,7 @@ describe('Chat Codec - processRemoteChat', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
+  afterEach(() => vi.restoreAllMocks())
 
   const basePlaintext = (overrides: Record<string, unknown> = {}) =>
     JSON.stringify({
@@ -46,8 +47,11 @@ describe('Chat Codec - processRemoteChat', () => {
 
       expect(result.status).toBe('decrypted')
       expect(result.chat.title).toBe('My Chat')
-      expect(result.chat.messages).toHaveLength(1)
+      expect(result.chat.messages).toEqual([
+        { role: 'user', content: 'Hello', attachments: undefined },
+      ])
       expect(result.chat.decryptionFailed).toBeUndefined()
+      expect(result.chat.dataCorrupted).toBeUndefined()
     })
 
     it('preserves assistant model display names', async () => {
@@ -68,13 +72,15 @@ describe('Chat Codec - processRemoteChat', () => {
     })
 
     it('sets sync metadata on decoded chat', async () => {
+      const now = 1_700_000_000_000
+      vi.spyOn(Date, 'now').mockReturnValue(now)
       const result = await processRemoteChat({
         ...baseRemoteChat,
         plaintext: basePlaintext({ messages: [] }),
       })
 
-      expect(result.chat.syncedAt).toBeGreaterThan(0)
-      expect(result.chat.lastAccessedAt).toBeGreaterThan(0)
+      expect(result.chat.syncedAt).toBe(now)
+      expect(result.chat.lastAccessedAt).toBe(now)
       expect(result.chat.locallyModified).toBe(false)
       expect(result.chat.syncVersion).toBe(1)
       expect(result.chat.formatVersion).toBe(2)
@@ -125,29 +131,6 @@ describe('Chat Codec - processRemoteChat', () => {
       expect(result.chat.id).toBe('remote-chat-1')
     })
 
-    it('drops imported documents that have no readable payload', async () => {
-      const result = await processRemoteChat({
-        ...baseRemoteChat,
-        plaintext: basePlaintext({
-          messages: [
-            {
-              role: 'user',
-              content: 'Read this',
-              attachments: [
-                {
-                  id: '',
-                  type: 'document',
-                  fileName: 'missing.pdf',
-                },
-              ],
-            },
-          ],
-        }),
-      })
-
-      expect(result.chat.messages[0].attachments).toEqual([])
-    })
-
     it('sanitizes malformed and empty imported attachments', async () => {
       const result = await processRemoteChat({
         ...baseRemoteChat,
@@ -164,6 +147,7 @@ describe('Chat Codec - processRemoteChat', () => {
               attachments: [
                 null,
                 {},
+                { id: '', type: 'document', fileName: 'missing.pdf' },
                 {
                   id: 'empty-text',
                   type: 'document',
@@ -224,32 +208,23 @@ describe('Chat Codec - processRemoteChat', () => {
   })
 
   describe('No content handling', () => {
-    it('returns no_content status when plaintext is null', async () => {
-      const remoteChat: RemoteChatData = {
-        id: 'empty-chat',
-        plaintext: null,
-        formatVersion: 2,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      }
+    it.each([null, undefined])(
+      'returns no_content status when plaintext is null',
+      async (plaintext) => {
+        const remoteChat: RemoteChatData = {
+          id: 'empty-chat',
+          plaintext,
+          formatVersion: 2,
+          createdAt: '2024-01-01T00:00:00.000Z',
+        }
 
-      const result = await processRemoteChat(remoteChat)
+        const result = await processRemoteChat(remoteChat)
 
-      expect(result.status).toBe('no_content')
-      expect(result.chat.title).toBe('Encrypted')
-      expect(result.chat.decryptionFailed).toBe(false)
-    })
-
-    it('returns no_content status when plaintext is undefined', async () => {
-      const remoteChat: RemoteChatData = {
-        id: 'empty-chat',
-        formatVersion: 2,
-        createdAt: '2024-01-01T00:00:00.000Z',
-      }
-
-      const result = await processRemoteChat(remoteChat)
-
-      expect(result.status).toBe('no_content')
-    })
+        expect(result.status).toBe('no_content')
+        expect(result.chat.title).toBe('Encrypted')
+        expect(result.chat.decryptionFailed).toBe(false)
+      },
+    )
 
     it('rejects empty plaintext as malformed v2 envelope', async () => {
       const remoteChat: RemoteChatData = {
@@ -279,14 +254,6 @@ describe('Chat Codec - processRemoteChat', () => {
   })
 
   describe('Project ID handling', () => {
-    it('uses explicit projectId option', async () => {
-      const result = await processRemoteChat(baseRemoteChat, {
-        projectId: 'project-123',
-      })
-
-      expect(result.chat.projectId).toBe('project-123')
-    })
-
     it('uses localChat projectId when no explicit projectId', async () => {
       const localChat = {
         id: 'remote-chat-1',
@@ -302,19 +269,17 @@ describe('Chat Codec - processRemoteChat', () => {
       expect(result.chat.projectId).toBe('local-project')
     })
 
-    it('prefers explicit projectId over localChat projectId', async () => {
-      const localChat = {
-        id: 'remote-chat-1',
-        projectId: 'local-project',
-      } as any
+    it.each([undefined, { projectId: 'local-project' }])(
+      'prefers explicit projectId over localChat projectId',
+      async (localChat) => {
+        const result = await processRemoteChat(baseRemoteChat, {
+          localChat,
+          projectId: 'explicit-project',
+        })
 
-      const result = await processRemoteChat(baseRemoteChat, {
-        localChat,
-        projectId: 'explicit-project',
-      })
-
-      expect(result.chat.projectId).toBe('explicit-project')
-    })
+        expect(result.chat.projectId).toBe('explicit-project')
+      },
+    )
 
     it('preserves an explicit project deletion', async () => {
       const result = await processRemoteChat(baseRemoteChat, {

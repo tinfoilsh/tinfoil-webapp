@@ -340,39 +340,55 @@ describe('parseChatGPTConversations', () => {
 
     const result = parseChatGPTConversations(data, createParseOptions())
 
-    expect(result[0].messages).toHaveLength(2)
+    expect(result[0].messages).toEqual([
+      {
+        role: 'user',
+        content: 'Starting message',
+        timestamp: new Date('2023-11-14T22:13:20.000Z'),
+      },
+      {
+        role: 'assistant',
+        content: 'Response',
+        timestamp: new Date('2023-11-14T22:13:20.000Z'),
+      },
+    ])
   })
 
-  it('uses conversation create_time when message create_time is missing', () => {
-    const conversationTime = 1700000000
-    const data: ChatGPTConversation[] = [
-      {
-        title: 'No Message Time',
-        create_time: conversationTime,
-        update_time: 1700001000,
-        mapping: {
-          root: {
-            id: 'root',
-            children: ['msg1'],
-          },
-          msg1: {
-            id: 'msg1',
-            parent: 'root',
-            message: {
-              author: { role: 'user' },
-              content: { content_type: 'text', parts: ['Hello'] },
+  it.each([
+    [undefined, '2023-11-14T22:13:20.000Z'],
+    [1700000100, '2023-11-14T22:15:00.000Z'],
+  ] as const)(
+    'uses message time or conversation fallback: %s',
+    (messageTime, expected) => {
+      const conversationTime = 1700000000
+      const data: ChatGPTConversation[] = [
+        {
+          title: 'No Message Time',
+          create_time: conversationTime,
+          update_time: 1700001000,
+          mapping: {
+            root: {
+              id: 'root',
+              children: ['msg1'],
+            },
+            msg1: {
+              id: 'msg1',
+              parent: 'root',
+              message: {
+                author: { role: 'user' },
+                content: { content_type: 'text', parts: ['Hello'] },
+                create_time: messageTime,
+              },
             },
           },
         },
-      },
-    ]
+      ]
 
-    const result = parseChatGPTConversations(data, createParseOptions())
+      const result = parseChatGPTConversations(data, createParseOptions())
 
-    expect(result[0].messages[0].timestamp).toEqual(
-      new Date(conversationTime * 1000),
-    )
-  })
+      expect(result[0].messages[0].timestamp).toEqual(new Date(expected))
+    },
+  )
 
   it('parses multiple conversations', () => {
     const data: ChatGPTConversation[] = [
@@ -653,31 +669,37 @@ describe('parseClaudeConversations', () => {
     expect(result[0].title).toBe('Imported Chat')
   })
 
-  it('respects isCloudSyncEnabled option', () => {
-    const data: ClaudeConversation[] = [
-      {
-        uuid: 'conv-sync',
-        name: 'Synced',
-        created_at: '2024-01-15T10:00:00Z',
-        updated_at: '2024-01-15T10:00:00Z',
-        chat_messages: [
-          {
-            uuid: 'msg-1',
-            text: 'Test',
-            sender: 'human',
-            created_at: '2024-01-15T10:00:00Z',
-          },
-        ],
-      },
-    ]
+  it.each([
+    [false, true],
+    [true, false],
+  ] as const)(
+    'respects Claude cloud sync preference %s',
+    (enabled, localOnly) => {
+      const data: ClaudeConversation[] = [
+        {
+          uuid: 'conv-sync',
+          name: 'Synced',
+          created_at: '2024-01-15T10:00:00Z',
+          updated_at: '2024-01-15T10:00:00Z',
+          chat_messages: [
+            {
+              uuid: 'msg-1',
+              text: 'Test',
+              sender: 'human',
+              created_at: '2024-01-15T10:00:00Z',
+            },
+          ],
+        },
+      ]
 
-    const result = parseClaudeConversations(
-      data,
-      createParseOptions({ isCloudSyncEnabled: true }),
-    )
+      const result = parseClaudeConversations(
+        data,
+        createParseOptions({ isCloudSyncEnabled: enabled }),
+      )
 
-    expect(result[0].isLocalOnly).toBe(false)
-  })
+      expect(result[0].isLocalOnly).toBe(localOnly)
+    },
+  )
 
   it('parses multiple conversations', () => {
     const data: ClaudeConversation[] = [
@@ -937,21 +959,5 @@ describe('parseClaudeProjects', () => {
     expect(result[1].description).toBe('The second one')
     expect(result[1].systemInstructions).toBe('Be concise.')
     expect(result[1].docs).toHaveLength(1)
-  })
-
-  it('handles undefined docs array', () => {
-    const data: ClaudeProject[] = [
-      {
-        uuid: 'proj-no-docs',
-        name: 'No Docs',
-        created_at: '2024-01-15T10:00:00Z',
-        updated_at: '2024-01-15T10:00:00Z',
-        docs: undefined,
-      },
-    ]
-
-    const result = parseClaudeProjects(data)
-
-    expect(result[0].docs).toHaveLength(0)
   })
 })

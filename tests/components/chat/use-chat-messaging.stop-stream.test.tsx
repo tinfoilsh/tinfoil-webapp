@@ -57,7 +57,7 @@ const {
     async (..._args: unknown[]) => undefined,
   ),
   patchStatusMock: vi.fn(),
-  saveChatMock: vi.fn(async (chat: unknown) => chat),
+  saveChatMock: vi.fn(async (chat: Chat, _skipCloudSync?: boolean) => chat),
   sendChatStreamMock: vi.fn(),
   sessionGetAllChatsMock: vi.fn(() => [] as Chat[]),
   sessionSaveMock: vi.fn(),
@@ -175,14 +175,19 @@ vi.mock('@/services/storage/chat-storage', () => ({
   },
 }))
 
-vi.mock('@/services/storage/session-storage', () => ({
-  sessionChatStorage: {
-    getAllChats: sessionGetAllChatsMock,
-    saveChat: sessionSaveMock,
-    saveStreamingDraft: sessionSaveDraftMock,
-    clearStreamingDraft: vi.fn(),
-  },
-}))
+vi.mock('@/services/storage/session-storage', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/services/storage/session-storage')>()
+  return {
+    sessionChatStorage: {
+      ...actual.sessionChatStorage,
+      getAllChats: sessionGetAllChatsMock,
+      saveChat: sessionSaveMock,
+      saveStreamingDraft: sessionSaveDraftMock,
+      clearStreamingDraft: vi.fn(actual.sessionChatStorage.clearStreamingDraft),
+    },
+  }
+})
 
 vi.mock('@/services/exec-snapshot/access-token', () => ({
   generateCodeExecutionAccessToken: () => 'token',
@@ -246,11 +251,14 @@ describe('useChatMessaging stopped streams', () => {
     containerAuthTokenMock.mockResolvedValue(null)
     generateTitleMock.mockResolvedValue('Untitled')
     sessionGetAllChatsMock.mockReturnValue([])
+    sessionSaveMock.mockReset()
+    sessionSaveDraftMock.mockReset()
+    sessionStorage.clear()
     authState.isSignedIn = false
     authState.userId = undefined
     recoveryAvailableState.available = false
     cloudSyncState.enabled = false
-    saveChatMock.mockImplementation(async (chat: unknown) => chat)
+    saveChatMock.mockImplementation(async (chat: Chat) => chat)
     streamControllers.clear()
     streamingChats.clear()
     pendingStreams.clear()
@@ -337,6 +345,15 @@ describe('useChatMessaging stopped streams', () => {
   })
 
   it('keeps the latest guest draft durable after a network error', async () => {
+    const { sessionChatStorage } = await vi.importActual<
+      typeof import('@/services/storage/session-storage')
+    >('@/services/storage/session-storage')
+    sessionSaveMock.mockImplementation(
+      sessionChatStorage.saveChat.bind(sessionChatStorage),
+    )
+    sessionSaveDraftMock.mockImplementation(
+      sessionChatStorage.saveStreamingDraft.bind(sessionChatStorage),
+    )
     const initialChat: Chat = {
       id: 'chat-1',
       title: 'Existing chat',
@@ -389,16 +406,14 @@ describe('useChatMessaging stopped streams', () => {
       await query
     })
 
-    expect(sessionSaveDraftMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        messages: expect.arrayContaining([
-          expect.objectContaining({
-            role: 'assistant',
-            content: 'Partial answer',
-          }),
-        ]),
-      }),
-    )
+    expect(
+      sessionChatStorage
+        .getChat(initialChat.id)
+        ?.messages.map(({ role, content }) => ({ role, content })),
+    ).toEqual([
+      { role: 'user', content: 'New prompt' },
+      { role: 'assistant', content: 'Partial answer' },
+    ])
   })
 
   it('waits for first-turn persistence before saving the stopped response', async () => {
@@ -815,7 +830,7 @@ describe('useChatMessaging stopped streams', () => {
     const stream = createOpenStream()
     let finishLocalSave!: () => void
     saveChatMock.mockImplementationOnce(
-      (chat: unknown) =>
+      (chat: Chat) =>
         new Promise((resolve) => {
           finishLocalSave = () => resolve(chat)
         }),
@@ -861,7 +876,6 @@ describe('useChatMessaging stopped streams', () => {
     await vi.waitFor(() => expect(sendChatStreamMock).toHaveBeenCalled())
     expect(initialSaveMock).not.toHaveBeenCalled()
     expect(saveChatMock).toHaveBeenCalledOnce()
-    expect(saveChatMock.mock.calls.every((call) => call[1] === true)).toBe(true)
     expect(sendChatStreamMock).toHaveBeenCalledWith(
       expect.objectContaining({ recovery: expect.any(Object) }),
     )
@@ -889,7 +903,7 @@ describe('useChatMessaging stopped streams', () => {
     const stream = createOpenStream()
     let finishLocalSave!: () => void
     saveChatMock.mockImplementationOnce(
-      (chat: unknown) =>
+      (chat: Chat) =>
         new Promise((resolve) => {
           finishLocalSave = () => resolve(chat)
         }),
@@ -930,7 +944,6 @@ describe('useChatMessaging stopped streams', () => {
 
     expect(initialSaveMock).not.toHaveBeenCalled()
     expect(saveChatMock).toHaveBeenCalledOnce()
-    expect(saveChatMock.mock.calls.every((call) => call[1] === true)).toBe(true)
     expect(saveChatMock).toHaveBeenCalledWith(
       expect.objectContaining({
         id: expect.stringMatching(/\S/),

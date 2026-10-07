@@ -157,7 +157,7 @@ describe('processStreamingResponse lifecycle', () => {
       yield { choices: [{ delta: {}, finish_reason: 'stop' }] }
     })()
     const context = createContext({
-      modelDisplayName: 'Kimi K2.6',
+      modelDisplayName: 'Auto · Smart',
       resolveModelDisplayName: () => 'Kimi K2.6',
     })
 
@@ -250,7 +250,7 @@ describe('processStreamingResponse interruption', () => {
     await expect(processing).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  it('includes content buffered for stream format detection', async () => {
+  it('includes a buffered partial marker in the interrupted response', async () => {
     const controller = new AbortController()
     const stream = createOpenStream()
     const interrupted: Array<Message | null> = []
@@ -261,14 +261,7 @@ describe('processStreamingResponse interruption', () => {
     })
     const processing = processStreamingResponse(stream.stream, context)
 
-    stream.send(
-      { choices: [{ delta: { content: 'Hi' } }] },
-      {
-        type: 'web_search_call',
-        status: 'in_progress',
-        action: { query: 'test query' },
-      },
-    )
+    stream.send({ choices: [{ delta: { content: 'Hi<tinfoil-' } }] })
     await vi.waitFor(() =>
       expect(context.setIsWaitingForResponse).toHaveBeenCalledWith(false),
     )
@@ -276,7 +269,7 @@ describe('processStreamingResponse interruption', () => {
     controller.abort()
 
     expect(interrupted[0]).toMatchObject({
-      content: 'Hi',
+      content: 'Hi<tinfoil-',
       turnId: 'turn-1',
     })
 
@@ -346,7 +339,9 @@ describe('processStreamingResponse frame publication', () => {
     const processing = processStreamingResponse(
       stream.stream,
       createContext({
-        onUpdate: (message) => updates.push(message.content ?? ''),
+        onUpdate: (message) => {
+          updates.push(message.content ?? '')
+        },
       }),
     )
 
@@ -363,7 +358,9 @@ describe('processStreamingResponse frame publication', () => {
   it('publishes the leading chunk and coalesces later chunks per frame', async () => {
     const updates: string[] = []
     const context = createContext({
-      onUpdate: (message) => updates.push(message.thoughts ?? ''),
+      onUpdate: (message) => {
+        updates.push(message.thoughts ?? '')
+      },
     })
     const processing = processStreamingResponse(
       (async function* (): AsyncGenerator<ChatChunk> {
@@ -407,7 +404,9 @@ describe('processStreamingResponse frame publication', () => {
     await processStreamingResponse(
       createReasoningStream(),
       createContext({
-        onUpdate: (message) => updates.push(message.thoughts ?? ''),
+        onUpdate: (message) => {
+          updates.push(message.thoughts ?? '')
+        },
       }),
     )
 
@@ -449,7 +448,9 @@ describe('processStreamingResponse frame publication', () => {
     const updates: string[] = []
     const context = createContext({
       signal: controller.signal,
-      onUpdate: (message) => updates.push(message.thoughts ?? ''),
+      onUpdate: (message) => {
+        updates.push(message.thoughts ?? '')
+      },
     })
     const processing = processStreamingResponse(stream.stream, context)
 
@@ -515,7 +516,7 @@ describe('processStreamingResponse frame publication', () => {
     expect(updates).toEqual(['A'])
   })
 
-  it('matches the rich parser for shared event assembly', async () => {
+  it('assembles expected rich events through both streaming entry points', async () => {
     const events: ChatChunk[] = [
       { choices: [{ delta: { reasoning_content: 'Reasoning' } }] },
       {
@@ -525,10 +526,14 @@ describe('processStreamingResponse frame publication', () => {
         action: { query: 'query' },
       },
       {
-        type: 'web_search_call',
-        id: 'search-1',
-        status: 'completed',
-        sources: [{ title: 'Source', url: 'https://example.com' }],
+        choices: [
+          {
+            delta: {
+              content:
+                '<tinfoil-event>{"type":"tinfoil.web_search_call","item_id":"search-1","status":"completed","sources":[{"title":"Source","url":"https://example.com"}]}</tinfoil-event>',
+            },
+          },
+        ],
       },
       { choices: [{ delta: { content: 'Answer' } }] },
       { choices: [{ delta: {}, finish_reason: 'stop' }] },
@@ -546,11 +551,39 @@ describe('processStreamingResponse frame publication', () => {
       parseRichStreamingResponse(makeStream()),
     ])
 
-    expect(processed?.content).toBe(parsed.content)
-    expect(processed?.thoughts).toBe(parsed.thoughts)
-    expect(processed?.webSearch).toEqual(parsed.webSearch)
-    expect(processed?.timeline?.map(({ type }) => type)).toEqual(
-      parsed.timeline?.map(({ type }) => type),
-    )
+    for (const message of [processed, parsed]) {
+      expect(message?.content).toBe('Answer')
+      expect(message?.thoughts).toBe('Reasoning')
+      expect(message?.webSearch).toEqual({
+        query: 'query',
+        status: 'completed',
+        sources: [
+          { title: 'Source', url: 'https://example.com', snippet: undefined },
+        ],
+      })
+      expect(message?.timeline).toEqual([
+        expect.objectContaining({
+          type: 'thinking',
+          content: 'Reasoning',
+          isThinking: false,
+        }),
+        {
+          type: 'web_search',
+          id: 'web-search-1',
+          state: {
+            query: 'query',
+            status: 'completed',
+            sources: [
+              {
+                title: 'Source',
+                url: 'https://example.com',
+                snippet: undefined,
+              },
+            ],
+          },
+        },
+        { type: 'content', id: 'content-2', content: 'Answer' },
+      ])
+    }
   })
 })

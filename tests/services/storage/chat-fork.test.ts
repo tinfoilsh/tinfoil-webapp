@@ -33,6 +33,7 @@ describe('buildForkedChat', () => {
           type: 'document',
           fileName: 'notes.txt',
           textContent: 'hello',
+          pages: [{ page: 1, text: 'page text', image: '', is_scanned: false }],
         },
         {
           id: 'att-legacy',
@@ -137,6 +138,17 @@ describe('buildForkedChat', () => {
     expect(fork.messages[0].attachments![0]).not.toBe(
       source.messages[0].attachments![0],
     )
+    const timelineEntry = fork.messages[1].timeline![0]
+    if (timelineEntry.type !== 'content')
+      throw new Error('Expected content entry')
+    timelineEntry.content = 'Fork-only edit'
+    fork.messages[0].attachments![0].fileName = 'renamed.png'
+    fork.messages[0].attachments![1].pages![0].text = 'Fork-only page'
+    expect(source.messages[1].timeline).toEqual([
+      { type: 'content', id: 'content-0', content: 'Nice photo' },
+    ])
+    expect(source.messages[0].attachments![0].fileName).toBe('a.png')
+    expect(source.messages[0].attachments![1].pages![0].text).toBe('page text')
   })
 
   it('does not stack the fork suffix when forking a fork', () => {

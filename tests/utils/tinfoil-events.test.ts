@@ -1,7 +1,6 @@
 import {
   TINFOIL_WEB_SEARCH_CALL_TYPE,
   createTinfoilEventParser,
-  extractTinfoilEventsFromText,
 } from '@/utils/tinfoil-events'
 import { describe, expect, it } from 'vitest'
 
@@ -10,22 +9,44 @@ function markerFor(payload: Record<string, unknown>): string {
 }
 
 describe('createTinfoilEventParser', () => {
-  it('extracts a marker delivered in a single chunk', () => {
-    const parser = createTinfoilEventParser()
-    const payload = {
-      type: TINFOIL_WEB_SEARCH_CALL_TYPE,
-      item_id: 'ws_1',
-      status: 'in_progress',
-      action: { type: 'search', query: 'q' },
+  it('removes marker padding identically at every chunk boundary', () => {
+    const payload = { type: TINFOIL_WEB_SEARCH_CALL_TYPE, status: 'completed' }
+    const input = `hello\n${markerFor(payload)}\nAnswer.`
+    for (let split = 0; split <= input.length; split++) {
+      const parser = createTinfoilEventParser()
+      const first = parser.consume(input.slice(0, split))
+      const empty = parser.consume('')
+      const second = parser.consume(input.slice(split))
+      expect(first.text + empty.text + second.text + parser.flush()).toBe(
+        'helloAnswer.',
+      )
+      expect([...first.events, ...empty.events, ...second.events]).toEqual([
+        payload,
+      ])
     }
-    const input = `prefix ${markerFor(payload)} suffix`
-    const result = parser.consume(input)
-    expect(result.text).toBe('prefix  suffix')
-    expect(result.events).toHaveLength(1)
-    expect(result.events[0].status).toBe('in_progress')
-    expect(result.events[0].action?.query).toBe('q')
-    expect(parser.flush()).toBe('')
   })
+  it.each([
+    ['prefix ', ' suffix', 'prefix  suffix'],
+    ['\n', '\nAnswer.', 'Answer.'],
+  ])(
+    'extracts a marker delivered in a single chunk: %j',
+    (prefix, suffix, expected) => {
+      const parser = createTinfoilEventParser()
+      const payload = {
+        type: TINFOIL_WEB_SEARCH_CALL_TYPE,
+        item_id: 'ws_1',
+        status: 'in_progress',
+        action: { type: 'search', query: 'q' },
+      }
+      const input = `${prefix}${markerFor(payload)}${suffix}`
+      const result = parser.consume(input)
+      expect(result.text).toBe(expected)
+      expect(result.events).toHaveLength(1)
+      expect(result.events[0].status).toBe('in_progress')
+      expect(result.events[0]).toMatchObject({ action: { query: 'q' } })
+      expect(parser.flush()).toBe('')
+    },
+  )
 
   it('preserves per-search sources attached to a marker payload', () => {
     const parser = createTinfoilEventParser()
@@ -43,7 +64,10 @@ describe('createTinfoilEventParser', () => {
     }
     const result = parser.consume(markerFor(payload))
     expect(result.events).toHaveLength(1)
-    expect(result.events[0].sources).toEqual(payload.sources)
+    const event = result.events[0]
+    if (event.type !== TINFOIL_WEB_SEARCH_CALL_TYPE)
+      throw new Error('Expected web search event')
+    expect(event.sources).toEqual(payload.sources)
   })
 
   it('stitches a marker split across an arbitrary byte boundary', () => {
@@ -130,7 +154,8 @@ describe('createTinfoilEventParser', () => {
 
   it('ignores foreign JSON payloads that are not tinfoil.web_search_call', () => {
     const parser = createTinfoilEventParser()
-    const foreign = '<tinfoil-event>{"type":"other.kind"}</tinfoil-event>'
+    const foreign =
+      '<tinfoil-event>{"type":"other.kind","status":"completed"}</tinfoil-event>'
     const result = parser.consume(foreign)
     expect(result.text).toBe('')
     expect(result.events).toEqual([])
@@ -181,50 +206,33 @@ describe('createTinfoilEventParser', () => {
     // chunk 2. The parser must retroactively drop it from the emitted
     // text so no orphan blank line surfaces above the marker.
     const first = parser.consume('hello\n')
-    expect(first.text).toBe('hello\n')
+    expect(first.text).toBe('hello')
     const second = parser.consume(`${markerFor(payload)}\nAnswer.`)
     expect(second.text).toBe('Answer.')
     expect(second.events).toHaveLength(1)
+    expect(first.text + second.text + parser.flush()).toBe('helloAnswer.')
   })
 
-  it('preserves a real model newline when no marker follows it', () => {
-    const parser = createTinfoilEventParser()
-    // A `\n` emitted by the model that is NOT followed by an open tag
-    // in the next chunk must survive verbatim.
-    const first = parser.consume('line1\n')
-    expect(first.text).toBe('line1\n')
-    const second = parser.consume('line2')
-    expect(second.text).toBe('line2')
-  })
+  it.each([
+    ['line1\n', 'line2', 'line1\nline2'],
+    ['plain answer without events', '', 'plain answer without events'],
+    ['trailing\n', '', 'trailing\n'],
+  ])(
+    'preserves model text without markers across chunks: %j',
+    (start, end, expected) => {
+      const parser = createTinfoilEventParser()
+      // A `\n` emitted by the model that is NOT followed by an open tag
+      // in the next chunk must survive verbatim.
+      const first = parser.consume(start)
+      const second = parser.consume(end)
+      expect(first.events).toEqual([])
+      expect(second.events).toEqual([])
+      expect(first.text + second.text + parser.flush()).toBe(expected)
+    },
+  )
 })
 
-describe('extractTinfoilEventsFromText', () => {
-  it('processes a full non-streaming message in one call', () => {
-    const payload = {
-      type: TINFOIL_WEB_SEARCH_CALL_TYPE,
-      item_id: 'ws_1',
-      status: 'completed',
-      action: { type: 'search', query: 'q' },
-    }
-    // Router emits `\n<marker>\n` so raw SSE captures stay readable.
-    // The parser collapses those pad newlines on each side so the
-    // marker round-trips invisibly — the rendered text should have no
-    // orphan blank line where the marker used to be.
-    const input = `\n${markerFor(payload)}\nAnswer.`
-    const { text, events } = extractTinfoilEventsFromText(input)
-    expect(text).toBe('Answer.')
-    expect(events).toHaveLength(1)
-    expect(events[0].action?.query).toBe('q')
-  })
-
-  it('returns the original text when no markers are present', () => {
-    const { text, events } = extractTinfoilEventsFromText(
-      'plain answer without events',
-    )
-    expect(text).toBe('plain answer without events')
-    expect(events).toEqual([])
-  })
-
+describe('marker whitespace', () => {
   it('preserves non-pad whitespace adjacent to a marker', () => {
     const payload = {
       type: TINFOIL_WEB_SEARCH_CALL_TYPE,
@@ -235,7 +243,11 @@ describe('extractTinfoilEventsFromText', () => {
     // Two `\n` before the marker: one is consumed as the pad, the
     // other is real content the model intended to emit.
     const input = `first\n\n${markerFor(payload)}\n\nsecond`
-    const { text } = extractTinfoilEventsFromText(input)
-    expect(text).toBe('first\n\nsecond')
+    for (let split = 0; split <= input.length; split++) {
+      const parser = createTinfoilEventParser()
+      const first = parser.consume(input.slice(0, split))
+      const second = parser.consume(input.slice(split))
+      expect(first.text + second.text + parser.flush()).toBe('first\n\nsecond')
+    }
   })
 })

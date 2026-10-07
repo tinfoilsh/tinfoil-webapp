@@ -43,6 +43,7 @@ import {
   runOffDeviceImport,
   type OffDeviceImportProgress,
 } from '@/services/chat-import/off-device-import'
+import type { AccountOperationGuard } from '@/services/cloud/account-operation'
 import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
 import { validateCurrentPrimaryKey } from '@/services/cloud/cloud-key-preflight'
 import { cloudStorage } from '@/services/cloud/cloud-storage'
@@ -70,6 +71,7 @@ import {
   attachmentGet,
   type ImportStatusResponse,
 } from '@/services/sync-enclave/sync-api'
+import { SyncRequestAbortedError } from '@/services/sync-enclave/sync-enclave-client'
 import { TINFOIL_COLORS } from '@/theme/colors'
 import {
   clearExplicitSignoutIntent,
@@ -2032,7 +2034,11 @@ export function SettingsModal({
   }
 
   // Export chats as conversations.json
-  const downloadChats = async (chatsToExport: Chat[]) => {
+  const downloadChats = async (
+    chatsToExport: Chat[],
+    guard: AccountOperationGuard,
+  ) => {
+    guard.assertCurrent()
     if (chatsToExport.length === 0) {
       toast({
         title: 'No chats to export',
@@ -2051,47 +2057,66 @@ export function SettingsModal({
       const fetchAttachmentBytes = async (
         att: Attachment,
       ): Promise<Uint8Array | null> => {
+        guard.assertCurrent()
         try {
           if (att.base64) {
             return base64ToUint8Array(att.base64)
           }
           if (att.encryptionKey) {
-            return await attachmentGet({
+            const bytes = await attachmentGet({
               id: att.id,
               attKeyB64: att.encryptionKey,
             })
+            guard.assertCurrent()
+            return bytes
           }
-        } catch {
+        } catch (error) {
+          guard.assertCurrent()
+          if (
+            error instanceof SyncRequestAbortedError ||
+            (error instanceof DOMException && error.name === 'AbortError')
+          )
+            throw error
           logWarning('Failed to fetch attachment for export', {
             component: 'SettingsModal',
             action: 'downloadChats',
             metadata: { attachmentId: att.id },
           })
         }
+        guard.assertCurrent()
         return null
       }
 
+      guard.assertCurrent()
       const archive = await buildChatExport(chatsToExport, fetchAttachmentBytes)
+      guard.assertCurrent()
       const blob =
         typeof archive.data === 'string'
           ? new Blob([archive.data], { type: archive.mimeType })
           : new Blob([new Uint8Array(archive.data)], {
               type: archive.mimeType,
             })
+      guard.assertCurrent()
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
       a.download = archive.filename
       document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      window.URL.revokeObjectURL(url)
+      try {
+        guard.assertCurrent()
+        a.click()
+      } finally {
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      }
 
+      guard.assertCurrent()
       toast({
         title: 'Export complete',
         description: `Exported ${chatsToExport.length} conversation${chatsToExport.length !== 1 ? 's' : ''} successfully.`,
       })
     } catch (error) {
+      if (!guard.isCurrent()) return
       logError('Failed to create conversations export', error, {
         component: 'SettingsModal',
         action: 'downloadChats',
@@ -2109,10 +2134,12 @@ export function SettingsModal({
 
   // Fetch all chats (including cloud) and export them
   const handleExportAllChats = async () => {
+    const guard = cloudSync.createAccountOperationGuard()
     setIsPreparingExport(true)
     setExportType('chats')
 
     try {
+      guard.assertCurrent()
       const chatsById = new Map<string, Chat>()
       const addChat = (chat: Chat) => {
         if (!chat.id || chatsById.has(chat.id)) return
@@ -2120,6 +2147,7 @@ export function SettingsModal({
       }
 
       const indexedDbChats = await chatStorage.getAllChats()
+      guard.assertCurrent()
       indexedDbChats.forEach(addChat)
       if (!isSignedIn) {
         sessionChatStorage.getAllChats().forEach(addChat)
@@ -2131,11 +2159,16 @@ export function SettingsModal({
         let continuationToken: string | undefined
 
         while (hasMore) {
-          const result = await cloudSync.loadChatsWithPagination({
-            limit: 50,
-            continuationToken,
-            loadLocal: !continuationToken, // Only load local on first page to avoid duplicates
-          })
+          guard.assertCurrent()
+          const result = await cloudSync.loadChatsWithPagination(
+            {
+              limit: 50,
+              continuationToken,
+              loadLocal: !continuationToken, // Only load local on first page to avoid duplicates
+            },
+            guard,
+          )
+          guard.assertCurrent()
 
           // Convert StoredChat to Chat
           for (const storedChat of result.chats) {
@@ -2158,6 +2191,7 @@ export function SettingsModal({
       }
 
       // Filter out blank chats and chats that failed decryption
+      guard.assertCurrent()
       const allChats = Array.from(chatsById.values())
       const hasPremiumProjectAccess = Boolean(isPremium)
       const exportableChats = filterExportableChats(
@@ -2176,8 +2210,15 @@ export function SettingsModal({
           description: `${excludedProjectChats} project chat${excludedProjectChats === 1 ? '' : 's'} could not be exported. Premium is required to export project chats.`,
         })
       }
-      await downloadChats(exportableChats)
+      guard.assertCurrent()
+      await downloadChats(exportableChats, guard)
+      guard.assertCurrent()
     } catch (error) {
+      if (!guard.isCurrent()) {
+        setIsPreparingExport(false)
+        setExportType(null)
+        return
+      }
       logError('Failed to prepare chats for export', error, {
         component: 'SettingsModal',
         action: 'handleExportAllChats',

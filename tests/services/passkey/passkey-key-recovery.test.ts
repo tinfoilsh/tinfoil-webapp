@@ -5,7 +5,6 @@ import {
   TINFOIL_PASSKEY_PROFILE,
 } from '@/services/passkey/kit'
 import {
-  encryptKeyBundle,
   promoteRecoveredCekToEnclave,
   recoverPasskeyKeyBundle,
   wrapTinfoilKeyBundle,
@@ -13,6 +12,8 @@ import {
   type PasskeyCredentialEntry,
 } from '@/services/passkey/passkey-key-storage'
 import { hexToB64 } from '@/services/sync-enclave/sync-api'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
+import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
 import {
   decodeWrappedKeyRecord,
   encodeWrappedKeyRecord,
@@ -45,6 +46,25 @@ const PRF_OUTPUT = new Uint8Array(32).map((_, index) => index)
 const EXPECTED_PRIMARY_BYTES = new Uint8Array(32).map(
   (_, index) => 0xff - index,
 )
+const originalCredentials = Object.getOwnPropertyDescriptor(
+  navigator,
+  'credentials',
+)
+const LEGACY_PRIMARY = `key_${'ar'.repeat(32)}`
+const LEGACY_ALTERNATIVE = `key_${'as'.repeat(32)}`
+
+async function encryptLegacyFixture(kek: CryptoKey, keys: KeyBundle) {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    kek,
+    new TextEncoder().encode(JSON.stringify(keys)),
+  )
+  return {
+    iv: Buffer.from(iv).toString('base64'),
+    data: Buffer.from(ciphertext).toString('base64'),
+  }
+}
 
 async function genericEnvelopeEntry(
   keyBundle: KeyBundle,
@@ -129,14 +149,22 @@ function entry(
 describe('recoverPasskeyKeyBundle', () => {
   beforeEach(() => {
     localStorage.clear()
+    encryptionService.clearKey()
     cachePrf()
     mockKeyCurrent.mockReset().mockResolvedValue({ key_id: null, bundles: {} })
-    mockAddBundle.mockReset()
-    mockRegisterKey.mockReset()
+    mockAddBundle
+      .mockReset()
+      .mockRejectedValue(new Error('Unexpected bundle addition'))
+    mockRegisterKey
+      .mockReset()
+      .mockRejectedValue(new Error('Unexpected registration'))
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    if (originalCredentials)
+      Object.defineProperty(navigator, 'credentials', originalCredentials)
+    else Reflect.deleteProperty(navigator, 'credentials')
   })
 
   it('adapts and unlocks existing raw bundle bytes through the manager', async () => {
@@ -175,7 +203,7 @@ describe('recoverPasskeyKeyBundle', () => {
     { format: '1Password byte array', first: Array.from(PRF_OUTPUT) },
   ])('recovers with $format PRF output', async ({ first }) => {
     localStorage.clear()
-    const get = vi.fn(async () => ({
+    const get = vi.fn(async (_options?: CredentialRequestOptions) => ({
       rawId: new Uint8Array([1, 2, 3]).buffer,
       authenticatorAttachment: 'platform',
       getClientExtensionResults: () => ({
@@ -283,29 +311,48 @@ describe('recoverPasskeyKeyBundle', () => {
     expect(new Set(ivs).size).toBe(3)
   })
 
-  it('uses manager cache recovery for generic envelopes without the legacy cache', async () => {
-    const primary = new Uint8Array(32).fill(0x48)
-    const alternative = new Uint8Array(32).fill(0x49)
-    const keyBundle = {
-      primary: encryptionService.encodeKeyFromBytes(primary),
-      alternatives: [encryptionService.encodeKeyFromBytes(alternative)],
-      authorizationMode: 'validated' as const,
-    }
-    const candidate = await genericEnvelopeEntry(keyBundle)
-    localStorage.removeItem(SECRET_PASSKEY_PRF_OUTPUT)
-    const recoverFromCache = vi
-      .spyOn(passkeyKeyManager, 'recoverKeyFromCache')
-      .mockResolvedValueOnce({ credentialId: CREDENTIAL_ID, key: primary })
-      .mockResolvedValueOnce({ credentialId: CREDENTIAL_ID, key: alternative })
+  it.each(['matching', 'missing', 'other-credential'] as const)(
+    'routes cached recovery to each record and rejects unavailable alternatives: %s',
+    async (result) => {
+      const primary = new Uint8Array(32).fill(0x48)
+      const alternative = new Uint8Array(32).fill(0x49)
+      const keyBundle = {
+        primary: encryptionService.encodeKeyFromBytes(primary),
+        alternatives: [encryptionService.encodeKeyFromBytes(alternative)],
+        authorizationMode: 'validated' as const,
+      }
+      const candidate = await genericEnvelopeEntry(keyBundle)
+      const envelope = JSON.parse(
+        Buffer.from(candidate.encrypted_keys, 'base64').toString('utf8'),
+      ) as { primary: string; alternatives: string[] }
+      const primaryRecord = decodeWrappedKeyRecord(envelope.primary)
+      const alternativeRecord = decodeWrappedKeyRecord(envelope.alternatives[0])
+      localStorage.removeItem(SECRET_PASSKEY_PRF_OUTPUT)
+      const recoverFromCache = vi
+        .spyOn(passkeyKeyManager, 'recoverKeyFromCache')
+        .mockImplementation(async ({ wrappedKeys }) => {
+          if (recoverFromCache.mock.calls.length === 1) {
+            expect(wrappedKeys).toEqual([primaryRecord])
+            return { credentialId: CREDENTIAL_ID, key: primary }
+          }
+          expect(wrappedKeys).toEqual([alternativeRecord])
+          if (result === 'missing') return null
+          return {
+            credentialId: result === 'matching' ? CREDENTIAL_ID : 'BAUG',
+            key: alternative,
+          }
+        })
 
-    const recovered = await recoverPasskeyKeyBundle([candidate], {
-      cachedOnly: true,
-    })
+      const recovered = await recoverPasskeyKeyBundle([candidate], {
+        cachedOnly: true,
+      })
 
-    expect(localStorage.getItem(SECRET_PASSKEY_PRF_OUTPUT)).toBeNull()
-    expect(recoverFromCache).toHaveBeenCalledTimes(2)
-    expect(recovered?.keyBundle).toEqual(keyBundle)
-  })
+      expect(localStorage.getItem(SECRET_PASSKEY_PRF_OUTPUT)).toBeNull()
+      expect(recoverFromCache).toHaveBeenCalledTimes(2)
+      if (result === 'matching') expect(recovered?.keyBundle).toEqual(keyBundle)
+      else expect(recovered).toBeNull()
+    },
+  )
 
   it('rejects generic envelopes encrypted for the wrong PRF', async () => {
     const keyBundle = {
@@ -359,57 +406,96 @@ describe('recoverPasskeyKeyBundle', () => {
     ).resolves.toBeNull()
   })
 
-  it('retains the legacy primary and alternatives decoder among candidates', async () => {
-    const original = {
-      primary: 'key_legacy_primary',
-      alternatives: ['key_legacy_alternative'],
-    }
-    const encrypted = await encryptKeyBundle(await legacyKek(), original)
-    const generic = await genericEnvelopeEntry(
-      {
-        primary: encryptionService.encodeKeyFromBytes(
-          new Uint8Array(32).fill(0x71),
-        ),
-        alternatives: [],
-      },
-      'BwgJ',
-    )
-    const get = vi.fn(async () => ({
-      rawId: new Uint8Array([1, 2, 3]).buffer,
-      authenticatorAttachment: 'platform',
-      getClientExtensionResults: () => ({
-        prf: { results: { first: PRF_OUTPUT.buffer } },
-      }),
-    }))
-    Object.defineProperty(navigator, 'credentials', {
-      value: { create: vi.fn(), get },
-      configurable: true,
-    })
-    const recovered = await recoverPasskeyKeyBundle([
-      entry({
-        id: 'BAUG',
-        iv: btoa(String.fromCharCode(...new Uint8Array(12))),
-        encrypted_keys: btoa(String.fromCharCode(...new Uint8Array(48))),
-        source: 'enclave',
-      }),
-      generic,
-      entry({
-        id: 'CgsM',
-        iv: btoa(String.fromCharCode(...new Uint8Array(12))),
-        encrypted_keys: 'not base64!',
-        source: 'enclave',
-      }),
-      entry({
-        iv: encrypted.iv,
-        encrypted_keys: encrypted.data,
-        source: 'legacy',
-      }),
-    ])
-
-    expect(recovered?.keyBundle).toEqual(original)
-    expect(recovered?.source).toBe('legacy')
-    expect(get.mock.calls[0][0].publicKey.allowCredentials).toHaveLength(3)
-  })
+  it.each([
+    'matching',
+    'rotated',
+    'unavailable',
+    'not-found',
+    'empty',
+  ] as const)(
+    'checks the registered key when recovering legacy candidates: %s',
+    async (remoteState) => {
+      const original = {
+        primary: LEGACY_PRIMARY,
+        alternatives: [LEGACY_ALTERNATIVE],
+      }
+      const encrypted = await encryptLegacyFixture(await legacyKek(), original)
+      const keyId = await deriveTinfoilKeyIdHex(new Uint8Array(32).fill(0x11))
+      if (remoteState === 'unavailable' || remoteState === 'not-found') {
+        mockKeyCurrent.mockRejectedValue(
+          new SyncEnclaveError(
+            'opaque',
+            remoteState === 'not-found' ? 404 : 503,
+          ),
+        )
+      } else {
+        mockKeyCurrent.mockResolvedValue({
+          key_id:
+            remoteState === 'matching'
+              ? keyId
+              : remoteState === 'rotated'
+                ? 'ff'.repeat(16)
+                : null,
+          bundles: {},
+        })
+      }
+      const generic = await genericEnvelopeEntry(
+        {
+          primary: encryptionService.encodeKeyFromBytes(
+            new Uint8Array(32).fill(0x71),
+          ),
+          alternatives: [],
+        },
+        'BwgJ',
+      )
+      const get = vi.fn(async (_options?: CredentialRequestOptions) => ({
+        rawId: new Uint8Array([1, 2, 3]).buffer,
+        authenticatorAttachment: 'platform',
+        getClientExtensionResults: () => ({
+          prf: { results: { first: PRF_OUTPUT.buffer } },
+        }),
+      }))
+      Object.defineProperty(navigator, 'credentials', {
+        value: { create: vi.fn(), get },
+        configurable: true,
+      })
+      const candidates = [
+        entry({
+          id: 'BAUG',
+          iv: btoa(String.fromCharCode(...new Uint8Array(12))),
+          encrypted_keys: btoa(String.fromCharCode(...new Uint8Array(48))),
+          source: 'enclave',
+        }),
+        generic,
+        entry({
+          id: 'CgsM',
+          iv: btoa(String.fromCharCode(...new Uint8Array(12))),
+          encrypted_keys: 'not base64!',
+          source: 'enclave',
+        }),
+        entry({
+          iv: encrypted.iv,
+          encrypted_keys: encrypted.data,
+          source: 'legacy',
+        }),
+      ]
+      for (const cachedOnly of [false, true]) {
+        cachePrf()
+        const recovered = await recoverPasskeyKeyBundle(candidates, {
+          cachedOnly,
+        })
+        if (remoteState === 'rotated' || remoteState === 'unavailable')
+          expect(recovered).toBeNull()
+        else {
+          expect(recovered?.keyBundle).toEqual(original)
+          expect(recovered?.source).toBe('legacy')
+        }
+      }
+      expect(mockKeyCurrent).toHaveBeenCalledTimes(2)
+      expect(get).toHaveBeenCalledOnce()
+      expect(get.mock.calls[0][0]?.publicKey?.allowCredentials).toHaveLength(3)
+    },
+  )
 
   it('recovers Start Fresh authorization on another device among mixed credentials', async () => {
     const keyBundle = {
@@ -421,11 +507,11 @@ describe('recoverPasskeyKeyBundle', () => {
       ],
       authorizationMode: 'explicit_start_fresh' as const,
     }
-    const legacy = await encryptKeyBundle(await legacyKek(), {
-      primary: 'key_legacy_primary',
+    const legacy = await encryptLegacyFixture(await legacyKek(), {
+      primary: LEGACY_PRIMARY,
       alternatives: [],
     })
-    const get = vi.fn(async () => ({
+    const get = vi.fn(async (_options?: CredentialRequestOptions) => ({
       rawId: new Uint8Array([7, 8, 9]).buffer,
       authenticatorAttachment: 'platform',
       getClientExtensionResults: () => ({
@@ -454,7 +540,7 @@ describe('recoverPasskeyKeyBundle', () => {
 
     expect(recovered?.credentialId).toBe('BwgJ')
     expect(recovered?.keyBundle).toEqual(keyBundle)
-    expect(get.mock.calls[0][0].publicKey.allowCredentials).toHaveLength(3)
+    expect(get.mock.calls[0][0]?.publicKey?.allowCredentials).toHaveLength(3)
   })
 
   it('persists the primary CEK when promoting a recovered legacy bundle', async () => {
@@ -481,6 +567,17 @@ describe('recoverPasskeyKeyBundle', () => {
     ).resolves.toBe(true)
     expect(mockRegisterKey).toHaveBeenCalledOnce()
     const initialBundle = mockRegisterKey.mock.calls[0][0].initialBundle
+    expect(mockRegisterKey).toHaveBeenCalledWith({
+      keyB64: Buffer.from(cek).toString('base64'),
+      ifMatch: '*',
+      createdVia: 'recovery',
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{32}$/),
+      initialBundle: {
+        credentialId: CREDENTIAL_ID,
+        kekIvHex: expect.stringMatching(/^[0-9a-f]{24}$/),
+        encryptedKeysHex: expect.stringMatching(/^[0-9a-f]{96}$/),
+      },
+    })
     expect(initialBundle.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
     const recovered = await recoverPasskeyKeyBundle(
       [

@@ -30,7 +30,15 @@ import contract from '../../fixtures/native-cloud-import-v1.json'
 const timestamp = '2026-08-20T12:00:00.000Z'
 const png = base64ToUint8Array(contract.blobs[0].base64)
 
-function backupInput(): NativeBackupFormatInput {
+type MutableInput = {
+  [
+    K in keyof NativeBackupFormatInput
+  ]: NativeBackupFormatInput[K] extends readonly (infer T)[]
+    ? T[]
+    : NativeBackupFormatInput[K]
+}
+
+function backupInput(): MutableInput {
   return {
     backupId: contract.source_backup_id,
     createdAt: timestamp,
@@ -585,7 +593,7 @@ describe('native backup restore validation and cloud packaging', () => {
     const root = {
       removeEntry,
       getFileHandle: vi.fn(async () => ({
-        createWritable: vi.fn(async () => {
+        createWritable: vi.fn(async (): Promise<WritableStream<Uint8Array>> => {
           throw new Error('setup failed')
         }),
       })),

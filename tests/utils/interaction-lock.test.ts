@@ -33,6 +33,7 @@ describe('interaction lock', () => {
     document.body.appendChild(appRoot)
 
     const release = acquireInteractionLock([appRoot], { ariaHidden: true })
+    expect(appRoot.getAttribute('aria-hidden')).toBe('true')
     release()
 
     expect(appRoot.hasAttribute('inert')).toBe(true)
@@ -44,9 +45,12 @@ describe('interaction lock', () => {
     document.body.appendChild(appRoot)
 
     const release = acquireInteractionLock([appRoot])
+    const releaseOther = acquireInteractionLock([appRoot])
     release()
     release()
 
+    expect(appRoot.hasAttribute('inert')).toBe(true)
+    releaseOther()
     expect(appRoot.hasAttribute('inert')).toBe(false)
   })
 })

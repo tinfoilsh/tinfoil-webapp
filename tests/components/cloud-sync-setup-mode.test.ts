@@ -42,25 +42,23 @@ describe('determineGeneratedKeySetupMode', () => {
     expect(mode).toBe('explicitStartFresh')
   })
 
-  it('uses explicitStartFresh when the remote cloud state is unknown', async () => {
-    mockInspectRemoteEncryptedState.mockResolvedValue('unknown')
+  it.each(['unknown', 'rejected'] as const)(
+    'keeps recoverExisting when inspection is %s',
+    async (result) => {
+      if (result === 'unknown') {
+        mockInspectRemoteEncryptedState.mockResolvedValue('unknown')
+      } else {
+        mockInspectRemoteEncryptedState.mockRejectedValue(
+          new Error('Network error'),
+        )
+      }
 
-    const mode = await determineGeneratedKeySetupMode({
-      manualRecoveryNeeded: false,
-    })
+      const mode = await determineGeneratedKeySetupMode({
+        manualRecoveryNeeded: false,
+      })
 
-    expect(mode).toBe('recoverExisting')
-  })
-
-  it('falls back to recoverExisting when remote inspection fails', async () => {
-    mockInspectRemoteEncryptedState.mockRejectedValue(
-      new Error('Network error'),
-    )
-
-    const mode = await determineGeneratedKeySetupMode({
-      manualRecoveryNeeded: false,
-    })
-
-    expect(mode).toBe('recoverExisting')
-  })
+      expect(mode).toBe('recoverExisting')
+      expect(mockInspectRemoteEncryptedState).toHaveBeenCalledTimes(1)
+    },
+  )
 })

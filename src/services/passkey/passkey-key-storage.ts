@@ -25,7 +25,7 @@
  * enclave's `bundle_version` so callers that read them keep working.
  */
 
-import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
+import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
   decodeWrappedKeyRecord,
@@ -157,23 +157,6 @@ export class PasskeyCredentialConflictError extends Error {
 }
 
 // --- Crypto primitives -----------------------------------------------------
-
-export async function encryptKeyBundle(
-  kek: CryptoKey,
-  keys: KeyBundle,
-): Promise<{ iv: string; data: string }> {
-  const iv = crypto.getRandomValues(new Uint8Array(AES_GCM_IV_BYTES))
-  const plaintext = new TextEncoder().encode(JSON.stringify(keys))
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    kek,
-    plaintext,
-  )
-  return {
-    iv: uint8ArrayToBase64(iv),
-    data: uint8ArrayToBase64(new Uint8Array(ciphertext)),
-  }
-}
 
 export async function decryptKeyBundle(
   kek: CryptoKey,
@@ -472,15 +455,6 @@ export async function deletePasskeyCredential(
       component: 'PasskeyKeyStorage',
       action: 'deletePasskeyCredential',
     })
-    return false
-  }
-}
-
-export async function hasPasskeyCredentials(): Promise<boolean> {
-  try {
-    const entries = await loadPasskeyCredentials()
-    return entries.length > 0
-  } catch {
     return false
   }
 }

@@ -49,7 +49,20 @@ describe('Clerk environment privacy check', () => {
   })
 
   it('fails closed when expected configuration fields are absent', () => {
-    expect(getClerkPrivacyDrift({})).toHaveLength(2)
+    expect(getClerkPrivacyDrift({})).toEqual([
+      'user_settings.sign_up.captcha_enabled must be false',
+      'display_config.captcha_provider must be null',
+    ])
+    const missingProvider = environment()
+    delete missingProvider.display_config.captcha_provider
+    expect(getClerkPrivacyDrift(missingProvider)).toEqual([
+      'display_config.captcha_provider must be null',
+    ])
+    const missingEnabled = environment()
+    delete missingEnabled.user_settings.sign_up.captcha_enabled
+    expect(getClerkPrivacyDrift(missingEnabled)).toEqual([
+      'user_settings.sign_up.captcha_enabled must be false',
+    ])
   })
 
   it('accepts password signup with email-code verification', () => {
@@ -79,7 +92,20 @@ describe('Clerk environment privacy check', () => {
   })
 
   it('fails closed when authentication configuration is absent', () => {
-    expect(getClerkAuthDrift({})).toHaveLength(6)
+    expect(getClerkAuthDrift({})).toEqual([
+      'user_settings.sign_up.mode must be public',
+      'user_settings.attributes.password.enabled must be true',
+      'user_settings.attributes.password.required must be true',
+      'user_settings.attributes.email_address.enabled must be true',
+      'user_settings.attributes.email_address.verify_at_sign_up must be true',
+      'user_settings.attributes.email_address.verifications must include email_code',
+    ])
+    const missingPassword = environment()
+    delete missingPassword.user_settings.attributes.password
+    expect(getClerkAuthDrift(missingPassword)).toEqual([
+      'user_settings.attributes.password.enabled must be true',
+      'user_settings.attributes.password.required must be true',
+    ])
   })
 
   it('checks the fetched production response', async () => {
@@ -144,14 +170,23 @@ describe('Clerk environment privacy check', () => {
     })
   })
 
-  it('reports privacy configuration drift', async () => {
+  it.each([
+    [
+      environment({ captchaEnabled: true }),
+      'user_settings.sign_up.captcha_enabled must be false',
+    ],
+    [
+      environment({ passwordEnabled: false }),
+      'user_settings.attributes.password.enabled must be true',
+    ],
+  ])('reports fetched configuration drift: %j', async (body, reason) => {
     const fetchImplementation = vi.fn().mockResolvedValue({
       ok: true,
-      json: vi.fn().mockResolvedValue(environment({ captchaEnabled: true })),
+      json: vi.fn().mockResolvedValue(body),
     })
 
     await expect(
       checkClerkEnvironment({ fetchImplementation }),
-    ).rejects.toThrow('Clerk configuration drifted')
+    ).rejects.toThrow(`Clerk configuration drifted:\n- ${reason}`)
   })
 })

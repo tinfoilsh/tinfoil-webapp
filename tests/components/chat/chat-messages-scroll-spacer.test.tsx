@@ -1,11 +1,12 @@
 import { ChatMessages } from '@/components/chat/chat-messages'
 import type { Message } from '@/components/chat/types'
+import {
+  DEFAULT_AUTO_INTELLIGENCE_LEVEL,
+  type BaseModel,
+} from '@/config/models'
 import { render } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-
-vi.mock('@/config/models', () => ({
-  findSelectableModel: (_id: string, models: unknown[]) => models[0],
-}))
 
 vi.mock('@/components/chat/renderers/client', () => ({
   getRendererRegistry: () => ({
@@ -25,26 +26,49 @@ vi.mock('@/components/chat/PrintableChat', () => ({
   PrintableChat: () => null,
 }))
 
-const models = [
-  { id: 'model-1', chatConfig: { contextWindowTokens: 1000 } },
-] as any
+const models: BaseModel[] = [
+  {
+    modelName: 'gpt-oss-120b',
+    name: 'GPT-OSS',
+    nameShort: 'GPT-OSS',
+    image: '',
+    description: '',
+    type: 'chat',
+    chat: true,
+    chatConfig: { contextWindowTokens: 1000 },
+  },
+]
 
-function message(role: Message['role'], turnId: string): Message {
+const MESSAGE_TIMESTAMPS = {
+  'old-user': 1,
+  'old-assistant': 2,
+  'active-user': 3,
+  'active-assistant': 4,
+}
+
+function message(
+  role: Message['role'],
+  turnId: keyof typeof MESSAGE_TIMESTAMPS,
+): Message {
   return {
     role,
     turnId,
     content: `${role} message`,
-    timestamp: new Date(),
+    timestamp: new Date(MESSAGE_TIMESTAMPS[turnId]),
   }
 }
 
-function props(messages: Message[]) {
+function props(messages: Message[]): ComponentProps<typeof ChatMessages> {
   return {
     chatId: 'chat-1',
     messages,
     isDarkMode: false,
     models,
-    selectedModel: 'model-1',
+    selectedModel: models[0].modelName,
+    autoIntelligence: DEFAULT_AUTO_INTELLIGENCE_LEVEL,
+    setAutoIntelligence: () => {
+      throw new Error('Unexpected intelligence change while rendering messages')
+    },
   }
 }
 

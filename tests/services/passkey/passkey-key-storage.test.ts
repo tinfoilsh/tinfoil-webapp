@@ -1,17 +1,60 @@
-import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
+import { SECRET_PASSKEY_PRF_OUTPUT } from '@/constants/storage-keys'
+import { encryptionService } from '@/services/encryption/encryption-service'
+import {
+  passkeyKeyManager,
+  TINFOIL_PASSKEY_PROFILE,
+} from '@/services/passkey/kit'
 import {
   decryptKeyBundle,
-  encryptKeyBundle,
+  recoverPasskeyKeyBundle,
+  wrapTinfoilKeyBundle,
   type KeyBundle,
 } from '@/services/passkey/passkey-key-storage'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-/**
- * Generate a deterministic 32-byte PRF output for testing.
- * Real PRF outputs come from WebAuthn; here we simulate with random bytes.
- */
-function generateTestPrfOutput(): ArrayBuffer {
-  return crypto.getRandomValues(new Uint8Array(32)).buffer as ArrayBuffer
+vi.mock('@/services/sync-enclave/sync-api', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/services/sync-enclave/sync-api')
+  >()),
+  keyCurrent: vi.fn(async () => ({ key_id: null, bundles: {} })),
+}))
+
+const CREDENTIAL_ID = 'AQID'
+const PRF_OUTPUT = Uint8Array.from({ length: 32 }, (_, index) => index)
+const PRIMARY = `key_${'ar'.repeat(32)}`
+const ALTERNATIVE = `key_${'as'.repeat(32)}`
+const SECOND_ALTERNATIVE = `key_${'at'.repeat(32)}`
+const LEGACY_IV = 'AQIDBAUGBwgJCgsM'
+const PRIMARY_CIPHERTEXT =
+  '1xR6jgDLBx4pG6hLEh6kLXlYz+gbmyu4YuMnGxOIcDIIkUlDVPF1+Gn/qJNUfTIfk1rAc+frkQlLs9cQVVHkribgOEmMopUnHVtbezyR8JutzN6w2S9wHWyyWviOKIy1lPgoqg6b37wo2/Pchdyaxnemk30='
+const ALTERNATIVES_CIPHERTEXT =
+  '1xR6jgDLBx4pG6hLEh6kLXlYz+gbmyu4YuMnGxOIcDIIkUlDVPF1+Gn/qJNUfTIfk1rAc+frkQlLs9cQVVHkribgOEmMopUnHVtbezyR8JutzN6w2S9wHWyyWviOKIy1lPhXvL9sfe2bdfUNlvHaLSgmiURYZzk63TFeErTj8oL9YgWyrNNIvTy096rYvUbscgUtiKvgibRV87L8Z0nBMXX5cj/SMdt09MNGay20GGUcktA4PrKs07cjcdmuqO8LjLl4tpxrncH/bKtknXpSqiATbarLyH54Yw6K3rOJKWi9/5Ml4zN90ghwJBivQ6bwU4nCOnihXql+/OwLl58ouxQ='
+
+function recoverLegacy(
+  encrypted: { iv: string; data: string },
+  prf = PRF_OUTPUT,
+) {
+  localStorage.setItem(
+    SECRET_PASSKEY_PRF_OUTPUT,
+    JSON.stringify({
+      credentialId: CREDENTIAL_ID,
+      prfOutput: Buffer.from(prf).toString('base64'),
+    }),
+  )
+  return recoverPasskeyKeyBundle(
+    [
+      {
+        id: CREDENTIAL_ID,
+        iv: encrypted.iv,
+        encrypted_keys: encrypted.data,
+        created_at: '2024-01-01T00:00:00.000Z',
+        version: 1,
+        sync_version: 1,
+        source: 'legacy',
+      },
+    ],
+    { cachedOnly: true },
+  )
 }
 
 async function deriveKeyEncryptionKey(
@@ -39,73 +82,85 @@ describe('passkey-key-storage', () => {
   let prfOutput: ArrayBuffer
 
   beforeEach(async () => {
-    prfOutput = generateTestPrfOutput()
+    encryptionService.clearKey()
+    prfOutput = PRF_OUTPUT.slice().buffer
     kek = await deriveKeyEncryptionKey(prfOutput)
   })
 
   describe('encryptKeyBundle / decryptKeyBundle round-trip', () => {
-    it('should encrypt and decrypt a key bundle with primary only', async () => {
+    it('recovers a fixed legacy primary-only envelope', async () => {
       const original: KeyBundle = {
-        primary: 'key_abcdef1234567890',
+        primary: PRIMARY,
         alternatives: [],
       }
 
-      const encrypted = await encryptKeyBundle(kek, original)
-      const decrypted = await decryptKeyBundle(kek, encrypted)
+      const decrypted = (
+        await recoverLegacy({ iv: LEGACY_IV, data: PRIMARY_CIPHERTEXT })
+      )?.keyBundle
 
-      expect(decrypted.primary).toBe(original.primary)
-      expect(decrypted.alternatives).toEqual(original.alternatives)
+      expect(decrypted?.primary).toBe(original.primary)
+      expect(decrypted?.alternatives).toEqual(original.alternatives)
     })
 
-    it('should encrypt and decrypt a key bundle with alternatives', async () => {
+    it('recovers fixed legacy primary and alternative keys', async () => {
       const original: KeyBundle = {
-        primary: 'key_primary1234567890abcdef',
-        alternatives: ['key_alt1abcdef1234567890', 'key_alt2abcdef1234567890'],
+        primary: PRIMARY,
+        alternatives: [ALTERNATIVE, SECOND_ALTERNATIVE],
       }
 
-      const encrypted = await encryptKeyBundle(kek, original)
-      const decrypted = await decryptKeyBundle(kek, encrypted)
+      const decrypted = (
+        await recoverLegacy({ iv: LEGACY_IV, data: ALTERNATIVES_CIPHERTEXT })
+      )?.keyBundle
 
-      expect(decrypted.primary).toBe(original.primary)
-      expect(decrypted.alternatives).toEqual(original.alternatives)
+      expect(decrypted?.primary).toBe(original.primary)
+      expect(decrypted?.alternatives).toEqual(original.alternatives)
     })
 
-    it('should produce different ciphertext for the same plaintext (random IV)', async () => {
+    it('wraps repeated primary and alternative keys with fresh IVs and ciphertext', async () => {
       const bundle: KeyBundle = {
-        primary: 'key_abcdef1234567890',
-        alternatives: [],
+        primary: PRIMARY,
+        alternatives: [ALTERNATIVE],
       }
 
-      const encrypted1 = await encryptKeyBundle(kek, bundle)
-      const encrypted2 = await encryptKeyBundle(kek, bundle)
-
-      expect(encrypted1.iv).not.toBe(encrypted2.iv)
-      expect(encrypted1.data).not.toBe(encrypted2.data)
+      const wrap = async () =>
+        wrapTinfoilKeyBundle(
+          await passkeyKeyManager.wrapKeyWithPRFResult({
+            credentialId: CREDENTIAL_ID,
+            keyMaterial: new Uint8Array(32).fill(0x11),
+            prfResult: { output: PRF_OUTPUT },
+          }),
+          bundle,
+          { output: PRF_OUTPUT },
+        )
+      const encrypted1 = await wrap()
+      const encrypted2 = await wrap()
+      expect(encrypted1).not.toBeNull()
+      expect(encrypted2).not.toBeNull()
+      expect(encrypted1?.primary.kekIvHex).not.toBe(
+        encrypted2?.primary.kekIvHex,
+      )
+      expect(encrypted1?.primary.wrappedKeyHex).not.toBe(
+        encrypted2?.primary.wrappedKeyHex,
+      )
+      expect(encrypted1?.alternatives[0].kekIvHex).not.toBe(
+        encrypted2?.alternatives[0].kekIvHex,
+      )
+      expect(encrypted1?.alternatives[0].wrappedKeyHex).not.toBe(
+        encrypted2?.alternatives[0].wrappedKeyHex,
+      )
     })
   })
 
   describe('decryption failure cases', () => {
     it('should fail to decrypt with a different KEK', async () => {
-      const bundle: KeyBundle = {
-        primary: 'key_abcdef1234567890',
-        alternatives: [],
-      }
-
-      const encrypted = await encryptKeyBundle(kek, bundle)
-
-      const differentPrf = generateTestPrfOutput()
-      const differentKek = await deriveKeyEncryptionKey(differentPrf)
-
-      await expect(decryptKeyBundle(differentKek, encrypted)).rejects.toThrow()
+      const encrypted = { iv: LEGACY_IV, data: PRIMARY_CIPHERTEXT }
+      await expect(
+        recoverLegacy(encrypted, new Uint8Array(32).fill(0xff)),
+      ).resolves.toBeNull()
     })
 
     it('should fail to decrypt tampered ciphertext', async () => {
-      const bundle: KeyBundle = {
-        primary: 'key_abcdef1234567890',
-        alternatives: [],
-      }
-
-      const encrypted = await encryptKeyBundle(kek, bundle)
+      const encrypted = { iv: LEGACY_IV, data: PRIMARY_CIPHERTEXT }
 
       // Tamper with one character in the middle of the ciphertext
       const tampered = {
@@ -116,16 +171,11 @@ describe('passkey-key-storage', () => {
           encrypted.data.substring(11),
       }
 
-      await expect(decryptKeyBundle(kek, tampered)).rejects.toThrow()
+      await expect(recoverLegacy(tampered)).resolves.toBeNull()
     })
 
     it('should fail to decrypt with tampered IV', async () => {
-      const bundle: KeyBundle = {
-        primary: 'key_abcdef1234567890',
-        alternatives: [],
-      }
-
-      const encrypted = await encryptKeyBundle(kek, bundle)
+      const encrypted = { iv: LEGACY_IV, data: PRIMARY_CIPHERTEXT }
 
       const tampered = {
         ...encrypted,
@@ -135,7 +185,7 @@ describe('passkey-key-storage', () => {
           encrypted.iv.substring(3),
       }
 
-      await expect(decryptKeyBundle(kek, tampered)).rejects.toThrow()
+      await expect(recoverLegacy(tampered)).resolves.toBeNull()
     })
   })
 

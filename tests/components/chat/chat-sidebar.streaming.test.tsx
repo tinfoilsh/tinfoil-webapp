@@ -1,5 +1,9 @@
 import { ChatSidebar } from '@/components/chat/chat-sidebar'
-import { DragProvider } from '@/components/chat/drag-context'
+import {
+  DragProvider,
+  useDrag,
+  type ChatDragSource,
+} from '@/components/chat/drag-context'
 import type { Chat } from '@/components/chat/types'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { act, fireEvent, render, screen } from '@testing-library/react'
@@ -58,6 +62,18 @@ const otherChat: Chat = {
   createdAt: new Date(),
   isBlankChat: false,
   isLocalOnly: false,
+}
+
+function DragSource({ source }: { source: ChatDragSource }) {
+  const { setDraggingChat, draggingChatSource } = useDrag()
+  return (
+    <>
+      <button onClick={() => setDraggingChat(activeChat.id, null, source)}>
+        Start drag
+      </button>
+      <output aria-label="Drag source">{draggingChatSource ?? 'none'}</output>
+    </>
+  )
 }
 
 describe('chat sidebar during streaming', () => {
@@ -124,4 +140,78 @@ describe('chat sidebar during streaming', () => {
     expect(screen.queryByText('Generating response')).not.toBeInTheDocument()
     expect(otherLink).toBeVisible()
   })
+
+  it.each([
+    { source: 'favorites', isLocalOnly: false, destination: 'Local' },
+    { source: 'chat-history', isLocalOnly: false, destination: 'Local' },
+    { source: 'favorites', isLocalOnly: true, destination: 'Cloud' },
+    { source: 'chat-history', isLocalOnly: true, destination: 'Cloud' },
+  ] as const)(
+    'routes a $source drop on the $destination chat list without mixing removal and conversion',
+    async ({ source, isLocalOnly, destination }) => {
+      const droppedChat = { ...activeChat, isLocalOnly }
+      const onRemoveFavorite = vi.fn()
+      const onConvertChatToLocal = vi.fn(async () => {})
+      const onConvertChatToCloud = vi.fn(async () => true)
+      const onRemoveChatFromProject = vi.fn(async () => {})
+      render(
+        <DragProvider>
+          <DragSource source={source} />
+          <ChatSidebar
+            isOpen
+            setIsOpen={vi.fn()}
+            chats={[droppedChat, otherChat]}
+            currentChat={droppedChat}
+            isDarkMode={false}
+            pixelateSidebarChatTitles={false}
+            createNewChat={vi.fn()}
+            handleChatSelect={vi.fn()}
+            updateChatTitle={vi.fn()}
+            deleteChat={vi.fn()}
+            isClient
+            isPremium
+            windowWidth={1440}
+            pinnedChatIds={[activeChat.id]}
+            onRemoveFavorite={onRemoveFavorite}
+            onConvertChatToLocal={onConvertChatToLocal}
+            onConvertChatToCloud={onConvertChatToCloud}
+            onRemoveChatFromProject={onRemoveChatFromProject}
+          />
+        </DragProvider>,
+      )
+      fireEvent.click(screen.getByRole('tab', { name: destination }))
+      fireEvent.click(screen.getByRole('button', { name: 'Start drag' }))
+      expect(screen.getByLabelText('Drag source')).toHaveTextContent(source)
+
+      await act(async () => {
+        fireEvent.drop(screen.getByRole('tabpanel', { name: destination }), {
+          dataTransfer: {
+            getData: (type: string) => {
+              if (type !== 'application/x-chat-id')
+                throw new Error(`Unexpected drag type: ${type}`)
+              return activeChat.id
+            },
+          },
+        })
+      })
+
+      if (source === 'favorites') {
+        expect(onRemoveFavorite).toHaveBeenCalledExactlyOnceWith(activeChat.id)
+        expect(onConvertChatToLocal).not.toHaveBeenCalled()
+        expect(onConvertChatToCloud).not.toHaveBeenCalled()
+      } else {
+        expect(onRemoveFavorite).not.toHaveBeenCalled()
+        const convert = isLocalOnly
+          ? onConvertChatToCloud
+          : onConvertChatToLocal
+        const otherConvert = isLocalOnly
+          ? onConvertChatToLocal
+          : onConvertChatToCloud
+        expect(convert).toHaveBeenCalledExactlyOnceWith(activeChat.id)
+        expect(otherConvert).not.toHaveBeenCalled()
+      }
+      expect(onRemoveChatFromProject).not.toHaveBeenCalled()
+      expect(screen.getByLabelText('Drag source')).toHaveTextContent('none')
+    },
+  )
 })

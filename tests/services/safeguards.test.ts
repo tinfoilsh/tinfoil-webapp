@@ -66,12 +66,6 @@ describe('safeguards store', () => {
     expect(getSafeguardsSnapshot()).not.toHaveProperty('isPreview')
   })
 
-  it('always fetches the configured API base URL', async () => {
-    const fetchSpy = mockSafeguardsResponse()
-    await refreshSafeguards()
-    expect(fetchSpy).toHaveBeenCalledWith(SAFEGUARDS_URL, expect.any(Object))
-  })
-
   it('loads flagged chats and indexes them by conversation id', async () => {
     expect(getSafeguardsSnapshot().hasLoaded).toBe(false)
     mockSafeguardsResponse()
@@ -197,13 +191,27 @@ describe('safeguards store', () => {
   it('notifies subscribers and clears on reset', async () => {
     mockSafeguardsResponse()
     const listener = vi.fn()
-    subscribeSafeguards(listener)
-
-    await refreshSafeguards()
-    resetSafeguards()
-
-    expect(listener).toHaveBeenCalled()
-    expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
-    expect(getSafeguardsSnapshot().status).toBe('idle')
+    const unsubscribe = subscribeSafeguards(listener)
+    try {
+      const refresh = refreshSafeguards()
+      expect(listener).toHaveBeenCalledOnce()
+      expect(getSafeguardsSnapshot().status).toBe('loading')
+      listener.mockClear()
+      await refresh
+      expect(listener).toHaveBeenCalledOnce()
+      expect(getSafeguardsSnapshot().status).toBe('ready')
+      listener.mockClear()
+      resetSafeguards()
+      expect(listener).toHaveBeenCalledOnce()
+      expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
+      expect(getSafeguardsSnapshot().status).toBe('idle')
+      unsubscribe()
+      listener.mockClear()
+      await refreshSafeguards()
+      resetSafeguards()
+      expect(listener).not.toHaveBeenCalled()
+    } finally {
+      unsubscribe()
+    }
   })
 })

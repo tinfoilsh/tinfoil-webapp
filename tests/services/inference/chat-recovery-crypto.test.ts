@@ -36,25 +36,10 @@ async function envelope() {
 }
 
 describe('chat recovery envelope crypto', () => {
-  it('round-trips a recovery payload', async () => {
-    const encrypted = await envelope()
-
-    await expect(
-      decryptRecoveryEnvelope({
-        cek: cek(1),
-        userId: USER_ID,
-        chatId: CHAT_ID,
-        envelope: encrypted,
-        now: NOW,
-      }),
-    ).resolves.toEqual({
-      sessionId: SESSION_ID,
-      recoveryToken: TOKEN,
-    })
-  })
-
-  it('round-trips an SDK-serialized recovery token', async () => {
-    const recoveryToken = JSON.stringify(TOKEN)
+  it.each([
+    { format: 'object', recoveryToken: TOKEN },
+    { format: 'SDK-serialized', recoveryToken: JSON.stringify(TOKEN) },
+  ])('round-trips a $format recovery token', async ({ recoveryToken }) => {
     const encrypted = await encryptRecoveryEnvelope({
       cek: cek(1),
       userId: USER_ID,

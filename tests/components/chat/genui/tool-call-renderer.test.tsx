@@ -8,7 +8,7 @@ import {
   OPEN_ARTIFACT_PREVIEW_EVENT,
   type ArtifactPreviewSidebarEventDetail,
 } from '@/components/chat/genui/widgets/ArtifactPreview'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -32,10 +32,7 @@ const validArtifactPreview = JSON.stringify(artifact)
 const artifactPreviewListeners: EventListener[] = []
 
 function setWindowWidth(width: number): void {
-  Object.defineProperty(window, 'innerWidth', {
-    configurable: true,
-    value: width,
-  })
+  vi.stubGlobal('innerWidth', width)
 }
 
 function renderArtifactPreview({ isStreaming }: { isStreaming: boolean }) {
@@ -69,6 +66,7 @@ describe('GenUIToolCallRenderer', () => {
     }
     artifactPreviewListeners.length = 0
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('renders completed widget arguments while the assistant stream continues', () => {
@@ -111,14 +109,9 @@ describe('GenUIToolCallRenderer', () => {
     expect(listener).not.toHaveBeenCalled()
   })
 
-  it('does not auto-open artifacts from chat history', () => {
-    const listener = renderArtifactPreview({ isStreaming: false })
-
-    expect(listener).not.toHaveBeenCalled()
-  })
-
   it('keeps artifact card clicks as sidebar toggles', () => {
     const listener = renderArtifactPreview({ isStreaming: false })
+    expect(listener).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Snake game/ }))
 
     expect(listener).toHaveBeenCalledTimes(1)
@@ -286,8 +279,15 @@ describe('GenUIToolCallRenderer', () => {
   })
 
   it('keeps widget retry repeatable and exposes full regeneration separately', async () => {
+    let rejectRetry!: (error: ArtifactRetryError) => void
     const retryWidget = vi
-      .fn()
+      .fn<(toolCallId: string) => Promise<boolean>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectRetry = reject
+          }),
+      )
       .mockRejectedValue(new ArtifactRetryError('incomplete_replacement'))
     const regenerate = vi.fn()
     render(
@@ -317,13 +317,31 @@ describe('GenUIToolCallRenderer', () => {
       screen.getByRole('button', { name: 'Regenerate response' }),
     ).toBeInTheDocument()
     fireEvent.click(retryButton)
-    await waitFor(() => expect(retryWidget).toHaveBeenCalledTimes(1))
+    expect(retryWidget).toHaveBeenCalledExactlyOnceWith('one')
+    const pendingRetry = screen.getByRole('button', {
+      name: 'Fixing widget...',
+    })
+    const regenerateButton = screen.getByRole('button', {
+      name: 'Regenerate response',
+    })
+    expect(pendingRetry).toBeDisabled()
+    expect(regenerateButton).toBeDisabled()
+    fireEvent.click(pendingRetry)
+    fireEvent.click(regenerateButton)
+    expect(retryWidget).toHaveBeenCalledOnce()
+    expect(regenerate).not.toHaveBeenCalled()
+    await act(async () => {
+      rejectRetry(new ArtifactRetryError('incomplete_replacement'))
+    })
     expect(
       screen.getByText(/replacement was incomplete or invalid JSON/),
     ).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Retry widget' }))
     await waitFor(() => expect(retryWidget).toHaveBeenCalledTimes(2))
+    expect(retryWidget).toHaveBeenNthCalledWith(2, 'one')
     expect(regenerate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }))
+    expect(regenerate).toHaveBeenCalledOnce()
   })
 
   it.each([
@@ -422,6 +440,47 @@ describe('GenUIToolCallRenderer', () => {
         screen.queryByText(/component ran into a problem while rendering/),
       ).not.toBeInTheDocument(),
     )
+  })
+
+  it('resets render failures when arguments change outside a retry', async () => {
+    const widget = GENUI_WIDGETS_BY_NAME.render_message_compose
+    const originalRender = widget.render
+    vi.spyOn(widget, 'render').mockImplementation(
+      (args: { title?: string }, context: GenUIRenderContext) => {
+        if (args.title === 'Reply draft') throw new Error('render failed')
+        return originalRender!(args, context)
+      },
+    )
+    const toolCall = {
+      id: 'external-repair',
+      name: 'render_message_compose',
+      arguments: validMessageCompose,
+    }
+    const { rerender } = render(
+      <GenUIToolCallRenderer isStreaming={false} toolCalls={[toolCall]} />,
+    )
+    expect(
+      screen.getByText(/component ran into a problem while rendering/),
+    ).toBeInTheDocument()
+    rerender(
+      <GenUIToolCallRenderer
+        isStreaming={false}
+        toolCalls={[
+          {
+            ...toolCall,
+            arguments: JSON.stringify({
+              channel: 'message',
+              title: 'External repair',
+              variants: [{ label: 'Concise', body: 'Recovered.' }],
+            }),
+          },
+        ]}
+      />,
+    )
+    expect(await screen.findByText('External repair')).toBeInTheDocument()
+    expect(
+      screen.queryByText(/component ran into a problem while rendering/),
+    ).not.toBeInTheDocument()
   })
 
   it('retries rendering when repaired arguments are unchanged', async () => {

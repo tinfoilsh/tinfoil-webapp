@@ -84,13 +84,40 @@ describe('AuthTokenManager', () => {
 
   it('drops the provider and refresh state on reset', async () => {
     const manager = new AuthTokenManager()
-    manager.initialize(vi.fn().mockResolvedValue('token'))
+    let resolveOld!: (token: string) => void
+    manager.initialize(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveOld = resolve
+        }),
+    )
+    const oldRefresh = manager.refreshToken('rejected-token')
+    const oldRejection = expect(oldRefresh).rejects.toBeInstanceOf(
+      AuthTokenRefreshError,
+    )
     manager.reset()
 
     expect(manager.isInitialized()).toBe(false)
     await expect(manager.getValidToken()).rejects.toMatchObject({
       reason: 'not-initialized',
     })
+    let resolveNew!: (token: string) => void
+    const newProvider = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveNew = resolve
+        }),
+    )
+    manager.initialize(newProvider)
+    const newRefresh = manager.refreshToken('rejected-token')
+    expect(newRefresh).not.toBe(oldRefresh)
+    expect(newProvider).toHaveBeenCalledExactlyOnceWith({ skipCache: true })
+    resolveOld('old-account-token')
+    await oldRejection
+    expect(manager.refreshToken('rejected-token')).toBe(newRefresh)
+    expect(newProvider).toHaveBeenCalledOnce()
+    resolveNew('new-account-token')
+    await expect(newRefresh).resolves.toBe('new-account-token')
   })
 
   it('rejects an in-flight refresh after the account changes', async () => {
@@ -134,7 +161,7 @@ describe('AuthTokenManager', () => {
 
   it('cancels a hanging authentication read with the caller signal', async () => {
     const manager = new AuthTokenManager()
-    manager.initialize(vi.fn(() => new Promise(() => {})))
+    manager.initialize(vi.fn(() => new Promise<string | null>(() => {})))
     const controller = new AbortController()
 
     const authenticated = manager.isAuthenticated(controller.signal)

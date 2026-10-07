@@ -53,12 +53,13 @@ describe('SafeguardFlagBanner', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('does not distinguish mock flags: the banner is identical to production', () => {
+  it('offers sign-in guidance when no settings action is available', () => {
     render(<SafeguardFlagBanner chatId="flagged-chat" isDarkMode={false} />)
     expect(screen.queryByText(/Local preview/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/simulated/i)).not.toBeInTheDocument()
     expect(
       screen.getByText('Sign in to view Settings → Safeguards.'),
     ).toBeVisible()
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })

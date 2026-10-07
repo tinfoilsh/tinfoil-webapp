@@ -32,16 +32,11 @@ const { getAuthHeaders } = vi.hoisted(() => ({
   getAuthHeaders: vi.fn(),
 }))
 
-vi.mock('@/services/auth', () => {
-  class AuthTokenUnavailableError extends Error {
-    constructor(msg = 'unavailable') {
-      super(msg)
-      this.name = 'AuthTokenUnavailableError'
-    }
-  }
+vi.mock('@/services/auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/services/auth')>()
   return {
+    ...actual,
     authTokenManager: { getAuthHeaders },
-    AuthTokenUnavailableError,
   }
 })
 
@@ -174,7 +169,7 @@ let fetchMock: ReturnType<typeof vi.fn>
 
 describe('local Dev Simulator', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     vi.useFakeTimers()
     resetSafeguards()
     getAuthHeaders.mockResolvedValue({
@@ -197,16 +192,19 @@ describe('local Dev Simulator', () => {
     await vi.runAllTimersAsync()
     const chunks = await result
 
-    expect(contentOf(chunks)).toBe(getSimulatorPattern('help').content)
     expect(contentOf(chunks)).toContain('Available Dev Simulator commands')
+    expect(contentOf(chunks)).toContain('`help`')
     expect(contentOf(chunks)).toContain('`flag safeguard`')
     expect(contentOf(chunks)).toContain('`reset safeguards`')
     expect(contentOf(chunks)).toContain(`\`${DEV_SIMULATOR_ERROR_COMMAND}\``)
-    for (const command of Object.keys(SIMULATOR_PATTERNS)) {
+    const commands = Object.keys(SIMULATOR_PATTERNS)
+    expect(commands.length).toBeGreaterThan(0)
+    for (const command of commands) {
       expect(contentOf(chunks)).toContain(`\`${command}\``)
     }
     expect(chunks.at(-1)?.choices?.[0]?.finish_reason).toBe('stop')
     expect(createCompletion).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it.each([DEV_SIMULATOR_ERROR_COMMAND, '  TEST ERROR  '])(
@@ -268,22 +266,35 @@ describe('local Dev Simulator', () => {
     },
   )
 
-  it('counts each chat once through the mock backend', async () => {
+  it('forwards every flag command and refreshes the store for its conversation', async () => {
     await collect(await send('flag safeguard'))
     await collect(await send('flag safeguard'))
-    expect(backendFlags.map((f) => f.conversation_id)).toEqual(['current-chat'])
     await collect(
       await send('flag safeguard', { conversationId: 'another-chat' }),
     )
-    expect(backendFlags.map((f) => f.conversation_id).sort()).toEqual([
-      'another-chat',
-      'current-chat',
+    expect(
+      fetchMock.mock.calls.map(([url, init]) => [url, init?.method ?? 'GET']),
+    ).toEqual([
+      ['/api/dev/safeguard-flags', 'POST'],
+      ['/api/users/me/safeguard-flags', 'GET'],
+      ['/api/dev/safeguard-flags', 'POST'],
+      ['/api/users/me/safeguard-flags', 'GET'],
+      ['/api/dev/safeguard-flags', 'POST'],
+      ['/api/users/me/safeguard-flags', 'GET'],
+    ])
+    expect(
+      fetchMock.mock.calls
+        .filter(([, init]) => init?.method === 'POST')
+        .map(([, init]) => JSON.parse(String(init?.body))),
+    ).toEqual([
+      { conversation_id: 'current-chat' },
+      { conversation_id: 'current-chat' },
+      { conversation_id: 'another-chat' },
     ])
     expect(getSafeguardsSnapshot().flaggedChatIds).toEqual({
       'current-chat': true,
       'another-chat': true,
     })
-    expect(fetchMock).toHaveBeenCalled()
   })
 
   it('clears flags on `reset safeguards` through the DELETE endpoint', async () => {
@@ -314,7 +325,11 @@ describe('local Dev Simulator', () => {
   it('requires the exact command rather than matching it in prose', async () => {
     const result = collect(await send('What does flag safeguard mean?'))
     await vi.runAllTimersAsync()
-    await result
+    const content = contentOf(await result)
+    expect(content).toContain('This is the default simulated response.')
+    expect(content).toContain('Your query: "What does flag safeguard mean?"')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(createCompletion).not.toHaveBeenCalled()
     expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
   })
 
@@ -324,6 +339,8 @@ describe('local Dev Simulator', () => {
     controller.abort()
     await expect(collect(stream)).rejects.toMatchObject({ name: 'AbortError' })
     expect(getSafeguardsSnapshot().flaggedChats).toEqual([])
+    expect(backendFlags).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('aborts an in-flight safeguard mutation request', async () => {
@@ -361,7 +378,7 @@ describe('local Dev Simulator', () => {
   it('explains that sign-in is required when no Clerk token is available', async () => {
     const { AuthTokenUnavailableError } = await import('@/services/auth')
     getAuthHeaders.mockRejectedValue(
-      new AuthTokenUnavailableError('signed out'),
+      new AuthTokenUnavailableError('unavailable'),
     )
     await expect(collect(await send('flag safeguard'))).rejects.toMatchObject({
       code: 'FETCH_ERROR',

@@ -86,6 +86,12 @@ describe('ProfileSyncService', () => {
     expect(mockPush).toHaveBeenCalledTimes(2)
     expect(mockPush.mock.calls[0][0]).toMatchObject({ ifMatch: null })
     expect(mockPush.mock.calls[1][0]).toMatchObject({ ifMatch: '9' })
+    expect(
+      JSON.parse(new TextDecoder().decode(mockPush.mock.calls[1][0].plaintext)),
+    ).toMatchObject({ nickname: 'Sacha', version: 10, clockVersion: 10 })
+    expect(mockPush.mock.calls[1][0].idempotencyKey).not.toBe(
+      mockPush.mock.calls[0][0].idempotencyKey,
+    )
   })
 
   it('adopts the newer remote field and re-pushes the merge on conflict', async () => {
@@ -130,6 +136,12 @@ describe('ProfileSyncService', () => {
     // current version so both devices converge.
     expect(mockPush).toHaveBeenCalledTimes(2)
     expect(mockPush.mock.calls[1][0]).toMatchObject({ ifMatch: '9' })
+    expect(
+      JSON.parse(new TextDecoder().decode(mockPush.mock.calls[1][0].plaintext)),
+    ).toMatchObject({ nickname: 'Remote', version: 10, clockVersion: 10 })
+    expect(mockPush.mock.calls[1][0].idempotencyKey).not.toBe(
+      mockPush.mock.calls[0][0].idempotencyKey,
+    )
     expect(service.getCachedProfile()).toMatchObject({ nickname: 'Remote' })
   })
 

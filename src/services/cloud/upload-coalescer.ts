@@ -385,34 +385,6 @@ export class UploadCoalescer {
   }
 
   /**
-   * Check if a chat is currently being uploaded.
-   */
-  isUploading(chatId: string): boolean {
-    const state = this.states.get(chatId)
-    return !!state?.inFlight
-  }
-
-  /**
-   * Get the number of active uploads.
-   */
-  get activeUploadCount(): number {
-    return this.activeWorkers
-  }
-
-  /**
-   * Get all chat IDs with pending uploads.
-   */
-  getPendingChatIds(): string[] {
-    const ids: string[] = []
-    for (const [chatId, state] of this.states.entries()) {
-      if (state.dirty || state.queued || state.inFlight) {
-        ids.push(chatId)
-      }
-    }
-    return ids
-  }
-
-  /**
    * Clear all pending uploads (useful for cleanup/testing).
    */
   clear(): void {
@@ -475,14 +447,4 @@ function shouldRetryUploadError(error: Error): boolean {
   // covers every attempt, so the extra tries are safe and only delay
   // terminal failure by a few seconds.
   return true
-}
-
-/**
- * Create a singleton upload coalescer for a given prepare function.
- */
-export function createUploadCoalescer(
-  prepareUpload: PrepareUploadFn,
-  config?: UploadCoalescerConfig,
-): UploadCoalescer {
-  return new UploadCoalescer(prepareUpload, config)
 }

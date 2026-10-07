@@ -2286,6 +2286,7 @@ export function ChatSidebar({
                             await onRemoveChatFromProject(chatId)
                           }
                         } else if (
+                          !favoriteDropConsumed &&
                           chat?.isLocalOnly &&
                           activeTab === 'cloud' &&
                           onConvertChatToCloud
@@ -2293,6 +2294,7 @@ export function ChatSidebar({
                           // Local chat dropped on cloud tab area - convert to cloud
                           await onConvertChatToCloud(chatId)
                         } else if (
+                          !favoriteDropConsumed &&
                           !chat?.isLocalOnly &&
                           activeTab === 'local' &&
                           onConvertChatToLocal

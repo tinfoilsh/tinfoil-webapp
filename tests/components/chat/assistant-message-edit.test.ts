@@ -19,6 +19,10 @@ describe('replaceAssistantContent', () => {
     expect(edited.timeline).toEqual([
       { type: 'content', id: 'content-0', content: 'new text' },
     ])
+    expect(message.content).toBe('old')
+    expect(message.timeline).toEqual([
+      { type: 'content', id: 'content-0', content: 'old' },
+    ])
   })
 
   it('keeps thinking and tool blocks and collapses split content blocks', () => {
@@ -122,23 +126,5 @@ describe('replaceAssistantContent', () => {
       },
       { type: 'content', id: 'legacy-content', content: 'edited' },
     ])
-  })
-
-  it('does not mutate the original message', () => {
-    const message: Message = {
-      role: 'assistant',
-      content: 'old',
-      timestamp,
-      timeline: [{ type: 'content', id: 'content-0', content: 'old' }],
-    }
-
-    replaceAssistantContent(message, 'new')
-
-    expect(message.content).toBe('old')
-    expect(message.timeline?.[0]).toEqual({
-      type: 'content',
-      id: 'content-0',
-      content: 'old',
-    })
   })
 })

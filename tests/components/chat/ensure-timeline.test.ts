@@ -3,11 +3,8 @@ import { MessageAssembler } from '@/components/chat/hooks/streaming/message-asse
 import { TimelineBuilder } from '@/components/chat/hooks/streaming/timeline-builder'
 import type {
   Message,
-  TimelineBlock,
   TimelineContentBlock,
   TimelineThinkingBlock,
-  TimelineURLFetchBlock,
-  TimelineWebSearchBlock,
 } from '@/components/chat/types'
 import { describe, expect, it } from 'vitest'
 
@@ -32,14 +29,6 @@ describe('ensureTimeline', () => {
       expect(ensureTimeline(msg)).toBe(msg)
     })
 
-    it('returns assistant messages that already have a timeline unchanged', () => {
-      const timeline: TimelineBlock[] = [
-        { type: 'content', id: 'c-0', content: 'hi' },
-      ]
-      const msg = assistantMsg({ content: 'hi', timeline })
-      expect(ensureTimeline(msg)).toBe(msg)
-    })
-
     it('returns empty assistant messages unchanged (no blocks to create)', () => {
       const msg = assistantMsg()
       expect(ensureTimeline(msg)).toBe(msg)
@@ -55,14 +44,10 @@ describe('ensureTimeline', () => {
       const block = result.timeline![0] as TimelineContentBlock
       expect(block.type).toBe('content')
       expect(block.content).toBe('the answer')
-    })
-
-    it('preserves all original fields', () => {
-      const msg = assistantMsg({ content: 'hello' })
-      const result = ensureTimeline(msg)
-      expect(result.content).toBe('hello')
+      expect(result.content).toBe('the answer')
       expect(result.role).toBe('assistant')
       expect(result.timestamp).toBe(msg.timestamp)
+      expect(msg.timeline).toBeUndefined()
     })
   })
 
@@ -87,16 +72,26 @@ describe('ensureTimeline', () => {
       expect(content.content).toBe('answer')
     })
 
-    it('handles active thinking (isThinking=true)', () => {
-      const msg = assistantMsg({
-        thoughts: 'still going',
-        isThinking: true,
-      })
-      const result = ensureTimeline(msg)
+    it.each(['', 'still going'])(
+      'handles active thinking (isThinking=true, thoughts=%j)',
+      (thoughts) => {
+        const msg = assistantMsg({
+          thoughts,
+          isThinking: true,
+        })
+        const result = ensureTimeline(msg)
 
-      const thinking = result.timeline![0] as TimelineThinkingBlock
-      expect(thinking.isThinking).toBe(true)
-    })
+        expect(result.timeline).toEqual([
+          {
+            type: 'thinking',
+            id: 'legacy-thinking',
+            content: thoughts,
+            isThinking: true,
+            duration: undefined,
+          },
+        ])
+      },
+    )
 
     it('ignores whitespace-only thoughts', () => {
       const msg = assistantMsg({ content: 'answer', thoughts: '   ' })
@@ -108,35 +103,6 @@ describe('ensureTimeline', () => {
   })
 
   describe('web search messages', () => {
-    it('places web search before thinking when webSearchBeforeThinking=true', () => {
-      const msg = assistantMsg({
-        content: 'answer',
-        thoughts: 'hmm',
-        webSearch: { query: 'test', status: 'completed' },
-        webSearchBeforeThinking: true,
-      })
-      const result = ensureTimeline(msg)
-
-      const types = result.timeline!.map((b) => b.type)
-      expect(types).toEqual(['web_search', 'thinking', 'content'])
-
-      const ws = result.timeline![0] as TimelineWebSearchBlock
-      expect(ws.state.query).toBe('test')
-      expect(ws.state.status).toBe('completed')
-    })
-
-    it('places web search after thinking when webSearchBeforeThinking is falsy', () => {
-      const msg = assistantMsg({
-        content: 'answer',
-        thoughts: 'hmm',
-        webSearch: { query: 'test', status: 'completed' },
-      })
-      const result = ensureTimeline(msg)
-
-      const types = result.timeline!.map((b) => b.type)
-      expect(types).toEqual(['thinking', 'web_search', 'content'])
-    })
-
     it('handles web search without thinking', () => {
       const msg = assistantMsg({
         content: 'answer',
@@ -160,9 +126,17 @@ describe('ensureTimeline', () => {
       })
       const result = ensureTimeline(msg)
 
-      expect(result.timeline![0].type).toBe('url_fetches')
-      const block = result.timeline![0] as TimelineURLFetchBlock
-      expect(block.fetches).toHaveLength(2)
+      expect(result.timeline).toEqual([
+        {
+          type: 'url_fetches',
+          id: 'legacy-url-fetches',
+          fetches: [
+            { id: 'f1', url: 'https://a.com', status: 'completed' },
+            { id: 'f2', url: 'https://b.com', status: 'fetching' },
+          ],
+        },
+        { type: 'content', id: 'legacy-content', content: 'answer' },
+      ])
     })
   })
 
@@ -184,35 +158,55 @@ describe('ensureTimeline', () => {
       })
       const result = ensureTimeline(msg)
 
-      const types = result.timeline!.map((b) => b.type)
-      expect(types).toEqual([
-        'url_fetches',
-        'web_search',
-        'thinking',
-        'content',
+      expect(result.timeline).toEqual([
+        {
+          type: 'url_fetches',
+          id: 'legacy-url-fetches',
+          fetches: [{ id: 'f1', url: 'https://page.com', status: 'completed' }],
+        },
+        {
+          type: 'web_search',
+          id: 'legacy-web-search-pre',
+          state: {
+            query: 'search query',
+            status: 'completed',
+            sources: [{ title: 'Source', url: 'https://src.com' }],
+          },
+        },
+        {
+          type: 'thinking',
+          id: 'legacy-thinking',
+          content: 'reasoning',
+          isThinking: false,
+          duration: 1,
+        },
+        { type: 'content', id: 'legacy-content', content: 'the answer' },
       ])
     })
 
-    it('urlFetches → thinking → webSearch(post) → content', () => {
-      const msg = assistantMsg({
-        content: 'the answer',
-        thoughts: 'reasoning',
-        webSearch: { query: 'q', status: 'completed' },
-        webSearchBeforeThinking: false,
-        urlFetches: [
-          { id: 'f1', url: 'https://page.com', status: 'completed' },
-        ],
-      })
-      const result = ensureTimeline(msg)
+    it.each([undefined, false])(
+      'urlFetches → thinking → webSearch(post) → content (before=%s)',
+      (webSearchBeforeThinking) => {
+        const msg = assistantMsg({
+          content: 'the answer',
+          thoughts: 'reasoning',
+          webSearch: { query: 'q', status: 'completed' },
+          webSearchBeforeThinking,
+          urlFetches: [
+            { id: 'f1', url: 'https://page.com', status: 'completed' },
+          ],
+        })
+        const result = ensureTimeline(msg)
 
-      const types = result.timeline!.map((b) => b.type)
-      expect(types).toEqual([
-        'url_fetches',
-        'thinking',
-        'web_search',
-        'content',
-      ])
-    })
+        const types = result.timeline!.map((b) => b.type)
+        expect(types).toEqual([
+          'url_fetches',
+          'thinking',
+          'web_search',
+          'content',
+        ])
+      },
+    )
   })
 
   describe('roundtrip: toMessage() output survives ensureTimeline', () => {
@@ -226,11 +220,20 @@ describe('ensureTimeline', () => {
       builder.appendContent('here is the answer')
 
       const message = assembler.toMessage(builder.snapshot())
+      expect(message.timeline).toEqual([
+        {
+          type: 'thinking',
+          id: 'thinking-0',
+          content: 'let me think about this',
+          isThinking: false,
+          duration: 1.5,
+        },
+        { type: 'content', id: 'content-1', content: 'here is the answer' },
+      ])
       const result = ensureTimeline(message)
 
       // Should return the exact same object (already has timeline)
       expect(result).toBe(message)
-      expect(result.timeline).toEqual(message.timeline)
     })
 
     it('flat fields from toMessage match what ensureTimeline would reconstruct', () => {
@@ -256,15 +259,37 @@ describe('ensureTimeline', () => {
       const reconstructed = ensureTimeline(legacy)
 
       // The flat fields should match
-      expect(reconstructed.content).toBe(streamedMsg.content)
-      expect(reconstructed.thoughts).toBe(streamedMsg.thoughts)
-      expect(reconstructed.webSearch).toEqual(streamedMsg.webSearch)
-      expect(reconstructed.thinkingDuration).toBe(streamedMsg.thinkingDuration)
+      expect(reconstructed.content).toBe('the answer')
+      expect(reconstructed.thoughts).toBe('reasoning')
+      expect(reconstructed.webSearch).toEqual({
+        query: 'test q',
+        status: 'completed',
+        sources: [{ title: 'Result', url: 'https://r.com' }],
+      })
+      expect(reconstructed.thinkingDuration).toBe(2)
 
       // The reconstructed timeline should have the same block types
       const streamedTypes = streamedMsg.timeline!.map((b) => b.type)
-      const reconstructedTypes = reconstructed.timeline!.map((b) => b.type)
-      expect(reconstructedTypes).toEqual(streamedTypes)
+      expect(streamedTypes).toEqual(['thinking', 'web_search', 'content'])
+      expect(reconstructed.timeline).toEqual([
+        {
+          type: 'thinking',
+          id: 'legacy-thinking',
+          content: 'reasoning',
+          isThinking: false,
+          duration: 2,
+        },
+        {
+          type: 'web_search',
+          id: 'legacy-web-search-post',
+          state: {
+            query: 'test q',
+            status: 'completed',
+            sources: [{ title: 'Result', url: 'https://r.com' }],
+          },
+        },
+        { type: 'content', id: 'legacy-content', content: 'the answer' },
+      ])
     })
 
     it('handles url fetches roundtrip', () => {
@@ -286,12 +311,28 @@ describe('ensureTimeline', () => {
       const legacy = { ...streamedMsg, timeline: undefined }
       const reconstructed = ensureTimeline(legacy)
 
-      expect(reconstructed.timeline!.map((b) => b.type)).toEqual([
-        'url_fetches',
-        'thinking',
-        'content',
+      expect(reconstructed.timeline).toEqual([
+        {
+          type: 'url_fetches',
+          id: 'legacy-url-fetches',
+          fetches: [{ id: 'f1', url: 'https://a.com', status: 'completed' }],
+        },
+        {
+          type: 'thinking',
+          id: 'legacy-thinking',
+          content: 'analyzing the page',
+          isThinking: false,
+          duration: 1,
+        },
+        {
+          type: 'content',
+          id: 'legacy-content',
+          content: 'here is what I found',
+        },
       ])
-      expect(reconstructed.urlFetches).toEqual(streamedMsg.urlFetches)
+      expect(reconstructed.urlFetches).toEqual([
+        { id: 'f1', url: 'https://a.com', status: 'completed' },
+      ])
     })
   })
 })

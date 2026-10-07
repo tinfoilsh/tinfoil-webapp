@@ -112,10 +112,12 @@ describe('dev-serve route precedence', () => {
     ['POST', '/api/dev/stream-log'],
     ['GET', '/api/config/models?feature=new'],
   ])('routes %s %s through the local API gateway', async (method, path) => {
+    const body = method === 'POST' ? '{"conversation_id":"chat-1"}' : undefined
     const response = await driveHandler(handler(), {
       method,
       path,
       headers: { Authorization: 'Bearer local' },
+      body,
     })
 
     expect(response.status).toBe(200)
@@ -125,6 +127,7 @@ describe('dev-serve route precedence', () => {
       url: path,
       authorization: 'Bearer local',
       host: new URL(gateway.url).host,
+      body: body ?? '',
     })
     expect(router.requests).toHaveLength(0)
   })
@@ -161,5 +164,7 @@ describe('dev-serve route precedence', () => {
     })
 
     expect(response.status).toBe(502)
+    expect(response.text).toBe('Bad Gateway')
+    expect(router.requests).toEqual([])
   })
 })

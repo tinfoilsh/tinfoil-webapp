@@ -151,10 +151,10 @@ describe('model lifecycle tags', () => {
         name: `Chat ${index}`,
       })),
       taggedModel,
-      { ...taggedModel, modelName: 'api-only', name: 'API only', chat: false },
+      { ...MODEL, modelName: 'api-only', name: 'API only', chat: false },
     ]
     const onSelect = vi.fn()
-    render(
+    const { rerender } = render(
       <ModelSelector
         selectedModel={taggedModel.modelName}
         models={models}
@@ -180,6 +180,16 @@ describe('model lifecycle tags', () => {
     expect(screen.queryByText('API only')).not.toBeInTheDocument()
     fireEvent.click(row)
     expect(onSelect).toHaveBeenCalledExactlyOnceWith(taggedModel.modelName)
+    rerender(
+      <ModelSelector
+        selectedModel="api-only"
+        models={models}
+        onSelect={onSelect}
+        isDarkMode={true}
+      />,
+    )
+    expect(screen.getByText('Chat 0')).toBeVisible()
+    expect(screen.queryByText('API only')).not.toBeInTheDocument()
   })
 
   it('does not inherit tags from candidates when Auto is selected', () => {

@@ -26,9 +26,14 @@ describe('AnimationFramePublisher', () => {
     const publisher = new AnimationFramePublisher<undefined>(onUpdate)
 
     publisher.publish(undefined)
+    expect(onUpdate.mock.calls).toEqual([[undefined]])
     publisher.publish(undefined)
+    expect(frames).toHaveLength(1)
+    expect(onUpdate.mock.calls).toEqual([[undefined]])
     frames.shift()?.(performance.now())
-    await vi.waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() =>
+      expect(onUpdate.mock.calls).toEqual([[undefined], [undefined]]),
+    )
   })
 
   it('materializes only the latest queued frame value', async () => {
@@ -56,7 +61,8 @@ describe('AnimationFramePublisher', () => {
     publisher.publish(undefined)
     await publisher.finish(undefined)
 
-    expect(onUpdate).toHaveBeenCalledTimes(2)
+    expect(onUpdate.mock.calls).toEqual([[undefined], [undefined]])
+    expect(frames).toHaveLength(0)
   })
 
   it('drops a hidden-tab update queued before cancellation', async () => {

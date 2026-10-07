@@ -25,6 +25,7 @@ import {
   abortSyncEnclaveRequests,
   resetSyncEnclaveRequestScope,
   SyncEnclaveError,
+  SyncRequestAbortedError,
 } from '@/services/sync-enclave/sync-enclave-client'
 import {
   CLOUD_SYNC_SETTING_CHANGED_EVENT,
@@ -1167,15 +1168,23 @@ export class CloudSyncService {
 
   private async paginateLocalChats(
     limit: number,
-    continuationToken?: string,
+    continuationToken: string | undefined,
+    guard: AccountOperationGuard,
   ): Promise<PaginatedChatsResult> {
-    const chats = await indexedDBStorage.getAllChats()
+    guard.assertCurrent()
+    let chats: StoredChat[]
+    try {
+      chats = await indexedDBStorage.getAllChats()
+    } finally {
+      guard.assertCurrent()
+    }
     chats.sort(
       (left, right) =>
         new Date(right.createdAt).getTime() -
         new Date(left.createdAt).getTime(),
     )
     const start = continuationToken ? Number.parseInt(continuationToken, 10) : 0
+    guard.assertCurrent()
     return {
       chats: chats.slice(start, start + limit),
       hasMore: start + limit < chats.length,
@@ -1292,28 +1301,44 @@ export class CloudSyncService {
     })
   }
 
-  async loadChatsWithPagination(options: {
-    limit: number
-    continuationToken?: string
-    loadLocal?: boolean
-  }): Promise<PaginatedChatsResult> {
+  async loadChatsWithPagination(
+    options: {
+      limit: number
+      continuationToken?: string
+      loadLocal?: boolean
+    },
+    guard: AccountOperationGuard = this.createAccountOperationGuard(),
+  ): Promise<PaginatedChatsResult> {
     const { limit, continuationToken, loadLocal = true } = options
-    if (!(await cloudStorage.isAuthenticated())) {
-      return loadLocal
-        ? this.paginateLocalChats(limit, continuationToken)
+    guard.assertCurrent()
+    let authenticated: boolean
+    try {
+      authenticated = await cloudStorage.isAuthenticated()
+    } finally {
+      guard.assertCurrent()
+    }
+    if (!authenticated) {
+      const result = loadLocal
+        ? await this.paginateLocalChats(limit, continuationToken, guard)
         : { chats: [], hasMore: false }
+      guard.assertCurrent()
+      return result
     }
     try {
       const remote = await cloudStorage.listChats({ limit, continuationToken })
+      guard.assertCurrent()
       const entries = remote.conversations.filter(
         (entry) => !deletedChatsTracker.isDeleted(entry.id),
       )
       const metadata = new Map(entries.map((entry) => [entry.id, entry]))
+      guard.assertCurrent()
       const pulled = await cloudStorage.downloadChats(
         entries.map((entry) => entry.id),
       )
+      guard.assertCurrent()
       const chats: StoredChat[] = []
       for (const result of pulled) {
+        guard.assertCurrent()
         if (result.status === 'unavailable') {
           if (result.code === PULL_ITEM_CODES.NotFound) continue
           throw new RemoteChatPageIncompleteError(
@@ -1336,8 +1361,10 @@ export class CloudSyncService {
               projectId: entry.projectId,
             },
           )
+          guard.assertCurrent()
           chats.push(decoded.chat)
         } catch (error) {
+          guard.assertCurrent()
           logError('Failed to decode paginated remote chat', error, {
             component: 'CloudSync',
             action: 'loadChatsWithPagination',
@@ -1346,18 +1373,34 @@ export class CloudSyncService {
           throw new RemoteChatPageIncompleteError(result.id, 'decode', error)
         }
       }
+      guard.assertCurrent()
       return {
         chats,
         hasMore: remote.hasMore,
         nextToken: remote.nextContinuationToken,
       }
     } catch (error) {
-      if (error instanceof RemoteChatPageIncompleteError) throw error
+      guard.assertCurrent()
+      if (
+        error instanceof RemoteChatPageIncompleteError ||
+        error instanceof SyncRequestAbortedError ||
+        error instanceof CloudSyncLifecycleCanceledError ||
+        (error instanceof DOMException && error.name === 'AbortError')
+      )
+        throw error
       logError('Failed to load remote chats with pagination', error, {
         component: 'CloudSync',
         action: 'loadChatsWithPagination',
       })
-      if (loadLocal) return this.paginateLocalChats(limit, continuationToken)
+      if (loadLocal) {
+        const result = await this.paginateLocalChats(
+          limit,
+          continuationToken,
+          guard,
+        )
+        guard.assertCurrent()
+        return result
+      }
       throw error
     }
   }
@@ -1376,6 +1419,7 @@ export class CloudSyncService {
     },
     visitedTokens = new Set<string>(),
   ): Promise<ChatListResponse> {
+    const guard = this.createAccountOperationGuard()
     let continuationToken = options.continuationToken
     for (;;) {
       if (continuationToken !== undefined) {
@@ -1384,10 +1428,12 @@ export class CloudSyncService {
         }
         visitedTokens.add(continuationToken)
       }
+      guard.assertCurrent()
       const page = await cloudStorage.listChats({
         limit: options.limit,
         continuationToken,
       })
+      guard.assertCurrent()
       if (page.conversations.length > 0 || !page.hasMore) return page
       continuationToken = page.nextContinuationToken
     }

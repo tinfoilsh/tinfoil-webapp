@@ -1,11 +1,12 @@
 import { ChatMessages } from '@/components/chat/chat-messages'
 import type { Message } from '@/components/chat/types'
+import {
+  DEFAULT_AUTO_INTELLIGENCE_LEVEL,
+  type BaseModel,
+} from '@/config/models'
 import { render, screen } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-
-vi.mock('@/config/models', () => ({
-  findSelectableModel: (_id: string, models: unknown[]) => models[0],
-}))
 
 vi.mock('@/components/chat/renderers/client', () => ({
   getRendererRegistry: () => ({
@@ -29,9 +30,18 @@ vi.mock('@/components/chat/WelcomeScreen', () => ({
   WelcomeScreen: () => null,
 }))
 
-const models = [
-  { id: 'model-1', chatConfig: { contextWindowTokens: 1000 } },
-] as any
+const models: BaseModel[] = [
+  {
+    modelName: 'gpt-oss-120b',
+    name: 'GPT-OSS',
+    nameShort: 'GPT-OSS',
+    image: '',
+    description: '',
+    type: 'chat',
+    chat: true,
+    chatConfig: { contextWindowTokens: 1000 },
+  },
+]
 
 function message(
   role: Message['role'],
@@ -47,14 +57,21 @@ function message(
   }
 }
 
-function props(chatId: string, messages: Message[]) {
+function props(
+  chatId: string,
+  messages: Message[],
+): ComponentProps<typeof ChatMessages> {
   return {
     chatId,
     messages,
     contextWindowTokens: 1000,
     isDarkMode: false,
     models,
-    selectedModel: 'model-1',
+    selectedModel: models[0].modelName,
+    autoIntelligence: DEFAULT_AUTO_INTELLIGENCE_LEVEL,
+    setAutoIntelligence: () => {
+      throw new Error('Unexpected intelligence change while rendering messages')
+    },
   }
 }
 

@@ -16,6 +16,13 @@ describe('describeImportFailure', () => {
     expect(describeImportFailure('key_mismatch')).toMatch(
       /nothing was written/i,
     )
+    expect(describeImportFailure('invalid_archive')).toMatch(
+      /export your chats again/i,
+    )
+    expect(describeImportFailure('limit_exceeded')).toMatch(
+      /splitting it into smaller exports/i,
+    )
+    expect(describeImportFailure('internal')).toMatch(/on our side/i)
   })
 
   it('uses restore wording for the backup restore surface', () => {

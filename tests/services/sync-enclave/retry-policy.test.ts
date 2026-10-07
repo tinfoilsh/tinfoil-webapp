@@ -1,22 +1,26 @@
-import { describe, expect, it, vi } from 'vitest'
-
+import { AuthTokenUnavailableError } from '@/services/auth'
+import { UploadCoalescer } from '@/services/cloud/upload-coalescer'
 import {
   computeBackoffDelay,
-  runWithRetry,
   type RetryScheduler,
 } from '@/services/sync-enclave/retry-policy'
+import {
+  SyncEnclaveError,
+  SyncNetworkError,
+  SyncPersistentAuthError,
+} from '@/services/sync-enclave/sync-enclave-client'
+import { AttestationError } from 'tinfoil'
+import { describe, expect, it, vi } from 'vitest'
 
 function makeScheduler(): { scheduler: RetryScheduler; sleeps: number[] } {
   const sleeps: number[] = []
-  let randomCursor = 0
-  const randomSequence = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
   return {
     sleeps,
     scheduler: {
       sleep: async (ms: number) => {
         sleeps.push(ms)
       },
-      random: () => randomSequence[randomCursor++ % randomSequence.length],
+      random: () => 0.5,
     },
   }
 }
@@ -36,178 +40,118 @@ describe('computeBackoffDelay', () => {
   })
 })
 
-describe('runWithRetry', () => {
-  it('retries up to maxAttempts when shouldRetry is true', async () => {
-    const fn = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('1'))
-      .mockRejectedValueOnce(new Error('2'))
-      .mockResolvedValueOnce('ok')
+describe('UploadCoalescer retry policy', () => {
+  it('retries one prepared upload with the exact backoff sequence', async () => {
+    const attempt = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new SyncNetworkError())
+      .mockRejectedValueOnce(new SyncNetworkError())
+      .mockResolvedValueOnce(undefined)
+    const prepare = vi.fn(async () => attempt)
     const { scheduler, sleeps } = makeScheduler()
-
-    const result = await runWithRetry(fn, () => true, {
+    const coalescer = new UploadCoalescer(prepare, {
       baseDelayMs: 10,
       maxDelayMs: 40,
-      maxAttempts: 4,
+      maxRetries: 3,
       scheduler,
     })
-
-    expect(result).toBe('ok')
-    expect(fn).toHaveBeenCalledTimes(3)
-    expect(sleeps.length).toBe(2)
+    await coalescer.enqueueAndWait('chat-1')
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(prepare).toHaveBeenCalledWith(
+      'chat-1',
+      expect.stringMatching(/^[0-9a-f]{32}$/),
+    )
+    expect(attempt).toHaveBeenCalledTimes(3)
+    expect(sleeps).toEqual([5, 10])
+    expect(coalescer.hasPendingUpload('chat-1')).toBe(false)
   })
 
-  it('stops retrying when shouldRetry returns false', async () => {
-    const err = new Error('boom')
-    const fn = vi.fn().mockRejectedValue(err)
+  it.each([
+    new SyncEnclaveError('opaque', 403, 'FORBIDDEN'),
+    new AttestationError('localized opaque failure'),
+    new SyncPersistentAuthError(),
+  ])('does not retry a terminal security failure: %s', async (error) => {
+    const attempt = vi.fn<() => Promise<void>>().mockRejectedValue(error)
     const { scheduler, sleeps } = makeScheduler()
-
-    await expect(
-      runWithRetry(fn, () => false, {
-        baseDelayMs: 10,
-        maxDelayMs: 40,
-        maxAttempts: 4,
-        scheduler,
-      }),
-    ).rejects.toBe(err)
-
-    expect(fn).toHaveBeenCalledTimes(1)
-    expect(sleeps.length).toBe(0)
+    const coalescer = new UploadCoalescer(async () => attempt, { scheduler })
+    await expect(coalescer.enqueueAndWait('chat-1')).rejects.toBe(error)
+    expect(attempt).toHaveBeenCalledOnce()
+    expect(sleeps).toEqual([])
   })
 
-  it('throws the last error when maxAttempts is exhausted', async () => {
-    const err = new Error('permanent flake')
-    const fn = vi.fn().mockRejectedValue(err)
-    const { scheduler } = makeScheduler()
-
-    await expect(
-      runWithRetry(fn, () => true, {
-        baseDelayMs: 1,
-        maxDelayMs: 4,
-        maxAttempts: 3,
-        scheduler,
-      }),
-    ).rejects.toBe(err)
-
-    expect(fn).toHaveBeenCalledTimes(3)
-  })
-
-  it('fires onAttemptFailed exactly once per back-off wait', async () => {
-    const fn = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('1'))
-      .mockResolvedValueOnce('ok')
-    const onAttemptFailed = vi.fn()
-    const { scheduler } = makeScheduler()
-
-    await runWithRetry(fn, () => true, {
-      baseDelayMs: 5,
-      maxDelayMs: 5,
-      maxAttempts: 4,
+  it('rejects with the final distinct error after exhausting retries', async () => {
+    const first = new SyncNetworkError({ cause: new Error('first') })
+    const last = new SyncNetworkError({ cause: new Error('last') })
+    const attempt = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(first)
+      .mockRejectedValue(last)
+    const { scheduler, sleeps } = makeScheduler()
+    const coalescer = new UploadCoalescer(async () => attempt, {
+      baseDelayMs: 10,
+      maxDelayMs: 40,
+      maxRetries: 2,
       scheduler,
-      onAttemptFailed,
     })
-
-    expect(onAttemptFailed).toHaveBeenCalledTimes(1)
+    await expect(coalescer.enqueueAndWait('chat-1')).rejects.toBe(last)
+    expect(attempt).toHaveBeenCalledTimes(3)
+    expect(sleeps).toEqual([5, 10])
   })
 
-  it('fires onAttemptFailed on a non-retriable failure', async () => {
-    const err = new Error('terminal')
-    const fn = vi.fn().mockRejectedValue(err)
-    const onAttemptFailed = vi.fn()
+  it('rejects unavailable authentication before preparing another upload', async () => {
+    const error = new AuthTokenUnavailableError('unavailable')
+    const prepare = vi.fn().mockRejectedValue(error)
     const { scheduler, sleeps } = makeScheduler()
-
-    await expect(
-      runWithRetry(fn, () => false, {
-        baseDelayMs: 5,
-        maxDelayMs: 5,
-        maxAttempts: 4,
-        scheduler,
-        onAttemptFailed,
-      }),
-    ).rejects.toBe(err)
-
-    expect(onAttemptFailed).toHaveBeenCalledTimes(1)
-    expect(onAttemptFailed).toHaveBeenCalledWith({
-      attempt: 0,
-      delayMs: 0,
-      error: err,
-    })
-    expect(sleeps.length).toBe(0)
+    const coalescer = new UploadCoalescer(prepare, { scheduler })
+    await expect(coalescer.enqueueAndWait('chat-1')).rejects.toBe(error)
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(sleeps).toEqual([])
   })
 
-  it('fires onAttemptFailed on the final exhausted attempt', async () => {
-    const err = new Error('always')
-    const fn = vi.fn().mockRejectedValue(err)
-    const onAttemptFailed = vi.fn()
-    const { scheduler } = makeScheduler()
-
-    await expect(
-      runWithRetry(fn, () => true, {
-        baseDelayMs: 1,
-        maxDelayMs: 1,
-        maxAttempts: 3,
-        scheduler,
-        onAttemptFailed,
-      }),
-    ).rejects.toBe(err)
-
-    expect(onAttemptFailed).toHaveBeenCalledTimes(3)
-    expect(onAttemptFailed.mock.calls[2][0]).toMatchObject({
-      attempt: 2,
-      delayMs: 0,
-    })
-  })
-
-  it('does not leak real setTimeout calls', async () => {
+  it('uses the injected scheduler without starting real timers', async () => {
     const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout')
     try {
-      const fn = vi
-        .fn()
-        .mockRejectedValueOnce(new Error('x'))
-        .mockResolvedValueOnce('ok')
-      const { scheduler } = makeScheduler()
-
-      await runWithRetry(fn, () => true, {
-        baseDelayMs: 1,
-        maxDelayMs: 1,
-        maxAttempts: 2,
+      const attempt = vi
+        .fn<() => Promise<void>>()
+        .mockRejectedValueOnce(new SyncNetworkError())
+        .mockResolvedValueOnce(undefined)
+      const { scheduler, sleeps } = makeScheduler()
+      const coalescer = new UploadCoalescer(async () => attempt, {
+        baseDelayMs: 10,
         scheduler,
       })
-
+      await coalescer.enqueueAndWait('chat-1')
+      expect(attempt).toHaveBeenCalledTimes(2)
+      expect(sleeps).toEqual([5])
       expect(setTimeoutSpy).not.toHaveBeenCalled()
     } finally {
       setTimeoutSpy.mockRestore()
     }
   })
 
-  it('still runs once when maxAttempts is zero or negative', async () => {
-    const { scheduler } = makeScheduler()
-    for (const maxAttempts of [0, -3]) {
-      const fn = vi.fn().mockResolvedValue('ok')
-      const result = await runWithRetry(fn, () => true, {
-        maxAttempts,
-        scheduler,
-      })
-      expect(result).toBe('ok')
-      expect(fn).toHaveBeenCalledTimes(1)
-    }
+  it('attempts once without sleeping when the retry budget is zero', async () => {
+    const error = new SyncNetworkError()
+    const attempt = vi.fn<() => Promise<void>>().mockRejectedValue(error)
+    const { scheduler, sleeps } = makeScheduler()
+    const coalescer = new UploadCoalescer(async () => attempt, {
+      maxRetries: 0,
+      scheduler,
+    })
+    await expect(coalescer.enqueueAndWait('chat-1')).rejects.toBe(error)
+    expect(attempt).toHaveBeenCalledOnce()
+    expect(sleeps).toEqual([])
   })
 
-  it('falls back to the default attempt count when maxAttempts is NaN', async () => {
-    const err = new Error('flake')
-    const fn = vi.fn().mockRejectedValue(err)
-    const { scheduler } = makeScheduler()
-
-    await expect(
-      runWithRetry(fn, () => true, {
-        baseDelayMs: 1,
-        maxDelayMs: 1,
-        maxAttempts: Number.NaN,
-        scheduler,
-      }),
-    ).rejects.toBe(err)
-
-    expect(fn).toHaveBeenCalledTimes(4)
+  it('uses four total attempts when the live retry budget is omitted', async () => {
+    const error = new SyncNetworkError()
+    const attempt = vi.fn<() => Promise<void>>().mockRejectedValue(error)
+    const { scheduler, sleeps } = makeScheduler()
+    const coalescer = new UploadCoalescer(async () => attempt, {
+      baseDelayMs: 10,
+      scheduler,
+    })
+    await expect(coalescer.enqueueAndWait('chat-1')).rejects.toBe(error)
+    expect(attempt).toHaveBeenCalledTimes(4)
+    expect(sleeps).toEqual([5, 10, 20])
   })
 })
