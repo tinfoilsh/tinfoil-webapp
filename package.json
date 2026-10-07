@@ -16,6 +16,8 @@
     "find-unused": "ts-unused-exports tsconfig.json",
     "test": "vitest run",
     "test:unit": "vitest",
+    "test:shuffle": "vitest run --sequence.shuffle",
+    "test:typecheck": "tsc --project tsconfig.test.json --noEmit --incremental false",
     "test:coverage": "vitest run --coverage",
     "prebuild": "node scripts/patch-clerk-worker.mjs && node scripts/patch-style-singleton.mjs && node scripts/copy-vendor.mjs",
     "predev": "node scripts/copy-vendor.mjs",

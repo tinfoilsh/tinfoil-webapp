@@ -20,7 +20,9 @@ jobs:
 
       - run: npm run lint
 
-      - run: npm run test:unit
+      - run: npm run test:typecheck
+
+      - run: npm run test:shuffle
 
       - run: npm run build
         env:

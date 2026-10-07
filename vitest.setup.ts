@@ -3,22 +3,22 @@ import { beforeEach } from 'vitest'
 
 // Mock localStorage for tests
 const localStorageMock = (() => {
-  let store: Record<string, string> = {}
+  const store = new Map<string, string>()
   return {
-    getItem: (key: string) => store[key] ?? null,
+    getItem: (key: string) => store.get(String(key)) ?? null,
     setItem: (key: string, value: string) => {
-      store[key] = value
+      store.set(String(key), String(value))
     },
     removeItem: (key: string) => {
-      delete store[key]
+      store.delete(String(key))
     },
     clear: () => {
-      store = {}
+      store.clear()
     },
     get length() {
-      return Object.keys(store).length
+      return store.size
     },
-    key: (index: number) => Object.keys(store)[index] ?? null,
+    key: (index: number) => Array.from(store.keys())[index] ?? null,
   }
 })()
 
