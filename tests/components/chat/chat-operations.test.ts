@@ -3,6 +3,7 @@ import {
   canToggleTemporaryChat,
   createBlankChat,
   createTemporaryChat,
+  loadChats,
   resolveWebSearchEnabled,
   upsertChatById,
 } from '@/components/chat/hooks/chat-operations'
@@ -12,7 +13,9 @@ import {
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
 } from '@/constants/storage-keys'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { chatStorage } from '@/services/storage/chat-storage'
+import { sessionChatStorage } from '@/services/storage/session-storage'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const chatModel = (modelName: string): BaseModel => ({
   modelName,
@@ -30,6 +33,40 @@ const createChat = (overrides: Partial<Chat> = {}): Chat => ({
   messages: [],
   createdAt: new Date(),
   ...overrides,
+})
+
+describe('loadChats', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it.each([false, true])(
+    'distinguishes a failed persistent read from empty history (summaries: %s)',
+    async (summariesOnly) => {
+      const read = vi.spyOn(
+        chatStorage,
+        summariesOnly
+          ? 'getChatSummariesWithSyncStatus'
+          : 'getAllChatsWithSyncStatus',
+      )
+      read.mockRejectedValueOnce(
+        new DOMException('Storage unavailable', 'InvalidStateError'),
+      )
+      await expect(loadChats(true, summariesOnly)).resolves.toBeNull()
+
+      read.mockResolvedValueOnce([])
+      await expect(loadChats(true, summariesOnly)).resolves.toEqual([])
+    },
+  )
+
+  it('distinguishes a failed session read from empty history', async () => {
+    const read = vi.spyOn(sessionChatStorage, 'getAllChats')
+    read.mockImplementationOnce(() => {
+      throw new DOMException('Storage unavailable', 'SecurityError')
+    })
+    await expect(loadChats(false)).resolves.toBeNull()
+
+    read.mockReturnValueOnce([])
+    await expect(loadChats(false)).resolves.toEqual([])
+  })
 })
 
 describe('canToggleTemporaryChat', () => {

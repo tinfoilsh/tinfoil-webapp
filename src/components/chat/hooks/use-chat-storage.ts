@@ -203,6 +203,8 @@ export function useChatStorage({
           storeHistory && !!isSignedIn,
           !needsFullReload,
         )
+        // A failed read is not an empty history; keep the visible collection.
+        if (loadedChats === null) return
         if (
           reloadGeneration !== reloadGenerationRef.current ||
           reloadAccountGeneration !== accountGenerationRef.current
@@ -514,10 +516,11 @@ export function useChatStorage({
       if (typeof window === 'undefined') return
 
       try {
-        const loadedChats = await loadChats(
-          storeHistory && !!isSignedIn,
-          storeHistory && !!isSignedIn,
-        )
+        const loadedChats =
+          (await loadChats(
+            storeHistory && !!isSignedIn,
+            storeHistory && !!isSignedIn,
+          )) ?? []
 
         if (
           !mounted ||

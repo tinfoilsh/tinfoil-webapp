@@ -92,6 +92,100 @@ describe('useChatStorage.reloadChats', () => {
   })
 
   it.each([false, true])(
+    'preserves chat history when a storage read fails during streaming (full history: %s)',
+    async (fullHistory) => {
+      const current: Chat = {
+        id: 'streaming-chat',
+        title: 'Streaming conversation',
+        createdAt: new Date(),
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+        isBlankChat: false,
+        pendingRecoveries: fullHistory ? [createMockRecovery()] : undefined,
+      }
+      const other: Chat = { ...current, id: 'other-chat', title: 'Other chat' }
+      mockLoadChats.mockResolvedValue([current, other])
+      const { result } = renderHook(() =>
+        useChatStorage({ storeHistory: true }),
+      )
+      await waitFor(() => expect(result.current.isInitialLoad).toBe(false))
+      act(() => result.current.handleChatSelect(current.id))
+      mockIsStreaming.mockImplementation((id) => id === current.id)
+
+      const actual = await vi.importActual<
+        typeof import('@/components/chat/hooks/chat-operations')
+      >('@/components/chat/hooks/chat-operations')
+      mockLoadChats.mockImplementation(actual.loadChats)
+      const read = vi
+        .spyOn(
+          chatStorage,
+          fullHistory
+            ? 'getAllChatsWithSyncStatus'
+            : 'getChatSummariesWithSyncStatus',
+        )
+        .mockRejectedValueOnce(new DOMException('Read aborted', 'AbortError'))
+      const previousChats = result.current.chats
+
+      await act(async () => result.current.reloadChats())
+
+      expect(read).toHaveBeenCalledOnce()
+      expect(result.current.chats).toBe(previousChats)
+      expect(result.current.currentChat).toBe(current)
+      act(() => result.current.handleChatSelect(other.id))
+      expect(result.current.currentChat).toBe(other)
+
+      read.mockResolvedValue([
+        current,
+        { ...other, title: 'Updated elsewhere' },
+      ])
+      await act(async () => result.current.reloadChats())
+      expect(
+        result.current.chats.find((chat) => chat.id === other.id)?.title,
+      ).toBe('Updated elsewhere')
+    },
+  )
+
+  it('still clears history when storage successfully returns no chats', async () => {
+    const stored: Chat = {
+      id: 'removed-chat',
+      title: 'Removed chat',
+      createdAt: new Date(),
+      messages: [],
+      isBlankChat: false,
+    }
+    mockLoadChats.mockResolvedValue([stored])
+    const { result } = renderHook(() => useChatStorage({ storeHistory: true }))
+    await waitFor(() => expect(result.current.isInitialLoad).toBe(false))
+    const actual = await vi.importActual<
+      typeof import('@/components/chat/hooks/chat-operations')
+    >('@/components/chat/hooks/chat-operations')
+    mockLoadChats.mockImplementation(actual.loadChats)
+    vi.spyOn(chatStorage, 'getChatSummariesWithSyncStatus').mockResolvedValue(
+      [],
+    )
+
+    await act(async () => result.current.reloadChats())
+
+    expect(result.current.chats.filter((chat) => !chat.isBlankChat)).toEqual([])
+  })
+
+  it('settles the initial load with blank chats when storage is unavailable', async () => {
+    const actual = await vi.importActual<
+      typeof import('@/components/chat/hooks/chat-operations')
+    >('@/components/chat/hooks/chat-operations')
+    mockLoadChats.mockImplementation(actual.loadChats)
+    vi.spyOn(chatStorage, 'getChatSummariesWithSyncStatus').mockRejectedValue(
+      new DOMException('Storage unavailable', 'InvalidStateError'),
+    )
+
+    const { result } = renderHook(() => useChatStorage({ storeHistory: true }))
+    await waitFor(() => expect(result.current.isInitialLoad).toBe(false))
+
+    expect(result.current.chats).toHaveLength(2)
+    expect(result.current.chats.every((chat) => chat.isBlankChat)).toBe(true)
+    expect(result.current.currentChat.isBlankChat).toBe(true)
+  })
+
+  it.each([false, true])(
     'merges completed upload metadata without clearing pending edits (pending: %s)',
     async (pendingSave) => {
       const current: Chat = {
