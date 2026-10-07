@@ -24,6 +24,11 @@ vi.mock('@/services/sync-enclave/sync-api', () => ({
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mocks.toast }),
 }))
+vi.mock('@heroicons/react/24/outline', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@heroicons/react/24/outline')>()),
+  GlobeAltIcon: () => <svg data-testid="globe-icon" />,
+  LockClosedIcon: () => <svg data-testid="lock-icon" />,
+}))
 
 const props = {
   isOpen: true,
@@ -69,6 +74,40 @@ describe('ShareModal revocation', () => {
   })
 
   afterEach(cleanup)
+
+  it('keeps the privacy icon aligned with actual link access, not the checkbox', async () => {
+    const upload = deferred<void>()
+    mocks.uploadSharedChat.mockReturnValueOnce(upload.promise)
+    render(<ShareModal {...props} />)
+    const checkbox = await readyCheckbox()
+    expect(screen.getByText('Private')).toBeVisible()
+    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
+
+    fireEvent.click(checkbox)
+    expect(checkbox).toBeChecked()
+    expect(screen.getByText('Private')).toBeVisible()
+    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
+    expect(screen.queryByTestId('globe-icon')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
+    await waitFor(() => expect(mocks.uploadSharedChat).toHaveBeenCalled())
+    expect(screen.getByText('Private')).toBeVisible()
+    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
+
+    await act(async () => upload.resolve())
+    expect(screen.getByText('Shareable link access')).toBeVisible()
+    expect(screen.getByTestId('globe-icon')).toBeInTheDocument()
+    expect(screen.queryByTestId('lock-icon')).not.toBeInTheDocument()
+
+    fireEvent.click(await readyCheckbox())
+    expect(await screen.findByText('Private')).toBeVisible()
+    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
+
+    fireEvent.click(await readyCheckbox())
+    expect(checkbox).toBeChecked()
+    expect(screen.getByText('Private')).toBeVisible()
+    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
+  })
 
   it('preserves encrypted upload bytes and conversation markdown', async () => {
     render(

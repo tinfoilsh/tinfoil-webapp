@@ -461,7 +461,7 @@ function ShareModalContent({
                       <div className="mt-1 rounded-full bg-surface-chat p-2 text-content-secondary">
                         {hasShare === null ? (
                           <LinkIcon className="h-5 w-5" />
-                        ) : showShareEnabled ? (
+                        ) : hasShare ? (
                           <GlobeAltIcon className="h-5 w-5" />
                         ) : (
                           <LockClosedIcon className="h-5 w-5" />
