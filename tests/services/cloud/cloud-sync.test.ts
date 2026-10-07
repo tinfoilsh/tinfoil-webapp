@@ -120,17 +120,29 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 
+let frames: Map<number, FrameRequestCallback>
+let frameId = 0
+beforeEach(() => {
+  const pendingFrames = new Map<number, FrameRequestCallback>()
+  frames = pendingFrames
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    pendingFrames.set(++frameId, callback)
+    return frameId
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) =>
+    pendingFrames.delete(id),
+  )
+})
+
+afterEach(() => {
+  frames.clear()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
 describe('CloudSyncService revision coordinator routing', () => {
-  let frames: Map<number, FrameRequestCallback>
   beforeEach(() => {
     vi.resetAllMocks()
-    frames = new Map()
-    let frameId = 0
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      frames.set(++frameId, callback)
-      return frameId
-    })
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
     Object.defineProperty(navigator, 'locks', {
       configurable: true,
       value: {
@@ -158,11 +170,6 @@ describe('CloudSyncService revision coordinator routing', () => {
       downloaded: 2,
       errors: [],
     })
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.useRealTimers()
   })
 
   it('routes smart sync through the account-wide coordinator', async () => {
@@ -221,9 +228,17 @@ describe('CloudSyncService revision coordinator routing', () => {
   it.each(['queued', 'direct'])(
     'notifies the UI after a %s upload has finalized its sync metadata',
     async (mode) => {
-      vi.useFakeTimers()
       const notify = vi.fn()
       const unsubscribe = chatEvents.on(notify)
+      let finishFinalization!: () => void
+      const finalization = new Promise<void>((resolve) => {
+        finishFinalization = resolve
+      })
+      let enterFinalization!: () => void
+      const finalizationStarted = new Promise<void>((resolve) => {
+        enterFinalization = resolve
+      })
+      let pending: Promise<PromiseSettledResult<void>[]> | undefined
       try {
         canWriteToCloud.mockResolvedValue(true)
         const chat = {
@@ -243,11 +258,8 @@ describe('CloudSyncService revision coordinator routing', () => {
           rewrites: [],
           projectIntentIncluded: false,
         })
-        let finishFinalization!: () => void
-        const finalization = new Promise<void>((resolve) => {
-          finishFinalization = resolve
-        })
         finalizeUpload.mockImplementation(async () => {
+          enterFinalization()
           await finalization
           chat.locallyModified = false
           chat.pendingUpload = 0
@@ -255,21 +267,22 @@ describe('CloudSyncService revision coordinator routing', () => {
           chat.syncVersion = 1
         })
         const service = new CloudSyncService()
-        const pending = Promise.allSettled([
+        pending = Promise.allSettled([
           mode === 'queued'
             ? service.backupChatAndWait(chat.id)
             : service.backupChatNow(chat.id),
         ])
-        await vi.advanceTimersByTimeAsync(0)
+        await Promise.race([finalizationStarted, pending])
         expect(finalizeUpload).toHaveBeenCalledOnce()
         expect(frames.size).toBe(0)
         expect(notify).not.toHaveBeenCalled()
         finishFinalization()
-        await vi.runAllTimersAsync()
-        for (const callback of frames.values()) callback(performance.now())
         expect(await pending).toEqual([
           { status: 'fulfilled', value: undefined },
         ])
+        const callbacks = [...frames.values()]
+        frames.clear()
+        for (const callback of callbacks) callback(performance.now())
         expect(chat.syncedAt).toBeGreaterThan(0)
         expect(notify).toHaveBeenCalledExactlyOnceWith({
           reason: 'sync',
@@ -277,7 +290,8 @@ describe('CloudSyncService revision coordinator routing', () => {
         })
       } finally {
         unsubscribe()
-        vi.useRealTimers()
+        finishFinalization()
+        await pending
       }
     },
   )
