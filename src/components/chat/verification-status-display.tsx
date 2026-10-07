@@ -1,4 +1,4 @@
-import { CheckCircleIcon } from '@heroicons/react/24/outline'
+import { TfBoxCheckmark, TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { memo, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
@@ -105,24 +105,18 @@ export const VerificationStatusDisplay = memo(
       switch (status) {
         case 'success':
           return (
-            <CheckCircleIcon className="h-5 w-5 text-brand-accent-dark dark:text-brand-accent-light" />
+            <TfBoxCheckmark
+              className="h-5 w-5 text-brand-accent-dark dark:text-brand-accent-light"
+              aria-hidden="true"
+            />
           )
         case 'error':
           return (
             <div className="relative h-5 w-5 rounded-full bg-red-500">
-              <svg
-                className="absolute inset-0 h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M6 6L14 14M14 6L6 14"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
+              <TfBoxX
+                className="absolute inset-0 h-5 w-5 text-white"
+                aria-hidden="true"
+              />
             </div>
           )
         case 'loading':
@@ -174,7 +168,10 @@ export const VerificationStatusDisplay = memo(
               ) : isComplete ? (
                 <div className="h-2 w-2 rounded-full bg-brand-accent-dark shadow-[0_0_4px_1px_hsl(var(--color-accent-dark)/0.6)] dark:bg-brand-accent-light dark:shadow-[0_0_4px_1px_hsl(var(--color-accent-light)/0.6)]" />
               ) : (
-                <PiSpinner className="h-5 w-5 animate-spin text-content-secondary" />
+                <PiSpinner
+                  className="h-5 w-5 animate-spin text-content-secondary"
+                  aria-hidden="true"
+                />
               )}
               <span
                 role="status"
@@ -273,7 +270,10 @@ export const VerificationStatusDisplay = memo(
             ) : isComplete ? (
               <div className="h-2 w-2 rounded-full bg-brand-accent-dark shadow-[0_0_4px_1px_hsl(var(--color-accent-dark)/0.6)] dark:bg-brand-accent-light dark:shadow-[0_0_4px_1px_hsl(var(--color-accent-light)/0.6)]" />
             ) : (
-              <PiSpinner className="h-5 w-5 animate-spin text-content-secondary" />
+              <PiSpinner
+                className="h-5 w-5 animate-spin text-content-secondary"
+                aria-hidden="true"
+              />
             )}
             <h3
               role="status"

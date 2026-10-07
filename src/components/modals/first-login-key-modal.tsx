@@ -1,10 +1,6 @@
 import { Modal, ModalTitle } from '@/components/ui/modal'
-import {
-  ArrowUpTrayIcon,
-  KeyIcon,
-  SparklesIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
+import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
+import { TfBoxX, TfKey, TfStars } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useRef, useState } from 'react'
 
 interface FirstLoginKeyModalProps {
@@ -129,7 +125,10 @@ export function FirstLoginKeyModal({
         <>
           <ModalTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <KeyIcon className="h-6 w-6 text-content-primary" />
+              <TfKey
+                className="h-6 w-6 !text-content-primary"
+                aria-hidden="true"
+              />
               <span>Welcome to Tinfoil Chat</span>
             </div>
           </ModalTitle>
@@ -163,7 +162,10 @@ export function FirstLoginKeyModal({
                 className="w-full rounded-lg border border-brand-accent-dark/40 bg-brand-accent-dark p-4 text-left text-white shadow-md transition-colors hover:bg-brand-accent-dark/90"
               >
                 <div className="flex items-start gap-3">
-                  <SparklesIcon className="mt-0.5 h-5 w-5 text-white" />
+                  <TfStars
+                    className="mt-0.5 h-5 w-5 !text-white"
+                    aria-hidden="true"
+                  />
                   <div>
                     <h4 className="font-medium text-white">
                       Create New Encryption Key
@@ -197,7 +199,7 @@ export function FirstLoginKeyModal({
               aria-label="Back"
               className="rounded-lg p-1 text-content-secondary transition-colors hover:bg-surface-chat"
             >
-              <XMarkIcon className="h-5 w-5" />
+              <TfBoxX className="h-5 w-5" aria-hidden="true" />
             </button>
           </ModalTitle>
 

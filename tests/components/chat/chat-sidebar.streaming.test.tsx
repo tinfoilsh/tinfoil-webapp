@@ -36,7 +36,7 @@ vi.mock('@/components/chat/sidebar-account-menu', () => ({
 }))
 vi.mock('@/utils/cloud-sync-settings', () => ({
   isCloudSyncEnabled: () => true,
-  isLocalOnlyModeEnabled: () => false,
+  isLocalOnlyModeEnabled: () => true,
   hasUserSetLocalOnlyPreference: () => true,
   CLOUD_SYNC_SETTING_CHANGED_EVENT: 'cloudSyncSettingChanged',
 }))
@@ -92,6 +92,9 @@ describe('chat sidebar during streaming', () => {
       </DragProvider>
     )
     const { rerender } = render(sidebar(activeChat))
+    expect(
+      screen.getByRole('tab', { name: 'Local' }).querySelector('svg'),
+    ).toHaveAttribute('aria-hidden', 'true')
     const otherLink = screen.getByRole('link', { name: otherChat.title })
     expect(otherLink).toBeVisible()
 

@@ -9,11 +9,8 @@ import {
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
-import {
-  CheckIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-} from '@heroicons/react/24/outline'
+import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
+import { TfBoxCheckmark, TfShuffle } from '@tinfoilsh/tinfoil-icons'
 import {
   useCallback,
   useLayoutEffect,
@@ -22,7 +19,6 @@ import {
   type MouseEvent,
   type TouchEvent,
 } from 'react'
-import { PiShuffleAngularBold } from 'react-icons/pi'
 import {
   DEFAULT_EFFORT,
   supportsReasoningEffort,
@@ -401,7 +397,7 @@ export function ModelSelector({
             )}
             <span className="flex-1" />
             {isActive && (
-              <CheckIcon
+              <TfBoxCheckmark
                 className="h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
                 aria-hidden="true"
               />
@@ -430,7 +426,7 @@ export function ModelSelector({
       >
         <div className="relative flex h-5 w-5 flex-none items-center justify-center">
           {model.isAuto ? (
-            <PiShuffleAngularBold
+            <TfShuffle
               className="h-5 w-5 text-brand-accent-dark dark:text-brand-accent-light"
               aria-hidden="true"
             />
@@ -460,7 +456,7 @@ export function ModelSelector({
           {!model.isAuto && <ModelLifecycleBadges model={model} />}
         </div>
         {isSelected && (
-          <CheckIcon
+          <TfBoxCheckmark
             className="mt-0.5 h-4 w-4 flex-none text-brand-accent-dark dark:text-brand-accent-light"
             aria-hidden="true"
           />

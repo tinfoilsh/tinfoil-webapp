@@ -5,7 +5,12 @@ import { SAFEGUARDS_INFO_URL } from '@/constants/external-links'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { logError } from '@/utils/error-handling'
 import { useUser } from '@clerk/react'
-import { TfLock, TfShieldCheck, TfUnlockOpen } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxCheckmark,
+  TfLockLocked,
+  TfShieldCheck,
+  TfUnlockOpen,
+} from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useCallback, useState } from 'react'
 
@@ -212,7 +217,10 @@ function OnboardingSafeguardsPage() {
     >
       <div className="flex w-full flex-col items-center gap-8">
         <div className="flex h-28 items-center justify-center">
-          <TfShieldCheck className="h-24 w-24 text-tinfoil-accent-blue dark:text-white" />
+          <TfShieldCheck
+            className="h-24 w-24 text-tinfoil-accent-blue dark:text-white"
+            aria-hidden="true"
+          />
         </div>
 
         <div className="space-y-4 text-center">
@@ -278,7 +286,10 @@ function OnboardingPrivacyPage({
                 exit={{ opacity: 0, scale: 0.85 }}
                 transition={{ duration: 0.5, ease: 'easeOut' }}
               >
-                <TfLock className="h-24 w-24 text-content-primary" />
+                <TfLockLocked
+                  className="h-24 w-24 text-content-primary"
+                  aria-hidden="true"
+                />
               </motion.div>
             ) : (
               <motion.div
@@ -288,7 +299,10 @@ function OnboardingPrivacyPage({
                 exit={{ opacity: 0, scale: 0.85 }}
                 transition={{ duration: 0.15, ease: 'easeOut' }}
               >
-                <TfUnlockOpen className="h-24 w-24 text-content-primary" />
+                <TfUnlockOpen
+                  className="h-24 w-24 text-content-primary"
+                  aria-hidden="true"
+                />
               </motion.div>
             )}
           </AnimatePresence>
@@ -325,6 +339,7 @@ function OnboardingPrivacyPage({
                 <AnimatePresence>
                   {privacyEnabled && (
                     <motion.svg
+                      aria-hidden="true"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
@@ -343,7 +358,11 @@ function OnboardingPrivacyPage({
                         ease: 'easeOut',
                       }}
                     >
-                      <path d="M5 13l5 5L20 7" />
+                      <TfBoxCheckmark
+                        width="100%"
+                        size="100%"
+                        aria-hidden="true"
+                      />
                     </motion.svg>
                   )}
                 </AnimatePresence>

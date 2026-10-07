@@ -3,6 +3,8 @@ import {
   type ChatItemData,
 } from '@/components/chat/chat-list-item'
 import { fireEvent, render, screen } from '@testing-library/react'
+import { TfThumbtack } from '@tinfoilsh/tinfoil-icons'
+import { PiPushPinFill } from 'react-icons/pi'
 import { describe, expect, it, vi } from 'vitest'
 
 const savedChat: ChatItemData = {
@@ -99,6 +101,76 @@ describe('ChatListItem navigation semantics', () => {
 })
 
 describe('ChatListItem favorites', () => {
+  it.each([false, true])(
+    'renders the real filled pin SVG when selected=%s',
+    (isSelected) => {
+      renderChatListItem({ isPinned: true, isSelected })
+      const indicator = screen.getByLabelText('Pinned to Favorites')
+      const { container } = render(
+        <PiPushPinFill
+          className="h-3.5 w-3.5 flex-shrink-0 text-content-muted"
+          title="Pinned to Favorites"
+          aria-label="Pinned to Favorites"
+        />,
+      )
+
+      expect(indicator.outerHTML).toBe(
+        container.querySelector('svg')?.outerHTML,
+      )
+    },
+  )
+
+  it('does not show a pinned indicator for an unpinned chat', () => {
+    renderChatListItem({ onTogglePin: vi.fn() })
+
+    expect(
+      screen.queryByLabelText('Pinned to Favorites'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Pin to Favorites' }),
+    ).toBeInTheDocument()
+  })
+
+  it('hides the pinned indicator during streaming and restores it afterward', () => {
+    const { rerenderChat } = renderChatListItem({ isPinned: true })
+    const indicator = screen.getByLabelText('Pinned to Favorites').outerHTML
+
+    rerenderChat(savedChat, true)
+
+    expect(
+      screen.queryByLabelText('Pinned to Favorites'),
+    ).not.toBeInTheDocument()
+    expect(screen.getByTitle('Generating response')).toBeInTheDocument()
+
+    rerenderChat(savedChat, false)
+
+    expect(screen.getByLabelText('Pinned to Favorites').outerHTML).toBe(
+      indicator,
+    )
+    expect(screen.queryByTitle('Generating response')).not.toBeInTheDocument()
+  })
+
+  it.each(['button', 'menuitem'] as const)(
+    'keeps the real Tinfoil thumbtack SVG for the %s action',
+    (role) => {
+      renderChatListItem({ isPinned: true, onTogglePin: vi.fn() })
+      if (role === 'menuitem') {
+        fireEvent.click(
+          screen.getByRole('button', { name: 'More chat options' }),
+        )
+      }
+      const action = screen.getByRole(role, { name: 'Remove from Favorites' })
+      const { container } = render(
+        <TfThumbtack className="h-4 w-4" aria-hidden="true" />,
+      )
+
+      expect(action.querySelector('svg')).toBeInTheDocument()
+      expect(action.querySelector('svg')?.outerHTML).toBe(
+        container.querySelector('svg')?.outerHTML,
+      )
+    },
+  )
+
   it('shows pinned state and removes a favorite from the desktop action', () => {
     const onTogglePin = vi.fn()
     renderChatListItem({ isPinned: true, onTogglePin })

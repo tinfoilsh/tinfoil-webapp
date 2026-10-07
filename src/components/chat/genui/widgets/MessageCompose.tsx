@@ -1,5 +1,6 @@
 import { Card } from '@/components/ui/card'
-import { Copy, Send } from 'lucide-react'
+import { TfCopy } from '@tinfoilsh/tinfoil-icons'
+import { Send } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -134,7 +135,7 @@ function EmailComposeCard({ to, title, variants }: Props) {
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-content-muted transition-colors hover:bg-surface-card hover:text-content-primary"
             aria-label="Copy body"
           >
-            <Copy className="h-3.5 w-3.5" />
+            <TfCopy className="h-3.5 w-3.5" />
             {copied ? 'Copied' : 'Copy'}
           </button>
           <a
@@ -229,7 +230,7 @@ function MessageOnlyCard({ title, variants }: Props) {
             onClick={copyBody}
             className="inline-flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-sm text-content-primary transition-colors hover:border-content-primary/40"
           >
-            <Copy className="h-4 w-4" />
+            <TfCopy className="h-4 w-4" />
             {copied ? 'Copied' : 'Copy'}
           </button>
         </div>

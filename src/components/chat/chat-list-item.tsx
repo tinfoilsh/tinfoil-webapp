@@ -3,22 +3,23 @@
 import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { canRequestChatPin } from '@/services/storage/pinned-chats'
 import { isPlainPrimaryClick } from '@/utils/navigation'
+import { EllipsisVerticalIcon } from '@heroicons/react/24/outline'
 import {
-  CheckIcon,
-  CloudIcon,
-  EllipsisVerticalIcon,
-  FolderIcon,
-  PencilSquareIcon,
-  TrashIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline'
-import { FlagIcon } from '@heroicons/react/24/solid'
+  TfBoxCheckmark,
+  TfBoxX,
+  TfCloud,
+  TfFlagFilled,
+  TfFloppyDisk,
+  TfFolder,
+  TfLockLocked,
+  TfThumbtack,
+  TfTrash,
+  TfWriting,
+} from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CiFloppyDisk } from 'react-icons/ci'
-import { PiPushPin, PiPushPinFill, PiSpinner } from 'react-icons/pi'
-import { FaLock } from '../icons/lazy-icons'
+import { PiPushPinFill, PiSpinner } from 'react-icons/pi'
 import { RedactedText } from '../ui/redacted-text'
 import { cn } from '../ui/utils'
 import { getBlankQueueId } from './message-queue-identity'
@@ -368,7 +369,7 @@ export function ChatListItem({
               title="Save"
               aria-label="Save chat title"
             >
-              <CheckIcon className="h-4 w-4" aria-hidden="true" />
+              <TfBoxCheckmark className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -380,7 +381,7 @@ export function ChatListItem({
               title="Cancel"
               aria-label="Cancel rename"
             >
-              <XMarkIcon className="h-4 w-4" aria-hidden="true" />
+              <TfBoxX className="h-4 w-4" aria-hidden="true" />
             </button>
           </form>
         </div>
@@ -393,8 +394,8 @@ export function ChatListItem({
           <>
             <span className="flex items-center gap-1.5">
               {showEncryptionStatus && chat.decryptionFailed && (
-                <FaLock
-                  className="h-3.5 w-3.5 flex-shrink-0 text-orange-500"
+                <TfLockLocked
+                  className="h-3.5 w-3.5 flex-shrink-0 !text-orange-500"
                   title="Encrypted chat"
                   aria-hidden="true"
                 />
@@ -453,7 +454,7 @@ export function ChatListItem({
                 />
               )}
               {isFlagged && (
-                <FlagIcon
+                <TfFlagFilled
                   className="h-3.5 w-3.5 flex-shrink-0 -translate-y-px text-red-600"
                   title="Flagged by safeguards"
                   aria-label="Flagged by safeguards"
@@ -495,15 +496,12 @@ export function ChatListItem({
                   aria-label={
                     isPinned ? 'Remove from Favorites' : 'Pin to Favorites'
                   }
+                  aria-pressed={isPinned}
                   title={
                     isPinned ? 'Remove from Favorites' : 'Pin to Favorites'
                   }
                 >
-                  {isPinned ? (
-                    <PiPushPinFill className="h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <PiPushPin className="h-4 w-4" aria-hidden="true" />
-                  )}
+                  <TfThumbtack className="h-4 w-4" aria-hidden="true" />
                 </button>
               )}
             {hasRealTitle && (
@@ -519,7 +517,7 @@ export function ChatListItem({
                 aria-label="Rename chat"
                 title="Rename"
               >
-                <PencilSquareIcon className="h-4 w-4" aria-hidden="true" />
+                <TfWriting className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
             {!chat.isBlankChat && (
@@ -535,7 +533,7 @@ export function ChatListItem({
                 aria-label="Delete chat"
                 title="Delete"
               >
-                <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                <TfTrash className="h-4 w-4" aria-hidden="true" />
               </button>
             )}
           </div>
@@ -614,10 +612,7 @@ export function ChatListItem({
                               onStartEdit()
                             }}
                           >
-                            <PencilSquareIcon
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
+                            <TfWriting className="h-4 w-4" aria-hidden="true" />
                             Rename
                           </button>
                         )}
@@ -639,17 +634,10 @@ export function ChatListItem({
                               void onTogglePin()
                             }}
                           >
-                            {isPinned ? (
-                              <PiPushPinFill
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <PiPushPin
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                            )}
+                            <TfThumbtack
+                              className="h-4 w-4"
+                              aria-hidden="true"
+                            />
                             {isPinned
                               ? 'Remove from Favorites'
                               : 'Pin to Favorites'}
@@ -677,7 +665,7 @@ export function ChatListItem({
                               }}
                             >
                               <span className="flex items-center gap-3">
-                                <FolderIcon
+                                <TfFolder
                                   className="h-4 w-4"
                                   aria-hidden="true"
                                 />
@@ -718,10 +706,7 @@ export function ChatListItem({
                               onRemoveFromProject()
                             }}
                           >
-                            <FolderIcon
-                              className="h-4 w-4"
-                              aria-hidden="true"
-                            />
+                            <TfFolder className="h-4 w-4" aria-hidden="true" />
                             Move out of project
                           </button>
                         )}
@@ -746,10 +731,7 @@ export function ChatListItem({
                                 onConvertToCloud()
                               }}
                             >
-                              <CloudIcon
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
+                              <TfCloud className="h-4 w-4" aria-hidden="true" />
                               Move to cloud
                             </button>
                           )}
@@ -774,7 +756,7 @@ export function ChatListItem({
                                 onConvertToLocal()
                               }}
                             >
-                              <CiFloppyDisk
+                              <TfFloppyDisk
                                 className="h-4 w-4"
                                 aria-hidden="true"
                               />
@@ -797,7 +779,7 @@ export function ChatListItem({
                             onRequestDelete()
                           }}
                         >
-                          <TrashIcon className="h-4 w-4" aria-hidden="true" />
+                          <TfTrash className="h-4 w-4" aria-hidden="true" />
                           Delete
                         </button>
                       </>
@@ -856,8 +838,8 @@ export function ChatListItem({
                                 onMoveToProject?.(project.id)
                               }}
                             >
-                              <FolderIcon
-                                className="h-4 w-4 text-content-muted"
+                              <TfFolder
+                                className="h-4 w-4 !text-content-muted"
                                 aria-hidden="true"
                               />
                               <span className="truncate">{project.name}</span>

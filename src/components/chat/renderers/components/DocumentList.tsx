@@ -1,7 +1,8 @@
 import { cn } from '@/components/ui/utils'
-import { XMarkIcon } from '@heroicons/react/24/outline'
+import { TfBoxX } from '@tinfoilsh/tinfoil-icons'
 import { memo, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { PiSpinner } from 'react-icons/pi'
 
 import { FilePreview } from '../../components/file-preview'
 
@@ -177,7 +178,10 @@ export const DocumentList = memo(function DocumentList({
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center">
-                      <div className="border-content-tertiary h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" />
+                      <PiSpinner
+                        className="text-content-tertiary h-5 w-5 animate-spin"
+                        aria-hidden="true"
+                      />
                     </div>
                   )}
                   {overflowBadge > 0 && (
@@ -274,7 +278,7 @@ export const DocumentList = memo(function DocumentList({
                   aria-label="Close"
                   className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
                 >
-                  <XMarkIcon className="h-5 w-5" />
+                  <TfBoxX className="h-5 w-5" aria-hidden="true" />
                 </button>
               </div>
 

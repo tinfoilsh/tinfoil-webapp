@@ -1,7 +1,6 @@
-import { FiArrowUp } from '@/components/icons/lazy-icons'
 import { cn } from '@/components/ui/utils'
-import { TrashIcon } from '@heroicons/react/24/outline'
-import { HiOutlineQueueList } from 'react-icons/hi2'
+import { TfQueue, TfTrash } from '@tinfoilsh/tinfoil-icons'
+import { FiArrowUp } from 'react-icons/fi'
 import type { Attachment, QueuedMessage } from './types'
 
 const QUEUED_PREVIEW_MAX_LENGTH = 240
@@ -72,7 +71,10 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
               'group flex w-full items-start gap-2 rounded-2xl border border-border-subtle bg-surface-chat px-3 py-2 shadow-sm',
             )}
           >
-            <HiOutlineQueueList className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary" />
+            <TfQueue
+              className="mt-0.5 h-4 w-4 flex-shrink-0 text-content-secondary"
+              aria-hidden="true"
+            />
             <div className="flex min-w-0 flex-1 flex-col gap-1.5">
               <QueuedImagePreview attachments={item.attachments} />
               <p className="line-clamp-2 whitespace-pre-wrap break-words text-sm text-content-secondary">
@@ -85,7 +87,7 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
               aria-label="Send queued message now"
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
             >
-              <FiArrowUp className="h-4 w-4" />
+              <FiArrowUp className="h-4 w-4" aria-hidden="true" />
             </button>
             <button
               type="button"
@@ -93,7 +95,7 @@ export function MessageQueue({ queue, onRemove, onSend }: MessageQueueProps) {
               aria-label="Remove queued message"
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
             >
-              <TrashIcon className="h-3.5 w-3.5" />
+              <TfTrash className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </div>
         )

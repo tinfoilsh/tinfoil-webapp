@@ -1,12 +1,9 @@
 import { speechPlayer } from '@/services/speech/player'
 import type { SpeechTextFormat } from '@/services/speech/text'
-import {
-  ArrowPathIcon,
-  PlayIcon,
-  SpeakerWaveIcon,
-  StopIcon,
-} from '@heroicons/react/24/outline'
+import { PlayIcon } from '@heroicons/react/24/outline'
+import { TfAudio, TfStop } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState, useSyncExternalStore } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 
 export function ReadAloudButton({
   content,
@@ -63,16 +60,16 @@ export function ReadAloudButton({
         }`}
       >
         {status === 'loading' ? (
-          <ArrowPathIcon
+          <PiSpinner
             className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none"
             aria-hidden="true"
           />
         ) : status === 'paused' ? (
           <PlayIcon className="h-3.5 w-3.5" aria-hidden="true" />
         ) : active ? (
-          <StopIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfStop className="h-3.5 w-3.5" aria-hidden="true" />
         ) : (
-          <SpeakerWaveIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfAudio className="h-3.5 w-3.5" aria-hidden="true" />
         )}
         {variant === 'icon' && (
           <span
@@ -103,7 +100,7 @@ export function ReadAloudButton({
             onClick={() => speechPlayer.stop(owner)}
             className="flex items-center rounded px-2 py-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
           >
-            <StopIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            <TfStop className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
           <span className="sr-only" role="status">
             Speech paused

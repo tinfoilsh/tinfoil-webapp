@@ -1,5 +1,6 @@
 'use client'
 
+import { TfBoxX, TfImageSlash } from '@tinfoilsh/tinfoil-icons'
 import {
   createContext,
   useCallback,
@@ -8,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { PiSpinner } from 'react-icons/pi'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
 
@@ -49,6 +51,23 @@ export function ImageLightbox({
       close={onClose}
       index={index}
       slides={images.map((image) => ({ src: image.src, alt: image.alt }))}
+      render={{
+        iconClose: () => <TfBoxX className="yarl__icon" aria-hidden="true" />,
+        iconError: () => (
+          <TfImageSlash
+            className="yarl__icon yarl__slide_error"
+            aria-hidden="true"
+          />
+        ),
+        iconLoading: () => (
+          <span className="yarl__slide_loading">
+            <PiSpinner
+              className="yarl__icon animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          </span>
+        ),
+      }}
       controller={{ closeOnBackdropClick: true }}
       on={{ view: ({ index: nextIndex }) => onIndexChange(nextIndex) }}
     />

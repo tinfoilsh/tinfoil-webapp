@@ -29,9 +29,9 @@ import { CONSTANTS } from './constants'
 import { ensureTimeline } from './ensure-timeline'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
 import { ImageGalleryProvider } from './image-gallery-context'
+import { MessageRendererHost } from './message-renderer-host'
 import { PrintableChat } from './PrintableChat'
 import type { PromptPreset } from './prompts/types'
-import { getRendererRegistry } from './renderers/client'
 import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
 import type { LabelType, Message, PendingRecoveryEnvelope } from './types'
 import { WelcomeScreen } from './WelcomeScreen'
@@ -153,11 +153,9 @@ const ChatMessage = memo(
     ) => Promise<boolean>
   }) {
     const normalized = ensureTimeline(message)
-    const renderer = getRendererRegistry().getMessageRenderer(normalized, model)
-    const RendererComponent = renderer.render
 
     return (
-      <RendererComponent
+      <MessageRendererHost
         message={normalized}
         messageIndex={messageIndex}
         model={model}

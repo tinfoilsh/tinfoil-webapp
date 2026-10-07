@@ -2,7 +2,7 @@
 
 import { cn } from '@/components/ui/utils'
 import { useSafeguards } from '@/hooks/use-safeguards'
-import { FlagIcon } from '@heroicons/react/24/solid'
+import { TfFlagFilled } from '@tinfoilsh/tinfoil-icons'
 
 interface SafeguardFlagBannerProps {
   chatId: string
@@ -28,7 +28,7 @@ export function SafeguardFlagBanner({
           : 'border-red-300 bg-red-50 text-red-700',
       )}
     >
-      <FlagIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <TfFlagFilled className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">
           This chat was flagged by a safeguard model.

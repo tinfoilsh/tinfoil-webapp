@@ -24,10 +24,10 @@ vi.mock('@/services/sync-enclave/sync-api', () => ({
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mocks.toast }),
 }))
-vi.mock('@heroicons/react/24/outline', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@heroicons/react/24/outline')>()),
-  GlobeAltIcon: () => <svg data-testid="globe-icon" />,
-  LockClosedIcon: () => <svg data-testid="lock-icon" />,
+vi.mock('@tinfoilsh/tinfoil-icons', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tinfoilsh/tinfoil-icons')>()),
+  TfGlobe: () => <svg data-testid="globe-icon" />,
+  TfLockLocked: () => <svg data-testid="lock-icon" />,
 }))
 
 const props = {

@@ -1,4 +1,5 @@
 import type { ToolCallState } from '@/components/chat/types'
+import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
 import { memo, useMemo, useState } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 
@@ -151,25 +152,19 @@ function ToolCallRow({ call }: { call: ToolCallState }) {
         className={`flex items-start gap-2 text-sm ${isFailed ? 'text-destructive/80' : 'text-content-primary/70'}`}
       >
         {call.status === 'running' ? (
-          <PiSpinner className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-content-primary/50" />
+          <PiSpinner
+            className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-content-primary/50"
+            aria-hidden="true"
+          />
         ) : isFailed ? (
           <span className="mt-0.5 h-3.5 w-3.5 shrink-0 text-center text-xs text-destructive">
             !
           </span>
         ) : (
-          <svg
+          <TfBoxCheckmark
             className="mt-0.5 h-3.5 w-3.5 shrink-0 text-content-primary/40"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M5 13l4 4L19 7"
-            />
-          </svg>
+            aria-hidden="true"
+          />
         )}
         <span className="min-w-0 font-medium">{label}</span>
       </div>

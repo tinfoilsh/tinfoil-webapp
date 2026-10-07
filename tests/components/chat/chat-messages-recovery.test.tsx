@@ -227,7 +227,10 @@ describe('ChatMessages recovery indicator', () => {
       name: /Recovering stream/,
     })
 
-    expect(userMessage.nextElementSibling).toBe(indicator)
+    expect(userMessage.closest('[data-message-role]')?.nextElementSibling).toBe(
+      indicator,
+    )
+    expect(indicator.closest('[data-message-role]')).toBeNull()
     expect(screen.getByText('Recovering stream...')).toBeInTheDocument()
     expect(
       screen.queryByText('Catching up to the live response'),
@@ -285,7 +288,9 @@ describe('ChatMessages recovery indicator', () => {
 
     const renderedMessages = await screen.findAllByTestId('message-turn-1')
     expect(renderedMessages).toHaveLength(2)
-    expect(renderedMessages[0].nextElementSibling).toBe(renderedMessages[1])
+    expect(
+      renderedMessages[0].closest('[data-message-role]')?.nextElementSibling,
+    ).toBe(renderedMessages[1].closest('[data-message-role]'))
     expect(renderedMessages[1]).toHaveAttribute('data-streaming', 'true')
     expect(renderedMessages[1]).toHaveAttribute('data-last', 'true')
     expect(screen.getByText('assistant: Partial answer')).toBeInTheDocument()
@@ -402,7 +407,7 @@ describe('ChatMessages recovery indicator', () => {
     )
 
     const assistant = screen.getAllByTestId('message-turn-1')[1]
-    expect(assistant.nextElementSibling).toBe(
+    expect(assistant.closest('[data-message-role]')?.nextElementSibling).toBe(
       screen.getByRole('status', { name: /Recovering stream/ }),
     )
   })

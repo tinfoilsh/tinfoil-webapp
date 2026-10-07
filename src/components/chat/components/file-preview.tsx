@@ -93,7 +93,10 @@ export function FilePreview({
         data-testid="file-preview"
         data-preview-kind="pending"
       >
-        <PiSpinner className="h-4 w-4 animate-spin text-content-secondary" />
+        <PiSpinner
+          className="h-4 w-4 animate-spin text-content-secondary"
+          aria-hidden="true"
+        />
       </div>
     )
   }
@@ -134,7 +137,10 @@ export function FilePreview({
       )}
       {isBusy && (
         <div className="absolute inset-0 flex items-center justify-center bg-surface-chat/70">
-          <PiSpinner className="h-4 w-4 animate-spin text-content-secondary" />
+          <PiSpinner
+            className="h-4 w-4 animate-spin text-content-secondary"
+            aria-hidden="true"
+          />
         </div>
       )}
     </div>

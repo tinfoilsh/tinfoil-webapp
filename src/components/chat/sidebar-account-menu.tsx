@@ -6,17 +6,19 @@ import { useRateLimit } from '@/hooks/use-rate-limit'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useUser } from '@clerk/react'
 import {
-  ArrowPathIcon,
   ArrowTopRightOnSquareIcon,
-  BugAntIcon,
-  CheckIcon,
   ChevronRightIcon,
-  Cog6ToothIcon,
-  DocumentTextIcon,
-  QuestionMarkCircleIcon,
-  ShieldCheckIcon,
-  UserCircleIcon,
 } from '@heroicons/react/24/outline'
+import {
+  TfBoxCheckmark,
+  TfBug,
+  TfDocument,
+  TfPerson,
+  TfQuestionMarkCircle,
+  TfRefresh1,
+  TfSetting,
+  TfShieldCheck,
+} from '@tinfoilsh/tinfoil-icons'
 import { useRouter } from 'next/router'
 import {
   useCallback,
@@ -418,7 +420,7 @@ export function SidebarAccountMenu({
           {isSignedIn ? (
             <UserAvatar size={28} />
           ) : (
-            <UserCircleIcon className="h-7 w-7" aria-hidden="true" />
+            <TfPerson className="h-7 w-7" aria-hidden="true" />
           )}
           {syncNeedsAttention && (
             <span
@@ -471,7 +473,7 @@ export function SidebarAccountMenu({
                 onPointerEnter={handleOtherRowEnter}
                 onClick={() => runAndClose(() => onOpenSettings('account'))}
               >
-                <UserCircleIcon className="h-4 w-4" aria-hidden="true" />
+                <TfPerson className="h-4 w-4" aria-hidden="true" />
                 Account
               </button>
             ) : (
@@ -484,7 +486,7 @@ export function SidebarAccountMenu({
                 onClick={closeAndRestoreFocus}
                 onKeyDown={handleMenuLinkKeyDown}
               >
-                <UserCircleIcon className="h-4 w-4" aria-hidden="true" />
+                <TfPerson className="h-4 w-4" aria-hidden="true" />
                 Sign in
               </Link>
             )}
@@ -501,7 +503,7 @@ export function SidebarAccountMenu({
                 )
               }
             >
-              <Cog6ToothIcon className="h-4 w-4" aria-hidden="true" />
+              <TfSetting className="h-4 w-4" aria-hidden="true" />
               <span className="flex-1">Settings</span>
               {syncNeedsAttention && (
                 <span
@@ -523,15 +525,17 @@ export function SidebarAccountMenu({
                 onClick={() => void manualSync.sync()}
               >
                 {manualSync.showSpinner ? (
-                  <PiSpinner className="h-4 w-4 animate-spin" aria-hidden />
+                  <PiSpinner
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
                 ) : manualSync.showSuccess ? (
-                  <CheckIcon
+                  <TfBoxCheckmark
                     className="h-4 w-4 text-green-600 dark:text-green-400"
-                    strokeWidth={2.5}
                     aria-hidden="true"
                   />
                 ) : (
-                  <ArrowPathIcon className="h-4 w-4" aria-hidden="true" />
+                  <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
                 )}
                 <span className="flex-1">Sync now</span>
                 <span
@@ -575,10 +579,7 @@ export function SidebarAccountMenu({
                   else setIsHelpOpen(isHoverClick(event.detail) || !isHelpOpen)
                 }}
               >
-                <QuestionMarkCircleIcon
-                  className="h-4 w-4"
-                  aria-hidden="true"
-                />
+                <TfQuestionMarkCircle className="h-4 w-4" aria-hidden="true" />
                 <span className="flex-1">Help</span>
                 <ChevronRightIcon
                   className="h-4 w-4 text-content-muted"
@@ -611,7 +612,7 @@ export function SidebarAccountMenu({
                     onClick={closeAndRestoreFocus}
                     onKeyDown={handleMenuLinkKeyDown}
                   >
-                    <DocumentTextIcon className="h-4 w-4" aria-hidden="true" />
+                    <TfDocument className="h-4 w-4" aria-hidden="true" />
                     <span className="flex-1">Terms of Service</span>
                     <ArrowTopRightOnSquareIcon
                       className="h-3.5 w-3.5 text-content-muted"
@@ -628,7 +629,7 @@ export function SidebarAccountMenu({
                     onClick={closeAndRestoreFocus}
                     onKeyDown={handleMenuLinkKeyDown}
                   >
-                    <ShieldCheckIcon className="h-4 w-4" aria-hidden="true" />
+                    <TfShieldCheck className="h-4 w-4" aria-hidden="true" />
                     <span className="flex-1">Privacy Policy</span>
                     <ArrowTopRightOnSquareIcon
                       className="h-3.5 w-3.5 text-content-muted"
@@ -642,7 +643,7 @@ export function SidebarAccountMenu({
                     className={MENU_ITEM_CLASS_NAME}
                     onClick={() => runAndClose(onReportBug)}
                   >
-                    <BugAntIcon className="h-4 w-4" aria-hidden="true" />
+                    <TfBug className="h-4 w-4" aria-hidden="true" />
                     Report a bug
                   </button>
                 </div>
