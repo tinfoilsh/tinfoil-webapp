@@ -61,9 +61,6 @@ describe('runOffDeviceImport', () => {
 
     expect(importCreate).toHaveBeenCalledTimes(1)
     const createArg = importCreate.mock.calls[0][0]
-    expect(createArg.source).toBe('claude')
-    expect(createArg.totalBytes).toBe(size)
-    expect(createArg.totalChunks).toBe(2)
     expect(createArg).toEqual({
       source: 'claude',
       totalBytes: size,
@@ -73,13 +70,6 @@ describe('runOffDeviceImport', () => {
     expect(importCreate.mock.calls[0][1]).toBe(signal)
 
     expect(importUploadChunk).toHaveBeenCalledTimes(2)
-    const first = importUploadChunk.mock.calls[0][0]
-    const second = importUploadChunk.mock.calls[1][0]
-    expect(first.uploadId).toBe('up-1')
-    expect(first.chunkIndex).toBe(0)
-    expect(first.data.byteLength).toBe(IMPORT_CHUNK_BYTES)
-    expect(second.chunkIndex).toBe(1)
-    expect(second.data.byteLength).toBe(1234)
     for (const [index, expected] of [
       archive.subarray(0, IMPORT_CHUNK_BYTES),
       archive.subarray(IMPORT_CHUNK_BYTES),

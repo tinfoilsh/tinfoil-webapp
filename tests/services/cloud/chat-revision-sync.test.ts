@@ -1,10 +1,13 @@
 import { CLOUD_SYNC } from '@/config'
-import {
-  BOOTSTRAP_RECENT_CONTENT_LIMIT,
-  drainChatRevisionSync,
-} from '@/services/cloud/chat-revision-sync'
+import { drainChatRevisionSync } from '@/services/cloud/chat-revision-sync'
 import type { StoredChat } from '@/services/storage/indexed-db'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// This fixed dataset pins the 50-chat bootstrap policy independently of the
+// production limit. Changing that policy requires an intentional oracle update.
+const MISSING_CHAT_COUNT = 52
+const EXPECTED_RECENT_CHAT_COUNT = 50
+const FIRST_RECENT_CHAT_INDEX = 2
 
 const {
   getSyncState,
@@ -494,7 +497,7 @@ describe('chat revision synchronization', () => {
       oldest_replayable_revision: '1',
     })
     const missingItems = Array.from(
-      { length: BOOTSTRAP_RECENT_CONTENT_LIMIT + 2 },
+      { length: MISSING_CHAT_COUNT },
       (_, index) => ({
         id: `missing-${index}`,
         etag: '2',
@@ -538,12 +541,15 @@ describe('chat revision synchronization', () => {
     const pulledIds = downloadChats.mock.calls.flatMap(([ids]) => ids)
     expect(pulledIds).toContain('stale-existing')
     expect(pulledIds.filter((id) => id.startsWith('missing-'))).toHaveLength(
-      BOOTSTRAP_RECENT_CONTENT_LIMIT,
+      EXPECTED_RECENT_CHAT_COUNT,
     )
     expect([...pulledIds].sort()).toEqual(
       [
         'stale-existing',
-        ...Array.from({ length: 50 }, (_, index) => `missing-${index + 2}`),
+        ...Array.from(
+          { length: EXPECTED_RECENT_CHAT_COUNT },
+          (_, index) => `missing-${index + FIRST_RECENT_CHAT_INDEX}`,
+        ),
       ].sort(),
     )
   })

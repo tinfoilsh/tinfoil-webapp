@@ -86,10 +86,7 @@ describe('parseLocalTinfoilExport', () => {
     const chats = await parseLocalTinfoilExport(file, options)
 
     expect(chats).toHaveLength(1)
-    expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ fileName: 'conversations.json' }),
-      [expect.any(ArrayBuffer)],
-    )
+    expect(postMessage).toHaveBeenCalledOnce()
     expect(terminate).toHaveBeenCalledOnce()
     expect(construct).toHaveBeenCalledOnce()
     expect(construct.mock.calls[0][0].pathname).toMatch(

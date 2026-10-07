@@ -53,6 +53,37 @@ const originalCredentials = Object.getOwnPropertyDescriptor(
 const LEGACY_PRIMARY = `key_${'ar'.repeat(32)}`
 const LEGACY_ALTERNATIVE = `key_${'as'.repeat(32)}`
 
+function decodeEnvelope(candidate: PasskeyCredentialEntry) {
+  return JSON.parse(
+    Buffer.from(candidate.encrypted_keys, 'base64').toString('utf8'),
+  ) as { primary: string; alternatives: string[] }
+}
+
+function installCredentialGet(
+  rawId = new Uint8Array([1, 2, 3]),
+  first: ArrayBuffer | number[] = PRF_OUTPUT.buffer,
+) {
+  const get = vi.fn(async (_options?: CredentialRequestOptions) => ({
+    rawId: rawId.buffer,
+    authenticatorAttachment: 'platform',
+    getClientExtensionResults: () => ({ prf: { results: { first } } }),
+  }))
+  Object.defineProperty(navigator, 'credentials', {
+    value: { create: vi.fn(), get },
+    configurable: true,
+  })
+  return get
+}
+
+function undecryptableEnclaveEntry(): PasskeyCredentialEntry {
+  return entry({
+    id: 'BAUG',
+    iv: Buffer.from(new Uint8Array(12)).toString('base64'),
+    encrypted_keys: Buffer.from(new Uint8Array(48)).toString('base64'),
+    source: 'enclave',
+  })
+}
+
 async function encryptLegacyFixture(kek: CryptoKey, keys: KeyBundle) {
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const ciphertext = await crypto.subtle.encrypt(
@@ -88,14 +119,10 @@ async function genericEnvelopeEntry(
     primary: encodeWrappedKeyRecord(wrappedKeys.primary),
     alternatives: wrappedKeys.alternatives.map(encodeWrappedKeyRecord),
   })
-  const encryptedKeysHex = Array.from(
-    new TextEncoder().encode(envelope),
-    (byte) => byte.toString(16).padStart(2, '0'),
-  ).join('')
   return entry({
     id: credentialId,
     iv: hexToB64(wrappedKeys.primary.kekIvHex),
-    encrypted_keys: hexToB64(encryptedKeysHex),
+    encrypted_keys: Buffer.from(envelope, 'utf8').toString('base64'),
     source: 'enclave',
   })
 }
@@ -203,17 +230,7 @@ describe('recoverPasskeyKeyBundle', () => {
     { format: '1Password byte array', first: Array.from(PRF_OUTPUT) },
   ])('recovers with $format PRF output', async ({ first }) => {
     localStorage.clear()
-    const get = vi.fn(async (_options?: CredentialRequestOptions) => ({
-      rawId: new Uint8Array([1, 2, 3]).buffer,
-      authenticatorAttachment: 'platform',
-      getClientExtensionResults: () => ({
-        prf: { results: { first } },
-      }),
-    }))
-    Object.defineProperty(navigator, 'credentials', {
-      value: { create: vi.fn(), get },
-      configurable: true,
-    })
+    installCredentialGet(undefined, first)
     const cacheRecovery = vi.spyOn(passkeyKeyManager, 'recoverKeyFromCache')
     const recovered = await recoverPasskeyKeyBundle([
       entry({
@@ -293,13 +310,7 @@ describe('recoverPasskeyKeyBundle', () => {
       authorizationMode: 'validated' as const,
     }
     const candidate = await genericEnvelopeEntry(keyBundle)
-    const envelope = JSON.parse(
-      new TextDecoder().decode(
-        Uint8Array.from(atob(candidate.encrypted_keys), (char) =>
-          char.charCodeAt(0),
-        ),
-      ),
-    ) as { primary: string; alternatives: string[] }
+    const envelope = decodeEnvelope(candidate)
     const ivs = [envelope.primary, ...envelope.alternatives].map(
       (record) => decodeWrappedKeyRecord(record).kekIvHex,
     )
@@ -322,9 +333,7 @@ describe('recoverPasskeyKeyBundle', () => {
         authorizationMode: 'validated' as const,
       }
       const candidate = await genericEnvelopeEntry(keyBundle)
-      const envelope = JSON.parse(
-        Buffer.from(candidate.encrypted_keys, 'base64').toString('utf8'),
-      ) as { primary: string; alternatives: string[] }
+      const envelope = decodeEnvelope(candidate)
       const primaryRecord = decodeWrappedKeyRecord(envelope.primary)
       const alternativeRecord = decodeWrappedKeyRecord(envelope.alternatives[0])
       localStorage.removeItem(SECRET_PASSKEY_PRF_OUTPUT)
@@ -448,24 +457,9 @@ describe('recoverPasskeyKeyBundle', () => {
         },
         'BwgJ',
       )
-      const get = vi.fn(async (_options?: CredentialRequestOptions) => ({
-        rawId: new Uint8Array([1, 2, 3]).buffer,
-        authenticatorAttachment: 'platform',
-        getClientExtensionResults: () => ({
-          prf: { results: { first: PRF_OUTPUT.buffer } },
-        }),
-      }))
-      Object.defineProperty(navigator, 'credentials', {
-        value: { create: vi.fn(), get },
-        configurable: true,
-      })
+      const get = installCredentialGet()
       const candidates = [
-        entry({
-          id: 'BAUG',
-          iv: btoa(String.fromCharCode(...new Uint8Array(12))),
-          encrypted_keys: btoa(String.fromCharCode(...new Uint8Array(48))),
-          source: 'enclave',
-        }),
+        undecryptableEnclaveEntry(),
         generic,
         entry({
           id: 'CgsM',
@@ -511,25 +505,10 @@ describe('recoverPasskeyKeyBundle', () => {
       primary: LEGACY_PRIMARY,
       alternatives: [],
     })
-    const get = vi.fn(async (_options?: CredentialRequestOptions) => ({
-      rawId: new Uint8Array([7, 8, 9]).buffer,
-      authenticatorAttachment: 'platform',
-      getClientExtensionResults: () => ({
-        prf: { results: { first: PRF_OUTPUT.buffer } },
-      }),
-    }))
-    Object.defineProperty(navigator, 'credentials', {
-      value: { create: vi.fn(), get },
-      configurable: true,
-    })
+    const get = installCredentialGet(new Uint8Array([7, 8, 9]))
 
     const recovered = await recoverPasskeyKeyBundle([
-      entry({
-        id: 'BAUG',
-        iv: btoa(String.fromCharCode(...new Uint8Array(12))),
-        encrypted_keys: btoa(String.fromCharCode(...new Uint8Array(48))),
-        source: 'enclave',
-      }),
+      undecryptableEnclaveEntry(),
       await genericEnvelopeEntry(keyBundle, 'BwgJ'),
       entry({
         iv: legacy.iv,

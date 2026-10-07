@@ -116,7 +116,7 @@ describe('selectPendingInputToolCall', () => {
           id: 'b1',
           name: 'ask_user_input',
           toolCallId: 't1',
-          args: '{"question":"Pick one","options":[{"label":"A"},{"label":"B"}]}',
+          args: validInputArguments,
         },
       ]),
     ]
@@ -150,6 +150,7 @@ describe('selectPendingInputToolCall', () => {
 
   it.each([
     '{"question":"Pick one"}',
+    '{"question":"Pick one","options":[{"label":"A"}]}',
     '{"question":"Pick one","options":[{"label":"A"},{"label":7}]}',
     '{"question":"Pick one","options":[{"label":"A"},{"label":"B"}],"unexpected":true}',
   ])('returns null for schema-invalid input tool arguments: %s', (args) => {

@@ -169,6 +169,24 @@ function renderAndSubmitPasswordSignIn(password = 'account password') {
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 }
 
+function renderAndSubmitPasswordSignUp() {
+  render(<SignInPage initialMode="signup" />)
+  fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
+    target: { value: 'New' },
+  })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Last name' }), {
+    target: { value: 'Person' },
+  })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
+    target: { value: 'new@example.com' },
+  })
+  fireEvent.change(screen.getByLabelText('Password'), {
+    target: { value: 'new account password' },
+  })
+  fireEvent.click(screen.getByRole('checkbox'))
+  fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+}
+
 describe('SignInPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -293,21 +311,7 @@ describe('SignInPage', () => {
           new TypeError('Network unavailable'),
         )
       }
-      render(<SignInPage initialMode="signup" />)
-      fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
-        target: { value: 'New' },
-      })
-      fireEvent.change(screen.getByRole('textbox', { name: 'Last name' }), {
-        target: { value: 'Person' },
-      })
-      fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
-        target: { value: 'new@example.com' },
-      })
-      fireEvent.change(screen.getByLabelText('Password'), {
-        target: { value: 'new account password' },
-      })
-      fireEvent.click(screen.getByRole('checkbox'))
-      fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+      renderAndSubmitPasswordSignUp()
 
       const alert = await screen.findByRole('alert')
       expect(alert).toHaveTextContent(
@@ -515,22 +519,7 @@ describe('SignInPage', () => {
       auth.signUp.unverifiedFields = ['email_address']
       return { error: null }
     })
-    render(<SignInPage initialMode="signup" />)
-
-    fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
-      target: { value: 'New' },
-    })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Last name' }), {
-      target: { value: 'Person' },
-    })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
-      target: { value: 'new@example.com' },
-    })
-    fireEvent.change(screen.getByLabelText('Password'), {
-      target: { value: 'new account password' },
-    })
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+    renderAndSubmitPasswordSignUp()
 
     await waitFor(() => {
       expect(auth.signUp.password).toHaveBeenCalledWith({
@@ -1086,21 +1075,7 @@ describe('SignInPage', () => {
       auth.signUp.unverifiedFields = ['email_address']
       return { error: null }
     })
-    render(<SignInPage initialMode="signup" />)
-    fireEvent.change(screen.getByRole('textbox', { name: 'First name' }), {
-      target: { value: 'New' },
-    })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Last name' }), {
-      target: { value: 'Person' },
-    })
-    fireEvent.change(screen.getByRole('textbox', { name: 'Email' }), {
-      target: { value: 'new@example.com' },
-    })
-    fireEvent.change(screen.getByLabelText('Password'), {
-      target: { value: 'new account password' },
-    })
-    fireEvent.click(screen.getByRole('checkbox'))
-    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+    renderAndSubmitPasswordSignUp()
     fireEvent.change(
       await screen.findByRole('textbox', { name: 'Verification code' }),
       { target: { value: '654321' } },

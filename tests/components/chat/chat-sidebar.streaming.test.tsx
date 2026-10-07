@@ -7,6 +7,7 @@ import {
 import type { Chat } from '@/components/chat/types'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@clerk/react', () => ({
@@ -76,6 +77,36 @@ function DragSource({ source }: { source: ChatDragSource }) {
   )
 }
 
+const SIDEBAR_WIDTH = 1440
+
+function SidebarHarness({
+  currentChat = activeChat,
+  source,
+  ...overrides
+}: Partial<ComponentProps<typeof ChatSidebar>> & { source?: ChatDragSource }) {
+  return (
+    <DragProvider>
+      {source && <DragSource source={source} />}
+      <ChatSidebar
+        isOpen
+        setIsOpen={vi.fn()}
+        chats={[currentChat, otherChat]}
+        currentChat={currentChat}
+        isDarkMode={false}
+        pixelateSidebarChatTitles={false}
+        createNewChat={vi.fn()}
+        handleChatSelect={vi.fn()}
+        updateChatTitle={vi.fn()}
+        deleteChat={vi.fn()}
+        isClient
+        isPremium
+        windowWidth={SIDEBAR_WIDTH}
+        {...overrides}
+      />
+    </DragProvider>
+  )
+}
+
 describe('chat sidebar during streaming', () => {
   beforeEach(() => {
     sessionStorage.clear()
@@ -89,23 +120,10 @@ describe('chat sidebar during streaming', () => {
   it('keeps other chats visible and selectable through streaming updates', () => {
     const handleChatSelect = vi.fn()
     const sidebar = (currentChat: Chat) => (
-      <DragProvider>
-        <ChatSidebar
-          isOpen
-          setIsOpen={vi.fn()}
-          chats={[currentChat, otherChat]}
-          currentChat={currentChat}
-          isDarkMode={false}
-          pixelateSidebarChatTitles={false}
-          createNewChat={vi.fn()}
-          handleChatSelect={handleChatSelect}
-          updateChatTitle={vi.fn()}
-          deleteChat={vi.fn()}
-          isClient
-          isPremium
-          windowWidth={1440}
-        />
-      </DragProvider>
+      <SidebarHarness
+        currentChat={currentChat}
+        handleChatSelect={handleChatSelect}
+      />
     )
     const { rerender } = render(sidebar(activeChat))
     expect(
@@ -155,29 +173,15 @@ describe('chat sidebar during streaming', () => {
       const onConvertChatToCloud = vi.fn(async () => true)
       const onRemoveChatFromProject = vi.fn(async () => {})
       render(
-        <DragProvider>
-          <DragSource source={source} />
-          <ChatSidebar
-            isOpen
-            setIsOpen={vi.fn()}
-            chats={[droppedChat, otherChat]}
-            currentChat={droppedChat}
-            isDarkMode={false}
-            pixelateSidebarChatTitles={false}
-            createNewChat={vi.fn()}
-            handleChatSelect={vi.fn()}
-            updateChatTitle={vi.fn()}
-            deleteChat={vi.fn()}
-            isClient
-            isPremium
-            windowWidth={1440}
-            pinnedChatIds={[activeChat.id]}
-            onRemoveFavorite={onRemoveFavorite}
-            onConvertChatToLocal={onConvertChatToLocal}
-            onConvertChatToCloud={onConvertChatToCloud}
-            onRemoveChatFromProject={onRemoveChatFromProject}
-          />
-        </DragProvider>,
+        <SidebarHarness
+          source={source}
+          currentChat={droppedChat}
+          pinnedChatIds={[activeChat.id]}
+          onRemoveFavorite={onRemoveFavorite}
+          onConvertChatToLocal={onConvertChatToLocal}
+          onConvertChatToCloud={onConvertChatToCloud}
+          onRemoveChatFromProject={onRemoveChatFromProject}
+        />,
       )
       fireEvent.click(screen.getByRole('tab', { name: destination }))
       fireEvent.click(screen.getByRole('button', { name: 'Start drag' }))

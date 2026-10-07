@@ -55,6 +55,16 @@ vi.mock('@/utils/error-handling', () => ({
 const CEK_BYTE_LENGTH = 32
 const PRIMARY_KEY = `key_${'ab'.repeat(CEK_BYTE_LENGTH)}`
 
+function enqueuePendingAttestation(): () => void {
+  let finishAttestation!: () => void
+  mockReady.mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      finishAttestation = resolve
+    }),
+  )
+  return finishAttestation
+}
+
 describe('live cloud-sync key session', () => {
   beforeEach(() => {
     resetSyncEnclaveClient()
@@ -85,12 +95,7 @@ describe('live cloud-sync key session', () => {
 
   it('publishes the local CEK only after verified preflight completes', async () => {
     await encryptionService.setKey(PRIMARY_KEY)
-    let finishAttestation!: () => void
-    mockReady.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        finishAttestation = resolve
-      }),
-    )
+    const finishAttestation = enqueuePendingAttestation()
     const { result } = renderHook(() => useCloudSync())
     await waitFor(() => expect(mockReady).toHaveBeenCalledOnce())
     expect(result.current.encryptionKey).toBeNull()
@@ -151,12 +156,7 @@ describe('live cloud-sync key session', () => {
     first.unmount()
     resetSyncEnclaveClient()
     expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBe(PRIMARY_KEY)
-    let finishAttestation!: () => void
-    mockReady.mockReturnValueOnce(
-      new Promise<void>((resolve) => {
-        finishAttestation = resolve
-      }),
-    )
+    const finishAttestation = enqueuePendingAttestation()
     const second = renderHook(() => useCloudSync())
     await waitFor(() => expect(mockReady).toHaveBeenCalledTimes(2))
     expect(second.result.current.encryptionKey).toBeNull()
@@ -174,12 +174,7 @@ describe('live cloud-sync key session', () => {
     'deleting the CEK while %s blocks preflight and leaves the next cloud-sync mount keyless',
     async (phase) => {
       await encryptionService.setKey(PRIMARY_KEY)
-      let finishAttestation!: () => void
-      mockReady.mockReturnValueOnce(
-        new Promise<void>((resolve) => {
-          finishAttestation = resolve
-        }),
-      )
+      const finishAttestation = enqueuePendingAttestation()
       const first = renderHook(() => useCloudSync())
       await waitFor(() => expect(mockReady).toHaveBeenCalledOnce())
       if (phase === 'ready') {

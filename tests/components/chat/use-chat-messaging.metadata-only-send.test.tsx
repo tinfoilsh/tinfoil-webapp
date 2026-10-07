@@ -203,6 +203,28 @@ function renderMessaging(initialChat: Chat) {
   })
 }
 
+const expectedSendContents = [
+  'Earlier question',
+  'Earlier answer',
+  'New prompt',
+  'Response',
+]
+
+function expectFinalSendState(
+  result: ReturnType<typeof renderMessaging>['result'],
+  saveMock: typeof saveChatMock,
+  expectedContents: string[] = expectedSendContents,
+) {
+  expect(
+    result.current.currentChat.messages.map(({ content }) => content),
+  ).toEqual(expectedContents)
+  expect(saveMock).toHaveBeenLastCalledWith(
+    expect.objectContaining({ messages: result.current.currentChat.messages }),
+    false,
+  )
+  expect(result.current.messaging.streamError).toBeNull()
+}
+
 describe('useChatMessaging metadata-only sends', () => {
   it('hydrates stored messages before persisting a send', async () => {
     getChatMock.mockResolvedValue(hydratedChat())
@@ -221,18 +243,7 @@ describe('useChatMessaging metadata-only sends', () => {
     ).toEqual(['Earlier question', 'Earlier answer', 'New prompt'])
     expect(firstSave.isMetadataOnly).toBe(false)
 
-    expect(
-      result.current.currentChat.messages.map(
-        (m: { content: string }) => m.content,
-      ),
-    ).toEqual(['Earlier question', 'Earlier answer', 'New prompt', 'Response'])
-    expect(saveExistingChatMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        messages: result.current.currentChat.messages,
-      }),
-      false,
-    )
-    expect(result.current.messaging.streamError).toBeNull()
+    expectFinalSendState(result, saveExistingChatMock)
   })
 
   it('refreshes hydration when the stored summary changes during the read', async () => {
@@ -294,9 +305,7 @@ describe('useChatMessaging metadata-only sends', () => {
       'Remote answer',
       'New prompt',
     ])
-    expect(
-      result.current.currentChat.messages.map(({ content }) => content),
-    ).toEqual([
+    expectFinalSendState(result, saveExistingChatMock, [
       'Earlier question',
       'Earlier answer',
       'Remote question',
@@ -304,13 +313,6 @@ describe('useChatMessaging metadata-only sends', () => {
       'New prompt',
       'Response',
     ])
-    expect(saveExistingChatMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        messages: result.current.currentChat.messages,
-      }),
-      false,
-    )
-    expect(result.current.messaging.streamError).toBeNull()
   })
 
   it('does not persist anything when hydration fails', async () => {
@@ -363,16 +365,7 @@ describe('useChatMessaging metadata-only sends', () => {
     expect(
       firstSave.messages.map((m: { content: string }) => m.content),
     ).toEqual(['Earlier question', 'Earlier answer', 'New prompt'])
-    expect(
-      result.current.currentChat.messages.map(({ content }) => content),
-    ).toEqual(['Earlier question', 'Earlier answer', 'New prompt', 'Response'])
-    expect(saveChatMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        messages: result.current.currentChat.messages,
-      }),
-      false,
-    )
-    expect(result.current.messaging.streamError).toBeNull()
+    expectFinalSendState(result, saveChatMock)
   })
 
   it('keeps B current while a hydrated send continues for A', async () => {
@@ -410,7 +403,7 @@ describe('useChatMessaging metadata-only sends', () => {
       result.current.chats
         .find(({ id }) => id === 'chat-1')
         ?.messages.map(({ content }) => content),
-    ).toEqual(['Earlier question', 'Earlier answer', 'New prompt', 'Response'])
+    ).toEqual(expectedSendContents)
     expect(saveExistingChatMock).toHaveBeenLastCalledWith(
       expect.objectContaining({
         id: 'chat-1',

@@ -35,6 +35,23 @@ function setWindowWidth(width: number): void {
   vi.stubGlobal('innerWidth', width)
 }
 
+function mockRenderFailureWidget(
+  shouldThrow: (args: { title?: string }) => boolean = (args) =>
+    args.title === 'Reply draft',
+) {
+  const widget = GENUI_WIDGETS_BY_NAME.render_message_compose
+  const originalRender = widget.render
+  if (!originalRender) throw new Error('Missing message compose renderer')
+  return vi
+    .spyOn(widget, 'render')
+    .mockImplementation(
+      (args: { title?: string }, context: GenUIRenderContext) => {
+        if (shouldThrow(args)) throw new Error('render failed')
+        return originalRender(args, context)
+      },
+    )
+}
+
 function renderArtifactPreview({ isStreaming }: { isStreaming: boolean }) {
   const listener = vi.fn<(event: Event) => void>()
   artifactPreviewListeners.push(listener)
@@ -340,6 +357,11 @@ describe('GenUIToolCallRenderer', () => {
     await waitFor(() => expect(retryWidget).toHaveBeenCalledTimes(2))
     expect(retryWidget).toHaveBeenNthCalledWith(2, 'one')
     expect(regenerate).not.toHaveBeenCalled()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Regenerate response' }),
+      ).toBeEnabled(),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate response' }))
     expect(regenerate).toHaveBeenCalledOnce()
   })
@@ -371,16 +393,9 @@ describe('GenUIToolCallRenderer', () => {
   })
 
   it('retries render exceptions and resets after arguments change', async () => {
-    const widget = GENUI_WIDGETS_BY_NAME.render_message_compose
-    const originalRender = widget.render
+    mockRenderFailureWidget()
     const retryWidget = vi.fn()
     const regenerate = vi.fn()
-    vi.spyOn(widget, 'render').mockImplementation(
-      (args: { title?: string }, context: GenUIRenderContext) => {
-        if (args.title === 'Reply draft') throw new Error('render failed')
-        return originalRender!(args, context)
-      },
-    )
 
     function RenderExceptionHarness() {
       const [argumentsValue, setArgumentsValue] = useState(validMessageCompose)
@@ -443,14 +458,7 @@ describe('GenUIToolCallRenderer', () => {
   })
 
   it('resets render failures when arguments change outside a retry', async () => {
-    const widget = GENUI_WIDGETS_BY_NAME.render_message_compose
-    const originalRender = widget.render
-    vi.spyOn(widget, 'render').mockImplementation(
-      (args: { title?: string }, context: GenUIRenderContext) => {
-        if (args.title === 'Reply draft') throw new Error('render failed')
-        return originalRender!(args, context)
-      },
-    )
+    mockRenderFailureWidget()
     const toolCall = {
       id: 'external-repair',
       name: 'render_message_compose',
@@ -484,15 +492,8 @@ describe('GenUIToolCallRenderer', () => {
   })
 
   it('retries rendering when repaired arguments are unchanged', async () => {
-    const widget = GENUI_WIDGETS_BY_NAME.render_message_compose
-    const originalRender = widget.render
     let shouldThrow = true
-    vi.spyOn(widget, 'render').mockImplementation(
-      (args: { title?: string }, context: GenUIRenderContext) => {
-        if (shouldThrow) throw new Error('render failed')
-        return originalRender!(args, context)
-      },
-    )
+    mockRenderFailureWidget(() => shouldThrow)
 
     render(
       <GenUIToolCallRenderer

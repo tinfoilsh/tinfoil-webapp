@@ -5,6 +5,14 @@ import {
 } from '@/services/auth/auth-token-manager'
 import { describe, expect, it, vi } from 'vitest'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((finish) => {
+    resolve = finish
+  })
+  return { promise, resolve }
+}
+
 describe('AuthTokenManager', () => {
   it('distinguishes a confirmed signed-out session from unresolved auth', async () => {
     const manager = new AuthTokenManager()
@@ -34,11 +42,11 @@ describe('AuthTokenManager', () => {
 
   it('rejects an in-flight token read after confirmed sign-out', async () => {
     const manager = new AuthTokenManager()
-    let resolveToken!: (token: string) => void
-    manager.initialize(() => new Promise((resolve) => (resolveToken = resolve)))
+    const pendingToken = deferred<string>()
+    manager.initialize(() => pendingToken.promise)
     const token = manager.getValidToken()
     manager.initialize(null)
-    resolveToken('old-session-token')
+    pendingToken.resolve('old-session-token')
 
     await expect(token).rejects.toBeInstanceOf(AuthTokenUnavailableError)
   })
@@ -53,10 +61,8 @@ describe('AuthTokenManager', () => {
   })
 
   it('single-flights forced refreshes for the rejected token', async () => {
-    let resolveRefresh!: (token: string) => void
-    const getToken = vi.fn(
-      () => new Promise<string>((resolve) => (resolveRefresh = resolve)),
-    )
+    const pendingRefresh = deferred<string>()
+    const getToken = vi.fn(() => pendingRefresh.promise)
     const manager = new AuthTokenManager()
     manager.initialize(getToken)
 
@@ -66,7 +72,7 @@ describe('AuthTokenManager', () => {
     expect(getToken).toHaveBeenCalledOnce()
     expect(getToken).toHaveBeenCalledWith({ skipCache: true })
 
-    resolveRefresh('fresh-token')
+    pendingRefresh.resolve('fresh-token')
     await expect(first).resolves.toBe('fresh-token')
   })
 
@@ -84,13 +90,8 @@ describe('AuthTokenManager', () => {
 
   it('drops the provider and refresh state on reset', async () => {
     const manager = new AuthTokenManager()
-    let resolveOld!: (token: string) => void
-    manager.initialize(
-      () =>
-        new Promise<string>((resolve) => {
-          resolveOld = resolve
-        }),
-    )
+    const oldToken = deferred<string>()
+    manager.initialize(() => oldToken.promise)
     const oldRefresh = manager.refreshToken('rejected-token')
     const oldRejection = expect(oldRefresh).rejects.toBeInstanceOf(
       AuthTokenRefreshError,
@@ -101,60 +102,41 @@ describe('AuthTokenManager', () => {
     await expect(manager.getValidToken()).rejects.toMatchObject({
       reason: 'not-initialized',
     })
-    let resolveNew!: (token: string) => void
-    const newProvider = vi.fn(
-      () =>
-        new Promise<string>((resolve) => {
-          resolveNew = resolve
-        }),
-    )
+    const newToken = deferred<string>()
+    const newProvider = vi.fn(() => newToken.promise)
     manager.initialize(newProvider)
     const newRefresh = manager.refreshToken('rejected-token')
     expect(newRefresh).not.toBe(oldRefresh)
     expect(newProvider).toHaveBeenCalledExactlyOnceWith({ skipCache: true })
-    resolveOld('old-account-token')
+    oldToken.resolve('old-account-token')
     await oldRejection
     expect(manager.refreshToken('rejected-token')).toBe(newRefresh)
     expect(newProvider).toHaveBeenCalledOnce()
-    resolveNew('new-account-token')
+    newToken.resolve('new-account-token')
     await expect(newRefresh).resolves.toBe('new-account-token')
   })
 
   it('rejects an in-flight refresh after the account changes', async () => {
-    let resolveOldRefresh!: (token: string) => void
+    const oldToken = deferred<string>()
     const manager = new AuthTokenManager()
-    manager.initialize(
-      vi.fn(
-        () =>
-          new Promise<string>((resolve) => {
-            resolveOldRefresh = resolve
-          }),
-      ),
-    )
+    manager.initialize(vi.fn(() => oldToken.promise))
 
     const refresh = manager.refreshToken('old-token')
     manager.reset()
     manager.initialize(vi.fn().mockResolvedValue('new-token'))
-    resolveOldRefresh('old-account-token')
+    oldToken.resolve('old-account-token')
 
     await expect(refresh).rejects.toBeInstanceOf(AuthTokenRefreshError)
   })
 
   it('rejects an in-flight ordinary read after the account changes', async () => {
-    let resolveOldRead!: (token: string) => void
+    const oldToken = deferred<string>()
     const manager = new AuthTokenManager()
-    manager.initialize(
-      vi.fn(
-        () =>
-          new Promise<string>((resolve) => {
-            resolveOldRead = resolve
-          }),
-      ),
-    )
+    manager.initialize(vi.fn(() => oldToken.promise))
 
     const read = manager.getValidToken()
     manager.reset()
-    resolveOldRead('old-account-token')
+    oldToken.resolve('old-account-token')
 
     await expect(read).rejects.toBeInstanceOf(AuthTokenUnavailableError)
   })

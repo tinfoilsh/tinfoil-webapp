@@ -3,9 +3,9 @@
  *
  * Field-level conflict resolution for profile sync. The merge must:
  * - keep each side's freshest field by edit clock when both are trusted
- * - fall back to whole-blob updatedAt when clocks are absent/untrusted
- * - never let an empty/default blob wipe a populated profile on fallback
- * - converge: merging in either direction yields the same field values
+ * - report conflicting edits and retain local values when clocks are untrusted
+ * - preserve independent edits and intentional clears against the baseline
+ * - converge for trusted clocks: either direction yields the same field values
  */
 
 import {
@@ -82,7 +82,7 @@ describe('trusted and untrusted three-way profile merges', () => {
       },
       updatedAt: '2024-01-02T00:00:00.000Z',
     }
-    // Remote omits profession, and local wins nickname by updatedAt.
+    // Remote omits profession, and only local changed nickname from the baseline.
     const remote: ProfileData = {
       nickname: 'remote',
       version: 5,

@@ -79,6 +79,18 @@ async function downloadChatForBackup(
 }
 
 describe('CloudStorageService auth readiness', () => {
+  function deferWaitForInit() {
+    mockIsInitialized.mockReturnValue(false)
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
+    let finishInit!: () => void
+    mockWaitForInit.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishInit = resolve
+      }),
+    )
+    return finishInit
+  }
+
   beforeEach(() => {
     vi.resetAllMocks()
     mockAttachmentGet.mockReset()
@@ -808,21 +820,17 @@ describe('CloudStorageService auth readiness', () => {
   })
 
   it('waits for auth token manager initialization before listing chats', async () => {
-    mockIsInitialized.mockReturnValue(false)
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
-    let finishInit!: () => void
-    mockWaitForInit.mockReturnValue(
-      new Promise<void>((resolve) => {
-        finishInit = resolve
-      }),
-    )
+    const finishInit = deferWaitForInit()
 
     const service = new CloudStorageService()
     const listing = service.listChats()
-    await vi.waitFor(() => expect(mockWaitForInit).toHaveBeenCalledOnce())
-    expect(mockListStatus).not.toHaveBeenCalled()
-    finishInit()
-    await listing
+    try {
+      await vi.waitFor(() => expect(mockWaitForInit).toHaveBeenCalledOnce())
+      expect(mockListStatus).not.toHaveBeenCalled()
+    } finally {
+      finishInit()
+      await listing
+    }
 
     expect(mockWaitForInit).toHaveBeenCalledWith(3000)
     expect(mockListStatus).toHaveBeenCalledWith({
@@ -881,20 +889,17 @@ describe('CloudStorageService auth readiness', () => {
   })
 
   it('waits for auth token manager initialization before checking auth state', async () => {
-    mockIsInitialized.mockReturnValue(false)
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
-    let finishInit!: () => void
-    mockWaitForInit.mockReturnValue(
-      new Promise<void>((resolve) => {
-        finishInit = resolve
-      }),
-    )
+    const finishInit = deferWaitForInit()
 
     const service = new CloudStorageService()
     const authentication = service.isAuthenticated()
-    await vi.waitFor(() => expect(mockWaitForInit).toHaveBeenCalledOnce())
-    expect(mockIsAuthenticated).not.toHaveBeenCalled()
-    finishInit()
+    try {
+      await vi.waitFor(() => expect(mockWaitForInit).toHaveBeenCalledOnce())
+      expect(mockIsAuthenticated).not.toHaveBeenCalled()
+    } finally {
+      finishInit()
+      await authentication
+    }
     const isAuthenticated = await authentication
 
     expect(isAuthenticated).toBe(true)
@@ -1068,46 +1073,43 @@ describe('CloudStorageService auth readiness', () => {
     expect(JSON.stringify(plaintext)).not.toContain('sensitive-local-token')
   })
 
-  it.each(['upload-idem-1', 'upload-idem-2'])(
-    'keeps the attachment idempotency key stable across separate logical uploads',
-    async (secondKey) => {
-      // A failed chat push leaves the local attachment without an
-      // encryptionKey, so the next sync cycle re-uploads it under a fresh
-      // upload idempotency key. The attachment key must not depend on
-      // that per-upload key or every cycle mints a new server-side blob.
-      const service = new CloudStorageService()
-      const makeChat = () =>
-        ({
-          id: 'chat-1',
-          title: 'Local chat',
-          messages: [
-            {
-              role: 'user',
-              content: 'hi',
-              attachments: [
-                {
-                  id: 'local-att',
-                  type: 'image',
-                  fileName: 'image.png',
-                  base64: 'AQID',
-                },
-              ],
-            },
-          ],
-          createdAt: '2026-01-01T00:00:00.000Z',
-          updatedAt: '2026-01-01T00:00:00.000Z',
-          lastAccessedAt: 0,
-        }) as any
+  it('keeps the attachment idempotency key stable across separate logical uploads', async () => {
+    // A failed chat push leaves the local attachment without an
+    // encryptionKey, so the next sync cycle re-uploads it under a fresh
+    // upload idempotency key. The attachment key must not depend on
+    // that per-upload key or every cycle mints a new server-side blob.
+    const service = new CloudStorageService()
+    const makeChat = () =>
+      ({
+        id: 'chat-1',
+        title: 'Local chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'hi',
+            attachments: [
+              {
+                id: 'local-att',
+                type: 'image',
+                fileName: 'image.png',
+                base64: 'AQID',
+              },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        lastAccessedAt: 0,
+      }) as any
 
-      await service.uploadChat(makeChat(), { idempotencyKey: 'upload-idem-1' })
-      await service.uploadChat(makeChat(), { idempotencyKey: secondKey })
+    await service.uploadChat(makeChat(), { idempotencyKey: 'upload-idem-1' })
+    await service.uploadChat(makeChat(), { idempotencyKey: 'upload-idem-2' })
 
-      expect(mockAttachmentPut).toHaveBeenCalledTimes(2)
-      expect(mockAttachmentPut.mock.calls[1][0].idempotencyKey).toBe(
-        mockAttachmentPut.mock.calls[0][0].idempotencyKey,
-      )
-    },
-  )
+    expect(mockAttachmentPut).toHaveBeenCalledTimes(2)
+    expect(mockAttachmentPut.mock.calls[1][0].idempotencyKey).toBe(
+      mockAttachmentPut.mock.calls[0][0].idempotencyKey,
+    )
+  })
 
   it('derives distinct attachment idempotency keys for different bytes, chats, or attachment ids', async () => {
     const service = new CloudStorageService()

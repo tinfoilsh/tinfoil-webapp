@@ -977,22 +977,6 @@ describe('CloudSyncService revision coordinator routing', () => {
     })
   })
 
-  it('rejects a pagination cursor from a previous account', async () => {
-    listChats.mockImplementationOnce(async () => {
-      localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-2')
-      return {
-        conversations: [],
-        hasMore: true,
-        nextContinuationToken: 'stale-page-2',
-      }
-    })
-
-    await expect(
-      new CloudSyncService().initializeChatPaginationCursor(),
-    ).rejects.toThrow('Cloud account changed during synchronization')
-    expect(listChats).toHaveBeenCalledOnce()
-  })
-
   it.each([
     { entryPoint: 'initialize', switchAfter: 1 },
     { entryPoint: 'initialize', switchAfter: 2 },
@@ -1018,7 +1002,7 @@ describe('CloudSyncService revision coordinator routing', () => {
         entryPoint === 'initialize'
           ? service.initializeChatPaginationCursor()
           : service.fetchAndStorePage({ limit: 20 }),
-      ).rejects.toThrow('Cloud account changed')
+      ).rejects.toThrow('Cloud account changed during synchronization')
       expect(listChats).toHaveBeenCalledTimes(switchAfter)
       expect(downloadChats).not.toHaveBeenCalled()
       expect(applyRemoteChatIfFresh).not.toHaveBeenCalled()
@@ -1523,7 +1507,7 @@ describe('CloudSyncService forkChat', () => {
     }
   })
 
-  it('fails without touching the enclave when pending edits cannot be synced', async () => {
+  it('propagates an upload failure when pending edits cannot be synced', async () => {
     getChat.mockResolvedValue({ ...syncedSource, locallyModified: true })
     const failure = new SyncEnclaveError('Upload unavailable', 503, 'INTERNAL')
     uploadChat.mockRejectedValueOnce(failure)

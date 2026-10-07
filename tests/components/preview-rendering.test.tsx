@@ -282,8 +282,8 @@ describe('code previews', () => {
         null,
         {},
         ['a', 1],
-        Array(1001).fill('a'),
-        ['a'.repeat(100_001)],
+        Array(MAX_OUTPUT_LINES + 1).fill('a'),
+        ['a'.repeat(MAX_OUTPUT_CHARACTERS + 1)],
       ]) {
         previewMessage(frame, type, { output: ['Ready'] })
         previewMessage(frame, type, { output })
@@ -315,8 +315,11 @@ describe('code previews', () => {
   )
 
   it.each([
-    { reason: 'too many lines', output: Array(1001).fill('a') },
-    { reason: 'too many characters', output: ['a'.repeat(100_001)] },
+    { reason: 'too many lines', output: Array(MAX_OUTPUT_LINES + 1).fill('a') },
+    {
+      reason: 'too many characters',
+      output: ['a'.repeat(MAX_OUTPUT_CHARACTERS + 1)],
+    },
     { reason: 'invalid output', output: { text: 'Unexpected' } },
   ])('finishes loading Python after $reason', ({ output }) => {
     const { getByRole, getByTitle, queryByText, rerender } = render(

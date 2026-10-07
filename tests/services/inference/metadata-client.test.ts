@@ -15,11 +15,14 @@ vi.mock('tinfoil', () => ({
   },
 }))
 
+const FAVICON_DATA_URL = 'data:image/x-icon;base64,aWNvbg=='
+const FAVICON_BYTES = 'aWNvbg=='
+
 function faviconResponse(): Response {
   return new Response(
     JSON.stringify({
       status: 'found',
-      favicon_bytes: 'aWNvbg==',
+      favicon_bytes: FAVICON_BYTES,
       favicon_content_type: 'image/x-icon',
     }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -33,7 +36,7 @@ describe('fetchFavicon', () => {
 
   it('uses the favicon-only enclave endpoint', async () => {
     await expect(fetchFavicon('https://example.com/page')).resolves.toBe(
-      'data:image/x-icon;base64,aWNvbg==',
+      FAVICON_DATA_URL,
     )
     expect(mockFetch).toHaveBeenCalledWith(
       'https://opengraph-metadata.tinfoil.sh/favicon',
@@ -69,11 +72,11 @@ describe('fetchFavicon', () => {
       finish(faviconResponse())
     }
     await expect(Promise.all([first, second])).resolves.toEqual([
-      'data:image/x-icon;base64,aWNvbg==',
-      'data:image/x-icon;base64,aWNvbg==',
+      FAVICON_DATA_URL,
+      FAVICON_DATA_URL,
     ])
     await expect(fetchFavicon('https://example.org/again')).resolves.toBe(
-      'data:image/x-icon;base64,aWNvbg==',
+      FAVICON_DATA_URL,
     )
     expect(mockFetch).toHaveBeenCalledTimes(3)
   })
@@ -95,7 +98,7 @@ describe('fetchFavicon', () => {
 
   it.each([
     { bytes: '', contentType: 'image/png' },
-    { bytes: 'aWNvbg==', contentType: 'text/plain' },
+    { bytes: FAVICON_BYTES, contentType: 'text/plain' },
   ])(
     'rejects found responses without valid image data: $bytes / $contentType',
     async ({ bytes, contentType }) => {
@@ -125,7 +128,7 @@ describe('fetchFavicon', () => {
       'Favicon fetch failed: 503',
     )
     await expect(fetchFavicon('https://transient.example')).resolves.toBe(
-      'data:image/x-icon;base64,aWNvbg==',
+      FAVICON_DATA_URL,
     )
     expect(mockFetch).toHaveBeenCalledTimes(2)
   })

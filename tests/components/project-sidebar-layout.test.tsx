@@ -132,8 +132,6 @@ describe('project sidebar layout', () => {
     const list = screen.getByRole('list')
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
     expect(description.nextElementSibling).toContainElement(list)
-    expect(description.nextElementSibling).not.toContainElement(description)
-    expect(description.parentElement).toContainElement(list)
   })
 
   it('orders project chats by update time with creation time as the fallback', () => {

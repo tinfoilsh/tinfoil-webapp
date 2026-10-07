@@ -83,6 +83,12 @@ function loadPlausible(url: string, referrer = '') {
   }
 }
 
+function navigateTo(analytics: ReturnType<typeof loadPlausible>, path: string) {
+  analytics.location.href = `${analytics.location.origin}${path}`
+  analytics.location.pathname = path
+  analytics.history.pushState({}, '', path)
+}
+
 describe('Plausible analytics', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -118,9 +124,7 @@ describe('Plausible analytics', () => {
 
       analytics.plausible('Sign In Viewed')
       expect(analytics.fetchMock).toHaveBeenCalledTimes(2)
-      analytics.location.href = 'https://chat.tinfoil.sh/signup'
-      analytics.location.pathname = '/signup'
-      analytics.history.pushState({}, '', '/signup')
+      navigateTo(analytics, '/signup')
       expect(
         analytics.fetchMock.mock.calls.map(
           ([, request]) => JSON.parse(request.body).n,
@@ -133,9 +137,7 @@ describe('Plausible analytics', () => {
         u: 'https://chat.tinfoil.sh/signup',
       })
 
-      analytics.location.href = `https://chat.tinfoil.sh${privatePath}`
-      analytics.location.pathname = privatePath
-      analytics.history.pushState({}, '', privatePath)
+      navigateTo(analytics, privatePath)
       analytics.plausible('Chat Viewed')
 
       expect(analytics.fetchMock).toHaveBeenCalledTimes(4)

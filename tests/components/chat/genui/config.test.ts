@@ -1,10 +1,6 @@
 /**
- * These tests exercise the runtime config setter/getter and the widget
- * filtering predicate directly, without importing `./registry.ts`. The
- * registry transitively pulls in `zod-to-json-schema`, which vitest's
- * resolver can't see (the package is vendored inside the `openai` SDK).
- * The webapp build resolves it correctly via Next.js; this is a test
- * infrastructure limitation that pre-dates these changes.
+ * These tests exercise runtime config and the live widget registry through
+ * allowlist resolution, tool schema generation, and prompt hints.
  */
 import { getGenUIConfig, setGenUIConfig } from '@/components/chat/genui/config'
 import { resolveEnabledWidgets } from '@/components/chat/genui/enabled-widgets'

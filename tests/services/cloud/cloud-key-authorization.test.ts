@@ -66,6 +66,30 @@ import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
 
 const USER_ID = 'user-abc'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((finish) => {
+    resolve = finish
+  })
+  return { promise, resolve }
+}
+
+async function expectWriteWaitsFor(
+  operation: ReturnType<typeof vi.fn>,
+  finish: () => void,
+) {
+  const settled = vi.fn()
+  const writable = canWriteToCloud().finally(settled)
+  try {
+    await vi.waitFor(() => expect(operation).toHaveBeenCalledOnce())
+    expect(settled).not.toHaveBeenCalled()
+  } finally {
+    finish()
+    await writable
+  }
+  expect(await writable).toBe(true)
+}
+
 describe('cloud-key-authorization', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -111,21 +135,9 @@ describe('cloud-key-authorization', () => {
         canWrite: true,
         probe: 'none',
       })
-      let finishRegistration!: () => void
-      mockRegisterKey.mockReturnValue(
-        new Promise<void>((resolve) => {
-          finishRegistration = resolve
-        }),
-      )
-      let settled = false
-      const writable = canWriteToCloud().then((result) => {
-        settled = true
-        return result
-      })
-      await vi.waitFor(() => expect(mockRegisterKey).toHaveBeenCalledOnce())
-      expect(settled).toBe(false)
-      finishRegistration()
-      expect(await writable).toBe(true)
+      const registration = deferred<void>()
+      mockRegisterKey.mockReturnValue(registration.promise)
+      await expectWriteWaitsFor(mockRegisterKey, registration.resolve)
 
       expect(mockRegisterKey).toHaveBeenCalledTimes(1)
       const arg = mockRegisterKey.mock.calls[0][0]
@@ -158,12 +170,8 @@ describe('cloud-key-authorization', () => {
     })
 
     it('adopts the local key before writing legacy data with no registered key', async () => {
-      let finishAdoption!: (value: boolean) => void
-      mockAdoptLocalKey.mockReturnValue(
-        new Promise<boolean>((resolve) => {
-          finishAdoption = resolve
-        }),
-      )
+      const adoption = deferred<boolean>()
+      mockAdoptLocalKey.mockReturnValue(adoption.promise)
       mockValidateCurrentPrimaryKey.mockResolvedValue({
         remoteState: 'exists',
         canWrite: true,
@@ -171,15 +179,7 @@ describe('cloud-key-authorization', () => {
         needsAdoption: true,
       })
 
-      let settled = false
-      const writable = canWriteToCloud().then((result) => {
-        settled = true
-        return result
-      })
-      await vi.waitFor(() => expect(mockAdoptLocalKey).toHaveBeenCalledOnce())
-      expect(settled).toBe(false)
-      finishAdoption(true)
-      expect(await writable).toBe(true)
+      await expectWriteWaitsFor(mockAdoptLocalKey, () => adoption.resolve(true))
       expect(mockAdoptLocalKey).toHaveBeenCalledTimes(1)
     })
 

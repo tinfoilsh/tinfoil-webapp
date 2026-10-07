@@ -2,11 +2,16 @@ import { openFavoriteChat } from '@/components/chat/favorite-navigation'
 import { describe, expect, it, vi } from 'vitest'
 
 describe('openFavoriteChat', () => {
-  it('enters project context before opening the chat', async () => {
+  function createDeferredProjectLoad() {
     let resolveProject!: (entered: boolean) => void
     const projectLoad = new Promise<boolean>((resolve) => {
       resolveProject = resolve
     })
+    return { projectLoad, resolveProject }
+  }
+
+  it('enters project context before opening the chat', async () => {
+    const { projectLoad, resolveProject } = createDeferredProjectLoad()
     const enterProjectMode = vi.fn(() => projectLoad)
     const exitProjectMode = vi.fn()
     const openChat = vi.fn(async () => {})
@@ -76,10 +81,7 @@ describe('openFavoriteChat', () => {
   })
 
   it('does not open when normal navigation invalidates a pending favorite', async () => {
-    let resolveProject: ((entered: boolean) => void) | undefined
-    const projectLoad = new Promise<boolean>((resolve) => {
-      resolveProject = resolve
-    })
+    const { projectLoad, resolveProject } = createDeferredProjectLoad()
     let generation = 0
     const favoriteGeneration = ++generation
     const openChat = vi.fn(async () => {})
@@ -93,7 +95,7 @@ describe('openFavoriteChat', () => {
     })
 
     generation += 1
-    resolveProject?.(true)
+    resolveProject(true)
 
     await expect(opening).resolves.toBe(false)
     expect(openChat).not.toHaveBeenCalled()

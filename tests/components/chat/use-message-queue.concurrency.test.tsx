@@ -190,12 +190,12 @@ describe('useMessageQueue concurrency', () => {
   it('never persists a temporary chat queue and clears it on mode exit', async () => {
     const handleQuery = vi.fn(() => Promise.resolve())
     const { result, rerender } = renderHook(
-      ({ queueId, persistQueue }) =>
+      ({ queueId, persistQueue, loadingState }) =>
         useMessageQueue({
           chatId: queueId,
           queueId,
           persistQueue,
-          loadingState: 'loading' as LoadingState,
+          loadingState,
           handleQuery,
           isRateLimited: () => false,
         }),
@@ -203,6 +203,7 @@ describe('useMessageQueue concurrency', () => {
         initialProps: {
           queueId: 'temporary-chat',
           persistQueue: false as boolean,
+          loadingState: 'loading' as LoadingState,
         },
       },
     )
@@ -226,11 +227,20 @@ describe('useMessageQueue concurrency', () => {
     ).toBeNull()
     expect(result.current.queuedMessages).toHaveLength(1)
 
-    rerender({ queueId: 'permanent-chat', persistQueue: true })
+    rerender({
+      queueId: 'permanent-chat',
+      persistQueue: true,
+      loadingState: 'loading',
+    })
     expect(result.current.queuedMessages).toEqual([])
     expect(window.sessionStorage.length).toBe(0)
 
-    rerender({ queueId: 'temporary-chat', persistQueue: false })
+    rerender({
+      queueId: 'temporary-chat',
+      persistQueue: false,
+      loadingState: 'idle',
+    })
+    await flushMicrotasks()
     expect(result.current.queuedMessages).toEqual([])
     expect(window.sessionStorage.length).toBe(0)
     expect(handleQuery).not.toHaveBeenCalled()

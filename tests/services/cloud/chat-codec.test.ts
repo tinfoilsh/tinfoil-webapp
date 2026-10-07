@@ -209,7 +209,7 @@ describe('Chat Codec - processRemoteChat', () => {
 
   describe('No content handling', () => {
     it.each([null, undefined])(
-      'returns no_content status when plaintext is null',
+      'returns no_content status when plaintext is %s',
       async (plaintext) => {
         const remoteChat: RemoteChatData = {
           id: 'empty-chat',
@@ -269,17 +269,20 @@ describe('Chat Codec - processRemoteChat', () => {
       expect(result.chat.projectId).toBe('local-project')
     })
 
-    it.each([undefined, { projectId: 'local-project' }])(
-      'prefers explicit projectId over localChat projectId',
-      async (localChat) => {
-        const result = await processRemoteChat(baseRemoteChat, {
-          localChat,
-          projectId: 'explicit-project',
-        })
-
-        expect(result.chat.projectId).toBe('explicit-project')
+    it.each([
+      { context: 'without a local chat', localChat: undefined },
+      {
+        context: 'over a conflicting local project',
+        localChat: { projectId: 'local-project' },
       },
-    )
+    ])('uses explicit projectId $context', async ({ localChat }) => {
+      const result = await processRemoteChat(baseRemoteChat, {
+        localChat,
+        projectId: 'explicit-project',
+      })
+
+      expect(result.chat.projectId).toBe('explicit-project')
+    })
 
     it('preserves an explicit project deletion', async () => {
       const result = await processRemoteChat(baseRemoteChat, {

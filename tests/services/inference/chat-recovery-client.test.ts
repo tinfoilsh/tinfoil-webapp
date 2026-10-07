@@ -20,7 +20,6 @@ const SESSION_ID = '0123456789abcdef0123456789abcdef'
 
 describe('chat recovery client', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
     decryptResponseWithToken.mockReset()
   })
 

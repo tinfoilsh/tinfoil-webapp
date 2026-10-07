@@ -233,21 +233,68 @@ describe('createTinfoilEventParser', () => {
 })
 
 describe('marker whitespace', () => {
-  it('preserves non-pad whitespace adjacent to a marker', () => {
-    const payload = {
-      type: TINFOIL_WEB_SEARCH_CALL_TYPE,
-      item_id: 'ws_1',
-      status: 'completed',
-      action: { type: 'search', query: 'q' },
-    }
-    // Two `\n` before the marker: one is consumed as the pad, the
-    // other is real content the model intended to emit.
-    const input = `first\n\n${markerFor(payload)}\n\nsecond`
-    for (let split = 0; split <= input.length; split++) {
-      const parser = createTinfoilEventParser()
-      const first = parser.consume(input.slice(0, split))
-      const second = parser.consume(input.slice(split))
-      expect(first.text + second.text + parser.flush()).toBe('first\n\nsecond')
-    }
-  })
+  const payload = {
+    type: TINFOIL_WEB_SEARCH_CALL_TYPE,
+    item_id: 'ws_1',
+    status: 'completed',
+    action: { type: 'search', query: 'q' },
+  }
+  const marker = markerFor(payload)
+  it.each([
+    [
+      'single marker',
+      `first\n\n${marker}\n\nsecond`,
+      'first\n\nsecond',
+      [payload],
+    ],
+    [
+      'adjacent markers',
+      `first\n\n${marker}${marker}\nsecond`,
+      'first\nsecond',
+      [payload, payload],
+    ],
+    [
+      'shared pad',
+      `first\n\n${marker}\n${marker}\nsecond`,
+      'first\nsecond',
+      [payload, payload],
+    ],
+    [
+      'independent pads',
+      `first\n\n${marker}\n\n${marker}\nsecond`,
+      'first\nsecond',
+      [payload, payload],
+    ],
+    [
+      'model separator',
+      `first\n\n${marker}\n\n\n${marker}\nsecond`,
+      'first\n\nsecond',
+      [payload, payload],
+    ],
+    [
+      'terminal markers',
+      `first\n\n${marker}${marker}`,
+      'first\n',
+      [payload, payload],
+    ],
+  ])(
+    'preserves non-pad whitespace across every split: %s',
+    (_, input, expected, events) => {
+      // Two `\n` before the marker: one is consumed as the pad, the
+      // other is real content the model intended to emit.
+      for (let split = 0; split <= input.length; split++) {
+        const parser = createTinfoilEventParser()
+        const first = parser.consume(input.slice(0, split))
+        const empty = parser.consume('')
+        const second = parser.consume(input.slice(split))
+        expect(
+          first.text + empty.text + second.text + parser.flush(),
+          `split ${split}`,
+        ).toBe(expected)
+        expect([...first.events, ...empty.events, ...second.events]).toEqual(
+          events,
+        )
+      }
+    },
+  )
 })

@@ -551,16 +551,17 @@ describe('processStreamingResponse frame publication', () => {
       parseRichStreamingResponse(makeStream()),
     ])
 
+    const expectedWebSearch = {
+      query: 'query',
+      status: 'completed',
+      sources: [
+        { title: 'Source', url: 'https://example.com', snippet: undefined },
+      ],
+    }
     for (const message of [processed, parsed]) {
       expect(message?.content).toBe('Answer')
       expect(message?.thoughts).toBe('Reasoning')
-      expect(message?.webSearch).toEqual({
-        query: 'query',
-        status: 'completed',
-        sources: [
-          { title: 'Source', url: 'https://example.com', snippet: undefined },
-        ],
-      })
+      expect(message?.webSearch).toEqual(expectedWebSearch)
       expect(message?.timeline).toEqual([
         expect.objectContaining({
           type: 'thinking',
@@ -570,17 +571,7 @@ describe('processStreamingResponse frame publication', () => {
         {
           type: 'web_search',
           id: 'web-search-1',
-          state: {
-            query: 'query',
-            status: 'completed',
-            sources: [
-              {
-                title: 'Source',
-                url: 'https://example.com',
-                snippet: undefined,
-              },
-            ],
-          },
+          state: expectedWebSearch,
         },
         { type: 'content', id: 'content-2', content: 'Answer' },
       ])

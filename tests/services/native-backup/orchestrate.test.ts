@@ -452,22 +452,15 @@ describe('restoreNativeBackup', () => {
   it.each([
     [false, false],
     [true, false],
+    [false, true],
     [true, true],
   ])(
     'restores image occurrences and counts outcomes with duplicate IDs: %s, documents: %s',
     async (duplicateIds, documents) => {
       const value = validated(false)
-      value.local.chats[0].messages[0].attachments = [
-        { id: 'attachment-1', type: 'image', imageId: 'image-1' },
-        {
-          id: duplicateIds ? 'attachment-1' : 'attachment-2',
-          type: 'image',
-          imageId: 'image-2',
-        },
-      ]
       if (documents)
         value.local.chats[0].messages[0].attachments = [1, 2].map((number) => ({
-          id: 'attachment-1',
+          id: duplicateIds ? 'attachment-1' : `attachment-${number}`,
           type: 'document',
           fileName: `document-${number}.pdf`,
           pages: [
@@ -479,6 +472,15 @@ describe('restoreNativeBackup', () => {
             },
           ],
         }))
+      else
+        value.local.chats[0].messages[0].attachments = [
+          { id: 'attachment-1', type: 'image', imageId: 'image-1' },
+          {
+            id: duplicateIds ? 'attachment-1' : 'attachment-2',
+            type: 'image',
+            imageId: 'image-2',
+          },
+        ]
       value.local.images = [1, 2].map((number) => ({
         metadata: {
           id: `image-${number}`,
@@ -545,7 +547,7 @@ describe('restoreNativeBackup', () => {
                 pages: [{ page: 0, text: 'page-1', image: 'AQ==' }],
               },
               {
-                id: 'attachment-1',
+                id: duplicateIds ? 'attachment-1' : 'attachment-2',
                 fileName: 'document-2.pdf',
                 pages: [{ page: 0, text: 'page-2', image: 'Ag==' }],
               },

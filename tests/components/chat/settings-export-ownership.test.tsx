@@ -158,6 +158,11 @@ describe('settings chat export ownership', () => {
       DOWNLOAD_URL,
     )
     expect(cloudSync.loadChatsWithPagination).toHaveBeenCalledTimes(2)
+    expect(
+      vi
+        .mocked(cloudSync.loadChatsWithPagination)
+        .mock.calls.map(([options]) => options?.continuationToken),
+    ).toEqual([undefined, 'page-two'])
   })
 
   it('passes the same captured guard to every export page', async () => {
@@ -225,18 +230,18 @@ describe('settings chat export ownership', () => {
   it.each(['local', 'page', 'attachment', 'serialization'])(
     'does not download across an owner switch during %s',
     async (stage) => {
-      const entered = deferred<void>()
+      const entered = vi.fn().mockName(`${stage} export boundary`)
       const release = deferred<void>()
       if (stage === 'local') {
         vi.mocked(chatStorage.getAllChats).mockImplementationOnce(async () => {
-          entered.resolve()
+          entered()
           await release.promise
           return [chat]
         })
       } else if (stage === 'page') {
         vi.mocked(cloudSync.loadChatsWithPagination).mockImplementationOnce(
           async () => {
-            entered.resolve()
+            entered()
             await release.promise
             return { ...page, hasMore: true, nextToken: 'old-owner-page-two' }
           },
@@ -267,7 +272,7 @@ describe('settings chat export ownership', () => {
           },
         ])
         vi.mocked(syncApi.attachmentGet).mockImplementationOnce(async () => {
-          entered.resolve()
+          entered()
           await release.promise
           return new Uint8Array([1, 2, 3])
         })
@@ -276,7 +281,7 @@ describe('settings chat export ownership', () => {
         vi.spyOn(archive, 'buildChatExport').mockImplementationOnce(
           async (...args) => {
             const built = await realBuild(...args)
-            entered.resolve()
+            entered()
             await release.promise
             return built
           },
@@ -284,10 +289,8 @@ describe('settings chat export ownership', () => {
       }
       const view = render(<Harness />)
       const button = screen.getByRole('button', { name: 'Export Chats' })
-      await act(async () => {
-        fireEvent.click(button)
-        await entered.promise
-      })
+      fireEvent.click(button)
+      await waitFor(() => expect(entered).toHaveBeenCalledOnce())
       await act(async () => {
         auth.userId = OWNER_B
         localStorage.setItem(AUTH_ACTIVE_USER_ID, OWNER_B)

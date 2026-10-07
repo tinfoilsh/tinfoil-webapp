@@ -93,6 +93,8 @@ describe('MapWidget', () => {
 
   it.each([
     {
+      name: 'two-location walking route',
+      travelMode: 'walking',
       route: locations,
       expected: {
         source: '37.33,-122.01',
@@ -101,10 +103,14 @@ describe('MapWidget', () => {
       },
     },
     {
+      name: 'single walking destination',
+      travelMode: 'walking',
       route: [locations[1]],
       expected: { destination: 'Paris', mode: 'walking' },
     },
     {
+      name: 'walking route with a waypoint',
+      travelMode: 'walking',
       route: [
         locations[0],
         { name: 'Stop', address: 'One & Two' },
@@ -117,11 +123,21 @@ describe('MapWidget', () => {
         mode: 'walking',
       },
     },
-  ])(
-    'keeps the Apple Maps route $expected without loading any map code',
-    ({ route, expected }) => {
+    {
+      name: 'route without a travel mode',
+      travelMode: undefined,
+      route: locations,
+      expected: { source: '37.33,-122.01', destination: 'Paris' },
+    },
+  ] as const)(
+    'keeps the Apple Maps $name without loading any map code',
+    ({ route, travelMode, expected }) => {
       const { getByRole, queryByTitle } = render(
-        <MapWidget locations={route} mode="directions" travelMode="walking" />,
+        <MapWidget
+          locations={[...route]}
+          mode="directions"
+          travelMode={travelMode}
+        />,
       )
       expect(queryByTitle('Apple Maps')).toBeNull()
       const link = getByRole('link', { name: /open directions in apple maps/i })

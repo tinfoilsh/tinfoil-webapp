@@ -20,6 +20,16 @@ vi.mock('@clerk/react', () => ({
   useUser: () => clerkState,
 }))
 
+function seedCache(
+  cachedAt: number,
+  { userId = 'user_123', active = true } = {},
+) {
+  localStorage.setItem(
+    SETTINGS_CACHED_SUBSCRIPTION_STATUS,
+    JSON.stringify({ userId, chat_subscription_active: active, cachedAt }),
+  )
+}
+
 describe('hasActiveSubscription', () => {
   const now = new Date('2026-07-23T12:00:00Z')
   const future = new Date('2026-08-23T12:00:00Z')
@@ -60,14 +70,7 @@ describe('readCachedSubscriptionStatus', () => {
   it.each([now, new Date('2026-07-22T12:00:00Z').getTime()])(
     'restores a recent cache for the same user at %s',
     (cachedAt) => {
-      localStorage.setItem(
-        SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-        JSON.stringify({
-          userId: 'user_123',
-          chat_subscription_active: true,
-          cachedAt,
-        }),
-      )
+      seedCache(cachedAt)
 
       expect(readCachedSubscriptionStatus('user_123', now)).toBe(true)
     },
@@ -84,14 +87,7 @@ describe('readCachedSubscriptionStatus', () => {
   ] as const)(
     'rejects another user or an expired cache (%s)',
     (_scenario, userId, cachedAt) => {
-      localStorage.setItem(
-        SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-        JSON.stringify({
-          userId: 'user_123',
-          chat_subscription_active: true,
-          cachedAt,
-        }),
-      )
+      seedCache(cachedAt)
 
       expect(readCachedSubscriptionStatus(userId, now)).toBeNull()
     },
@@ -109,14 +105,7 @@ describe('useSubscriptionStatus cache synchronization', () => {
 
   it('re-reads cached status when the active user changes', () => {
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
-    localStorage.setItem(
-      SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-      JSON.stringify({
-        userId: 'user_123',
-        chat_subscription_active: true,
-        cachedAt: Date.now(),
-      }),
-    )
+    seedCache(Date.now())
     const { result } = renderHook(() => useSubscriptionStatus())
 
     expect(result.current.chat_subscription_active).toBe(true)
@@ -131,25 +120,11 @@ describe('useSubscriptionStatus cache synchronization', () => {
 
   it('re-reads cached status after cross-tab storage changes', () => {
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
-    localStorage.setItem(
-      SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-      JSON.stringify({
-        userId: 'user_123',
-        chat_subscription_active: true,
-        cachedAt: Date.now(),
-      }),
-    )
+    seedCache(Date.now())
     const { result } = renderHook(() => useSubscriptionStatus())
 
     act(() => {
-      localStorage.setItem(
-        SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-        JSON.stringify({
-          userId: 'user_123',
-          chat_subscription_active: false,
-          cachedAt: Date.now(),
-        }),
-      )
+      seedCache(Date.now(), { active: false })
       window.dispatchEvent(
         new StorageEvent('storage', {
           key: SETTINGS_CACHED_SUBSCRIPTION_STATUS,
@@ -160,14 +135,7 @@ describe('useSubscriptionStatus cache synchronization', () => {
 
     act(() => {
       localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_456')
-      localStorage.setItem(
-        SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-        JSON.stringify({
-          userId: 'user_456',
-          chat_subscription_active: true,
-          cachedAt: Date.now(),
-        }),
-      )
+      seedCache(Date.now(), { userId: 'user_456' })
       window.dispatchEvent(
         new StorageEvent('storage', { key: AUTH_ACTIVE_USER_ID }),
       )

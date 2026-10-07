@@ -83,6 +83,7 @@ describe('CatchAllPage', () => {
     mocks.router = { isReady: false, query: { slug: ['chat', 'c1'] } }
     render(<CatchAllPage />)
     expect(screen.getByRole('status', { name: 'Loading route' })).toBeVisible()
+    expect(screen.queryByText('Page not found')).not.toBeInTheDocument()
     expect(mocks.chat).not.toHaveBeenCalled()
     expect(mocks.project).not.toHaveBeenCalled()
     expect(mocks.share).not.toHaveBeenCalled()

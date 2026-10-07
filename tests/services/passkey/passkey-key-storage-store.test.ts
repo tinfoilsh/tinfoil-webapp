@@ -108,10 +108,6 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(mockRegisterKey).toHaveBeenCalledOnce()
     expect(mockAddBundle).not.toHaveBeenCalled()
     const arg = mockRegisterKey.mock.calls[0][0]
-    expect(arg.createdVia).toBe('passkey')
-    expect(arg.initialBundle.credentialId).toBe('AQID')
-    expect(arg.initialBundle).toEqual(expectedBundle(bundle))
-    expect(arg.initialBundle.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
     expect(arg).toEqual({
       keyB64: PRIMARY_KEY_B64,
       ifMatch: '*',
@@ -183,13 +179,6 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(mockRegisterKey).not.toHaveBeenCalled()
     expect(mockAddBundle).toHaveBeenCalledOnce()
     const arg = mockAddBundle.mock.calls[0][0]
-    expect(arg.keyId).toBe(expectedKeyId)
-    expect(arg.credentialId).toBe('BAUG')
-    const expected = expectedBundle(bundle)
-    expect(arg.kekIvHex).toBe(expected.kekIvHex)
-    expect(arg.encryptedKeysHex).toBe(expected.encryptedKeysHex)
-    expect(arg.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
-    expect(typeof arg.idempotencyKey).toBe('string')
     expect(arg).toEqual({
       keyId: expectedKeyId,
       keyB64: PRIMARY_KEY_B64,

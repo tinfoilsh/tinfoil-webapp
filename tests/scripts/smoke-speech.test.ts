@@ -12,6 +12,7 @@ vi.mock('tinfoil', () => ({
 }))
 
 const originalExitCode = process.exitCode
+const ONE_SECOND_24_KHZ_16_BIT_PCM_BYTES = 48000
 let stderr: ReturnType<typeof vi.spyOn>
 
 beforeEach(() => {
@@ -60,7 +61,7 @@ describe('speech smoke diagnostics', () => {
   it('accepts whitespace before content-type parameters', async () => {
     createSpeech.mockImplementation(
       async () =>
-        new Response(new Uint8Array(48000), {
+        new Response(new Uint8Array(ONE_SECOND_24_KHZ_16_BIT_PCM_BYTES), {
           headers: { 'Content-Type': 'audio/pcm ; charset=binary' },
         }),
     )

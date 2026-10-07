@@ -22,6 +22,9 @@ describe('getTitleContent', () => {
     )
 
     expect(content).toBe(retained)
+  })
+
+  it('prefers trimmed message content over attachment text', () => {
     expect(
       getTitleContent(
         message({

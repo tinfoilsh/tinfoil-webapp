@@ -172,14 +172,16 @@ describe('Clerk environment privacy check', () => {
 
   it.each([
     [
+      'enabled CAPTCHA',
       environment({ captchaEnabled: true }),
       'user_settings.sign_up.captcha_enabled must be false',
     ],
     [
+      'disabled password signup',
       environment({ passwordEnabled: false }),
       'user_settings.attributes.password.enabled must be true',
     ],
-  ])('reports fetched configuration drift: %j', async (body, reason) => {
+  ])('reports fetched configuration drift: %s', async (_, body, reason) => {
     const fetchImplementation = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue(body),

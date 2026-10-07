@@ -53,6 +53,19 @@ const model: BaseModel = {
   type: 'chat',
 }
 
+const EXHAUSTED_DAILY_QUOTA = {
+  maxRequests: 10,
+  remaining: 0,
+  resetsAt: '',
+  kind: 'free_daily',
+} as const
+
+async function collectChunks<T>(stream: AsyncIterable<T>): Promise<T[]> {
+  const chunks: T[] = []
+  for await (const chunk of stream) chunks.push(chunk)
+  return chunks
+}
+
 function status429Error() {
   return Object.assign(new Error('Rate limit reached'), { status: 429 })
 }
@@ -85,12 +98,7 @@ describe('sendChatStream 429 quota classification', () => {
 
   it('fails immediately with RATE_LIMIT when the daily quota is exhausted', async () => {
     createCompletion.mockRejectedValue(status429Error())
-    getRateLimitInfo.mockReturnValue({
-      maxRequests: 10,
-      remaining: 0,
-      resetsAt: '',
-      kind: 'free_daily',
-    })
+    getRateLimitInfo.mockReturnValue({ ...EXHAUSTED_DAILY_QUOTA })
     const onRetry = vi.fn()
 
     const error = await send(onRetry).catch((e: unknown) => e)
@@ -125,20 +133,17 @@ describe('sendChatStream 429 quota classification', () => {
     createCompletion
       .mockRejectedValueOnce(status429Error())
       .mockResolvedValueOnce(successfulStream())
-    const exhaustedQuota = {
-      maxRequests: 10,
-      remaining: 0,
-      resetsAt: '',
-      kind: 'free_daily',
-    }
-    getRateLimitInfo.mockReturnValue(exhaustedQuota)
+    getRateLimitInfo.mockReturnValue({ ...EXHAUSTED_DAILY_QUOTA })
     let finishRefresh!: () => void
     const refreshed = new Promise<void>((resolve) => {
       finishRefresh = resolve
     })
     refreshRateLimit.mockImplementationOnce(async () => {
       await refreshed
-      getRateLimitInfo.mockReturnValue({ ...exhaustedQuota, remaining: 5 })
+      getRateLimitInfo.mockReturnValue({
+        ...EXHAUSTED_DAILY_QUOTA,
+        remaining: 5,
+      })
     })
     const onRetry = vi.fn()
 
@@ -149,9 +154,9 @@ describe('sendChatStream 429 quota classification', () => {
     finishRefresh()
     const stream = await pending
 
-    const chunks = []
-    for await (const chunk of stream) chunks.push(chunk)
-    expect(chunks).toEqual([{ choices: [{ delta: { content: 'answer' } }] }])
+    expect(await collectChunks(stream)).toEqual([
+      { choices: [{ delta: { content: 'answer' } }] },
+    ])
     expect(onRetry).toHaveBeenCalledTimes(1)
     expect(createCompletion).toHaveBeenCalledTimes(2)
   })
@@ -164,9 +169,9 @@ describe('sendChatStream 429 quota classification', () => {
 
     const stream = await send()
 
-    const chunks = []
-    for await (const chunk of stream) chunks.push(chunk)
-    expect(chunks).toEqual([{ choices: [{ delta: { content: 'answer' } }] }])
+    expect(await collectChunks(stream)).toEqual([
+      { choices: [{ delta: { content: 'answer' } }] },
+    ])
     expect(createCompletion).toHaveBeenCalledTimes(2)
   })
 })

@@ -7,11 +7,21 @@ import {
   validateAndPackageNativeBackup,
   type NativeBackupFormatInput,
   type NativeBackupManifestV1,
+  type NativeBackupOmission,
+  type NativeBackupWarning,
 } from '@/services/native-backup'
 import { zipSync } from 'fflate'
 import goldenManifest from '../../fixtures/native-backup-manifest-v1.json'
 
 const timestamp = '2026-08-20T12:00:00.000Z'
+
+type MutableManifest = {
+  counts: { images: number; relationships?: number }
+  complete: boolean
+  files: NativeBackupManifestV1['files']
+  omissions?: NativeBackupOmission[]
+  warnings?: NativeBackupWarning[]
+}
 
 type MutableInput = {
   [
@@ -34,6 +44,20 @@ function archive(formatted: ReturnType<typeof formatNativeBackupV1>): File {
     'backup.zip',
     { type: 'application/zip' },
   )
+}
+
+function repackArchive(
+  formatted: ReturnType<typeof formatNativeBackupV1>,
+  mutate: (manifest: MutableManifest) => void,
+): File {
+  const manifest = JSON.parse(
+    new TextDecoder().decode(formatted.manifestBytes),
+  ) as MutableManifest
+  mutate(manifest)
+  return archive({
+    manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
+    files: formatted.files,
+  })
 }
 
 function input(): MutableInput {
@@ -259,39 +283,82 @@ describe('native backup v1 manifest', () => {
     )
   })
 
-  it('formats complete relationship sets near the archive entry limit', () => {
-    const nearLimit = input()
-    const count = 24_000
-    nearLimit.projects = Array.from({ length: count }, (_, index) => ({
-      id: `p-${index}`,
-      name: `Project ${index}`,
-      description: '',
-      systemInstructions: '',
-      memory: [],
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }))
-    nearLimit.projectDocuments = nearLimit.projects.map((project, index) => ({
-      id: `d-${index}`,
-      projectId: project.id,
-      filename: `${index}.txt`,
-      contentType: 'text/plain',
-      sizeBytes: 1,
-      extractedText: 'x',
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }))
-    nearLimit.cloudChats[0].projectId = nearLimit.projects[0].id
-    nearLimit.relationships.projectChats[0].projectId = nearLimit.projects[0].id
-    nearLimit.relationships.projectDocuments = nearLimit.projectDocuments.map(
-      ({ id, projectId }) => ({ projectId, documentId: id }),
-    )
+  it.each([false, true])(
+    'validates relationship sets near the archive entry limit (missing edge: %s)',
+    async (missingEdge) => {
+      const nearLimit = input()
+      nearLimit.images[0].bytes = new Uint8Array([
+        137, 80, 78, 71, 13, 10, 26, 10, 1,
+      ])
+      const count = 24_000
+      nearLimit.projects = Array.from({ length: count }, (_, index) => ({
+        id: `p-${index}`,
+        name: `Project ${index}`,
+        description: '',
+        systemInstructions: '',
+        memory: [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }))
+      nearLimit.projectDocuments = nearLimit.projects.map((project, index) => ({
+        id: `d-${index}`,
+        projectId: project.id,
+        filename: `${index}.txt`,
+        contentType: 'text/plain',
+        sizeBytes: 1,
+        extractedText: 'x',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }))
+      nearLimit.cloudChats[0].projectId = nearLimit.projects[0].id
+      nearLimit.relationships.projectChats[0].projectId =
+        nearLimit.projects[0].id
+      nearLimit.relationships.projectDocuments = nearLimit.projectDocuments.map(
+        ({ id, projectId }) => ({ projectId, documentId: id }),
+      )
 
-    const formatted = formatNativeBackupV1(nearLimit)
-    const manifest = parseNativeBackupManifest(formatted.manifestBytes)
-    expect(manifest.counts.files).toBe(48_005)
-    expect(manifest.counts.relationships).toBe(24_002)
-  }, 30_000)
+      const formatted = formatNativeBackupV1(nearLimit)
+      if (missingEdge) {
+        const relationships = formatted.files.find(
+          ({ kind }) => kind === 'relationships',
+        )!
+        nearLimit.relationships.projectDocuments.pop()
+        const bytes = new TextEncoder().encode(
+          JSON.stringify(nearLimit.relationships),
+        )
+        relationships.bytes = bytes
+        const sha256 = Buffer.from(
+          await crypto.subtle.digest('SHA-256', bytes),
+        ).toString('hex')
+        await expect(
+          validateAndPackageNativeBackup(
+            repackArchive(formatted, (manifest) => {
+              const listed = manifest.files.find(
+                ({ kind }) => kind === 'relationships',
+              )!
+              listed.sha256 = sha256
+              listed.size_bytes = bytes.length
+              manifest.counts.relationships!--
+            }),
+          ).then(() => undefined),
+        ).rejects.toThrow(
+          'project document relationships do not match entities',
+        )
+        return
+      }
+      const result = await validateAndPackageNativeBackup(archive(formatted))
+      expect(result.backup.counts.files).toBe(48_005)
+      expect(result.backup.counts.relationships).toBe(24_002)
+      expect(result.cloud?.manifest.counts).toEqual({
+        projects: count,
+        documents: count,
+        chats: 1,
+        blobs: 1,
+      })
+      expect(result.local.chats).toEqual(nearLimit.localChats)
+    },
+    30_000,
+  )
 
   it('requires matching image metadata, bytes, and message references', () => {
     const missingBytes = { ...input(), images: [] }
@@ -350,20 +417,13 @@ describe('native backup v1 manifest', () => {
     ['projects/not-canonical.json', 'invalid, unknown, or duplicate'],
   ])('rejects unsafe or noncanonical path %s', async (path, reason) => {
     const formatted = formatNativeBackupV1(input())
-    const manifest = JSON.parse(
-      new TextDecoder().decode(formatted.manifestBytes),
-    )
     const project = formatted.files.find(({ kind }) => kind === 'projects')!
     project.path = path
-    manifest.files.find(
-      ({ kind }: { kind: string }) => kind === 'projects',
-    ).path = project.path
 
     await expect(
       validateAndPackageNativeBackup(
-        archive({
-          manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
-          files: formatted.files,
+        repackArchive(formatted, (manifest) => {
+          manifest.files.find(({ kind }) => kind === 'projects')!.path = path
         }),
       ),
     ).rejects.toThrow(reason)
@@ -382,11 +442,6 @@ describe('native backup v1 manifest', () => {
       ),
     ).rejects.toThrow('hash mismatch')
 
-    type MutableManifest = {
-      counts: { images: number; relationships?: number }
-      complete: boolean
-      files: Array<{ sha256: string; size_bytes: number }>
-    }
     const mutations: Array<[(manifest: MutableManifest) => void, string]> = [
       [
         (manifest) => {
@@ -426,17 +481,8 @@ describe('native backup v1 manifest', () => {
       ],
     ]
     for (const [mutation, reason] of mutations) {
-      const manifest = JSON.parse(
-        new TextDecoder().decode(formatted.manifestBytes),
-      ) as MutableManifest
-      mutation(manifest)
       await expect(
-        validateAndPackageNativeBackup(
-          archive({
-            manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
-            files: formatted.files,
-          }),
-        ),
+        validateAndPackageNativeBackup(repackArchive(formatted, mutation)),
       ).rejects.toThrow(reason)
     }
   })
@@ -486,16 +532,10 @@ describe('native backup v2 manifest', () => {
       omissions: [],
       warnings: [],
     })
-    const manifest = JSON.parse(
-      new TextDecoder().decode(formatted.manifestBytes),
-    )
-    manifest.complete = false
-
     await expect(
       validateAndPackageNativeBackup(
-        archive({
-          manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
-          files: formatted.files,
+        repackArchive(formatted, (manifest) => {
+          manifest.complete = false
         }),
       ),
     ).rejects.toThrow('completeness')
@@ -665,23 +705,18 @@ describe('native backup v2 manifest', () => {
       omissions: [],
       warnings: [],
     })
-    const manifest = JSON.parse(
-      new TextDecoder().decode(formatted.manifestBytes),
-    )
-    manifest.complete = false
-    manifest.omissions = [entityOmission]
-    manifest.warnings = [
-      {
-        code: 'source_items_omitted',
-        category: 'source_coverage',
-        count: 1,
-      },
-    ]
     await expect(
       validateAndPackageNativeBackup(
-        archive({
-          manifestBytes: new TextEncoder().encode(JSON.stringify(manifest)),
-          files: formatted.files,
+        repackArchive(formatted, (manifest) => {
+          manifest.complete = false
+          manifest.omissions = [entityOmission]
+          manifest.warnings = [
+            {
+              code: 'source_items_omitted',
+              category: 'source_coverage',
+              count: 1,
+            },
+          ]
         }),
       ),
     ).rejects.toThrow('project omission conflicts')

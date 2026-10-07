@@ -1,7 +1,7 @@
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 // prettier-ignore
 import { NATIVE_RESTORE_KINDS,restoreNativeBackup,type NativeRestoreResult } from '@/services/native-backup/orchestrate'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const INITIAL_RESTORE_PHASE = 'uploading'
 
@@ -26,7 +26,7 @@ export function NativeBackupRestore({
 
   // prettier-ignore
   useEffect(() => () => { if (!started.current) controller.current?.abort() }, [])
-  useEffect(() => {
+  useLayoutEffect(() => {
     const changed =
       guard.current.available !== available || guard.current.ownerId !== ownerId
     guard.current = { available, ownerId }

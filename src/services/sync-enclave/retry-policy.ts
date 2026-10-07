@@ -1,9 +1,8 @@
 /**
- * §9.6 R3 — Shared retry / backoff helper for the sync layer.
+ * §9.6 R3 — Backoff and scheduler utilities for the sync layer.
  *
- * One implementation drives every retry loop in the cloud-storage
- * adapters, the upload coalescer, and the sync engine. Two design
- * properties matter:
+ * The upload coalescer uses `computeBackoffDelay` and `RetryScheduler`
+ * to schedule its retries. Two design properties matter:
  *
  *   1. Full-jitter exponential backoff. `delay(attempt) = random(0,
  *      min(maxDelay, baseDelay * 2**attempt))`. Full jitter (not
@@ -18,10 +17,9 @@
  *      default `realScheduler` which delegates to `setTimeout` and
  *      `Math.random`.
  *
- * The function deliberately does NOT classify or inspect the error
- * itself — that's §9.6 R2's `classifyEnclaveError`. The caller looks
- * up the bucket first and only calls `runWithRetry` when retrying is
- * the right action.
+ * These utilities do not classify or inspect errors. The caller uses
+ * §9.6 R2's `classifyEnclaveError` to decide whether to retry before
+ * computing a delay and sleeping through the scheduler.
  */
 
 export interface RetryScheduler {
