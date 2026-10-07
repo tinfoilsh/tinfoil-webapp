@@ -127,6 +127,7 @@ import {
   ShieldExclamationIcon,
   Squares2X2Icon,
   SunIcon,
+  TrashIcon,
   UserCircleIcon,
   UserIcon,
   XMarkIcon,
@@ -3973,12 +3974,16 @@ ${encryptionKey.replace('key_', '')}
                                   setShowDeleteAllChatsConfirm(true)
                                 }
                                 className={cn(
-                                  'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
+                                  'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
                                   isDarkMode
                                     ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
                                     : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
                                 )}
                               >
+                                <TrashIcon
+                                  className="h-4 w-4 shrink-0"
+                                  aria-hidden="true"
+                                />
                                 Delete all saved chats
                               </button>
                             )}
@@ -4089,12 +4094,16 @@ ${encryptionKey.replace('key_', '')}
                                     setShowDeleteAllProjectsConfirm(true)
                                   }
                                   className={cn(
-                                    'w-full shrink-0 rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-auto',
+                                    'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
                                     isDarkMode
                                       ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
                                       : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
                                   )}
                                 >
+                                  <TrashIcon
+                                    className="h-4 w-4 shrink-0"
+                                    aria-hidden="true"
+                                  />
                                   Delete all projects
                                 </button>
                               )}
