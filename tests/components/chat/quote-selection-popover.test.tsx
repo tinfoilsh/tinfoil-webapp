@@ -1,4 +1,14 @@
+import { AskSidebar } from '@/components/chat/ask-sidebar'
+import { ChatMessages } from '@/components/chat/chat-messages'
 import { QuoteSelectionPopover } from '@/components/chat/quote-selection-popover'
+import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
+import {
+  getRendererRegistry,
+  resetRendererRegistry,
+} from '@/components/chat/renderers/registry'
+import type { MessageRenderer } from '@/components/chat/renderers/types'
+import { SharedChatView } from '@/components/chat/shared-chat-view'
+import type { BaseModel } from '@/config/models'
 import {
   act,
   cleanup,
@@ -32,6 +42,29 @@ let audio: FakeAudioContext
 const frames = new Map<number, FrameRequestCallback>()
 let nextFrame = 0
 
+const model: BaseModel = {
+  modelName: 'gpt-oss-120b',
+  name: 'GPT-OSS 120B',
+  nameShort: 'GPT-OSS',
+  image: '',
+  description: '',
+  type: 'chat',
+}
+
+const customRenderer: MessageRenderer = {
+  id: 'selection-test',
+  canRender: (_message, candidate) => candidate.modelName === model.modelName,
+  render: ({ message, messageIndex }) => (
+    <>
+      <section>
+        <span>{message.content}</span>
+        {messageIndex === 0 && <span>Do not read this surrounding text.</span>}
+      </section>
+      <p>Renderer footer {messageIndex}</p>
+    </>
+  ),
+}
+
 function Harness({
   enabled,
   onQuote = vi.fn(),
@@ -49,15 +82,25 @@ function Harness({
   return (
     <>
       <div ref={ref}>
-        <div data-message-role={messageRole}>
-          <span>{text}</span>
-          <span>Do not read this surrounding text.</span>
-        </div>
-        <div data-message-role={messageRole}>
-          <span>Another message</span>
-        </div>
+        <ChatMessages
+          messages={[
+            { role: messageRole, content: text, timestamp: new Date(0) },
+            {
+              role: messageRole,
+              content: 'Another message',
+              timestamp: new Date(1),
+            },
+          ]}
+          chatId="selection-test"
+          isDarkMode={false}
+          models={[model]}
+          selectedModel={model.modelName}
+          autoIntelligence="high"
+          setAutoIntelligence={() => {}}
+        />
         <span>Outside message</span>
       </div>
+      <span>Outside container</span>
       <QuoteSelectionPopover
         enabled={enabled}
         containerRef={ref}
@@ -90,6 +133,9 @@ function flushFrames() {
 }
 
 beforeEach(() => {
+  resetRendererRegistry()
+  getRendererRegistry().setDefaultMessageRenderer(DefaultMessageRenderer)
+  getRendererRegistry().registerMessageRenderer(customRenderer)
   generation = controlledSpeech()
   audio = new FakeAudioContext()
   audioMocks.stream.mockImplementation(generation.stream)
@@ -107,6 +153,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  resetRendererRegistry()
   window.getSelection()?.removeAllRanges()
   vi.restoreAllMocks()
 })
@@ -142,9 +189,36 @@ describe('QuoteSelectionPopover', () => {
     )
   })
 
+  it('allows selections across separate roots of a custom renderer fragment', () => {
+    const onQuote = vi.fn()
+    render(<Harness enabled onQuote={onQuote} />)
+    selectText()
+    const range = window.getSelection()!.getRangeAt(0)
+    range.setEndAfter(screen.getByText('Renderer footer 0'))
+    flushFrames()
+    fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
+    expect(onQuote).toHaveBeenCalledWith(
+      'Selected textDo not read this surrounding text.Renderer footer 0',
+    )
+  })
+
   it('does not show actions for non-message text inside the container', () => {
     render(<Harness enabled />)
     selectText('Outside message')
+    flushFrames()
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
+  })
+
+  it('does not show actions for an editor inside a custom message renderer', () => {
+    getRendererRegistry().registerMessageRenderer({
+      ...customRenderer,
+      render: ({ message }) => <textarea defaultValue={message.content} />,
+    })
+    render(<Harness enabled />)
+    selectText()
+    const range = window.getSelection()!.getRangeAt(0)
+    range.selectNodeContents(screen.getByDisplayValue('Selected text'))
+    expect(window.getSelection()!.toString()).toBe('Selected text')
     flushFrames()
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
   })
@@ -289,3 +363,121 @@ describe('QuoteSelectionPopover', () => {
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
   })
 })
+
+describe.each(['custom', 'default'])(
+  '%s renderer message hosts',
+  (renderer) => {
+    beforeEach(() => {
+      if (renderer === 'default') {
+        getRendererRegistry().reset()
+        getRendererRegistry().setDefaultMessageRenderer(DefaultMessageRenderer)
+      }
+    })
+
+    it.each(['user', 'assistant'] as const)(
+      'supports a %s host endpoint and keeps a single focusable boundary per message',
+      (messageRole) => {
+        const onQuote = vi.fn()
+        const { container } = render(
+          <Harness enabled messageRole={messageRole} onQuote={onQuote} />,
+        )
+        const messages = container.querySelectorAll<HTMLElement>(
+          '[data-message-role]',
+        )
+        expect(messages).toHaveLength(2)
+        expect(screen.getAllByRole('article')).toHaveLength(2)
+        expect(messages[0]).toHaveAccessibleName(
+          messageRole === 'user' ? 'You said' : 'Al said',
+        )
+        messages[1].focus({ preventScroll: true })
+        expect(messages[1]).toHaveFocus()
+
+        selectText()
+        const range = window.getSelection()!.getRangeAt(0)
+        range.setStart(messages[0], 0)
+        flushFrames()
+        fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
+        expect(onQuote).toHaveBeenCalledWith('Selected text')
+      },
+    )
+
+    it.each(['Another message', 'Outside message', 'Outside container'])(
+      'rejects selection extending into %s',
+      (endText) => {
+        render(<Harness enabled />)
+        selectText()
+        flushFrames()
+        expect(screen.getByRole('toolbar')).toBeInTheDocument()
+        const range = window.getSelection()!.getRangeAt(0)
+        const node = screen.getByText(endText).firstChild!
+        range.setEnd(node, node.textContent!.length)
+        fireEvent(document, new Event('selectionchange'))
+        flushFrames()
+        expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
+      },
+    )
+
+    it.each(['user', 'assistant'] as const)(
+      'quotes a %s message through the real Ask sidebar host',
+      (role) => {
+        const onQuote = vi.fn()
+        render(
+          <AskSidebar
+            isOpen
+            onClose={() => {}}
+            onQuote={onQuote}
+            state={{
+              messages: [
+                { role, content: 'Sidebar selection', timestamp: new Date(0) },
+              ],
+              quote: null,
+              loadingState: 'idle',
+              isThinking: false,
+              isWaitingForResponse: false,
+              isStreaming: false,
+              retryInfo: null,
+            }}
+            models={[model]}
+            selectedModel={model.modelName}
+            isDarkMode={false}
+          />,
+        )
+        selectText('Sidebar selection')
+        const range = window.getSelection()!.getRangeAt(0)
+        range.setStart(screen.getByRole('article'), 0)
+        flushFrames()
+        fireEvent.click(screen.getByRole('button', { name: 'Quote' }))
+        expect(onQuote).toHaveBeenCalledWith('Sidebar selection')
+      },
+    )
+
+    it('preserves message boundaries and focus semantics in shared chat', () => {
+      const { container } = render(
+        <SharedChatView
+          chatData={{
+            v: 1,
+            title: 'Shared conversation',
+            createdAt: 0,
+            messages: [
+              { role: 'user', content: 'Shared prompt', timestamp: 0 },
+              { role: 'assistant', content: 'Shared answer', timestamp: 1 },
+            ],
+          }}
+          model={model}
+          isDarkMode={false}
+        />,
+      )
+      const messages = container.querySelectorAll<HTMLElement>(
+        '[data-message-role]',
+      )
+      expect(messages).toHaveLength(2)
+      expect(screen.getAllByRole('article')).toHaveLength(2)
+      expect(messages[0]).toContainElement(screen.getByText('Shared prompt'))
+      expect(messages[1]).toContainElement(screen.getByText('Shared answer'))
+      expect(messages[0]).toHaveAccessibleName('You said')
+      expect(messages[1]).toHaveAccessibleName('Al said')
+      messages[1].focus({ preventScroll: true })
+      expect(messages[1]).toHaveFocus()
+    })
+  },
+)

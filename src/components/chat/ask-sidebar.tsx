@@ -5,8 +5,8 @@ import { memo, useRef } from 'react'
 import { LoadingDots } from '../loading-dots'
 import { CONSTANTS } from './constants'
 import type { SidebarChatState } from './hooks/use-sidebar-chat'
+import { MessageRendererHost } from './message-renderer-host'
 import { QuoteSelectionPopover } from './quote-selection-popover'
-import { getRendererRegistry } from './renderers/client'
 import type { AIModel, Message } from './types'
 
 type AskSidebarProps = {
@@ -37,10 +37,8 @@ const SidebarMessage = memo(function SidebarMessage({
   isLastMessage: boolean
   isStreaming: boolean
 }) {
-  const renderer = getRendererRegistry().getMessageRenderer(message, model)
-  const Component = renderer.render
   return (
-    <Component
+    <MessageRendererHost
       message={message}
       messageIndex={messageIndex}
       model={model}

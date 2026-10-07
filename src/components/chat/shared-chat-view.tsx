@@ -9,7 +9,7 @@ import type { ShareableChatData } from '@/utils/share-payload'
 import 'katex/dist/katex.min.css'
 import { memo, useEffect, useMemo, useState } from 'react'
 import { ensureTimeline } from './ensure-timeline'
-import { getRendererRegistry } from './renderers/client'
+import { MessageRendererHost } from './message-renderer-host'
 import type { Attachment, Message } from './types'
 
 type SharedChatViewProps = {
@@ -30,11 +30,9 @@ const SharedChatMessage = memo(function SharedChatMessage({
   isDarkMode: boolean
 }) {
   const normalized = ensureTimeline(message)
-  const renderer = getRendererRegistry().getMessageRenderer(normalized, model)
-  const RendererComponent = renderer.render
 
   return (
-    <RendererComponent
+    <MessageRendererHost
       message={normalized}
       messageIndex={messageIndex}
       model={model}
