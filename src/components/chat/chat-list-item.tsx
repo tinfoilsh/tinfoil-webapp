@@ -19,7 +19,7 @@ import {
 import Link from 'next/link'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { PiSpinner } from 'react-icons/pi'
+import { PiPushPinFill, PiSpinner } from 'react-icons/pi'
 import { RedactedText } from '../ui/redacted-text'
 import { cn } from '../ui/utils'
 import { getBlankQueueId } from './message-queue-identity'
@@ -447,7 +447,7 @@ export function ChatListItem({
                 )
               )}
               {isPinned && showPinnedIndicator && !isStreaming && (
-                <TfThumbtack
+                <PiPushPinFill
                   className="h-3.5 w-3.5 flex-shrink-0 text-content-muted"
                   title="Pinned to Favorites"
                   aria-label="Pinned to Favorites"

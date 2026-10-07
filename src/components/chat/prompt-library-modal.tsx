@@ -1,7 +1,8 @@
 import { cn } from '@/components/ui/utils'
 import type { BaseModel } from '@/config/models'
 import { acquireInteractionLock } from '@/utils/interaction-lock'
-import { ArrowLeftIcon } from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, StarIcon } from '@heroicons/react/24/outline'
+import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
   TfBookmark,
@@ -9,7 +10,6 @@ import {
   TfBoxCheckmark,
   TfBoxX,
   TfPlus,
-  TfStar,
   TfStars,
   TfTools,
   TfTrash,
@@ -255,8 +255,8 @@ export function PromptLibraryModal({
             )}
             {isPinned && (
               <>
-                <TfStar
-                  className="h-3.5 w-3.5 text-yellow-500 [stroke-width:initial]"
+                <StarIconSolid
+                  className="h-3.5 w-3.5 text-yellow-500"
                   aria-hidden="true"
                 />
                 <span className="sr-only">Favorite</span>
@@ -629,13 +629,11 @@ function PresetDetail({
               'cursor-not-allowed opacity-50 hover:bg-transparent',
           )}
         >
-          <TfStar
-            className={cn(
-              'h-3.5 w-3.5',
-              isFavorite && '[stroke-width:initial]',
-            )}
-            aria-hidden="true"
-          />
+          {isFavorite ? (
+            <StarIconSolid className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <StarIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
           {isFavorite ? 'Favorited' : 'Favorite'}
         </button>
         <button
