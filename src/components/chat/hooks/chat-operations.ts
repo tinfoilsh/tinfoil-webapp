@@ -109,7 +109,7 @@ export function resolveWebSearchEnabled(
 export async function loadChats(
   isSignedIn: boolean,
   summariesOnly = false,
-): Promise<Chat[]> {
+): Promise<Chat[] | null> {
   try {
     const chats = isSignedIn
       ? summariesOnly
@@ -128,7 +128,7 @@ export async function loadChats(
       component: 'chat-operations',
       action: 'loadChats',
     })
-    return []
+    return null
   }
 }
 
