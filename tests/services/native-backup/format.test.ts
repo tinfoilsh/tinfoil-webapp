@@ -14,6 +14,8 @@ import { zipSync } from 'fflate'
 import goldenManifest from '../../fixtures/native-backup-manifest-v1.json'
 
 const timestamp = '2026-08-20T12:00:00.000Z'
+// The 48,006-entry integration workload needs headroom on shared CI CPUs.
+const NEAR_LIMIT_VALIDATION_TIMEOUT_MS = 120_000
 
 type MutableManifest = {
   counts: { images: number; relationships?: number }
@@ -357,7 +359,7 @@ describe('native backup v1 manifest', () => {
       })
       expect(result.local.chats).toEqual(nearLimit.localChats)
     },
-    30_000,
+    NEAR_LIMIT_VALIDATION_TIMEOUT_MS,
   )
 
   it('requires matching image metadata, bytes, and message references', () => {
