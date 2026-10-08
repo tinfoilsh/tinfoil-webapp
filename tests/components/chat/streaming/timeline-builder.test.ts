@@ -3,7 +3,6 @@ import type {
   TimelineContentBlock,
   TimelineThinkingBlock,
   TimelineURLFetchBlock,
-  TimelineWebSearchBlock,
 } from '@/components/chat/types'
 import { describe, expect, it } from 'vitest'
 
@@ -11,71 +10,26 @@ describe('TimelineBuilder', () => {
   describe('thinking blocks', () => {
     it('creates and closes a thinking block', () => {
       const builder = new TimelineBuilder()
+      expect(builder.isThinkingOpen).toBe(false)
+      builder.appendThinking('orphan')
+      expect(builder.snapshot()).toEqual([])
+      builder.endThinking(1.0)
+      expect(builder.snapshot()).toEqual([])
       builder.startThinking()
-      builder.appendThinking('hello ')
-      builder.appendThinking('world')
+      expect(builder.isThinkingOpen).toBe(true)
+      builder.appendThinking('  hello ')
+      builder.appendThinking('world  ')
       builder.endThinking(1.5)
+      expect(builder.isThinkingOpen).toBe(false)
+      builder.endThinking(2.0)
 
       const blocks = builder.snapshot()
       expect(blocks).toHaveLength(1)
       const block = blocks[0] as TimelineThinkingBlock
       expect(block.type).toBe('thinking')
-      expect(block.content).toBe('hello world')
+      expect(block.content).toBe('  hello world  ')
       expect(block.isThinking).toBe(false)
       expect(block.duration).toBe(1.5)
-    })
-
-    it('preserves thinking whitespace on end', () => {
-      const builder = new TimelineBuilder()
-      builder.startThinking()
-      builder.appendThinking('  spaced  ')
-      builder.endThinking()
-
-      const block = builder.snapshot()[0] as TimelineThinkingBlock
-      expect(block.content).toBe('  spaced  ')
-    })
-
-    it('preserves thinking whitespace at a tool boundary', () => {
-      const builder = new TimelineBuilder()
-      builder.startThinking()
-      builder.appendThinking('  spaced for tool  ')
-      builder.pushWebSearch({ status: 'searching' })
-
-      const block = builder.snapshot()[0] as TimelineThinkingBlock
-      expect(block.content).toBe('  spaced for tool  ')
-    })
-
-    it('tracks isThinkingOpen correctly', () => {
-      const builder = new TimelineBuilder()
-      expect(builder.isThinkingOpen).toBe(false)
-
-      builder.startThinking()
-      expect(builder.isThinkingOpen).toBe(true)
-
-      builder.endThinking()
-      expect(builder.isThinkingOpen).toBe(false)
-    })
-
-    it('handles multiple thinking blocks', () => {
-      const builder = new TimelineBuilder()
-      builder.startThinking()
-      builder.appendThinking('first')
-      builder.endThinking(1.0)
-
-      builder.startThinking()
-      builder.appendThinking('second')
-      builder.endThinking(2.0)
-
-      const blocks = builder.snapshot()
-      expect(blocks).toHaveLength(2)
-      expect((blocks[0] as TimelineThinkingBlock).content).toBe('first')
-      expect((blocks[1] as TimelineThinkingBlock).content).toBe('second')
-    })
-
-    it('ignores appendThinking when no block is open', () => {
-      const builder = new TimelineBuilder()
-      builder.appendThinking('orphan')
-      expect(builder.snapshot()).toEqual([])
     })
 
     it('appends a tail to the closed thinking block without splitting content', () => {
@@ -106,40 +60,24 @@ describe('TimelineBuilder', () => {
       expect(blocks).toHaveLength(1)
       expect((blocks[0] as TimelineContentBlock).content).toBe('hello')
     })
-
-    it('ignores endThinking when no block is open', () => {
-      const builder = new TimelineBuilder()
-      // Should not throw
-      builder.endThinking(1.0)
-      expect(builder.snapshot()).toEqual([])
-    })
   })
 
   describe('content blocks', () => {
-    it('creates a content block on first append', () => {
-      const builder = new TimelineBuilder()
-      builder.appendContent('hello')
-
-      const blocks = builder.snapshot()
-      expect(blocks).toHaveLength(1)
-      expect(blocks[0].type).toBe('content')
-      expect((blocks[0] as TimelineContentBlock).content).toBe('hello')
-    })
-
     it('appends to existing content block', () => {
       const builder = new TimelineBuilder()
+      builder.appendContent('')
+      expect(builder.snapshot()).toEqual([])
       builder.appendContent('hello')
+      expect(builder.snapshot()).toEqual([
+        { type: 'content', id: 'content-0', content: 'hello' },
+      ])
+      builder.appendContent('')
       builder.appendContent(' world')
 
       const blocks = builder.snapshot()
       expect(blocks).toHaveLength(1)
+      expect(blocks[0].type).toBe('content')
       expect((blocks[0] as TimelineContentBlock).content).toBe('hello world')
-    })
-
-    it('ignores empty strings', () => {
-      const builder = new TimelineBuilder()
-      builder.appendContent('')
-      expect(builder.snapshot()).toEqual([])
     })
 
     it('creates a new content block after thinking', () => {
@@ -161,34 +99,47 @@ describe('TimelineBuilder', () => {
   })
 
   describe('web search blocks', () => {
-    it('pushes a web search block', () => {
-      const builder = new TimelineBuilder()
-      builder.pushWebSearch({ query: 'test', status: 'searching' })
-
-      const blocks = builder.snapshot()
-      expect(blocks).toHaveLength(1)
-      expect(blocks[0].type).toBe('web_search')
-      expect((blocks[0] as TimelineWebSearchBlock).state.query).toBe('test')
-    })
-
     it('updates the most recent web search block', () => {
       const builder = new TimelineBuilder()
-      builder.pushWebSearch({ query: 'test', status: 'searching' })
+      builder.pushWebSearch({ query: 'first', status: 'searching' })
+      expect(builder.snapshot()).toEqual([
+        {
+          type: 'web_search',
+          id: 'web-search-0',
+          state: { query: 'first', status: 'searching' },
+        },
+      ])
+      builder.appendContent('between')
+      builder.pushWebSearch({ query: 'second', status: 'searching' })
       builder.updateWebSearch({
-        query: 'test',
+        query: 'second',
         status: 'completed',
         sources: [{ title: 'Result', url: 'https://example.com' }],
       })
 
-      const block = builder.snapshot()[0] as TimelineWebSearchBlock
-      expect(block.state.status).toBe('completed')
-      expect(block.state.sources).toHaveLength(1)
+      expect(builder.snapshot()).toEqual([
+        {
+          type: 'web_search',
+          id: 'web-search-0',
+          state: { query: 'first', status: 'searching' },
+        },
+        { type: 'content', id: 'content-1', content: 'between' },
+        {
+          type: 'web_search',
+          id: 'web-search-2',
+          state: {
+            query: 'second',
+            status: 'completed',
+            sources: [{ title: 'Result', url: 'https://example.com' }],
+          },
+        },
+      ])
     })
 
     it('finalizes open thinking when web search arrives', () => {
       const builder = new TimelineBuilder()
       builder.startThinking()
-      builder.appendThinking('mid-thought')
+      builder.appendThinking('  spaced for tool  ')
       expect(builder.isThinkingOpen).toBe(true)
 
       builder.pushWebSearch({ query: 'q', status: 'searching' })
@@ -197,25 +148,14 @@ describe('TimelineBuilder', () => {
       const blocks = builder.snapshot()
       expect(blocks).toHaveLength(2)
       expect((blocks[0] as TimelineThinkingBlock).isThinking).toBe(false)
+      expect((blocks[0] as TimelineThinkingBlock).content).toBe(
+        '  spaced for tool  ',
+      )
       expect(blocks[1].type).toBe('web_search')
     })
   })
 
   describe('URL fetch blocks', () => {
-    it('adds a URL fetch to a new block', () => {
-      const builder = new TimelineBuilder()
-      builder.addURLFetch({
-        id: 'f1',
-        url: 'https://a.com',
-        status: 'fetching',
-      })
-
-      const blocks = builder.snapshot()
-      expect(blocks).toHaveLength(1)
-      expect(blocks[0].type).toBe('url_fetches')
-      expect((blocks[0] as TimelineURLFetchBlock).fetches).toHaveLength(1)
-    })
-
     it('groups consecutive URL fetches into the same block', () => {
       const builder = new TimelineBuilder()
       builder.addURLFetch({
@@ -223,6 +163,13 @@ describe('TimelineBuilder', () => {
         url: 'https://a.com',
         status: 'fetching',
       })
+      expect(builder.snapshot()).toEqual([
+        {
+          type: 'url_fetches',
+          id: 'url-fetches-0',
+          fetches: [{ id: 'f1', url: 'https://a.com', status: 'fetching' }],
+        },
+      ])
       builder.addURLFetch({
         id: 'f2',
         url: 'https://b.com',
@@ -231,10 +178,45 @@ describe('TimelineBuilder', () => {
 
       const blocks = builder.snapshot()
       expect(blocks).toHaveLength(1)
-      expect((blocks[0] as TimelineURLFetchBlock).fetches).toHaveLength(2)
+      expect((blocks[0] as TimelineURLFetchBlock).fetches).toEqual([
+        { id: 'f1', url: 'https://a.com', status: 'fetching' },
+        { id: 'f2', url: 'https://b.com', status: 'fetching' },
+      ])
+      builder.addURLFetch({
+        id: 'f1',
+        url: 'https://a.com/redirected',
+        status: 'completed',
+      })
+      builder.appendContent('between')
+      builder.addURLFetch({
+        id: 'f3',
+        url: 'https://c.com',
+        status: 'fetching',
+      })
+      expect(builder.snapshot()).toEqual([
+        {
+          type: 'url_fetches',
+          id: 'url-fetches-0',
+          fetches: [
+            { id: 'f1', url: 'https://a.com/redirected', status: 'completed' },
+            { id: 'f2', url: 'https://b.com', status: 'fetching' },
+          ],
+        },
+        { type: 'content', id: 'content-1', content: 'between' },
+        {
+          type: 'url_fetches',
+          id: 'url-fetches-2',
+          fetches: [{ id: 'f3', url: 'https://c.com', status: 'fetching' }],
+        },
+      ])
     })
 
-    it('updates a specific fetch by id', () => {
+    it.each([
+      { target: 'f1', statuses: ['completed', 'fetching', 'fetching'] },
+      { target: 'f2', statuses: ['fetching', 'completed', 'fetching'] },
+      { target: 'f3', statuses: ['fetching', 'fetching', 'completed'] },
+      { target: 'missing', statuses: ['fetching', 'fetching', 'fetching'] },
+    ])('updates only the requested fetch ($target)', ({ target, statuses }) => {
       const builder = new TimelineBuilder()
       builder.addURLFetch({
         id: 'f1',
@@ -246,11 +228,38 @@ describe('TimelineBuilder', () => {
         url: 'https://b.com',
         status: 'fetching',
       })
-      builder.updateURLFetch('f1', 'completed')
+      builder.appendContent('between')
+      builder.addURLFetch({
+        id: 'f3',
+        url: 'https://c.com',
+        status: 'fetching',
+      })
+      const sources = [{ title: 'Result', url: 'https://result.com' }]
+      builder.updateURLFetch(target, 'completed', sources)
 
-      const fetches = (builder.snapshot()[0] as TimelineURLFetchBlock).fetches
-      expect(fetches[0].status).toBe('completed')
-      expect(fetches[1].status).toBe('fetching')
+      const fetches = builder
+        .snapshot()
+        .flatMap((block) => (block.type === 'url_fetches' ? block.fetches : []))
+      expect(fetches).toEqual([
+        {
+          id: 'f1',
+          url: 'https://a.com',
+          status: statuses[0],
+          sources: statuses[0] === 'completed' ? sources : undefined,
+        },
+        {
+          id: 'f2',
+          url: 'https://b.com',
+          status: statuses[1],
+          sources: statuses[1] === 'completed' ? sources : undefined,
+        },
+        {
+          id: 'f3',
+          url: 'https://c.com',
+          status: statuses[2],
+          sources: statuses[2] === 'completed' ? sources : undefined,
+        },
+      ])
     })
 
     it('finalizes open thinking when URL fetch arrives', () => {
@@ -324,8 +333,20 @@ describe('TimelineBuilder', () => {
       const builder = new TimelineBuilder(seed)
       builder.appendContent(' more')
       builder.startThinking()
+      builder.endThinking()
       builder.appendContent('new block')
 
+      expect(builder.snapshot()).toEqual([
+        { type: 'content', id: 'content-0', content: 'seed more' },
+        {
+          type: 'thinking',
+          id: 'thinking-0',
+          content: '',
+          isThinking: false,
+          duration: undefined,
+        },
+        { type: 'content', id: 'content-2', content: 'new block' },
+      ])
       expect(seed).toEqual([
         { type: 'content', id: 'content-0', content: 'seed' },
       ])
@@ -348,8 +369,23 @@ describe('TimelineBuilder', () => {
       builder.appendContent('test')
       const s1 = builder.snapshot()
       const s2 = builder.snapshot()
-      expect(s1).toEqual(s2)
+      expect(s1).toEqual([
+        { type: 'content', id: 'content-0', content: 'test' },
+      ])
+      expect(s2).toEqual([
+        { type: 'content', id: 'content-0', content: 'test' },
+      ])
       expect(s1).not.toBe(s2)
+      builder.appendContent(' more')
+      expect(builder.snapshot()).toEqual([
+        { type: 'content', id: 'content-0', content: 'test more' },
+      ])
+      expect(s1).toEqual([
+        { type: 'content', id: 'content-0', content: 'test' },
+      ])
+      expect(s2).toEqual([
+        { type: 'content', id: 'content-0', content: 'test' },
+      ])
     })
   })
 
@@ -371,6 +407,24 @@ describe('TimelineBuilder', () => {
 
       const types = builder.snapshot().map((b) => b.type)
       expect(types).toEqual(['thinking', 'web_search', 'thinking', 'content'])
+      expect(
+        builder.snapshot().filter((block) => block.type === 'thinking'),
+      ).toEqual([
+        {
+          type: 'thinking',
+          id: 'thinking-0',
+          content: 'first thought',
+          isThinking: false,
+          duration: 1.0,
+        },
+        {
+          type: 'thinking',
+          id: 'thinking-1',
+          content: 'second thought',
+          isThinking: false,
+          duration: 0.5,
+        },
+      ])
     })
   })
 })

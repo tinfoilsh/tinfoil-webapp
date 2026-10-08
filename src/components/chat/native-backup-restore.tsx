@@ -1,7 +1,9 @@
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 // prettier-ignore
 import { NATIVE_RESTORE_KINDS,restoreNativeBackup,type NativeRestoreResult } from '@/services/native-backup/orchestrate'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+
+const INITIAL_RESTORE_PHASE = 'uploading'
 
 export function NativeBackupRestore({
   available,
@@ -18,23 +20,35 @@ export function NativeBackupRestore({
   const dismissed = useRef(false)
   const guard = useRef({ available, ownerId })
   const [busy, setBusy] = useState(false)
-  const [phase, setPhase] = useState('uploading')
+  const [phase, setPhase] = useState(INITIAL_RESTORE_PHASE)
   const [result, setResult] = useState<NativeRestoreResult | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
   // prettier-ignore
   useEffect(() => () => { if (!started.current) controller.current?.abort() }, [])
-  useEffect(() => {
+  useLayoutEffect(() => {
     const changed =
       guard.current.available !== available || guard.current.ownerId !== ownerId
     guard.current = { available, ownerId }
-    if (changed) controller.current?.abort()
+    if (changed) {
+      controller.current?.abort()
+      controller.current = null
+      if (input.current) input.current.value = ''
+      started.current = false
+      dismissed.current = false
+      setBusy(false)
+      setPhase(INITIAL_RESTORE_PHASE)
+      setResult(null)
+      setMessage(null)
+    }
   }, [available, ownerId])
 
   const restore = async (file: File) => {
     if (!ownerId) return
     const current = new AbortController()
     controller.current = current
+    const isCurrent = () =>
+      controller.current === current && !current.signal.aborted
     started.current = false
     dismissed.current = false
     setBusy(true)
@@ -43,12 +57,14 @@ export function NativeBackupRestore({
     try {
       const next = await restoreNativeBackup(file, ownerId, current.signal, {
         onStarted: (status) => {
+          if (!isCurrent()) return
           started.current = true
           setPhase(status.phase ?? 'running')
         },
         // prettier-ignore
-        onPhase: (value) => { if (!dismissed.current && value) setPhase(value) },
+        onPhase: (value) => { if (isCurrent() && !dismissed.current && value) setPhase(value) },
       })
+      if (!isCurrent()) return
       let refreshFailed = false
       if (next.state === 'completed' || next.state === 'partial') {
         try {
@@ -57,6 +73,7 @@ export function NativeBackupRestore({
           refreshFailed = true
         }
       }
+      if (!isCurrent()) return
       if (!dismissed.current || next.state !== 'pending') setResult(next)
       if (!dismissed.current || next.state !== 'pending')
         setMessage(
@@ -75,12 +92,14 @@ export function NativeBackupRestore({
                     : 'Backup restored successfully.',
         )
     } catch (cause) {
-      if (!current.signal.aborted)
+      if (isCurrent())
         setMessage(cause instanceof Error ? cause.message : 'Restore failed')
     } finally {
-      if (controller.current === current) controller.current = null
-      setBusy(false)
-      if (input.current) input.current.value = ''
+      if (controller.current === current) {
+        controller.current = null
+        setBusy(false)
+        if (input.current) input.current.value = ''
+      }
     }
   }
 

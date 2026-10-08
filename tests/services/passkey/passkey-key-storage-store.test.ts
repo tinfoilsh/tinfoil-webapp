@@ -41,19 +41,11 @@ vi.mock('@/services/sync-enclave/sync-api', async () => {
   }
 })
 
-const mockGetAlternativeKeyBytes = vi.fn<(k: string) => Uint8Array | null>()
-
-vi.mock('@/services/encryption/encryption-service', () => ({
-  encryptionService: {
-    getAlternativeKeyBytes: (k: string) => mockGetAlternativeKeyBytes(k),
-  },
-}))
-
 const PRIMARY_BYTES = new Uint8Array(32).fill(0x11)
-const ALTERNATIVE_BYTES = new Uint8Array(32).fill(0x22)
+const PRIMARY_KEY_B64 = 'ERERERERERERERERERERERERERERERERERERERERERE='
 const KEY_BUNDLE: KeyBundle = {
-  primary: 'key_primary',
-  alternatives: ['key_alt1'],
+  primary: `key_${'ar'.repeat(32)}`,
+  alternatives: [`key_${'a8'.repeat(32)}`],
   authorizationMode: 'validated',
 }
 
@@ -85,15 +77,13 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
   })
 
   beforeEach(async () => {
-    mockRegisterKey.mockReset()
-    mockAddBundle.mockReset()
+    mockRegisterKey
+      .mockReset()
+      .mockRejectedValue(new Error('Unexpected registration'))
+    mockAddBundle
+      .mockReset()
+      .mockRejectedValue(new Error('Unexpected bundle addition'))
     mockKeyCurrent.mockReset()
-    mockGetAlternativeKeyBytes.mockReset()
-    mockGetAlternativeKeyBytes.mockImplementation((k) => {
-      if (k === 'key_primary') return PRIMARY_BYTES
-      if (k === 'key_alt1') return ALTERNATIVE_BYTES
-      return null
-    })
 
     expectedKeyId = await deriveTinfoilKeyIdHex(PRIMARY_BYTES)
   })
@@ -118,10 +108,13 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(mockRegisterKey).toHaveBeenCalledOnce()
     expect(mockAddBundle).not.toHaveBeenCalled()
     const arg = mockRegisterKey.mock.calls[0][0]
-    expect(arg.createdVia).toBe('passkey')
-    expect(arg.initialBundle.credentialId).toBe('AQID')
-    expect(arg.initialBundle).toEqual(expectedBundle(bundle))
-    expect(arg.initialBundle.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
+    expect(arg).toEqual({
+      keyB64: PRIMARY_KEY_B64,
+      ifMatch: '*',
+      createdVia: 'passkey',
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{32}$/),
+      initialBundle: expectedBundle(bundle),
+    })
   })
 
   it('uses created_via=start_fresh when the bundle is marked explicit_start_fresh', async () => {
@@ -186,13 +179,12 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(mockRegisterKey).not.toHaveBeenCalled()
     expect(mockAddBundle).toHaveBeenCalledOnce()
     const arg = mockAddBundle.mock.calls[0][0]
-    expect(arg.keyId).toBe(expectedKeyId)
-    expect(arg.credentialId).toBe('BAUG')
-    const expected = expectedBundle(bundle)
-    expect(arg.kekIvHex).toBe(expected.kekIvHex)
-    expect(arg.encryptedKeysHex).toBe(expected.encryptedKeysHex)
-    expect(arg.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
-    expect(typeof arg.idempotencyKey).toBe('string')
+    expect(arg).toEqual({
+      keyId: expectedKeyId,
+      keyB64: PRIMARY_KEY_B64,
+      ...expectedBundle(bundle),
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{32}$/),
+    })
   })
 
   it('throws PasskeyCredentialConflictError when the enclave KeyID differs from the local CEK', async () => {
@@ -207,10 +199,21 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(mockAddBundle).not.toHaveBeenCalled()
   })
 
-  it('returns null when an unexpected error escapes the enclave call', async () => {
-    mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
-    mockRegisterKey.mockRejectedValue(new Error('boom'))
-    const result = await storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE)
-    expect(result).toBeNull()
-  })
+  it.each(['register', 'refresh'] as const)(
+    'returns null when the enclave fails during %s',
+    async (stage) => {
+      mockKeyCurrent.mockResolvedValueOnce({ key_id: null, bundles: {} })
+      if (stage === 'register')
+        mockRegisterKey.mockRejectedValue(new Error('boom'))
+      else {
+        mockRegisterKey.mockResolvedValue({ ok: true, key_id: expectedKeyId })
+        mockKeyCurrent.mockRejectedValueOnce(new Error('refresh failed'))
+      }
+      const result = await storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE)
+      expect(result).toBeNull()
+      expect(mockRegisterKey).toHaveBeenCalledOnce()
+      expect(mockAddBundle).not.toHaveBeenCalled()
+      expect(mockKeyCurrent).toHaveBeenCalledTimes(stage === 'register' ? 1 : 2)
+    },
+  )
 })

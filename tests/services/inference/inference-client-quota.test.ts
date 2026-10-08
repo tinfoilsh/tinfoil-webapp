@@ -53,6 +53,19 @@ const model: BaseModel = {
   type: 'chat',
 }
 
+const EXHAUSTED_DAILY_QUOTA = {
+  maxRequests: 10,
+  remaining: 0,
+  resetsAt: '',
+  kind: 'free_daily',
+} as const
+
+async function collectChunks<T>(stream: AsyncIterable<T>): Promise<T[]> {
+  const chunks: T[] = []
+  for await (const chunk of stream) chunks.push(chunk)
+  return chunks
+}
+
 function status429Error() {
   return Object.assign(new Error('Rate limit reached'), { status: 429 })
 }
@@ -80,17 +93,12 @@ function send(onRetry?: (attempt: number, maxRetries: number) => void) {
 
 describe('sendChatStream 429 quota classification', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
   it('fails immediately with RATE_LIMIT when the daily quota is exhausted', async () => {
     createCompletion.mockRejectedValue(status429Error())
-    getRateLimitInfo.mockReturnValue({
-      maxRequests: 10,
-      remaining: 0,
-      resetsAt: '',
-      kind: 'free_daily',
-    })
+    getRateLimitInfo.mockReturnValue({ ...EXHAUSTED_DAILY_QUOTA })
     const onRetry = vi.fn()
 
     const error = await send(onRetry).catch((e: unknown) => e)
@@ -125,17 +133,30 @@ describe('sendChatStream 429 quota classification', () => {
     createCompletion
       .mockRejectedValueOnce(status429Error())
       .mockResolvedValueOnce(successfulStream())
-    getRateLimitInfo.mockReturnValue({
-      maxRequests: 10,
-      remaining: 5,
-      resetsAt: '',
-      kind: 'free_daily',
+    getRateLimitInfo.mockReturnValue({ ...EXHAUSTED_DAILY_QUOTA })
+    let finishRefresh!: () => void
+    const refreshed = new Promise<void>((resolve) => {
+      finishRefresh = resolve
+    })
+    refreshRateLimit.mockImplementationOnce(async () => {
+      await refreshed
+      getRateLimitInfo.mockReturnValue({
+        ...EXHAUSTED_DAILY_QUOTA,
+        remaining: 5,
+      })
     })
     const onRetry = vi.fn()
 
-    const stream = await send(onRetry)
+    const pending = send(onRetry)
+    await vi.waitFor(() => expect(refreshRateLimit).toHaveBeenCalledOnce())
+    expect(createCompletion).toHaveBeenCalledTimes(1)
+    expect(onRetry).not.toHaveBeenCalled()
+    finishRefresh()
+    const stream = await pending
 
-    expect(typeof stream[Symbol.asyncIterator]).toBe('function')
+    expect(await collectChunks(stream)).toEqual([
+      { choices: [{ delta: { content: 'answer' } }] },
+    ])
     expect(onRetry).toHaveBeenCalledTimes(1)
     expect(createCompletion).toHaveBeenCalledTimes(2)
   })
@@ -148,7 +169,9 @@ describe('sendChatStream 429 quota classification', () => {
 
     const stream = await send()
 
-    expect(typeof stream[Symbol.asyncIterator]).toBe('function')
+    expect(await collectChunks(stream)).toEqual([
+      { choices: [{ delta: { content: 'answer' } }] },
+    ])
     expect(createCompletion).toHaveBeenCalledTimes(2)
   })
 })

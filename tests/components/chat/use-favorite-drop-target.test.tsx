@@ -23,7 +23,7 @@ describe('useFavoriteDropTarget', () => {
     const clearDragState = vi.fn()
     const { result } = renderHook(() =>
       useFavoriteDropTarget({
-        chats: [{ id: 'chat-a', title: 'Chat A', createdAt: new Date() }],
+        chats: [{ id: 'chat-a', title: 'Chat A' }],
         pinnedChatIds: [],
         draggingChatId: 'chat-a',
         onToggleFavorite,
@@ -55,7 +55,7 @@ describe('useFavoriteDropTarget', () => {
     const clearDragState = vi.fn()
     const { result } = renderHook(() =>
       useFavoriteDropTarget({
-        chats: [{ id: 'chat-a', title: 'Chat A', createdAt: new Date() }],
+        chats: [{ id: 'chat-a', title: 'Chat A' }],
         pinnedChatIds: ['chat-a'],
         draggingChatId: 'chat-a',
         onToggleFavorite,
@@ -78,7 +78,7 @@ describe('useFavoriteDropTarget', () => {
     const onActivate = vi.fn()
     const { result } = renderHook(() =>
       useFavoriteDropTarget({
-        chats: [{ id: 'chat-a', title: 'Chat A', createdAt: new Date() }],
+        chats: [{ id: 'chat-a', title: 'Chat A' }],
         pinnedChatIds: [],
         draggingChatId: 'chat-a',
         onToggleFavorite: vi.fn(),
@@ -100,7 +100,7 @@ describe('useFavoriteDropTarget', () => {
     const { result, rerender } = renderHook(
       ({ draggingChatId }: { draggingChatId: string | null }) =>
         useFavoriteDropTarget({
-          chats: [{ id: 'chat-a', title: 'Chat A', createdAt: new Date() }],
+          chats: [{ id: 'chat-a', title: 'Chat A' }],
           pinnedChatIds: [],
           draggingChatId,
           onToggleFavorite: vi.fn(),
@@ -129,7 +129,6 @@ describe('useFavoriteDropTarget', () => {
           {
             id: 'chat-a',
             title: 'Chat A',
-            createdAt: new Date(),
             isTemporary: true,
           },
         ],

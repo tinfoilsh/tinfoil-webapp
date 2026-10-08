@@ -3,13 +3,14 @@ import {
   deleteSharedChat,
   fetchSharedChat,
   getShareStatus,
-  SHARE_FORMAT_VERSION,
-  SHARE_STORAGE_FORMAT_HEADER,
-  SHARE_STORAGE_FORMAT_VERSION,
   SharedChatNotFoundError,
   UnsupportedShareFormatError,
 } from '@/services/share-api'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const WIRE_FORMAT_HEADER = 'X-Format-Version'
+const WIRE_STORAGE_VERSION = '1'
+const DECODED_FORMAT_VERSION = 1
 
 vi.mock('@/services/auth', () => ({
   authTokenManager: { getAuthHeaders: vi.fn() },
@@ -25,13 +26,13 @@ describe('fetchSharedChat', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(binary, {
         headers: {
-          [SHARE_STORAGE_FORMAT_HEADER]: SHARE_STORAGE_FORMAT_VERSION,
+          [WIRE_FORMAT_HEADER]: WIRE_STORAGE_VERSION,
         },
       }),
     )
 
     await expect(fetchSharedChat('chat-id')).resolves.toEqual({
-      formatVersion: SHARE_FORMAT_VERSION,
+      formatVersion: DECODED_FORMAT_VERSION,
       binary,
     })
     expect(fetch).toHaveBeenCalledWith(
@@ -45,7 +46,7 @@ describe('fetchSharedChat', () => {
     async (formatVersion) => {
       const headers = new Headers()
       if (formatVersion !== null) {
-        headers.set(SHARE_STORAGE_FORMAT_HEADER, formatVersion)
+        headers.set(WIRE_FORMAT_HEADER, formatVersion)
       }
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(
         new Response('{}', { headers }),

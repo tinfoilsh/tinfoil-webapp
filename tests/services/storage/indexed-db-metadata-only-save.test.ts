@@ -97,6 +97,10 @@ describe('IndexedDB metadata-only chat saves', () => {
       title: 'Renamed',
       messageCount: 2,
     })
+    const raw = await readRawChatRow('chat-1')
+    expect('isMetadataOnly' in raw).toBe(false)
+    expect('messageCount' in raw).toBe(false)
+    expect((raw.messages as unknown[]).length).toBe(2)
   })
 
   it('recreates an evicted decryption placeholder without marking it dirty', async () => {
@@ -155,19 +159,5 @@ describe('IndexedDB metadata-only chat saves', () => {
     })
 
     expect(await storage.getChat('chat-1')).toBeNull()
-  })
-
-  it('never persists summary markers on the full chat row', async () => {
-    const storage = new IndexedDBStorage()
-    await storage.saveChat(
-      storedChat('chat-1', { messages: conversationMessages() }),
-    )
-    const [summary] = await storage.getChatSummaries()
-    await storage.saveChat({ ...summary, title: 'Renamed' })
-
-    const raw = await readRawChatRow('chat-1')
-    expect('isMetadataOnly' in raw).toBe(false)
-    expect('messageCount' in raw).toBe(false)
-    expect((raw.messages as unknown[]).length).toBe(2)
   })
 })

@@ -94,12 +94,6 @@ export async function getChatRecoveryStatus(
   return { state: status, persistedBytes }
 }
 
-export async function getChatRecoveryState(
-  sessionId: string,
-): Promise<RecoveryState> {
-  return (await getChatRecoveryStatus(sessionId)).state
-}
-
 export async function fetchRecoveredChatResponse(
   sessionId: string,
   token: SessionRecoveryToken,

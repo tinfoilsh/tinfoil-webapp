@@ -1,10 +1,17 @@
 import { ArtifactRetryError } from '@/components/chat/genui/retry'
 import { useChatMessaging } from '@/components/chat/hooks/use-chat-messaging'
+import {
+  IDLE_STREAM_STATUS,
+  type ChatStreamStatus,
+} from '@/components/chat/hooks/use-chat-streams'
 import type { Chat, Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import type { ChatChunk } from '@/services/inference/chat-stream'
+import { sendChatStream } from '@/services/inference/inference-client'
 import { chatStorage } from '@/services/storage/chat-storage'
+import { sessionChatStorage } from '@/services/storage/session-storage'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { type Dispatch, type SetStateAction, useState } from 'react'
+import { useState, type Dispatch, type SetStateAction } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const abortMock = vi.fn()
@@ -13,6 +20,15 @@ const resetStatusMock = vi.fn()
 const moveStatusMock = vi.fn()
 const registerControllerMock = vi.fn()
 const clearControllerMock = vi.fn()
+const streamStatuses: Record<string, ChatStreamStatus> = {}
+const TEST_MODEL: BaseModel = {
+  modelName: 'gpt-oss-120b',
+  name: 'GPT-OSS',
+  nameShort: 'GPT-OSS',
+  description: '',
+  image: '',
+  type: 'chat',
+}
 const { regenerateToolCallArgumentsMock } = vi.hoisted(() => ({
   regenerateToolCallArgumentsMock: vi.fn(),
 }))
@@ -60,7 +76,7 @@ vi.mock('@/components/chat/hooks/use-chat-streams', async () => {
   return {
     ...actual,
     useChatStreams: () => ({
-      statusByChat: {},
+      statusByChat: streamStatuses,
       patchStatus: patchStatusMock,
       resetStatus: resetStatusMock,
       moveStatus: moveStatusMock,
@@ -74,8 +90,9 @@ vi.mock('@/components/chat/hooks/use-chat-streams', async () => {
 })
 
 vi.mock('@/services/inference/inference-client', () => ({
-  sendChatStream: vi.fn(async function* () {
-    yield { type: 'content', text: 'ok' }
+  sendChatStream: vi.fn(async function* (): AsyncGenerator<ChatChunk> {
+    yield { choices: [{ delta: { content: 'Retried answer' } }] }
+    yield { choices: [{ delta: {}, finish_reason: 'stop' }] }
   }),
 }))
 
@@ -84,6 +101,7 @@ vi.mock('@/services/inference/title', () => ({
 }))
 
 vi.mock('@/services/inference/tinfoil-client', () => ({
+  createStreamUsageTracker: () => () => undefined,
   getRateLimitInfo: vi.fn(() => null),
   refreshRateLimit: vi.fn(),
   snapshotAndDecrementRemaining: vi.fn(),
@@ -91,8 +109,8 @@ vi.mock('@/services/inference/tinfoil-client', () => ({
 
 vi.mock('@/services/storage/chat-storage', () => ({
   chatStorage: {
-    saveChatAndSync: vi.fn(() => Promise.resolve()),
-    saveChat: vi.fn(() => Promise.resolve()),
+    saveChatAndSync: vi.fn(async (chat: Chat) => chat),
+    saveChat: vi.fn(async (chat: Chat) => chat),
   },
 }))
 
@@ -149,28 +167,42 @@ const noopSetCurrentChat: Dispatch<SetStateAction<Chat>> = (_value) => undefined
 
 describe('useChatMessaging retryLastMessage', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    for (const chatId of Object.keys(streamStatuses))
+      delete streamStatuses[chatId]
   })
 
-  it('calls handleQuery directly instead of going through regenerateMessage guards', () => {
+  it('calls handleQuery directly instead of going through regenerateMessage guards', async () => {
     const chat = createChatWithUserMessage('chat-a')
+    streamStatuses[chat.id] = {
+      ...IDLE_STREAM_STATUS,
+      loadingState: 'loading',
+      isStreaming: true,
+    }
 
-    const { result } = renderHook(() =>
-      useChatMessaging({
+    const { result, rerender } = renderHook(() => {
+      const [currentChat, setCurrentChat] = useState(chat)
+      const [chats, setChats] = useState([chat])
+      const messaging = useChatMessaging({
         systemPrompt: '',
         rules: '',
         storeHistory: false,
-        models: [{ modelName: 'test-model' } as BaseModel],
-        selectedModel: 'test-model',
-        chats: [chat],
-        currentChat: chat,
-        setChats: noopSetChats,
-        setCurrentChat: noopSetCurrentChat,
-      }),
-    )
+        models: [TEST_MODEL],
+        selectedModel: TEST_MODEL.modelName,
+        chats,
+        currentChat,
+        setChats,
+        setCurrentChat,
+      })
+      return { messaging, currentChat }
+    })
+
+    const retryAfterFailure = result.current.messaging.retryLastMessage
+    streamStatuses[chat.id] = IDLE_STREAM_STATUS
+    rerender()
 
     act(() => {
-      result.current.retryLastMessage()
+      retryAfterFailure()
     })
 
     expect(patchStatusMock).toHaveBeenCalledWith('chat-a', {
@@ -182,6 +214,26 @@ describe('useChatMessaging retryLastMessage', () => {
       isWaitingForResponse: true,
       isStreaming: true,
     })
+    await waitFor(() => {
+      expect(sessionChatStorage.saveChat).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          messages: [
+            expect.objectContaining({ role: 'user', content: 'Hello' }),
+            expect.objectContaining({
+              role: 'assistant',
+              content: 'Retried answer',
+            }),
+          ],
+        }),
+      )
+    })
+    expect(sendChatStream).toHaveBeenCalledOnce()
+    expect(vi.mocked(sendChatStream).mock.calls[0][0].updatedMessages).toEqual([
+      expect.objectContaining({ role: 'user', content: 'Hello' }),
+    ])
+    expect(
+      result.current.currentChat.messages.map(({ content }) => content),
+    ).toEqual(['Hello', 'Retried answer'])
   })
 
   it('preserves typed artifact retry failures for the renderer', async () => {
@@ -210,7 +262,7 @@ describe('useChatMessaging retryLastMessage', () => {
     })
     const retryError = new ArtifactRetryError('incomplete_replacement')
     regenerateToolCallArgumentsMock.mockRejectedValueOnce(retryError)
-    const model = { modelName: 'gpt-oss-120b' } as BaseModel
+    const model = TEST_MODEL
 
     const { result } = renderHook(() =>
       useChatMessaging({
@@ -279,13 +331,13 @@ describe('useChatMessaging retryLastMessage', () => {
     let releaseFirstSave: (() => void) | undefined
     vi.mocked(chatStorage.saveChatAndSync)
       .mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            releaseFirstSave = resolve
+        (savedChat) =>
+          new Promise<Chat>((resolve) => {
+            releaseFirstSave = () => resolve(savedChat)
           }),
       )
-      .mockResolvedValue(undefined)
-    const model = { modelName: 'gpt-oss-120b' } as BaseModel
+      .mockImplementation(async (savedChat) => savedChat)
+    const model = TEST_MODEL
 
     const { result } = renderHook(() => {
       const [chats, setChats] = useState([chat])

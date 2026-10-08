@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const importCreate = vi.fn()
@@ -20,7 +21,9 @@ import {
 } from '@/services/chat-import/off-device-import'
 
 function fileOf(bytes: Uint8Array): File {
-  return new File([bytes], 'export.zip', { type: 'application/zip' })
+  return new File([new Uint8Array(bytes)], 'export.zip', {
+    type: 'application/zip',
+  })
 }
 
 describe('runOffDeviceImport', () => {
@@ -58,19 +61,29 @@ describe('runOffDeviceImport', () => {
 
     expect(importCreate).toHaveBeenCalledTimes(1)
     const createArg = importCreate.mock.calls[0][0]
-    expect(createArg.source).toBe('claude')
-    expect(createArg.totalBytes).toBe(size)
-    expect(createArg.totalChunks).toBe(2)
-    expect(createArg.archiveSha256).toMatch(/^[0-9a-f]{64}$/)
+    expect(createArg).toEqual({
+      source: 'claude',
+      totalBytes: size,
+      totalChunks: 2,
+      archiveSha256: createHash('sha256').update(archive).digest('hex'),
+    })
+    expect(importCreate.mock.calls[0][1]).toBe(signal)
 
     expect(importUploadChunk).toHaveBeenCalledTimes(2)
-    const first = importUploadChunk.mock.calls[0][0]
-    const second = importUploadChunk.mock.calls[1][0]
-    expect(first.uploadId).toBe('up-1')
-    expect(first.chunkIndex).toBe(0)
-    expect(first.data.byteLength).toBe(IMPORT_CHUNK_BYTES)
-    expect(second.chunkIndex).toBe(1)
-    expect(second.data.byteLength).toBe(1234)
+    for (const [index, expected] of [
+      archive.subarray(0, IMPORT_CHUNK_BYTES),
+      archive.subarray(IMPORT_CHUNK_BYTES),
+    ].entries()) {
+      const [request, uploadSignal] = importUploadChunk.mock.calls[index]
+      const { data, ...metadata } = request
+      expect(Buffer.compare(Buffer.from(data), Buffer.from(expected))).toBe(0)
+      expect(metadata).toEqual({
+        uploadId: 'up-1',
+        chunkIndex: index,
+        chunkSha256: createHash('sha256').update(expected).digest('hex'),
+      })
+      expect(uploadSignal).toBe(signal)
+    }
 
     expect(importStart).toHaveBeenCalledWith(
       {

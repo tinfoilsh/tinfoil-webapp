@@ -44,32 +44,25 @@ describe('resolveChatModel', () => {
     model,
   })
 
-  it("returns the chat's own model when it is available", () => {
-    expect(resolveChatModel(makeChat('model-b'), mockModels)).toBe('model-b')
-  })
-
   it('falls back to the saved device model when the chat has no model', () => {
     expect(resolveChatModel(makeChat(undefined), mockModels, 'model-b')).toBe(
       'model-b',
     )
   })
 
-  it("prefers the chat's own model over the saved device model", () => {
-    expect(resolveChatModel(makeChat('model-b'), mockModels, 'model-a')).toBe(
-      'model-b',
-    )
-  })
+  it.each([undefined, 'model-a'])(
+    "prefers the chat's own model over saved device model %s",
+    (savedModel) => {
+      expect(
+        resolveChatModel(makeChat('model-b'), mockModels, savedModel),
+      ).toBe('model-b')
+    },
+  )
 
   it('ignores a saved device model that is no longer available', () => {
     expect(
       resolveChatModel(makeChat(undefined), mockModels, 'removed-model'),
     ).toBe(AUTO_MODEL_ID)
-  })
-
-  it('falls back to Auto when the chat has no model', () => {
-    expect(resolveChatModel(makeChat(undefined), mockModels)).toBe(
-      AUTO_MODEL_ID,
-    )
   })
 
   it('falls back to Auto when the chat model is unavailable', () => {
@@ -78,8 +71,11 @@ describe('resolveChatModel', () => {
     )
   })
 
-  it('falls back to Auto when there is no chat', () => {
-    expect(resolveChatModel(undefined, mockModels)).toBe(AUTO_MODEL_ID)
+  it.each([
+    { name: 'no chat', chat: undefined },
+    { name: 'a chat without a model', chat: makeChat() },
+  ])('falls back to Auto for $name', ({ chat }) => {
+    expect(resolveChatModel(chat, mockModels)).toBe(AUTO_MODEL_ID)
   })
 
   it('returns an empty string when no models are available', () => {
@@ -116,18 +112,6 @@ describe('useModelManagement', () => {
   })
 
   describe('initial model selection', () => {
-    it('should start with empty selectedModel before validation', () => {
-      const { result } = renderHook(() =>
-        useModelManagement({
-          models: [],
-          isClient: false,
-        }),
-      )
-
-      expect(result.current.selectedModel).toBe('')
-      expect(result.current.hasValidatedModel).toBe(false)
-    })
-
     it('should use saved model from localStorage as initial value', () => {
       localStorage.setItem(SETTINGS_SELECTED_MODEL, 'model-a')
 
@@ -157,57 +141,6 @@ describe('useModelManagement', () => {
 
       expect(result.current.selectedModel).toBe('model-b')
     })
-
-    it('should fall back to Auto when no saved model exists', async () => {
-      const { result } = renderHook(() =>
-        useModelManagement({
-          models: mockModels,
-          isClient: true,
-        }),
-      )
-
-      await waitFor(() => {
-        expect(result.current.hasValidatedModel).toBe(true)
-      })
-
-      expect(result.current.selectedModel).toBe(AUTO_MODEL_ID)
-    })
-  })
-
-  describe('invalid saved model handling', () => {
-    it('should fall back to Auto when saved model does not exist', async () => {
-      localStorage.setItem(SETTINGS_SELECTED_MODEL, 'non-existent-model')
-
-      const { result } = renderHook(() =>
-        useModelManagement({
-          models: mockModels,
-          isClient: true,
-        }),
-      )
-
-      await waitFor(() => {
-        expect(result.current.hasValidatedModel).toBe(true)
-      })
-
-      expect(result.current.selectedModel).toBe(AUTO_MODEL_ID)
-    })
-
-    it('should fall back to Auto when saved model is empty', async () => {
-      localStorage.setItem(SETTINGS_SELECTED_MODEL, '')
-
-      const { result } = renderHook(() =>
-        useModelManagement({
-          models: mockModels,
-          isClient: true,
-        }),
-      )
-
-      await waitFor(() => {
-        expect(result.current.hasValidatedModel).toBe(true)
-      })
-
-      expect(result.current.selectedModel).toBe(AUTO_MODEL_ID)
-    })
   })
 
   describe('hasValidatedModel state', () => {
@@ -220,6 +153,7 @@ describe('useModelManagement', () => {
       )
 
       expect(result.current.hasValidatedModel).toBe(false)
+      expect(result.current.selectedModel).toBe('')
     })
 
     it('should be false when no models available', () => {
@@ -231,19 +165,6 @@ describe('useModelManagement', () => {
       )
 
       expect(result.current.hasValidatedModel).toBe(false)
-    })
-
-    it('should be true after validation completes', async () => {
-      const { result } = renderHook(() =>
-        useModelManagement({
-          models: mockModels,
-          isClient: true,
-        }),
-      )
-
-      await waitFor(() => {
-        expect(result.current.hasValidatedModel).toBe(true)
-      })
     })
   })
 
@@ -261,11 +182,16 @@ describe('useModelManagement', () => {
       })
 
       act(() => {
+        result.current.setExpandedLabel('model')
+      })
+      expect(result.current.expandedLabel).toBe('model')
+      act(() => {
         result.current.handleModelSelect('model-b')
       })
 
       expect(result.current.selectedModel).toBe('model-b')
       expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBe('model-b')
+      expect(result.current.expandedLabel).toBeNull()
     })
 
     it('should reject selection of a model not in the models list', async () => {
@@ -287,28 +213,6 @@ describe('useModelManagement', () => {
       })
 
       expect(result.current.selectedModel).toBe(initialModel)
-    })
-
-    it('closes the menu when a concrete model is picked', async () => {
-      const { result } = renderHook(() =>
-        useModelManagement({
-          models: mockModels,
-          isClient: true,
-        }),
-      )
-
-      await waitFor(() => {
-        expect(result.current.hasValidatedModel).toBe(true)
-      })
-
-      act(() => {
-        result.current.setExpandedLabel('model')
-      })
-      act(() => {
-        result.current.handleModelSelect('model-b')
-      })
-
-      expect(result.current.expandedLabel).toBeNull()
     })
 
     it('keeps the menu open when Auto is picked so the slider can be adjusted', async () => {
@@ -338,20 +242,25 @@ describe('useModelManagement', () => {
   })
 
   describe('localStorage persistence', () => {
-    it('should not persist the fallback default when nothing was saved', async () => {
-      const { result } = renderHook(() =>
-        useModelManagement({
-          models: mockModels,
-          isClient: true,
-        }),
-      )
+    it.each([null, ''])(
+      'does not persist the fallback default for saved value %j',
+      async (saved) => {
+        if (saved !== null) localStorage.setItem(SETTINGS_SELECTED_MODEL, saved)
+        const { result } = renderHook(() =>
+          useModelManagement({
+            models: mockModels,
+            isClient: true,
+          }),
+        )
 
-      await waitFor(() => {
-        expect(result.current.hasValidatedModel).toBe(true)
-      })
+        await waitFor(() => {
+          expect(result.current.hasValidatedModel).toBe(true)
+        })
 
-      expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBeNull()
-    })
+        expect(localStorage.getItem(SETTINGS_SELECTED_MODEL)).toBeNull()
+        expect(result.current.selectedModel).toBe(AUTO_MODEL_ID)
+      },
+    )
 
     it('should clear localStorage when the saved model is unavailable', async () => {
       localStorage.setItem(SETTINGS_SELECTED_MODEL, 'removed-model')

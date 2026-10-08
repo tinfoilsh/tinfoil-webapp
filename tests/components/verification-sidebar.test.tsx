@@ -1,5 +1,11 @@
 import { VerifierSidebar } from '@/components/verification-sidebar'
-import { act, fireEvent, render, waitFor } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -33,7 +39,7 @@ vi.mock('@/components/chat/constants', async (importOriginal) => {
 const VERIFICATION_CENTER_ORIGIN = 'https://verification-center.tinfoil.sh'
 
 function renderSidebar(onVerificationComplete: (success: boolean) => void) {
-  return render(
+  const view = render(
     <VerifierSidebar
       isOpen={false}
       setIsOpen={vi.fn()}
@@ -42,6 +48,14 @@ function renderSidebar(onVerificationComplete: (success: boolean) => void) {
       isClient={true}
     />,
   )
+  const iframe = view.getByTitle(
+    'Tinfoil Verification Center',
+  ) as HTMLIFrameElement
+  const postMessage = vi
+    .spyOn(iframe.contentWindow!, 'postMessage')
+    .mockImplementation(() => {})
+  fireEvent.load(iframe)
+  return { ...view, postMessage }
 }
 
 function requestVerificationDocument() {
@@ -63,6 +77,7 @@ describe('VerifierSidebar', () => {
     mocks.getCachedVerificationDocument.mockReturnValue(null)
     mocks.getVerificationDocument.mockReset()
     onLineSpy = vi.spyOn(window.navigator, 'onLine', 'get')
+    onLineSpy.mockReturnValue(true)
     // The browser regression covers the remote page; unit tests keep frames local.
     vi.spyOn(HTMLIFrameElement.prototype, 'src', 'get').mockReturnValue(
       'about:blank',
@@ -70,6 +85,7 @@ describe('VerifierSidebar', () => {
   })
 
   afterEach(() => {
+    cleanup()
     vi.restoreAllMocks()
   })
 
@@ -133,23 +149,39 @@ describe('VerifierSidebar', () => {
     expect(iframe.getAttribute('src')).toBe(source)
   })
 
-  it('keeps a previously successful verification when fetching offline', async () => {
-    // Offline: retry attempts short-circuit, but the cached attestation from
-    // startup verification is still available without network work.
-    onLineSpy.mockReturnValue(false)
-    mocks.getCachedVerificationDocument.mockReturnValue({
-      securityVerified: true,
-    })
-    const onVerificationComplete = vi.fn()
+  it.each(['initial', 'terminal'] as const)(
+    'keeps a previously successful verification when fetching offline (%s cache)',
+    async (cacheStage) => {
+      // Offline: retry attempts short-circuit, but the cached attestation from
+      // startup verification is still available without network work.
+      onLineSpy.mockReturnValue(false)
+      if (cacheStage === 'terminal')
+        mocks.getCachedVerificationDocument.mockReturnValueOnce(null)
+      mocks.getCachedVerificationDocument.mockReturnValue({
+        securityVerified: true,
+      })
+      const onVerificationComplete = vi.fn()
 
-    renderSidebar(onVerificationComplete)
-    requestVerificationDocument()
+      const { postMessage } = renderSidebar(onVerificationComplete)
+      requestVerificationDocument()
 
-    expect(onVerificationComplete).toHaveBeenCalled()
-    expect(onVerificationComplete).toHaveBeenCalledWith(true)
-    expect(onVerificationComplete).not.toHaveBeenCalledWith(false)
-    expect(mocks.getVerificationDocument).not.toHaveBeenCalled()
-  })
+      await waitFor(() =>
+        expect(onVerificationComplete).toHaveBeenCalledExactlyOnceWith(true),
+      )
+      expect(onVerificationComplete).not.toHaveBeenCalledWith(false)
+      expect(mocks.getVerificationDocument).not.toHaveBeenCalled()
+      expect(mocks.getCachedVerificationDocument).toHaveBeenCalledTimes(
+        cacheStage === 'initial' ? 1 : 2,
+      )
+      expect(postMessage).toHaveBeenCalledWith(
+        {
+          type: 'TINFOIL_VERIFICATION_DOCUMENT',
+          document: { securityVerified: true },
+        },
+        VERIFICATION_CENTER_ORIGIN,
+      )
+    },
+  )
 
   it('reports offline exhaustion without starting initialization', async () => {
     onLineSpy.mockReturnValue(false)

@@ -8,6 +8,11 @@ import {
   handleIndexedDBAccountResetStorageEvent,
   IndexedDBStorage,
 } from '@/services/storage/indexed-db'
+import {
+  IDBKeyRange as FakeIDBKeyRange,
+  IDBObjectStore as FakeIDBObjectStore,
+  IDBFactory,
+} from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 interface FakeResetTransaction {
@@ -166,26 +171,50 @@ describe('IndexedDBStorage account reset', () => {
   })
 
   it('reports cross-tab reset failures without re-enabling writes', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange)
     const storage = new IndexedDBStorage()
-    vi.spyOn(storage, 'resetForAccountChange').mockRejectedValue(
-      new Error('reset failed'),
+    await storage.initialize()
+    const originalClear = FakeIDBObjectStore.prototype.clear
+    vi.spyOn(FakeIDBObjectStore.prototype, 'clear').mockImplementationOnce(
+      function (this: IDBObjectStore) {
+        const request = originalClear.call(this)
+        request.addEventListener('success', () => this.transaction.abort())
+        return request
+      },
     )
     const handleFailure = vi.fn()
+    const reload = vi
+      .spyOn(window.location, 'reload')
+      .mockImplementation(() => {})
     const clearDeletedChats = vi.spyOn(deletedChatsTracker, 'clear')
     window.addEventListener(ACCOUNT_RESET_FAILED_EVENT, handleFailure)
 
-    handleIndexedDBAccountResetStorageEvent(
-      storage,
-      new StorageEvent('storage', {
-        key: AUTH_ACCOUNT_RESET_SIGNAL,
-        newValue: 'reset_123',
-      }),
-    )
+    try {
+      handleIndexedDBAccountResetStorageEvent(
+        storage,
+        new StorageEvent('storage', {
+          key: AUTH_ACCOUNT_RESET_SIGNAL,
+          newValue: 'reset_123',
+        }),
+      )
 
-    await vi.waitFor(() => expect(handleFailure).toHaveBeenCalledTimes(1))
-    expect(sessionStorage.getItem(AUTH_ACCOUNT_RESET_FAILED)).toBe('true')
-    expect(clearDeletedChats).not.toHaveBeenCalled()
-    window.removeEventListener(ACCOUNT_RESET_FAILED_EVENT, handleFailure)
+      await vi.waitFor(() => expect(handleFailure).toHaveBeenCalledTimes(1))
+      expect(sessionStorage.getItem(AUTH_ACCOUNT_RESET_FAILED)).toBe('true')
+      expect(clearDeletedChats).not.toHaveBeenCalled()
+      expect(reload).not.toHaveBeenCalled()
+      await expect(
+        storage.saveChat({
+          id: 'old-account-write',
+          title: 'Blocked',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messages: [],
+        }),
+      ).rejects.toThrow('IndexedDB write superseded by account change')
+    } finally {
+      window.removeEventListener(ACCOUNT_RESET_FAILED_EVENT, handleFailure)
+    }
   })
 
   it('cancels writes that were queued before the account reset', async () => {
@@ -285,22 +314,35 @@ describe('IndexedDBStorage account reset', () => {
   })
 
   it('rejects reads that were already in flight when reset started', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange)
     const storage = new IndexedDBStorage()
-    let finishRead!: (value: string) => void
-    const protectedRead = (storage as any).protectRead(
-      new Promise<string>((resolve) => {
-        finishRead = resolve
-      }),
-    )
-    const { transaction } = prepareReset(storage)
-
-    const reset = storage.resetForAccountChange()
-    finishRead('stale data')
-
-    await expect(protectedRead).rejects.toThrow(
+    const chatId = 'in-flight-old-account'
+    await storage.saveChat({
+      id: chatId,
+      title: 'Old account content',
+      messages: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    })
+    let reset: Promise<void> | undefined
+    const originalGet = FakeIDBObjectStore.prototype.get
+    vi.spyOn(FakeIDBObjectStore.prototype, 'get').mockImplementation(function (
+      this: IDBObjectStore,
+      key: IDBValidKey | IDBKeyRange,
+    ) {
+      const request = originalGet.call(this, key)
+      if (this.name === 'chats' && key === chatId) {
+        request.addEventListener('success', () => {
+          reset = storage.resetForAccountChange(false)
+        })
+      }
+      return request
+    })
+    await expect(storage.getChat(chatId)).rejects.toThrow(
       'IndexedDB read superseded by account change',
     )
-    await completeReset(transaction)
+    expect(reset).toBeDefined()
     await reset
   })
 

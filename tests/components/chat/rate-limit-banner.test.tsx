@@ -40,15 +40,18 @@ describe('hourly limit recheck', () => {
     vi.useFakeTimers()
     vi.setSystemTime(NOW)
     resetTinfoilClient()
-    fetchMock.mockReset().mockResolvedValueOnce(
-      Response.json(
-        {
-          code: 'HOURLY_LIMIT_REACHED',
-          resets_at: RESET_AT,
-        },
-        { status: 429 },
-      ),
-    )
+    fetchMock
+      .mockReset()
+      .mockRejectedValue(new Error('Unexpected quota request'))
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            code: 'HOURLY_LIMIT_REACHED',
+            resets_at: RESET_AT,
+          },
+          { status: 429 },
+        ),
+      )
     vi.stubGlobal('fetch', fetchMock)
   })
 
@@ -119,6 +122,9 @@ describe('hourly limit recheck', () => {
         }}
         isDarkMode={false}
       />,
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      "You've reached your daily rate limit.",
     )
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })

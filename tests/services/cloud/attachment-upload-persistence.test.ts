@@ -11,7 +11,10 @@ import {
 } from '@/services/storage/indexed-db'
 import { realScheduler } from '@/services/sync-enclave/retry-policy'
 import { attachmentPut, push } from '@/services/sync-enclave/sync-api'
-import { SyncNetworkError } from '@/services/sync-enclave/sync-enclave-client'
+import {
+  SyncEnclaveError,
+  SyncNetworkError,
+} from '@/services/sync-enclave/sync-enclave-client'
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -263,5 +266,69 @@ describe('attachment upload persistence', () => {
 
     expect(sentAttachments()).toEqual([[...IMAGE_A]])
     expect(push).not.toHaveBeenCalled()
+  })
+
+  it('persists minted references when the chat push fails terminally', async () => {
+    const failure = new SyncEnclaveError(
+      'Push rejected',
+      409,
+      'IDEMPOTENCY_CONFLICT',
+    )
+    vi.mocked(push).mockRejectedValueOnce(failure)
+    const service = new CloudSyncService()
+    await service.backupChat(CHAT_ID)
+    await expect(service.waitForAllUploads()).rejects.toBe(failure)
+    expect((await readChat()).messages[0].attachments).toMatchObject([
+      { id: 'server-a', encryptionKey: 'key-a' },
+      { id: 'server-b', encryptionKey: 'key-b' },
+    ])
+    expect(await readChat()).toMatchObject({
+      locallyModified: true,
+      pendingUpload: 1,
+    })
+    await service.backupChatAndWait(CHAT_ID)
+    expect(sentAttachments()).toEqual([[...IMAGE_A], [...IMAGE_B]])
+    expect(await readChat()).toMatchObject({
+      locallyModified: false,
+      pendingUpload: 0,
+    })
+  })
+
+  it('re-uploads attachments the server purged and pushes again', async () => {
+    await indexedDBStorage.recordAttachmentRewrites(CHAT_ID, [
+      { clientId: 'local-a', serverId: 'server-a', encryptionKey: 'key-a' },
+      { clientId: 'local-b', serverId: 'server-b', encryptionKey: 'key-b' },
+    ])
+    vi.mocked(push).mockRejectedValueOnce(
+      new SyncEnclaveError('Missing blob', 409, 'MISSING_ATTACHMENT', {
+        missing_attachments: ['server-a'],
+      }),
+    )
+    vi.mocked(attachmentPut).mockResolvedValueOnce({
+      ok: true,
+      id: 'healed-a',
+      att_key: 'healed-key-a',
+    })
+    const service = new CloudSyncService()
+    await service.backupChat(CHAT_ID)
+    await service.waitForAllUploads()
+    expect(sentAttachments()).toEqual([[...IMAGE_A]])
+    expect(push).toHaveBeenCalledTimes(2)
+    const [first, second] = vi
+      .mocked(push)
+      .mock.calls.map(([request]) => request)
+    expect(second.idempotencyKey).not.toBe(first.idempotencyKey)
+    expect(
+      JSON.parse(new TextDecoder().decode(second.plaintext)).messages[0]
+        .attachments,
+    ).toMatchObject([
+      { id: 'healed-a', encryptionKey: 'healed-key-a' },
+      { id: 'server-b', encryptionKey: 'key-b' },
+    ])
+    expect(await readChat()).toMatchObject({
+      locallyModified: false,
+      pendingUpload: 0,
+      syncVersion: 1,
+    })
   })
 })

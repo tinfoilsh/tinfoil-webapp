@@ -36,10 +36,13 @@ describe('useSafeguardsLoader', () => {
     renderHook(() => useSafeguardsLoader())
 
     expect(mocks.refresh).toHaveBeenCalledTimes(1)
-    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS)
+    vi.advanceTimersByTime(SAFEGUARDS_REFRESH_INTERVAL_MS - 1)
+    expect(mocks.refresh).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(1)
     expect(mocks.refresh).toHaveBeenCalledTimes(2)
 
     window.dispatchEvent(new Event('focus'))
+    expect(mocks.refresh).toHaveBeenCalledTimes(3)
     window.dispatchEvent(new Event('online'))
     expect(mocks.refresh).toHaveBeenCalledTimes(4)
   })

@@ -150,7 +150,12 @@ function destinationChatId(ownerId: string, backupId: string, sourceId: string) 
   return `native-${bytesToHex(sha256(input))}`
 }
 
-function applyImage(chat: Chat, image: NativeBackupImage, bytes: Uint8Array) {
+function applyImage(
+  chat: Chat,
+  source: ValidatedNativeRestore['local']['chats'][number],
+  image: NativeBackupImage,
+  bytes: Uint8Array,
+) {
   const message = chat.messages[image.messageIndex]
   const base64 = uint8ArrayToBase64(bytes)
   if (image.legacyIndex !== undefined) {
@@ -158,11 +163,24 @@ function applyImage(chat: Chat, image: NativeBackupImage, bytes: Uint8Array) {
     return
   }
   const index =
-    message.attachments?.findIndex(({ id }) => id === image.attachmentId) ?? -1
+    source.messages[image.messageIndex].attachments?.findIndex((attachment) =>
+      attachment.type === 'image'
+        ? attachment.imageId === image.id
+        : attachment.pages?.some(({ imageId }) => imageId === image.id),
+    ) ?? -1
   const attachment = message.attachments?.[index]
   if (!attachment) throw new Error('Backup image attachment is missing')
   if (image.page !== undefined) {
-    const page = attachment.pages?.find(({ page }) => page === image.page)
+    const sourceAttachment =
+      source.messages[image.messageIndex].attachments?.[index]
+    const pageIndex =
+      sourceAttachment?.type === 'document'
+        ? sourceAttachment.pages?.findIndex(
+            ({ imageId }) => imageId === image.id,
+          )
+        : undefined
+    const page =
+      pageIndex === undefined ? undefined : attachment.pages?.[pageIndex]
     if (!page) throw new Error('Backup image page is missing')
     page.image = base64
   } else {
@@ -287,7 +305,7 @@ async function restoreLocalChats(
     try {
       const chat = normalizeChat(source, id, ownerId, projectId, sourceImages)
       // prettier-ignore
-      await dependencies.forEachImage(sourceImages, ({ metadata, bytes }) => applyImage(chat, metadata, bytes), { signal })
+      await dependencies.forEachImage(sourceImages, ({ metadata, bytes }) => applyImage(chat, source, metadata, bytes), { signal })
       if (!(await dependencies.saveChat(chat, true)))
         throw new Error('Restored chat was not saved')
       report.local_chats.imported++

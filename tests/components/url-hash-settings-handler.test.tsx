@@ -1,5 +1,4 @@
 import { UrlHashSettingsHandler } from '@/components/url-hash-settings-handler'
-import { SETTINGS_TABS } from '@/constants/settings-tabs'
 import { logWarning } from '@/utils/error-handling'
 import { render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,6 +11,7 @@ vi.mock('@/utils/error-handling', () => ({
 describe('settings deep links', () => {
   afterEach(() => {
     window.history.replaceState(null, '', '/')
+    vi.clearAllMocks()
   })
 
   it('preserves an unknown settings link without opening a tab', () => {
@@ -34,17 +34,38 @@ describe('settings deep links', () => {
     )
   })
 
-  it.each(SETTINGS_TABS)('recognizes the shared %s tab value', (tab) => {
-    window.history.replaceState(null, '', `/#settings/${tab}`)
-    const onSettingsTabReady = vi.fn()
-    render(
-      <UrlHashSettingsHandler
-        isReady
-        onSettingsTabReady={onSettingsTabReady}
-      />,
-    )
-    expect(onSettingsTabReady).toHaveBeenCalledExactlyOnceWith(tab)
-  })
+  it.each([
+    ['general', 'general'],
+    ['chat', 'chat'],
+    ['personalization', 'personalization'],
+    ['prompts', 'prompts'],
+    ['cloud-sync', 'cloud-sync'],
+    ['safeguards', 'safeguards'],
+    ['data', 'data'],
+    ['account', 'account'],
+    ['import', 'data'],
+    ['export', 'data'],
+  ])(
+    'opens the %s link in the %s tab and consumes its fragment',
+    (link, tab) => {
+      window.history.replaceState(
+        null,
+        '',
+        `/chat?view=compact#settings/${link}`,
+      )
+      const onSettingsTabReady = vi.fn()
+      render(
+        <UrlHashSettingsHandler
+          isReady
+          onSettingsTabReady={onSettingsTabReady}
+        />,
+      )
+      expect(onSettingsTabReady).toHaveBeenCalledExactlyOnceWith(tab)
+      expect(window.location.pathname).toBe('/chat')
+      expect(window.location.search).toBe('?view=compact')
+      expect(window.location.hash).toBe('')
+    },
+  )
 
   it('preserves a safeguards link until the app and authentication are ready', () => {
     window.history.replaceState(null, '', '/#settings/safeguards')
@@ -64,23 +85,5 @@ describe('settings deep links', () => {
       />,
     )
     expect(onSettingsTabReady).toHaveBeenCalledExactlyOnceWith('safeguards')
-  })
-
-  it.each([
-    ['data', 'data'],
-    ['import', 'data'],
-    ['export', 'data'],
-    ['safeguards', 'safeguards'],
-  ])('opens the %s link in the %s tab', (link, tab) => {
-    window.history.replaceState(null, '', `/#settings/${link}`)
-    const onSettingsTabReady = vi.fn()
-    render(
-      <UrlHashSettingsHandler
-        isReady
-        onSettingsTabReady={onSettingsTabReady}
-      />,
-    )
-    expect(onSettingsTabReady).toHaveBeenCalledExactlyOnceWith(tab)
-    expect(window.location.hash).toBe('')
   })
 })

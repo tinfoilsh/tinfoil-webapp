@@ -49,7 +49,6 @@ import {
   markRecoveryHistoryReady,
   resetAlternativesFinalizationState,
   runLegacyBlobMigration,
-  runLegacyBlobMigrationAndFinalize,
   type MigrationReport,
 } from '@/services/cloud/legacy-blob-migration'
 
@@ -111,9 +110,9 @@ describe('runLegacyBlobMigration', () => {
 
   it('aggregates per-scope counts into a flat report', async () => {
     mockMigrateAll.mockResolvedValue({
-      migrated: 150,
+      migrated: 999,
       retryable_remaining: 0,
-      blocked_unmigrated: 2,
+      blocked_unmigrated: 999,
       partial: false,
       scopes: [
         {
@@ -233,10 +232,18 @@ describe('runLegacyBlobMigration', () => {
         },
       ],
     })
-    const promise = runLegacyBlobMigration()
-    await vi.advanceTimersByTimeAsync(16 * 60_000)
+    const pollBudgetMs = 15 * 60_000
+    const pollIntervalMs = 2_000
+    let settled = false
+    const promise = runLegacyBlobMigration().then((report) => {
+      settled = true
+      return report
+    })
+    await vi.advanceTimersByTimeAsync(pollBudgetMs)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(pollIntervalMs)
     const report = await promise
-    expect(mockMigrateStatus).toHaveBeenCalled()
+    expect(mockMigrateStatus).toHaveBeenCalledTimes(451)
     expect(report.fullyMigrated).toBe(false)
     expect(report.totalRemaining).toBe(99)
   })
@@ -271,6 +278,7 @@ describe('finalizeAlternativesIfMigrated', () => {
   })
 
   it('is a no-op when migration is not fully complete', async () => {
+    await markRecoveryHistoryReady()
     const ran = await finalizeAlternativesIfMigrated(
       buildReport({ fullyMigrated: false, totalRemaining: 5 }),
     )
@@ -292,13 +300,6 @@ describe('finalizeAlternativesIfMigrated', () => {
     expect(await finalizeAlternativesIfMigrated(buildReport())).toBe(false)
     await markRecoveryHistoryReady()
     expect(mockClearFallbackKeys).not.toHaveBeenCalled()
-  })
-
-  it('clears fallback keys after deferred history readiness', async () => {
-    mockGetFallbackKeyCount.mockReturnValue(0)
-    await finalizeAlternativesIfMigrated(buildReport())
-    await markRecoveryHistoryReady()
-    expect(mockClearFallbackKeys).toHaveBeenCalledOnce()
   })
 
   it('retries deferred cleanup after recovery history is fully ingested', async () => {
@@ -345,7 +346,7 @@ describe('finalizeAlternativesIfMigrated', () => {
   })
 })
 
-describe('runLegacyBlobMigrationAndFinalize', () => {
+describe('migration report finalization contract', () => {
   beforeEach(() => {
     mockMigrateAll.mockReset()
     mockRequirePrimaryKeyB64.mockReset()
@@ -362,7 +363,8 @@ describe('runLegacyBlobMigrationAndFinalize', () => {
 
   it('clears fallback keys when every scope drains', async () => {
     mockMigrateAll.mockResolvedValue(emptyEnclaveReport())
-    const report = await runLegacyBlobMigrationAndFinalize()
+    const report = await runLegacyBlobMigration()
+    await finalizeAlternativesIfMigrated(report)
     expect(report.fullyMigrated).toBe(true)
     expect(mockClearFallbackKeys).not.toHaveBeenCalled()
     await markRecoveryHistoryReady()
@@ -370,6 +372,7 @@ describe('runLegacyBlobMigrationAndFinalize', () => {
   })
 
   it('keeps fallback keys when remaining rows are reported', async () => {
+    await markRecoveryHistoryReady()
     mockMigrateAll.mockResolvedValue({
       migrated: 0,
       retryable_remaining: 1,
@@ -384,7 +387,8 @@ describe('runLegacyBlobMigrationAndFinalize', () => {
         },
       ],
     })
-    const report = await runLegacyBlobMigrationAndFinalize()
+    const report = await runLegacyBlobMigration()
+    await finalizeAlternativesIfMigrated(report)
     expect(report.fullyMigrated).toBe(false)
     expect(mockClearFallbackKeys).not.toHaveBeenCalled()
   })

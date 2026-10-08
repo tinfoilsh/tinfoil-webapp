@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { runInNewContext } from 'node:vm'
@@ -74,12 +73,20 @@ function loadPlausible(url: string, referrer = '') {
     window: windowMock,
   })
 
+  expect(windowMock.plausible).toBeTypeOf('function')
+  if (!windowMock.plausible) throw new Error('Analytics API was not installed')
   return {
     fetchMock,
     history: windowMock.history,
     location,
     plausible: windowMock.plausible,
   }
+}
+
+function navigateTo(analytics: ReturnType<typeof loadPlausible>, path: string) {
+  analytics.location.href = `${analytics.location.origin}${path}`
+  analytics.location.pathname = path
+  analytics.history.pushState({}, '', path)
 }
 
 describe('Plausible analytics', () => {
@@ -95,6 +102,8 @@ describe('Plausible analytics', () => {
       'https://chat.tinfoil.sh/newchat?q=private',
     ],
     ['shared chat', 'https://chat.tinfoil.sh/share/chat-id#v2:throwaway-key'],
+    ['new chat trailing slash', 'https://chat.tinfoil.sh/newchat/?q=private'],
+    ['new chat repeated trailing slash', 'https://chat.tinfoil.sh/newchat//'],
     ['chat root', 'https://chat.tinfoil.sh/chat'],
     ['chat', 'https://chat.tinfoil.sh/chat/chat-id'],
     ['local chat', 'https://chat.tinfoil.sh/chat/local/chat-id'],
@@ -102,21 +111,38 @@ describe('Plausible analytics', () => {
   ])('does not send events from %s URLs', (_, url) => {
     const analytics = loadPlausible(url)
 
-    analytics.plausible?.('Chat Viewed')
+    analytics.plausible('Chat Viewed')
 
     expect(analytics.fetchMock).not.toHaveBeenCalled()
   })
 
-  it('stops sending events after navigating to a chat URL', () => {
-    const analytics = loadPlausible('https://chat.tinfoil.sh/signin')
-    expect(analytics.fetchMock).toHaveBeenCalledTimes(1)
+  it.each(['/chat/local/chat-id', '/newchat/'])(
+    'stops sending events after navigating to %s',
+    (privatePath) => {
+      const analytics = loadPlausible('https://chat.tinfoil.sh/signin')
+      expect(analytics.fetchMock).toHaveBeenCalledTimes(1)
 
-    analytics.location.href = 'https://chat.tinfoil.sh/chat/local/chat-id'
-    analytics.location.pathname = '/chat/local/chat-id'
-    analytics.history.pushState({}, '', '/chat/local/chat-id')
+      analytics.plausible('Sign In Viewed')
+      expect(analytics.fetchMock).toHaveBeenCalledTimes(2)
+      navigateTo(analytics, '/signup')
+      expect(
+        analytics.fetchMock.mock.calls.map(
+          ([, request]) => JSON.parse(request.body).n,
+        ),
+      ).toEqual(['pageview', 'Sign In Viewed', 'engagement', 'pageview'])
+      expect(
+        JSON.parse(analytics.fetchMock.mock.calls[3][1].body),
+      ).toMatchObject({
+        n: 'pageview',
+        u: 'https://chat.tinfoil.sh/signup',
+      })
 
-    expect(analytics.fetchMock).toHaveBeenCalledTimes(1)
-  })
+      navigateTo(analytics, privatePath)
+      analytics.plausible('Chat Viewed')
+
+      expect(analytics.fetchMock).toHaveBeenCalledTimes(4)
+    },
+  )
 
   it('continues sending pageviews from non-share routes', () => {
     const analytics = loadPlausible('https://chat.tinfoil.sh/shared')
@@ -147,17 +173,5 @@ describe('Plausible analytics', () => {
     const request = analytics.fetchMock.mock.calls[0][1]
     const body = JSON.parse(String(request.body)) as { r: string | null }
     expect(body.r).toBe('https://chat.tinfoil.sh/newchat')
-  })
-})
-
-describe('Plausible script integrity', () => {
-  it('matches the subresource integrity hash declared in _app', () => {
-    const app = readFileSync(
-      resolve(process.cwd(), 'src/pages/_app.tsx'),
-      'utf8',
-    )
-    const declared = app.match(/integrity="(sha384-[^"]+)"/)?.[1]
-    const actual = `sha384-${createHash('sha384').update(plausibleScript).digest('base64')}`
-    expect(declared).toBe(actual)
   })
 })

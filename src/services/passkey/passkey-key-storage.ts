@@ -1,13 +1,9 @@
 /**
  * Passkey Key Storage — enclave-backed.
  *
- * The legacy implementation talked to `/api/passkey-credentials/` and
- * persisted a JSONB array of credentials directly. After Phase 2 the
- * enclave is the source of truth: passkey bundles live under
- * `user_key_bundles` rows scoped to a single `user_keys.key_id`. We
- * preserve this module's public exports verbatim so the
- * `usePasskeyBackup` hook and recovery flows keep importing the same
- * names, but the internals route through the enclave's
+ * The enclave is the source of truth: passkey bundles live under
+ * `user_key_bundles` rows scoped to a single `user_keys.key_id`.
+ * Storage and recovery operations route through the enclave's
  * `key-current` / `register-key` / `add-bundle` / `remove-bundle`
  * wire.
  *
@@ -15,8 +11,7 @@
  * iOS. `KeyBundle.alternatives` remains supported when reading legacy
  * generic envelopes so existing recovery history is not lost.
  *
- * The legacy decoder primitives (`encryptKeyBundle`,
- * `decryptKeyBundle`) are pure client-side AES-256-GCM. Optimistic
+ * The legacy decoder `decryptKeyBundle` uses client-side AES-256-GCM. Optimistic
  * concurrency is enforced by the enclave: register-key uses
  * `if_match='*'` for first-time writes and returns
  * EXISTING_DATA_UNDER_OTHER_KEY when a key already exists;
@@ -25,7 +20,7 @@
  * enclave's `bundle_version` so callers that read them keep working.
  */
 
-import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
+import { base64ToUint8Array } from '@/utils/binary-codec'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
   decodeWrappedKeyRecord,
@@ -157,23 +152,6 @@ export class PasskeyCredentialConflictError extends Error {
 }
 
 // --- Crypto primitives -----------------------------------------------------
-
-export async function encryptKeyBundle(
-  kek: CryptoKey,
-  keys: KeyBundle,
-): Promise<{ iv: string; data: string }> {
-  const iv = crypto.getRandomValues(new Uint8Array(AES_GCM_IV_BYTES))
-  const plaintext = new TextEncoder().encode(JSON.stringify(keys))
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    kek,
-    plaintext,
-  )
-  return {
-    iv: uint8ArrayToBase64(iv),
-    data: uint8ArrayToBase64(new Uint8Array(ciphertext)),
-  }
-}
 
 export async function decryptKeyBundle(
   kek: CryptoKey,
@@ -476,15 +454,6 @@ export async function deletePasskeyCredential(
   }
 }
 
-export async function hasPasskeyCredentials(): Promise<boolean> {
-  try {
-    const entries = await loadPasskeyCredentials()
-    return entries.length > 0
-  } catch {
-    return false
-  }
-}
-
 export async function getPasskeyCredentialState(): Promise<PasskeyCredentialState> {
   try {
     const entries = await loadPasskeyCredentials()
@@ -523,7 +492,7 @@ export async function getPasskeyDeviceState(
 }
 
 /**
- * Persist the user's passkey-wrapped generic key envelope in the enclave.
+ * Persist the user's passkey-wrapped primary CEK in the enclave.
  * Behavior mirrors the legacy contract the
  * hook expects:
  *

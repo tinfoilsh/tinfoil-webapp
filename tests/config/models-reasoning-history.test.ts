@@ -40,15 +40,29 @@ describe('getReasoningHistoryPolicy', () => {
     ).toBe(REASONING_HISTORY_POLICIES.all)
   })
 
-  it('uses the strongest Auto candidate policy', () => {
+  it.each([
+    [
+      REASONING_HISTORY_POLICIES.none,
+      REASONING_HISTORY_POLICIES.toolCallOnly,
+      REASONING_HISTORY_POLICIES.all,
+    ],
+    [
+      REASONING_HISTORY_POLICIES.all,
+      REASONING_HISTORY_POLICIES.none,
+      REASONING_HISTORY_POLICIES.toolCallOnly,
+    ],
+    [
+      REASONING_HISTORY_POLICIES.toolCallOnly,
+      REASONING_HISTORY_POLICIES.all,
+      REASONING_HISTORY_POLICIES.none,
+    ],
+  ])('uses the strongest Auto candidate policy: %s, %s, %s', (...policies) => {
     expect(
       getReasoningHistoryPolicy({
         model: model('standard'),
-        autoCandidates: [
-          model('standard'),
-          model('glm', REASONING_HISTORY_POLICIES.toolCallOnly),
-          model('kimi-k3', REASONING_HISTORY_POLICIES.all),
-        ],
+        autoCandidates: policies.map((policy, index) =>
+          model(`candidate-${index}`, policy),
+        ),
       }),
     ).toBe(REASONING_HISTORY_POLICIES.all)
   })
@@ -64,11 +78,13 @@ describe('getReasoningHistoryPolicy', () => {
     )
   })
 
-  it('uses the smallest Auto candidate context window', () => {
-    const candidates = [
-      model('large', undefined, 256000),
-      model('small', undefined, 32000),
-    ]
+  it.each([
+    [256000, 32000, undefined],
+    [32000, undefined, 256000],
+  ])('uses the smallest Auto candidate context window: %j', (...windows) => {
+    const candidates = windows.map((window, index) =>
+      model(`candidate-${index}`, undefined, window),
+    )
 
     expect(
       getResolvedModelContextWindowTokens({

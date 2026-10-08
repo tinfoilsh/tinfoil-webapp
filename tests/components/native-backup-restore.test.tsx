@@ -1,17 +1,21 @@
 import { NativeBackupRestore } from '@/components/chat/native-backup-restore'
-import type { NativeRestoreResult } from '@/services/native-backup/orchestrate'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type {
+  NativeRestoreResult,
+  restoreNativeBackup,
+} from '@/services/native-backup/orchestrate'
+import type { ImportStatusResponse } from '@/services/sync-enclave/sync-api'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { startTransition, useEffect, useLayoutEffect } from 'react'
+import { createRoot } from 'react-dom/client'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ restore: vi.fn() }))
-vi.mock('@/services/native-backup/orchestrate', () => ({
-  NATIVE_RESTORE_KINDS: [
-    'projects',
-    'project_documents',
-    'cloud_chats',
-    'local_chats',
-    'attachments',
-  ],
+const mocks = vi.hoisted(() => ({
+  restore: vi.fn<typeof restoreNativeBackup>(),
+}))
+vi.mock('@/services/native-backup/orchestrate', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('@/services/native-backup/orchestrate')
+  >()),
   restoreNativeBackup: mocks.restore,
 }))
 
@@ -58,16 +62,49 @@ const report = {
   },
 } satisfies NativeRestoreResult['report']
 
-function selectArchive(container: HTMLElement) {
-  const input = container.querySelector('input[type="file"]')!
-  fireEvent.change(input, {
-    target: { files: [new File(['backup'], 'backup.zip')] },
+const pendingReport: NativeRestoreResult['report'] = {
+  ...report,
+  projects: { ...report.projects, imported: 0 },
+  local_chats: { ...report.local_chats, imported: 0 },
+}
+
+const runningStatus: ImportStatusResponse = {
+  status: 'running',
+  phase: 'projects',
+  imported: 0,
+  failed: 0,
+  total: 1,
+}
+
+function selectArchive(
+  container: HTMLElement,
+  archive = new File(['backup'], 'backup.zip'),
+) {
+  const input = container.querySelector<HTMLInputElement>('input[type="file"]')!
+  const transfer = new DataTransfer()
+  transfer.items.add(archive)
+  input.files = transfer.files
+  fireEvent.change(input)
+  return input
+}
+
+function startEnclaveRestore() {
+  let finish!: (result: NativeRestoreResult) => void
+  const pending = new Promise<NativeRestoreResult>((resolve) => {
+    finish = resolve
   })
+  mocks.restore.mockImplementationOnce(
+    (_file, _owner, _signal, events = {}) => {
+      events.onStarted?.(runningStatus)
+      return pending
+    },
+  )
+  return finish
 }
 
 describe('NativeBackupRestore', () => {
   beforeEach(() => {
-    mocks.restore.mockReset()
+    mocks.restore.mockReset().mockRejectedValue(new Error('Unexpected restore'))
   })
 
   it('honors its availability gate and displays the plaintext warning', () => {
@@ -85,9 +122,40 @@ describe('NativeBackupRestore', () => {
     mocks.restore.mockResolvedValue({
       state: 'partial' as const,
       report: {
-        ...report,
+        projects: {
+          ...report.projects,
+          imported: 1,
+          skipped: 2,
+          failed: 3,
+          blocked: 4,
+        },
+        project_documents: {
+          ...report.project_documents,
+          imported: 5,
+          skipped: 6,
+          failed: 7,
+          blocked: 8,
+        },
+        cloud_chats: {
+          ...report.cloud_chats,
+          imported: 9,
+          skipped: 10,
+          failed: 11,
+          blocked: 12,
+        },
+        local_chats: {
+          ...report.local_chats,
+          imported: 13,
+          skipped: 14,
+          failed: 15,
+          blocked: 16,
+        },
         attachments: {
           ...report.attachments,
+          imported: 17,
+          skipped: 18,
+          failed: 19,
+          blocked: 20,
           warnings: ['thumbnail unavailable'],
         },
       },
@@ -110,6 +178,15 @@ describe('NativeBackupRestore', () => {
     ).toBeVisible()
     expect(screen.queryByText('Backup restored successfully.')).toBeNull()
     expect(updated).toHaveBeenCalledOnce()
+    expect(
+      screen.getAllByRole('listitem').map((row) => row.textContent),
+    ).toEqual([
+      'projects: 1 imported, 2 skipped, 3 failed, 4 blocked',
+      'project documents: 5 imported, 6 skipped, 7 failed, 8 blocked',
+      'cloud chats: 9 imported, 10 skipped, 11 failed, 12 blocked',
+      'local chats: 13 imported, 14 skipped, 15 failed, 16 blocked',
+      'attachments: 17 imported, 18 skipped, 19 failed, 20 blocked, warnings: thumbnail unavailable',
+    ])
   })
 
   it('reports a failed asynchronous chat reload instead of success', async () => {
@@ -143,7 +220,9 @@ describe('NativeBackupRestore', () => {
       (_file: File, _owner: string, signal: AbortSignal) =>
         new Promise<NativeRestoreResult>((resolve, reject) => {
           signal.addEventListener('abort', () => reject(signal.reason))
-          queueMicrotask(() => resolve({ state: 'pending', report }))
+          queueMicrotask(() =>
+            resolve({ state: 'pending', report: pendingReport }),
+          )
         }),
     )
     const first = render(<NativeBackupRestore available ownerId="owner" />)
@@ -170,29 +249,20 @@ describe('NativeBackupRestore', () => {
   })
 
   it('closes without aborting after the enclave restore starts', async () => {
-    let finish!: (result: NativeRestoreResult) => void
-    const runRestore = mocks.restore.mockImplementation(
-      (
-        _file: File,
-        _owner: string,
-        _signal: AbortSignal,
-        events: { onStarted(status: any): void },
-      ) => {
-        events.onStarted({ status: 'running', phase: 'projects' })
-        return new Promise<NativeRestoreResult>((resolve) => (finish = resolve))
-      },
-    )
+    const finish = startEnclaveRestore()
     const { container } = render(
       <NativeBackupRestore available ownerId="owner" />,
     )
     selectArchive(container)
     fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
 
-    expect(runRestore.mock.calls[0][2].aborted).toBe(false)
+    expect(mocks.restore.mock.calls[0][2].aborted).toBe(false)
     expect(screen.getByText(/enclave restore continues/i)).toHaveTextContent(
       "We'll email you",
     )
-    finish({ state: 'pending', report })
+    await act(async () => {
+      finish({ state: 'pending', report: pendingReport })
+    })
   })
 
   it('aborts a started restore when its owner changes', async () => {
@@ -201,9 +271,9 @@ describe('NativeBackupRestore', () => {
         _file: File,
         _owner: string,
         signal: AbortSignal,
-        events: { onStarted(status: any): void },
+        events: Parameters<typeof restoreNativeBackup>[3] = {},
       ) => {
-        events.onStarted({ status: 'running' })
+        events.onStarted?.(runningStatus)
         return new Promise<NativeRestoreResult>((_resolve, reject) =>
           signal.addEventListener('abort', () => reject(signal.reason)),
         )
@@ -218,19 +288,298 @@ describe('NativeBackupRestore', () => {
     expect(runRestore.mock.calls[0][2].aborted).toBe(true)
   })
 
-  it('surfaces a terminal failure after the progress view is closed', async () => {
-    let finish!: (result: NativeRestoreResult) => void
-    mocks.restore.mockImplementation(
-      (
-        _file: File,
-        _owner: string,
-        _signal: AbortSignal,
-        events: { onStarted(status: any): void },
-      ) => {
-        events.onStarted({ status: 'running' })
-        return new Promise<NativeRestoreResult>((resolve) => (finish = resolve))
-      },
+  it('refreshes chats after an enclave-started restore is unmounted', async () => {
+    const finish = startEnclaveRestore()
+    const updated = vi.fn()
+    const view = render(
+      <NativeBackupRestore
+        available
+        ownerId="owner"
+        onChatsUpdated={updated}
+      />,
     )
+    selectArchive(view.container)
+    view.unmount()
+    expect(mocks.restore.mock.calls[0][2].aborted).toBe(false)
+    await act(async () => {
+      finish({ state: 'completed', report })
+    })
+    expect(updated).toHaveBeenCalledTimes(1)
+  })
+
+  it('aborts an upload on unmount before the enclave restore starts', async () => {
+    let finish!: (value: NativeRestoreResult) => void
+    mocks.restore.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }),
+    )
+    const updated = vi.fn()
+    const view = render(
+      <NativeBackupRestore
+        available
+        ownerId="owner"
+        onChatsUpdated={updated}
+      />,
+    )
+    selectArchive(view.container)
+    expect(mocks.restore).toHaveBeenCalledOnce()
+    view.unmount()
+    expect(mocks.restore.mock.calls[0][2].aborted).toBe(true)
+    await act(async () => {
+      finish({ state: 'completed', report })
+    })
+    expect(updated).not.toHaveBeenCalled()
+  })
+
+  it.each(['owner change', 'availability loss'] as const)(
+    'fences a restore at commit before passive effects on %s',
+    async (change) => {
+      const finish = startEnclaveRestore()
+      const lifecycle: string[] = []
+      const abortedAtCommit: boolean[] = []
+      const updated = vi.fn(() => {
+        lifecycle.push('refresh')
+      })
+      let passiveFinished!: () => void
+      const passive = new Promise<void>((resolve) => {
+        passiveFinished = resolve
+      })
+      function Owner({ changed }: { changed: boolean }) {
+        useLayoutEffect(() => {
+          if (!changed) return
+          lifecycle.push('commit')
+          abortedAtCommit.push(mocks.restore.mock.calls[0][2].aborted)
+          queueMicrotask(() => {
+            lifecycle.push('completion')
+            finish({ state: 'completed', report })
+          })
+        }, [changed])
+        useEffect(() => {
+          if (!changed) return
+          lifecycle.push('passive')
+          passiveFinished()
+        }, [changed])
+        return (
+          <NativeBackupRestore
+            available={!(changed && change === 'availability loss')}
+            ownerId={
+              changed && change === 'owner change' ? 'owner-b' : 'owner-a'
+            }
+            onChatsUpdated={updated}
+          />
+        )
+      }
+      const container = document.createElement('div')
+      document.body.append(container)
+      const root = createRoot(container)
+      try {
+        await act(async () => {
+          root.render(<Owner changed={false} />)
+        })
+        selectArchive(container)
+        expect(mocks.restore).toHaveBeenCalledOnce()
+        // act flushes passive effects synchronously, hiding this commit boundary.
+        vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', false)
+        startTransition(() => {
+          root.render(<Owner changed />)
+        })
+        await passive
+        vi.unstubAllGlobals()
+        await act(async () => {})
+        expect(lifecycle).toContain('commit')
+        expect(lifecycle).toContain('completion')
+        expect(lifecycle).toContain('passive')
+        expect(lifecycle.indexOf('commit')).toBeLessThan(
+          lifecycle.indexOf('completion'),
+        )
+        expect(updated, lifecycle.join(' -> ')).not.toHaveBeenCalled()
+        expect(abortedAtCommit).toEqual([true])
+        expect(mocks.restore.mock.calls[0][2].aborted).toBe(true)
+        expect(container.querySelector('[role="status"]')).toBeNull()
+      } finally {
+        vi.unstubAllGlobals()
+        await act(async () => {
+          root.unmount()
+        })
+        container.remove()
+      }
+    },
+  )
+
+  it.each(['late completion', 'abort rejection'] as const)(
+    'clears the selected archive immediately on owner change before %s',
+    async (outcome) => {
+      let finishRestore!: (value: NativeRestoreResult) => void
+      mocks.restore.mockImplementationOnce(
+        (_file, _owner, signal) =>
+          new Promise((resolve, reject) => {
+            finishRestore = resolve
+            if (outcome === 'abort rejection') {
+              signal.addEventListener('abort', () => reject(signal.reason), {
+                once: true,
+              })
+            }
+          }),
+      )
+      const updated = vi.fn()
+      const archive = new File(['owner-a-backup'], 'backup.zip')
+      const view = render(
+        <NativeBackupRestore
+          available
+          ownerId="owner-a"
+          onChatsUpdated={updated}
+        />,
+      )
+      const input = selectArchive(view.container, archive)
+      expect(input.files).toHaveLength(1)
+      expect(input.files?.[0]).toBe(archive)
+      expect(input.value).not.toBe('')
+
+      view.rerender(
+        <NativeBackupRestore
+          available
+          ownerId="owner-b"
+          onChatsUpdated={updated}
+        />,
+      )
+      const invalidatedSelection = {
+        value: input.value,
+        fileCount: input.files?.length,
+      }
+      expect(mocks.restore.mock.calls[0][2].aborted).toBe(true)
+      await act(async () => {
+        if (outcome === 'late completion')
+          finishRestore({ state: 'completed', report })
+      })
+
+      expect(invalidatedSelection).toEqual({ value: '', fileCount: 0 })
+      expect(input.value).toBe('')
+      expect(input.files).toHaveLength(0)
+      expect(updated).not.toHaveBeenCalled()
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: 'Restore Tinfoil Backup' }),
+      ).toBeEnabled()
+
+      mocks.restore.mockResolvedValueOnce({ state: 'completed', report })
+      selectArchive(view.container, archive)
+      expect(mocks.restore).toHaveBeenLastCalledWith(
+        archive,
+        'owner-b',
+        expect.any(AbortSignal),
+        expect.objectContaining({
+          onStarted: expect.any(Function),
+          onPhase: expect.any(Function),
+        }),
+      )
+      expect(
+        await screen.findByText('Backup restored successfully.'),
+      ).toBeVisible()
+      expect(updated).toHaveBeenCalledTimes(1)
+      expect(input.value).toBe('')
+      expect(input.files).toHaveLength(0)
+    },
+  )
+
+  it.each(['restore', 'chat refresh', 'abort rejection'] as const)(
+    'ignores old-owner completion while waiting for %s',
+    async (pendingStage) => {
+      let finishRestore!: (value: NativeRestoreResult) => void
+      let finishRefresh!: () => void
+      mocks.restore.mockImplementationOnce(
+        (_file, _owner, signal) =>
+          new Promise<NativeRestoreResult>((resolve, reject) => {
+            finishRestore = resolve
+            if (pendingStage === 'abort rejection') {
+              signal.addEventListener('abort', () => reject(signal.reason), {
+                once: true,
+              })
+            }
+          }),
+      )
+      const updated = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+      if (pendingStage === 'chat refresh') {
+        updated.mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              finishRefresh = resolve
+            }),
+        )
+      }
+      const view = render(
+        <NativeBackupRestore
+          available
+          ownerId="owner-a"
+          onChatsUpdated={updated}
+        />,
+      )
+      selectArchive(view.container)
+      if (pendingStage === 'chat refresh') {
+        await act(async () => {
+          finishRestore({ state: 'completed', report })
+        })
+        expect(updated).toHaveBeenCalledTimes(1)
+      }
+      view.rerender(
+        <NativeBackupRestore
+          available
+          ownerId="owner-b"
+          onChatsUpdated={updated}
+        />,
+      )
+      expect(mocks.restore.mock.calls[0][2].aborted).toBe(true)
+      expect(
+        screen.getByRole('button', { name: 'Restore Tinfoil Backup' }),
+      ).toBeEnabled()
+      let finishNewRestore!: (value: NativeRestoreResult) => void
+      mocks.restore.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishNewRestore = resolve
+          }),
+      )
+      const successorArchive = new File(
+        ['owner-b-backup'],
+        'owner-b-backup.zip',
+      )
+      const successorInput = selectArchive(view.container, successorArchive)
+      const successorValue = successorInput.value
+      expect(successorValue).not.toBe('')
+      expect(successorInput.files?.[0]).toBe(successorArchive)
+      await act(async () => {
+        if (pendingStage === 'restore')
+          finishRestore({ state: 'completed', report })
+        else if (pendingStage === 'chat refresh') finishRefresh()
+      })
+      expect(updated).toHaveBeenCalledTimes(
+        pendingStage === 'chat refresh' ? 1 : 0,
+      )
+      expect(successorInput.value).toBe(successorValue)
+      expect(successorInput.files).toHaveLength(1)
+      expect(successorInput.files?.[0]).toBe(successorArchive)
+      expect(
+        screen.queryByText('Backup restored successfully.'),
+      ).not.toBeInTheDocument()
+      expect(screen.queryByRole('list')).not.toBeInTheDocument()
+      expect(
+        screen.getByRole('button', { name: 'Restore Tinfoil Backup' }),
+      ).toBeDisabled()
+      await act(async () => {
+        finishNewRestore({ state: 'completed', report })
+      })
+      expect(updated).toHaveBeenCalledTimes(
+        pendingStage === 'chat refresh' ? 2 : 1,
+      )
+      expect(screen.getByText('Backup restored successfully.')).toBeVisible()
+      expect(successorInput.value).toBe('')
+      expect(successorInput.files).toHaveLength(0)
+    },
+  )
+
+  it('surfaces a terminal failure after the progress view is closed', async () => {
+    const finish = startEnclaveRestore()
     const view = render(<NativeBackupRestore available ownerId="owner" />)
     selectArchive(view.container)
     fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
@@ -247,7 +596,7 @@ describe('NativeBackupRestore', () => {
     mocks.restore.mockResolvedValue({
       state: 'interrupted',
       jobId: 'job-1',
-      report,
+      report: pendingReport,
     })
     const { container } = render(
       <NativeBackupRestore available ownerId="owner" />,
@@ -261,18 +610,7 @@ describe('NativeBackupRestore', () => {
   })
 
   it('replaces the dismissed progress message after completion', async () => {
-    let finish!: (result: NativeRestoreResult) => void
-    mocks.restore.mockImplementation(
-      (
-        _file: File,
-        _owner: string,
-        _signal: AbortSignal,
-        events: { onStarted(status: any): void },
-      ) => {
-        events.onStarted({ status: 'running' })
-        return new Promise<NativeRestoreResult>((resolve) => (finish = resolve))
-      },
-    )
+    const finish = startEnclaveRestore()
     const view = render(<NativeBackupRestore available ownerId="owner" />)
     selectArchive(view.container)
     fireEvent.click(await screen.findByRole('button', { name: 'Close' }))

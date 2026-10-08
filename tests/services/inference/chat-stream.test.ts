@@ -29,19 +29,16 @@ async function collectAll(response: Response): Promise<ChatChunk[]> {
 }
 
 describe('chatChunkStreamFromSSE', () => {
-  it('parses basic SSE data lines', async () => {
-    const results = await collectAll(
-      mockResponse(['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n']),
-    )
-    expect(results).toHaveLength(1)
-    expect(results[0].choices?.[0]?.delta?.content).toBe('hi')
-  })
-
   it('handles multiple events in one chunk', async () => {
     const results = await collectAll(
-      mockResponse(['data: {"id":"1"}\n\ndata: {"id":"2"}\n\n']),
+      mockResponse([
+        'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: {"id":"2"}\n\n',
+      ]),
     )
-    expect(results).toEqual([{ id: '1' }, { id: '2' }])
+    expect(results).toEqual([
+      { choices: [{ delta: { content: 'hi' } }] },
+      { id: '2' },
+    ])
   })
 
   it('reassembles events split across chunks', async () => {
@@ -80,7 +77,9 @@ describe('chatChunkStreamFromSSE', () => {
 
   it('skips non-data and empty lines', async () => {
     const results = await collectAll(
-      mockResponse(['\n\nevent: message\ndata: {"id":"1"}\n\n\n\n']),
+      mockResponse([
+        '\n\n{"id":"not-data"}\nevent: message\ndata:\ndata: {"id":"1"}\n\n\n\n',
+      ]),
     )
     expect(results).toEqual([{ id: '1' }])
   })

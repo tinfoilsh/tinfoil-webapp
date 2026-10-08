@@ -1,6 +1,6 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { useChatMessaging } from '@/components/chat/hooks/use-chat-messaging'
-import type { Chat } from '@/components/chat/types'
+import type { Chat, TimelineToolCallBlock } from '@/components/chat/types'
 import type { ChatChunk } from '@/services/inference/chat-stream'
 import { act, renderHook } from '@testing-library/react'
 import { useState } from 'react'
@@ -546,5 +546,109 @@ describe('useChatMessaging message edits', () => {
 
     expect(result.current.currentChat.messages).toHaveLength(1)
     expect(sessionSaveMock).not.toHaveBeenCalled()
+  })
+
+  it('resolves only the selected input tool and continues with the stamped history', async () => {
+    const resolvedAt = new Date('2026-09-01T12:00:00.000Z').getTime()
+    const selectedTool: TimelineToolCallBlock = {
+      type: 'tool_call',
+      id: 'input-block',
+      toolCallId: 'input-choice',
+      name: 'render_message_compose',
+      arguments:
+        '{"channel":"message","variants":[{"label":"Detailed","body":"Detailed"}]}',
+    }
+    const otherTool: TimelineToolCallBlock = {
+      ...selectedTool,
+      id: 'other-block',
+      toolCallId: 'other-choice',
+    }
+    const resolvedTool: TimelineToolCallBlock = {
+      ...selectedTool,
+      id: 'resolved-block',
+      toolCallId: 'previous-choice',
+      resolvedAt: new Date('2026-09-01T11:00:00.000Z').getTime(),
+      resolution: { text: 'Brief', data: { choice: 'brief' } },
+    }
+    const chat = makeChat()
+    chat.messages[3] = {
+      ...chat.messages[3],
+      timeline: [otherTool, selectedTool, resolvedTool],
+    }
+    const originalSnapshot = structuredClone({
+      messages: chat.messages,
+      otherTool,
+      selectedTool,
+      resolvedTool,
+    })
+    const selection = { choice: 'detailed' }
+    const resolution = { text: 'Detailed', data: selection, resolvedAt }
+    const continuationUserMessage = {
+      role: 'user',
+      content: 'Detailed',
+      turnId: expect.any(String),
+      attachments: undefined,
+      timestamp: expect.any(Date),
+      quote: undefined,
+    }
+    const expectedHistory: Chat['messages'] = [
+      ...originalSnapshot.messages.slice(0, -1),
+      {
+        ...originalSnapshot.messages[3],
+        timeline: [
+          originalSnapshot.otherTool,
+          {
+            ...originalSnapshot.selectedTool,
+            resolvedAt,
+            resolution,
+          },
+          originalSnapshot.resolvedTool,
+        ],
+      },
+    ]
+    const stream = createOpenStream()
+    stream.send({ choices: [{ delta: { content: 'Detailed continuation' } }] })
+    stream.send({ choices: [{ delta: {}, finish_reason: 'stop' }] })
+    stream.close()
+    sendChatStreamMock.mockResolvedValue(stream.stream)
+    const { result } = renderMessaging(chat)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(resolvedAt)
+    try {
+      await act(async () => {
+        result.current.messaging.resolveInputToolCall(
+          selectedTool.toolCallId,
+          'Detailed',
+          selection,
+        )
+      })
+      await vi.waitFor(() => {
+        expect(sessionSaveMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            messages: [
+              ...expectedHistory,
+              continuationUserMessage,
+              expect.objectContaining({
+                role: 'assistant',
+                content: 'Detailed continuation',
+              }),
+            ],
+          }),
+        )
+      })
+      expect(sendChatStreamMock).toHaveBeenCalledOnce()
+      const request = sendChatStreamMock.mock.calls[0][0] as {
+        updatedMessages: Chat['messages']
+      }
+      expect(request.updatedMessages).toEqual([
+        ...expectedHistory,
+        continuationUserMessage,
+      ])
+      expect(result.current.currentChat.messages.slice(0, -1)).toEqual(
+        request.updatedMessages,
+      )
+      expect(chat.messages).toEqual(originalSnapshot.messages)
+    } finally {
+      clock.mockRestore()
+    }
   })
 })

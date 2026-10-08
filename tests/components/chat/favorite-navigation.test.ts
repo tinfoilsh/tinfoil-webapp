@@ -2,25 +2,39 @@ import { openFavoriteChat } from '@/components/chat/favorite-navigation'
 import { describe, expect, it, vi } from 'vitest'
 
 describe('openFavoriteChat', () => {
-  it('enters project context before opening the chat', async () => {
-    const calls: string[] = []
+  function createDeferredProjectLoad() {
+    let resolveProject!: (entered: boolean) => void
+    const projectLoad = new Promise<boolean>((resolve) => {
+      resolveProject = resolve
+    })
+    return { projectLoad, resolveProject }
+  }
 
-    const opened = await openFavoriteChat({
+  it('enters project context before opening the chat', async () => {
+    const { projectLoad, resolveProject } = createDeferredProjectLoad()
+    const enterProjectMode = vi.fn(() => projectLoad)
+    const exitProjectMode = vi.fn()
+    const openChat = vi.fn(async () => {})
+    const isCurrent = () => true
+
+    const opening = openFavoriteChat({
       favorite: { id: 'chat-a', projectId: 'project-a' },
       isProjectMode: false,
-      enterProjectMode: async () => {
-        calls.push('project')
-        return true
-      },
-      exitProjectMode: vi.fn(),
-      openChat: async () => {
-        calls.push('chat')
-      },
-      isCurrent: () => true,
+      enterProjectMode,
+      exitProjectMode,
+      openChat,
+      isCurrent,
     })
 
-    expect(opened).toBe(true)
-    expect(calls).toEqual(['project', 'chat'])
+    expect(enterProjectMode).toHaveBeenCalledExactlyOnceWith(
+      'project-a',
+      isCurrent,
+    )
+    expect(openChat).not.toHaveBeenCalled()
+    resolveProject(true)
+    await expect(opening).resolves.toBe(true)
+    expect(openChat).toHaveBeenCalledExactlyOnceWith('chat-a')
+    expect(exitProjectMode).not.toHaveBeenCalled()
   })
 
   it('does not open after project failure or superseded navigation', async () => {
@@ -67,10 +81,7 @@ describe('openFavoriteChat', () => {
   })
 
   it('does not open when normal navigation invalidates a pending favorite', async () => {
-    let resolveProject: ((entered: boolean) => void) | undefined
-    const projectLoad = new Promise<boolean>((resolve) => {
-      resolveProject = resolve
-    })
+    const { projectLoad, resolveProject } = createDeferredProjectLoad()
     let generation = 0
     const favoriteGeneration = ++generation
     const openChat = vi.fn(async () => {})
@@ -84,7 +95,7 @@ describe('openFavoriteChat', () => {
     })
 
     generation += 1
-    resolveProject?.(true)
+    resolveProject(true)
 
     await expect(opening).resolves.toBe(false)
     expect(openChat).not.toHaveBeenCalled()

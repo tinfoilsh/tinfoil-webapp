@@ -16,14 +16,6 @@ describe('DeletedChatsTracker', () => {
     expect(tracker.isDeleted('chat-1')).toBe(true)
   })
 
-  it('reports when removing a remote deletion lifts the tombstone', () => {
-    const tracker = new DeletedChatsTracker()
-    tracker.markAsRemoteDeleted('chat-1')
-
-    expect(tracker.removeRemoteDeletion('chat-1')).toBe(true)
-    expect(tracker.isDeleted('chat-1')).toBe(false)
-  })
-
   it('keeps legacy string tombstones until an authoritative upsert', () => {
     sessionStorage.setItem(SYNC_DELETED_CHATS, JSON.stringify(['chat-1']))
     const tracker = new DeletedChatsTracker()

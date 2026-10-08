@@ -1,7 +1,5 @@
-import {
-  isPrfSupported,
-  resetPrfSupportCache,
-} from '@/services/passkey/prf-support'
+import { resetPasskeyCapabilityCache } from '@/services/passkey/kit'
+import { isPrfSupported } from '@/services/passkey/prf-support'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 describe('prf-support', () => {
@@ -9,7 +7,7 @@ describe('prf-support', () => {
   const originalCredentials = navigator.credentials
 
   beforeEach(() => {
-    resetPrfSupportCache()
+    resetPasskeyCapabilityCache()
     Object.defineProperty(navigator, 'credentials', {
       value: { create: vi.fn(), get: vi.fn() },
       writable: true,
@@ -150,8 +148,11 @@ describe('prf-support', () => {
     expect(mockAvailable).toHaveBeenCalledTimes(1)
   })
 
-  it('should reset cache when resetPrfSupportCache is called', async () => {
-    const mockAvailable = vi.fn().mockResolvedValue(true)
+  it('reprobes capability after the cache is reset', async () => {
+    const mockAvailable = vi
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false)
     Object.defineProperty(window, 'PublicKeyCredential', {
       value: {
         isUserVerifyingPlatformAuthenticatorAvailable: mockAvailable,
@@ -160,11 +161,12 @@ describe('prf-support', () => {
       configurable: true,
     })
 
-    await isPrfSupported()
+    await expect(isPrfSupported()).resolves.toBe(true)
+    await expect(isPrfSupported()).resolves.toBe(true)
     expect(mockAvailable).toHaveBeenCalledTimes(1)
 
-    resetPrfSupportCache()
-    await isPrfSupported()
+    resetPasskeyCapabilityCache()
+    await expect(isPrfSupported()).resolves.toBe(false)
     expect(mockAvailable).toHaveBeenCalledTimes(2)
   })
 })

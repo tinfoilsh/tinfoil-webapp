@@ -244,11 +244,18 @@ describe('useCloudPagination', () => {
       nextToken?: string
       saved: number
     }) => void
-    fetchAndStorePage.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveOldPage = resolve
-      }),
-    )
+    let resolveNewPage!: typeof resolveOldPage
+    fetchAndStorePage
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOldPage = resolve
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveNewPage = resolve
+        }),
+      )
     const { result, rerender } = renderHook(
       ({ userId }: { userId: string }) =>
         useCloudPagination({
@@ -267,14 +274,35 @@ describe('useCloudPagination', () => {
     rerender({ userId: 'user-2' })
     await waitFor(() => expect(result.current.isInitialized).toBe(true))
 
+    let newRequest!: ReturnType<typeof result.current.loadMore>
+    act(() => {
+      newRequest = result.current.loadMore()
+    })
+    expect(result.current.isLoading).toBe(true)
+    await act(async () => {
+      resolveOldPage({ hasMore: false, saved: 20 })
+      await oldRequest
+    })
+
+    expect(result.current.isLoading).toBe(true)
+    expect(result.current.hasMore).toBe(true)
     await act(() => result.current.loadMore())
-    resolveOldPage({ hasMore: false, saved: 20 })
-    await act(() => oldRequest)
 
     expect(fetchAndStorePage).toHaveBeenCalledTimes(2)
     expect(fetchAndStorePage).toHaveBeenLastCalledWith({
       limit: 20,
       continuationToken: 'user-2-page-2',
+    })
+    await act(async () => {
+      resolveNewPage({ hasMore: true, nextToken: 'user-2-page-3', saved: 20 })
+      await newRequest
+    })
+    expect(result.current.isLoading).toBe(false)
+    await act(() => result.current.loadMore())
+    expect(fetchAndStorePage).toHaveBeenCalledTimes(3)
+    expect(fetchAndStorePage).toHaveBeenLastCalledWith({
+      limit: 20,
+      continuationToken: 'user-2-page-3',
     })
   })
 })

@@ -61,13 +61,13 @@ function renderSidebar(
         isOpen
         setIsOpen={vi.fn()}
         isDarkMode={false}
+        isClient
+        pixelateSidebarChatTitles={false}
         cloudSyncEnabled
         isPremium
         windowWidth={1200}
         project={project}
         onExitProject={onExitProject}
-        onProjectUpdated={vi.fn()}
-        onProjectDeleted={vi.fn()}
         onSelectChat={vi.fn()}
         onNewChat={vi.fn()}
         {...overrides}
@@ -79,6 +79,7 @@ function renderSidebar(
 
 describe('project sidebar layout', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     sessionStorage.clear()
   })
 
@@ -99,8 +100,23 @@ describe('project sidebar layout', () => {
     }
   })
 
-  it('keeps the project chat description outside the inner chat scroller', () => {
-    renderSidebar()
+  it('keeps the project chat description outside the populated chat scroller', () => {
+    renderSidebar({
+      chats: [
+        {
+          id: 'first',
+          title: 'First project chat',
+          messageCount: 2,
+          createdAt: new Date('2026-09-02T12:00:00Z'),
+        },
+        {
+          id: 'second',
+          title: 'Second project chat',
+          messageCount: 1,
+          createdAt: new Date('2026-09-01T12:00:00Z'),
+        },
+      ],
+    })
     const description = screen.getByText(
       'Chats in this project share context and documents.',
     )
@@ -113,6 +129,9 @@ describe('project sidebar layout', () => {
       'overflow-y-auto',
       'overscroll-contain',
     )
+    const list = screen.getByRole('list')
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    expect(description.nextElementSibling).toContainElement(list)
   })
 
   it('orders project chats by update time with creation time as the fallback', () => {

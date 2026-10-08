@@ -18,8 +18,10 @@ describe('WebSearchProcess', () => {
     expect(screen.getByRole('button')).toHaveTextContent(
       'Search failed for "xxx"',
     )
-    expect(
-      container.querySelector('button > span[aria-hidden="true"]'),
-    ).toHaveClass('invisible')
+    const slot = container.querySelector('button > span[aria-hidden="true"]')
+    expect(slot).toHaveClass('invisible', 'h-3.5', 'w-3.5', 'shrink-0')
+    expect(slot).not.toHaveClass('hidden')
+    expect(slot).not.toHaveStyle({ display: 'none' })
+    expect(screen.getByRole('button')).toBeDisabled()
   })
 })

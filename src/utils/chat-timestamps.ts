@@ -15,12 +15,6 @@ function extractReverseTimestamp(conversationId?: string): number | undefined {
   return timestamp
 }
 
-export function getConversationTimestampFromId(
-  conversationId: string,
-): number | undefined {
-  return extractReverseTimestamp(conversationId)
-}
-
 export function ensureValidISODate(
   value: string | number | Date | null | undefined,
   conversationId?: string,
@@ -34,7 +28,8 @@ export function ensureValidISODate(
 
   const fallback = extractReverseTimestamp(conversationId)
   if (fallback !== undefined) {
-    return new Date(fallback).toISOString()
+    const date = new Date(fallback)
+    if (!Number.isNaN(date.getTime())) return date.toISOString()
   }
 
   return new Date().toISOString()

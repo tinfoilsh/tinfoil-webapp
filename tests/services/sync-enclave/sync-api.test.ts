@@ -1,6 +1,11 @@
 import { resetSyncEnclaveClient } from '@/services/sync-enclave/sync-enclave-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const CEK_B64 = 'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo='
+const ALTERNATIVE_CEK_B64 = Buffer.from(new Uint8Array(32).fill(0xbb)).toString(
+  'base64',
+)
+
 // vi.mock factories are hoisted above module-scope consts; vi.hoisted
 // guarantees the shared mock state exists when the factory runs.
 const { mockReady, mockFetch } = vi.hoisted(() => ({
@@ -50,7 +55,9 @@ function lastHeaders(): Headers {
 describe('sync-api (enclave JSON-RPC)', () => {
   beforeEach(() => {
     resetSyncEnclaveClient()
-    mockFetch.mockReset()
+    mockFetch
+      .mockReset()
+      .mockRejectedValue(new Error('Unexpected secure request'))
   })
 
   afterEach(() => {
@@ -66,22 +73,24 @@ describe('sync-api (enclave JSON-RPC)', () => {
     const resp = await api.push({
       scope: 'chat',
       id: 'chat-1',
-      keyB64: api.hexToB64('aa'.repeat(32)),
+      keyB64: CEK_B64,
       plaintext,
       ifMatch: null,
       idempotencyKey: 'idem-1',
+      metadata: { projectId: null, messageCount: 1 },
     })
-    expect(resp.ok).toBe(true)
+    expect(resp).toEqual({ ok: true, etag: '1', key_id: 'aa'.repeat(16) })
     const [path, init] = lastRequest()
     expect(path).toBe('/v1/sync/push')
     expect(init?.method).toBe('POST')
     expect(lastBody()).toEqual({
       scope: 'chat',
       id: 'chat-1',
-      key: api.hexToB64('aa'.repeat(32)),
-      plaintext: api.bytesToBase64(plaintext),
+      key: CEK_B64,
+      plaintext: 'aGVsbG8=',
       if_match: null,
       idempotency_key: 'idem-1',
+      metadata: { projectId: null, messageCount: 1 },
     })
   })
 
@@ -91,15 +100,23 @@ describe('sync-api (enclave JSON-RPC)', () => {
     await api.pull({
       scope: 'chat',
       ids: ['c1', 'c2'],
-      keys: [{ key: api.hexToB64('aa'.repeat(32)) }],
+      keys: [
+        { key: CEK_B64, key_id: 'primary-hint' },
+        { key: ALTERNATIVE_CEK_B64 },
+      ],
     })
     expect(lastRequest()[0]).toBe('/v1/sync/pull')
-    const body = lastBody<{ ids: string[]; keys: Array<{ key: string }> }>()
-    expect(body.ids).toEqual(['c1', 'c2'])
-    expect(body.keys).toHaveLength(1)
+    expect(lastBody()).toEqual({
+      scope: 'chat',
+      ids: ['c1', 'c2'],
+      keys: [
+        { key: CEK_B64, key_id: 'primary-hint' },
+        { key: ALTERNATIVE_CEK_B64 },
+      ],
+    })
   })
 
-  it('normalizes nil pull pages and pullOne handles empty results', async () => {
+  it('normalizes nil pull pages for inventory and explicit IDs', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
     mockFetch.mockResolvedValueOnce(ok({ items: null, next_cursor: 'next' }))
 
@@ -122,8 +139,8 @@ describe('sync-api (enclave JSON-RPC)', () => {
 
     mockFetch.mockResolvedValueOnce(ok({ items: null }))
     await expect(
-      api.pullOne('chat', 'missing', [{ key: 'key-1' }]),
-    ).resolves.toBeNull()
+      api.pull({ scope: 'chat', ids: ['missing'], keys: [{ key: 'key-1' }] }),
+    ).resolves.toEqual({ items: [] })
     expect(lastBody()).toEqual({
       scope: 'chat',
       ids: ['missing'],
@@ -361,9 +378,14 @@ describe('sync-api (enclave JSON-RPC)', () => {
       keyB64: api.hexToB64('aa'.repeat(32)),
     })
     expect(lastRequest()[0]).toBe('/v1/sync/delete')
-    const body = lastBody<{ if_match: string; idempotency_key: string }>()
-    expect(body.if_match).toBe('7')
-    expect(body.idempotency_key).toBe('del-1')
+    expect(lastRequest()[1]?.method).toBe('POST')
+    expect(lastBody()).toEqual({
+      scope: 'chat',
+      id: 'c1',
+      key: 'qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=',
+      if_match: '7',
+      idempotency_key: 'del-1',
+    })
   })
 
   it('deleteAllProjects posts the CEK and idempotency key', async () => {
@@ -417,20 +439,18 @@ describe('sync-api (enclave JSON-RPC)', () => {
     mockFetch.mockResolvedValueOnce(
       ok({ ok: true, id: 'att-1', att_key: 'att-key' }),
     )
-    await api.attachmentPut({
+    const response = await api.attachmentPut({
       chatId: 'chat-1',
       plaintext: new Uint8Array([1, 2, 3]),
       idempotencyKey: 'att-idem-1',
     })
     expect(lastRequest()[0]).toBe('/v1/attachment/put')
-    const body = lastBody<{
-      chat_id: string
-      plaintext: string
-      idempotency_key: string
-    }>()
-    expect(body.chat_id).toBe('chat-1')
-    expect(body.plaintext).toBe(api.bytesToBase64(new Uint8Array([1, 2, 3])))
-    expect(body.idempotency_key).toBe('att-idem-1')
+    expect(lastBody()).toEqual({
+      chat_id: 'chat-1',
+      plaintext: 'AQID',
+      idempotency_key: 'att-idem-1',
+    })
+    expect(response).toEqual({ ok: true, id: 'att-1', att_key: 'att-key' })
   })
 
   it('registerKey posts /v1/key/register with initial bundle', async () => {
@@ -444,15 +464,21 @@ describe('sync-api (enclave JSON-RPC)', () => {
       initialBundle: {
         credentialId: 'cred-1',
         kekIvHex: 'bb'.repeat(12),
-        encryptedKeysHex: 'cc'.repeat(32),
+        encryptedKeysHex: 'cc'.repeat(48),
       },
     })
     expect(lastRequest()[0]).toBe('/v1/key/register')
-    const body = lastBody<{
-      initial_bundle: { credential_id: string; encrypted_keys: string }
-    }>()
-    expect(body.initial_bundle.credential_id).toBe('cred-1')
-    expect(body.initial_bundle.encrypted_keys).toBe('cc'.repeat(32))
+    expect(lastBody()).toEqual({
+      key: CEK_B64,
+      if_match: '*',
+      created_via: 'passkey',
+      idempotency_key: 'reg-1',
+      initial_bundle: {
+        credential_id: 'cred-1',
+        kek_iv: 'bb'.repeat(12),
+        encrypted_keys: 'cc'.repeat(48),
+      },
+    })
   })
 
   it('addBundle posts /v1/key/add-bundle', async () => {
@@ -463,18 +489,18 @@ describe('sync-api (enclave JSON-RPC)', () => {
       keyB64: api.hexToB64('aa'.repeat(32)),
       credentialId: 'cred-2',
       kekIvHex: 'bb'.repeat(12),
-      encryptedKeysHex: 'cc'.repeat(32),
+      encryptedKeysHex: 'cc'.repeat(48),
       idempotencyKey: 'idem-add-1',
     })
     expect(lastRequest()[0]).toBe('/v1/key/add-bundle')
-    const body = lastBody<{
-      key_id: string
-      key: string
-      credential_id: string
-    }>()
-    expect(body.key_id).toBe('aa'.repeat(16))
-    expect(body.key).toBe(api.hexToB64('aa'.repeat(32)))
-    expect(body.credential_id).toBe('cred-2')
+    expect(lastBody()).toEqual({
+      key_id: 'aa'.repeat(16),
+      key: CEK_B64,
+      credential_id: 'cred-2',
+      kek_iv: 'bb'.repeat(12),
+      encrypted_keys: 'cc'.repeat(48),
+      idempotency_key: 'idem-add-1',
+    })
   })
 
   it('removeBundle includes the key proof and idempotency key', async () => {
@@ -550,24 +576,6 @@ describe('sync-api (enclave JSON-RPC)', () => {
     expect(requestSignal?.aborted).toBe(true)
   })
 
-  it('migrate posts /v1/blobs/migrate with target key', async () => {
-    const api = await import('@/services/sync-enclave/sync-api')
-    mockFetch.mockResolvedValueOnce(
-      ok({
-        migrated: 1,
-        retryable_remaining: 0,
-        blocked_unmigrated: 0,
-        blocked: [],
-      }),
-    )
-    await api.migrate({
-      scope: 'chat',
-      keys: [{ key: api.hexToB64('aa'.repeat(32)) }],
-      target: { key: api.hexToB64('bb'.repeat(32)) },
-    })
-    expect(lastRequest()[0]).toBe('/v1/blobs/migrate')
-  })
-
   it('normalizes migration reports from kickoff and status polling', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
     mockFetch.mockResolvedValueOnce(
@@ -593,7 +601,22 @@ describe('sync-api (enclave JSON-RPC)', () => {
       keys: [{ key: 'legacy-key', key_id: 'legacy-id' }],
       target: { key: 'target-key' },
     })
-    expect(kickoff.scopes[0].blocked).toEqual([])
+    expect(kickoff).toEqual({
+      migrated: 2,
+      retryable_remaining: 1,
+      blocked_unmigrated: 1,
+      partial: true,
+      status: 'running',
+      scopes: [
+        {
+          scope: 'chat',
+          migrated: 2,
+          retryable_remaining: 1,
+          blocked_unmigrated: 1,
+          blocked: [],
+        },
+      ],
+    })
     expect(lastRequest()[0]).toBe('/v1/blobs/migrate-all')
     expect(lastBody()).toEqual({
       keys: [{ key: 'legacy-key', key_id: 'legacy-id' }],
@@ -611,9 +634,31 @@ describe('sync-api (enclave JSON-RPC)', () => {
       }),
     )
     const status = await api.migrateStatus()
-    expect(status.scopes).toEqual([])
+    expect(status).toEqual({
+      migrated: 2,
+      retryable_remaining: 0,
+      blocked_unmigrated: 0,
+      partial: false,
+      status: 'completed',
+      scopes: [],
+    })
     expect(lastRequest()[0]).toBe('/v1/blobs/migrate-status')
     expect(lastBody()).toEqual({})
+    const failure = {
+      migrated: 0,
+      retryable_remaining: 3,
+      blocked_unmigrated: 2,
+      partial: false,
+      status: 'failed',
+      job_id: 'migration-1',
+      error: 'opaque failure',
+      scopes: null,
+    }
+    mockFetch.mockResolvedValueOnce(ok(failure))
+    await expect(api.migrateStatus()).resolves.toEqual({
+      ...failure,
+      scopes: [],
+    })
   })
 
   it('serializes every off-device import phase and normalizes nil errors', async () => {
@@ -646,7 +691,7 @@ describe('sync-api (enclave JSON-RPC)', () => {
       upload_id: 'up-1',
       chunk_index: 0,
       chunk_sha256: 'cd'.repeat(32),
-      data: api.bytesToBase64(chunk),
+      data: 'AH//',
     })
 
     mockFetch.mockResolvedValueOnce(
@@ -744,9 +789,7 @@ describe('sync-api (enclave JSON-RPC)', () => {
   it('round-trips private and public attachment bytes through distinct auth paths', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
     const plaintext = new Uint8Array([0, 1, 2, 127, 128, 255])
-    mockFetch.mockResolvedValueOnce(
-      ok({ ok: true, plaintext: api.bytesToBase64(plaintext) }),
-    )
+    mockFetch.mockResolvedValueOnce(ok({ ok: true, plaintext: 'AAECf4D/' }))
 
     await expect(
       api.attachmentGet({ id: 'att-1', attKeyB64: 'attachment-key' }),
@@ -755,19 +798,13 @@ describe('sync-api (enclave JSON-RPC)', () => {
     expect(lastBody()).toEqual({ id: 'att-1', att_key: 'attachment-key' })
     expect(lastHeaders().get('Authorization')).toBe('Bearer test-jwt')
 
-    mockFetch.mockResolvedValueOnce(
-      ok({ ok: true, plaintext: api.bytesToBase64(plaintext) }),
-    )
+    mockFetch.mockResolvedValueOnce(ok({ ok: true, plaintext: 'AAECf4D/' }))
     await expect(
       api.attachmentGetPublic({ id: 'att-1', attKeyB64: 'attachment-key' }),
     ).resolves.toEqual(plaintext)
     expect(lastRequest()[0]).toBe('/v1/attachment/get-public')
+    expect(lastBody()).toEqual({ id: 'att-1', att_key: 'attachment-key' })
     expect(lastHeaders().has('Authorization')).toBe(false)
-
-    mockFetch.mockResolvedValueOnce(ok({ ok: true }))
-    await api.attachmentDelete({ id: 'att-1' })
-    expect(lastRequest()[0]).toBe('/v1/attachment/delete')
-    expect(lastBody()).toEqual({ id: 'att-1' })
   })
 
   it('seals authenticated shares and opens them without leaking a JWT', async () => {
@@ -779,39 +816,30 @@ describe('sync-api (enclave JSON-RPC)', () => {
 
     await api.shareSeal({ plaintext })
     expect(lastRequest()[0]).toBe('/v1/share/seal')
-    expect(lastBody()).toEqual({ plaintext: api.bytesToBase64(plaintext) })
+    expect(lastBody()).toEqual({ plaintext: 'AQMDBw==' })
     expect(lastHeaders().get('Authorization')).toBe('Bearer test-jwt')
 
     const opened = new Uint8Array([9, 8, 7])
     const ciphertext = new Uint8Array([4, 5, 6])
-    mockFetch.mockResolvedValueOnce(
-      ok({ ok: true, plaintext: api.bytesToBase64(opened) }),
-    )
+    mockFetch.mockResolvedValueOnce(ok({ ok: true, plaintext: 'CQgH' }))
     await expect(
       api.shareOpen({ shareKeyHex: 'cd'.repeat(32), ciphertext }),
     ).resolves.toEqual(opened)
     expect(lastRequest()[0]).toBe('/v1/share/open')
     expect(lastBody()).toEqual({
       share_key: 'cd'.repeat(32),
-      ciphertext: api.bytesToBase64(ciphertext),
+      ciphertext: 'BAUG',
     })
     expect(lastHeaders().has('Authorization')).toBe(false)
-  })
-
-  it('health hits GET /v1/health', async () => {
-    const api = await import('@/services/sync-enclave/sync-api')
-    mockFetch.mockResolvedValueOnce(ok({ status: 'ok' }))
-    const resp = await api.health()
-    expect(resp.status).toBe('ok')
-    const [path, init] = lastRequest()
-    expect(path).toBe('/v1/health')
-    expect(init?.method).toBe('GET')
   })
 
   it('hexToB64 and pullItemPlaintext round-trip', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
     const bytes = new Uint8Array([1, 2, 3, 4, 5])
-    const b64 = api.bytesToBase64(bytes)
+    const b64 = 'AQIDBAU='
+    expect(api.bytesToBase64(bytes)).toBe(b64)
+    expect(api.hexToB64('0102030405')).toBe(b64)
+    expect(api.hexToB64('00fF')).toBe('AP8=')
     expect(api.base64ToBytes(b64)).toEqual(bytes)
     expect(() => api.hexToB64('')).toThrow(/empty hex/)
     expect(() => api.hexToB64('abc')).toThrow(/odd-length hex/)
@@ -826,7 +854,12 @@ describe('sync-api (enclave JSON-RPC)', () => {
     })
     expect(item).toEqual(bytes)
     expect(
-      api.pullItemPlaintext({ id: 'x', ok: false, code: 'NOT_FOUND' }),
+      api.pullItemPlaintext({
+        id: 'x',
+        ok: false,
+        code: 'NOT_FOUND',
+        plaintext: b64,
+      }),
     ).toBeNull()
     expect(api.pullItemPlaintext({ id: 'x', ok: true })).toBeNull()
     expect(api.pullItemPlaintext({ id: 'x', ok: true, plaintext: '' })).toEqual(
@@ -839,11 +872,26 @@ describe('sync-api (enclave JSON-RPC)', () => {
 
   it('generates well-formed, non-repeating idempotency keys', async () => {
     const api = await import('@/services/sync-enclave/sync-api')
-    const keys = Array.from({ length: 2048 }, () => api.newIdempotencyKey())
-
-    expect(new Set(keys).size).toBe(keys.length)
-    for (const key of keys) {
-      expect(key).toMatch(/^[0-9a-f]{32}$/)
+    const entropy = [
+      Uint8Array.from({ length: 16 }, (_, index) => index),
+      Uint8Array.from({ length: 16 }, (_, index) => 0xf0 + index),
+    ]
+    let call = 0
+    const random = vi
+      .spyOn(crypto, 'getRandomValues')
+      .mockImplementation((array) => {
+        if (!(array instanceof Uint8Array))
+          throw new Error('Expected byte entropy')
+        expect(array.byteLength).toBe(16)
+        array.set(entropy[call++])
+        return array
+      })
+    try {
+      expect(api.newIdempotencyKey()).toBe('000102030405060708090a0b0c0d0e0f')
+      expect(api.newIdempotencyKey()).toBe('f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff')
+      expect(random).toHaveBeenCalledTimes(2)
+    } finally {
+      random.mockRestore()
     }
   })
 })

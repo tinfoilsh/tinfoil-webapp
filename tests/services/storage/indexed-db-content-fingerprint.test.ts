@@ -1,6 +1,5 @@
 import {
   chatContentFingerprint,
-  chatNeedsSync,
   resolveStoredLocalOnly,
   snapshotChatForStorage,
 } from '@/services/storage/indexed-db'
@@ -8,23 +7,23 @@ import { describe, expect, it } from 'vitest'
 
 describe('chatContentFingerprint', () => {
   it('ignores updatedAt differences (not part of fingerprint input)', () => {
-    const fp1 = chatContentFingerprint({
+    const first = {
       title: 'T',
       projectId: undefined,
       updatedAt: '2024-01-01T00:00:00Z',
       messages: [
         { role: 'user', content: 'hi', timestamp: '2024-01-01T00:00:00Z' },
       ],
-    })
-    const fp2 = chatContentFingerprint({
+    }
+    const second = {
       title: 'T',
       projectId: undefined,
       updatedAt: '2024-12-31T23:59:59Z',
       messages: [
         { role: 'user', content: 'hi', timestamp: '2024-01-01T00:00:00Z' },
       ],
-    })
-    expect(fp1).toBe(fp2)
+    }
+    expect(chatContentFingerprint(first)).toBe(chatContentFingerprint(second))
   })
 
   it('changes when message content changes (same length)', () => {
@@ -145,7 +144,7 @@ describe('chatContentFingerprint', () => {
     expect(fp1).not.toBe(fp2)
   })
 
-  it('captures image changes without hashing full base64', () => {
+  it('captures equal-length legacy image payload changes', () => {
     const fp1 = chatContentFingerprint({
       title: 'T',
       projectId: undefined,
@@ -166,42 +165,10 @@ describe('chatContentFingerprint', () => {
           role: 'user',
           content: 'x',
           timestamp: '2024-01-01T00:00:00Z',
-          imageData: [{ mimeType: 'image/png', base64: 'AAAAAA' }],
+          imageData: [{ mimeType: 'image/png', base64: 'BBB' }],
         },
       ],
     })
-    expect(fp1).not.toBe(fp2)
-  })
-
-  it('captures normalized attachment payload changes', () => {
-    const attachment = {
-      id: 'attachment',
-      type: 'image',
-      fileName: 'image.png',
-    }
-    const fp1 = chatContentFingerprint({
-      title: 'T',
-      messages: [
-        {
-          role: 'user',
-          content: 'x',
-          timestamp: '2024-01-01T00:00:00Z',
-          attachments: [{ ...attachment, base64: 'AAA' }],
-        },
-      ],
-    })
-    const fp2 = chatContentFingerprint({
-      title: 'T',
-      messages: [
-        {
-          role: 'user',
-          content: 'x',
-          timestamp: '2024-01-01T00:00:00Z',
-          attachments: [{ ...attachment, base64: 'BBB' }],
-        },
-      ],
-    })
-
     expect(fp1).not.toBe(fp2)
   })
 
@@ -230,25 +197,7 @@ describe('chatContentFingerprint', () => {
       'cb1ad2119d8fafb69566510ee712661f9f14b83385006ef92aec47f523a38358',
     )
     expect(fingerprint('up/Gwn25')).not.toBe(fingerprint('XND8FyWq'))
-  })
-})
-
-describe('chatNeedsSync', () => {
-  it('indexes dirty and never-synced cloud chats', () => {
-    expect(chatNeedsSync({ locallyModified: true, syncedAt: Date.now() })).toBe(
-      1,
-    )
-    expect(chatNeedsSync({ locallyModified: false })).toBe(1)
-  })
-
-  it('does not index clean, local-only, or undecryptable chats', () => {
-    expect(
-      chatNeedsSync({ locallyModified: false, syncedAt: Date.now() }),
-    ).toBe(0)
-    expect(chatNeedsSync({ locallyModified: true, isLocalOnly: true })).toBe(0)
-    expect(
-      chatNeedsSync({ locallyModified: true, decryptionFailed: true }),
-    ).toBe(0)
+    expect(fingerprint('AAA')).not.toBe(fingerprint('BBB'))
   })
 })
 

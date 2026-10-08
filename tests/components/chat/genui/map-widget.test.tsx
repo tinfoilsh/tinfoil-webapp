@@ -91,14 +91,60 @@ describe('MapWidget', () => {
     expect(getByText('Map unavailable')).toBeInTheDocument()
   })
 
-  it('keeps the Apple Maps links without loading any map code', () => {
-    const { getByRole, queryByTitle } = render(
-      <MapWidget locations={locations} mode="directions" />,
-    )
-    expect(queryByTitle('Apple Maps')).toBeNull()
-    const link = getByRole('link', { name: /open directions in apple maps/i })
-    expect(link.getAttribute('href')).toMatch(
-      /^https:\/\/maps\.apple\.com\/directions\?/,
-    )
-  })
+  it.each([
+    {
+      name: 'two-location walking route',
+      travelMode: 'walking',
+      route: locations,
+      expected: {
+        source: '37.33,-122.01',
+        destination: 'Paris',
+        mode: 'walking',
+      },
+    },
+    {
+      name: 'single walking destination',
+      travelMode: 'walking',
+      route: [locations[1]],
+      expected: { destination: 'Paris', mode: 'walking' },
+    },
+    {
+      name: 'walking route with a waypoint',
+      travelMode: 'walking',
+      route: [
+        locations[0],
+        { name: 'Stop', address: 'One & Two' },
+        locations[1],
+      ],
+      expected: {
+        source: '37.33,-122.01',
+        destination: 'Paris',
+        waypoint: 'One & Two',
+        mode: 'walking',
+      },
+    },
+    {
+      name: 'route without a travel mode',
+      travelMode: undefined,
+      route: locations,
+      expected: { source: '37.33,-122.01', destination: 'Paris' },
+    },
+  ] as const)(
+    'keeps the Apple Maps $name without loading any map code',
+    ({ route, travelMode, expected }) => {
+      const { getByRole, queryByTitle } = render(
+        <MapWidget
+          locations={[...route]}
+          mode="directions"
+          travelMode={travelMode}
+        />,
+      )
+      expect(queryByTitle('Apple Maps')).toBeNull()
+      const link = getByRole('link', { name: /open directions in apple maps/i })
+      const url = new URL(link.getAttribute('href')!)
+      expect(url.origin).toBe('https://maps.apple.com')
+      expect(url.pathname).toBe('/directions')
+      expect(Object.fromEntries(url.searchParams)).toEqual(expected)
+    },
+  )
 })

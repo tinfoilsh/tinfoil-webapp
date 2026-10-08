@@ -60,14 +60,20 @@ describe('profile sync coordinator', () => {
     await oldAccount
   })
 
-  it('keeps local invalidation when broadcast storage is unavailable', () => {
-    const setItem = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
-        throw new Error('storage unavailable')
-      })
+  it('keeps local invalidation when broadcast storage is unavailable', async () => {
+    const setItem = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new Error('storage unavailable')
+    })
 
-    expect(() => invalidateProfileSyncGeneration(true)).not.toThrow()
-    setItem.mockRestore()
+    const operation = vi.fn(async () => {})
+    try {
+      const queued = runSerializedProfileSync('user-1', operation)
+      invalidateProfileSyncGeneration(true)
+      await queued
+      expect(setItem).toHaveBeenCalledOnce()
+      expect(operation).not.toHaveBeenCalled()
+    } finally {
+      setItem.mockRestore()
+    }
   })
 })

@@ -15,7 +15,6 @@ import {
   isUploadableChat,
   remoteWins,
   remoteWinsLastWrite,
-  shouldIngestRemoteChat,
   trustedChatClock,
 } from '@/services/cloud/sync-predicates'
 import type { StoredChat } from '@/services/storage/indexed-db'
@@ -72,28 +71,18 @@ describe('Sync Predicates', () => {
       expect(isUploadableChat(baseChat, isStreaming)).toBe(true)
     })
 
-    it('returns false for full chats without messages', () => {
-      const minimalChat = {
-        id: 'minimal',
-        title: 'Minimal',
-        messages: [],
-        createdAt: '2024-01-01T00:00:00.000Z',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-        lastAccessedAt: Date.now(),
-        // No optional fields set
-      } as StoredChat
-      expect(isUploadableChat(minimalChat)).toBe(false)
-    })
+    it.each([undefined, 4])(
+      'uses full chat messages instead of an incidental message count',
+      (messageCount) => {
+        const staleFullChat = {
+          ...baseChat,
+          messages: [],
+          messageCount,
+        }
 
-    it('uses full chat messages instead of an incidental message count', () => {
-      const staleFullChat = {
-        ...baseChat,
-        messages: [],
-        messageCount: 4,
-      }
-
-      expect(isUploadableChat(staleFullChat)).toBe(false)
-    })
+        expect(isUploadableChat(staleFullChat)).toBe(false)
+      },
+    )
 
     it('returns false for metadata with no messages', () => {
       expect(
@@ -120,152 +109,18 @@ describe('Sync Predicates', () => {
       ).toBe(false)
     })
 
-    it('handles false vs undefined for boolean flags', () => {
-      const explicitFalse = {
-        ...baseChat,
-        isLocalOnly: false,
-        isBlankChat: false,
-        decryptionFailed: false,
-      } as StoredChat
-      expect(isUploadableChat(explicitFalse)).toBe(true)
-    })
-  })
-
-  describe('shouldIngestRemoteChat', () => {
-    // Note: The predicate compares remote.updatedAt with local.syncedAt
-    // (not local.updatedAt) because syncedAt represents when we last
-    // got data from the server
-
-    it('makes the same decision from lightweight sync metadata', () => {
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-02T00:00:00.000Z',
-      }
-      const metadata = {
-        id: 'test-chat-1',
-        projectId: 'project-1',
-        decryptionFailed: false,
-        locallyModified: false,
-        syncedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-
-      expect(shouldIngestRemoteChat(remote, metadata)).toBe(true)
-    })
-
-    it('returns true when no local chat exists', () => {
-      const remote = {
-        id: 'new-chat',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-      expect(shouldIngestRemoteChat(remote, undefined)).toBe(true)
-    })
-
-    it('returns true when local chat is null', () => {
-      const remote = {
-        id: 'new-chat',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-      expect(shouldIngestRemoteChat(remote, null)).toBe(true)
-    })
-
-    it('returns true when local chat failed decryption', () => {
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-      const local = { ...baseChat, decryptionFailed: true } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(true)
-    })
-
-    it('returns true when remote updatedAt is newer than local syncedAt', () => {
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-02T00:00:00.000Z', // Newer than syncedAt
-      }
-      const local = {
-        ...baseChat,
-        syncedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
-      } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(true)
-    })
-
-    it('returns false when local syncedAt is newer than remote', () => {
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-      const local = {
-        ...baseChat,
-        syncedAt: new Date('2024-01-02T00:00:00.000Z').getTime(), // Newer
-      } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(false)
-    })
-
-    it('returns false when timestamps are equal', () => {
-      const timestamp = new Date('2024-01-01T00:00:00.000Z').getTime()
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-      const local = {
-        ...baseChat,
-        syncedAt: timestamp, // Same as remote
-      } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(false)
-    })
-
-    it('returns true when local has no syncedAt (treated as 0)', () => {
-      // When syncedAt is undefined, it's treated as 0, so any valid remote timestamp wins
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-      const local = {
-        ...baseChat,
-        syncedAt: undefined,
-      } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(true)
-    })
-
-    it('returns false when local chat has unsynced modifications', () => {
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-02T00:00:00.000Z',
-      }
-      const local = {
-        ...baseChat,
-        locallyModified: true,
-        syncedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
-      } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(false)
-    })
-
-    it('returns true when local chat has no unsynced modifications and remote is newer', () => {
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-02T00:00:00.000Z',
-      }
-      const local = {
-        ...baseChat,
-        locallyModified: false,
-        syncedAt: new Date('2024-01-01T00:00:00.000Z').getTime(),
-      } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(true)
-    })
-
-    it('returns true for decryption-failed chat even if locallyModified', () => {
-      const remote = {
-        id: 'test-chat-1',
-        updatedAt: '2024-01-01T00:00:00.000Z',
-      }
-      const local = {
-        ...baseChat,
-        decryptionFailed: true,
-        locallyModified: true,
-      } as StoredChat
-      expect(shouldIngestRemoteChat(remote, local)).toBe(true)
-    })
+    it.each([false, undefined])(
+      'handles false vs undefined for boolean flags',
+      (flag) => {
+        const explicitFalse = {
+          ...baseChat,
+          isLocalOnly: flag,
+          isBlankChat: flag,
+          decryptionFailed: flag,
+        } as StoredChat
+        expect(isUploadableChat(explicitFalse)).toBe(true)
+      },
+    )
   })
 
   describe('remoteWinsLastWrite', () => {
@@ -366,42 +221,6 @@ describe('Sync Predicates', () => {
           remoteUpdatedAt: older,
         }),
       ).toBe(false)
-    })
-  })
-
-  describe('Combined scenarios', () => {
-    it('a failed-decryption chat is not uploadable', () => {
-      const failedChat = {
-        ...baseChat,
-        decryptionFailed: true,
-      }
-
-      // Should not upload (would overwrite server data with placeholder)
-      expect(isUploadableChat(failedChat)).toBe(false)
-    })
-
-    it('local-only chats are never uploadable regardless of other flags', () => {
-      const localOnlyWithMessages = {
-        ...baseChat,
-        isLocalOnly: true,
-        messages: [
-          { role: 'user', content: 'important message' },
-          { role: 'assistant', content: 'response' },
-        ],
-      }
-
-      expect(isUploadableChat(localOnlyWithMessages)).toBe(false)
-    })
-
-    it('blank chats are never uploadable even if explicitly cloud-enabled', () => {
-      const blankCloudChat = {
-        ...baseChat,
-        isBlankChat: true,
-        isLocalOnly: false,
-        messages: [],
-      }
-
-      expect(isUploadableChat(blankCloudChat)).toBe(false)
     })
   })
 

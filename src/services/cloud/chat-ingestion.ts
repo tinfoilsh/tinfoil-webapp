@@ -16,7 +16,6 @@ import {
 } from './chat-codec'
 import { cloudStorage } from './cloud-storage'
 import { reportChatSyncRecovered } from './sync-health'
-import { shouldIngestRemoteChat } from './sync-predicates'
 
 export interface RemoteChatEntry {
   id: string
@@ -32,7 +31,6 @@ export interface IngestOptions {
   localChatMap?: Map<string, ChatSyncMetadata>
   /** Project ID to associate with ingested chats */
   projectId?: string
-  checkShouldIngest?: boolean
   fetchMissingContent?: boolean
   setLoadedAt?: boolean
   eventReason?: ChatChangeReason
@@ -60,7 +58,6 @@ export async function ingestRemoteChats(
   const {
     localChatMap,
     projectId,
-    checkShouldIngest = false,
     fetchMissingContent = false,
     setLoadedAt = false,
     eventReason = 'sync',
@@ -75,14 +72,6 @@ export async function ingestRemoteChats(
     const localChat = localChatMap
       ? (localChatMap.get(remoteChat.id) ?? null)
       : await indexedDBStorage.getChat(remoteChat.id)
-    if (
-      !forceOverwriteLocal &&
-      checkShouldIngest &&
-      !shouldIngestRemoteChat(remoteChat, localChat)
-    ) {
-      continue
-    }
-
     let stage: IngestFailure['stage'] = 'decode'
     try {
       let fetchedProjectMetadata:

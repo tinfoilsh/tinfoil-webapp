@@ -4,9 +4,11 @@ import {
   chatContentFingerprint,
   derivePendingUpload,
   IndexedDBStorage,
+  type StoredChat,
 } from '@/services/storage/indexed-db'
+import { IDBObjectStore as FakeIDBObjectStore } from 'fake-indexeddb'
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const DB_NAME = 'tinfoil-chat'
 const LEGACY_DB_VERSION = 1
@@ -127,6 +129,7 @@ function readStoreNames(): Promise<string[]> {
 }
 
 describe('IndexedDB sync protocol v2 migration', () => {
+  afterEach(() => vi.restoreAllMocks())
   beforeEach(async () => {
     Object.defineProperty(window, 'indexedDB', {
       configurable: true,
@@ -223,34 +226,81 @@ describe('IndexedDB sync protocol v2 migration', () => {
     ])
   })
 
-  it('persists a local delete intent atomically with row removal', async () => {
-    const storage = new IndexedDBStorage()
-    await storage.initialize()
-    await storage.saveChat({
-      id: 'chat-1',
-      title: 'Chat',
-      messages: [{ role: 'user', content: 'hello' } as any],
-      createdAt: '2026-01-01T00:00:00Z',
-      updatedAt: '2026-01-01T00:00:00Z',
-    })
-
-    await storage.markAsSynced('chat-1', 1)
-    await storage.deleteChatWithPendingIntent(
-      'chat-1',
-      'stable-delete-key',
-      'user-1',
-    )
-
-    await expect(storage.getChat('chat-1')).resolves.toBeNull()
-    await expect(storage.getPendingDeletes('user-1')).resolves.toEqual([
-      expect.objectContaining({
+  it.each([false, true])(
+    'persists a local delete intent atomically with row removal (abort=%s)',
+    async (abort) => {
+      const storage = new IndexedDBStorage()
+      await storage.initialize()
+      await storage.saveChat({
         id: 'chat-1',
-        userId: 'user-1',
-        idempotencyKey: 'stable-delete-key',
-      }),
-    ])
-    expect(await storage.hasPendingSyncWork('user-1')).toBe(true)
-  })
+        title: 'Chat',
+        messages: [
+          {
+            role: 'user',
+            content: 'hello',
+            timestamp: new Date('2026-01-01T00:00:00Z'),
+            attachments: [
+              {
+                id: 'retained-document',
+                type: 'document',
+                fileName: 'retained.txt',
+                textContent: 'Retain on abort',
+              },
+            ],
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T00:00:00Z',
+      })
+
+      await storage.markAsSynced('chat-1', 1)
+      if (abort) {
+        const originalPut = FakeIDBObjectStore.prototype.put
+        vi.spyOn(FakeIDBObjectStore.prototype, 'put').mockImplementation(
+          function (this: IDBObjectStore, value: unknown, key?: IDBValidKey) {
+            const request = originalPut.call(this, value, key)
+            if (this.name === 'sync_outbox') {
+              request.addEventListener('success', () =>
+                this.transaction.abort(),
+              )
+            }
+            return request
+          },
+        )
+      }
+      const deletion = storage.deleteChatWithPendingIntent(
+        'chat-1',
+        'stable-delete-key',
+        'user-1',
+      )
+
+      if (abort) {
+        await expect(deletion).rejects.toThrow(
+          'Failed to persist pending chat deletion',
+        )
+        const retained = await storage.getChat('chat-1')
+        expect(retained?.messages[0].attachments?.[0].textContent).toBe(
+          'Retain on abort',
+        )
+        expect(await storage.getChatSummaries()).toEqual([
+          expect.objectContaining({ id: 'chat-1', messageCount: 1 }),
+        ])
+        expect(await storage.getPendingDeletes('user-1')).toEqual([])
+        return
+      }
+      await expect(deletion).resolves.toBe(true)
+
+      await expect(storage.getChat('chat-1')).resolves.toBeNull()
+      await expect(storage.getPendingDeletes('user-1')).resolves.toEqual([
+        expect.objectContaining({
+          id: 'chat-1',
+          userId: 'user-1',
+          idempotencyKey: 'stable-delete-key',
+        }),
+      ])
+      expect(await storage.hasPendingSyncWork('user-1')).toBe(true)
+    },
+  )
 
   it('does not create a remote delete for a never-synced local chat', async () => {
     const storage = new IndexedDBStorage()
@@ -270,6 +320,8 @@ describe('IndexedDB sync protocol v2 migration', () => {
     )
 
     expect(queued).toBe(false)
+    expect(await storage.getChat('local-create')).toBeNull()
+    expect(await storage.getChatSummaries()).toEqual([])
     await expect(storage.getPendingDeletes('user-1')).resolves.toEqual([])
   })
 
@@ -369,29 +421,74 @@ describe('IndexedDB sync protocol v2 migration', () => {
   it('aborts a remote apply when its account expires after the put', async () => {
     const storage = new IndexedDBStorage()
     await storage.initialize()
-    const isCurrent = vi
-      .fn<() => boolean>()
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true)
-      .mockReturnValueOnce(true)
-      .mockReturnValue(false)
+    const chatId = 'stale-account-chat'
+    let current = true
+    let putCompleted = false
+    const originalPut = FakeIDBObjectStore.prototype.put
+    vi.spyOn(FakeIDBObjectStore.prototype, 'put').mockImplementation(function (
+      this: IDBObjectStore,
+      value: unknown,
+      key?: IDBValidKey,
+    ) {
+      const request = originalPut.call(this, value, key)
+      if (this.name === 'chats') {
+        request.addEventListener('success', () => {
+          putCompleted = true
+          current = false
+        })
+      }
+      return request
+    })
 
     await expect(
       storage.applyRemoteChatIfFresh({
         chat: {
-          id: 'stale-account-chat',
+          id: chatId,
           title: 'Stale',
-          messages: [{ role: 'user', content: 'hello' } as any],
+          messages: [
+            {
+              role: 'user',
+              content: 'hello',
+              timestamp: new Date('2026-01-01T00:00:00Z'),
+              attachments: [
+                {
+                  id: 'document',
+                  type: 'document',
+                  fileName: 'private.txt',
+                  textContent: 'Account-scoped content',
+                },
+              ],
+            },
+          ],
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T00:00:00Z',
         },
         syncVersion: 1,
         expectedLocalUpdatedAt: null,
-        isCurrent,
+        isCurrent: () => current,
       }),
     ).resolves.toEqual({ applied: false })
-    await expect(storage.getChat('stale-account-chat')).resolves.toBeNull()
+    expect(putCompleted).toBe(true)
+    await expect(storage.getChat(chatId)).resolves.toBeNull()
+    await expect(storage.getChatSummaries()).resolves.toEqual([])
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME)
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    try {
+      const payloadCount = await new Promise<number>((resolve, reject) => {
+        const request = db
+          .transaction('attachmentPayloads')
+          .objectStore('attachmentPayloads')
+          .count()
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      expect(payloadCount).toBe(0)
+    } finally {
+      db.close()
+    }
   })
 
   it('stages remote-only and locally discovered project deletes idempotently', async () => {
@@ -463,7 +560,7 @@ describe('IndexedDB sync protocol v2 migration', () => {
   it('does not stage project intents for zero-version local chats', async () => {
     const storage = new IndexedDBStorage()
     await storage.initialize()
-    await storage.saveChat({
+    const chat: StoredChat = {
       id: 'zero-version-chat',
       title: 'Creating',
       projectId: 'project-1',
@@ -471,7 +568,9 @@ describe('IndexedDB sync protocol v2 migration', () => {
       messages: [{ role: 'user', content: 'hello' } as any],
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
-    })
+      lastAccessedAt: 0,
+    }
+    await storage.saveChat(chat)
 
     await storage.deleteChatsByProject(
       'project-1',
@@ -520,7 +619,7 @@ describe('IndexedDB sync protocol v2 migration', () => {
     await expect(storage.getPendingDeletes('user-2')).resolves.toEqual([])
   })
 
-  it('does not stage project deletion after its account guard expires', async () => {
+  it('rolls back project deletion when its account guard expires during staging', async () => {
     const storage = new IndexedDBStorage()
     await storage.initialize()
     await storage.saveChat({
@@ -531,25 +630,42 @@ describe('IndexedDB sync protocol v2 migration', () => {
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-01T00:00:00Z',
     })
-    const isCurrent = vi
-      .fn<() => boolean>()
-      .mockReturnValueOnce(true)
-      .mockReturnValue(false)
-
-    await expect(
+    await storage.markAsSynced('chat-1', 1)
+    let current = false
+    const deleteProject = () =>
       storage.deleteChatsByProject(
         'project-1',
-        [],
+        ['remote-only'],
         'user-1',
         () => 'unused-key',
-        isCurrent,
-      ),
-    ).resolves.toEqual([])
+        () => current,
+      )
+    await expect(deleteProject()).resolves.toEqual([])
+    current = true
+    let stagingStarted = false
+    const originalGet = FakeIDBObjectStore.prototype.get
+    vi.spyOn(FakeIDBObjectStore.prototype, 'get').mockImplementation(function (
+      this: IDBObjectStore,
+      key: IDBValidKey | IDBKeyRange,
+    ) {
+      const request = originalGet.call(this, key)
+      if (this.name === 'sync_outbox') {
+        request.addEventListener('success', () => {
+          stagingStarted = true
+          current = false
+        })
+      }
+      return request
+    })
+    await expect(deleteProject()).rejects.toThrow(
+      'Failed to delete project chats',
+    )
+    expect(stagingStarted).toBe(true)
     await expect(storage.getChat('chat-1')).resolves.not.toBeNull()
     await expect(storage.getPendingDeletes('user-1')).resolves.toEqual([])
   })
 
-  it('repairs state and outbox when the account changes', async () => {
+  it('returns revision checkpoints only to their owning account', async () => {
     const storage = new IndexedDBStorage()
     await storage.initialize()
     await storage.commitRevisionBatch([], '7', 'user-1')
@@ -790,9 +906,16 @@ describe('IndexedDB sync protocol v2 migration', () => {
     )
 
     await storage.updateChatLocalOnly('chat-1', false)
+    await storage.markAsSynced('chat-1', 1)
+    expect((await storage.getChat('chat-1'))?.pendingUpload).toBe(0)
     await storage.updateChatProject('chat-1', 'project-1')
     await expect(storage.getChat('chat-1')).resolves.toEqual(
-      expect.objectContaining({ pendingUpload: 1 }),
+      expect.objectContaining({
+        pendingUpload: 1,
+        projectId: 'project-1',
+        projectLocallyModified: true,
+        isLocalOnly: false,
+      }),
     )
   })
 
@@ -809,16 +932,33 @@ describe('IndexedDB sync protocol v2 migration', () => {
     await storage.markAsSynced('chat-1', 1)
     await storage.updateChatProject('chat-1', 'project-a')
     const uploaded = await storage.getChat('chat-1')
+    if (!uploaded) throw new Error('Expected upload snapshot')
+    const preUploadFingerprint = chatContentFingerprint(uploaded)
+    await storage.finalizeUpload({
+      chatId: 'chat-1',
+      rewrites: [],
+      preUploadUpdatedAt: uploaded.updatedAt,
+      preUploadFingerprint,
+      syncVersion: 2,
+      uploadedProjectId: 'project-a',
+      projectIntentIncluded: false,
+    })
+    expect((await storage.getChat('chat-1'))?.projectLocallyModified).toBe(true)
     await storage.finalizeUpload({
       chatId: 'chat-1',
       rewrites: [],
       preUploadUpdatedAt: uploaded!.updatedAt,
+      preUploadFingerprint,
       syncVersion: 2,
       uploadedProjectId: 'project-a',
       projectIntentIncluded: true,
     })
     await expect(storage.getChat('chat-1')).resolves.toEqual(
-      expect.objectContaining({ projectLocallyModified: false }),
+      expect.objectContaining({
+        projectLocallyModified: false,
+        locallyModified: false,
+        pendingUpload: 0,
+      }),
     )
 
     await storage.updateChatProject('chat-1', 'project-b')
@@ -826,6 +966,7 @@ describe('IndexedDB sync protocol v2 migration', () => {
       chatId: 'chat-1',
       rewrites: [],
       preUploadUpdatedAt: uploaded!.updatedAt,
+      preUploadFingerprint,
       syncVersion: 3,
       uploadedProjectId: 'project-a',
       projectIntentIncluded: true,

@@ -10,7 +10,11 @@ import {
   IndexedDBStorage,
   type StoredChat,
 } from '@/services/storage/indexed-db'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
+import {
+  IDBCursor as FakeIDBCursor,
+  IDBKeyRange as FakeIDBKeyRange,
+  IDBFactory,
+} from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 function storedChat(
@@ -119,6 +123,7 @@ function blockChatTransaction(
 
 describe('IndexedDB pending sync index', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
@@ -281,7 +286,7 @@ describe('IndexedDB pending sync index', () => {
       messages: [],
     })
 
-    await storage.applyRemoteChatIfFresh({
+    const applied = await storage.applyRemoteChatIfFresh({
       chat: {
         ...storedChat('with-attachment'),
         messages: [
@@ -302,6 +307,10 @@ describe('IndexedDB pending sync index', () => {
       syncVersion: 2,
       expectedLocalUpdatedAt: undefined,
     })
+    expect(applied).toEqual({ applied: true })
+    expect(
+      (await storage.getChat('with-attachment'))?.messages[0].content,
+    ).toBe('Read this remotely')
     expect(
       (await storage.getChat('with-attachment'))?.messages[0].attachments?.[0]
         .base64,
@@ -322,7 +331,20 @@ describe('IndexedDB pending sync index', () => {
       },
     )
     expect(payloadCountAfterRemoval).toBe(0)
+    if (!hydrated) throw new Error('Expected hydrated chat')
+    await storage.saveChat(hydrated)
+    const beforeDeleteCount = await new Promise<number>((resolve, reject) => {
+      const request = db
+        .transaction('attachmentPayloads')
+        .objectStore('attachmentPayloads')
+        .count()
+      request.onerror = () => reject(request.error)
+      request.onsuccess = () => resolve(request.result)
+    })
+    expect(beforeDeleteCount).toBe(1)
     await storage.deleteChat('with-attachment')
+    expect(await storage.getChat('with-attachment')).toBeNull()
+    expect(await storage.getChatSummaries()).toEqual([])
     const payloadCount = await new Promise<number>((resolve, reject) => {
       const request = db
         .transaction('attachmentPayloads')
@@ -766,7 +788,7 @@ describe('IndexedDB pending sync index', () => {
           {
             role: 'assistant',
             content: 'Recovered response',
-            timestamp: '2026-08-12T00:00:01.000Z',
+            timestamp: new Date('2026-08-12T00:00:01.000Z'),
           },
         ],
       },
@@ -1357,6 +1379,8 @@ describe('IndexedDB pending sync index', () => {
       preUploadUpdatedAt: uploaded.updatedAt,
       preUploadFingerprint: chatContentFingerprint(uploaded),
       syncVersion: 2,
+      uploadedProjectId: uploaded.projectId,
+      projectIntentIncluded: false,
     })
 
     const finalized = await storage.getChat(uploaded.id)
@@ -1439,18 +1463,23 @@ describe('IndexedDB pending sync index', () => {
   })
 
   it('uses one chat transaction for every metadata-only mutation', async () => {
+    const initialTime = new Date('2026-08-12T00:00:00.000Z')
+    const accessedTime = new Date('2026-08-12T00:00:10.000Z')
+    vi.setSystemTime(initialTime)
     const storage = new IndexedDBStorage()
     await storage.initialize()
     await storage.saveChat(storedChat('metadata-transactions'))
+    await storage.getChatSummaries()
     const db = (storage as any).db as IDBDatabase
     const transactionSpy = vi.spyOn(db, 'transaction')
 
-    await (storage as any).updateLastAccessed('metadata-transactions')
-    expect(transactionSpy).toHaveBeenCalledTimes(1)
-    expect(transactionSpy).toHaveBeenLastCalledWith(
-      ['chats', 'chatSummaries'],
-      'readwrite',
-    )
+    vi.setSystemTime(accessedTime)
+    await storage.getChat('metadata-transactions')
+    const [accessed] = await storage.getChatSummaries()
+    expect(accessed.lastAccessedAt).toBe(accessedTime.getTime())
+    expect(
+      transactionSpy.mock.calls.filter(([, mode]) => mode === 'readwrite'),
+    ).toEqual([[['chats', 'chatSummaries'], 'readwrite']])
 
     transactionSpy.mockClear()
     await storage.markAsSynced('metadata-transactions', 2)
@@ -1460,6 +1489,13 @@ describe('IndexedDB pending sync index', () => {
       'readwrite',
     )
 
+    expect((await storage.getChatSummaries())[0]).toMatchObject({
+      locallyModified: false,
+      syncPending: 0,
+      syncVersion: 2,
+      clockVersion: 2,
+    })
+
     transactionSpy.mockClear()
     await storage.rebaseSyncVersion('metadata-transactions', 3)
     expect(transactionSpy).toHaveBeenCalledTimes(1)
@@ -1467,6 +1503,12 @@ describe('IndexedDB pending sync index', () => {
       ['chats', 'chatSummaries'],
       'readwrite',
     )
+    expect((await storage.getChatSummaries())[0]).toMatchObject({
+      locallyModified: true,
+      syncPending: 1,
+      syncVersion: 3,
+      clockVersion: 2,
+    })
   })
 
   it('does not rewrite attachments after a cross-tab content edit', async () => {
@@ -1545,6 +1587,8 @@ describe('IndexedDB pending sync index', () => {
       preUploadUpdatedAt: uploaded.updatedAt,
       preUploadFingerprint: chatContentFingerprint(uploaded),
       syncVersion: 4,
+      uploadedProjectId: uploaded.projectId,
+      projectIntentIncluded: false,
     })
     await vi.waitFor(() =>
       expect(transactionSpy).toHaveBeenCalledWith(
@@ -1633,6 +1677,8 @@ describe('IndexedDB pending sync index', () => {
       preUploadUpdatedAt: uploaded.updatedAt,
       preUploadFingerprint: chatContentFingerprint(uploaded),
       syncVersion: 4,
+      uploadedProjectId: uploaded.projectId,
+      projectIntentIncluded: false,
     })
     blocker.release()
     await Promise.all([blocker.complete, finalizing])
@@ -1670,6 +1716,8 @@ describe('IndexedDB pending sync index', () => {
       preUploadUpdatedAt: uploaded.updatedAt,
       preUploadFingerprint,
       syncVersion: 5,
+      uploadedProjectId: uploaded.projectId,
+      projectIntentIncluded: false,
     })
 
     expect(await storage.getChat(uploaded.id)).toMatchObject({
@@ -1735,6 +1783,7 @@ describe('IndexedDB pending sync index', () => {
       }),
       syncVersion: 5,
       expectedLocalUpdatedAt: expectedUpdatedAt,
+      allowLocallyModified: true,
     })
     await vi.waitFor(() =>
       expect(transactionSpy).toHaveBeenCalledWith(
@@ -1785,7 +1834,23 @@ describe('IndexedDB pending sync index', () => {
         ],
       }),
     )
-    let currentCheckCount = 0
+    let current = true
+    let payloadDeleted = false
+    const originalDelete = FakeIDBCursor.prototype.delete
+    vi.spyOn(FakeIDBCursor.prototype, 'delete').mockImplementation(function (
+      this: IDBCursor,
+    ) {
+      const request = originalDelete.call(this)
+      const store =
+        'objectStore' in this.source ? this.source.objectStore : this.source
+      if (store.name === 'attachmentPayloads') {
+        request.addEventListener('success', () => {
+          payloadDeleted = true
+          current = false
+        })
+      }
+      return request
+    })
     const result = await storage.applyRemoteChatIfFresh({
       chat: storedChat('cancelled-remote-apply', {
         updatedAt: '2026-08-12T00:00:01.000Z',
@@ -1799,13 +1864,11 @@ describe('IndexedDB pending sync index', () => {
       }),
       syncVersion: 2,
       expectedLocalUpdatedAt: undefined,
-      isCurrent: () => {
-        currentCheckCount += 1
-        return currentCheckCount < 6
-      },
+      isCurrent: () => current,
     })
 
     expect(result).toEqual({ applied: false })
+    expect(payloadDeleted).toBe(true)
     const stored = await storage.getChat('cancelled-remote-apply')
     expect(stored?.messages[0].content).toBe('Original')
     expect(

@@ -1,8 +1,13 @@
 import { ChatSidebar } from '@/components/chat/chat-sidebar'
-import { DragProvider } from '@/components/chat/drag-context'
+import {
+  DragProvider,
+  useDrag,
+  type ChatDragSource,
+} from '@/components/chat/drag-context'
 import type { Chat } from '@/components/chat/types'
 import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@clerk/react', () => ({
@@ -60,6 +65,48 @@ const otherChat: Chat = {
   isLocalOnly: false,
 }
 
+function DragSource({ source }: { source: ChatDragSource }) {
+  const { setDraggingChat, draggingChatSource } = useDrag()
+  return (
+    <>
+      <button onClick={() => setDraggingChat(activeChat.id, null, source)}>
+        Start drag
+      </button>
+      <output aria-label="Drag source">{draggingChatSource ?? 'none'}</output>
+    </>
+  )
+}
+
+const SIDEBAR_WIDTH = 1440
+
+function SidebarHarness({
+  currentChat = activeChat,
+  source,
+  ...overrides
+}: Partial<ComponentProps<typeof ChatSidebar>> & { source?: ChatDragSource }) {
+  return (
+    <DragProvider>
+      {source && <DragSource source={source} />}
+      <ChatSidebar
+        isOpen
+        setIsOpen={vi.fn()}
+        chats={[currentChat, otherChat]}
+        currentChat={currentChat}
+        isDarkMode={false}
+        pixelateSidebarChatTitles={false}
+        createNewChat={vi.fn()}
+        handleChatSelect={vi.fn()}
+        updateChatTitle={vi.fn()}
+        deleteChat={vi.fn()}
+        isClient
+        isPremium
+        windowWidth={SIDEBAR_WIDTH}
+        {...overrides}
+      />
+    </DragProvider>
+  )
+}
+
 describe('chat sidebar during streaming', () => {
   beforeEach(() => {
     sessionStorage.clear()
@@ -73,23 +120,10 @@ describe('chat sidebar during streaming', () => {
   it('keeps other chats visible and selectable through streaming updates', () => {
     const handleChatSelect = vi.fn()
     const sidebar = (currentChat: Chat) => (
-      <DragProvider>
-        <ChatSidebar
-          isOpen
-          setIsOpen={vi.fn()}
-          chats={[currentChat, otherChat]}
-          currentChat={currentChat}
-          isDarkMode={false}
-          pixelateSidebarChatTitles={false}
-          createNewChat={vi.fn()}
-          handleChatSelect={handleChatSelect}
-          updateChatTitle={vi.fn()}
-          deleteChat={vi.fn()}
-          isClient
-          isPremium
-          windowWidth={1440}
-        />
-      </DragProvider>
+      <SidebarHarness
+        currentChat={currentChat}
+        handleChatSelect={handleChatSelect}
+      />
     )
     const { rerender } = render(sidebar(activeChat))
     expect(
@@ -124,4 +158,64 @@ describe('chat sidebar during streaming', () => {
     expect(screen.queryByText('Generating response')).not.toBeInTheDocument()
     expect(otherLink).toBeVisible()
   })
+
+  it.each([
+    { source: 'favorites', isLocalOnly: false, destination: 'Local' },
+    { source: 'chat-history', isLocalOnly: false, destination: 'Local' },
+    { source: 'favorites', isLocalOnly: true, destination: 'Cloud' },
+    { source: 'chat-history', isLocalOnly: true, destination: 'Cloud' },
+  ] as const)(
+    'routes a $source drop on the $destination chat list without mixing removal and conversion',
+    async ({ source, isLocalOnly, destination }) => {
+      const droppedChat = { ...activeChat, isLocalOnly }
+      const onRemoveFavorite = vi.fn()
+      const onConvertChatToLocal = vi.fn(async () => {})
+      const onConvertChatToCloud = vi.fn(async () => true)
+      const onRemoveChatFromProject = vi.fn(async () => {})
+      render(
+        <SidebarHarness
+          source={source}
+          currentChat={droppedChat}
+          pinnedChatIds={[activeChat.id]}
+          onRemoveFavorite={onRemoveFavorite}
+          onConvertChatToLocal={onConvertChatToLocal}
+          onConvertChatToCloud={onConvertChatToCloud}
+          onRemoveChatFromProject={onRemoveChatFromProject}
+        />,
+      )
+      fireEvent.click(screen.getByRole('tab', { name: destination }))
+      fireEvent.click(screen.getByRole('button', { name: 'Start drag' }))
+      expect(screen.getByLabelText('Drag source')).toHaveTextContent(source)
+
+      await act(async () => {
+        fireEvent.drop(screen.getByRole('tabpanel', { name: destination }), {
+          dataTransfer: {
+            getData: (type: string) => {
+              if (type !== 'application/x-chat-id')
+                throw new Error(`Unexpected drag type: ${type}`)
+              return activeChat.id
+            },
+          },
+        })
+      })
+
+      if (source === 'favorites') {
+        expect(onRemoveFavorite).toHaveBeenCalledExactlyOnceWith(activeChat.id)
+        expect(onConvertChatToLocal).not.toHaveBeenCalled()
+        expect(onConvertChatToCloud).not.toHaveBeenCalled()
+      } else {
+        expect(onRemoveFavorite).not.toHaveBeenCalled()
+        const convert = isLocalOnly
+          ? onConvertChatToCloud
+          : onConvertChatToLocal
+        const otherConvert = isLocalOnly
+          ? onConvertChatToLocal
+          : onConvertChatToCloud
+        expect(convert).toHaveBeenCalledExactlyOnceWith(activeChat.id)
+        expect(otherConvert).not.toHaveBeenCalled()
+      }
+      expect(onRemoveChatFromProject).not.toHaveBeenCalled()
+      expect(screen.getByLabelText('Drag source')).toHaveTextContent('none')
+    },
+  )
 })

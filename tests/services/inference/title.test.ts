@@ -14,11 +14,32 @@ function message(overrides: Partial<Message>): Message {
 
 describe('getTitleContent', () => {
   it('bounds large message content before title processing', () => {
+    const opening = 'Opening: '
+    const retained =
+      opening + 'A'.repeat(TITLE_SOURCE_MAX_CHARACTERS - opening.length)
     const content = getTitleContent(
-      message({ content: 'A'.repeat(TITLE_SOURCE_MAX_CHARACTERS * 10) }),
+      message({ content: retained + 'Discard this ending.' }),
     )
 
-    expect(content).toHaveLength(TITLE_SOURCE_MAX_CHARACTERS)
+    expect(content).toBe(retained)
+  })
+
+  it('prefers trimmed message content over attachment text', () => {
+    expect(
+      getTitleContent(
+        message({
+          content: '  Short title source  ',
+          attachments: [
+            {
+              id: 'unused',
+              type: 'document',
+              fileName: 'unused.txt',
+              textContent: 'Do not prefer attachment text',
+            },
+          ],
+        }),
+      ),
+    ).toBe('Short title source')
   })
 
   it('bounds combined attachment content and uses metadata fallbacks', () => {
@@ -41,7 +62,31 @@ describe('getTitleContent', () => {
       }),
     )
 
-    expect(content.startsWith('fallback.pdf')).toBe(true)
-    expect(content.length).toBeLessThanOrEqual(TITLE_SOURCE_MAX_CHARACTERS)
+    const prefix = 'fallback.pdf\n'
+    expect(content).toBe(
+      prefix + 'B'.repeat(TITLE_SOURCE_MAX_CHARACTERS - prefix.length),
+    )
+    expect(
+      getTitleContent(
+        message({
+          attachments: [
+            {
+              id: 'description',
+              type: 'image',
+              fileName: 'fallback.png',
+              textContent: ' ',
+              description: ' Description text ',
+            },
+            {
+              id: 'text',
+              type: 'document',
+              fileName: 'ignored.txt',
+              textContent: 'Preferred text',
+              description: 'Ignored description',
+            },
+          ],
+        }),
+      ),
+    ).toBe('Description text\nPreferred text')
   })
 })

@@ -199,18 +199,26 @@ describe('createTemporaryChat', () => {
 
 describe('upsertChatById', () => {
   it('replaces every stale copy of the same chat identity', () => {
-    const replacement = createChat({ title: 'Permanent', isTemporary: false })
+    const replacement = createChat({
+      title: 'Permanent',
+      isTemporary: false,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+    })
+    const otherChat = createChat({
+      id: 'chat-2',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    })
     const chats = [
       createChat({ title: 'Temporary', isTemporary: true }),
       createChat({ title: 'Duplicate', isTemporary: true }),
-      createChat({ id: 'chat-2' }),
+      otherChat,
     ]
+    const original = structuredClone(chats)
 
     const result = upsertChatById(chats, replacement)
 
-    expect(result.filter((chat) => chat.id === replacement.id)).toEqual([
-      replacement,
-    ])
+    expect(result).toEqual([replacement, otherChat])
+    expect(chats).toEqual(original)
   })
 })
 

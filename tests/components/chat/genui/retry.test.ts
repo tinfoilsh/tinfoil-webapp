@@ -6,8 +6,9 @@ import {
 } from '@/components/chat/genui/retry'
 import type { Chat, Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import { DEV_ENABLE_DEBUG_LOGS } from '@/constants/storage-keys'
 import { StructuredCompletionError } from '@/services/inference/inference-client'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { logErrorMock, sendStructuredCompletionMock, zodToJsonSchemaMock } =
   vi.hoisted(() => ({
@@ -94,6 +95,11 @@ function artifactChat(argumentsValue: string): Chat {
 }
 
 describe('artifact retry', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    localStorage.removeItem(DEV_ENABLE_DEBUG_LOGS)
+  })
+
   beforeEach(() => {
     sendStructuredCompletionMock.mockReset()
     zodToJsonSchemaMock.mockClear()
@@ -247,7 +253,16 @@ describe('artifact retry', () => {
   })
 
   it('classifies and safely logs schema conversion failures', async () => {
-    const conversionError = new Error('conversion failed')
+    const privateArguments = 'private artifact source'
+    const privateCause = 'private conversion detail'
+    const conversionError = new Error(privateCause)
+    const { logError } = await vi.importActual<
+      typeof import('@/utils/error-handling')
+    >('@/utils/error-handling')
+    logErrorMock.mockImplementationOnce(logError)
+    localStorage.setItem(DEV_ENABLE_DEBUG_LOGS, 'true')
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const debug = vi.spyOn(console, 'log').mockImplementation(() => {})
     zodToJsonSchemaMock.mockImplementationOnce(() => {
       throw conversionError
     })
@@ -255,6 +270,7 @@ describe('artifact retry', () => {
     await expect(
       regenerateToolCallArguments({
         toolName: 'render_chart',
+        originalArguments: privateArguments,
         contextMessages: [],
         model,
       }),
@@ -272,12 +288,24 @@ describe('artifact retry', () => {
         },
       }),
     )
+    expect(sendStructuredCompletionMock).not.toHaveBeenCalled()
+    expect(warning).toHaveBeenCalledExactlyOnceWith(
+      '[genui-retry] Artifact schema conversion failed: schema_conversion_failed',
+    )
+    expect(debug).toHaveBeenCalledOnce()
+    const output = [...warning.mock.calls, ...debug.mock.calls]
+      .flat()
+      .join('\n')
+    expect(output).not.toContain(privateArguments)
+    expect(output).not.toContain(privateCause)
   })
 
   it('patches only the originating block and mirror while preserving changes', () => {
     const original = '{"source":{"type":"html"}'
     const chat = artifactChat(original)
     chat.messages.push(message('user', 'Concurrent message'))
+    const before = structuredClone(chat)
+    const replacement = '{"source":{"type":"html","html":"fixed"}}'
     const result = patchToolCallArguments(
       chat,
       {
@@ -288,16 +316,26 @@ describe('artifact retry', () => {
         toolName: 'render_artifact_preview',
         originalArguments: original,
       },
-      '{"source":{"type":"html","html":"fixed"}}',
+      replacement,
     )
 
     expect(result.ok).toBe(true)
     if (!result.ok) return
+    expect(chat).toEqual(before)
+    expect(result.chat).not.toBe(chat)
+    expect(result.chat.messages[1]).not.toBe(chat.messages[1])
+    expect(result.chat.messages[0]).toBe(chat.messages[0])
+    expect(result.chat.messages[2]).toBe(chat.messages[2])
+    expect(result.chat.messages[1].timeline).toEqual([
+      before.messages[1].timeline![0],
+      { ...before.messages[1].timeline![1], arguments: replacement },
+      before.messages[1].timeline![2],
+    ])
     expect(result.chat.messages.at(-1)?.content).toBe('Concurrent message')
     expect(result.chat.messages[1].content).toBe(
       'Unrelated prose stays unchanged',
     )
-    expect(result.chat.messages[1].toolCalls?.[0].arguments).toContain('fixed')
+    expect(result.chat.messages[1].toolCalls?.[0].arguments).toBe(replacement)
     expect(result.chat.messages[1].toolCalls?.[1].arguments).toBe(
       '{"type":"bar","data":[]}',
     )

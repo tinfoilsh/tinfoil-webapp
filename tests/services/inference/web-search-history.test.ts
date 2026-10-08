@@ -247,18 +247,27 @@ describe('saved web evidence', () => {
       'assistant',
       'tool',
     ])
-    const [fetchCall, fetchResult, searchCall, searchResult] = replay as [
-      { tool_calls: [{ id: string; function: { name: string } }] },
-      { tool_call_id: string; content: string },
-      { tool_calls: [{ id: string; function: { name: string } }] },
-      { tool_call_id: string; content: string },
-    ]
-    expect(fetchCall.tool_calls[0].function.name).toBe('router_fetch')
-    expect(fetchCall.tool_calls[0].id).toBe('saved_web_3_0')
+    const [fetchCall, fetchResult, searchCall, searchResult] = replay
+    expect(fetchCall).toMatchObject({
+      role: 'assistant',
+      tool_calls: [{ id: 'saved_web_3_0', function: { name: 'router_fetch' } }],
+    })
+    expect(searchCall).toMatchObject({
+      role: 'assistant',
+      tool_calls: [
+        { id: 'saved_web_3_1', function: { name: 'router_search' } },
+      ],
+    })
+    if (
+      fetchResult.role !== 'tool' ||
+      typeof fetchResult.content !== 'string' ||
+      searchResult.role !== 'tool' ||
+      typeof searchResult.content !== 'string'
+    ) {
+      throw new Error('Expected textual tool results')
+    }
     expect(fetchResult.tool_call_id).toBe('saved_web_3_0')
     expect(JSON.parse(fetchResult.content).sources[0].snippet).toBe(excerpt)
-    expect(searchCall.tool_calls[0].function.name).toBe('router_search')
-    expect(searchCall.tool_calls[0].id).toBe('saved_web_3_1')
     expect(searchResult.tool_call_id).toBe('saved_web_3_1')
     expect(JSON.parse(searchResult.content).sources[0].snippet).toBe(excerpt)
   })
@@ -336,21 +345,36 @@ describe('saved web evidence', () => {
         })),
       )
     }
-    expect(estimateMessageTokens(original)).toBeGreaterThan(
-      estimateMessageTokens({
-        ...original,
-        timeline: undefined,
-        webSearch: undefined,
-      }),
-    )
+    const contextWindowTokens = 50_000
+    const smallEvidence: Message = {
+      ...original,
+      timeline: original.timeline.map((block) =>
+        block.type === 'web_search'
+          ? {
+              ...block,
+              state: {
+                ...block.state,
+                sources: block.state.sources?.map((item) => ({
+                  ...item,
+                  snippet: 'Short excerpt.',
+                })),
+              },
+            }
+          : block,
+      ),
+    }
+    expect(estimateMessageTokens(original)).toBeGreaterThan(contextWindowTokens)
     const latest: Message = {
       role: 'user',
       content: 'Continue.',
       timestamp: original.timestamp,
     }
-    expect(selectMessagesWithinBudget([original, latest], 100)).toEqual([
-      latest,
-    ])
+    expect(
+      selectMessagesWithinBudget([original, latest], contextWindowTokens),
+    ).toEqual([latest])
+    expect(
+      selectMessagesWithinBudget([smallEvidence, latest], contextWindowTokens),
+    ).toEqual([smallEvidence, latest])
   })
 
   it('retains a long page through streaming and backup before the next request', () => {

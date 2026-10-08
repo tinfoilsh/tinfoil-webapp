@@ -17,23 +17,32 @@ describe('settings chat deletion confirmation', () => {
     )
   })
 
-  it('describes completed cloud deletion without claiming an email was sent', () => {
-    expect(getDeleteAllChatsSuccessDescription(true, true)).toBe(
-      'Removed all chats from this device and encrypted cloud storage.',
-    )
-  })
-
-  it('warns signed-in users when cloud deletion did not complete', () => {
-    expect(getDeleteAllChatsSuccessDescription(true, false)).toBe(
-      'Removed all chats from this device. Encrypted cloud storage was not cleared.',
-    )
-  })
-
-  it('keeps guest deletion scoped to the browser session', () => {
-    expect(getDeleteAllChatsSuccessDescription(false, false)).toBe(
-      'Removed all chats from this browser session.',
-    )
-  })
+  it.each([
+    {
+      signedIn: true,
+      cloudDeleted: true,
+      description:
+        'Removed all chats from this device and encrypted cloud storage.',
+    },
+    {
+      signedIn: true,
+      cloudDeleted: false,
+      description:
+        'Removed all chats from this device. Encrypted cloud storage was not cleared.',
+    },
+    {
+      signedIn: false,
+      cloudDeleted: false,
+      description: 'Removed all chats from this browser session.',
+    },
+  ])(
+    'describes deletion scope (signed in: $signedIn, cloud deleted: $cloudDeleted)',
+    ({ signedIn, cloudDeleted, description }) => {
+      expect(getDeleteAllChatsSuccessDescription(signedIn, cloudDeleted)).toBe(
+        description,
+      )
+    },
+  )
 })
 
 describe('off-device import kickoff', () => {

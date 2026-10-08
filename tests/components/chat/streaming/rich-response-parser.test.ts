@@ -42,9 +42,14 @@ describe('parseRichStreamingResponse', () => {
 
   it('ends the initial wait when URL fetching begins', async () => {
     const onFirstEvent = vi.fn()
-    await parseRichStreamingResponse(
-      chunkStream([
-        {
+    const onUpdate = vi.fn()
+    let finish!: () => void
+    const completion = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const parsing = parseRichStreamingResponse(
+      (async function* (): AsyncGenerator<ChatChunk> {
+        yield {
           choices: [
             {
               delta: {
@@ -53,12 +58,27 @@ describe('parseRichStreamingResponse', () => {
               },
             },
           ],
-        },
-      ]),
-      { onFirstEvent },
+        }
+        await completion
+        yield { choices: [{ delta: {}, finish_reason: 'stop' }] }
+      })(),
+      { onFirstEvent, onUpdate },
     )
 
-    expect(onFirstEvent).toHaveBeenCalledOnce()
+    try {
+      await vi.waitFor(() => expect(onUpdate).toHaveBeenCalled())
+      expect(onFirstEvent).toHaveBeenCalledOnce()
+      expect(onUpdate).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          urlFetches: [
+            { id: 'fetch-1', url: 'https://example.com', status: 'fetching' },
+          ],
+        }),
+      )
+    } finally {
+      finish()
+      await parsing
+    }
   })
 
   it('reconstructs reasoning, content, citations, and tool calls', async () => {
@@ -139,24 +159,6 @@ describe('parseRichStreamingResponse', () => {
     ])
   })
 
-  it('preserves the query from a terminal-only web search event', async () => {
-    const message = await parseRichStreamingResponse(
-      chunkStream([
-        {
-          type: 'web_search_call',
-          id: 'search-1',
-          status: 'completed',
-          action: { query: 'actual query' },
-        },
-      ]),
-    )
-
-    expect(message.webSearch).toMatchObject({
-      query: 'actual query',
-      status: 'completed',
-    })
-  })
-
   it('keeps separate terminal-only web searches distinct', async () => {
     const message = await parseRichStreamingResponse(
       chunkStream([
@@ -178,8 +180,16 @@ describe('parseRichStreamingResponse', () => {
     expect(
       message.timeline
         ?.filter((block) => block.type === 'web_search')
-        .map((block) => block.state.query),
-    ).toEqual(['first query', 'second query'])
+        .map((block) => block.state),
+    ).toEqual([
+      { query: 'first query', status: 'completed', sources: [] },
+      { query: 'second query', status: 'completed', sources: [] },
+    ])
+    expect(message.webSearch).toEqual({
+      query: 'second query',
+      status: 'completed',
+      sources: [],
+    })
   })
 
   it('matches interleaved web-search completions by event ID', async () => {
@@ -226,6 +236,12 @@ describe('parseRichStreamingResponse', () => {
         },
         {
           type: 'web_search_call',
+          id: 'search-2',
+          status: 'in_progress',
+          action: { query: 'unrelated query' },
+        },
+        {
+          type: 'web_search_call',
           id: 'search-1',
           status: 'blocked',
           reason: 'policy',
@@ -242,6 +258,9 @@ describe('parseRichStreamingResponse', () => {
           status: 'blocked',
           reason: 'policy',
         },
+      }),
+      expect.objectContaining({
+        state: { query: 'unrelated query', status: 'searching' },
       }),
     ])
   })

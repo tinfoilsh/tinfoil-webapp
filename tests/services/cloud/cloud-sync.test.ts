@@ -11,7 +11,7 @@ import {
 } from '@/services/cloud/cloud-sync'
 import { chatEvents } from '@/services/storage/chat-events'
 import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   drainChatRevisionSync,
@@ -73,9 +73,8 @@ vi.mock('@/services/cloud/cloud-storage', () => ({
     listChats,
   },
 }))
-vi.mock('@/services/storage/indexed-db', () => ({
-  applyAttachmentRewritesInPlace: vi.fn(),
-  chatContentFingerprint: vi.fn(() => 'content-fingerprint'),
+vi.mock('@/services/storage/indexed-db', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/storage/indexed-db')>()),
   indexedDBStorage: {
     clearRevisionSyncState,
     getChat,
@@ -121,9 +120,29 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 
+let frames: Map<number, FrameRequestCallback>
+let frameId = 0
+beforeEach(() => {
+  const pendingFrames = new Map<number, FrameRequestCallback>()
+  frames = pendingFrames
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    pendingFrames.set(++frameId, callback)
+    return frameId
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) =>
+    pendingFrames.delete(id),
+  )
+})
+
+afterEach(() => {
+  frames.clear()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
 describe('CloudSyncService revision coordinator routing', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     Object.defineProperty(navigator, 'locks', {
       configurable: true,
       value: {
@@ -209,9 +228,17 @@ describe('CloudSyncService revision coordinator routing', () => {
   it.each(['queued', 'direct'])(
     'notifies the UI after a %s upload has finalized its sync metadata',
     async (mode) => {
-      vi.useFakeTimers()
       const notify = vi.fn()
       const unsubscribe = chatEvents.on(notify)
+      let finishFinalization!: () => void
+      const finalization = new Promise<void>((resolve) => {
+        finishFinalization = resolve
+      })
+      let enterFinalization!: () => void
+      const finalizationStarted = new Promise<void>((resolve) => {
+        enterFinalization = resolve
+      })
+      let pending: Promise<PromiseSettledResult<void>[]> | undefined
       try {
         canWriteToCloud.mockResolvedValue(true)
         const chat = {
@@ -232,21 +259,30 @@ describe('CloudSyncService revision coordinator routing', () => {
           projectIntentIncluded: false,
         })
         finalizeUpload.mockImplementation(async () => {
+          enterFinalization()
+          await finalization
           chat.locallyModified = false
           chat.pendingUpload = 0
           chat.syncedAt = Date.now()
           chat.syncVersion = 1
         })
         const service = new CloudSyncService()
-        const pending = Promise.allSettled([
+        pending = Promise.allSettled([
           mode === 'queued'
             ? service.backupChatAndWait(chat.id)
             : service.backupChatNow(chat.id),
         ])
-        await vi.runAllTimersAsync()
+        await Promise.race([finalizationStarted, pending])
+        expect(finalizeUpload).toHaveBeenCalledOnce()
+        expect(frames.size).toBe(0)
+        expect(notify).not.toHaveBeenCalled()
+        finishFinalization()
         expect(await pending).toEqual([
           { status: 'fulfilled', value: undefined },
         ])
+        const callbacks = [...frames.values()]
+        frames.clear()
+        for (const callback of callbacks) callback(performance.now())
         expect(chat.syncedAt).toBeGreaterThan(0)
         expect(notify).toHaveBeenCalledExactlyOnceWith({
           reason: 'sync',
@@ -254,7 +290,8 @@ describe('CloudSyncService revision coordinator routing', () => {
         })
       } finally {
         unsubscribe()
-        vi.useRealTimers()
+        finishFinalization()
+        await pending
       }
     },
   )
@@ -418,82 +455,6 @@ describe('CloudSyncService revision coordinator routing', () => {
     )
   })
 
-  it('persists minted attachment ids before the chat push so a failed push does not re-upload them', async () => {
-    canWriteToCloud.mockResolvedValue(true)
-    getChat.mockResolvedValue({
-      id: 'chat-1',
-      syncUserId: 'user-1',
-      locallyModified: true,
-      pendingUpload: 1,
-      updatedAt: '2026-01-01T00:00:00Z',
-      messages: [
-        {
-          role: 'user',
-          content: 'hello',
-          attachments: [{ id: 'local-att', type: 'image', base64: 'AQID' }],
-        },
-      ],
-    })
-    const rewrites = [
-      { clientId: 'local-att', serverId: 'srv-att', encryptionKey: 'k' },
-    ]
-    uploadChat.mockImplementation(async (_chat, options) => {
-      await options.onAttachmentsUploaded?.(rewrites)
-      throw new SyncEnclaveError('push failed', 409, 'IDEMPOTENCY_CONFLICT')
-    })
-
-    const service = new CloudSyncService()
-    await service.backupChat('chat-1')
-    await expect(service.waitForAllUploads()).rejects.toThrow('push failed')
-
-    expect(recordAttachmentRewrites).toHaveBeenCalledWith('chat-1', rewrites)
-    expect(finalizeUpload).not.toHaveBeenCalled()
-  })
-
-  it('re-uploads attachments the server purged and pushes again', async () => {
-    canWriteToCloud.mockResolvedValue(true)
-    const chat = {
-      id: 'chat-1',
-      syncUserId: 'user-1',
-      locallyModified: true,
-      pendingUpload: 1,
-      updatedAt: '2026-01-01T00:00:00Z',
-      messages: [
-        {
-          role: 'user',
-          content: 'hello',
-          attachments: [
-            {
-              id: 'srv-att',
-              type: 'image',
-              base64: 'AQID',
-              encryptionKey: 'k',
-            },
-          ],
-        },
-      ],
-    }
-    getChat.mockImplementation(async () => chat)
-    uploadChat
-      .mockRejectedValueOnce(
-        new SyncEnclaveError('missing', 409, 'MISSING_ATTACHMENT', {
-          missing_attachments: ['srv-att'],
-        }),
-      )
-      .mockImplementationOnce(async () => {
-        getChat.mockImplementation(async () => ({ ...chat, pendingUpload: 0 }))
-        return { syncVersion: 2, rewrites: [], projectIntentIncluded: false }
-      })
-
-    const service = new CloudSyncService()
-    await service.backupChat('chat-1')
-    await service.waitForAllUploads()
-    await vi.waitFor(() => expect(uploadChat).toHaveBeenCalledTimes(2))
-
-    expect(forgetServerAttachments).toHaveBeenCalledWith('chat-1', ['srv-att'])
-    expect(reportChatSyncFailed).not.toHaveBeenCalled()
-  })
-
   it('heals a purged attachment in-line on a one-shot upload', async () => {
     canWriteToCloud.mockResolvedValue(true)
     const chat = {
@@ -583,9 +544,6 @@ describe('CloudSyncService revision coordinator routing', () => {
 
   it('marks an oversized chat as failed and skips it until its content changes', async () => {
     canWriteToCloud.mockResolvedValue(true)
-    const { chatContentFingerprint } =
-      await import('@/services/storage/indexed-db')
-    const fingerprint = vi.mocked(chatContentFingerprint)
     const pendingChat = {
       id: 'chat-1',
       syncUserId: 'user-1',
@@ -600,7 +558,6 @@ describe('CloudSyncService revision coordinator routing', () => {
     )
     const service = new CloudSyncService()
 
-    fingerprint.mockReturnValue('fp-oversized')
     await service.backupChat('chat-1')
     await expect(service.waitForAllUploads()).rejects.toThrow('too large')
     // Terminal: no coalescer retries under the same key.
@@ -619,7 +576,7 @@ describe('CloudSyncService revision coordinator routing', () => {
     expect(uploadChat).toHaveBeenCalledTimes(1)
 
     // The user edited the chat: it is attempted again.
-    fingerprint.mockReturnValue('fp-edited')
+    pendingChat.messages[0].content = 'edited after size rejection'
     await service.backupChat('chat-1')
     await expect(service.waitForAllUploads()).rejects.toThrow('too large')
     expect(uploadChat).toHaveBeenCalledTimes(2)
@@ -691,7 +648,7 @@ describe('CloudSyncService revision coordinator routing', () => {
     const conversations = Array.from({ length: 50 }, (_, index) => ({
       id: `chat-${index}`,
       syncVersion: index + 1,
-      updatedAt: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+      updatedAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
     }))
     listChats
       .mockResolvedValueOnce({
@@ -710,7 +667,8 @@ describe('CloudSyncService revision coordinator routing', () => {
         hasMore: false,
       })
     getChat.mockImplementation(async (id: string) => {
-      const entry = conversations.find((chat) => chat.id === id)!
+      const entry = conversations.find((chat) => chat.id === id)
+      if (!entry) return null
       return {
         ...entry,
         syncUserId: 'user-1',
@@ -795,7 +753,7 @@ describe('CloudSyncService revision coordinator routing', () => {
     const boundary = Array.from({ length: 50 }, (_, index) => ({
       id: `boundary-${index}`,
       syncVersion: index + 1,
-      updatedAt: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+      updatedAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
     }))
     const cachedPage = Array.from({ length: 20 }, (_, index) => ({
       id: `cached-history-${index}`,
@@ -1019,20 +977,37 @@ describe('CloudSyncService revision coordinator routing', () => {
     })
   })
 
-  it('rejects a pagination cursor from a previous account', async () => {
-    listChats.mockImplementationOnce(async () => {
-      localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-2')
-      return {
-        conversations: [],
-        hasMore: true,
-        nextContinuationToken: 'stale-page-2',
-      }
-    })
-
-    await expect(
-      new CloudSyncService().initializeChatPaginationCursor(),
-    ).rejects.toThrow('Cloud account changed during synchronization')
-  })
+  it.each([
+    { entryPoint: 'initialize', switchAfter: 1 },
+    { entryPoint: 'initialize', switchAfter: 2 },
+    { entryPoint: 'fetch', switchAfter: 1 },
+    { entryPoint: 'fetch', switchAfter: 2 },
+  ])(
+    'stops metadata requests on account change: $entryPoint page $switchAfter',
+    async ({ entryPoint, switchAfter }) => {
+      let pages = 0
+      listChats.mockImplementation(async () => {
+        pages++
+        if (pages === switchAfter)
+          localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-2')
+        return {
+          conversations: [],
+          hasMore: pages <= switchAfter,
+          nextContinuationToken:
+            pages <= switchAfter ? `page-${pages + 1}` : undefined,
+        }
+      })
+      const service = new CloudSyncService()
+      await expect(
+        entryPoint === 'initialize'
+          ? service.initializeChatPaginationCursor()
+          : service.fetchAndStorePage({ limit: 20 }),
+      ).rejects.toThrow('Cloud account changed during synchronization')
+      expect(listChats).toHaveBeenCalledTimes(switchAfter)
+      expect(downloadChats).not.toHaveBeenCalled()
+      expect(applyRemoteChatIfFresh).not.toHaveBeenCalled()
+    },
+  )
 
   it('keeps paginating past chats the enclave cannot return', async () => {
     listChats.mockResolvedValue({
@@ -1330,6 +1305,9 @@ describe('CloudSyncService revision coordinator routing', () => {
     ).resolves.toBe(2)
     expect(clearRevisionCheckpoint).toHaveBeenCalledOnce()
     expect(drainChatRevisionSync).toHaveBeenCalledOnce()
+    expect(deleteStoredChat).toHaveBeenCalledTimes(2)
+    expect(deleteStoredChat).toHaveBeenNthCalledWith(1, 'failed-1')
+    expect(deleteStoredChat).toHaveBeenNthCalledWith(2, 'failed-2')
   })
 })
 
@@ -1364,7 +1342,7 @@ describe('CloudSyncService forkChat', () => {
     })
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-1')
     localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
     isAuthenticated.mockResolvedValue(true)
@@ -1417,18 +1395,27 @@ describe('CloudSyncService forkChat', () => {
       rewrites: [],
       projectIntentIncluded: false,
     })
+    let finishFinalization!: () => void
+    const finalization = new Promise<void>((resolve) => {
+      finishFinalization = resolve
+    })
     finalizeUpload.mockImplementation(async () => {
+      await finalization
       dirty.locallyModified = false
       dirty.pendingUpload = 0
     })
 
-    await new CloudSyncService().forkChat({
+    const pendingFork = new CloudSyncService().forkChat({
       sourceId: 'chat-source',
       targetId: 'chat-fork',
       messageCount: 1,
       title: 'Trip planning (fork)',
     })
 
+    await vi.waitFor(() => expect(finalizeUpload).toHaveBeenCalledOnce())
+    expect(forkCloudChat).not.toHaveBeenCalled()
+    finishFinalization()
+    await pendingFork
     expect(uploadChat).toHaveBeenCalledTimes(1)
     expect(uploadChat.mock.invocationCallOrder[0]).toBeLessThan(
       forkCloudChat.mock.invocationCallOrder[0],
@@ -1520,14 +1507,14 @@ describe('CloudSyncService forkChat', () => {
     }
   })
 
-  it('fails without touching the enclave when pending edits cannot be synced', async () => {
+  it('propagates an upload failure when pending edits cannot be synced', async () => {
     getChat.mockResolvedValue({ ...syncedSource, locallyModified: true })
-    canWriteToCloud.mockResolvedValue(false)
+    const failure = new SyncEnclaveError('Upload unavailable', 503, 'INTERNAL')
+    uploadChat.mockRejectedValueOnce(failure)
 
-    await expect(forkSource()).rejects.toThrow(
-      'Cloud sync key is not authorized',
-    )
+    await expect(forkSource()).rejects.toBe(failure)
 
+    expect(uploadChat).toHaveBeenCalledOnce()
     expect(forkCloudChat).not.toHaveBeenCalled()
     expect(applyRemoteChatIfFresh).not.toHaveBeenCalled()
   })

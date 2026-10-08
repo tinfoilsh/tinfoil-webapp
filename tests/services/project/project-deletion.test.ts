@@ -17,32 +17,41 @@ vi.mock('@/services/project/project-events', () => ({
 
 describe('clearDeletedProjectsForAccount', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
   })
 
-  it('publishes the successful deletion count after clearing the cache', async () => {
-    mocks.clear.mockResolvedValue(undefined)
-    const guard: AccountOperationGuard = {
-      userId: 'project-user',
-      isCurrent: () => true,
-      assertCurrent: vi.fn(),
-    }
-    const onCacheError = vi.fn()
-    const deletedCount = 3
-    const publishUiSuccess = vi.fn((count: number) => count)
-
-    const completion = clearDeletedProjectsForAccount(guard, onCacheError).then(
-      () => publishUiSuccess(deletedCount),
-    )
-
-    await expect(completion).resolves.toBe(deletedCount)
-    expect(guard.isCurrent()).toBe(true)
-    expect(mocks.clear).toHaveBeenCalledOnce()
-    expect(guard.assertCurrent).toHaveBeenCalledTimes(2)
-    expect(mocks.invalidateProjects).toHaveBeenCalledOnce()
-    expect(publishUiSuccess).toHaveBeenCalledExactlyOnceWith(deletedCount)
-    expect(onCacheError).not.toHaveBeenCalled()
-  })
+  it.each([false, true])(
+    'invalidates only after cache clear settles, cache failure: %s',
+    async (cacheFails) => {
+      let finish!: () => void
+      let fail!: (error: Error) => void
+      mocks.clear.mockReturnValue(
+        new Promise<void>((resolve, reject) => {
+          finish = resolve
+          fail = reject
+        }),
+      )
+      const guard: AccountOperationGuard = {
+        userId: 'project-user',
+        isCurrent: () => true,
+        assertCurrent: vi.fn(),
+      }
+      const onCacheError = vi.fn()
+      const completion = clearDeletedProjectsForAccount(guard, onCacheError)
+      expect(mocks.clear).toHaveBeenCalledOnce()
+      expect(mocks.invalidateProjects).not.toHaveBeenCalled()
+      expect(guard.assertCurrent).toHaveBeenCalledTimes(1)
+      const failure = new Error('Cache unavailable')
+      if (cacheFails) fail(failure)
+      else finish()
+      await expect(completion).resolves.toBeUndefined()
+      expect(guard.assertCurrent).toHaveBeenCalledTimes(2)
+      expect(mocks.invalidateProjects).toHaveBeenCalledOnce()
+      if (cacheFails)
+        expect(onCacheError).toHaveBeenCalledExactlyOnceWith(failure)
+      else expect(onCacheError).not.toHaveBeenCalled()
+    },
+  )
 
   it('does not publish success when the account changes during cache clear', async () => {
     let accountIsCurrent = true

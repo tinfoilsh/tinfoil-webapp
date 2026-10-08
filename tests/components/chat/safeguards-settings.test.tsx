@@ -53,14 +53,10 @@ describe('SafeguardsSettings', () => {
     setSnapshot()
   })
 
-  it('does not label safeguard responses as local previews', () => {
+  it('splits the explanation into three headed sections with the policy link', () => {
     setSnapshot({ status: 'ready', policy: POLICY })
     render(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)
     expect(screen.queryByText(/Local preview/i)).not.toBeInTheDocument()
-  })
-
-  it('splits the explanation into three headed sections with the policy link', () => {
-    render(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)
 
     expect(
       screen

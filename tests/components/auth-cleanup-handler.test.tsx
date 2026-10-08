@@ -82,12 +82,15 @@ describe('AuthCleanupHandler', () => {
 
   it('does not clear data for a transient signed-out state', async () => {
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
+    localStorage.setItem(AUTH_SIGNOUT_REQUESTED_AT, String(Date.now()))
 
     const { rerender } = render(createElement(AuthCleanupHandler))
 
     await act(async () => {
       vi.advanceTimersByTime(1000)
     })
+    expect(mockPerformSignoutCleanup).not.toHaveBeenCalled()
+    expect(window.location.reload).not.toHaveBeenCalled()
 
     authState = {
       isSignedIn: true,
@@ -106,6 +109,7 @@ describe('AuthCleanupHandler', () => {
 
     expect(mockPerformSignoutCleanup).not.toHaveBeenCalled()
     expect(mockPerformUserSwitchCleanup).not.toHaveBeenCalled()
+    expect(window.location.reload).not.toHaveBeenCalled()
   })
 
   it('preserves data when the session expires without explicit sign-out', async () => {
@@ -169,8 +173,14 @@ describe('AuthCleanupHandler', () => {
       await Promise.resolve()
     })
 
+    expect(mockPerformSignoutCleanup).toHaveBeenCalledTimes(1)
+    expect(
+      screen.getByRole('alertdialog', { name: 'Unable to clear local data' }),
+    ).toBeInTheDocument()
     expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
     expect(window.location.reload).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry cleanup' }))
+    expect(window.location.reload).toHaveBeenCalledTimes(1)
   })
 
   it('still clears data immediately on user switch', () => {

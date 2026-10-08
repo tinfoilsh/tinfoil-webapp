@@ -1,16 +1,28 @@
 import { runManualCloudSync } from '@/services/cloud/manual-cloud-sync'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const successfulChatSync = { uploaded: 1, downloaded: 1, errors: [] }
 
 describe('runManualCloudSync', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
   it('awaits chat and profile sync before reloading chats', async () => {
     const order: string[] = []
+    let finishChats!: () => void
+    let finishProfile!: () => void
+    const chats = new Promise<void>((resolve) => {
+      finishChats = resolve
+    })
+    const profile = new Promise<void>((resolve) => {
+      finishProfile = resolve
+    })
     const syncChats = vi.fn(async () => {
+      await chats
       order.push('chats')
       return successfulChatSync
     })
     const syncProfile = vi.fn(async () => {
+      await profile
       order.push('profile')
       return true
     })
@@ -18,9 +30,14 @@ describe('runManualCloudSync', () => {
       order.push('reload')
     })
 
-    await expect(
-      runManualCloudSync({ syncChats, syncProfile, reloadChats }),
-    ).resolves.toBe(true)
+    const sync = runManualCloudSync({ syncChats, syncProfile, reloadChats })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reloadChats).not.toHaveBeenCalled()
+    finishChats()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reloadChats).not.toHaveBeenCalled()
+    finishProfile()
+    await expect(sync).resolves.toBe(true)
     expect(syncChats).toHaveBeenCalledOnce()
     expect(syncProfile).toHaveBeenCalledOnce()
     expect(reloadChats).toHaveBeenCalledOnce()
@@ -62,7 +79,7 @@ describe('runManualCloudSync', () => {
       },
     )
 
-    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(0)
     expect(settled).toBe(false)
     finishProfile?.(true)
     await expect(syncPromise).rejects.toThrow('chat sync failed')

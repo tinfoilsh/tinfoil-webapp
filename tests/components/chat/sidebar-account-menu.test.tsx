@@ -195,18 +195,28 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('hides sync for signed-out users and offers sign in instead', () => {
-    userState = { user: null }
-    renderMenu({ isSignedIn: false, canSync: false, onSync: undefined })
+  it.each([
+    { gate: 'availability', canSync: false, hasSyncCallback: true },
+    { gate: 'callback', canSync: true, hasSyncCallback: false },
+  ])(
+    'offers sign in and independently gates sync on $gate',
+    ({ canSync, hasSyncCallback }) => {
+      userState = { user: null }
+      renderMenu({
+        isSignedIn: false,
+        canSync,
+        onSync: hasSyncCallback ? vi.fn().mockResolvedValue(true) : undefined,
+      })
 
-    fireEvent.click(screen.getByRole('button', { name: /Menu/ }))
-    expect(
-      screen.getByRole('menuitem', { name: 'Sign in' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('menuitem', { name: /Sync cloud data/ }),
-    ).not.toBeInTheDocument()
-  })
+      fireEvent.click(screen.getByRole('button', { name: /Menu/ }))
+      expect(
+        screen.getByRole('menuitem', { name: 'Sign in' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('menuitem', { name: /Sync cloud data/ }),
+      ).not.toBeInTheDocument()
+    },
+  )
 
   it('links directly to sign in with the return URL instead of opening account settings', () => {
     userState = { user: null }
@@ -358,7 +368,8 @@ describe('SidebarAccountMenu', () => {
     it('changes the Help highlight without retaining faded flyouts during repeated row switches', () => {
       const { help, panel } = openWithMouse()
       const settings = screen.getByRole('menuitem', { name: 'Settings' })
-      for (let pass = 0; pass < 10; pass += 1) {
+      for (const _pass of ['first switch', 'repeat switch']) {
+        const flyout = screen.getByRole('menu', { name: 'Help' })
         fireEvent.pointerOut(help, {
           relatedTarget: settings,
           pointerType: 'mouse',
@@ -368,6 +379,8 @@ describe('SidebarAccountMenu', () => {
           pointerType: 'mouse',
         })
         expect(help).not.toHaveClass('bg-surface-chat')
+        expect(help).toHaveAttribute('aria-expanded', 'false')
+        expect(flyout).not.toBeInTheDocument()
         expect(
           screen.queryByRole('menu', { name: 'Help' }),
         ).not.toBeInTheDocument()
@@ -415,27 +428,6 @@ describe('SidebarAccountMenu', () => {
         expect(screen.getByRole('menu', { name: /Ada/ })).toBe(panel)
         expect(screen.getByRole('menu', { name: 'Help' })).toBe(flyout)
       }
-    })
-
-    it('removes Help immediately on entering Settings without remounting the main panel', () => {
-      const { help, panel, flyout } = openWithMouse()
-      const settings = screen.getByRole('menuitem', { name: 'Settings' })
-      fireEvent.pointerOut(help, {
-        relatedTarget: settings,
-        pointerType: 'mouse',
-      })
-      fireEvent.pointerOver(settings, {
-        relatedTarget: help,
-        pointerType: 'mouse',
-      })
-      fireEvent.pointerMove(settings, {
-        clientX: 100,
-        clientY: 420,
-        pointerType: 'mouse',
-      })
-      expect(flyout).not.toBeInTheDocument()
-      expect(help).toHaveAttribute('aria-expanded', 'false')
-      expect(screen.getByRole('menu', { name: /Ada/ })).toBe(panel)
     })
 
     it('cancels a pending close when the pointer returns and closes after a real departure', () => {

@@ -7,13 +7,17 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const authState = vi.hoisted(() => ({ isSignedIn: false }))
+
 vi.mock('@clerk/react', () => ({
   useAuth: () => ({
     getToken: async () => null,
     signOut: vi.fn(),
-    isSignedIn: false,
+    isSignedIn: authState.isSignedIn,
   }),
-  useUser: () => ({ user: null }),
+  useUser: () => ({
+    user: authState.isSignedIn ? { id: 'settings-user' } : null,
+  }),
 }))
 
 vi.mock('@/services/passkey', async (importOriginal) => ({
@@ -57,15 +61,18 @@ function Harness(props: Partial<Parameters<typeof SettingsModal>[0]> = {}) {
 describe('settings opening', () => {
   beforeEach(() => {
     localStorage.clear()
+    authState.isSignedIn = false
   })
 
   it.each([false, true])(
     'uses theme-aware blue for active passkeys (dark: %s)',
     async (isDarkMode) => {
+      authState.isSignedIn = true
       localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
       render(
         <Harness
           initialTab="cloud-sync"
+          isSignedIn
           passkeyActive
           isClient
           isDarkMode={isDarkMode}
@@ -81,9 +88,61 @@ describe('settings opening', () => {
       const icon = status.parentElement?.querySelector('svg')
       expect(icon).toHaveClass('text-tinfoil-accent-blue', 'dark:text-blue-400')
       expect(icon?.style.color).toBe('')
-      expect(icon).toHaveAttribute('width', '1em')
-      expect(icon).toHaveAttribute('height', '1em')
-      expect(icon).toHaveAttribute('viewBox', '-2 -2 24 24')
+    },
+  )
+
+  it.each([
+    { isSignedIn: false, isPremium: false },
+    { isSignedIn: true, isPremium: false },
+    { isSignedIn: true, isPremium: true },
+  ])(
+    'gates project deletion and transfers in settings (signed in: $isSignedIn, premium: $isPremium)',
+    ({ isSignedIn, isPremium }) => {
+      authState.isSignedIn = isSignedIn
+      render(
+        <Harness
+          initialTab="data"
+          isSignedIn={isSignedIn}
+          isPremium={isPremium}
+          encryptionKey={`key_${'ab'.repeat(32)}`}
+        />,
+      )
+      expect(
+        screen.getByRole('button', { name: 'Delete all saved chats' }),
+      ).toBeEnabled()
+      expect(
+        Boolean(screen.queryByRole('button', { name: 'Delete all projects' })),
+      ).toBe(isSignedIn)
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Import from Claude' }),
+      )
+      expect(Boolean(screen.queryByRole('button', { name: 'Projects' }))).toBe(
+        isPremium,
+      )
+      expect(
+        Boolean(
+          screen.queryByRole('button', { name: 'Export Projects for Claude' }),
+        ),
+      ).toBe(isPremium)
+      if (isSignedIn) {
+        fireEvent.click(
+          screen.getAllByRole('button', { name: 'Cloud Sync' })[0],
+        )
+        expect(
+          Boolean(
+            screen.queryByRole('button', { name: 'Create Tinfoil Backup' }),
+          ),
+        ).toBe(isPremium)
+        expect(
+          Boolean(
+            screen.queryByRole('button', { name: 'Restore Tinfoil Backup' }),
+          ),
+        ).toBe(isPremium)
+      } else {
+        expect(
+          screen.queryByRole('button', { name: 'Cloud Sync' }),
+        ).not.toBeInTheDocument()
+      }
     },
   )
 

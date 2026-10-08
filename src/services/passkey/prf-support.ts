@@ -6,7 +6,7 @@
  * fails, callers should fall back to the manual key flow.
  */
 
-import { getPasskeyCapability, resetPasskeyCapabilityCache } from './kit'
+import { getPasskeyCapability } from './kit'
 
 /**
  * Returns true if the browser/platform likely supports WebAuthn PRF.
@@ -14,11 +14,4 @@ import { getPasskeyCapability, resetPasskeyCapabilityCache } from './kit'
  */
 export async function isPrfSupported(): Promise<boolean> {
   return (await getPasskeyCapability()) !== 'unsupported'
-}
-
-/**
- * Clear the cached result. Useful for testing.
- */
-export function resetPrfSupportCache(): void {
-  resetPasskeyCapabilityCache()
 }

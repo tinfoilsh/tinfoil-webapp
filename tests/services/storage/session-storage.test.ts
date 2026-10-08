@@ -47,20 +47,6 @@ describe('sessionChatStorage streaming drafts', () => {
     )
   })
 
-  it('clears the draft after a terminal save', () => {
-    sessionChatStorage.saveChat(chat('chat-1', 'before'))
-    sessionChatStorage.saveStreamingDraft(chat('chat-1', 'streaming'))
-
-    sessionChatStorage.saveChat(chat('chat-1', 'complete'))
-
-    expect(
-      sessionStorage.getItem(`${SYNC_SESSION_CHAT_DRAFT_PREFIX}chat-1`),
-    ).toBeNull()
-    expect(sessionChatStorage.getChat('chat-1')?.messages[0].content).toBe(
-      'complete',
-    )
-  })
-
   it('keeps unrelated drafts separate when saving a chat', () => {
     sessionChatStorage.saveChat(chat('chat-a', 'before'))
     sessionChatStorage.saveChat(chat('chat-b', 'persisted'))
@@ -112,6 +98,7 @@ describe('sessionChatStorage streaming drafts', () => {
     (operation) => {
       sessionChatStorage.saveChat(chat('chat-1', 'persisted'))
       sessionChatStorage.saveStreamingDraft(chat('chat-1', 'streaming'))
+      const canonicalBefore = sessionStorage.getItem(SYNC_SESSION_CHATS)
       const originalSetItem = sessionStorage.setItem.bind(sessionStorage)
       const setItemSpy = vi
         .spyOn(sessionStorage, 'setItem')
@@ -125,16 +112,25 @@ describe('sessionChatStorage streaming drafts', () => {
           originalSetItem(key, value)
         })
 
-      if (operation === 'save') {
-        sessionChatStorage.saveChat(chat('chat-1', 'complete'))
-      } else {
-        sessionChatStorage.deleteChat('chat-1')
+      try {
+        if (operation === 'save') {
+          sessionChatStorage.saveChat(chat('chat-1', 'complete'))
+        } else {
+          sessionChatStorage.deleteChat('chat-1')
+        }
+        expect(setItemSpy).toHaveBeenCalledWith(
+          SYNC_SESSION_CHATS,
+          JSON.stringify(
+            operation === 'save' ? [chat('chat-1', 'complete')] : [],
+          ),
+        )
+        expect(sessionStorage.getItem(SYNC_SESSION_CHATS)).toBe(canonicalBefore)
+        expect(sessionChatStorage.getChat('chat-1')?.messages[0].content).toBe(
+          'streaming',
+        )
+      } finally {
+        setItemSpy.mockRestore()
       }
-
-      expect(sessionChatStorage.getChat('chat-1')?.messages[0].content).toBe(
-        'streaming',
-      )
-      setItemSpy.mockRestore()
     },
   )
 
@@ -144,8 +140,20 @@ describe('sessionChatStorage streaming drafts', () => {
     sessionChatStorage.deleteChat('chat-1')
     expect(sessionChatStorage.getChat('chat-1')).toBeNull()
 
+    const unrelatedKey = 'unrelated-session-state'
+    sessionStorage.setItem(unrelatedKey, 'retain')
+    sessionChatStorage.saveChat(chat('chat-2', 'persisted'))
     sessionChatStorage.saveStreamingDraft(chat('chat-2', 'streaming'))
+    sessionChatStorage.saveStreamingDraft(chat('chat-3', 'another draft'))
     sessionChatStorage.clearAll()
     expect(sessionChatStorage.getAllChats()).toEqual([])
+    expect(sessionStorage.getItem(SYNC_SESSION_CHATS)).toBeNull()
+    expect(
+      sessionStorage.getItem(`${SYNC_SESSION_CHAT_DRAFT_PREFIX}chat-2`),
+    ).toBeNull()
+    expect(
+      sessionStorage.getItem(`${SYNC_SESSION_CHAT_DRAFT_PREFIX}chat-3`),
+    ).toBeNull()
+    expect(sessionStorage.getItem(unrelatedKey)).toBe('retain')
   })
 })

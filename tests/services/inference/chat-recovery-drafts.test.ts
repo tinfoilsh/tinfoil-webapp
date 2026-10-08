@@ -61,9 +61,29 @@ describe('chat recovery drafts', () => {
       message: message('Partial'),
     })
 
-    pruneChatRecoveryDrafts(new Set())
+    setChatRecoveryDraft({
+      chatId: 'chat-2',
+      turnId: 'turn-1',
+      sessionId: 'session-2',
+      message: message('Stale partial'),
+    })
+    const listener = vi.fn()
+    const unsubscribe = subscribeChatRecoveryDrafts(listener)
+    try {
+      pruneChatRecoveryDrafts(new Set(['chat-1\u0000turn-1']))
 
-    expect(getChatRecoveryDraftSnapshot()).toEqual([])
+      expect(getChatRecoveryDraftSnapshot()).toEqual([
+        {
+          chatId: 'chat-1',
+          turnId: 'turn-1',
+          sessionId: 'session-1',
+          message: message('Partial'),
+        },
+      ])
+      expect(listener).toHaveBeenCalledOnce()
+    } finally {
+      unsubscribe()
+    }
   })
 
   it('publishes active resumed recoveries', () => {

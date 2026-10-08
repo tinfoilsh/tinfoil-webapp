@@ -58,7 +58,7 @@ async function drive(store, req) {
   const routed = store.route(req, res)
   if (routed && typeof routed.then === 'function') await routed
   // Ensure end has been called.
-  await new Promise((r) => setImmediate(r))
+  expect(res.finished).toBe(true)
   return res
 }
 
@@ -98,12 +98,17 @@ describe('mock safeguards backend', () => {
   it.each(['POST', 'DELETE'])(
     'rejects unauthenticated %s mutations with 401',
     async (method) => {
+      store.addFlag('existing')
+      const before = store.listFlags()
       const res = await drive(
         store,
-        makeRequest(method, '/api/dev/safeguard-flags'),
+        makeRequest(method, '/api/dev/safeguard-flags', {
+          body: { conversation_id: 'new' },
+        }),
       )
       expect(res.statusCode).toBe(401)
       expect(res.json).toMatchObject({ error: expect.any(String) })
+      expect(store.listFlags()).toEqual(before)
     },
   )
 
@@ -122,27 +127,25 @@ describe('mock safeguards backend', () => {
     })
   })
 
-  it('rejects POST missing conversation_id with 400', async () => {
-    const res = await drive(
-      store,
-      makeRequest('POST', '/api/dev/safeguard-flags', {
-        headers: { ...AUTH, 'Content-Type': 'application/json' },
-        body: {},
-      }),
-    )
-    expect(res.statusCode).toBe(400)
-  })
-
-  it('rejects POST with blank conversation_id with 400', async () => {
-    const res = await drive(
-      store,
-      makeRequest('POST', '/api/dev/safeguard-flags', {
-        headers: { ...AUTH, 'Content-Type': 'application/json' },
-        body: { conversation_id: '   ' },
-      }),
-    )
-    expect(res.statusCode).toBe(400)
-  })
+  it.each([undefined, '   ', 7, 'a'.repeat(513)])(
+    'rejects invalid conversation_id %j without changing state',
+    async (conversationId) => {
+      store.addFlag('existing')
+      const before = store.listFlags()
+      const res = await drive(
+        store,
+        makeRequest('POST', '/api/dev/safeguard-flags', {
+          headers: { ...AUTH, 'Content-Type': 'application/json' },
+          body: { conversation_id: conversationId },
+        }),
+      )
+      expect(res.statusCode).toBe(400)
+      expect(res.json).toEqual({
+        error: 'conversation_id is required and must be a non-empty string.',
+      })
+      expect(store.listFlags()).toEqual(before)
+    },
+  )
 
   it('creates one flag and deduplicates repeats', async () => {
     const first = await drive(
@@ -244,18 +247,19 @@ describe('mock safeguards backend', () => {
   })
 
   it('does not log the Authorization header', async () => {
-    await drive(
+    const res = await drive(
       store,
       makeRequest('POST', '/api/dev/safeguard-flags', {
         headers: { ...AUTH, 'Content-Type': 'application/json' },
         body: { conversation_id: 'no-secret-leak' },
       }),
     )
-    for (const call of logger.log.mock.calls) {
-      const line = String(call[0] ?? '')
-      expect(line).not.toContain('test-token')
-      expect(line).not.toContain('Bearer')
-    }
+    expect(res.json).toEqual({ created: true, duplicate: false })
+    expect(store.listFlags().flags.map((flag) => flag.conversation_id)).toEqual(
+      ['no-secret-leak'],
+    )
+    expect(JSON.stringify(logger.log.mock.calls)).not.toContain('test-token')
+    expect(JSON.stringify(logger.log.mock.calls)).not.toContain('Bearer')
   })
 
   it('router returns null for unrelated paths so callers can fall through', () => {

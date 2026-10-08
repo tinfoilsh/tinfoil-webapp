@@ -142,34 +142,6 @@ describe('useMessageQueue concurrency', () => {
     resolveA?.()
   })
 
-  it('dispatches the first message of a blank chat (empty string id)', async () => {
-    const handleQuery = vi.fn((_text: string) => Promise.resolve())
-
-    const { result } = renderHook(() =>
-      useMessageQueue({
-        chatId: '',
-        loadingState: 'idle' as LoadingState,
-        handleQuery,
-        isRateLimited: () => false,
-      }),
-    )
-
-    act(() => {
-      result.current.submit({ text: 'hello' })
-    })
-    await flushMicrotasks()
-
-    expect(handleQuery).toHaveBeenCalledTimes(1)
-    expect(handleQuery).toHaveBeenLastCalledWith(
-      'hello',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      expect.any(Function),
-    )
-  })
-
   it('keeps local and cloud blank queues isolated while dispatch is blocked', async () => {
     const handleQuery = vi.fn((_text: string) => Promise.resolve())
     let blocked = true
@@ -218,12 +190,12 @@ describe('useMessageQueue concurrency', () => {
   it('never persists a temporary chat queue and clears it on mode exit', async () => {
     const handleQuery = vi.fn(() => Promise.resolve())
     const { result, rerender } = renderHook(
-      ({ queueId, persistQueue }) =>
+      ({ queueId, persistQueue, loadingState }) =>
         useMessageQueue({
           chatId: queueId,
           queueId,
           persistQueue,
-          loadingState: 'loading' as LoadingState,
+          loadingState,
           handleQuery,
           isRateLimited: () => false,
         }),
@@ -231,6 +203,7 @@ describe('useMessageQueue concurrency', () => {
         initialProps: {
           queueId: 'temporary-chat',
           persistQueue: false as boolean,
+          loadingState: 'loading' as LoadingState,
         },
       },
     )
@@ -254,9 +227,23 @@ describe('useMessageQueue concurrency', () => {
     ).toBeNull()
     expect(result.current.queuedMessages).toHaveLength(1)
 
-    rerender({ queueId: 'permanent-chat', persistQueue: true })
+    rerender({
+      queueId: 'permanent-chat',
+      persistQueue: true,
+      loadingState: 'loading',
+    })
     expect(result.current.queuedMessages).toEqual([])
     expect(window.sessionStorage.length).toBe(0)
+
+    rerender({
+      queueId: 'temporary-chat',
+      persistQueue: false,
+      loadingState: 'idle',
+    })
+    await flushMicrotasks()
+    expect(result.current.queuedMessages).toEqual([])
+    expect(window.sessionStorage.length).toBe(0)
+    expect(handleQuery).not.toHaveBeenCalled()
   })
 
   it('requeues the complete item once when dispatch never starts', async () => {
@@ -427,6 +414,15 @@ describe('useMessageQueue concurrency', () => {
     })
     await flushMicrotasks()
     expect(handleQuery).toHaveBeenCalledTimes(1)
+
+    expect(handleQuery).toHaveBeenLastCalledWith(
+      'A',
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      expect.any(Function),
+    )
 
     // The blank chat converts to a real id and keeps streaming.
     rerender({ chatId: 'real-1', loadingState: 'loading' as LoadingState })

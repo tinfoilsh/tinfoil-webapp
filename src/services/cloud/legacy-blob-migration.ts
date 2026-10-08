@@ -275,14 +275,3 @@ export function resetAlternativesFinalizationState(): void {
   finalizedFinalizationReport = null
   recoveryHistoryReady = false
 }
-
-/**
- * Convenience: run the migration and, on success, drop the
- * client-side alternatives. Returns the report so callers can still
- * surface counts to the UI.
- */
-export async function runLegacyBlobMigrationAndFinalize(): Promise<MigrationReport> {
-  const report = await runLegacyBlobMigration()
-  await finalizeAlternativesIfMigrated(report)
-  return report
-}

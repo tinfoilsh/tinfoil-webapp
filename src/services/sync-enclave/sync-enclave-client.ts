@@ -28,6 +28,7 @@ const requestScopeControllers = new Map<
   AbortController
 >()
 const SYNC_ENCLAVE_REQUIRED_PROTOCOL = 'https:'
+const AUTHORIZATION_HEADER = 'Authorization'
 const ABSOLUTE_URL_PROTOCOL_PATTERN = /^[a-z][a-z\d+\-.]*:/i
 
 export class SyncEnclaveError extends Error {
@@ -155,6 +156,7 @@ export class SyncEnclaveClient {
     } = init
     const requestUrl = new URL(path, SYNC_ENCLAVE_URL).toString()
     const baseHeaders = new Headers(init.headers)
+    if (init.skipAuth) baseHeaders.delete(AUTHORIZATION_HEADER)
     baseHeaders.set('Accept', 'application/json')
     baseHeaders.set(SYNC_HEADERS.SyncProtocol, SYNC_PROTOCOL_VERSION)
     if (init.body && !baseHeaders.has('Content-Type')) {
@@ -173,7 +175,8 @@ export class SyncEnclaveClient {
 
         const send = async (authToken: string | null) => {
           const headers = new Headers(baseHeaders)
-          if (authToken) headers.set('Authorization', `Bearer ${authToken}`)
+          if (authToken)
+            headers.set(AUTHORIZATION_HEADER, `Bearer ${authToken}`)
           try {
             return await settleWithSignal(
               this.secure.fetch(requestUrl, {
@@ -413,10 +416,19 @@ function assertSecureSyncEnclaveUrl(enclaveURL: string): void {
 }
 
 function assertRelativeSyncEnclavePath(path: string): void {
+  let sameOrigin: boolean
+  try {
+    sameOrigin =
+      new URL(path, SYNC_ENCLAVE_URL).origin ===
+      new URL(SYNC_ENCLAVE_URL).origin
+  } catch {
+    sameOrigin = false
+  }
   if (
     !path.startsWith('/') ||
     path.startsWith('//') ||
-    ABSOLUTE_URL_PROTOCOL_PATTERN.test(path)
+    ABSOLUTE_URL_PROTOCOL_PATTERN.test(path) ||
+    !sameOrigin
   ) {
     throw new SyncEnclaveError(
       'sync enclave request path must be relative',

@@ -11,11 +11,6 @@ describe('tryParsePartialJson', () => {
     expect(tryParsePartialJson('   ')).toBeNull()
   })
 
-  it('recovers an unterminated string value', () => {
-    const result = tryParsePartialJson('{"title":"My Slid')
-    expect(result).toEqual({ title: 'My Slid' })
-  })
-
   it('recovers a missing closing brace', () => {
     const result = tryParsePartialJson('{"a":1,"b":2')
     expect(result).toEqual({ a: 1, b: 2 })
@@ -26,14 +21,19 @@ describe('tryParsePartialJson', () => {
     expect(result).toEqual({ title: 'Demo' })
   })
 
-  it('recovers a partial nested object', () => {
-    const result = tryParsePartialJson(
-      '{"title":"Demo","source":{"type":"html","html":"<h1',
-    )
-    expect(result).toEqual({
-      title: 'Demo',
-      source: { type: 'html', html: '<h1' },
-    })
+  it.each([
+    {
+      name: 'flat value',
+      raw: '{"title":"My Slid',
+      expected: { title: 'My Slid' },
+    },
+    {
+      name: 'nested source',
+      raw: '{"title":"Demo","source":{"type":"html","html":"<h1',
+      expected: { title: 'Demo', source: { type: 'html', html: '<h1' } },
+    },
+  ])('recovers an unterminated string in $name', ({ raw, expected }) => {
+    expect(tryParsePartialJson(raw)).toEqual(expected)
   })
 
   it('recovers from a stream that ends in an open array', () => {

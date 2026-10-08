@@ -24,11 +24,35 @@ vi.mock('@/hooks/use-subscription-status', () => ({
 }))
 
 vi.mock('@/components/project/project-provider', () => ({
-  ProjectProvider: ({ children }: { children: ReactNode }) => children,
+  ProjectProvider: ({
+    children,
+    initialProjectId,
+  }: {
+    children: ReactNode
+    initialProjectId?: string | null
+  }) => (
+    <div data-testid="project-provider" data-project-id={initialProjectId}>
+      {children}
+    </div>
+  ),
 }))
 
 vi.mock('@/components/chat', () => ({
-  ChatInterface: () => <div>Project chat</div>,
+  ChatInterface: ({
+    initialProjectId,
+    initialChatId,
+  }: {
+    initialProjectId?: string | null
+    initialChatId?: string | null
+  }) => (
+    <div
+      data-testid="project-chat"
+      data-project-id={initialProjectId}
+      data-chat-id={initialChatId}
+    >
+      Project chat
+    </div>
+  ),
 }))
 
 describe('PremiumProjectRoute', () => {
@@ -48,19 +72,46 @@ describe('PremiumProjectRoute', () => {
 
   it('renders project chat for Premium users', () => {
     mocks.subscriptionActive = true
-    render(<PremiumProjectRoute projectId="project-1" />)
+    render(<PremiumProjectRoute projectId="project-1" chatId="chat-2" />)
 
     expect(screen.getByText('Project chat')).toBeInTheDocument()
     expect(mocks.router.replace).not.toHaveBeenCalled()
+    expect(screen.getByTestId('project-provider')).toHaveAttribute(
+      'data-project-id',
+      'project-1',
+    )
+    expect(screen.getByTestId('project-chat')).toHaveAttribute(
+      'data-project-id',
+      'project-1',
+    )
+    expect(screen.getByTestId('project-chat')).toHaveAttribute(
+      'data-chat-id',
+      'chat-2',
+    )
   })
 
-  it('does not render or redirect while subscription status is loading', () => {
-    mocks.isLoading = true
-    render(<PremiumProjectRoute projectId="project-1" />)
+  it.each([false, true])(
+    'does not render or redirect while subscription status is loading (cached Premium: %s)',
+    (active) => {
+      mocks.isLoading = true
+      mocks.subscriptionActive = active
+      const view = render(<PremiumProjectRoute projectId="project-1" />)
 
-    expect(screen.queryByText('Project chat')).not.toBeInTheDocument()
-    expect(mocks.router.replace).not.toHaveBeenCalled()
-  })
+      expect(screen.queryByText('Project chat')).not.toBeInTheDocument()
+      expect(mocks.router.replace).not.toHaveBeenCalled()
+      mocks.isLoading = false
+      view.rerender(<PremiumProjectRoute projectId="project-1" />)
+      if (active) {
+        expect(screen.getByText('Project chat')).toBeInTheDocument()
+        expect(mocks.router.replace).not.toHaveBeenCalled()
+      } else {
+        expect(screen.queryByText('Project chat')).not.toBeInTheDocument()
+        expect(mocks.router.replace).toHaveBeenCalledExactlyOnceWith(
+          '/chat?upgrade=projects',
+        )
+      }
+    },
+  )
 
   it('does not render project chat before route parameters are ready', () => {
     mocks.subscriptionActive = true

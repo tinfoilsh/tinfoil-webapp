@@ -109,6 +109,14 @@ describe('speech text', () => {
 
   it('preserves an oversized sentence split on word boundaries', () => {
     const text = `${'hello '.repeat(250)}world.`
-    expect(splitSpeechText(text).join(' ')).toBe(text)
+    const chunks = splitSpeechText(text)
+    expect(chunks.length).toBeGreaterThan(1)
+    expect(chunks.join(' ')).toBe(text)
+    for (const chunk of chunks) {
+      expect(Array.from(chunk).length).toBeLessThanOrEqual(
+        SPEECH.MAX_CHUNK_CHARACTERS,
+      )
+      expect(chunk).toMatch(/^(?:hello(?: |$))*(?:world\.)?$/)
+    }
   })
 })

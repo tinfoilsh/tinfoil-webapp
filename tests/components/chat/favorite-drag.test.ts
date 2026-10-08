@@ -2,7 +2,7 @@ import { consumeFavoriteDrop } from '@/components/chat/favorite-drag'
 import { describe, expect, it, vi } from 'vitest'
 
 describe('consumeFavoriteDrop', () => {
-  it('removes a dragged favorite without moving the chat', () => {
+  it('consumes a favorite drag and removes its pin', () => {
     const onRemoveFavorite = vi.fn()
 
     expect(

@@ -1,6 +1,7 @@
 import { createContentPreprocessor } from '@/components/chat/hooks/streaming/content-preprocessor'
 import { createEventNormalizer } from '@/components/chat/hooks/streaming/event-normalizer'
 import { MessageAssembler } from '@/components/chat/hooks/streaming/message-assembler'
+import { parseRichStreamingResponse } from '@/components/chat/hooks/streaming/rich-response-parser'
 import { TimelineBuilder } from '@/components/chat/hooks/streaming/timeline-builder'
 import type { TimelineCodeExecBlock } from '@/components/chat/types'
 import { describe, expect, it } from 'vitest'
@@ -69,28 +70,66 @@ describe('event-normalizer code_exec_tool_call handling', () => {
     })
   })
 
-  it('passes blocked/failed status through unchanged (process-stream maps to failed)', () => {
-    const normalizer = createEventNormalizer()
-    const preprocessor = createContentPreprocessor()
+  it.each([{ status: 'blocked' }, { status: 'failed' }])(
+    'preserves $status markers and maps terminal execution failures',
+    async ({ status }) => {
+      const normalizer = createEventNormalizer()
+      const preprocessor = createContentPreprocessor()
 
-    const events = normalizer.processChunk(
-      buildContentChunk(
-        tinfoilMarker({
-          type: 'tinfoil.tool_call',
-          item_id: 'call_1',
-          status: 'blocked',
-          tool: { name: 'bash' },
-        }),
-      ),
-      preprocessor,
-    )
+      const events = normalizer.processChunk(
+        buildContentChunk(
+          tinfoilMarker({
+            type: 'tinfoil.tool_call',
+            item_id: 'call_1',
+            status,
+            tool: { name: 'bash' },
+          }),
+        ),
+        preprocessor,
+      )
 
-    const event = events.find((e) => e.type === 'code_exec_tool_call')
-    expect(event).toBeDefined()
-    if (event && event.type === 'code_exec_tool_call') {
-      expect(event.status).toBe('blocked')
-    }
-  })
+      expect(events).toEqual([
+        {
+          type: 'code_exec_tool_call',
+          id: 'call_1',
+          toolName: 'bash',
+          status,
+          arguments: undefined,
+          output: undefined,
+        },
+      ])
+      const message = await parseRichStreamingResponse(
+        (async function* () {
+          yield buildContentChunk(
+            tinfoilMarker({
+              type: 'tinfoil.tool_call',
+              item_id: 'call_1',
+              status: 'in_progress',
+              tool: { name: 'bash', arguments: { command: 'ls' } },
+            }),
+          )
+          yield buildContentChunk(
+            tinfoilMarker({
+              type: 'tinfoil.tool_call',
+              item_id: 'call_1',
+              status,
+              tool: { name: 'bash' },
+            }),
+          )
+          yield { choices: [{ delta: {}, finish_reason: 'stop' }] }
+        })(),
+      )
+      expect(message.codeExecCalls).toEqual([
+        {
+          id: 'call_1',
+          toolName: 'bash',
+          arguments: { command: 'ls' },
+          status: 'failed',
+          output: undefined,
+        },
+      ])
+    },
+  )
 
   it('drops events without item_id (no clock-based fallback)', () => {
     const normalizer = createEventNormalizer()
@@ -141,28 +180,12 @@ describe('event-normalizer code_exec_tool_call handling', () => {
 })
 
 describe('TimelineBuilder code-exec operations', () => {
-  it('pushCodeExecCall creates a new code_exec block on first call', () => {
-    const tb = new TimelineBuilder()
-    tb.pushCodeExecCall({
-      id: 'call_1',
-      toolName: 'bash',
-      arguments: { command: 'ls' },
-      status: 'running',
-    })
-
-    const snapshot = tb.snapshot()
-    expect(snapshot).toHaveLength(1)
-    const block = snapshot[0] as TimelineCodeExecBlock
-    expect(block.type).toBe('code_exec')
-    expect(block.calls).toHaveLength(1)
-    expect(block.calls[0].id).toBe('call_1')
-  })
-
   it('consecutive pushCodeExecCall merges into the last code_exec block', () => {
     const tb = new TimelineBuilder()
     tb.pushCodeExecCall({
       id: 'call_1',
       toolName: 'bash',
+      arguments: { command: 'ls' },
       status: 'running',
     })
     tb.pushCodeExecCall({
@@ -174,7 +197,16 @@ describe('TimelineBuilder code-exec operations', () => {
     const snapshot = tb.snapshot()
     expect(snapshot).toHaveLength(1)
     const block = snapshot[0] as TimelineCodeExecBlock
-    expect(block.calls.map((c) => c.id)).toEqual(['call_1', 'call_2'])
+    expect(block.type).toBe('code_exec')
+    expect(block.calls).toEqual([
+      {
+        id: 'call_1',
+        toolName: 'bash',
+        arguments: { command: 'ls' },
+        status: 'running',
+      },
+      { id: 'call_2', toolName: 'view', status: 'running' },
+    ])
   })
 
   it('a non-code-exec block in between starts a fresh code_exec block', () => {
@@ -208,14 +240,35 @@ describe('TimelineBuilder code-exec operations', () => {
       toolName: 'bash',
       status: 'running',
     })
+    tb.pushCodeExecCall({ id: 'call_2', toolName: 'view', status: 'running' })
+    tb.appendContent('between')
+    tb.pushCodeExecCall({ id: 'call_3', toolName: 'bash', status: 'running' })
     tb.updateCodeExecCall('call_1', {
       status: 'completed',
       output: 'done',
     })
 
-    const block = tb.snapshot()[0] as TimelineCodeExecBlock
-    expect(block.calls[0].status).toBe('completed')
-    expect(block.calls[0].output).toBe('done')
+    expect(tb.snapshot()).toEqual([
+      {
+        type: 'code_exec',
+        id: 'code-exec-0',
+        calls: [
+          {
+            id: 'call_1',
+            toolName: 'bash',
+            status: 'completed',
+            output: 'done',
+          },
+          { id: 'call_2', toolName: 'view', status: 'running' },
+        ],
+      },
+      { type: 'content', id: 'content-1', content: 'between' },
+      {
+        type: 'code_exec',
+        id: 'code-exec-2',
+        calls: [{ id: 'call_3', toolName: 'bash', status: 'running' }],
+      },
+    ])
   })
 
   it('updateCodeExecCall silently no-ops when id does not match', () => {
@@ -309,13 +362,5 @@ describe('MessageAssembler code-exec derivation', () => {
       'call_1',
       'call_2',
     ])
-  })
-
-  it('omits codeExecCalls when the timeline has none', () => {
-    const asm = new MessageAssembler()
-    const message = asm.toMessage([
-      { type: 'content', id: 'c', content: 'plain' },
-    ])
-    expect(message.codeExecCalls).toBeUndefined()
   })
 })

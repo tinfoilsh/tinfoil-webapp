@@ -1,12 +1,13 @@
 import { CloudSyncSetupModal } from '@/components/modals/cloud-sync-setup-modal'
+import * as setupMode from '@/components/modals/cloud-sync-setup-mode'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
 import {
   isCloudSyncEnabled,
   setCloudSyncEnabled,
 } from '@/utils/cloud-sync-settings'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
@@ -25,9 +26,21 @@ vi.mock('@/utils/error-handling', () => ({
 const baseProps = {
   isOpen: true,
   onClose: vi.fn(),
-  onSetupComplete: vi.fn(),
+  onSetupComplete:
+    vi.fn<
+      (
+        key: string,
+        mode: setupMode.CloudKeySetupMode,
+      ) => Promise<setupMode.CloudKeySetupResult>
+    >(),
   isDarkMode: false,
 }
+
+beforeEach(() => {
+  baseProps.onSetupComplete
+    .mockReset()
+    .mockRejectedValue(new Error('Unexpected key activation'))
+})
 
 afterEach(() => {
   vi.clearAllMocks()
@@ -36,8 +49,8 @@ afterEach(() => {
 })
 
 describe('CloudSyncSetupModal onboarding', () => {
-  it('starts passkey setup directly from the intro card', () => {
-    const onSetupWithPasskey = vi.fn(async () => {})
+  it('starts passkey setup directly from the intro card', async () => {
+    const onSetupWithPasskey = vi.fn(async () => true)
     render(
       <CloudSyncSetupModal
         {...baseProps}
@@ -49,23 +62,17 @@ describe('CloudSyncSetupModal onboarding', () => {
     expect(
       screen.getByRole('heading', { name: 'Encrypted Backups & Sync' }),
     ).toBeInTheDocument()
-    expect(
-      document.querySelector('[class*="bg-[#F9F8F6]"]'),
-    ).toBeInTheDocument()
-    expect(document.querySelector('svg[class*="h-20"]')).toBeInTheDocument()
-    expect(
-      document.querySelector('[class*="max-h-[40rem]"]'),
-    ).toBeInTheDocument()
-    expect(document.querySelector('.backdrop-blur-md')).toBeInTheDocument()
-    expect(
-      screen.getByRole('heading', { name: 'Encrypted Backups & Sync' }),
-    ).toHaveClass('text-center')
-
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
 
     expect(
-      screen.getByRole('heading', { name: 'Encrypted Backups & Sync' }),
+      await screen.findByRole('heading', { name: 'Success!' }),
     ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Encryption Key' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Setup Failed' }),
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Enable with Passkey' }),
     ).not.toBeInTheDocument()
@@ -216,9 +223,18 @@ describe('CloudSyncSetupModal onboarding', () => {
   })
 
   it('shows a spinner while generating an encryption key', async () => {
-    vi.spyOn(encryptionService, 'generateKey').mockReturnValue(
-      new Promise<string>(() => {}),
+    let finishGeneration!: (key: string) => void
+    const generateKey = vi
+      .spyOn(encryptionService, 'generateKey')
+      .mockReturnValue(
+        new Promise<string>((resolve) => {
+          finishGeneration = resolve
+        }),
+      )
+    vi.spyOn(setupMode, 'determineGeneratedKeySetupMode').mockResolvedValue(
+      'recoverExisting',
     )
+    baseProps.onSetupComplete.mockResolvedValue({ ok: true })
     render(<CloudSyncSetupModal {...baseProps} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
@@ -231,13 +247,30 @@ describe('CloudSyncSetupModal onboarding', () => {
     expect(screen.getByTestId('generate-key-spinner')).toHaveClass(
       'animate-spin',
     )
+    expect(generateKey).toHaveBeenCalledTimes(1)
+    const generatedKey = 'key_generated-for-setup'
+    await act(async () => {
+      finishGeneration(generatedKey)
+    })
+    expect(await screen.findByText(generatedKey)).toBeInTheDocument()
+    const complete = screen.getByRole('button', { name: "Let's go!" })
+    expect(complete).toBeEnabled()
+    expect(baseProps.onSetupComplete).not.toHaveBeenCalled()
+    fireEvent.click(complete)
+    await waitFor(() =>
+      expect(baseProps.onSetupComplete).toHaveBeenCalledExactlyOnceWith(
+        generatedKey,
+        'recoverExisting',
+      ),
+    )
+    await waitFor(() => expect(baseProps.onClose).toHaveBeenCalledTimes(1))
   })
 
   it('disables intro actions while passkey setup is in progress', () => {
     render(
       <CloudSyncSetupModal
         {...baseProps}
-        onSetupWithPasskey={vi.fn(async () => {})}
+        onSetupWithPasskey={vi.fn(async () => true)}
         isPasskeySetupBusy
       />,
     )

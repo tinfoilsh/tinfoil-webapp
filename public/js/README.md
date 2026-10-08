@@ -19,9 +19,10 @@ keep user content out of analytics:
   never the full `href`, so query strings and fragments are dropped.
 - `k()` reduces `document.referrer` to origin + pathname before it is sent as `b.r`.
 
-`tests/pages/plausible-analytics.test.ts` asserts each of these and checks that the
-SRI hash in `src/pages/_app.tsx` matches the file. Do not overwrite `plausible.js`
-with the stock script.
+`tests/pages/plausible-analytics.test.ts` asserts each of these.
+`tests/pages/clerk-privacy.test.tsx` checks that the rendered SRI hash in
+`src/pages/_app.tsx` matches the file. Do not overwrite `plausible.js` with the
+stock script.
 
 ## Updating
 
@@ -40,5 +41,5 @@ The script downloads the current upstream to `public/js/plausible.upstream.js`
    ```bash
    openssl dgst -sha384 -binary public/js/plausible.js | openssl base64 -A
    ```
-4. Run `npx vitest run tests/pages/plausible-analytics.test.ts`. It fails until both
+4. Run `npx vitest run tests/pages/plausible-analytics.test.ts tests/pages/clerk-privacy.test.tsx`. It fails until both
    the local edits and the SRI hash are in place.

@@ -108,11 +108,12 @@ export function createTinfoilEventParser(): {
   // still in the next chunk; we strip the first byte of that chunk
   // below instead of checking buffer[0] synchronously.
   let pendingStripLeadingNewline = false
-  // True when the last byte we emitted to the output `text` was `\n`.
-  // If the next chunk starts with `<tinfoil-event>`, that `\n` was the
-  // router's leading pad and must be retroactively removed from `text`
-  // (we only know it was a pad after seeing the open tag).
+  // True when the unclassified text immediately before the buffered
+  // suffix ends with `\n`. A marker consumes this padding candidate;
+  // earlier model newlines cannot serve as padding for later markers.
   let trailingNewlineOnText = false
+  // Hold the last newline until another chunk identifies it as padding or text.
+  let pendingText = ''
 
   /**
    * Given a non-marker chunk suffix, return how many trailing bytes
@@ -140,13 +141,14 @@ export function createTinfoilEventParser(): {
 
   const consume = (chunk: string): TinfoilEventConsumeResult => {
     buffer += chunk
-    let text = ''
+    let text = pendingText
+    pendingText = ''
     const events: TinfoilEvent[] = []
 
     // Drain a deferred trailing-pad `\n` left over from the previous
     // `consume` call. Only applies to the very first byte so we do not
     // accidentally eat model-emitted newlines further downstream.
-    if (pendingStripLeadingNewline) {
+    if (pendingStripLeadingNewline && buffer.length > 0) {
       pendingStripLeadingNewline = false
       if (buffer.charCodeAt(0) === 0x0a) {
         buffer = buffer.slice(1)
@@ -185,11 +187,7 @@ export function createTinfoilEventParser(): {
           text = text.slice(0, -1)
         }
         text += buffer.slice(0, preTagEnd)
-        if (text.length > 0) {
-          trailingNewlineOnText = text.charCodeAt(text.length - 1) === 0x0a
-        } else {
-          trailingNewlineOnText = false
-        }
+        trailingNewlineOnText = false
         buffer = buffer.slice(openIdx + OPEN_TAG.length)
         insideMarker = true
         continue
@@ -212,16 +210,15 @@ export function createTinfoilEventParser(): {
       } else if (buffer.charCodeAt(0) === 0x0a) {
         buffer = buffer.slice(1)
       }
-      // The open tag we just finished reset `trailingNewlineOnText` to
-      // whatever `text` ended with; re-confirm that state so leading
-      // strips for subsequent markers in the same chunk still work.
-      trailingNewlineOnText =
-        text.length > 0 && text.charCodeAt(text.length - 1) === 0x0a
       insideMarker = false
       const event = parseMarkerPayload(payload)
       if (event) events.push(event)
     }
 
+    if (trailingNewlineOnText && text.endsWith('\n')) {
+      pendingText = '\n'
+      text = text.slice(0, -1)
+    }
     return { text, events }
   }
 
@@ -230,7 +227,8 @@ export function createTinfoilEventParser(): {
     // the raw tail as plain text so at least the user sees something
     // rather than silently dropping bytes. Callers can still decide
     // whether to strip residual tags before display.
-    const tail = buffer
+    const tail = pendingText + buffer
+    pendingText = ''
     buffer = ''
     insideMarker = false
     pendingStripLeadingNewline = false
@@ -258,21 +256,4 @@ function parseMarkerPayload(raw: string): TinfoilEvent | null {
   } catch {
     return null
   }
-}
-
-/**
- * One-shot helper for non-streaming content: runs a fresh parser across
- * the full string and returns both the cleaned text and the decoded
- * events. Use this for final assistant messages returned by the
- * non-streaming chat / responses paths, where the whole payload lands
- * in one chunk.
- */
-export function extractTinfoilEventsFromText(input: string): {
-  text: string
-  events: TinfoilEvent[]
-} {
-  const parser = createTinfoilEventParser()
-  const { text, events } = parser.consume(input)
-  const tail = parser.flush()
-  return { text: text + tail, events }
 }

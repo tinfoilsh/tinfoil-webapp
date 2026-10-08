@@ -1,4 +1,4 @@
-import { CLOUD_SYNC } from '@/config'
+import { API_BASE_URL, CLOUD_SYNC } from '@/config'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { unwrapBackupPullResult } from '@/services/cloud/backup-read-error'
 import {
@@ -79,8 +79,20 @@ async function downloadChatForBackup(
 }
 
 describe('CloudStorageService auth readiness', () => {
+  function deferWaitForInit() {
+    mockIsInitialized.mockReturnValue(false)
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
+    let finishInit!: () => void
+    mockWaitForInit.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishInit = resolve
+      }),
+    )
+    return finishInit
+  }
+
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     mockAttachmentGet.mockReset()
     localStorage.clear()
     mockGetAuthHeaders.mockResolvedValue({ Authorization: 'Bearer token' })
@@ -675,9 +687,9 @@ describe('CloudStorageService auth readiness', () => {
       reason: 'attachment_key_invalid',
       omittable: true,
     })
-    expect(invalidLength.cause).toBeInstanceOf(
-      EncryptedAttachmentValidationError,
-    )
+    expect(invalidLength).toMatchObject({
+      cause: expect.any(EncryptedAttachmentValidationError),
+    })
 
     vi.stubGlobal(
       'fetch',
@@ -702,7 +714,9 @@ describe('CloudStorageService auth readiness', () => {
       reason: 'attachment_payload_invalid',
       omittable: true,
     })
-    expect(truncated.cause).toBeInstanceOf(EncryptedAttachmentValidationError)
+    expect(truncated).toMatchObject({
+      cause: expect.any(EncryptedAttachmentValidationError),
+    })
 
     vi.stubGlobal(
       'fetch',
@@ -797,15 +811,26 @@ describe('CloudStorageService auth readiness', () => {
 
     const chat = await new CloudStorageService().downloadChat('chat-1')
 
+    expect(chat).toMatchObject({
+      id: 'chat-1',
+      title: 'Remote',
+      syncVersion: 2,
+    })
     expect(chat?.projectId).toBeUndefined()
   })
 
   it('waits for auth token manager initialization before listing chats', async () => {
-    mockIsInitialized.mockReturnValue(false)
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
+    const finishInit = deferWaitForInit()
 
     const service = new CloudStorageService()
-    await service.listChats()
+    const listing = service.listChats()
+    try {
+      await vi.waitFor(() => expect(mockWaitForInit).toHaveBeenCalledOnce())
+      expect(mockListStatus).not.toHaveBeenCalled()
+    } finally {
+      finishInit()
+      await listing
+    }
 
     expect(mockWaitForInit).toHaveBeenCalledWith(3000)
     expect(mockListStatus).toHaveBeenCalledWith({
@@ -864,11 +889,18 @@ describe('CloudStorageService auth readiness', () => {
   })
 
   it('waits for auth token manager initialization before checking auth state', async () => {
-    mockIsInitialized.mockReturnValue(false)
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
+    const finishInit = deferWaitForInit()
 
     const service = new CloudStorageService()
-    const isAuthenticated = await service.isAuthenticated()
+    const authentication = service.isAuthenticated()
+    try {
+      await vi.waitFor(() => expect(mockWaitForInit).toHaveBeenCalledOnce())
+      expect(mockIsAuthenticated).not.toHaveBeenCalled()
+    } finally {
+      finishInit()
+      await authentication
+    }
+    const isAuthenticated = await authentication
 
     expect(isAuthenticated).toBe(true)
     expect(mockWaitForInit).toHaveBeenCalledWith(3000)
@@ -876,15 +908,53 @@ describe('CloudStorageService auth readiness', () => {
   })
 
   it('returns only the number of chats deleted from cloud storage', async () => {
-    mockRevisionSnapshot.mockResolvedValueOnce({
-      items: [{ id: 'chat-1' }, { id: 'chat-2' }],
-      snapshot_revision: '2',
-    })
+    mockRevisionSnapshot
+      .mockResolvedValueOnce({
+        items: [{ id: 'chat-1' }],
+        next_cursor: 'second-page',
+        snapshot_revision: '2',
+      })
+      .mockResolvedValueOnce({
+        items: [{ id: 'chat-2' }],
+        snapshot_revision: '2',
+      })
 
     const result = await new CloudStorageService().deleteAllChats()
 
     expect(result).toEqual({ deleted: 2 })
     expect(mockEnclaveDeleteRow).toHaveBeenCalledTimes(2)
+    expect(mockRevisionSnapshot).toHaveBeenNthCalledWith(2, {
+      cursor: 'second-page',
+      limit: 500,
+    })
+    expect(mockEnclaveDeleteRow.mock.calls.map(([request]) => request)).toEqual(
+      [
+        {
+          scope: 'chat',
+          id: 'chat-1',
+          ifMatch: null,
+          idempotencyKey: expect.any(String),
+          keyB64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+        },
+        {
+          scope: 'chat',
+          id: 'chat-2',
+          ifMatch: null,
+          idempotencyKey: expect.any(String),
+          keyB64: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+        },
+      ],
+    )
+    const failure = new Error('Delete rejected')
+    mockRevisionSnapshot.mockResolvedValueOnce({
+      items: [{ id: 'chat-1' }, { id: 'chat-2' }],
+      snapshot_revision: '2',
+    })
+    mockEnclaveDeleteRow.mockRejectedValueOnce(failure)
+    await expect(new CloudStorageService().deleteAllChats()).rejects.toBe(
+      failure,
+    )
+    expect(mockEnclaveDeleteRow).toHaveBeenCalledTimes(3)
   })
 
   it('returns only the deleted count for project chat deletion', async () => {
@@ -894,10 +964,17 @@ describe('CloudStorageService auth readiness', () => {
     } as Response)
 
     const result = await new CloudStorageService().deleteChatsByProject(
-      'project-1',
+      'project/with space',
     )
 
     expect(result).toEqual({ deleted: 2 })
+    expect(fetch).toHaveBeenCalledExactlyOnceWith(
+      `${API_BASE_URL}/api/projects/project%2Fwith%20space/chats`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer token' },
+      },
+    )
   })
 
   it('marks restore uploads so the enclave can clear stale tombstones', async () => {
@@ -907,6 +984,8 @@ describe('CloudStorageService auth readiness', () => {
         id: 'chat-1',
         title: 'Local chat',
         messages: [{ role: 'user', content: 'hi' }],
+        syncVersion: 7,
+        clockVersion: 7,
         createdAt: '2026-01-01T00:00:00.000Z',
         updatedAt: '2026-01-01T00:00:00.000Z',
         lastAccessedAt: 0,
@@ -919,6 +998,10 @@ describe('CloudStorageService auth readiness', () => {
     expect(pushArg.scope).toBe('chat')
     expect(pushArg.id).toBe('chat-1')
     expect(pushArg.metadata).toMatchObject({ restoreDeleted: true })
+    expect(pushArg.ifMatch).toBeNull()
+    expect(
+      JSON.parse(new TextDecoder().decode(pushArg.plaintext)).clockVersion,
+    ).toBe(1)
   })
 
   it('omits stale project metadata from dirty content-only uploads', async () => {
@@ -988,42 +1071,6 @@ describe('CloudStorageService auth readiness', () => {
     )
     expect(plaintext.pendingRecoveries).toBeUndefined()
     expect(JSON.stringify(plaintext)).not.toContain('sensitive-local-token')
-  })
-
-  it('reuses stable attachment idempotency keys across upload retries', async () => {
-    const service = new CloudStorageService()
-    const chat = {
-      id: 'chat-1',
-      title: 'Local chat',
-      messages: [
-        {
-          role: 'user',
-          content: 'hi',
-          attachments: [
-            {
-              id: 'local-att',
-              type: 'image',
-              fileName: 'image.png',
-              base64: 'AQID',
-            },
-          ],
-        },
-      ],
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-      lastAccessedAt: 0,
-    } as any
-
-    await service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' })
-    const firstKey = mockAttachmentPut.mock.calls[0][0].idempotencyKey
-
-    chat.messages[0].attachments[0].id = 'local-att'
-    chat.messages[0].attachments[0].base64 = 'AQID'
-    chat.messages[0].attachments[0].encryptionKey = undefined
-    await service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' })
-
-    expect(mockAttachmentPut).toHaveBeenCalledTimes(2)
-    expect(mockAttachmentPut.mock.calls[1][0].idempotencyKey).toBe(firstKey)
   })
 
   it('keeps the attachment idempotency key stable across separate logical uploads', async () => {
@@ -1154,6 +1201,15 @@ describe('CloudStorageService auth readiness', () => {
   it('awaits each uploaded attachment callback before the next put and chat push', async () => {
     const service = new CloudStorageService()
     const order: string[] = []
+    const releases: Array<() => void> = []
+    const gates = Array.from(
+      { length: 2 },
+      () =>
+        new Promise<void>((resolve) => {
+          releases.push(resolve)
+        }),
+    )
+    let persistenceIndex = 0
     mockAttachmentPut.mockImplementationOnce(async () => {
       order.push('attachment-put-a')
       return { id: 'srv-att', att_key: 'k' }
@@ -1168,12 +1224,12 @@ describe('CloudStorageService auth readiness', () => {
     })
     const onAttachmentsUploaded = vi.fn(
       async (_rewrites: AttachmentRewrite[]) => {
-        await Promise.resolve()
+        await gates[persistenceIndex++]
         order.push('persist')
       },
     )
 
-    const result = await service.uploadChat(
+    const uploading = service.uploadChat(
       {
         id: 'chat-1',
         title: 'Local chat',
@@ -1204,6 +1260,19 @@ describe('CloudStorageService auth readiness', () => {
       { idempotencyKey: 'upload-idem-1', onAttachmentsUploaded },
     )
 
+    await vi.waitFor(() =>
+      expect(onAttachmentsUploaded).toHaveBeenCalledTimes(1),
+    )
+    expect(mockAttachmentPut).toHaveBeenCalledTimes(1)
+    expect(mockEnclavePush).not.toHaveBeenCalled()
+    releases[0]()
+    await vi.waitFor(() =>
+      expect(onAttachmentsUploaded).toHaveBeenCalledTimes(2),
+    )
+    expect(mockAttachmentPut).toHaveBeenCalledTimes(2)
+    expect(mockEnclavePush).not.toHaveBeenCalled()
+    releases[1]()
+    const result = await uploading
     expect(order).toEqual([
       'attachment-put-a',
       'persist',
@@ -1428,8 +1497,16 @@ describe('CloudStorageService auth readiness', () => {
     expect(loaded.documents).toEqual({
       'srv-doc': { textContent: 'from blob' },
     })
-    expect(Object.keys(loaded.images)).toEqual(['srv-img'])
+    expect(loaded.images).toEqual({ 'srv-img': 'AQID' })
     expect(mockAttachmentGet).toHaveBeenCalledTimes(2)
+    expect(mockAttachmentGet).toHaveBeenCalledWith({
+      id: 'srv-doc',
+      attKeyB64: 'dk',
+    })
+    expect(mockAttachmentGet).toHaveBeenCalledWith({
+      id: 'srv-img',
+      attKeyB64: 'ik',
+    })
   })
 
   it('rejects an oversized chat before uploading any attachment', async () => {
@@ -1495,6 +1572,19 @@ describe('CloudStorageService auth readiness', () => {
     await service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' })
 
     expect(mockAttachmentPut).not.toHaveBeenCalled()
+    expect(mockEnclavePush).toHaveBeenCalledOnce()
+    expect(
+      JSON.parse(
+        new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+      ).messages[0].attachments,
+    ).toEqual([
+      {
+        id: 'att-v2',
+        type: 'image',
+        fileName: 'image.png',
+        encryptionKey: 'existing-key',
+      },
+    ])
   })
 
   it('uploads attachments before chat push so retries reuse enclave-minted ids', async () => {
@@ -1522,6 +1612,7 @@ describe('CloudStorageService auth readiness', () => {
       lastAccessedAt: 0,
     } as any
 
+    const originalChat = structuredClone(chat)
     await expect(
       service.uploadChat(chat, { idempotencyKey: 'upload-idem-1' }),
     ).rejects.toThrow('push failed')
@@ -1532,6 +1623,19 @@ describe('CloudStorageService auth readiness', () => {
     expect(chat.messages[0].attachments[0]).toMatchObject({
       id: 'local-att',
     })
+    expect(chat).toEqual(originalChat)
+    expect(
+      JSON.parse(
+        new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+      ).messages[0].attachments,
+    ).toEqual([
+      {
+        id: 'att-v2',
+        type: 'image',
+        fileName: 'image.png',
+        encryptionKey: 'k',
+      },
+    ])
   })
 
   it('does not downgrade v2 attachment reads to legacy fetch on enclave failure', async () => {

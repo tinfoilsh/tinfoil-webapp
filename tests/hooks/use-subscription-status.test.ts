@@ -20,6 +20,16 @@ vi.mock('@clerk/react', () => ({
   useUser: () => clerkState,
 }))
 
+function seedCache(
+  cachedAt: number,
+  { userId = 'user_123', active = true } = {},
+) {
+  localStorage.setItem(
+    SETTINGS_CACHED_SUBSCRIPTION_STATUS,
+    JSON.stringify({ userId, chat_subscription_active: active, cachedAt }),
+  )
+}
+
 describe('hasActiveSubscription', () => {
   const now = new Date('2026-07-23T12:00:00Z')
   const future = new Date('2026-08-23T12:00:00Z')
@@ -57,32 +67,31 @@ describe('readCachedSubscriptionStatus', () => {
 
   beforeEach(() => localStorage.clear())
 
-  it('restores a recent cache for the same user', () => {
-    localStorage.setItem(
-      SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-      JSON.stringify({
-        userId: 'user_123',
-        chat_subscription_active: true,
-        cachedAt: now,
-      }),
-    )
+  it.each([now, new Date('2026-07-22T12:00:00Z').getTime()])(
+    'restores a recent cache for the same user at %s',
+    (cachedAt) => {
+      seedCache(cachedAt)
 
-    expect(readCachedSubscriptionStatus('user_123', now)).toBe(true)
-  })
+      expect(readCachedSubscriptionStatus('user_123', now)).toBe(true)
+    },
+  )
 
-  it('rejects another user or an expired cache', () => {
-    localStorage.setItem(
-      SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-      JSON.stringify({
-        userId: 'user_123',
-        chat_subscription_active: true,
-        cachedAt: now - 25 * 60 * 60 * 1000,
-      }),
-    )
+  it.each([
+    ['foreign account', 'user_456', now],
+    ['expired cache', 'user_123', new Date('2026-07-22T11:00:00Z').getTime()],
+    [
+      'future timestamp',
+      'user_123',
+      new Date('2026-07-23T12:00:01Z').getTime(),
+    ],
+  ] as const)(
+    'rejects another user or an expired cache (%s)',
+    (_scenario, userId, cachedAt) => {
+      seedCache(cachedAt)
 
-    expect(readCachedSubscriptionStatus('user_456', now)).toBeNull()
-    expect(readCachedSubscriptionStatus('user_123', now)).toBeNull()
-  })
+      expect(readCachedSubscriptionStatus(userId, now)).toBeNull()
+    },
+  )
 })
 
 describe('useSubscriptionStatus cache synchronization', () => {
@@ -96,14 +105,7 @@ describe('useSubscriptionStatus cache synchronization', () => {
 
   it('re-reads cached status when the active user changes', () => {
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
-    localStorage.setItem(
-      SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-      JSON.stringify({
-        userId: 'user_123',
-        chat_subscription_active: true,
-        cachedAt: Date.now(),
-      }),
-    )
+    seedCache(Date.now())
     const { result } = renderHook(() => useSubscriptionStatus())
 
     expect(result.current.chat_subscription_active).toBe(true)
@@ -118,25 +120,11 @@ describe('useSubscriptionStatus cache synchronization', () => {
 
   it('re-reads cached status after cross-tab storage changes', () => {
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
-    localStorage.setItem(
-      SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-      JSON.stringify({
-        userId: 'user_123',
-        chat_subscription_active: true,
-        cachedAt: Date.now(),
-      }),
-    )
+    seedCache(Date.now())
     const { result } = renderHook(() => useSubscriptionStatus())
 
     act(() => {
-      localStorage.setItem(
-        SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-        JSON.stringify({
-          userId: 'user_123',
-          chat_subscription_active: false,
-          cachedAt: Date.now(),
-        }),
-      )
+      seedCache(Date.now(), { active: false })
       window.dispatchEvent(
         new StorageEvent('storage', {
           key: SETTINGS_CACHED_SUBSCRIPTION_STATUS,
@@ -147,14 +135,7 @@ describe('useSubscriptionStatus cache synchronization', () => {
 
     act(() => {
       localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_456')
-      localStorage.setItem(
-        SETTINGS_CACHED_SUBSCRIPTION_STATUS,
-        JSON.stringify({
-          userId: 'user_456',
-          chat_subscription_active: true,
-          cachedAt: Date.now(),
-        }),
-      )
+      seedCache(Date.now(), { userId: 'user_456' })
       window.dispatchEvent(
         new StorageEvent('storage', { key: AUTH_ACTIVE_USER_ID }),
       )

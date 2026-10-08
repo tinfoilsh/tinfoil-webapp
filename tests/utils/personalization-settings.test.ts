@@ -5,13 +5,14 @@ import {
 import { describe, expect, it } from 'vitest'
 
 describe('personalization settings', () => {
-  it('defaults missing and enabled flags to on', () => {
-    expect(isPersonalizationEnabled(null)).toBe(true)
-    expect(isPersonalizationEnabled('true')).toBe(true)
-  })
-
-  it('treats only explicit false as off', () => {
-    expect(isPersonalizationEnabled('false')).toBe(false)
+  it.each([
+    [null, true],
+    ['true', true],
+    ['false', false],
+    ['', true],
+    ['unknown', true],
+  ] as const)('enables personalization for %s: %s', (value, expected) => {
+    expect(isPersonalizationEnabled(value)).toBe(expected)
   })
 
   it('clears details without changing the toggle or language', () => {

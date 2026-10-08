@@ -1,36 +1,35 @@
 import { ChatMessages } from '@/components/chat/chat-messages'
+import type { MessageRenderProps } from '@/components/chat/renderers/types'
+import {
+  DEFAULT_AUTO_INTELLIGENCE_LEVEL,
+  type BaseModel,
+} from '@/config/models'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockFindContextStartIndex = vi.hoisted(() => vi.fn(() => 0))
-
-vi.mock('@/config/models', () => ({
-  findSelectableModel: (_id: string, models: unknown[]) => models[0],
-}))
+const mockRenderMessage = vi.hoisted(() =>
+  vi.fn<(props: MessageRenderProps) => void>(),
+)
 
 vi.mock('@/components/chat/renderers/client', () => ({
   getRendererRegistry: () => ({
     getMessageRenderer: () => ({
-      render: ({
-        message,
-        isStreaming,
-        isLastMessage,
-        hideActions,
-      }: {
-        message: { role: string; turnId?: string; content?: string }
-        isStreaming?: boolean
-        isLastMessage?: boolean
-        hideActions?: boolean
-      }) => (
-        <div
-          data-testid={`message-${message.turnId}`}
-          data-streaming={isStreaming}
-          data-last={isLastMessage}
-          data-actions-hidden={hideActions}
-        >
-          {message.role}: {message.content}
-        </div>
-      ),
+      render: (props: MessageRenderProps) => {
+        mockRenderMessage(props)
+        const { message, isStreaming, isLastMessage, hideActions } = props
+        return (
+          <div
+            data-testid={`message-${message.turnId}`}
+            data-streaming={isStreaming}
+            data-last={isLastMessage}
+            data-actions-hidden={hideActions}
+          >
+            {message.role}: {message.content}
+          </div>
+        )
+      },
     }),
   }),
 }))
@@ -74,26 +73,73 @@ const messages = [
   },
 ]
 
+const models: BaseModel[] = [
+  {
+    modelName: 'gpt-oss-120b',
+    name: 'GPT-OSS',
+    nameShort: 'GPT-OSS',
+    image: '',
+    description: '',
+    type: 'chat',
+    chat: true,
+    chatConfig: { contextWindowTokens: 1000 },
+  },
+]
+
 const baseProps = {
   messages,
   pendingRecoveries: [recovery],
   isDarkMode: false,
   chatId: 'chat-1',
-  models: [{ id: 'model-1', chatConfig: { contextWindowTokens: 1000 } }] as any,
-  selectedModel: 'model-1',
-}
+  models,
+  selectedModel: models[0].modelName,
+  autoIntelligence: DEFAULT_AUTO_INTELLIGENCE_LEVEL,
+  setAutoIntelligence: () => {
+    throw new Error('Unexpected intelligence change while rendering messages')
+  },
+} satisfies ComponentProps<typeof ChatMessages>
 
 describe('ChatMessages recovery indicator', () => {
   beforeEach(() => {
     mockFindContextStartIndex.mockReturnValue(0)
+    mockRenderMessage.mockClear()
   })
 
   it('hides message actions when the conversation is read-only', () => {
-    render(<ChatMessages {...baseProps} readOnly />)
+    const actions = {
+      onEditMessage: vi.fn(),
+      onRegenerateMessage: vi.fn(),
+      onDeleteMessage: vi.fn(),
+      onEditAssistantMessage: vi.fn(),
+      onContinueAssistantMessage: vi.fn(),
+      onForkMessage: vi.fn(),
+      onRetryToolCall: vi.fn(async () => true),
+    }
+    const { rerender } = render(<ChatMessages {...baseProps} {...actions} />)
+    expect(mockRenderMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        ...actions,
+        hideActions: false,
+      }),
+    )
+
+    rerender(<ChatMessages {...baseProps} {...actions} readOnly />)
 
     expect(screen.getByTestId('message-turn-1')).toHaveAttribute(
       'data-actions-hidden',
       'true',
+    )
+    expect(mockRenderMessage).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        hideActions: true,
+        onEditMessage: undefined,
+        onRegenerateMessage: undefined,
+        onDeleteMessage: undefined,
+        onEditAssistantMessage: undefined,
+        onContinueAssistantMessage: undefined,
+        onForkMessage: undefined,
+        onRetryToolCall: undefined,
+      }),
     )
   })
 
@@ -125,30 +171,6 @@ describe('ChatMessages recovery indicator', () => {
     expect(screen.getByTestId('message-archived-1')).toBeInTheDocument()
   })
 
-  it('keeps an archived recovering turn visible', () => {
-    mockFindContextStartIndex.mockReturnValue(1)
-    render(
-      <ChatMessages
-        {...baseProps}
-        messages={[
-          messages[0],
-          {
-            role: 'user',
-            turnId: 'turn-2',
-            content: 'Latest',
-            timestamp: new Date('2026-07-21T00:00:01.000Z'),
-          },
-        ]}
-        activeRecoveryTurnIds={['turn-1']}
-      />,
-    )
-
-    expect(screen.getByTestId('message-turn-1')).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: /earlier messages/ }),
-    ).not.toBeInTheDocument()
-  })
-
   it('keeps the archive expanded after an archived recovery completes', () => {
     mockFindContextStartIndex.mockReturnValue(1)
     const latestMessage = {
@@ -167,6 +189,10 @@ describe('ChatMessages recovery indicator', () => {
     )
 
     expect(screen.getByTestId('message-turn-1')).toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: /earlier messages/ }),
+    ).not.toBeInTheDocument()
 
     // Recovery completes: the envelope clears and the recovered assistant
     // message lands in the archived slice.
@@ -299,31 +325,6 @@ describe('ChatMessages recovery indicator', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('renders the progressive draft while the recovered turn is active', async () => {
-    render(
-      <ChatMessages
-        {...baseProps}
-        isStreamingResponse
-        activeRecoveryTurnIds={['turn-1']}
-        recoveryDrafts={[
-          {
-            turnId: 'turn-1',
-            message: {
-              role: 'assistant',
-              turnId: 'turn-1',
-              content: 'Live recovered answer',
-              timestamp: new Date('2026-07-21T00:00:01.000Z'),
-            },
-          },
-        ]}
-      />,
-    )
-
-    expect(
-      await screen.findByText('assistant: Live recovered answer'),
-    ).toBeInTheDocument()
-  })
-
   it('streams replayed events without a separate catch-up state', async () => {
     render(
       <ChatMessages
@@ -345,6 +346,7 @@ describe('ChatMessages recovery indicator', () => {
     )
 
     const assistant = (await screen.findAllByTestId('message-turn-1'))[1]
+    expect(assistant).toHaveTextContent('assistant: Recovered so far')
     expect(assistant).toHaveAttribute('data-streaming', 'true')
     expect(assistant).toHaveAttribute('data-actions-hidden', 'false')
     expect(

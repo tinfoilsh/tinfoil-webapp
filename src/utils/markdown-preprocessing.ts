@@ -104,7 +104,13 @@ export function indentCodeBlocksInLists(content: string): string {
   return result.join('\n')
 }
 
-function extractFencedCodeBlocks(text: string, codeBlocks: string[]): string {
+const CODE_PLACEHOLDER_PREFIX = '__MARKDOWN_CODE_'
+
+function extractFencedCodeBlocks(
+  text: string,
+  codeBlocks: string[],
+  prefix: string,
+): string {
   const lines = text.split('\n')
   const result: string[] = []
   let i = 0
@@ -134,7 +140,7 @@ function extractFencedCodeBlocks(text: string, codeBlocks: string[]): string {
         i++
       }
       codeBlocks.push(blockLines.join('\n'))
-      result.push(`__CODE_BLOCK_${codeBlocks.length - 1}__`)
+      result.push(`${prefix}CODE_BLOCK_${codeBlocks.length - 1}__`)
     } else {
       result.push(lines[i])
       i++
@@ -156,15 +162,28 @@ export function preprocessMarkdown(content: string): string {
   // Extract code blocks and inline code to protect them
   const codeBlocks: string[] = []
   const inlineCode: string[] = []
+  // A delimiter absent from the input cannot alias a literal code example.
+  const occupiedPrefixes = new Set(
+    content.match(new RegExp(`${CODE_PLACEHOLDER_PREFIX}\\d+__`, 'g')) ?? [],
+  )
+  let placeholderIndex = 0
+  let placeholderPrefix = `${CODE_PLACEHOLDER_PREFIX}${placeholderIndex}__`
+  while (occupiedPrefixes.has(placeholderPrefix)) {
+    placeholderPrefix = `${CODE_PLACEHOLDER_PREFIX}${++placeholderIndex}__`
+  }
 
   // Protect fenced code blocks (``` and ~~~)
   // A closing fence must use the same char and be >= the opening fence length (CommonMark spec)
-  let processed = extractFencedCodeBlocks(indented, codeBlocks)
+  let processed = extractFencedCodeBlocks(
+    indented,
+    codeBlocks,
+    placeholderPrefix,
+  )
 
   // Protect inline code (`...`)
   processed = processed.replace(/`[^`]+`/g, (match) => {
     inlineCode.push(match)
-    return `__INLINE_CODE_${inlineCode.length - 1}__`
+    return `${placeholderPrefix}INLINE_CODE_${inlineCode.length - 1}__`
   })
 
   // Convert <a href="url">text</a> to [text](url)
@@ -182,13 +201,13 @@ export function preprocessMarkdown(content: string): string {
 
   // Restore inline code first (they might be inside code blocks)
   processed = processed.replace(
-    /__INLINE_CODE_(\d+)__/g,
+    new RegExp(`${placeholderPrefix}INLINE_CODE_(\\d+)__`, 'g'),
     (_, index) => inlineCode[parseInt(index)],
   )
 
   // Restore code blocks
   processed = processed.replace(
-    /__CODE_BLOCK_(\d+)__/g,
+    new RegExp(`${placeholderPrefix}CODE_BLOCK_(\\d+)__`, 'g'),
     (_, index) => codeBlocks[parseInt(index)],
   )
 

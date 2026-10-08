@@ -82,14 +82,28 @@ describe('ChatListItem navigation semantics', () => {
     expect(onSelect).toHaveBeenCalledOnce()
   })
 
-  it('preserves modified- and middle-click link behavior', () => {
-    const { onSelect } = renderChatListItem({ href: '/chat/chat-123' })
-    const link = screen.getByRole('link')
+  it.each([
+    { type: 'click', ctrlKey: true },
+    { type: 'click', metaKey: true },
+    { type: 'click', shiftKey: true },
+    { type: 'click', altKey: true },
+    { type: 'auxclick', button: 1 },
+  ])(
+    'preserves modified- and middle-click link behavior (%j)',
+    ({ type, ...modifiers }) => {
+      const { onSelect } = renderChatListItem({ href: '/chat/chat-123' })
+      const link = screen.getByRole('link')
 
-    fireEvent.click(link, { ctrlKey: true })
-    fireEvent(link, new MouseEvent('auxclick', { bubbles: true, button: 1 }))
-    expect(onSelect).not.toHaveBeenCalled()
-  })
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        ...modifiers,
+      })
+      fireEvent(link, event)
+      expect(event.defaultPrevented).toBe(false)
+      expect(onSelect).not.toHaveBeenCalled()
+    },
+  )
 
   it('renders chats without destinations as buttons', () => {
     const { onSelect } = renderChatListItem()
@@ -267,7 +281,7 @@ describe('ChatListItem safeguards', () => {
       isFlagged: true,
       isPinned: true,
       href: '/chat/chat-123',
-      chat: { ...savedChat, createdAt: new Date().toISOString() },
+      chat: savedChat,
       pixelateSidebarChatTitles: false,
     })
     const flag = screen.getByLabelText('Flagged by safeguards')
@@ -307,23 +321,8 @@ describe('ChatListItem title privacy', () => {
     )
   })
 
-  it('keeps the new chat title clear', () => {
-    renderChatListItem({
-      chat: {
-        id: 'blank-chat',
-        title: 'New Chat',
-        isBlankChat: true,
-        messageCount: 0,
-      },
-    })
-
-    expect(screen.getByText('New Chat').parentElement).not.toHaveClass(
-      'redacted-text',
-    )
-  })
-
   it('keeps saved chats without messages clear', () => {
-    renderChatListItem({
+    const { rerenderChat } = renderChatListItem({
       chat: {
         id: 'empty-saved-chat',
         title: 'Empty saved chat',
@@ -332,6 +331,15 @@ describe('ChatListItem title privacy', () => {
     })
 
     expect(screen.getByText('Empty saved chat').parentElement).not.toHaveClass(
+      'redacted-text',
+    )
+    rerenderChat({
+      id: 'blank-chat',
+      title: 'New Chat',
+      isBlankChat: true,
+      messageCount: 0,
+    })
+    expect(screen.getByText('New Chat').parentElement).not.toHaveClass(
       'redacted-text',
     )
   })

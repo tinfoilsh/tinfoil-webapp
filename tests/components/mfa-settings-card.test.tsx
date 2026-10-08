@@ -146,6 +146,16 @@ describe('MfaSettingsCard', () => {
         name: 'Turn off authenticator MFA?',
       }),
     ).toBeInTheDocument()
+    expect(mocks.user.disableTOTP).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('heading', { name: 'Turn off authenticator MFA?' }),
+      ).not.toBeInTheDocument(),
+    )
+    expect(mocks.user.disableTOTP).not.toHaveBeenCalled()
+    expect(screen.getByText('On')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }))
     fireEvent.click(screen.getByRole('button', { name: 'Turn off' }))
 
     await waitFor(() => {

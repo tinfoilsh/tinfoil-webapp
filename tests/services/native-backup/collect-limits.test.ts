@@ -6,6 +6,7 @@ import {
   NativeBackupCollectionError,
   type NativeBackupCollectionDependencies,
 } from '@/services/native-backup/collect'
+import { formatNativeBackupV2 } from '@/services/native-backup/format'
 import type { StoredChat } from '@/services/storage/indexed-db'
 import type { BackupInventoryItem } from '@/services/sync-enclave/sync-api'
 
@@ -36,6 +37,7 @@ vi.mock('@/services/native-backup/constants', async (importOriginal) => {
       entries: 5,
       discoveredRecords: 2,
       omissions: 1,
+      imageBytes: 8,
     },
   }
 })
@@ -101,7 +103,24 @@ describe('native backup collection limits', () => {
             total_items: 1,
             items: [item('chat')],
           }),
-          getCloudChats: batchReads(async () => cloudChat),
+          getCloudChats: batchReads(async () => ({
+            ...cloudChat,
+            messages: cloudChat.messages.map((message, index) =>
+              index
+                ? message
+                : {
+                    ...message,
+                    attachments: [
+                      {
+                        id: 'image',
+                        type: 'image',
+                        fileName: 'image.png',
+                        encryptionKey: 'key',
+                      },
+                    ],
+                  },
+            ),
+          })),
           getCloudImage,
         }),
       ),
@@ -199,6 +218,35 @@ describe('native backup collection limits', () => {
     expect(result.cloudChats[0].messages[0].attachments).toHaveLength(1)
     expect(result.images).toHaveLength(1)
     expect(result.omissions).toHaveLength(1)
+    const availableId = JSON.stringify([
+      'attachment',
+      'chat',
+      0,
+      0,
+      'available',
+    ])
+    const missingId = JSON.stringify(['attachment', 'chat', 0, 1, 'missing'])
+    expect(result.cloudChats[0].messages[0].attachments).toEqual([
+      { id: 'available', type: 'image', imageId: availableId },
+    ])
+    expect(result.images[0].bytes).toEqual(png)
+    expect(result.relationships.chatImages).toEqual([
+      { chatId: 'chat', imageId: availableId },
+    ])
+    expect(result.omissions).toEqual([
+      {
+        kind: 'attachment',
+        source_id: missingId,
+        parent_source_id: 'chat',
+        category: 'unavailable',
+        reason: 'attachment_not_found',
+      },
+    ])
+    expect(
+      JSON.parse(
+        new TextDecoder().decode(formatNativeBackupV2(result).manifestBytes),
+      ).complete,
+    ).toBe(false)
   })
 
   it('stops scheduling later downloads after an incremental limit failure', async () => {
@@ -229,15 +277,10 @@ describe('native backup collection limits', () => {
     const earlier = new Promise<Uint8Array>((resolve) => {
       releaseEarlier = resolve
     })
-    let rejectLater!: (error: Error) => void
-    const later = new Promise<Uint8Array>((_resolve, reject) => {
-      rejectLater = reject
+    let releaseLater!: (bytes: Uint8Array) => void
+    const later = new Promise<Uint8Array>((resolve) => {
+      releaseLater = resolve
     })
-    const failure = new NativeBackupCollectionError(
-      'limits',
-      'collection',
-      'image budget exceeded',
-    )
     const getCloudImage = vi.fn(({ id }: { id: string }) => {
       if (id === 'image-1') return later
       return earlier
@@ -255,10 +298,11 @@ describe('native backup collection limits', () => {
       }),
     )
     await vi.waitFor(() => expect(getCloudImage).toHaveBeenCalledTimes(4))
-    rejectLater(failure)
+    releaseLater(new Uint8Array([...png, 0]))
     releaseEarlier(png)
 
-    await expect(collection).rejects.toBe(failure)
+    await expect(collection).rejects.toBeInstanceOf(NativeBackupCollectionError)
+    await expect(collection).rejects.toThrow('image size limit exceeded')
     expect(getCloudImage.mock.calls.map(([{ id }]) => id)).toEqual(
       attachmentIds.slice(0, 4),
     )

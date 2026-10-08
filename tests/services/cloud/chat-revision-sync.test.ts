@@ -1,9 +1,13 @@
 import { CLOUD_SYNC } from '@/config'
-import {
-  BOOTSTRAP_RECENT_CONTENT_LIMIT,
-  drainChatRevisionSync,
-} from '@/services/cloud/chat-revision-sync'
+import { drainChatRevisionSync } from '@/services/cloud/chat-revision-sync'
+import type { StoredChat } from '@/services/storage/indexed-db'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// This fixed dataset pins the 50-chat bootstrap policy independently of the
+// production limit. Changing that policy requires an intentional oracle update.
+const MISSING_CHAT_COUNT = 52
+const EXPECTED_RECENT_CHAT_COUNT = 50
+const FIRST_RECENT_CHAT_INDEX = 2
 
 const {
   getSyncState,
@@ -79,12 +83,21 @@ vi.mock('@/services/storage/chat-events', () => ({
 vi.mock('@/services/storage/deleted-chats-tracker', () => ({
   deletedChatsTracker: { markAsRemoteDeleted, removeRemoteDeletion },
 }))
-vi.mock('@/services/cloud/sync-predicates', () => ({
-  isUploadableChat: (
-    chat: { id: string; isMetadataOnly?: boolean },
-    isStreaming: (id: string) => boolean,
-  ) => chat.isMetadataOnly !== true && !isStreaming(chat.id),
-}))
+function pendingChat(id: string): StoredChat {
+  return {
+    id,
+    title: id,
+    messages: [
+      { role: 'user', content: 'Pending edit', timestamp: new Date(0) },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    lastAccessedAt: 0,
+    locallyModified: true,
+    pendingUpload: 1,
+    syncUserId: 'user-1',
+  }
+}
 
 describe('chat revision synchronization', () => {
   const userId = 'user-1'
@@ -97,7 +110,7 @@ describe('chat revision synchronization', () => {
   }
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     getSyncState.mockResolvedValue({
       id: 'account',
       userId,
@@ -120,6 +133,7 @@ describe('chat revision synchronization', () => {
       errors: [],
     })
     removeRemoteDeletion.mockReturnValue(false)
+    adapter.upload.mockResolvedValue(undefined)
   })
 
   it('uses one summary request and stops when nothing changed', async () => {
@@ -154,6 +168,10 @@ describe('chat revision synchronization', () => {
 
   it('applies ordered deletes and project moves before pending uploads', async () => {
     const order: string[] = []
+    let finishCommit!: () => void
+    const commit = new Promise<void>((resolve) => {
+      finishCommit = resolve
+    })
     hasPendingSyncWork.mockResolvedValue(true)
     revisionSummary.mockResolvedValue({
       current_revision: '9',
@@ -185,14 +203,19 @@ describe('chat revision synchronization', () => {
     })
     getChat.mockResolvedValue({ id: 'moved-chat', syncVersion: 3 })
     commitRevisionBatch.mockImplementation(async () => {
+      await commit
       order.push('checkpoint')
     })
-    getPendingUploadChats.mockResolvedValue([{ id: 'local-chat' }])
+    getPendingUploadChats.mockResolvedValue([pendingChat('local-chat')])
     adapter.upload.mockImplementation(async () => {
       order.push('upload')
     })
 
-    await drainChatRevisionSync(adapter, userId)
+    const sync = drainChatRevisionSync(adapter, userId)
+    await vi.waitFor(() => expect(commitRevisionBatch).toHaveBeenCalledOnce())
+    expect(adapter.upload).not.toHaveBeenCalled()
+    finishCommit()
+    await sync
 
     expect(order).toEqual(['remote-delete', 'checkpoint', 'upload'])
     expect(markAsRemoteDeleted).toHaveBeenCalledWith('deleted-chat')
@@ -235,49 +258,52 @@ describe('chat revision synchronization', () => {
     expect(markAsRemoteDeleted).not.toHaveBeenCalled()
   })
 
-  it('repairs an expired checkpoint with a metadata snapshot', async () => {
-    getSyncState.mockResolvedValue({
-      id: 'account',
-      userId,
-      appliedRevision: '2',
-      bootstrapped: true,
-    })
-    revisionSummary.mockResolvedValue({
-      current_revision: '12',
-      oldest_replayable_revision: '5',
-    })
-    revisionSnapshot.mockResolvedValue({
-      snapshot_revision: '12',
-      items: [
-        {
-          id: 'remote-chat',
-          etag: '4',
-          key_id: 'key-1',
-          project_id: null,
-          updated_at: '2026-01-02T00:00:00Z',
-        },
-      ],
-    })
-    getChat.mockResolvedValue(null)
-    downloadChats.mockResolvedValue([
-      { status: 'ok', id: 'remote-chat', syncVersion: 4, content: '{}' },
-    ])
-    ingestRemoteChats.mockResolvedValue({
-      savedIds: ['remote-chat'],
-      downloaded: 1,
-      errors: [],
-    })
+  it.each([null, undefined])(
+    'repairs an expired checkpoint with a metadata snapshot',
+    async (missingLocal) => {
+      getSyncState.mockResolvedValue({
+        id: 'account',
+        userId,
+        appliedRevision: '2',
+        bootstrapped: true,
+      })
+      revisionSummary.mockResolvedValue({
+        current_revision: '12',
+        oldest_replayable_revision: '5',
+      })
+      revisionSnapshot.mockResolvedValue({
+        snapshot_revision: '12',
+        items: [
+          {
+            id: 'remote-chat',
+            etag: '4',
+            key_id: 'key-1',
+            project_id: null,
+            updated_at: '2026-01-02T00:00:00Z',
+          },
+        ],
+      })
+      getChat.mockResolvedValue(missingLocal)
+      downloadChats.mockResolvedValue([
+        { status: 'ok', id: 'remote-chat', syncVersion: 4, content: '{}' },
+      ])
+      ingestRemoteChats.mockResolvedValue({
+        savedIds: ['remote-chat'],
+        downloaded: 1,
+        errors: [],
+      })
 
-    const result = await drainChatRevisionSync(adapter, userId)
+      const result = await drainChatRevisionSync(adapter, userId)
 
-    expect(result.downloaded).toBe(1)
-    expect(reconcileRevisionSnapshot).toHaveBeenCalledWith(
-      [expect.objectContaining({ id: 'remote-chat', revision: '12' })],
-      '12',
-      userId,
-    )
-    expect(revisionEvents).not.toHaveBeenCalled()
-  })
+      expect(result.downloaded).toBe(1)
+      expect(reconcileRevisionSnapshot).toHaveBeenCalledWith(
+        [expect.objectContaining({ id: 'remote-chat', revision: '12' })],
+        '12',
+        userId,
+      )
+      expect(revisionEvents).not.toHaveBeenCalled()
+    },
+  )
 
   it('marks snapshot deletions and clears tombstones for remote rows', async () => {
     getSyncState.mockResolvedValue(null)
@@ -314,6 +340,12 @@ describe('chat revision synchronization', () => {
   })
 
   it('notifies once after committed replay upserts remove tombstones', async () => {
+    let finishCommit!: () => void
+    commitRevisionBatch.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishCommit = resolve
+      }),
+    )
     revisionSummary.mockResolvedValue({
       current_revision: '9',
       oldest_replayable_revision: '1',
@@ -348,7 +380,12 @@ describe('chat revision synchronization', () => {
       (id: string) => id === 'restored-chat',
     )
 
-    await drainChatRevisionSync(adapter, userId)
+    const sync = drainChatRevisionSync(adapter, userId)
+    await vi.waitFor(() => expect(commitRevisionBatch).toHaveBeenCalledOnce())
+    expect(removeRemoteDeletion).not.toHaveBeenCalled()
+    expect(emitChatEvent).not.toHaveBeenCalled()
+    finishCommit()
+    await sync
 
     expect(emitChatEvent).toHaveBeenCalledTimes(1)
     expect(emitChatEvent).toHaveBeenCalledWith({
@@ -417,6 +454,7 @@ describe('chat revision synchronization', () => {
 
   it('fails closed without uploads or checkpoint advancement', async () => {
     hasPendingSyncWork.mockResolvedValue(true)
+    getPendingUploadChats.mockResolvedValue([pendingChat('must-not-upload')])
     revisionSummary.mockResolvedValue({
       current_revision: '8',
       oldest_replayable_revision: '1',
@@ -459,13 +497,13 @@ describe('chat revision synchronization', () => {
       oldest_replayable_revision: '1',
     })
     const missingItems = Array.from(
-      { length: BOOTSTRAP_RECENT_CONTENT_LIMIT + 2 },
+      { length: MISSING_CHAT_COUNT },
       (_, index) => ({
         id: `missing-${index}`,
         etag: '2',
         key_id: 'key-1',
         project_id: null,
-        updated_at: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+        updated_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
       }),
     )
     const staleItem = {
@@ -477,11 +515,21 @@ describe('chat revision synchronization', () => {
     }
     revisionSnapshot.mockResolvedValue({
       snapshot_revision: '60',
-      items: [...missingItems, staleItem],
+      items: [
+        ...missingItems,
+        staleItem,
+        { ...staleItem, id: 'current-existing', etag: '1' },
+        { ...staleItem, id: 'dirty-existing' },
+      ],
     })
     getChat.mockImplementation(async (id: string) =>
-      id === staleItem.id
-        ? { id, syncVersion: 1, locallyModified: false }
+      id.endsWith('existing')
+        ? {
+            id,
+            syncVersion: 1,
+            locallyModified: id === 'dirty-existing',
+            syncedAt: Date.parse('2099-01-01T00:00:00Z'),
+          }
         : null,
     )
     downloadChats.mockImplementation(async (ids: string[]) =>
@@ -493,7 +541,16 @@ describe('chat revision synchronization', () => {
     const pulledIds = downloadChats.mock.calls.flatMap(([ids]) => ids)
     expect(pulledIds).toContain('stale-existing')
     expect(pulledIds.filter((id) => id.startsWith('missing-'))).toHaveLength(
-      BOOTSTRAP_RECENT_CONTENT_LIMIT,
+      EXPECTED_RECENT_CHAT_COUNT,
+    )
+    expect([...pulledIds].sort()).toEqual(
+      [
+        'stale-existing',
+        ...Array.from(
+          { length: EXPECTED_RECENT_CHAT_COUNT },
+          (_, index) => `missing-${index + FIRST_RECENT_CHAT_INDEX}`,
+        ),
+      ].sort(),
     )
   })
 
@@ -547,38 +604,46 @@ describe('chat revision synchronization', () => {
     expect(reconcileRevisionSnapshot).not.toHaveBeenCalled()
   })
 
-  it('re-pulls failed-decryption rows whose snapshot ETag still matches', async () => {
-    getSyncState.mockResolvedValue(null)
-    revisionSummary.mockResolvedValue({
-      current_revision: '10',
-      oldest_replayable_revision: '1',
-    })
-    revisionSnapshot.mockResolvedValue({
-      snapshot_revision: '10',
-      items: [
-        {
-          id: 'failed-chat',
-          etag: '4',
-          key_id: 'key-1',
-          project_id: null,
-          updated_at: '2026-01-01T00:00:00Z',
-        },
-      ],
-    })
-    getChat.mockResolvedValue({
-      id: 'failed-chat',
-      syncVersion: 4,
-      decryptionFailed: true,
-      locallyModified: false,
-    })
-    downloadChats.mockResolvedValue([
-      { status: 'ok', id: 'failed-chat', content: '{}', syncVersion: 4 },
-    ])
+  it.each([false, true])(
+    're-pulls failed-decryption rows only when local edits are absent',
+    async (locallyModified) => {
+      getSyncState.mockResolvedValue(null)
+      revisionSummary.mockResolvedValue({
+        current_revision: '10',
+        oldest_replayable_revision: '1',
+      })
+      revisionSnapshot.mockResolvedValue({
+        snapshot_revision: '10',
+        items: [
+          {
+            id: 'failed-chat',
+            etag: '4',
+            key_id: 'key-1',
+            project_id: null,
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+      })
+      getChat.mockResolvedValue({
+        id: 'failed-chat',
+        syncVersion: 4,
+        decryptionFailed: true,
+        locallyModified,
+      })
+      downloadChats.mockResolvedValue([
+        { status: 'ok', id: 'failed-chat', content: '{}', syncVersion: 4 },
+      ])
 
-    await drainChatRevisionSync(adapter, userId)
+      await drainChatRevisionSync(adapter, userId)
 
-    expect(downloadChats).toHaveBeenCalledWith(['failed-chat'])
-  })
+      if (locallyModified) {
+        expect(downloadChats).not.toHaveBeenCalled()
+        expect(ingestRemoteChats).not.toHaveBeenCalled()
+      } else {
+        expect(downloadChats).toHaveBeenCalledWith(['failed-chat'])
+      }
+    },
+  )
 
   it('refuses to advance the checkpoint past a row it cannot read', async () => {
     getSyncState.mockResolvedValue(null)
@@ -731,18 +796,27 @@ describe('chat revision synchronization', () => {
 
   it('settles in-flight uploads before issuing a durable delete', async () => {
     const order: string[] = []
+    let finishUpload!: () => void
+    const upload = new Promise<void>((resolve) => {
+      finishUpload = resolve
+    })
     hasPendingSyncWork.mockResolvedValue(true)
     getPendingDeletes.mockResolvedValue([
       { id: 'racing-chat', userId, idempotencyKey: 'delete-key' },
     ])
     adapter.waitForUpload.mockImplementation(async () => {
       order.push('wait-upload')
+      await upload
     })
     deleteChat.mockImplementation(async () => {
       order.push('delete')
     })
 
-    await drainChatRevisionSync(adapter, userId)
+    const sync = drainChatRevisionSync(adapter, userId)
+    await vi.waitFor(() => expect(adapter.waitForUpload).toHaveBeenCalledOnce())
+    expect(deleteChat).not.toHaveBeenCalled()
+    finishUpload()
+    await sync
 
     expect(adapter.waitForUpload).toHaveBeenCalledWith('racing-chat')
     expect(order).toEqual(['wait-upload', 'delete'])
@@ -757,7 +831,7 @@ describe('chat revision synchronization', () => {
     deleteChat
       .mockRejectedValueOnce(new Error('row is wedged'))
       .mockResolvedValueOnce(undefined)
-    getPendingUploadChats.mockResolvedValue([{ id: 'dirty-chat' }])
+    getPendingUploadChats.mockResolvedValue([pendingChat('dirty-chat')])
 
     const result = await drainChatRevisionSync(adapter, userId)
 
@@ -767,7 +841,7 @@ describe('chat revision synchronization', () => {
       'healthy-chat',
       userId,
     )
-    expect(adapter.upload).toHaveBeenCalledWith({ id: 'dirty-chat' })
+    expect(adapter.upload).toHaveBeenCalledWith(pendingChat('dirty-chat'))
     expect(result.uploaded).toBe(1)
     expect(result.errors).toEqual([expect.stringContaining('poison-chat')])
   })
@@ -775,8 +849,8 @@ describe('chat revision synchronization', () => {
   it('keeps uploading when one chat upload fails terminally', async () => {
     hasPendingSyncWork.mockResolvedValue(true)
     getPendingUploadChats.mockResolvedValue([
-      { id: 'failing-chat' },
-      { id: 'healthy-chat' },
+      pendingChat('failing-chat'),
+      pendingChat('healthy-chat'),
     ])
     adapter.upload
       .mockRejectedValueOnce(new Error('upload exploded'))
@@ -802,7 +876,7 @@ describe('chat revision synchronization', () => {
         },
       ],
     })
-    getPendingUploadChats.mockResolvedValue([{ id: 'local-chat' }])
+    getPendingUploadChats.mockResolvedValue([pendingChat('local-chat')])
     // Summary succeeds, then the account switches before events apply.
     let current = true
     revisionSummary.mockImplementation(async () => {
@@ -820,15 +894,15 @@ describe('chat revision synchronization', () => {
   it('skips streaming chats and counts only completed uploads', async () => {
     hasPendingSyncWork.mockResolvedValue(true)
     getPendingUploadChats.mockResolvedValue([
-      { id: 'streaming-chat' },
-      { id: 'ready-chat' },
+      pendingChat('streaming-chat'),
+      pendingChat('ready-chat'),
     ])
     adapter.isStreaming.mockImplementation((id) => id === 'streaming-chat')
 
     const result = await drainChatRevisionSync(adapter, userId)
 
     expect(adapter.upload).toHaveBeenCalledTimes(1)
-    expect(adapter.upload).toHaveBeenCalledWith({ id: 'ready-chat' })
+    expect(adapter.upload).toHaveBeenCalledWith(pendingChat('ready-chat'))
     expect(result.uploaded).toBe(1)
   })
 })

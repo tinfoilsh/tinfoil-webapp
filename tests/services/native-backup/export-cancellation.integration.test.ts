@@ -62,7 +62,18 @@ it('reports success when cancellation occurs during file close', async () => {
   }
   const download = vi.fn()
   const dependencies = {
-    collect: async () => ({ omissions: [], warnings: [] }),
+    collect: async () => ({
+      backupId: '123e4567-e89b-42d3-a456-426614174000',
+      createdAt: '2026-08-20T12:00:00.000Z',
+      projects: [],
+      projectDocuments: [],
+      cloudChats: [],
+      localChats: [],
+      images: [],
+      relationships: { projectChats: [], projectDocuments: [], chatImages: [] },
+      omissions: [],
+      warnings: [],
+    }),
     format: () => ({
       manifestBytes: new TextEncoder().encode(
         '{"created_at":"2026-08-20T12:00:00.000Z"}',
@@ -72,7 +83,7 @@ it('reports success when cancellation occurs during file close', async () => {
     write: (input, options) =>
       writeNativeBackupArchive(input, options, writerDependencies),
     download,
-  } as NativeBackupExportDependencies
+  } satisfies NativeBackupExportDependencies
 
   await expect(
     runNativeBackupExport(controller.signal, vi.fn(), dependencies),

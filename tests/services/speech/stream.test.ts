@@ -79,16 +79,42 @@ describe('PCM streaming', () => {
     expect(body.locked).toBe(false)
   })
 
-  it('rejects excessive generated audio and closes the stream', async () => {
-    const cancel = vi.fn()
-    const body = new ReadableStream<Uint8Array>({
-      pull(controller) {
+  it('accepts the audio limit and rejects the first excess sample', async () => {
+    const MAX_PCM_SAMPLES = 2_880_000
+    const BLOCK_BYTES = SPEECH.BLOCK_SAMPLES * SPEECH.BYTES_PER_SAMPLE
+    const signal = new AbortController().signal
+    let acceptedSamples = 0
+    const valid = new ReadableStream<Uint8Array>({
+      start(controller) {
         controller.enqueue(
-          new Uint8Array(SPEECH.BLOCK_SAMPLES * SPEECH.BYTES_PER_SAMPLE),
+          new Uint8Array(MAX_PCM_SAMPLES * SPEECH.BYTES_PER_SAMPLE),
         )
+        controller.close()
       },
-      cancel,
     })
+    for await (const part of decodePcmStream(valid, signal)) {
+      acceptedSamples += part.length
+    }
+    expect(acceptedSamples).toBe(MAX_PCM_SAMPLES)
+    expect(valid.locked).toBe(false)
+
+    const cancel = vi.fn()
+    let remainingBytes = (MAX_PCM_SAMPLES + 1) * SPEECH.BYTES_PER_SAMPLE
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (remainingBytes === 0) {
+            controller.close()
+            return
+          }
+          const byteCount = Math.min(BLOCK_BYTES, remainingBytes)
+          remainingBytes -= byteCount
+          controller.enqueue(new Uint8Array(byteCount))
+        },
+        cancel,
+      },
+      { highWaterMark: 0 },
+    )
     await expect(
       (async () => {
         for await (const _part of decodePcmStream(
@@ -100,6 +126,7 @@ describe('PCM streaming', () => {
       })(),
     ).rejects.toThrow('invalid-audio')
     expect(cancel).toHaveBeenCalledOnce()
+    expect(body.locked).toBe(false)
   })
 })
 
@@ -115,28 +142,6 @@ describe('speech SDK requests', () => {
     )
     return transport
   }
-
-  it('uses the shared SDK transport with Qwen PCM streaming and no retries', async () => {
-    const transport = clientWithResponse(
-      () =>
-        new Response(bytes([0, 0]), {
-          headers: { 'Content-Type': 'audio/pcm' },
-        }),
-    )
-    expect(
-      await collect(streamSpeech('Hello.', new AbortController().signal)),
-    ).toEqual([0])
-    const options = transport.mock.calls[0][1] as RequestInit
-    expect(JSON.parse(options.body as string)).toEqual({
-      model: SPEECH.MODEL,
-      voice: SPEECH.VOICE,
-      instructions: SPEECH.INSTRUCTIONS,
-      input: 'Hello.',
-      response_format: 'pcm',
-      stream_format: 'audio',
-    })
-    expect(options.signal).toBeDefined()
-  })
 
   it('sends identical style guidance separately from the text of parallel chunks', async () => {
     const transport = clientWithResponse(
@@ -170,17 +175,33 @@ describe('speech SDK requests', () => {
         stream_format: 'audio',
       })),
     )
+    for (const [, options] of transport.mock.calls) {
+      expect(options?.signal).toBeDefined()
+    }
   })
 
-  it('rejects unexpected WAV or JSON instead of interpreting it as PCM', async () => {
-    clientWithResponse(
-      () =>
-        new Response('{}', { headers: { 'Content-Type': 'application/json' } }),
-    )
-    await expect(
-      collect(streamSpeech('Hello.', new AbortController().signal)),
-    ).rejects.toThrow('invalid-audio')
-  })
+  it.each(['audio/wav', 'application/json'])(
+    'rejects and cancels unexpected %s instead of interpreting it as PCM',
+    async (mediaType) => {
+      const cancel = vi.fn()
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(mediaType === 'audio/wav' ? 'RIFF' : '{}'),
+          )
+        },
+        cancel,
+      })
+      clientWithResponse(
+        () => new Response(body, { headers: { 'Content-Type': mediaType } }),
+      )
+      await expect(
+        collect(streamSpeech('Hello.', new AbortController().signal)),
+      ).rejects.toMatchObject({ code: 'invalid-audio' })
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(body.locked).toBe(false)
+    },
+  )
 
   it('does not retry a failed generation request', async () => {
     const transport = clientWithResponse(

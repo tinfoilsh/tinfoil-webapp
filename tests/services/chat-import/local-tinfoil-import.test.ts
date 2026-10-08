@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LOCAL_IMPORT_WORKER_TIMEOUT_MS } from '@/services/chat-import/constants'
 import {
+  LOCAL_IMPORT_MAX_ARCHIVE_BYTES,
   LocalImportBackgroundProcessingUnavailableError,
   LocalImportWorkerTimeoutError,
   parseLocalTinfoilExport,
@@ -37,12 +38,12 @@ function conversation(attachments?: unknown[]) {
   ]
 }
 
-const parseInWorker = vi.fn(parseTinfoilExportBytes)
-const FunctionalImportWorker = createFunctionalImportWorker(parseInWorker)
+const FunctionalImportWorker = createFunctionalImportWorker(
+  parseTinfoilExportBytes,
+)
 
 describe('parseLocalTinfoilExport', () => {
   beforeEach(() => {
-    parseInWorker.mockClear()
     vi.stubGlobal('Worker', FunctionalImportWorker)
   })
 
@@ -54,7 +55,11 @@ describe('parseLocalTinfoilExport', () => {
   it('parses exports in a worker when workers are available', async () => {
     const postMessage = vi.fn()
     const terminate = vi.fn()
+    const construct = vi.fn()
     class ImportWorker {
+      constructor(url: URL) {
+        construct(url)
+      }
       onmessage: ((event: MessageEvent) => void) | null = null
       onerror: (() => void) | null = null
 
@@ -75,16 +80,30 @@ describe('parseLocalTinfoilExport', () => {
     const file = new File(
       [JSON.stringify(conversation())],
       'conversations.json',
+      { type: 'application/json' },
     )
 
     const chats = await parseLocalTinfoilExport(file, options)
 
     expect(chats).toHaveLength(1)
-    expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ fileName: 'conversations.json' }),
-      [expect.any(ArrayBuffer)],
-    )
+    expect(postMessage).toHaveBeenCalledOnce()
     expect(terminate).toHaveBeenCalledOnce()
+    expect(construct).toHaveBeenCalledOnce()
+    expect(construct.mock.calls[0][0].pathname).toMatch(
+      /\/local-tinfoil-import\.worker\.ts$/,
+    )
+    const [request, transfer] = postMessage.mock.calls[0]
+    expect(request).toEqual({
+      buffer: expect.any(ArrayBuffer),
+      fileName: file.name,
+      mimeType: 'application/json',
+      maxArchiveBytes: LOCAL_IMPORT_MAX_ARCHIVE_BYTES,
+    })
+    expect(new TextDecoder().decode(request.buffer)).toBe(
+      JSON.stringify(conversation()),
+    )
+    expect(transfer).toHaveLength(1)
+    expect(transfer[0]).toBe(request.buffer)
   })
 
   it('rejects malformed worker messages as unavailable background processing', async () => {
@@ -113,7 +132,6 @@ describe('parseLocalTinfoilExport', () => {
     await expect(parseLocalTinfoilExport(file, options)).rejects.toBeInstanceOf(
       LocalImportBackgroundProcessingUnavailableError,
     )
-    expect(parseInWorker).not.toHaveBeenCalled()
     expect(terminate).toHaveBeenCalledOnce()
   })
 
@@ -143,7 +161,6 @@ describe('parseLocalTinfoilExport', () => {
     await vi.advanceTimersByTimeAsync(LOCAL_IMPORT_WORKER_TIMEOUT_MS)
 
     expect(await result).toBeInstanceOf(LocalImportWorkerTimeoutError)
-    expect(parseInWorker).not.toHaveBeenCalled()
     expect(terminate).toHaveBeenCalledOnce()
   })
 
@@ -208,7 +225,6 @@ describe('parseLocalTinfoilExport', () => {
     await expect(parseLocalTinfoilExport(file, options)).rejects.toBeInstanceOf(
       LocalImportBackgroundProcessingUnavailableError,
     )
-    expect(parseInWorker).not.toHaveBeenCalled()
     expect(terminate).toHaveBeenCalledOnce()
   })
 
@@ -228,7 +244,6 @@ describe('parseLocalTinfoilExport', () => {
       name: 'LocalImportBackgroundProcessingUnavailableError',
       code: 'LOCAL_IMPORT_BACKGROUND_PROCESSING_UNAVAILABLE',
     })
-    expect(parseInWorker).not.toHaveBeenCalled()
   })
 
   it('fails explicitly when workers are unavailable', async () => {
@@ -241,7 +256,6 @@ describe('parseLocalTinfoilExport', () => {
     await expect(parseLocalTinfoilExport(file, options)).rejects.toBeInstanceOf(
       LocalImportBackgroundProcessingUnavailableError,
     )
-    expect(parseInWorker).not.toHaveBeenCalled()
   })
 
   it('fails explicitly when worker execution errors', async () => {
@@ -267,7 +281,6 @@ describe('parseLocalTinfoilExport', () => {
     await expect(parseLocalTinfoilExport(file, options)).rejects.toBeInstanceOf(
       LocalImportBackgroundProcessingUnavailableError,
     )
-    expect(parseInWorker).not.toHaveBeenCalled()
   })
 
   it('fails explicitly when posting to the worker fails', async () => {
@@ -291,7 +304,6 @@ describe('parseLocalTinfoilExport', () => {
     await expect(parseLocalTinfoilExport(file, options)).rejects.toBeInstanceOf(
       LocalImportBackgroundProcessingUnavailableError,
     )
-    expect(parseInWorker).not.toHaveBeenCalled()
   })
 
   it('preserves parser errors returned by a running worker', async () => {
@@ -316,7 +328,6 @@ describe('parseLocalTinfoilExport', () => {
     await expect(parseLocalTinfoilExport(file, options)).rejects.toThrow(
       'The export archive is malformed',
     )
-    expect(parseInWorker).not.toHaveBeenCalled()
   })
 
   it('imports conversations.json as local-only chats', async () => {

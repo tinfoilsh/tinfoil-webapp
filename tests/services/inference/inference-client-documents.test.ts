@@ -104,6 +104,15 @@ describe('document hydration at sendChatStream', () => {
     await send([{ ...document, ...payload }])
     expect(attachmentGet).not.toHaveBeenCalled()
     expect(create).toHaveBeenCalledTimes(1)
+    expect(create.mock.calls[0][0].messages[0]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: '[Attached file: scan.pdf]' },
+        { type: 'text', text: 'Page 1 (scanned):\npage text' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } },
+        { type: 'text', text: 'summarize' },
+      ],
+    })
   })
 
   it('refuses a missing document while sync is disabled without fetching', async () => {

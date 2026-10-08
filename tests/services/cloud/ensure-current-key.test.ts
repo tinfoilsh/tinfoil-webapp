@@ -115,14 +115,18 @@ function enableInitialBundle(): void {
   mockWrapTinfoilKeyBundle.mockImplementation(
     async (
       primary: { credentialId: string },
-      keyBundle: { alternatives: string[] },
-    ) => ({ primary, alternatives: keyBundle.alternatives }),
+      keyBundle: { alternatives: string[]; authorizationMode: string },
+    ) => ({
+      primary,
+      alternatives: keyBundle.alternatives,
+      authorizationMode: keyBundle.authorizationMode,
+    }),
   )
-  mockBundleToEnclave.mockReturnValue({
-    credentialId: 'AQID',
+  mockBundleToEnclave.mockImplementation((bundle) => ({
+    credentialId: bundle.primary.credentialId,
     kekIvHex: '01'.repeat(12),
-    encryptedKeysHex: '02'.repeat(48),
-  })
+    encryptedKeysHex: Buffer.from(JSON.stringify(bundle)).toString('hex'),
+  }))
 }
 
 vi.mock('@/utils/error-handling', () => ({
@@ -460,7 +464,7 @@ describe('ensure-current-key adoptLocalKeyForMigration', () => {
           JSON.stringify({ mode: 'explicit_start_fresh' }),
         ),
     ],
-  ])('accepts changed %s after a delayed create', async (_, mutate) => {
+  ])('accepts changed %s after a delayed create', async (field, mutate) => {
     enableInitialBundle()
     let releaseFirstRegistration: () => void = () => {}
     const registrationGate = new Promise<void>((resolve) => {
@@ -480,10 +484,20 @@ describe('ensure-current-key adoptLocalKeyForMigration', () => {
     await expect(staleAdoption).resolves.toBe(false)
     await expect(currentAdoption).resolves.toBe(true)
     expect(mockRegisterKey).toHaveBeenCalledOnce()
-    expect(mockAddBundle).not.toHaveBeenCalled()
-    expect(remoteKeyState.bundles.AQID.encrypted_keys).toBe(
-      mockBundleToEnclave.mock.results.at(-1)?.value.encryptedKeysHex,
-    )
+    expect(mockAddBundle).toHaveBeenCalledOnce()
+    expect(
+      JSON.parse(
+        Buffer.from(
+          remoteKeyState.bundles.AQID.encrypted_keys,
+          'hex',
+        ).toString(),
+      ),
+    ).toEqual({
+      primary: { credentialId: 'AQID' },
+      alternatives: field === 'history' ? ['key_latest_history'] : [],
+      authorizationMode:
+        field === 'authorization' ? 'explicit_start_fresh' : 'validated',
+    })
     expect(mockEmit).toHaveBeenCalledOnce()
   })
 
@@ -526,33 +540,16 @@ describe('ensure-current-key adoptLocalKeyForMigration', () => {
   })
 
   it('rejects bundle writes targeting the wrong remote key', async () => {
+    enableInitialBundle()
     remoteKeyState = {
-      key_id: await deriveTinfoilKeyIdHex(
-        Uint8Array.from(atob(TEST_KEY_B64), (character) =>
-          character.charCodeAt(0),
-        ),
-      ),
+      key_id: await deriveTinfoilKeyIdHex(CHANGED_KEY_BYTES),
       etag: '1',
       bundles: {},
     }
-    const request = {
-      keyId: 'wrong-key-id',
-      keyB64: TEST_KEY_B64,
-      credentialId: 'AQID',
-      kekIvHex: '01'.repeat(12),
-      encryptedKeysHex: '02',
-    }
 
-    await expect(mockAddBundle(request)).rejects.toThrow(
-      'bundle target does not match remote key',
-    )
-    await expect(
-      mockAddBundle({
-        ...request,
-        keyId: remoteKeyState.key_id,
-        keyB64: CHANGED_KEY_B64,
-      }),
-    ).rejects.toThrow('bundle target does not match remote key')
+    await expect(adoptLocalKeyForMigration()).resolves.toBe(false)
+    expect(mockAddBundle).not.toHaveBeenCalled()
+    expect(mockRegisterKey).not.toHaveBeenCalled()
     expect(remoteKeyState.bundles).toEqual({})
   })
 

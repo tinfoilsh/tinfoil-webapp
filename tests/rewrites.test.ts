@@ -1,6 +1,9 @@
-import { pathToRegexp } from 'next/dist/compiled/path-to-regexp'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
+
+const { pathToRegexp }: { pathToRegexp: (path: string) => RegExp } =
+  createRequire(import.meta.url)('next/dist/compiled/path-to-regexp')
 
 // Every page URL falls back to the single exported shell; files, Next assets
 // and the WEBCAT well-known directory must 404 for real instead.
@@ -30,7 +33,9 @@ describe('catch-all rewrite', () => {
 
   it.each([
     '/_next/static/chunks/missing.js',
+    '/_next/missing',
     '/.well-known/webcat/manifest.json',
+    '/.well-known/webcat/missing',
     '/js/boot.js',
     '/favicon.ico',
     '/preview/mermaid.html',

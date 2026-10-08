@@ -52,20 +52,29 @@ describe('getSystemPromptAndRules', () => {
     })
   })
 
-  it('rejects a response with a malformed genUI block', async () => {
+  it.each([
+    { header: 42, enabledWidgets: ['render_chart'] },
+    { header: 'h', enabledWidgets: 'oops' },
+  ])('rejects a response with a malformed genUI block: %j', async (genUI) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(validResponse)))
+    await getSystemPromptAndRules()
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
         okResponse({
           systemPrompt: 'p',
           rules: 'r',
-          genUI: { header: 42, enabledWidgets: 'oops' },
+          genUI,
         }),
       ),
     )
 
     await expect(getSystemPromptAndRules()).resolves.toBeNull()
-    expect(getGenUIConfig()).toBeNull()
+    expect(getGenUIConfig()).toEqual(validResponse.genUI)
+    expect(getCachedSystemPromptAndRules()).toEqual({
+      systemPrompt: 'Server prompt',
+      rules: 'Server rules',
+    })
   })
 
   it('rejects widget lists containing non-string entries', async () => {
@@ -79,12 +88,6 @@ describe('getSystemPromptAndRules', () => {
         }),
       ),
     )
-
-    await expect(getSystemPromptAndRules()).resolves.toBeNull()
-  })
-
-  it('returns null when the request fails', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')))
 
     await expect(getSystemPromptAndRules()).resolves.toBeNull()
   })

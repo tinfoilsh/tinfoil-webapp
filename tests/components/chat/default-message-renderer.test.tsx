@@ -134,6 +134,9 @@ describe('DefaultMessageRenderer metadata', () => {
     expect(screen.getByText('Retired Model')).toBeInTheDocument()
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
     expect(
+      screen.queryByRole('button', { name: 'Read aloud' }),
+    ).not.toBeInTheDocument()
+    expect(
       screen.queryByRole('button', { name: 'Copy message' }),
     ).not.toBeInTheDocument()
   })
@@ -310,8 +313,9 @@ describe('DefaultMessageRenderer message actions', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  it('deletes a user message with its own index', () => {
+  it('deletes and forks a user message with its own index', () => {
     const onDeleteMessage = vi.fn()
+    const onForkMessage = vi.fn()
     render(
       <Renderer
         message={{
@@ -323,11 +327,16 @@ describe('DefaultMessageRenderer message actions', () => {
         model={model}
         isDarkMode={false}
         onDeleteMessage={onDeleteMessage}
+        onForkMessage={onForkMessage}
       />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
     expect(onDeleteMessage).toHaveBeenCalledWith(4)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Fork conversation from here' }),
+    )
+    expect(onForkMessage).toHaveBeenCalledExactlyOnceWith(4)
   })
 
   it('closes an active edit when the conversation becomes read-only', () => {
@@ -370,28 +379,6 @@ describe('DefaultMessageRenderer message actions', () => {
     openMoreActions()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete message' }))
     expect(onDeleteMessage).toHaveBeenCalledWith(3)
-  })
-
-  it('forks from a user message with its own index', () => {
-    const onForkMessage = vi.fn()
-    render(
-      <Renderer
-        message={{
-          role: 'user',
-          content: 'Hello',
-          timestamp: new Date('2026-08-07T00:00:00.000Z'),
-        }}
-        messageIndex={2}
-        model={model}
-        isDarkMode={false}
-        onForkMessage={onForkMessage}
-      />,
-    )
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Fork conversation from here' }),
-    )
-    expect(onForkMessage).toHaveBeenCalledWith(2)
   })
 
   it('forks from an assistant message with its own index', () => {
@@ -586,16 +573,6 @@ describe('DefaultMessageRenderer read aloud', () => {
     { role: 'assistant' as const, content: 'Thinking.', isThinking: true },
   ])('does not offer read aloud for $role / $content', (message) => {
     renderMessage({ ...message, timestamp: new Date() })
-    expect(
-      screen.queryByRole('button', { name: 'Read aloud' }),
-    ).not.toBeInTheDocument()
-  })
-
-  it('respects hidden actions', () => {
-    renderMessage(
-      { role: 'assistant', content: 'Hello.', timestamp: new Date() },
-      true,
-    )
     expect(
       screen.queryByRole('button', { name: 'Read aloud' }),
     ).not.toBeInTheDocument()

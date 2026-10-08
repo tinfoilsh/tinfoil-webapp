@@ -15,11 +15,14 @@ vi.mock('tinfoil', () => ({
   },
 }))
 
+const FAVICON_DATA_URL = 'data:image/x-icon;base64,aWNvbg=='
+const FAVICON_BYTES = 'aWNvbg=='
+
 function faviconResponse(): Response {
   return new Response(
     JSON.stringify({
       status: 'found',
-      favicon_bytes: 'aWNvbg==',
+      favicon_bytes: FAVICON_BYTES,
       favicon_content_type: 'image/x-icon',
     }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -28,12 +31,12 @@ function faviconResponse(): Response {
 
 describe('fetchFavicon', () => {
   beforeEach(() => {
-    mockFetch.mockReset().mockResolvedValue(faviconResponse())
+    mockFetch.mockReset().mockImplementation(async () => faviconResponse())
   })
 
   it('uses the favicon-only enclave endpoint', async () => {
     await expect(fetchFavicon('https://example.com/page')).resolves.toBe(
-      'data:image/x-icon;base64,aWNvbg==',
+      FAVICON_DATA_URL,
     )
     expect(mockFetch).toHaveBeenCalledWith(
       'https://opengraph-metadata.tinfoil.sh/favicon',
@@ -45,11 +48,37 @@ describe('fetchFavicon', () => {
   })
 
   it('deduplicates concurrent requests for the same hostname', async () => {
+    let finish!: (response: Response) => void
+    mockFetch.mockReturnValueOnce(
+      new Promise<Response>((resolve) => {
+        finish = resolve
+      }),
+    )
+    mockFetch.mockResolvedValueOnce(
+      Response.json({
+        status: 'missing',
+        favicon_bytes: '',
+        favicon_content_type: '',
+      }),
+    )
     const first = fetchFavicon('https://example.org/one')
     const second = fetchFavicon('https://example.org/two')
 
-    await Promise.all([first, second])
-    expect(mockFetch).toHaveBeenCalledTimes(1)
+    try {
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      await expect(fetchFavicon('https://other.example/')).resolves.toBeNull()
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    } finally {
+      finish(faviconResponse())
+    }
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      FAVICON_DATA_URL,
+      FAVICON_DATA_URL,
+    ])
+    await expect(fetchFavicon('https://example.org/again')).resolves.toBe(
+      FAVICON_DATA_URL,
+    )
+    expect(mockFetch).toHaveBeenCalledTimes(3)
   })
 
   it('returns null when the enclave reports a missing favicon', async () => {
@@ -67,22 +96,28 @@ describe('fetchFavicon', () => {
     await expect(fetchFavicon('https://missing.example')).resolves.toBeNull()
   })
 
-  it('rejects found responses without valid image data', async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          status: 'found',
-          favicon_bytes: '',
-          favicon_content_type: 'text/plain',
-        }),
-        { status: 200 },
-      ),
-    )
+  it.each([
+    { bytes: '', contentType: 'image/png' },
+    { bytes: FAVICON_BYTES, contentType: 'text/plain' },
+  ])(
+    'rejects found responses without valid image data: $bytes / $contentType',
+    async ({ bytes, contentType }) => {
+      mockFetch.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            status: 'found',
+            favicon_bytes: bytes,
+            favicon_content_type: contentType,
+          }),
+          { status: 200 },
+        ),
+      )
 
-    await expect(fetchFavicon('https://invalid.example')).rejects.toThrow(
-      'Invalid found favicon response',
-    )
-  })
+      await expect(fetchFavicon('https://invalid.example')).rejects.toThrow(
+        'Invalid found favicon response',
+      )
+    },
+  )
 
   it('does not cache transient failures', async () => {
     mockFetch
@@ -93,7 +128,7 @@ describe('fetchFavicon', () => {
       'Favicon fetch failed: 503',
     )
     await expect(fetchFavicon('https://transient.example')).resolves.toBe(
-      'data:image/x-icon;base64,aWNvbg==',
+      FAVICON_DATA_URL,
     )
     expect(mockFetch).toHaveBeenCalledTimes(2)
   })
@@ -143,41 +178,34 @@ describe('fetchLinkMetadata', () => {
     } satisfies Partial<MetadataClientError>)
   })
 
-  it('drops empty and invalid preview image URLs', async () => {
-    mockFetch
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            url: 'https://example.com/',
-            title: ' Example ',
-            description: null,
-            site_name: null,
-            image: '   ',
-            cached: false,
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            url: 'https://example.org/',
-            title: 'Example',
-            description: null,
-            site_name: null,
-            image: 'javascript:alert(1)',
-            cached: false,
-          }),
-          { status: 200 },
-        ),
-      )
-
+  it.each([
+    { image: '   ', expected: null },
+    { image: 'javascript:alert(1)', expected: null },
+    {
+      image: ' https://images.example/preview.png ',
+      expected: 'https://images.example/preview.png',
+    },
+    {
+      image: 'http://images.example/preview.png',
+      expected: 'http://images.example/preview.png',
+    },
+  ])('normalizes preview image URLs: $image', async ({ image, expected }) => {
+    mockFetch.mockResolvedValueOnce(
+      Response.json({
+        url: 'https://example.com/',
+        title: ' Example ',
+        description: null,
+        site_name: null,
+        image,
+        cached: false,
+      }),
+    )
     await expect(
       fetchLinkMetadata('https://example.com/'),
-    ).resolves.toMatchObject({ title: 'Example', image: null })
-    await expect(
-      fetchLinkMetadata('https://example.org/'),
-    ).resolves.toMatchObject({ image: null })
+    ).resolves.toMatchObject({
+      title: 'Example',
+      image: expected,
+    })
   })
 
   it('classifies malformed metadata responses', async () => {

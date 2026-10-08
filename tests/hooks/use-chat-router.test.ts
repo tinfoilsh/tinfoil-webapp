@@ -38,31 +38,43 @@ describe('useChatRouter', () => {
         router.updateUrlForProject('project-1'),
       path: '/project/project-1',
     },
+    {
+      name: 'cloud chat without a pending message',
+      update: (router: ReturnType<typeof useChatRouter>) =>
+        router.updateUrlForChat('abc'),
+      path: '/chat/abc',
+      pendingMessage: false,
+    },
   ])(
     'preserves unconsumed message markers when routing to $name',
-    ({ update, path }) => {
+    ({ update, path, pendingMessage = true }) => {
       mockUseRouter.mockReturnValue({
         isReady: true,
         query: {},
         pathname: '/newchat',
       })
-      const hash = `#send=${Buffer.from('Hello 👋').toString('base64')}`
+      const hash = pendingMessage
+        ? `#send=${Buffer.from('Hello 👋').toString('base64')}`
+        : ''
+      const query = pendingMessage ? '?q=fallback' : ''
       window.history.replaceState(
         { retained: true },
         '',
-        `/newchat?q=fallback${hash}`,
+        `/newchat${query}${hash}`,
       )
+      const replaceSpy = vi.spyOn(window.history, 'replaceState')
       const { result } = renderHook(() => useChatRouter())
       act(() => update(result.current))
       expect(window.location.pathname).toBe(path)
       expect(window.location.hash).toBe(hash)
       expect(new URLSearchParams(window.location.search).get('q')).toBe(
-        'fallback',
+        pendingMessage ? 'fallback' : null,
       )
+      expect(replaceSpy).toHaveBeenCalledTimes(1)
       expect(window.history.state).toEqual({
         retained: true,
-        as: `${path}?q=fallback${hash}`,
-        url: `${path}?q=fallback${hash}`,
+        as: `${path}${query}${hash}`,
+        url: `${path}${query}${hash}`,
       })
     },
   )
@@ -78,28 +90,6 @@ describe('useChatRouter', () => {
     expect(result.current.isRouterReady).toBe(true)
     expect(result.current.initialChatId).toBe('chat-123')
     expect(result.current.isLocalChatUrl).toBe(true)
-  })
-
-  it('updates URL using history.replaceState', () => {
-    mockUseRouter.mockReturnValue({
-      isReady: true,
-      query: {},
-      pathname: '/chat/[chatId]',
-    })
-
-    const replaceSpy = vi.spyOn(window.history, 'replaceState')
-
-    // Start at '/'
-    window.history.replaceState({}, '', '/')
-
-    const { result } = renderHook(() => useChatRouter())
-
-    act(() => {
-      result.current.updateUrlForChat('abc')
-    })
-
-    expect(replaceSpy).toHaveBeenCalled()
-    expect(window.location.pathname).toBe('/chat/abc')
   })
 
   it('does not call replaceState if path is unchanged', () => {

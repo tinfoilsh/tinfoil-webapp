@@ -3,6 +3,7 @@ import { useMessageQueue } from '@/components/chat/hooks/use-message-queue'
 import type { Chat } from '@/components/chat/types'
 import { UrlHashMessageHandler } from '@/components/url-hash-message-handler'
 import type { ChatChunk } from '@/services/inference/chat-stream'
+import { sessionChatStorage } from '@/services/storage/session-storage'
 import {
   act,
   render,
@@ -101,13 +102,6 @@ vi.mock('@/services/storage/deleted-chats-tracker', () => ({
   deletedChatsTracker: { isDeleted: () => isDeletedMock() },
 }))
 
-vi.mock('@/services/storage/session-storage', () => ({
-  sessionChatStorage: {
-    getAllChats: vi.fn(() => []),
-    saveChat: vi.fn(),
-  },
-}))
-
 vi.mock('@/services/exec-snapshot/access-token', () => ({
   generateCodeExecutionAccessToken: () => 'token',
 }))
@@ -163,8 +157,33 @@ function hydratedChat(): Chat {
 function completedStream() {
   return (async function* (): AsyncGenerator<ChatChunk> {
     yield { choices: [{ delta: { content: 'Response' } }] } as ChatChunk
+    yield { choices: [{ delta: {}, finish_reason: 'stop' }] }
   })()
 }
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.clearAllMocks()
+  getChatMock.mockReset().mockRejectedValue(new Error('Unexpected chat read'))
+  saveChatMock.mockReset().mockImplementation(async (chat: unknown) => chat)
+  saveExistingChatMock
+    .mockReset()
+    .mockImplementation(async (chat: unknown) => chat)
+  saveChatAndSyncMock
+    .mockReset()
+    .mockImplementation(async (chat: unknown) => chat)
+  sendChatStreamMock
+    .mockReset()
+    .mockImplementation(async () => completedStream())
+  isDeletedMock.mockReset().mockReturnValue(false)
+  sessionStorage.clear()
+  vi.spyOn(sessionChatStorage, 'saveChat')
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+  sessionStorage.clear()
+})
 
 function renderMessaging(initialChat: Chat) {
   return renderHook(() => {
@@ -184,16 +203,29 @@ function renderMessaging(initialChat: Chat) {
   })
 }
 
-describe('useChatMessaging metadata-only sends', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    saveChatMock.mockImplementation(async (chat: unknown) => chat)
-    saveExistingChatMock.mockImplementation(async (chat: unknown) => chat)
-    saveChatAndSyncMock.mockImplementation(async (chat: unknown) => chat)
-    sendChatStreamMock.mockResolvedValue(completedStream())
-    isDeletedMock.mockReturnValue(false)
-  })
+const expectedSendContents = [
+  'Earlier question',
+  'Earlier answer',
+  'New prompt',
+  'Response',
+]
 
+function expectFinalSendState(
+  result: ReturnType<typeof renderMessaging>['result'],
+  saveMock: typeof saveChatMock,
+  expectedContents: string[] = expectedSendContents,
+) {
+  expect(
+    result.current.currentChat.messages.map(({ content }) => content),
+  ).toEqual(expectedContents)
+  expect(saveMock).toHaveBeenLastCalledWith(
+    expect.objectContaining({ messages: result.current.currentChat.messages }),
+    false,
+  )
+  expect(result.current.messaging.streamError).toBeNull()
+}
+
+describe('useChatMessaging metadata-only sends', () => {
   it('hydrates stored messages before persisting a send', async () => {
     getChatMock.mockResolvedValue(hydratedChat())
     const { result } = renderMessaging(metadataOnlyChat())
@@ -211,11 +243,7 @@ describe('useChatMessaging metadata-only sends', () => {
     ).toEqual(['Earlier question', 'Earlier answer', 'New prompt'])
     expect(firstSave.isMetadataOnly).toBe(false)
 
-    expect(
-      result.current.currentChat.messages.map(
-        (m: { content: string }) => m.content,
-      ),
-    ).toContain('Earlier question')
+    expectFinalSendState(result, saveExistingChatMock)
   })
 
   it('refreshes hydration when the stored summary changes during the read', async () => {
@@ -277,6 +305,14 @@ describe('useChatMessaging metadata-only sends', () => {
       'Remote answer',
       'New prompt',
     ])
+    expectFinalSendState(result, saveExistingChatMock, [
+      'Earlier question',
+      'Earlier answer',
+      'Remote question',
+      'Remote answer',
+      'New prompt',
+      'Response',
+    ])
   })
 
   it('does not persist anything when hydration fails', async () => {
@@ -329,6 +365,7 @@ describe('useChatMessaging metadata-only sends', () => {
     expect(
       firstSave.messages.map((m: { content: string }) => m.content),
     ).toEqual(['Earlier question', 'Earlier answer', 'New prompt'])
+    expectFinalSendState(result, saveChatMock)
   })
 
   it('keeps B current while a hydrated send continues for A', async () => {
@@ -366,7 +403,15 @@ describe('useChatMessaging metadata-only sends', () => {
       result.current.chats
         .find(({ id }) => id === 'chat-1')
         ?.messages.map(({ content }) => content),
-    ).toEqual(['Earlier question', 'Earlier answer', 'New prompt', 'Response'])
+    ).toEqual(expectedSendContents)
+    expect(saveExistingChatMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        id: 'chat-1',
+        messages: result.current.chats.find(({ id }) => id === 'chat-1')
+          ?.messages,
+      }),
+      false,
+    )
   })
 
   it('does not recreate or upload A when it is deleted during hydration', async () => {
@@ -409,11 +454,6 @@ describe('useChatMessaging metadata-only sends', () => {
 })
 
 describe('useChatMessaging model availability', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    sendChatStreamMock.mockResolvedValue(completedStream())
-  })
-
   it('does not dispatch without an available model', async () => {
     const initialChat = hydratedChat()
     const { result } = renderHook(() => {
@@ -497,17 +537,14 @@ function UrlMessageChat({
       <output data-testid="messages">
         {currentChat.messages.map((item) => item.content).join('\n')}
       </output>
+      <output data-testid="stream-error">
+        {messaging.streamError?.message}
+      </output>
     </>
   )
 }
 
 describe('URL messages through the chat send pipeline', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    window.sessionStorage.clear()
-    sendChatStreamMock.mockImplementation(async () => completedStream())
-  })
-
   afterEach(() => {
     window.history.replaceState(null, '', '/')
     window.sessionStorage.clear()
@@ -542,8 +579,20 @@ describe('URL messages through the chat send pipeline', () => {
         </StrictMode>,
       )
       await waitFor(() =>
-        expect(screen.getByTestId('messages')).toHaveTextContent('Response'),
+        expect(sessionChatStorage.saveChat).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            messages: [
+              expect.objectContaining({ role: 'user', content: message }),
+              expect.objectContaining({
+                role: 'assistant',
+                content: 'Response',
+              }),
+            ],
+          }),
+        ),
       )
+      expect(screen.getByTestId('messages')).toHaveTextContent('Response')
+      expect(screen.getByTestId('stream-error')).toBeEmptyDOMElement()
       expect(sendChatStreamMock).toHaveBeenCalledOnce()
       expect(sendChatStreamMock.mock.calls[0][0].updatedMessages).toEqual([
         expect.objectContaining({ role: 'user', content: message }),
@@ -564,8 +613,17 @@ describe('URL messages through the chat send pipeline', () => {
     expect(sendChatStreamMock).not.toHaveBeenCalled()
     rerender(<UrlMessageChat ready blocked={false} />)
     await waitFor(() =>
-      expect(screen.getByTestId('messages')).toHaveTextContent('Response'),
+      expect(sessionChatStorage.saveChat).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          messages: [
+            expect.objectContaining({ role: 'user', content: message }),
+            expect.objectContaining({ role: 'assistant', content: 'Response' }),
+          ],
+        }),
+      ),
     )
+    expect(screen.getByTestId('messages')).toHaveTextContent('Response')
+    expect(screen.getByTestId('stream-error')).toBeEmptyDOMElement()
     expect(sendChatStreamMock).toHaveBeenCalledOnce()
     expect(window.location.hash).toBe('')
     expect(sendChatStreamMock.mock.calls[0][0].updatedMessages).toEqual([

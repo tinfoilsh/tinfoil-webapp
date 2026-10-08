@@ -20,6 +20,13 @@ const EXPECTED_KEY = new Uint8Array(32).map((_, index) => 0xff - index)
 const EXISTING_KEK_IV_HEX = '0102030405060708090a0b0c'
 const EXISTING_WRAPPED_KEY_HEX =
   '53c8f700925c9f94a7cf679d8a892c82f7c443769103a322e477a38d9118f0a014a659136ee1b9f6ed4921877f17aca7'
+const originalCredentials = Object.getOwnPropertyDescriptor(
+  navigator,
+  'credentials',
+)
+const LEGACY_LOCAL_CREDENTIAL_STORAGE_KEY =
+  'tinfoil-local-passkey-credential-id'
+const UNRELATED_STORAGE_KEY = 'security-test-unrelated'
 
 function installCredentials(create: () => Promise<unknown>): void {
   Object.defineProperty(navigator, 'credentials', {
@@ -44,6 +51,9 @@ describe('Tinfoil passkey manager configuration', () => {
     vi.useRealTimers()
     resetPasskeyCapabilityCache()
     vi.restoreAllMocks()
+    if (originalCredentials)
+      Object.defineProperty(navigator, 'credentials', originalCredentials)
+    else Reflect.deleteProperty(navigator, 'credentials')
   })
 
   it('clears a rejected in-flight capability request', async () => {
@@ -127,6 +137,16 @@ describe('Tinfoil passkey manager configuration', () => {
       prfOutput: btoa(String.fromCharCode(...PRF_OUTPUT)),
     })
     expect(tinfoilPasskeyStorage.loadLocalCredentialId()).toBe(CREDENTIAL_ID)
+    expect(localStorage.getItem(LEGACY_LOCAL_CREDENTIAL_STORAGE_KEY)).toBe(
+      CREDENTIAL_ID,
+    )
+    localStorage.setItem(UNRELATED_STORAGE_KEY, 'preserve')
+    tinfoilPasskeyStorage.clear()
+    expect(localStorage.getItem(SECRET_PASSKEY_PRF_OUTPUT)).toBeNull()
+    expect(localStorage.getItem(LEGACY_LOCAL_CREDENTIAL_STORAGE_KEY)).toBeNull()
+    expect(tinfoilPasskeyStorage.loadCachedPRFResult()).toBeNull()
+    expect(tinfoilPasskeyStorage.loadLocalCredentialId()).toBeNull()
+    expect(localStorage.getItem(UNRELATED_STORAGE_KEY)).toBe('preserve')
   })
 
   it('maps cancellation without inspecting messages', async () => {
@@ -140,6 +160,17 @@ describe('Tinfoil passkey manager configuration', () => {
         key: EXPECTED_KEY,
       }),
     ).resolves.toBeNull()
+    expect(navigator.credentials.create).toHaveBeenCalledOnce()
+    const failure = new Error('NotAllowedError: cancelled')
+    installCredentials(async () => {
+      throw failure
+    })
+    await expect(
+      createAndWrapTinfoilKey({
+        user: { id: new Uint8Array([1]), name: 'person@example.com' },
+        key: EXPECTED_KEY,
+      }),
+    ).rejects.toMatchObject({ cause: failure })
   })
 
   it('maps evaluateCredential cancellation without touching legacy crypto', async () => {
@@ -148,6 +179,21 @@ describe('Tinfoil passkey manager configuration', () => {
     })
 
     await expect(evaluateTinfoilCredential([CREDENTIAL_ID])).resolves.toBeNull()
+    expect(navigator.credentials.get).toHaveBeenCalledOnce()
+    expect(navigator.credentials.get).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publicKey: expect.objectContaining({
+          allowCredentials: [expect.objectContaining({ type: 'public-key' })],
+        }),
+      }),
+    )
+    const failure = new Error('NotAllowedError: cancelled')
+    installCredentialEvaluation(async () => {
+      throw failure
+    })
+    await expect(
+      evaluateTinfoilCredential([CREDENTIAL_ID]),
+    ).rejects.toMatchObject({ cause: failure })
   })
 
   it('maps unsupported and timeout categories to existing UI errors', async () => {

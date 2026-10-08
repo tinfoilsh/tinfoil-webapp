@@ -60,17 +60,21 @@ describe('readExportFiles', () => {
     ).rejects.toThrow('users.json is not a ChatGPT conversations export')
   })
 
-  it('names the offending file when it holds neither a record nor an array', async () => {
-    await expect(
-      readExportFiles(
-        [
-          jsonFile('conversations-1.json', [{ uuid: 'a' }]),
-          jsonFile('users.json', 'just a string'),
-        ],
-        'Claude conversations',
-      ),
-    ).rejects.toThrow('users.json is not a Claude conversations export')
-  })
+  it.each(['just a string', null, 42])(
+    'names invalid single-record input %j',
+    async (value) => {
+      await expect(
+        readExportFiles(
+          [
+            jsonFile('conversations-1.json', [{ uuid: 'a' }]),
+            jsonFile('users.json', value),
+          ],
+          'Claude conversations',
+          { allowSingleRecord: true },
+        ),
+      ).rejects.toThrow('users.json is not a Claude conversations export')
+    },
+  )
 
   it('names the offending file when it is not valid JSON', async () => {
     await expect(

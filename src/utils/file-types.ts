@@ -244,30 +244,3 @@ export function getFileIconType(filename: string): string {
 
   return 'file'
 }
-
-/**
- * Gets the format type for document processing based on filename
- * @param filename - The filename to check
- * @returns A string representing the format for document processing
- */
-export function getDocumentFormat(filename: string): string {
-  const lowerFilename = filename.toLowerCase()
-
-  if (lowerFilename.endsWith('.pdf')) return 'pdf'
-  if (lowerFilename.endsWith('.docx')) return 'docx'
-  if (lowerFilename.endsWith('.pptx')) return 'pptx'
-  if (
-    lowerFilename.endsWith('.html') ||
-    lowerFilename.endsWith('.htm') ||
-    lowerFilename.endsWith('.xhtml')
-  )
-    return 'html'
-  if (lowerFilename.endsWith('.md')) return 'md'
-  if (lowerFilename.endsWith('.csv')) return 'csv'
-  if (lowerFilename.endsWith('.xlsx')) return 'xlsx'
-  if (hasImageExtension(filename)) return 'image'
-  if (lowerFilename.endsWith('.txt')) return 'asciidoc'
-
-  // Default to pdf if we can't determine
-  return 'pdf'
-}

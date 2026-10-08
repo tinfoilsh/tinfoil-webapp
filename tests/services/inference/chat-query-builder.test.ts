@@ -147,24 +147,6 @@ describe('ChatQueryBuilder', () => {
     expect(last.content).toMatch(/\n\nContinue where you left off\.$/)
   })
 
-  it('omits the time reminder by default', () => {
-    const messages = ChatQueryBuilder.buildMessages({
-      model,
-      systemPrompt: 'be helpful',
-      rules: '',
-      messages: [userMessage],
-      includeGenUIHint: false,
-    })
-
-    expect(
-      messages.some(
-        (m) =>
-          typeof m.content === 'string' &&
-          m.content.includes('<system-reminder>'),
-      ),
-    ).toBe(false)
-  })
-
   it('builds byte-identical messages across calls when the wall clock advances within a minute', () => {
     vi.useFakeTimers()
     try {
@@ -189,6 +171,24 @@ describe('ChatQueryBuilder', () => {
       })
 
       expect(second).toEqual(first)
+      expect(first.at(-1)).toEqual({
+        role: 'user',
+        content: expect.stringMatching(
+          /^<system-reminder>Current time: .+<\/system-reminder>$/,
+        ),
+      })
+
+      vi.setSystemTime(new Date('2026-07-20T10:16:01Z'))
+      const nextMinute = ChatQueryBuilder.buildMessages({
+        model,
+        systemPrompt: 'be helpful',
+        rules: '',
+        messages: [userMessage],
+        includeGenUIHint: false,
+        includeTimeReminder: true,
+      })
+      expect(nextMinute.slice(0, -1)).toEqual(first.slice(0, -1))
+      expect(nextMinute.at(-1)?.content).not.toBe(first.at(-1)?.content)
     } finally {
       vi.useRealTimers()
     }

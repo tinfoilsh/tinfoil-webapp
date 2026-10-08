@@ -34,7 +34,13 @@ beforeAll(() =>
   ),
 )
 afterAll(() => vi.unstubAllGlobals())
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
+
+const MAX_OUTPUT_LINES = 1000
+const MAX_OUTPUT_CHARACTERS = 100_000
 
 /** In-origin runner frames embed their payload as a JSON data block in srcdoc. */
 function runnerData(frame: HTMLIFrameElement): Record<string, unknown> {
@@ -157,6 +163,22 @@ describe('code previews', () => {
   })
 
   it('runs HTML previews on the sandbox origin, only after it is ready', () => {
+    const contentWindowGetter = Object.getOwnPropertyDescriptor(
+      HTMLIFrameElement.prototype,
+      'contentWindow',
+    )!.get!
+    const post = vi.fn()
+    vi.spyOn(
+      HTMLIFrameElement.prototype,
+      'contentWindow',
+      'get',
+    ).mockImplementation(function (this: HTMLIFrameElement) {
+      const frameWindow: Window | null = contentWindowGetter.call(this)
+      if (frameWindow && !vi.isMockFunction(frameWindow.postMessage)) {
+        vi.spyOn(frameWindow, 'postMessage').mockImplementation(post)
+      }
+      return frameWindow
+    })
     const code = '<h1>Preview</h1>\n<script>void 0</script>'
     const { getByRole, getByTitle } = render(
       <CodeBlock code={code} language="html" />,
@@ -167,7 +189,6 @@ describe('code previews', () => {
     expect(new URL(frame.src).hash.length).toBeGreaterThan(20)
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
-    const post = vi.spyOn(frame.contentWindow!, 'postMessage')
     expect(post).not.toHaveBeenCalled()
     // A ready message without our nonce is ignored.
     act(() => {
@@ -179,12 +200,41 @@ describe('code previews', () => {
       )
     })
     expect(post).not.toHaveBeenCalled()
-    post.mockRestore()
-    expect(sandboxRun(frame)).toMatchObject({
-      type: 'tinfoil-sandbox-run',
-      kind: 'html',
-      code,
+    const ready = {
+      type: 'tinfoil-sandbox-ready',
+      nonce: new URL(frame.src).hash.slice(1),
+    }
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', { source: window, data: ready }),
+      )
     })
+    expect(post).not.toHaveBeenCalled()
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          data: ready,
+        }),
+      )
+    })
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        type: 'tinfoil-sandbox-run',
+        kind: 'html',
+        code,
+      }),
+      '*',
+    )
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: frame.contentWindow,
+          data: ready,
+        }),
+      )
+    })
+    expect(post).toHaveBeenCalledTimes(1)
   })
 
   it.each(['javascript', 'python'])(
@@ -194,9 +244,8 @@ describe('code previews', () => {
         language === 'python'
           ? 'print("</script >")\nprint("ready")'
           : 'const value = "</script >";\nconsole.log(value);'
-      const { getByRole, getByTitle, queryByText } = render(
-        <CodeBlock code={code} language={language} />,
-      )
+      const { container, getByRole, getByTitle, queryByText, getAllByText } =
+        render(<CodeBlock code={code} language={language} />)
       fireEvent.click(getByRole('button', { name: 'Run' }))
       const frame = getByTitle(
         language === 'python' ? 'Python preview' : 'JavaScript preview',
@@ -214,14 +263,27 @@ describe('code previews', () => {
         expect(frame.src.startsWith(`${SANDBOX_PREVIEW_URL}#`)).toBe(true)
         expect(sandboxRun(frame)).toMatchObject({ kind: 'js', code })
       }
+      const boundaryLines = Array.from(
+        { length: MAX_OUTPUT_LINES },
+        (_, index) => `line-${index}`,
+      )
+      previewMessage(frame, type, { output: boundaryLines })
+      expect(getAllByText(/^line-\d+$/)).toHaveLength(MAX_OUTPUT_LINES)
+      const boundaryText = 'a'.repeat(MAX_OUTPUT_CHARACTERS)
+      previewMessage(frame, type, { output: [boundaryText] })
+      expect(queryByText(boundaryText)).not.toBeNull()
+      const markup = '<img src=x onerror="alert(1)">'
+      previewMessage(frame, type, { output: [markup] })
+      expect(queryByText(markup)).not.toBeNull()
+      expect(container.querySelector('img')).toBeNull()
       previewMessage(frame, type, { output: ['Ready'] })
       expect(queryByText('Ready')).not.toBeNull()
       for (const output of [
         null,
         {},
         ['a', 1],
-        Array(1001).fill('a'),
-        ['a'.repeat(100_001)],
+        Array(MAX_OUTPUT_LINES + 1).fill('a'),
+        ['a'.repeat(MAX_OUTPUT_CHARACTERS + 1)],
       ]) {
         previewMessage(frame, type, { output: ['Ready'] })
         previewMessage(frame, type, { output })
@@ -240,7 +302,11 @@ describe('code previews', () => {
         window.dispatchEvent(
           new MessageEvent('message', {
             source: window,
-            data: { type, output: ['Unrelated'] },
+            data: {
+              type,
+              instanceId: instanceIdOf(frame),
+              output: ['Unrelated'],
+            },
           }),
         )
       })
@@ -249,8 +315,11 @@ describe('code previews', () => {
   )
 
   it.each([
-    { reason: 'too many lines', output: Array(1001).fill('a') },
-    { reason: 'too many characters', output: ['a'.repeat(100_001)] },
+    { reason: 'too many lines', output: Array(MAX_OUTPUT_LINES + 1).fill('a') },
+    {
+      reason: 'too many characters',
+      output: ['a'.repeat(MAX_OUTPUT_CHARACTERS + 1)],
+    },
     { reason: 'invalid output', output: { text: 'Unexpected' } },
   ])('finishes loading Python after $reason', ({ output }) => {
     const { getByRole, getByTitle, queryByText, rerender } = render(
@@ -313,6 +382,7 @@ describe('code previews', () => {
       language === 'html' ? 'HTML preview' : 'CSS preview',
     ) as HTMLIFrameElement
     const type = `${language}-preview-height`
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
     previewMessage(frame, type, { height: 500 })
     expect(frame.style.height).toBe('500px')
     for (const height of [null, '500', Infinity, NaN]) {
@@ -379,6 +449,7 @@ describe('mermaid preview', () => {
     const frame = getByTitle('Mermaid preview') as HTMLIFrameElement
     expect(frame.src).toContain(`${MERMAID_PREVIEW_URL}#`)
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
+    expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
     expect(sandboxRun(frame)).toMatchObject({
       kind: 'mermaid',
       code: 'graph TD; A-->B',

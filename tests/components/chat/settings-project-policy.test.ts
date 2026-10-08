@@ -1,6 +1,4 @@
 import {
-  canDeleteAllProjects,
-  canTransferProjectData,
   countExcludedProjectChats,
   filterExportableChats,
 } from '@/components/chat/settings-project-policy'
@@ -20,11 +18,6 @@ const projectChat = {
 } as Chat
 
 describe('settings project policy', () => {
-  it('keeps delete-all available while hiding project transfer controls', () => {
-    expect(canDeleteAllProjects(true)).toBe(true)
-    expect(canTransferProjectData(false)).toBe(false)
-  })
-
   it('excludes project chats from free-user exports without deleting them', () => {
     const chats = [regularChat, projectChat]
 

@@ -1,4 +1,8 @@
 import { ShareModal } from '@/components/chat/share-modal'
+import type {
+  shareSeal,
+  ShareSealResponse,
+} from '@/services/sync-enclave/sync-api'
 import {
   act,
   cleanup,
@@ -13,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   getShareStatus: vi.fn(),
   deleteSharedChat: vi.fn(),
   uploadSharedChat: vi.fn(),
-  shareSeal: vi.fn(),
+  shareSeal: vi.fn<typeof shareSeal>(),
   toast: vi.fn(),
 }))
 
@@ -54,6 +58,20 @@ async function readyCheckbox() {
   return checkbox
 }
 
+function expectShareSealPayload(title: string, content: string) {
+  expect(mocks.shareSeal).toHaveBeenCalledOnce()
+  expect(
+    JSON.parse(
+      new TextDecoder().decode(mocks.shareSeal.mock.calls[0][0].plaintext),
+    ),
+  ).toEqual({
+    v: 1,
+    title,
+    messages: [{ role: 'user', content, timestamp: 0 }],
+    createdAt: 0,
+  })
+}
+
 describe('ShareModal revocation', () => {
   let shared: boolean
 
@@ -68,6 +86,7 @@ describe('ShareModal revocation', () => {
       shared = true
     })
     mocks.shareSeal.mockResolvedValue({
+      ok: true,
       share_key: 'ab'.repeat(32),
       ciphertext: 'AQID',
     })
@@ -113,12 +132,14 @@ describe('ShareModal revocation', () => {
     render(
       <ShareModal
         {...props}
+        chatTitle="Test conversation"
+        chatCreatedAt={new Date(0)}
         messages={[{ role: 'user', content: 'Hello', timestamp: new Date(0) }]}
       />,
     )
-    expect(
-      screen.getByLabelText('Raw conversation markdown'),
-    ).toHaveTextContent('## User Hello ---')
+    expect(screen.getByLabelText('Raw conversation markdown').textContent).toBe(
+      '## User\n\nHello\n\n---',
+    )
     fireEvent.click(await readyCheckbox())
     fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
     expect(
@@ -130,6 +151,7 @@ describe('ShareModal revocation', () => {
       'chat-id',
       new Uint8Array([1, 2, 3]),
     )
+    expectShareSealPayload('Test conversation', 'Hello')
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: 'Share link' })).toHaveFocus(),
     )
@@ -175,6 +197,7 @@ describe('ShareModal revocation', () => {
       screen.queryByRole('textbox', { name: 'Share link' }),
     ).not.toBeInTheDocument()
     mocks.shareSeal.mockResolvedValue({
+      ok: true,
       share_key: 'cd'.repeat(32),
       ciphertext: 'BAUG',
     })
@@ -329,15 +352,32 @@ describe('ShareModal revocation', () => {
   })
 
   it('does not publish an abandoned conversation after sealing completes', async () => {
-    const seal = deferred<{ share_key: string; ciphertext: string }>()
+    const seal = deferred<ShareSealResponse>()
     mocks.shareSeal.mockReturnValueOnce(seal.promise)
-    const view = render(<ShareModal {...props} />)
+    const view = render(
+      <ShareModal
+        {...props}
+        chatCreatedAt={new Date(0)}
+        messages={[
+          {
+            role: 'user',
+            content: 'Original private conversation',
+            timestamp: new Date(0),
+          },
+        ]}
+      />,
+    )
     fireEvent.click(await readyCheckbox())
     fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
+    expectShareSealPayload('Shared Chat', 'Original private conversation')
     view.rerender(<ShareModal {...props} chatId="other-chat" />)
     await readyCheckbox()
     await act(async () =>
-      seal.resolve({ share_key: 'ab'.repeat(32), ciphertext: 'AQID' }),
+      seal.resolve({
+        ok: true,
+        share_key: 'ab'.repeat(32),
+        ciphertext: 'AQID',
+      }),
     )
     expect(mocks.uploadSharedChat).not.toHaveBeenCalled()
     expect(screen.getByRole('checkbox')).not.toBeChecked()

@@ -202,9 +202,3 @@ function missingAttachmentIds(cause: unknown): string[] {
     ? ids.filter((id): id is string => typeof id === 'string')
     : []
 }
-
-/**
- * Exposed so the §14 #13 test can iterate the table without exporting
- * the function values.
- */
-export const COVERED_CODES = Object.keys(ACTIONS) as EnclaveErrorCode[]

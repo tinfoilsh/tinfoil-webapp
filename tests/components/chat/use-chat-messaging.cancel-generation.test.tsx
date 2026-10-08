@@ -32,6 +32,7 @@ const {
   cancelChatRecoveryMock,
   cloudSyncState,
   scanPendingChatRecoveriesMock,
+  sendChatStreamMock,
 } = vi.hoisted(() => ({
   authState: {
     isSignedIn: false,
@@ -40,6 +41,7 @@ const {
   cancelChatRecoveryMock: vi.fn(async () => false),
   cloudSyncState: { enabled: true },
   scanPendingChatRecoveriesMock: vi.fn(),
+  sendChatStreamMock: vi.fn(),
 }))
 
 vi.mock('@clerk/react', () => ({
@@ -56,6 +58,7 @@ vi.mock('@/components/project', () => ({
 vi.mock('@/services/cloud/streaming-tracker', () => ({
   streamingTracker: {
     isStreaming: vi.fn(() => false),
+    startStreaming: vi.fn(),
     endStreaming: vi.fn(),
     beginPendingStream: vi.fn(),
     endPendingStream: vi.fn(),
@@ -88,6 +91,10 @@ vi.mock('@/services/inference/chat-recovery', () => ({
   releaseActiveChatRecovery: vi.fn(),
   scanPendingChatRecoveries: scanPendingChatRecoveriesMock,
   startChatRecoveryAttempt: vi.fn(),
+}))
+
+vi.mock('@/services/inference/inference-client', () => ({
+  sendChatStream: sendChatStreamMock,
 }))
 
 vi.mock('@/components/chat/hooks/use-chat-streams', async () => {
@@ -136,7 +143,7 @@ function useChatMessagingHarness({
     systemPrompt: '',
     rules: '',
     storeHistory: false,
-    models: [],
+    models: testModels,
     selectedModel: 'test-model',
     chats: [currentChat],
     currentChat,
@@ -158,6 +165,11 @@ describe('useChatMessaging cancelGeneration', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     clearActiveChatRecoveries()
+    sessionStorage.clear()
+    sendChatStreamMock.mockReset().mockImplementation(async function* () {
+      yield { choices: [{ delta: { content: 'Recovered admission answer' } }] }
+      yield { choices: [{ delta: {}, finish_reason: 'stop' }] }
+    })
     authState.isSignedIn = false
     authState.userId = undefined
     cloudSyncState.enabled = true
@@ -206,14 +218,6 @@ describe('useChatMessaging cancelGeneration', () => {
 
   it('exposes a resumed recovery as an active stream', () => {
     const chat = createChat('chat-a')
-    streamStatuses['chat-a'] = {
-      loadingState: 'streaming',
-      retryInfo: null,
-      isThinking: false,
-      isWaitingForResponse: false,
-      isStreaming: true,
-      streamError: null,
-    }
     const { result } = renderHook(useChatMessagingHarness, {
       initialProps: {
         currentChat: chat,
@@ -227,10 +231,19 @@ describe('useChatMessaging cancelGeneration', () => {
 
     expect(result.current.loadingState).toBe('loading')
     expect(result.current.isStreaming).toBe(true)
+
+    act(() => {
+      setChatRecoveryActive('chat-a', 'turn-1', false)
+    })
+    expect(result.current.loadingState).toBe('idle')
+    expect(result.current.isStreaming).toBe(false)
   })
 
   it('does not start a new prompt while recovery is active', async () => {
     const chat = createChat('chat-a')
+    chat.messages = [
+      { role: 'user', content: 'Existing prompt', timestamp: new Date(1) },
+    ]
     const { result } = renderHook(useChatMessagingHarness, {
       initialProps: {
         currentChat: chat,
@@ -244,11 +257,30 @@ describe('useChatMessaging cancelGeneration', () => {
     registerControllerMock.mockClear()
 
     await act(async () => {
-      await result.current.handleQuery('Another prompt')
+      expect(await result.current.handleQuery('Another prompt')).toEqual({
+        status: 'not-started',
+        reason: 'blocked',
+      })
     })
 
     expect(resetStatusMock).not.toHaveBeenCalled()
     expect(registerControllerMock).not.toHaveBeenCalled()
+    expect(sendChatStreamMock).not.toHaveBeenCalled()
+
+    act(() => {
+      setChatRecoveryActive('chat-a', 'turn-1', false)
+    })
+    await act(async () => {
+      expect(await result.current.handleQuery('Another prompt')).toEqual({
+        status: 'accepted',
+      })
+    })
+    expect(registerControllerMock).toHaveBeenCalledOnce()
+    expect(sendChatStreamMock).toHaveBeenCalledOnce()
+    expect(sendChatStreamMock.mock.calls[0][0].updatedMessages).toEqual([
+      chat.messages[0],
+      expect.objectContaining({ role: 'user', content: 'Another prompt' }),
+    ])
   })
 
   it('keeps the Stop action active whenever the chat is streaming', () => {

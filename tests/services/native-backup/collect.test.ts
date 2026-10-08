@@ -335,14 +335,28 @@ describe('native backup collection', () => {
         },
       ],
     })
+    const foreign = chat({
+      id: 'foreign',
+      isLocalOnly: true,
+      syncUserId: 'other',
+    })
+    const anonymous = chat({ id: 'anonymous', isLocalOnly: true })
+    const changing = { ...source, id: 'changing' }
+    const getLocalChat = vi.fn(async (id: string) => {
+      if (id === source.id) return source
+      if (id === changing.id) return { ...changing, syncUserId: 'other' }
+      throw new Error(`Unexpected local read: ${id}`)
+    })
     const result = await collectNativeBackupV2(
       dependencies({
-        getLocalChats: async () => [source],
-        getLocalChat: async () => source,
+        getLocalChats: async () => [source, foreign, anonymous, changing],
+        getLocalChat,
       }),
     )
 
-    expect(result.localChats).toHaveLength(1)
+    expect(result.localChats.map(({ id }) => id)).toEqual(['local'])
+    expect(getLocalChat.mock.calls.map(([id]) => id)).not.toContain('foreign')
+    expect(getLocalChat.mock.calls.map(([id]) => id)).not.toContain('anonymous')
     expect(result.localChats[0].messages[0].attachments).toEqual([])
     expect(result.omissions[0]).toMatchObject({
       kind: 'attachment',
@@ -402,18 +416,24 @@ describe('native backup collection', () => {
         },
       ],
     })
-    let releaseDownloads!: () => void
-    const downloadGate = new Promise<void>((resolve) => {
-      releaseDownloads = resolve
-    })
+    const releases: Array<() => void> = []
+    const payloads = attachmentIds.map(
+      (_, index) => new Uint8Array([...png, index]),
+    )
+    const downloads = payloads.map(
+      (bytes) =>
+        new Promise<Uint8Array>((resolve) => {
+          releases.push(() => resolve(bytes))
+        }),
+    )
     let active = 0
     let maxActive = 0
     const getCloudImage = vi.fn(async ({ id }: { id: string }) => {
       active++
       maxActive = Math.max(maxActive, active)
-      if (id === 'image-0') await downloadGate
+      const bytes = await downloads[attachmentIds.indexOf(id)]
       active--
-      return png
+      return bytes
     })
 
     const collection = collectNativeBackupV2(
@@ -424,14 +444,21 @@ describe('native backup collection', () => {
         getCloudImage,
       }),
     )
-    await vi.waitFor(() =>
-      expect(getCloudImage).toHaveBeenCalledTimes(attachmentIds.length),
-    )
-    releaseDownloads()
+    try {
+      await vi.waitFor(() => expect(getCloudImage).toHaveBeenCalledTimes(4))
+      for (const [completed, index] of [3, 2, 1, 0].entries()) {
+        releases[index]()
+        await vi.waitFor(() =>
+          expect(getCloudImage).toHaveBeenCalledTimes(5 + completed),
+        )
+      }
+    } finally {
+      releases.forEach((release) => release())
+    }
 
     const result = await collection
-    expect(maxActive).toBeGreaterThan(1)
-    expect(maxActive).toBeLessThan(attachmentIds.length)
+    expect(maxActive).toBe(4)
+    expect(result.images.map(({ bytes }) => bytes)).toEqual(payloads)
     expect(
       result.relationships.chatImages.map(
         ({ imageId }) => JSON.parse(imageId)[4],
@@ -481,7 +508,7 @@ describe('native backup collection', () => {
   })
 
   it.each([
-    new AuthTokenUnavailableError('signed out'),
+    new AuthTokenUnavailableError('unavailable'),
     new SyncNetworkError(),
     new CloudBackupReadError('key_unavailable', 'cloud_key_unavailable', false),
   ])(

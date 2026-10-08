@@ -1,19 +1,41 @@
 import { NativeBackupExport } from '@/components/chat/native-backup-export'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type {
+  NativeBackupExportResult,
+  runNativeBackupExport,
+} from '@/services/native-backup/export'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ runExport: vi.fn() }))
-vi.mock('@/services/native-backup/export', () => ({
-  runNativeBackupExport: mocks.runExport,
-  nativeBackupExportError: (error: unknown) =>
-    error instanceof DOMException && error.name === 'AbortError'
-      ? 'Backup canceled. No backup file was saved.'
-      : 'Backup failed.',
+const mocks = vi.hoisted(() => ({
+  runExport: vi.fn<typeof runNativeBackupExport>(),
 }))
+vi.mock('@/services/native-backup/export', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/native-backup/export')>()),
+  runNativeBackupExport: mocks.runExport,
+}))
+
+const completeResult: NativeBackupExportResult = {
+  complete: true,
+  omitted: 0,
+  adjustedRelationships: 0,
+  localInventoryUnstable: false,
+  warnings: 0,
+}
+
+const pendingExport: typeof runNativeBackupExport = (signal, onProgress) => {
+  onProgress('collecting')
+  return new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), {
+      once: true,
+    })
+  })
+}
 
 describe('NativeBackupExport', () => {
   beforeEach(() => {
-    mocks.runExport.mockReset()
+    mocks.runExport
+      .mockReset()
+      .mockRejectedValue(new Error('Unexpected export'))
   })
 
   it('hides export when an availability prerequisite is missing', () => {
@@ -24,7 +46,7 @@ describe('NativeBackupExport', () => {
   })
 
   it('requires plaintext confirmation before export', async () => {
-    mocks.runExport.mockResolvedValue(undefined)
+    mocks.runExport.mockResolvedValue(completeResult)
     render(<NativeBackupExport available />)
 
     fireEvent.click(
@@ -43,16 +65,7 @@ describe('NativeBackupExport', () => {
   })
 
   it('cancels an active export with its AbortController', async () => {
-    mocks.runExport.mockImplementation(
-      (signal: AbortSignal, onProgress: (value: 'collecting') => void) => {
-        onProgress('collecting')
-        return new Promise<void>((_resolve, reject) =>
-          signal.addEventListener('abort', () =>
-            reject(new DOMException('Canceled', 'AbortError')),
-          ),
-        )
-      },
-    )
+    mocks.runExport.mockImplementation(pendingExport)
     render(<NativeBackupExport available />)
     fireEvent.click(
       screen.getByRole('button', { name: 'Create Tinfoil Backup' }),
@@ -71,9 +84,9 @@ describe('NativeBackupExport', () => {
     mocks.runExport.mockResolvedValue({
       complete: false,
       omitted: 2,
-      adjustedRelationships: 0,
-      localInventoryUnstable: false,
-      warnings: 1,
+      adjustedRelationships: 3,
+      localInventoryUnstable: true,
+      warnings: 3,
     })
     render(<NativeBackupExport available />)
     fireEvent.click(
@@ -86,19 +99,30 @@ describe('NativeBackupExport', () => {
     expect(await screen.findByText(/saved with warnings/)).toHaveTextContent(
       '2 source items could not be included',
     )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '3 relationships were adjusted',
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Local chats changed repeatedly',
+    )
+    const privateIdentifier = 'private-source-chat-identifier'
+    mocks.runExport.mockRejectedValueOnce(new Error(privateIdentifier))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Create Tinfoil Backup' }),
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'I understand, create backup' }),
+    )
+    expect(
+      await screen.findByText(
+        'The backup could not be created. Check your connection and try again.',
+      ),
+    ).toBeVisible()
+    expect(screen.getByRole('status')).not.toHaveTextContent(privateIdentifier)
   })
 
   it('cancels an active export when availability is lost', async () => {
-    mocks.runExport.mockImplementation(
-      (signal: AbortSignal, onProgress: (value: 'collecting') => void) => {
-        onProgress('collecting')
-        return new Promise<void>((_resolve, reject) =>
-          signal.addEventListener('abort', () =>
-            reject(new DOMException('Canceled', 'AbortError')),
-          ),
-        )
-      },
-    )
+    mocks.runExport.mockImplementation(pendingExport)
     const view = render(<NativeBackupExport available />)
     fireEvent.click(
       screen.getByRole('button', { name: 'Create Tinfoil Backup' }),
@@ -117,38 +141,65 @@ describe('NativeBackupExport', () => {
     expect(screen.queryByText(/No backup file was saved/)).toBeNull()
   })
 
-  it('ignores stale completion from an invalidated export', async () => {
-    let rejectFirst!: (reason: unknown) => void
-    mocks.runExport
-      .mockImplementationOnce(
-        (signal: AbortSignal, onProgress: (value: 'collecting') => void) => {
+  it.each(['success', 'failure'] as const)(
+    'ignores stale %s from an invalidated export',
+    async (outcome) => {
+      let rejectFirst!: (reason: unknown) => void
+      let finishFirst!: (result: NativeBackupExportResult) => void
+      let finishSecond!: (result: NativeBackupExportResult) => void
+      let staleProgress!: Parameters<typeof runNativeBackupExport>[1]
+      mocks.runExport
+        .mockImplementationOnce((_signal, onProgress) => {
           onProgress('collecting')
-          return new Promise<void>((_resolve, reject) => {
+          staleProgress = onProgress
+          return new Promise<NativeBackupExportResult>((resolve, reject) => {
+            finishFirst = resolve
             rejectFirst = reject
-            signal.addEventListener('abort', () => undefined)
           })
-        },
-      )
-      .mockResolvedValueOnce(undefined)
-    const view = render(<NativeBackupExport available />)
-    const start = () => {
-      fireEvent.click(
+        })
+        .mockImplementationOnce((_signal, onProgress) => {
+          onProgress('writing')
+          return new Promise((resolve) => {
+            finishSecond = resolve
+          })
+        })
+      const view = render(<NativeBackupExport available />)
+      const start = () => {
+        fireEvent.click(
+          screen.getByRole('button', { name: 'Create Tinfoil Backup' }),
+        )
+        fireEvent.click(
+          screen.getByRole('button', { name: 'I understand, create backup' }),
+        )
+      }
+      start()
+      await waitFor(() => expect(mocks.runExport).toHaveBeenCalledOnce())
+      view.rerender(<NativeBackupExport available={false} />)
+      view.rerender(<NativeBackupExport available />)
+      start()
+      expect(mocks.runExport).toHaveBeenCalledTimes(2)
+      expect(mocks.runExport.mock.calls[0][0].aborted).toBe(true)
+      await act(async () => {
+        staleProgress('collecting')
+        if (outcome === 'success') finishFirst(completeResult)
+        else rejectFirst(new DOMException('Canceled', 'AbortError'))
+      })
+      expect(screen.getByText('Saving archive...')).toBeVisible()
+      expect(
         screen.getByRole('button', { name: 'Create Tinfoil Backup' }),
-      )
-      fireEvent.click(
-        screen.getByRole('button', { name: 'I understand, create backup' }),
-      )
-    }
-    start()
-    await waitFor(() => expect(mocks.runExport).toHaveBeenCalledOnce())
-    view.rerender(<NativeBackupExport available={false} />)
-    view.rerender(<NativeBackupExport available />)
-    start()
-
-    expect(await screen.findByText('Backup saved successfully.')).toBeVisible()
-    rejectFirst(new DOMException('Canceled', 'AbortError'))
-    await Promise.resolve()
-
-    expect(screen.getByText('Backup saved successfully.')).toBeVisible()
-  })
+      ).toBeDisabled()
+      expect(
+        screen.queryByText('Backup saved successfully.'),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(/No backup file was saved/),
+      ).not.toBeInTheDocument()
+      await act(async () => {
+        finishSecond(completeResult)
+      })
+      expect(
+        await screen.findByText('Backup saved successfully.'),
+      ).toBeVisible()
+    },
+  )
 })

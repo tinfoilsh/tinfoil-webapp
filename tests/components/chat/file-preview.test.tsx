@@ -40,12 +40,24 @@ describe('FilePreview', () => {
       'data-preview-kind',
       'icon',
     )
+    expect(
+      screen.getByTestId('file-preview').querySelector('svg'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('file-preview').querySelector('img, pre'),
+    ).toBeNull()
 
     rerender(<FilePreview filename="notes.txt" textContent="   " />)
     expect(screen.getByTestId('file-preview')).toHaveAttribute(
       'data-preview-kind',
       'icon',
     )
+    expect(
+      screen.getByTestId('file-preview').querySelector('svg'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByTestId('file-preview').querySelector('img, pre'),
+    ).toBeNull()
   })
 
   it('shows a bare spinner while a file is still processing', () => {
@@ -53,10 +65,12 @@ describe('FilePreview', () => {
     const tile = screen.getByTestId('file-preview')
     expect(tile).toHaveAttribute('data-preview-kind', 'pending')
     expect(tile.className).not.toContain('border')
+    expect(tile.querySelector('svg.animate-spin')).toBeInTheDocument()
+    expect(tile.querySelector('img, pre')).toBeNull()
   })
 
   it('keeps the thumbnail visible under the busy overlay', () => {
-    render(
+    const { rerender } = render(
       <FilePreview
         filename="photo.png"
         imageSrc="data:image/jpeg;base64,AAAA"
@@ -68,6 +82,20 @@ describe('FilePreview', () => {
       'image',
     )
     expect(screen.getByAltText('photo.png')).toBeInTheDocument()
+    const image = screen.getByAltText('photo.png')
+    const tile = screen.getByTestId('file-preview')
+    const spinner = tile.querySelector('svg.animate-spin')
+    expect(spinner).toBeInTheDocument()
+    expect(spinner?.parentElement).toHaveClass('absolute', 'inset-0')
+
+    rerender(
+      <FilePreview
+        filename="photo.png"
+        imageSrc="data:image/jpeg;base64,AAAA"
+      />,
+    )
+    expect(screen.getByAltText('photo.png')).toBe(image)
+    expect(tile.querySelector('svg.animate-spin')).toBeNull()
   })
 
   it('does not render a thumbnail for images without data', () => {
@@ -89,9 +117,14 @@ describe('buildTextPreviewExcerpt', () => {
       '\n',
     )
     expect(buildTextPreviewExcerpt(manyLines).split('\n')).toHaveLength(24)
+    expect(buildTextPreviewExcerpt(manyLines)).toBe(
+      'line 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23',
+    )
 
-    const longLine = 'x'.repeat(5000)
+    const expectedPrefix = `start:${'a'.repeat(588)}:end!!`
+    const longLine = `${expectedPrefix}${'z'.repeat(5000)}`
     expect(buildTextPreviewExcerpt(longLine)).toHaveLength(600)
+    expect(buildTextPreviewExcerpt(longLine)).toBe(expectedPrefix)
   })
 })
 

@@ -16,15 +16,11 @@ export type {
   EnclaveErrorKind,
 } from './enclave-error-classification'
 
-export { COVERED_CODES, decideRecovery } from './enclave-error-recovery'
+export { decideRecovery } from './enclave-error-recovery'
 export type { RecoveryAction, RecoveryDecision } from './enclave-error-recovery'
 
-export {
-  computeBackoffDelay,
-  realScheduler,
-  runWithRetry,
-} from './retry-policy'
-export type { RetryConfig, RetryScheduler } from './retry-policy'
+export { computeBackoffDelay, realScheduler } from './retry-policy'
+export type { RetryScheduler } from './retry-policy'
 
 export * as syncApi from './sync-api'
 export type {
@@ -48,8 +44,6 @@ export type {
   MigrateAllRequest,
   MigrateAllResponse,
   MigrateAllScopeReport,
-  MigrateRequest,
-  MigrateResponse,
   OKResponse,
   PullItem,
   PullKey,

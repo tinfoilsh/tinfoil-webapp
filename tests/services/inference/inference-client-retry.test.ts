@@ -4,7 +4,7 @@ import {
   APIError,
   APIUserAbortError,
 } from 'openai'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   generateRecoverySessionId,
@@ -16,14 +16,13 @@ function statusError(status: number) {
 }
 
 describe('isRetryableError', () => {
-  it('retries SDK transport failures, including request timeouts', () => {
-    expect(isRetryableError(new APIConnectionError({}))).toBe(true)
-    expect(isRetryableError(new APIConnectionTimeoutError())).toBe(true)
-  })
-
-  it('retries browser fetch network failures', () => {
+  it.each([
+    new APIConnectionError({}),
+    new APIConnectionTimeoutError(),
     // fetch() rejects with a TypeError on network failure
-    expect(isRetryableError(new TypeError('Failed to fetch'))).toBe(true)
+    new TypeError('Failed to fetch'),
+  ])('retries SDK and browser transport failures: $name', (error) => {
+    expect(isRetryableError(error)).toBe(true)
   })
 
   it('retries timeouts, rate limits, and server errors by HTTP status', () => {
@@ -49,13 +48,32 @@ describe('isRetryableError', () => {
   })
 
   it('generates fresh 128-bit recovery capabilities', () => {
-    const sessionIds = new Set(
-      Array.from({ length: 100 }, () => generateRecoverySessionId()),
-    )
-
-    expect(sessionIds.size).toBe(100)
-    for (const sessionId of sessionIds) {
-      expect(sessionId).toMatch(/^[0-9a-f]{32}$/)
+    const entropy = [
+      new Uint8Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 255]),
+      new Uint8Array([255, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0]),
+    ]
+    let calls = 0
+    const random = vi
+      .spyOn(crypto, 'getRandomValues')
+      .mockImplementation((bytes) => {
+        expect(bytes).toBeInstanceOf(Uint8Array)
+        expect(bytes?.byteLength).toBe(16)
+        if (!(bytes instanceof Uint8Array))
+          throw new Error('Expected byte buffer')
+        bytes.set(entropy[calls++])
+        return bytes
+      })
+    try {
+      expect(generateRecoverySessionId()).toBe(
+        '000102030405060708090a0b0c0d0eff',
+      )
+      expect(generateRecoverySessionId()).toBe(
+        'ff0e0d0c0b0a09080706050403020100',
+      )
+      expect(random).toHaveBeenCalledTimes(2)
+      expect(random.mock.calls[0][0]).not.toBe(random.mock.calls[1][0])
+    } finally {
+      random.mockRestore()
     }
   })
 })

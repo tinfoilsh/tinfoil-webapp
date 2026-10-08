@@ -14,6 +14,8 @@ describe('MessageAssembler', () => {
       const msg = asm.toMessage(timeline)
       expect(msg.content).toBe('hello world')
       expect(msg.role).toBe('assistant')
+      expect(msg.timeline).toEqual(timeline)
+      expect(msg.timeline).not.toBe(timeline)
     })
 
     it('stores the model display name on the message', () => {
@@ -22,53 +24,26 @@ describe('MessageAssembler', () => {
       expect(asm.toMessage([]).modelDisplayName).toBe('Kimi K2.6')
     })
 
-    it('derives thoughts from thinking blocks', () => {
-      const asm = new MessageAssembler()
-      const timeline: TimelineBlock[] = [
-        {
-          type: 'thinking',
-          id: 'thinking-0',
-          content: 'let me think',
-          isThinking: false,
-          duration: 2.5,
-        },
-      ]
+    it.each([false, true])(
+      'derives thoughts from thinking blocks (active: %s)',
+      (isThinking) => {
+        const asm = new MessageAssembler()
+        const timeline: TimelineBlock[] = [
+          {
+            type: 'thinking',
+            id: 'thinking-0',
+            content: 'let me think',
+            isThinking,
+            duration: isThinking ? undefined : 2.5,
+          },
+        ]
 
-      const msg = asm.toMessage(timeline)
-      expect(msg.thoughts).toBe('let me think')
-      expect(msg.isThinking).toBe(false)
-      expect(msg.thinkingDuration).toBe(2.5)
-    })
-
-    it('shows isThinking=true for active thinking block', () => {
-      const asm = new MessageAssembler()
-      const timeline: TimelineBlock[] = [
-        {
-          type: 'thinking',
-          id: 'thinking-0',
-          content: 'thinking...',
-          isThinking: true,
-        },
-      ]
-
-      const msg = asm.toMessage(timeline)
-      expect(msg.isThinking).toBe(true)
-    })
-
-    it('derives webSearch from web_search blocks', () => {
-      const asm = new MessageAssembler()
-      const timeline: TimelineBlock[] = [
-        {
-          type: 'web_search',
-          id: 'ws-0',
-          state: { query: 'test', status: 'searching' },
-        },
-      ]
-
-      const msg = asm.toMessage(timeline)
-      expect(msg.webSearch?.query).toBe('test')
-      expect(msg.webSearch?.status).toBe('searching')
-    })
+        const msg = asm.toMessage(timeline)
+        expect(msg.thoughts).toBe('let me think')
+        expect(msg.isThinking).toBe(isThinking)
+        expect(msg.thinkingDuration).toBe(isThinking ? undefined : 2.5)
+      },
+    )
 
     it('uses last web_search block for webSearch state', () => {
       const asm = new MessageAssembler()
@@ -76,7 +51,7 @@ describe('MessageAssembler', () => {
         {
           type: 'web_search',
           id: 'ws-0',
-          state: { query: 'first', status: 'completed' },
+          state: { query: 'first', status: 'searching' },
         },
         {
           type: 'web_search',
@@ -89,8 +64,16 @@ describe('MessageAssembler', () => {
         },
       ]
 
+      expect(asm.toMessage(timeline.slice(0, 1)).webSearch).toEqual({
+        query: 'first',
+        status: 'searching',
+      })
       const msg = asm.toMessage(timeline)
-      expect(msg.webSearch?.query).toBe('second')
+      expect(msg.webSearch).toEqual({
+        query: 'second',
+        status: 'completed',
+        sources: [{ url: 'https://a.com', title: 'A' }],
+      })
     })
 
     it('derives urlFetches from url_fetches blocks', () => {
@@ -104,11 +87,20 @@ describe('MessageAssembler', () => {
             { id: 'f2', url: 'https://b.com', status: 'fetching' },
           ],
         },
+        { type: 'content', id: 'c-1', content: 'between' },
+        {
+          type: 'url_fetches',
+          id: 'uf-2',
+          fetches: [{ id: 'f3', url: 'https://c.com', status: 'failed' }],
+        },
       ]
 
       const msg = asm.toMessage(timeline)
-      expect(msg.urlFetches).toHaveLength(2)
-      expect(msg.urlFetches![0].status).toBe('completed')
+      expect(msg.urlFetches).toEqual([
+        { id: 'f1', url: 'https://a.com', status: 'completed' },
+        { id: 'f2', url: 'https://b.com', status: 'fetching' },
+        { id: 'f3', url: 'https://c.com', status: 'failed' },
+      ])
     })
 
     it('derives webSearchBeforeThinking from block order', () => {
@@ -147,15 +139,26 @@ describe('MessageAssembler', () => {
       expect(asm.toMessage(timeline2).webSearchBeforeThinking).toBeUndefined()
     })
 
-    it('omits undefined optional fields for empty timeline', () => {
-      const asm = new MessageAssembler()
-      const msg = asm.toMessage([])
-      expect(msg.thoughts).toBeUndefined()
-      expect(msg.webSearch).toBeUndefined()
-      expect(msg.urlFetches).toBeUndefined()
-      expect(msg.annotations).toBeUndefined()
-      expect(msg.searchReasoning).toBeUndefined()
-    })
+    it.each<{ label: string; timeline: TimelineBlock[] }>([
+      { label: 'empty', timeline: [] },
+      {
+        label: 'plain content',
+        timeline: [{ type: 'content', id: 'c', content: 'plain' }],
+      },
+    ])(
+      'omits optional fields without matching timeline blocks ($label)',
+      ({ timeline }) => {
+        const asm = new MessageAssembler()
+        const msg = asm.toMessage(timeline)
+        expect(msg.thoughts).toBeUndefined()
+        expect(msg.webSearch).toBeUndefined()
+        expect(msg.urlFetches).toBeUndefined()
+        expect(msg.annotations).toBeUndefined()
+        expect(msg.searchReasoning).toBeUndefined()
+        expect(msg.toolCalls).toBeUndefined()
+        expect(msg.codeExecCalls).toBeUndefined()
+      },
+    )
 
     it('preserves an explicitly empty reasoning value', () => {
       const asm = new MessageAssembler()
@@ -170,15 +173,6 @@ describe('MessageAssembler', () => {
 
       expect(msg.thoughts).toBe('')
     })
-
-    it('passes timeline through', () => {
-      const asm = new MessageAssembler()
-      const timeline: TimelineBlock[] = [
-        { type: 'content', id: 'c-0', content: 'test' },
-      ]
-      const msg = asm.toMessage(timeline)
-      expect(msg.timeline).toEqual(timeline)
-    })
   })
 
   describe('annotations', () => {
@@ -188,17 +182,20 @@ describe('MessageAssembler', () => {
       asm.addAnnotation('https://b.com', 'B')
 
       const msg = asm.toMessage([])
-      expect(msg.annotations).toHaveLength(2)
-      expect(msg.annotations![0].url_citation.url).toBe('https://a.com')
-      expect(msg.annotations![1].url_citation.title).toBe('B')
-    })
-
-    it('exposes collectedSources for timeline web search updates', () => {
-      const asm = new MessageAssembler()
-      asm.addAnnotation('https://a.com', 'A')
-
-      expect(asm.collectedSources).toHaveLength(1)
-      expect(asm.collectedSources[0].url).toBe('https://a.com')
+      expect(msg.annotations).toEqual([
+        {
+          type: 'url_citation',
+          url_citation: { url: 'https://a.com', title: 'A' },
+        },
+        {
+          type: 'url_citation',
+          url_citation: { url: 'https://b.com', title: 'B' },
+        },
+      ])
+      expect(asm.collectedSources).toEqual([
+        { url: 'https://a.com', title: 'A' },
+        { url: 'https://b.com', title: 'B' },
+      ])
     })
   })
 
