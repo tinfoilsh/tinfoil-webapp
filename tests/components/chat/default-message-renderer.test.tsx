@@ -1,5 +1,5 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
-import type { Message } from '@/components/chat/types'
+import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import { ForwardIcon } from '@heroicons/react/24/outline'
 import { act, fireEvent, render, screen } from '@testing-library/react'
@@ -600,4 +600,132 @@ describe('DefaultMessageRenderer read aloud', () => {
       ).not.toBeInTheDocument()
     },
   )
+})
+
+describe('DefaultMessageRenderer work traces', () => {
+  const traceTimeline: TimelineBlock[] = [
+    {
+      type: 'thinking',
+      id: 'thinking-0',
+      content: 'Plan the searches.',
+      isThinking: false,
+      duration: 4.7,
+      startedAt: 0,
+      endedAt: 4_700,
+    },
+    {
+      type: 'web_search',
+      id: 'web-search-1',
+      state: { query: 'first', status: 'completed', sources: [] },
+      startedAt: 4_700,
+      endedAt: 20_000,
+    },
+    // Stray newline the model emitted between tool calls.
+    { type: 'content', id: 'content-2', content: '\n\n' },
+    {
+      type: 'web_search',
+      id: 'web-search-3',
+      state: { query: 'second', status: 'completed', sources: [] },
+      startedAt: 20_000,
+      endedAt: 42_000,
+    },
+    { type: 'content', id: 'content-4', content: 'Final answer.' },
+  ]
+
+  it('collapses a finished run into one "Worked for" row with no phantom gap', () => {
+    const { container } = renderMessage({
+      role: 'assistant',
+      content: 'Final answer.',
+      timestamp: new Date('2026-08-07T00:00:01.000Z'),
+      timeline: traceTimeline,
+    })
+
+    const header = screen.getByText('Worked').closest('button')!
+    expect(header).toHaveTextContent('Worked for 42.0 seconds')
+    expect(header).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('Thought')).toBeInTheDocument()
+    expect(screen.getAllByText('Searched the web')).toHaveLength(2)
+    expect(screen.getByText('Final answer.')).toBeInTheDocument()
+
+    // The work group and the answer are adjacent siblings: the
+    // whitespace-only content block must not render a py-2 spacer.
+    const groupWrapper = header.closest('.no-scroll-anchoring')!
+    const answerWrapper = screen.getByText('Final answer.').closest('.py-2')!
+    expect(groupWrapper.nextElementSibling).toBe(answerWrapper)
+    expect(container.querySelectorAll('.w-full.px-4.py-2')).toHaveLength(1)
+  })
+
+  it('shows the live action in the header while the last run is streaming', () => {
+    render(
+      <Renderer
+        message={{
+          role: 'assistant',
+          content: '',
+          timestamp: new Date('2026-08-07T00:00:01.000Z'),
+          timeline: [
+            traceTimeline[0],
+            traceTimeline[1],
+            {
+              type: 'web_search',
+              id: 'web-search-2',
+              state: { query: 'second', status: 'searching' },
+              startedAt: 20_000,
+            },
+          ],
+        }}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        isStreaming
+      />,
+    )
+    expect(
+      screen.getByText('Searching the web for "second"').closest('button'),
+    ).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
+  })
+
+  it('does not treat an earlier run as active when answer text follows it', () => {
+    render(
+      <Renderer
+        message={{
+          role: 'assistant',
+          content: 'Partial',
+          timestamp: new Date('2026-08-07T00:00:01.000Z'),
+          timeline: [
+            ...traceTimeline.slice(0, 4),
+            {
+              type: 'content',
+              id: 'content-4',
+              content: 'Partial',
+            },
+          ],
+        }}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        isStreaming
+      />,
+    )
+    expect(screen.getByText('Worked').closest('button')).toHaveTextContent(
+      'Worked for 42.0 seconds',
+    )
+  })
+
+  it('leaves a lone trace block rendered as itself', () => {
+    renderMessage({
+      role: 'assistant',
+      content: 'Answer',
+      timestamp: new Date('2026-08-07T00:00:01.000Z'),
+      timeline: [
+        traceTimeline[0],
+        { type: 'content', id: 'c', content: 'Answer' },
+      ],
+    })
+    expect(screen.getByText('Thought')).toBeInTheDocument()
+    expect(screen.getByText('for 4.7 seconds')).toBeInTheDocument()
+    expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
+  })
 })

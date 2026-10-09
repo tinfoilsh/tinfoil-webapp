@@ -42,7 +42,15 @@ export type URLFetchState = {
   sources?: WebSearchSource[]
 }
 
-export type TimelineThinkingBlock = {
+// Wall-clock stamps (epoch ms) recorded while streaming so consecutive
+// trace blocks can be summarized as "Worked for N seconds". Absent on
+// legacy messages and on builders constructed without a clock.
+export type TimelineTiming = {
+  startedAt?: number
+  endedAt?: number
+}
+
+export type TimelineThinkingBlock = TimelineTiming & {
   type: 'thinking'
   id: string
   content: string
@@ -50,13 +58,13 @@ export type TimelineThinkingBlock = {
   duration?: number
 }
 
-export type TimelineWebSearchBlock = {
+export type TimelineWebSearchBlock = TimelineTiming & {
   type: 'web_search'
   id: string
   state: WebSearchState
 }
 
-export type TimelineURLFetchBlock = {
+export type TimelineURLFetchBlock = TimelineTiming & {
   type: 'url_fetches'
   id: string
   fetches: URLFetchState[]
@@ -97,7 +105,7 @@ export type ToolCallState = {
 
 // Code-execution timeline block. Consecutive code-exec calls are merged
 // into a single block so the renderer can group them under one header.
-export type TimelineCodeExecBlock = {
+export type TimelineCodeExecBlock = TimelineTiming & {
   type: 'code_exec'
   id: string
   calls: ToolCallState[]

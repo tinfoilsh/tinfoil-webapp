@@ -40,7 +40,9 @@ import { StreamingTracerDot } from '../components/StreamingTracerDot'
 import { ThoughtProcess } from '../components/ThoughtProcess'
 import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
+import { WorkProcess } from '../components/WorkProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
+import { isInvisibleBlock, segmentTimeline } from './timeline-segments'
 
 const MessageMetadata = ({
   modelDisplayName,
@@ -110,6 +112,10 @@ const DefaultMessageComponent = ({
     }
     return map.size > 0 ? map : undefined
   }, [message.annotations])
+  const timelineSegments = React.useMemo(
+    () => (isUser ? [] : segmentTimeline(message.timeline ?? [])),
+    [isUser, message.timeline],
+  )
   const [showActions, setShowActions] = React.useState(false)
   const lastContentRef = React.useRef(message.content)
   const showActionsTimeoutRef = React.useRef<ReturnType<
@@ -384,7 +390,26 @@ const DefaultMessageComponent = ({
       {/* Chronological timeline rendering (assistant only) */}
       {!isUser &&
         !isEditing &&
-        message.timeline?.map((block, blockIndex) => {
+        timelineSegments.map((segment, segmentIndex) => {
+          if (segment.kind === 'work') {
+            const isActive =
+              !!isStreaming &&
+              !!isLastMessage &&
+              segmentIndex === timelineSegments.length - 1
+            return (
+              <div
+                key={segment.key}
+                className="no-scroll-anchoring w-full px-4"
+              >
+                <WorkProcess
+                  blocks={segment.blocks}
+                  isActive={isActive}
+                  isDarkMode={isDarkMode}
+                />
+              </div>
+            )
+          }
+          const { block, blockIndex } = segment
           switch (block.type) {
             case 'thinking':
               return (
@@ -479,10 +504,10 @@ const DefaultMessageComponent = ({
                 </div>
               )
             case 'content': {
-              if (!block.content) return null
               const isLastContent =
-                message.timeline!.findLastIndex((b) => b.type === 'content') ===
-                blockIndex
+                message.timeline!.findLastIndex(
+                  (b) => b.type === 'content' && !isInvisibleBlock(b),
+                ) === blockIndex
               const isActivelyStreaming =
                 !!isStreaming && !!isLastMessage && isLastContent
               return (

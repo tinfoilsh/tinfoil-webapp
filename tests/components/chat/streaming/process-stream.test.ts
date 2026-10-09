@@ -568,13 +568,19 @@ describe('processStreamingResponse frame publication', () => {
           content: 'Reasoning',
           isThinking: false,
         }),
-        {
+        expect.objectContaining({
           type: 'web_search',
           id: 'web-search-1',
           state: expectedWebSearch,
-        },
+        }),
         { type: 'content', id: 'content-2', content: 'Answer' },
       ])
     }
+    // Only the live path tracks wall-clock; recovery replays carry no stamps.
+    expect(processed?.timeline?.[1]).toMatchObject({
+      startedAt: expect.any(Number),
+      endedAt: expect.any(Number),
+    })
+    expect(parsed.timeline?.[1]).not.toHaveProperty('startedAt')
   })
 })
