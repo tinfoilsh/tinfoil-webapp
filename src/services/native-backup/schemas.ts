@@ -60,6 +60,10 @@ const codeCall = strict({
   status: z.enum(['running', 'completed', 'failed']),
   output: optionalString,
 })
+const timing = {
+  startedAt: z.number().finite().optional(),
+  endedAt: z.number().finite().optional(),
+}
 const timeline = z.discriminatedUnion('type', [
   strict({
     type: z.literal('thinking'),
@@ -67,12 +71,14 @@ const timeline = z.discriminatedUnion('type', [
     content: z.string(),
     isThinking: z.boolean(),
     duration: z.number().nonnegative().optional(),
+    ...timing,
   }),
-  strict({ type: z.literal('web_search'), id, state: search }),
+  strict({ type: z.literal('web_search'), id, state: search, ...timing }),
   strict({
     type: z.literal('url_fetches'),
     id,
     fetches: z.array(fetchState),
+    ...timing,
   }),
   strict({ type: z.literal('content'), id, content: z.string() }),
   strict({
@@ -87,7 +93,12 @@ const timeline = z.discriminatedUnion('type', [
       data: NativeBackupJsonSchema.optional(),
     }).optional(),
   }),
-  strict({ type: z.literal('code_exec'), id, calls: z.array(codeCall) }),
+  strict({
+    type: z.literal('code_exec'),
+    id,
+    calls: z.array(codeCall),
+    ...timing,
+  }),
 ])
 const documentPage = strict({
   page: z.number().int().nonnegative(),

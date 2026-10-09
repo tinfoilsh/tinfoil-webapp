@@ -117,11 +117,11 @@ const cleanCitation = (value: unknown) => {
   }
 }
 const timelineFields: Record<string, readonly string[]> = {
-  thinking: keys('type id content isThinking duration'),
-  web_search: keys('type id'),
-  url_fetches: keys('type id'),
+  thinking: keys('type id content isThinking duration startedAt endedAt'),
+  web_search: keys('type id startedAt endedAt'),
+  url_fetches: keys('type id startedAt endedAt'),
   content: keys('type id content'),
-  code_exec: keys('type id'),
+  code_exec: keys('type id startedAt endedAt'),
   tool_call: keys('type id toolCallId name arguments resolvedAt'),
 }
 function cleanTimeline(value: unknown): unknown {

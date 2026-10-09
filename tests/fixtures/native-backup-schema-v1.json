@@ -94,7 +94,9 @@
             "id": "thinking-1",
             "content": "Inspect evidence",
             "isThinking": false,
-            "duration": 1.5
+            "duration": 1.5,
+            "startedAt": 1770000000000,
+            "endedAt": 1770000001500
           },
           {
             "type": "tool_call",

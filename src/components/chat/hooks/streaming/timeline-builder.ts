@@ -350,6 +350,7 @@ export class TimelineBuilder {
       this.blocks[this.currentThinkingIdx] = {
         ...block,
         isThinking: false,
+        ...this.stampEnd(),
       }
       this.currentThinkingIdx = -1
     }

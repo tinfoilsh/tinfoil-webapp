@@ -42,16 +42,16 @@ export function isInvisibleBlock(block: TimelineBlock): boolean {
 export function segmentTimeline(timeline: TimelineBlock[]): TimelineSegment[] {
   const segments: TimelineSegment[] = []
   let run: WorkBlock[] = []
+  let runStartIndex = -1
 
   const flush = () => {
     if (run.length > 1) {
       segments.push({ kind: 'work', key: `work-${run[0].id}`, blocks: run })
     } else if (run.length === 1) {
-      const block = run[0]
       segments.push({
         kind: 'block',
-        block,
-        blockIndex: timeline.indexOf(block),
+        block: run[0],
+        blockIndex: runStartIndex,
       })
     }
     run = []
@@ -60,6 +60,7 @@ export function segmentTimeline(timeline: TimelineBlock[]): TimelineSegment[] {
   timeline.forEach((block, blockIndex) => {
     if (isInvisibleBlock(block)) return
     if (isWorkBlock(block)) {
+      if (run.length === 0) runStartIndex = blockIndex
       run.push(block)
       return
     }

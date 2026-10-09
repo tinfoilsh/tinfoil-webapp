@@ -64,6 +64,20 @@ describe('native backup v1 schema', () => {
       expect(serialized).not.toContain(secret)
   })
 
+  it('carries trace timing stamps through sanitize and the strict schema', () => {
+    const chat = sanitizedFixture().chat
+    expect(chat.messages[0].timeline?.[0]).toEqual({
+      type: 'thinking',
+      id: 'thinking-1',
+      content: 'Inspect evidence',
+      isThinking: false,
+      duration: 1.5,
+      startedAt: 1770000000000,
+      endedAt: 1770000001500,
+    })
+    expect(() => NativeBackupChatSchema.parse(chat)).not.toThrow()
+  })
+
   it('preserves arbitrary JSON only in tool arguments and resolution data', () => {
     const message = sanitizedFixture().chat.messages[0]
 

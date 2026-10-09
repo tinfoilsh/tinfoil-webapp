@@ -471,6 +471,20 @@ describe('TimelineBuilder', () => {
       ])
     })
 
+    it('ends an open thought when a tool call closes it', () => {
+      const { clock, advance } = makeClock(0)
+      const builder = new TimelineBuilder([], clock)
+      builder.startThinking()
+      advance(800)
+      builder.startToolCall('call-1', 'chart')
+      expect(builder.snapshot()[0]).toMatchObject({
+        type: 'thinking',
+        isThinking: false,
+        startedAt: 0,
+        endedAt: 800,
+      })
+    })
+
     it('keeps a searching block open until a terminal status arrives', () => {
       const { clock, advance } = makeClock(0)
       const builder = new TimelineBuilder([], clock)

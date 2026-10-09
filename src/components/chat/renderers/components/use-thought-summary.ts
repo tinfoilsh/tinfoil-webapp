@@ -1,6 +1,6 @@
 import { summarize } from '@/services/inference/summary-client'
 import { logError } from '@/utils/error-handling'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const MIN_CONTENT_WORDS = 20
 const TAIL_WORD_COUNT = 200
@@ -11,91 +11,77 @@ const MIN_SUMMARY_INTERVAL_MS = 3000
  * to one summarizer call every few seconds. Returns '' until a summary is
  * available and clears once thinking stops. Pass `enabled: false` when a
  * parent already owns the summary for the same trace so the model is not
- * asked twice.
+ * asked twice. Pass `traceKey` when one hook instance may observe several
+ * traces in turn (e.g. a group header) so a change of trace resets it.
  */
 export function useThoughtSummary(
   thoughts: string,
   isThinking: boolean,
   enabled = true,
+  traceKey?: string,
 ): string {
   const [thoughtSummary, setThoughtSummary] = useState<string>('')
-  const summaryGenerationRef = useRef<Promise<void> | null>(null)
+  const inFlightRef = useRef(false)
   const lastSummaryTimeRef = useRef<number>(0)
-  const isMountedRef = useRef<boolean>(true)
+  // Bumped whenever thinking stops or the trace changes so a request that
+  // was still in flight cannot repopulate the summary for the next trace.
+  const epochRef = useRef(0)
 
-  const generateSummary = useCallback(async (thoughtText: string) => {
-    if (!thoughtText.trim()) {
-      if (isMountedRef.current) {
-        setThoughtSummary('')
-      }
-      return
-    }
-
-    try {
-      const generatedSummary = await summarize({
-        content: thoughtText,
-        style: 'thoughts_summary',
-      })
-
-      if (isMountedRef.current && generatedSummary.trim()) {
-        setThoughtSummary(generatedSummary.trim())
-      }
-    } catch (error) {
-      logError('Failed to generate thought summary', error, {
-        component: 'ThoughtProcess',
-        action: 'generateSummary',
-      })
-      if (isMountedRef.current) {
-        setThoughtSummary('')
-      }
-    }
-  }, [])
+  useEffect(() => {
+    epochRef.current += 1
+    inFlightRef.current = false
+    setThoughtSummary('')
+  }, [traceKey])
 
   useEffect(() => {
     if (!isThinking || !enabled) {
+      epochRef.current += 1
+      inFlightRef.current = false
       setThoughtSummary('')
       return
     }
 
-    if (!thoughts.trim()) return
-
-    const totalWords = thoughts.split(/\s+/).filter(Boolean).length
-    if (totalWords < MIN_CONTENT_WORDS) return
-
-    if (summaryGenerationRef.current) return
-
     const words = thoughts.split(/\s+/).filter(Boolean)
+    if (words.length < MIN_CONTENT_WORDS) return
+    if (inFlightRef.current) return
+
     const tailText =
       words.length > TAIL_WORD_COUNT
         ? words.slice(-TAIL_WORD_COUNT).join(' ')
         : thoughts
+    const epoch = epochRef.current
 
-    const timeSinceLastSummary = Date.now() - lastSummaryTimeRef.current
-    if (timeSinceLastSummary < MIN_SUMMARY_INTERVAL_MS) {
-      const delay = MIN_SUMMARY_INTERVAL_MS - timeSinceLastSummary
-      const timeoutId = setTimeout(() => {
-        if (!isMountedRef.current || !isThinking) return
-        if (summaryGenerationRef.current) return
-        lastSummaryTimeRef.current = Date.now()
-        summaryGenerationRef.current = generateSummary(tailText).finally(() => {
-          summaryGenerationRef.current = null
+    const fire = () => {
+      if (inFlightRef.current || epochRef.current !== epoch) return
+      inFlightRef.current = true
+      lastSummaryTimeRef.current = Date.now()
+      summarize({ content: tailText, style: 'thoughts_summary' })
+        .then((generated) => {
+          if (epochRef.current === epoch && generated.trim()) {
+            setThoughtSummary(generated.trim())
+          }
         })
-      }, delay)
-      return () => clearTimeout(timeoutId)
+        .catch((error) => {
+          logError('Failed to generate thought summary', error, {
+            component: 'useThoughtSummary',
+            action: 'generateSummary',
+          })
+          if (epochRef.current === epoch) setThoughtSummary('')
+        })
+        .finally(() => {
+          if (epochRef.current === epoch) inFlightRef.current = false
+        })
     }
 
-    lastSummaryTimeRef.current = Date.now()
-    summaryGenerationRef.current = generateSummary(tailText).finally(() => {
-      summaryGenerationRef.current = null
-    })
-  }, [thoughts, isThinking, enabled, generateSummary])
-
-  useEffect(() => {
-    isMountedRef.current = true
-    return () => {
-      isMountedRef.current = false
+    const delay =
+      MIN_SUMMARY_INTERVAL_MS - (Date.now() - lastSummaryTimeRef.current)
+    if (delay <= 0) {
+      fire()
+      return
     }
-  }, [])
+    const timeoutId = setTimeout(fire, delay)
+    return () => clearTimeout(timeoutId)
+  }, [thoughts, isThinking, enabled])
 
   return thoughtSummary
 }

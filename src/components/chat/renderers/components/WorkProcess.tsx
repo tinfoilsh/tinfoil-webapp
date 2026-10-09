@@ -10,7 +10,11 @@ import { PiSpinner } from 'react-icons/pi'
 import { CodeExecProcess, getCodeExecHeaderLabel } from './CodeExecProcess'
 import { formatDurationLabel } from './format-duration'
 import { ThoughtProcess } from './ThoughtProcess'
-import { URLFetchProcess } from './URLFetchProcess'
+import {
+  getURLFetchHeaderLabel,
+  isAnyURLFetching,
+  URLFetchProcess,
+} from './URLFetchProcess'
 import { useThoughtSummary } from './use-thought-summary'
 import { WebSearchProcess } from './WebSearchProcess'
 
@@ -73,16 +77,9 @@ function getLiveActivity(blocks: WorkBlock[]): LiveActivity {
           ? `Searching the web for "${last.state.query}"`
           : 'Searching the web',
       }
-    case 'url_fetches': {
-      if (!last.fetches.some((f) => f.status === 'fetching')) {
-        return { kind: 'idle' }
-      }
-      const count = last.fetches.length
-      return {
-        kind: 'action',
-        label: `Reading ${count} link${count === 1 ? '' : 's'}`,
-      }
-    }
+    case 'url_fetches':
+      if (!isAnyURLFetching(last.fetches)) return { kind: 'idle' }
+      return { kind: 'action', label: getURLFetchHeaderLabel(last.fetches) }
     case 'code_exec':
       if (!last.calls.some((c) => c.status === 'running'))
         return { kind: 'idle' }
@@ -125,6 +122,8 @@ export const WorkProcess = memo(function WorkProcess({
   const summary = useThoughtSummary(
     activeThinking?.content ?? '',
     activeThinking !== null,
+    true,
+    activeThinking?.id,
   )
 
   const duration = useMemo(

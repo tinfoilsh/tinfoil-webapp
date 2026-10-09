@@ -83,24 +83,28 @@ function InlineFavicons({ urlFetches }: { urlFetches: URLFetchState[] }) {
   )
 }
 
+export function isAnyURLFetching(urlFetches: URLFetchState[]): boolean {
+  return urlFetches.some((f) => f.status === 'fetching')
+}
+
+export function getURLFetchHeaderLabel(urlFetches: URLFetchState[]): string {
+  const count = urlFetches.length
+  if (isAnyURLFetching(urlFetches)) {
+    return `Reading ${count} link${count === 1 ? '' : 's'}`
+  }
+  const completedCount = urlFetches.filter(
+    (f) => f.status === 'completed',
+  ).length
+  return `Read ${completedCount} link${completedCount === 1 ? '' : 's'}`
+}
+
 export const URLFetchProcess = memo(function URLFetchProcess({
   urlFetches,
 }: URLFetchProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const anyFetching = useMemo(
-    () => urlFetches.some((f) => f.status === 'fetching'),
-    [urlFetches],
-  )
-  const completedCount = useMemo(
-    () => urlFetches.filter((f) => f.status === 'completed').length,
-    [urlFetches],
-  )
-  const count = urlFetches.length
-  if (count === 0) return null
-
-  const label = anyFetching
-    ? `Reading ${count} link${count === 1 ? '' : 's'}`
-    : `Read ${completedCount} link${completedCount === 1 ? '' : 's'}`
+  const anyFetching = useMemo(() => isAnyURLFetching(urlFetches), [urlFetches])
+  const label = useMemo(() => getURLFetchHeaderLabel(urlFetches), [urlFetches])
+  if (urlFetches.length === 0) return null
 
   return (
     <div>

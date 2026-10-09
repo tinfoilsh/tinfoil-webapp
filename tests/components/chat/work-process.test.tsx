@@ -227,6 +227,48 @@ describe('WorkProcess while the run is active', () => {
     expect(summarize).toHaveBeenCalledTimes(1)
   })
 
+  it('discards a summary that lands after its thinking block has closed', async () => {
+    const longThought = Array.from({ length: 30 }, (_, i) => `word${i}`).join(
+      ' ',
+    )
+    let resolveSummary!: (value: string) => void
+    summarize.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveSummary = resolve
+      }),
+    )
+
+    const { rerender } = renderWork(
+      [
+        search('s0'),
+        thinking('t1', { content: longThought, isThinking: true }),
+      ],
+      true,
+    )
+    await act(async () => {})
+    expect(summarize).toHaveBeenCalledTimes(1)
+
+    // The first thought closes and a second one opens while the request is
+    // still pending for the first.
+    rerender(
+      <WorkProcess
+        blocks={[
+          search('s0'),
+          thinking('t1', { content: longThought }),
+          thinking('t2', { content: 'Fresh start', isThinking: true }),
+        ]}
+        isActive
+        isDarkMode={false}
+      />,
+    )
+    await act(async () => {
+      resolveSummary('Stale summary of the first thought')
+    })
+
+    expect(getHeader()).toHaveTextContent('Thinking')
+    expect(screen.queryByText('Stale summary of the first thought')).toBeNull()
+  })
+
   it('settles into "Worked for" once the run completes', () => {
     const { rerender } = renderWork(
       [
