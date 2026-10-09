@@ -81,7 +81,7 @@ export function useThoughtSummary(
     }
     const timeoutId = setTimeout(fire, delay)
     return () => clearTimeout(timeoutId)
-  }, [thoughts, isThinking, enabled])
+  }, [thoughts, isThinking, enabled, traceKey])
 
   return thoughtSummary
 }
