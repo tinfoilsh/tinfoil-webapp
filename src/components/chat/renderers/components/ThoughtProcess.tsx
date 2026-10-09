@@ -1,7 +1,4 @@
 import { LoadingDots } from '@/components/loading-dots'
-import { summarize } from '@/services/inference/summary-client'
-
-import { logError } from '@/utils/error-handling'
 import {
   processLatexTags,
   sanitizeUnsupportedMathBlocks,
@@ -10,7 +7,6 @@ import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { sanitizeUrl } from '@braintree/sanitize-url'
 import {
   memo,
-  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -19,7 +15,9 @@ import {
   useState,
 } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { formatDurationLabel } from './format-duration'
 import { useMathPlugins } from './use-math-plugins'
+import { useThoughtSummary } from './use-thought-summary'
 
 interface ThoughtProcessProps {
   thoughts: string
@@ -27,6 +25,11 @@ interface ThoughtProcessProps {
   isThinking?: boolean
   shouldDiscard?: boolean
   thinkingDuration?: number
+  /**
+   * Live summary owned by a parent (e.g. a collapsed work group header).
+   * When provided, this component displays it instead of generating its own.
+   */
+  summary?: string
 }
 
 export const ThoughtProcess = memo(function ThoughtProcess({
@@ -35,6 +38,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   isThinking = false,
   shouldDiscard = false,
   thinkingDuration,
+  summary,
 }: ThoughtProcessProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const [renderContent, setRenderContent] = useState(false)
@@ -45,10 +49,12 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   const [contentHeight, setContentHeight] = useState<number>(0)
   const lastScrollPositionRef = useRef<number>(0)
   const isUserScrollingRef = useRef<boolean>(false)
-  const [thoughtSummary, setThoughtSummary] = useState<string>('')
-  const summaryGenerationRef = useRef<Promise<void> | null>(null)
-  const lastSummaryTimeRef = useRef<number>(0)
-  const isMountedRef = useRef<boolean>(true)
+  const ownSummary = useThoughtSummary(
+    thoughts,
+    isThinking,
+    summary === undefined,
+  )
+  const thoughtSummary = summary ?? ownSummary
   const wasExpandedRef = useRef<boolean>(isExpanded)
 
   const handleToggle = () => {
@@ -62,94 +68,6 @@ export const ThoughtProcess = memo(function ThoughtProcess({
       setRenderContent(false)
     }
   }, [isExpanded])
-
-  const generateSummary = useCallback(
-    async (
-      thoughtText: string,
-      isMountedRef: React.MutableRefObject<boolean>,
-    ) => {
-      if (!thoughtText.trim()) {
-        if (isMountedRef.current) {
-          setThoughtSummary('')
-        }
-        return
-      }
-
-      try {
-        const generatedSummary = await summarize({
-          content: thoughtText,
-          style: 'thoughts_summary',
-        })
-
-        if (isMountedRef.current && generatedSummary.trim()) {
-          setThoughtSummary(generatedSummary.trim())
-        }
-      } catch (error) {
-        logError('Failed to generate thought summary', error, {
-          component: 'ThoughtProcess',
-          action: 'generateSummary',
-        })
-        if (isMountedRef.current) {
-          setThoughtSummary('')
-        }
-      }
-    },
-    [],
-  )
-
-  useEffect(() => {
-    if (!isThinking) {
-      setThoughtSummary('')
-      return
-    }
-
-    if (!thoughts.trim()) return
-
-    const MIN_CONTENT_WORDS = 20
-    const totalWords = thoughts.split(/\s+/).filter(Boolean).length
-    if (totalWords < MIN_CONTENT_WORDS) return
-
-    if (summaryGenerationRef.current) return
-
-    const TAIL_WORD_COUNT = 200
-    const words = thoughts.split(/\s+/).filter(Boolean)
-    const tailText =
-      words.length > TAIL_WORD_COUNT
-        ? words.slice(-TAIL_WORD_COUNT).join(' ')
-        : thoughts
-
-    const MIN_SUMMARY_INTERVAL_MS = 3000
-    const timeSinceLastSummary = Date.now() - lastSummaryTimeRef.current
-    if (timeSinceLastSummary < MIN_SUMMARY_INTERVAL_MS) {
-      const delay = MIN_SUMMARY_INTERVAL_MS - timeSinceLastSummary
-      const timeoutId = setTimeout(() => {
-        if (!isMountedRef.current || !isThinking) return
-        if (summaryGenerationRef.current) return
-        lastSummaryTimeRef.current = Date.now()
-        summaryGenerationRef.current = generateSummary(
-          tailText,
-          isMountedRef,
-        ).finally(() => {
-          summaryGenerationRef.current = null
-        })
-      }, delay)
-      return () => clearTimeout(timeoutId)
-    }
-
-    lastSummaryTimeRef.current = Date.now()
-    summaryGenerationRef.current = generateSummary(
-      tailText,
-      isMountedRef,
-    ).finally(() => {
-      summaryGenerationRef.current = null
-    })
-  }, [thoughts, isThinking, generateSummary])
-
-  useEffect(() => {
-    return () => {
-      isMountedRef.current = false
-    }
-  }, [])
 
   // Fix main scroll container when thoughts collapse
   useEffect(() => {
@@ -335,9 +253,8 @@ export const ThoughtProcess = memo(function ThoughtProcess({
               <span className="font-medium">Thought</span>
               {thinkingDuration && (
                 <span className="font-normal">
-                  {thinkingDuration < 60
-                    ? ` for ${thinkingDuration.toFixed(1)} seconds`
-                    : ` for ${(thinkingDuration / 60).toFixed(1)} minutes`}
+                  {' '}
+                  for {formatDurationLabel(thinkingDuration)}
                 </span>
               )}
             </span>

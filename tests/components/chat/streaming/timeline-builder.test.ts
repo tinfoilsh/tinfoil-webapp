@@ -427,4 +427,141 @@ describe('TimelineBuilder', () => {
       ])
     })
   })
+
+  describe('timing stamps', () => {
+    const makeClock = (start: number) => {
+      let now = start
+      return {
+        clock: () => now,
+        advance: (ms: number) => {
+          now += ms
+        },
+      }
+    }
+
+    it('stamps thinking and web search blocks from the clock', () => {
+      const { clock, advance } = makeClock(1_000)
+      const builder = new TimelineBuilder([], clock)
+
+      builder.startThinking()
+      advance(500)
+      builder.endThinking(0.5)
+      advance(100)
+      builder.pushWebSearch({ query: 'q', status: 'searching' })
+      advance(2_000)
+      builder.updateWebSearch({ query: 'q', status: 'completed', sources: [] })
+
+      expect(builder.snapshot()).toEqual([
+        {
+          type: 'thinking',
+          id: 'thinking-0',
+          content: '',
+          isThinking: false,
+          duration: 0.5,
+          startedAt: 1_000,
+          endedAt: 1_500,
+        },
+        {
+          type: 'web_search',
+          id: 'web-search-1',
+          state: { query: 'q', status: 'completed', sources: [] },
+          startedAt: 1_600,
+          endedAt: 3_600,
+        },
+      ])
+    })
+
+    it('ends an open thought when a tool call closes it', () => {
+      const { clock, advance } = makeClock(0)
+      const builder = new TimelineBuilder([], clock)
+      builder.startThinking()
+      advance(800)
+      builder.startToolCall('call-1', 'chart')
+      expect(builder.snapshot()[0]).toMatchObject({
+        type: 'thinking',
+        isThinking: false,
+        startedAt: 0,
+        endedAt: 800,
+      })
+    })
+
+    it('keeps a searching block open until a terminal status arrives', () => {
+      const { clock, advance } = makeClock(0)
+      const builder = new TimelineBuilder([], clock)
+      builder.pushWebSearch({ query: 'q', status: 'searching' })
+      advance(50)
+      builder.updateWebSearch({ query: 'q', status: 'searching' })
+      expect(builder.snapshot()[0]).not.toHaveProperty('endedAt')
+      advance(50)
+      builder.updateWebSearch({ query: 'q', status: 'failed', sources: [] })
+      expect(builder.snapshot()[0]).toMatchObject({
+        startedAt: 0,
+        endedAt: 100,
+      })
+    })
+
+    it('ends a merged URL fetch block when its last fetch settles', () => {
+      const { clock, advance } = makeClock(10)
+      const builder = new TimelineBuilder([], clock)
+      builder.addURLFetch({ id: 'a', url: 'https://a', status: 'fetching' })
+      advance(10)
+      builder.addURLFetch({ id: 'b', url: 'https://b', status: 'fetching' })
+      advance(10)
+      builder.updateURLFetch('a', 'completed')
+      expect(builder.snapshot()[0]).toMatchObject({ startedAt: 10 })
+      expect(builder.snapshot()[0]).not.toHaveProperty('endedAt')
+      advance(10)
+      builder.updateURLFetch('b', 'failed')
+      expect(builder.snapshot()[0]).toMatchObject({
+        startedAt: 10,
+        endedAt: 40,
+      })
+    })
+
+    it('re-stamps a code exec block as later calls settle', () => {
+      const { clock, advance } = makeClock(0)
+      const builder = new TimelineBuilder([], clock)
+      builder.pushCodeExecCall({
+        id: 'c1',
+        toolName: 'bash',
+        status: 'running',
+      })
+      advance(100)
+      builder.updateCodeExecCall('c1', { status: 'completed' })
+      expect(builder.snapshot()[0]).toMatchObject({
+        startedAt: 0,
+        endedAt: 100,
+      })
+      advance(100)
+      builder.pushCodeExecCall({
+        id: 'c2',
+        toolName: 'bash',
+        status: 'running',
+      })
+      advance(100)
+      builder.updateCodeExecCall('c2', { status: 'completed' })
+      expect(builder.snapshot()).toHaveLength(1)
+      expect(builder.snapshot()[0]).toMatchObject({
+        startedAt: 0,
+        endedAt: 300,
+      })
+    })
+
+    it('adds no stamps without a clock', () => {
+      const builder = new TimelineBuilder()
+      builder.startThinking()
+      builder.endThinking(1)
+      builder.pushWebSearch({ query: 'q', status: 'completed', sources: [] })
+      builder.addURLFetch({ id: 'a', url: 'https://a', status: 'completed' })
+      builder.pushCodeExecCall({
+        id: 'c',
+        toolName: 'bash',
+        status: 'completed',
+      })
+      for (const block of builder.snapshot()) {
+        expect(block).not.toHaveProperty('startedAt')
+        expect(block).not.toHaveProperty('endedAt')
+      }
+    })
+  })
 })

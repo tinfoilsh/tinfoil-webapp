@@ -10,6 +10,7 @@ import type {
   TimelineBlock,
   TimelineContentBlock,
   TimelineThinkingBlock,
+  TimelineTiming,
   TimelineToolCallBlock,
   TimelineWebSearchBlock,
   ToolCallState,
@@ -27,8 +28,15 @@ export class TimelineBuilder {
    * Start from an existing timeline so a continuation stream appends to a
    * prior response. The seed's blocks are treated as closed, except a
    * trailing content block, which stays open so new text continues it.
+   *
+   * When a clock is supplied, trace blocks (thinking, web search, URL
+   * fetches, code exec) are stamped with startedAt/endedAt epoch ms so the
+   * renderer can summarize a run of them as "Worked for N seconds".
    */
-  constructor(seed: TimelineBlock[] = []) {
+  constructor(
+    seed: TimelineBlock[] = [],
+    private readonly clock?: () => number,
+  ) {
     this.blocks = [...seed]
     this.thinkingCounter = seed.reduce((next, block) => {
       if (block.type !== 'thinking') return next
@@ -51,6 +59,7 @@ export class TimelineBuilder {
       id,
       content: '',
       isThinking: true,
+      ...this.stampStart(),
     })
     this.currentThinkingIdx = this.blocks.length - 1
   }
@@ -89,6 +98,7 @@ export class TimelineBuilder {
       ...block,
       isThinking: false,
       duration,
+      ...this.stampEnd(),
     }
     this.currentThinkingIdx = -1
     this.currentContentIdx = -1
@@ -127,20 +137,21 @@ export class TimelineBuilder {
       type: 'web_search',
       id,
       state: { ...state },
+      ...this.stampStart(),
+      ...(state.status === 'searching' ? {} : this.stampEnd()),
     })
     return id
   }
 
   updateWebSearch(state: WebSearchState, id?: string): void {
     for (let i = this.blocks.length - 1; i >= 0; i--) {
-      if (
-        this.blocks[i].type === 'web_search' &&
-        (!id || this.blocks[i].id === id)
-      ) {
+      const block = this.blocks[i]
+      if (block.type === 'web_search' && (!id || block.id === id)) {
         this.blocks[i] = {
-          ...this.blocks[i],
+          ...block,
           state: { ...state },
-        } as TimelineBlock
+          ...(state.status === 'searching' ? {} : this.stampEnd()),
+        }
         break
       }
     }
@@ -180,17 +191,23 @@ export class TimelineBuilder {
     const lastBlock = this.blocks[this.blocks.length - 1]
     if (lastBlock && lastBlock.type === 'url_fetches') {
       const exists = lastBlock.fetches.some((f) => f.id === fetch.id)
+      const fetches = exists
+        ? lastBlock.fetches.map((f) => (f.id === fetch.id ? fetch : f))
+        : [...lastBlock.fetches, fetch]
       this.blocks[this.blocks.length - 1] = {
         ...lastBlock,
-        fetches: exists
-          ? lastBlock.fetches.map((f) => (f.id === fetch.id ? fetch : f))
-          : [...lastBlock.fetches, fetch],
+        fetches,
+        ...this.stampEndIfSettled(
+          fetches.every((f) => f.status !== 'fetching'),
+        ),
       }
     } else {
       this.blocks.push({
         type: 'url_fetches',
         id: `url-fetches-${this.blocks.length}`,
         fetches: [fetch],
+        ...this.stampStart(),
+        ...this.stampEndIfSettled(fetch.status !== 'fetching'),
       })
     }
   }
@@ -206,10 +223,14 @@ export class TimelineBuilder {
         block.type === 'url_fetches' &&
         block.fetches.some((f) => f.id === id)
       ) {
+        const fetches = block.fetches.map((f) =>
+          f.id === id ? { ...f, status, ...(sources ? { sources } : {}) } : f,
+        )
         this.blocks[i] = {
           ...block,
-          fetches: block.fetches.map((f) =>
-            f.id === id ? { ...f, status, ...(sources ? { sources } : {}) } : f,
+          fetches,
+          ...this.stampEndIfSettled(
+            fetches.every((f) => f.status !== 'fetching'),
           ),
         }
         break
@@ -250,15 +271,19 @@ export class TimelineBuilder {
     this.finalizeThinkingForTool()
     const lastBlock = this.blocks[this.blocks.length - 1]
     if (lastBlock && lastBlock.type === 'code_exec') {
+      const calls = [...lastBlock.calls, call]
       this.blocks[this.blocks.length - 1] = {
         ...lastBlock,
-        calls: [...lastBlock.calls, call],
+        calls,
+        ...this.stampEndIfSettled(calls.every((c) => c.status !== 'running')),
       }
     } else {
       this.blocks.push({
         type: 'code_exec',
         id: `code-exec-${this.blocks.length}`,
         calls: [call],
+        ...this.stampStart(),
+        ...this.stampEndIfSettled(call.status !== 'running'),
       })
     }
   }
@@ -267,11 +292,13 @@ export class TimelineBuilder {
     for (let i = this.blocks.length - 1; i >= 0; i--) {
       const block = this.blocks[i]
       if (block.type === 'code_exec' && block.calls.some((c) => c.id === id)) {
+        const calls = block.calls.map((c) =>
+          c.id === id ? { ...c, ...updates } : c,
+        )
         this.blocks[i] = {
           ...block,
-          calls: block.calls.map((c) =>
-            c.id === id ? { ...c, ...updates } : c,
-          ),
+          calls,
+          ...this.stampEndIfSettled(calls.every((c) => c.status !== 'running')),
         }
         break
       }
@@ -297,6 +324,20 @@ export class TimelineBuilder {
 
   // -- Internal -----------------------------------------------------------
 
+  private stampStart(): TimelineTiming {
+    return this.clock ? { startedAt: this.clock() } : {}
+  }
+
+  private stampEnd(): TimelineTiming {
+    return this.clock ? { endedAt: this.clock() } : {}
+  }
+
+  // Merged blocks (URL fetches, code exec) hold several items; the block
+  // ends when the last in-flight item settles, so re-stamp on each settle.
+  private stampEndIfSettled(settled: boolean): TimelineTiming {
+    return settled ? this.stampEnd() : {}
+  }
+
   /**
    * Close any active thinking block so tool blocks (web search, URL fetch)
    * appear after it chronologically.
@@ -309,6 +350,7 @@ export class TimelineBuilder {
       this.blocks[this.currentThinkingIdx] = {
         ...block,
         isThinking: false,
+        ...this.stampEnd(),
       }
       this.currentThinkingIdx = -1
     }

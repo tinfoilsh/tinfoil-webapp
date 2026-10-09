@@ -10,6 +10,7 @@ import { TimelineBuilder } from './timeline-builder'
 import type { NormalizedEvent } from './types'
 
 interface RichStreamSessionOptions {
+  /** Record thinking durations and startedAt/endedAt stamps on trace blocks. */
   trackThinkingDuration?: boolean
   onFirstEvent?: () => void
   onThinkingChange?: (isThinking: boolean) => void
@@ -35,7 +36,10 @@ export class RichStreamSession {
     const seed = options.continueFrom
       ? ensureTimeline(options.continueFrom)
       : undefined
-    this.timeline = new TimelineBuilder(seed?.timeline)
+    this.timeline = new TimelineBuilder(
+      seed?.timeline,
+      options.trackThinkingDuration ? Date.now : undefined,
+    )
     this.assembler = new MessageAssembler(options.modelDisplayName)
     if (seed) {
       this.assembler.seedFrom(seed)

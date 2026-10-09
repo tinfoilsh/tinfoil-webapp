@@ -86,7 +86,7 @@ function getToolLabel(call: ToolCallState): string {
   }
 }
 
-function getHeaderLabel(calls: ToolCallState[]): string {
+export function getCodeExecHeaderLabel(calls: ToolCallState[]): string {
   if (calls.length === 1) {
     return getToolLabel(calls[0])
   }
@@ -197,7 +197,7 @@ export const CodeExecProcess = memo(function CodeExecProcess({
     () => calls.length > 0 && calls.every((c) => c.status === 'failed'),
     [calls],
   )
-  const headerLabel = useMemo(() => getHeaderLabel(calls), [calls])
+  const headerLabel = useMemo(() => getCodeExecHeaderLabel(calls), [calls])
 
   if (calls.length === 0) return null
 
