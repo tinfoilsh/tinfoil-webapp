@@ -2,7 +2,7 @@ import { DefaultMessageRenderer } from '@/components/chat/renderers/default/Defa
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import { ForwardIcon } from '@heroicons/react/24/outline'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const model = {
@@ -18,6 +18,16 @@ const Renderer = DefaultMessageRenderer.render
 
 const openMoreActions = () =>
   fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+
+const getDeleteConfirmation = (title: string) =>
+  screen.getByRole('alertdialog', { name: title })
+
+const confirmDelete = (title: string) =>
+  fireEvent.click(
+    within(getDeleteConfirmation(title)).getByRole('button', {
+      name: 'Delete',
+    }),
+  )
 
 const renderMessage = (message: Message, hideActions = false) =>
   render(
@@ -222,13 +232,16 @@ describe('DefaultMessageRenderer message actions', () => {
       ).not.toBeInTheDocument()
       expect(container.querySelector('.prose')).not.toBeInTheDocument()
       for (const [name, handler] of [
-        ['Delete message', onDeleteMessage],
         ['Fork conversation from here', onForkMessage],
         ['Regenerate response', onRegenerateMessage],
       ] as const) {
         fireEvent.click(screen.getByRole('button', { name }))
         expect(handler).toHaveBeenCalledWith(messageIndex)
       }
+      fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+      expect(onDeleteMessage).not.toHaveBeenCalled()
+      confirmDelete('Delete message?')
+      expect(onDeleteMessage).toHaveBeenCalledExactlyOnceWith(messageIndex)
 
       rerender(<Renderer {...props} hideActions />)
       for (const name of [
@@ -332,11 +345,65 @@ describe('DefaultMessageRenderer message actions', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
-    expect(onDeleteMessage).toHaveBeenCalledWith(4)
+    expect(onDeleteMessage).not.toHaveBeenCalled()
+    confirmDelete('Delete message?')
+    expect(onDeleteMessage).toHaveBeenCalledExactlyOnceWith(4)
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
     fireEvent.click(
       screen.getByRole('button', { name: 'Fork conversation from here' }),
     )
     expect(onForkMessage).toHaveBeenCalledExactlyOnceWith(4)
+  })
+
+  it('does not delete a user message when the confirmation is cancelled', () => {
+    const onDeleteMessage = vi.fn()
+    render(
+      <Renderer
+        message={{
+          role: 'user',
+          content: 'Hello',
+          timestamp: new Date('2026-08-07T00:00:00.000Z'),
+        }}
+        messageIndex={4}
+        model={model}
+        isDarkMode={false}
+        onDeleteMessage={onDeleteMessage}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+    fireEvent.click(
+      within(getDeleteConfirmation('Delete message?')).getByRole('button', {
+        name: 'Cancel',
+      }),
+    )
+    expect(onDeleteMessage).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete message' })).toBeVisible()
+  })
+
+  it('closes a pending delete confirmation when the conversation becomes read-only', () => {
+    const onDeleteMessage = vi.fn()
+    const props = {
+      message: {
+        role: 'user' as const,
+        content: 'Hello',
+        timestamp: new Date('2026-08-07T00:00:00.000Z'),
+      },
+      messageIndex: 0,
+      model,
+      isDarkMode: false,
+      onDeleteMessage,
+    }
+    const { rerender } = render(<Renderer {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+    expect(getDeleteConfirmation('Delete message?')).toBeInTheDocument()
+
+    rerender(<Renderer {...props} hideActions />)
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(onDeleteMessage).not.toHaveBeenCalled()
   })
 
   it('closes an active edit when the conversation becomes read-only', () => {
@@ -378,7 +445,9 @@ describe('DefaultMessageRenderer message actions', () => {
 
     openMoreActions()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete message' }))
-    expect(onDeleteMessage).toHaveBeenCalledWith(3)
+    expect(onDeleteMessage).not.toHaveBeenCalled()
+    confirmDelete('Delete response?')
+    expect(onDeleteMessage).toHaveBeenCalledExactlyOnceWith(3)
   })
 
   it('forks from an assistant message with its own index', () => {

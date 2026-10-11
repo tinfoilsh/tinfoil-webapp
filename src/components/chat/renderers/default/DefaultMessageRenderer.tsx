@@ -21,6 +21,7 @@ import {
 } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useState, type JSX } from 'react'
 import { hasMessageAttachments } from '../../attachment-helpers'
+import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
 import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
@@ -85,6 +86,7 @@ const DefaultMessageComponent = ({
   const [isEditing, setIsEditing] = React.useState(false)
   const [editContent, setEditContent] = React.useState(message.content || '')
   const [copiedUser, setCopiedUser] = React.useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [isUserMessageExpanded, setIsUserMessageExpanded] =
     React.useState(false)
   const [isUserMessageOverflowing, setIsUserMessageOverflowing] =
@@ -94,7 +96,10 @@ const DefaultMessageComponent = ({
   const editButtonRef = React.useRef<HTMLButtonElement>(null)
 
   React.useEffect(() => {
-    if (hideActions) setIsEditing(false)
+    if (hideActions) {
+      setIsEditing(false)
+      setShowDeleteConfirm(false)
+    }
   }, [hideActions])
 
   const isLimitError =
@@ -245,8 +250,18 @@ const DefaultMessageComponent = ({
   }, [messageIndex, onContinueAssistantMessage])
 
   const handleDelete = React.useCallback(() => {
+    if (!onDeleteMessage) return
+    setShowDeleteConfirm(true)
+  }, [onDeleteMessage])
+
+  const handleConfirmDelete = React.useCallback(() => {
+    setShowDeleteConfirm(false)
     onDeleteMessage?.(messageIndex)
   }, [messageIndex, onDeleteMessage])
+
+  const handleCancelDelete = React.useCallback(() => {
+    setShowDeleteConfirm(false)
+  }, [])
 
   const handleFork = React.useCallback(() => {
     onForkMessage?.(messageIndex)
@@ -996,6 +1011,19 @@ const DefaultMessageComponent = ({
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title={isUser ? 'Delete message?' : 'Delete response?'}
+        description={
+          isUser
+            ? 'This message will be removed from the conversation. This cannot be undone.'
+            : 'This response will be removed from the conversation. This cannot be undone.'
+        }
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+      />
     </div>
   )
 }
