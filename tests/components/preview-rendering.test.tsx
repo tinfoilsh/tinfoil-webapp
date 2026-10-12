@@ -133,6 +133,42 @@ describe('message formatting', () => {
 })
 
 describe('code previews', () => {
+  it.each([
+    ['json', '{\n  "answer": 42,\n  "ready": true\n}'],
+    ['markdown', '# Answer\n\nThe completed response.'],
+    [
+      'svg',
+      '<svg xmlns="http://www.w3.org/2000/svg">\n<circle r="10"/>\n</svg>',
+    ],
+    ['css', 'body {\n  color: blue;\n  background: white;\n}'],
+    ['mermaid', 'graph TD\n  Start --> Finish'],
+  ])(
+    'keeps streamed %s code visible until the reader opens its preview',
+    (language, code) => {
+      const content = `\`\`\`${language}\n${code}\n\`\`\``
+      const view = (isStreaming: boolean) => (
+        <MessageContent
+          content={content}
+          isDarkMode={false}
+          isStreaming={isStreaming}
+        />
+      )
+      const { container, getByRole, rerender } = render(view(true))
+      const codeBlock = container.querySelector('pre')!
+      expect(codeBlock).toHaveTextContent(code.replace(/\s+/g, ' ').trim())
+
+      rerender(view(false))
+
+      expect(container.querySelector('pre')).toBe(codeBlock)
+      fireEvent.click(getByRole('button', { name: 'Preview' }))
+      expect(codeBlock).not.toBeInTheDocument()
+      fireEvent.click(getByRole('button', { name: 'View code' }))
+      expect(container.querySelector('pre')).toHaveTextContent(
+        code.replace(/\s+/g, ' ').trim(),
+      )
+    },
+  )
+
   it('renders styled SVG as a standalone image', () => {
     const code =
       '<svg viewBox="0 0 120 40">\n<style>text { fill: blue }</style>\n<defs><linearGradient id="base"/><linearGradient xlink:href="#base"/></defs><text y="20">Preview&nbsp;image</text>\n</svg>'
