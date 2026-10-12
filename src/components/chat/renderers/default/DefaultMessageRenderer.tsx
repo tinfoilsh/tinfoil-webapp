@@ -535,25 +535,17 @@ const DefaultMessageComponent = ({
                         'prose-a:text-blue-500 hover:prose-a:text-blue-600',
                       )}
                     >
-                      {isActivelyStreaming ? (
-                        <StreamingContentWrapper isStreaming={true}>
-                          <StreamingChunkedText
-                            content={block.content}
-                            isDarkMode={isDarkMode}
-                            isUser={false}
-                            isStreaming={true}
-                            citationUrlTitles={citationUrlTitles}
-                          />
-                        </StreamingContentWrapper>
-                      ) : (
+                      <StreamingContentWrapper
+                        isStreaming={isActivelyStreaming}
+                      >
                         <StreamingChunkedText
                           content={block.content}
                           isDarkMode={isDarkMode}
                           isUser={false}
-                          isStreaming={false}
+                          isStreaming={isActivelyStreaming}
                           citationUrlTitles={citationUrlTitles}
                         />
-                      )}
+                      </StreamingContentWrapper>
                     </div>
                   </div>
                 </div>
