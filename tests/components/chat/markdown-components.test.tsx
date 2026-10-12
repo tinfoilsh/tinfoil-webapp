@@ -1,7 +1,5 @@
-import { createMarkdownComponents } from '@/components/chat/renderers/components/markdown-components'
-import { TooltipProvider } from '@/components/ui/tooltip'
+import { MessageContent } from '@/components/chat/renderers/components/MessageContent'
 import { act, render, screen } from '@testing-library/react'
-import { createElement, type ElementType } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { fetchFavicon } = vi.hoisted(() => ({
@@ -15,7 +13,7 @@ beforeEach(() => {
   })
 })
 
-describe('createMarkdownComponents citations', () => {
+describe('Markdown citations', () => {
   it.each([
     {
       isStreaming: true,
@@ -35,25 +33,14 @@ describe('createMarkdownComponents citations', () => {
         expect(requested).toBe(url)
         return null
       })
-      const components = createMarkdownComponents({
-        isDarkMode: false,
-        isStreaming,
-        showMarkdownTablePlaceholder: false,
-        citationUrlTitles,
-      })
-
       await act(async () => {
         render(
-          createElement(
-            TooltipProvider,
-            null,
-            createElement(components.a as ElementType, { href: url }, 'source'),
-            createElement(
-              components.a as ElementType,
-              { href: 'https://ordinary.test/page' },
-              'Ordinary source',
-            ),
-          ),
+          <MessageContent
+            content={`[source](${url})\n\n[Ordinary source](https://ordinary.test/page)`}
+            isDarkMode={false}
+            isStreaming={isStreaming}
+            citationUrlTitles={citationUrlTitles}
+          />,
         )
       })
       expect(fetchFavicon).toHaveBeenCalledExactlyOnceWith(url)

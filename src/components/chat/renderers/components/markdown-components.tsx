@@ -7,6 +7,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { sanitizeUrl } from '@braintree/sanitize-url'
+import { createContext, useContext } from 'react'
 import type { Components } from 'react-markdown'
 import { ExpandableTable } from './ExpandableTable'
 
@@ -58,7 +59,7 @@ function CitationPill({ url, title }: { url: string; title?: string }) {
   )
 }
 
-interface CreateMarkdownComponentsOptions {
+interface MarkdownRenderingOptions {
   isDarkMode: boolean
   isStreaming: boolean
   showMarkdownTablePlaceholder: boolean
@@ -69,12 +70,15 @@ interface CreateMarkdownComponentsOptions {
   citationUrlTitles?: Map<string, string>
 }
 
-export function createMarkdownComponents({
-  isDarkMode,
-  isStreaming,
-  showMarkdownTablePlaceholder,
-  citationUrlTitles,
-}: CreateMarkdownComponentsOptions): Components {
+const MarkdownRenderingContext = createContext<MarkdownRenderingOptions>({
+  isDarkMode: false,
+  isStreaming: false,
+  showMarkdownTablePlaceholder: false,
+})
+
+export const MarkdownRenderingProvider = MarkdownRenderingContext.Provider
+
+function createMarkdownComponents(): Components {
   return {
     // Suppress hr elements
     hr: () => null,
@@ -107,7 +111,14 @@ export function createMarkdownComponents({
     },
 
     // Code blocks
-    pre({ children, ...props }: { children?: React.ReactNode }) {
+    pre: function MarkdownCodeBlock({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode
+    }) {
+      const { isDarkMode, isStreaming, showMarkdownTablePlaceholder } =
+        useContext(MarkdownRenderingContext)
       if (
         children &&
         typeof children === 'object' &&
@@ -213,7 +224,8 @@ export function createMarkdownComponents({
     },
 
     // Links with citation pill support
-    a({ children, href, ...props }: any) {
+    a: function MarkdownLink({ children, href, ...props }: any) {
+      const { citationUrlTitles } = useContext(MarkdownRenderingContext)
       if (href?.startsWith('#cite-')) {
         const tildeIndex = href.indexOf('~')
         if (tildeIndex !== -1) {
@@ -455,3 +467,5 @@ export function createMarkdownComponents({
     },
   }
 }
+
+export const markdownComponents = createMarkdownComponents()

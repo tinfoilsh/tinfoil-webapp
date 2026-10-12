@@ -40,6 +40,51 @@ const renderMessage = (message: Message, hideActions = false) =>
     />,
   )
 
+describe('DefaultMessageRenderer streaming completion', () => {
+  it('preserves rendered content and table scroll position when a response finishes', () => {
+    const content =
+      '| First column | Second column |\n| --- | --- |\n| First value | Second value |\n\nThe response continues after the table.'
+    const message: Message = {
+      role: 'assistant',
+      content,
+      timestamp: new Date('2026-10-12T00:00:00.000Z'),
+      timeline: [{ type: 'content', id: 'answer', content }],
+    }
+    const view = (isStreaming: boolean) => (
+      <Renderer
+        message={message}
+        messageIndex={1}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        isStreaming={isStreaming}
+      />
+    )
+    const { rerender } = render(view(true))
+    const table = screen.getByRole('group', {
+      name: 'Table, scroll horizontally to see more',
+    })
+    const tableScrollLeft = 120
+    table.scrollLeft = tableScrollLeft
+    const paragraph = screen.getByText(
+      'The response continues after the table.',
+    )
+
+    rerender(view(false))
+
+    expect(screen.getByText('The response continues after the table.')).toBe(
+      paragraph,
+    )
+    expect(
+      screen.getByRole('group', {
+        name: 'Table, scroll horizontally to see more',
+      }),
+    ).toBe(table)
+    expect(table.scrollLeft).toBe(tableScrollLeft)
+    expect(screen.getByRole('button', { name: 'Copy message' })).toBeVisible()
+  })
+})
+
 describe('DefaultMessageRenderer metadata', () => {
   it('does not show assistant metadata on user messages', () => {
     renderMessage({

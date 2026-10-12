@@ -7,7 +7,10 @@ import { preprocessMarkdown } from '@/utils/markdown-preprocessing'
 import { memo, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { GeneratingTable } from './GeneratingTable'
-import { createMarkdownComponents } from './markdown-components'
+import {
+  markdownComponents,
+  MarkdownRenderingProvider,
+} from './markdown-components'
 import { useMathPlugins } from './use-math-plugins'
 
 interface MessageContentProps {
@@ -62,14 +65,13 @@ export const MessageContent = memo(function MessageContent({
     return hasStreamingMarkdownTableCodeBlock(content)
   }, [isStreaming, content])
 
-  const components = useMemo(
-    () =>
-      createMarkdownComponents({
-        isDarkMode,
-        isStreaming,
-        showMarkdownTablePlaceholder,
-        citationUrlTitles,
-      }),
+  const renderingOptions = useMemo(
+    () => ({
+      isDarkMode,
+      isStreaming,
+      showMarkdownTablePlaceholder,
+      citationUrlTitles,
+    }),
     [isDarkMode, isStreaming, showMarkdownTablePlaceholder, citationUrlTitles],
   )
 
@@ -80,13 +82,15 @@ export const MessageContent = memo(function MessageContent({
   return (
     <TooltipProvider>
       <div translate="no">
-        <ReactMarkdown
-          remarkPlugins={remarkPlugins}
-          rehypePlugins={rehypePlugins}
-          components={components}
-        >
-          {sanitizedContent}
-        </ReactMarkdown>
+        <MarkdownRenderingProvider value={renderingOptions}>
+          <ReactMarkdown
+            remarkPlugins={remarkPlugins}
+            rehypePlugins={rehypePlugins}
+            components={markdownComponents}
+          >
+            {sanitizedContent}
+          </ReactMarkdown>
+        </MarkdownRenderingProvider>
         {showMarkdownTablePlaceholder && <GeneratingTable />}
       </div>
     </TooltipProvider>
