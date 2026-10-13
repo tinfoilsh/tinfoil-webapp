@@ -103,6 +103,33 @@ describe('ChatMessages archive boundary', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('archives the history the system prompt displaces', () => {
+    const messages = [
+      message('user', 'reserved-1', 200, 1),
+      message('assistant', 'reserved-2', 200, 2),
+      message('user', 'reserved-3', 200, 3),
+      message('assistant', 'reserved-4', 200, 4),
+    ]
+    const { unmount } = render(
+      <ChatMessages {...props('roomy-chat', messages)} />,
+    )
+    expect(screen.getByTestId('message-reserved-1')).toBeInTheDocument()
+    unmount()
+
+    render(
+      <ChatMessages
+        {...props('reserved-chat', messages)}
+        systemPromptTokens={400}
+      />,
+    )
+
+    expect(screen.queryByTestId('message-reserved-2')).not.toBeInTheDocument()
+    expect(screen.getByTestId('message-reserved-3')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Show 2 earlier messages/ }),
+    ).toBeInTheDocument()
+  })
+
   it('keeps the active turn visible as its assistant response grows', () => {
     const initialMessages = [
       message('user', 'old-user', 100, 1),

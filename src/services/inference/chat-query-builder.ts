@@ -11,7 +11,10 @@ import {
 } from '@/config/models'
 import { shouldIncludeReasoning } from '@/utils/reasoning-history'
 import { formatCurrentTimeReminder } from '@/utils/time-reminder'
-import { selectMessagesWithinBudget } from '@/utils/token-estimation'
+import {
+  estimateTokenCount,
+  selectMessagesWithinBudget,
+} from '@/utils/token-estimation'
 import { webSearchHistoryMessages } from '@/utils/web-search-history'
 import type {
   ChatCompletionAssistantMessageParam,
@@ -53,7 +56,21 @@ export interface ChatQueryBuilderParams {
   trailingInstruction?: string
 }
 
+type SystemMessageParams = Pick<
+  ChatQueryBuilderParams,
+  'systemPrompt' | 'rules' | 'includeGenUIHint'
+> & { modelName: string }
+
 export class ChatQueryBuilder {
+  /**
+   * Tokens the system message takes. History is selected within what the
+   * context budget leaves after it, so views that preview the prompt
+   * reserve exactly this much too.
+   */
+  static estimateSystemTokens(params: SystemMessageParams): number {
+    return estimateTokenCount(this.buildSystemContent(params) ?? undefined)
+  }
+
   /**
    * Build chat completion messages with model-appropriate system prompt and rules injection
    */
@@ -79,23 +96,14 @@ export class ChatQueryBuilder {
       autoCandidates,
     })
 
-    const genUIHint = includeGenUIHint ? buildGenUIPromptHint() : null
-
-    const processedSystemPrompt = systemPrompt.replaceAll(
-      '{MODEL_NAME}',
-      model.name,
-    )
-    const processedRules = rules
-      ? rules.replaceAll('{MODEL_NAME}', model.name)
-      : ''
-
     const result: ChatCompletionMessageParam[] = []
 
-    const systemContent = this.buildSystemContent(
-      processedSystemPrompt,
-      processedRules,
-      genUIHint,
-    )
+    const systemContent = this.buildSystemContent({
+      modelName: model.name,
+      systemPrompt,
+      rules,
+      includeGenUIHint,
+    })
     if (systemContent) {
       result.push({
         role: 'system',
@@ -103,11 +111,15 @@ export class ChatQueryBuilder {
       } as ChatCompletionSystemMessageParam)
     }
 
-    // Add conversation history that fits within the model's context budget
+    // Add the conversation history that fits in the budget left after the
+    // system message
     const recentMessages = selectMessagesWithinBudget(
       conversationMessages,
       contextWindowTokens,
-      { reasoningHistoryPolicy },
+      {
+        reasoningHistoryPolicy,
+        reservedTokens: estimateTokenCount(systemContent ?? undefined),
+      },
     )
 
     for (let index = 0; index < recentMessages.length; index++) {
@@ -188,12 +200,23 @@ export class ChatQueryBuilder {
     return result
   }
 
-  private static buildSystemContent(
-    systemPrompt: string,
-    rules: string,
-    genUIHint: string | null,
-  ): string | null {
-    const base = rules ? `${systemPrompt}\n${rules}` : systemPrompt
+  private static buildSystemContent({
+    modelName,
+    systemPrompt,
+    rules,
+    includeGenUIHint,
+  }: SystemMessageParams): string | null {
+    const processedSystemPrompt = systemPrompt.replaceAll(
+      '{MODEL_NAME}',
+      modelName,
+    )
+    const processedRules = rules
+      ? rules.replaceAll('{MODEL_NAME}', modelName)
+      : ''
+    const genUIHint = includeGenUIHint ? buildGenUIPromptHint() : null
+    const base = processedRules
+      ? `${processedSystemPrompt}\n${processedRules}`
+      : processedSystemPrompt
     const content = genUIHint ? `${base}\n\n${genUIHint}` : base
     return content.trim() ? content : null
   }

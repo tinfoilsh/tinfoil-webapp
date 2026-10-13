@@ -43,6 +43,7 @@ type ChatMessagesProps = {
   activeRecoveryTurnIds?: readonly string[]
   reasoningHistoryPolicy?: ReasoningHistoryPolicy
   contextWindowTokens?: number
+  systemPromptTokens?: number
   pendingContextTokens?: number
   isDarkMode: boolean
   chatId: string
@@ -306,6 +307,7 @@ export function ChatMessages({
   activeRecoveryTurnIds = [],
   reasoningHistoryPolicy = REASONING_HISTORY_POLICIES.none,
   contextWindowTokens,
+  systemPromptTokens = 0,
   pendingContextTokens = 0,
   isDarkMode,
   chatId,
@@ -470,7 +472,7 @@ export function ChatMessages({
     const budget = getHistoryTokenBudget(
       contextWindowTokens ??
         resolveContextWindowTokens(currentModel ?? undefined),
-      pendingContextTokens,
+      systemPromptTokens + pendingContextTokens,
     )
     return findContextStartIndex(messages, budget, {
       reasoningHistoryPolicy,
@@ -481,6 +483,7 @@ export function ChatMessages({
     contextWindowTokens,
     currentModel,
     reasoningHistoryPolicy,
+    systemPromptTokens,
     pendingContextTokens,
   ])
   const [archiveBoundary, setArchiveBoundary] = useState(() => ({

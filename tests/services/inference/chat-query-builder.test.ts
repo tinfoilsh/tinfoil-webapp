@@ -2,6 +2,7 @@ import type { Message } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import { ChatQueryBuilder } from '@/services/inference/chat-query-builder'
 import { REASONING_HISTORY_POLICIES } from '@/utils/reasoning-history'
+import { estimateTokenCount } from '@/utils/token-estimation'
 import { describe, expect, it, vi } from 'vitest'
 
 const model: BaseModel = {
@@ -58,6 +59,53 @@ describe('ChatQueryBuilder', () => {
 
     expect(messages).toHaveLength(2)
     expect(messages[0]).toEqual({ role: 'user', content: 'b'.repeat(1600) })
+  })
+
+  it('reserves the system message before selecting history', () => {
+    const history = ['a', 'b', 'c'].map((letter) => ({
+      ...userMessage,
+      content: letter.repeat(800),
+    }))
+    const build = (systemPrompt: string) =>
+      ChatQueryBuilder.buildMessages({
+        model: { ...model, chatConfig: { contextWindowTokens: 1000 } },
+        systemPrompt,
+        rules: '',
+        messages: history,
+      }).map((message) => message.content)
+
+    expect(build('')).toEqual([
+      'a'.repeat(800),
+      'b'.repeat(800),
+      'c'.repeat(800),
+    ])
+    const projectContext = 'p'.repeat(1600)
+    expect(build(projectContext)).toEqual([
+      projectContext,
+      'b'.repeat(800),
+      'c'.repeat(800),
+    ])
+  })
+
+  it('estimates exactly the system message it sends', () => {
+    const prompt = {
+      systemPrompt: `You are {MODEL_NAME}. ${'p'.repeat(400)}`,
+      rules: 'r'.repeat(200),
+      includeGenUIHint: true,
+    }
+    const [system] = ChatQueryBuilder.buildMessages({
+      model,
+      messages: [userMessage],
+      ...prompt,
+    })
+
+    expect(system.role).toBe('system')
+    expect(
+      ChatQueryBuilder.estimateSystemTokens({
+        modelName: model.name,
+        ...prompt,
+      }),
+    ).toBe(estimateTokenCount(system.content as string))
   })
 
   it('omits system messages when there is no prompt content', () => {

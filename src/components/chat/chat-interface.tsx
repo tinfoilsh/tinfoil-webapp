@@ -39,6 +39,7 @@ import {
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useSyncHealthAttention } from '@/hooks/use-sync-health'
 import { useToast } from '@/hooks/use-toast'
+import { ChatQueryBuilder } from '@/services/inference/chat-query-builder'
 import { isChatRecoveryActive } from '@/services/inference/chat-recovery-drafts'
 import {
   getRateLimitInfo,
@@ -2037,6 +2038,17 @@ export function ChatInterface({
   const contextWindowTokens = getResolvedModelContextWindowTokens(
     contextModelSelection,
   )
+  const contextModelName = contextModelSelection.model?.name ?? ''
+  const systemPromptTokens = useMemo(
+    () =>
+      ChatQueryBuilder.estimateSystemTokens({
+        modelName: contextModelName,
+        systemPrompt: finalSystemPrompt,
+        rules: processedRules,
+        includeGenUIHint: genUIEnabled,
+      }),
+    [contextModelName, finalSystemPrompt, processedRules, genUIEnabled],
+  )
   const pendingAttachments = buildCompletedAttachments(processedDocuments)
   const pendingContextTokens = estimateMessageTokens({
     role: 'user',
@@ -3012,11 +3024,14 @@ export function ChatInterface({
         file,
         (content, documentId, imageData, hasDescription, pages) => {
           const newDocTokens = estimateTokenCount(content)
-          const contextBudget = getContextTokenBudget(contextWindowTokens)
+          const contextBudget = getHistoryTokenBudget(
+            contextWindowTokens,
+            systemPromptTokens,
+          )
 
           // Attachments are part of the next message, which cannot be
           // archived, so all pending attachments together must fit within
-          // the context budget.
+          // the budget the system prompt leaves.
           const pendingTokens = processedDocuments.reduce(
             (total, doc) => total + estimateTokenCount(doc.content),
             0,
@@ -3100,7 +3115,13 @@ export function ChatInterface({
         },
       )
     },
-    [handleDocumentUpload, processedDocuments, contextWindowTokens, toast],
+    [
+      handleDocumentUpload,
+      processedDocuments,
+      contextWindowTokens,
+      systemPromptTokens,
+      toast,
+    ],
   )
 
   // Helper to process file and add to project context
@@ -3317,7 +3338,7 @@ export function ChatInterface({
   const contextUsage = useMemo(() => {
     const limitTokens = getContextTokenBudget(contextWindowTokens)
 
-    let usedTokens = pendingContextTokens
+    let usedTokens = systemPromptTokens + pendingContextTokens
 
     // Count tokens from messages (including their attachments), skipping
     // archived messages that are excluded from the prompt
@@ -3325,7 +3346,7 @@ export function ChatInterface({
       const messages = currentChat.messages
       const historyBudget = getHistoryTokenBudget(
         contextWindowTokens,
-        pendingContextTokens,
+        systemPromptTokens + pendingContextTokens,
       )
       const startIndex = findContextStartIndex(messages, historyBudget, {
         reasoningHistoryPolicy,
@@ -3347,6 +3368,7 @@ export function ChatInterface({
     currentChat?.messages,
     contextWindowTokens,
     reasoningHistoryPolicy,
+    systemPromptTokens,
     pendingContextTokens,
   ])
 
@@ -4627,6 +4649,7 @@ export function ChatInterface({
                       activeRecoveryTurnIds={activeRecoveryTurnIds}
                       reasoningHistoryPolicy={reasoningHistoryPolicy}
                       contextWindowTokens={contextWindowTokens}
+                      systemPromptTokens={systemPromptTokens}
                       pendingContextTokens={pendingContextTokens}
                       isDarkMode={isDarkMode}
                       chatId={currentChat.id}
