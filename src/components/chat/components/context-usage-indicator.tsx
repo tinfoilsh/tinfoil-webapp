@@ -23,8 +23,8 @@ function formatTokens(tokens: number): string {
 
 /**
  * Small circular gauge showing how much of the model's context window the
- * current conversation occupies. Once usage passes 100%, older messages get
- * archived and are no longer sent to the model.
+ * current prompt occupies after history selection. If it still exceeds the
+ * budget, dropping older history cannot make the remaining prompt fit.
  */
 export function ContextUsageIndicator({
   usage,
@@ -36,12 +36,15 @@ export function ContextUsageIndicator({
   const percentage = Math.min(Math.round(usage.percentage), 100)
 
   const isNearLimit = percentage >= WARNING_THRESHOLD_PERCENT
-  const isFull = percentage >= 100
+  const isFull = usage.usedTokens >= usage.limitTokens
+  const isOverBudget = usage.usedTokens > usage.limitTokens
   const dashOffset = RING_CIRCUMFERENCE * (1 - percentage / 100)
 
-  const tooltip = isFull
-    ? `Context window full (~${formatTokens(usage.limitTokens)} tokens). Older messages are archived and no longer sent to the model.`
-    : `Context window ${percentage}% used (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens)`
+  const tooltip = isOverBudget
+    ? `Context exceeds this model's input budget (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens). Replies may fail. Reduce project documents or instructions, remove attachments, or shorten your message.`
+    : isFull
+      ? `Context window full (~${formatTokens(usage.limitTokens)} tokens). Older messages may be omitted to make room.`
+      : `Context window ${percentage}% used (~${formatTokens(usage.usedTokens)} of ${formatTokens(usage.limitTokens)} tokens)`
 
   return (
     <div className={cn('group relative flex items-center', className)}>
@@ -78,7 +81,9 @@ export function ContextUsageIndicator({
             strokeDashoffset={dashOffset}
           />
         </svg>
-        <span className="text-xs font-medium leading-none">{percentage}%</span>
+        <span className="text-xs font-medium leading-none">
+          {isOverBudget ? 'Over limit' : `${percentage}%`}
+        </span>
       </span>
       <span className="pointer-events-none absolute bottom-full right-0 z-20 mb-1 w-max max-w-xs whitespace-normal rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-center text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
         {tooltip}
