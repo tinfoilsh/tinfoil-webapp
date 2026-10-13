@@ -7,7 +7,11 @@ import { authTokenManager } from '@/services/auth'
 import { reportSyncPaused } from '@/services/cloud/sync-health'
 import { logError, logInfo } from '@/utils/error-handling'
 import { SecureClient } from 'tinfoil'
-import { SYNC_HEADERS, SYNC_PROTOCOL_VERSION } from './wire-contract'
+import {
+  EXTENDED_ROUTE_BUDGETS_MS,
+  SYNC_HEADERS,
+  SYNC_PROTOCOL_VERSION,
+} from './wire-contract'
 
 /**
  * Singleton wrapper around the TinfoilAI SDK's SecureClient pointed at
@@ -248,7 +252,7 @@ export class SyncEnclaveClient {
         }
         return undefined as T
       },
-      SYNC_ENCLAVE_TIMEOUTS.REQUEST_MS,
+      EXTENDED_ROUTE_BUDGETS_MS[path] ?? SYNC_ENCLAVE_TIMEOUTS.REQUEST_MS,
       () => new SyncRequestTimeoutError(),
       [callerSignal, requestScope ? getRequestScopeSignal(requestScope) : null],
     )

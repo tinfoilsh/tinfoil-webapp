@@ -617,6 +617,35 @@ describe('SyncEnclaveClient', () => {
     })
   })
 
+  it.each([
+    ['/v1/sync/push', 60_000],
+    ['/v1/attachment/put', 300_000],
+  ])(
+    'waits for the enclave budget of %s before timing out',
+    async (path, budgetMs) => {
+      vi.useFakeTimers()
+      let requestSignal: AbortSignal | null | undefined
+      mockFetch.mockImplementationOnce((_input, init) => {
+        requestSignal = init?.signal
+        return new Promise(() => {})
+      })
+      const { getSyncEnclaveClient } =
+        await import('@/services/sync-enclave/sync-enclave-client')
+      const client = await getSyncEnclaveClient()
+
+      const request = client.post(path, {})
+      const assertion = expect(request).rejects.toMatchObject({
+        name: 'SyncRequestTimeoutError',
+      })
+      await vi.advanceTimersByTimeAsync(budgetMs - 1)
+      expect(requestSignal).toBeDefined()
+      expect(requestSignal?.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      await assertion
+      expect(requestSignal?.aborted).toBe(true)
+    },
+  )
+
   it('uses one overall budget for authentication refresh and replay', async () => {
     vi.useFakeTimers()
     vi.resetModules()

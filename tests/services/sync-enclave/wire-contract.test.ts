@@ -16,6 +16,7 @@ import {
   resetSyncEnclaveClient,
 } from '@/services/sync-enclave/sync-enclave-client'
 import {
+  EXTENDED_ROUTE_BUDGETS_MS,
   MAX_PULL_IDS,
   PULL_ITEM_CODE_UNSPECIFIED,
   PULL_ITEM_CODES,
@@ -174,5 +175,16 @@ describe('wire-contract', () => {
       LegacyBlobNotMigrated: 'LEGACY_BLOB_NOT_MIGRATED',
     })
     expect(PULL_ITEM_CODE_UNSPECIFIED).toBe('UNSPECIFIED')
+  })
+
+  it('route budgets match confidential-sync internal/server/http.go', () => {
+    expect(EXTENDED_ROUTE_BUDGETS_MS).toEqual({
+      '/v1/sync/push': 60_000,
+      '/v1/sync/fork': 300_000,
+      '/v1/attachment/put': 300_000,
+      '/v1/attachment/get': 300_000,
+      '/v1/attachment/get-public': 300_000,
+      '/v1/import/upload': 300_000,
+    })
   })
 })
