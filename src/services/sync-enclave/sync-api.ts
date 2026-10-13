@@ -20,6 +20,7 @@
  *     every conflict is bubbled up to the UI to resolve.
  */
 
+import { SYNC_ENCLAVE_TIMEOUTS } from '@/config'
 import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { z } from 'zod'
 import { SyncEnclaveError, getSyncEnclaveClient } from './sync-enclave-client'
@@ -621,21 +622,33 @@ function b64ToBytes(s: string): Uint8Array {
   return base64ToUint8Array(s)
 }
 
+function pushTimeoutMs(encodedBodyBytes: number): number {
+  const uploadMs = Math.ceil(
+    (encodedBodyBytes * 1000) /
+      SYNC_ENCLAVE_TIMEOUTS.PUSH_MIN_UPLOAD_BYTES_PER_SECOND,
+  )
+  return Math.min(
+    SYNC_ENCLAVE_TIMEOUTS.PUSH_MAX_MS,
+    SYNC_ENCLAVE_TIMEOUTS.REQUEST_MS + uploadMs,
+  )
+}
+
 export async function push(req: PushRequest): Promise<PushResponse> {
   const client = await getSyncEnclaveClient()
+  const plaintext = bytesToB64(req.plaintext)
   return client.post<PushResponse>(
     '/v1/sync/push',
     {
       scope: req.scope,
       id: req.id ?? '',
       key: req.keyB64,
-      plaintext: bytesToB64(req.plaintext),
+      plaintext,
       if_match: req.ifMatch,
       idempotency_key: req.idempotencyKey,
       metadata: req.metadata,
     },
     undefined,
-    { requestScope: 'cloud-sync' },
+    { requestScope: 'cloud-sync', timeoutMs: pushTimeoutMs(plaintext.length) },
   )
 }
 

@@ -1,3 +1,4 @@
+import { SYNC_ENCLAVE_TIMEOUTS } from '@/config'
 import { resetSyncEnclaveClient } from '@/services/sync-enclave/sync-enclave-client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -52,6 +53,39 @@ function lastHeaders(): Headers {
   return init?.headers as Headers
 }
 
+// Plaintext whose base64 encoding takes `seconds` to upload at the assumed
+// minimum uplink speed. Three plaintext bytes encode to four base64 bytes.
+function plaintextTakingSecondsToUpload(seconds: number): Uint8Array {
+  const encodedBytes =
+    SYNC_ENCLAVE_TIMEOUTS.PUSH_MIN_UPLOAD_BYTES_PER_SECOND * seconds
+  return new Uint8Array((encodedBytes / 4) * 3)
+}
+
+// Starts a push whose secure fetch never answers and reports when the
+// request is aborted.
+async function startHungPush(plaintext: Uint8Array) {
+  const api = await import('@/services/sync-enclave/sync-api')
+  let requestSignal: AbortSignal | null | undefined
+  mockFetch.mockImplementationOnce((_input, init) => {
+    requestSignal = init?.signal
+    return new Promise(() => {})
+  })
+  const pushing = api.push({
+    scope: 'project_document',
+    id: 'project-1/doc-1',
+    keyB64: CEK_B64,
+    plaintext,
+    ifMatch: null,
+    idempotencyKey: 'idem-1',
+  })
+  const timedOut = expect(pushing).rejects.toMatchObject({
+    name: 'SyncRequestTimeoutError',
+  })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(requestSignal).toBeDefined()
+  return { timedOut, isAborted: () => requestSignal?.aborted }
+}
+
 describe('sync-api (enclave JSON-RPC)', () => {
   beforeEach(() => {
     resetSyncEnclaveClient()
@@ -61,7 +95,35 @@ describe('sync-api (enclave JSON-RPC)', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.clearAllMocks()
+  })
+
+  it('gives a large push time to upload past the standard request budget', async () => {
+    vi.useFakeTimers()
+    const uploadSeconds = 12
+    const push = await startHungPush(
+      plaintextTakingSecondsToUpload(uploadSeconds),
+    )
+
+    await vi.advanceTimersByTimeAsync(
+      SYNC_ENCLAVE_TIMEOUTS.REQUEST_MS + uploadSeconds * 1000 - 1,
+    )
+    expect(push.isAborted()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await push.timedOut
+    expect(push.isAborted()).toBe(true)
+  })
+
+  it('stops waiting for a push near the enclave push deadline', async () => {
+    vi.useFakeTimers()
+    const push = await startHungPush(plaintextTakingSecondsToUpload(60))
+
+    await vi.advanceTimersByTimeAsync(SYNC_ENCLAVE_TIMEOUTS.PUSH_MAX_MS - 1)
+    expect(push.isAborted()).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await push.timedOut
+    expect(push.isAborted()).toBe(true)
   })
 
   it('push posts to /v1/sync/push with base64 plaintext + CEK', async () => {

@@ -10,8 +10,14 @@ import type {
   ProjectSyncStatus,
   UpdateProjectData,
 } from '@/types/project'
-import { logError } from '@/utils/error-handling'
+import { logError, logInfo } from '@/utils/error-handling'
 import { authTokenManager } from '../auth'
+import { decideRecovery } from '../sync-enclave/enclave-error-recovery'
+import {
+  computeBackoffDelay,
+  realScheduler,
+  type RetryScheduler,
+} from '../sync-enclave/retry-policy'
 import {
   deleteAllProjects as enclaveDeleteAllProjects,
   deleteRow as enclaveDeleteRow,
@@ -22,8 +28,13 @@ import {
   pullItemPlaintext,
   SyncEnclaveError,
   type PullItem,
+  type PushRequest,
+  type PushResponse,
 } from '../sync-enclave/sync-api'
-import type { AccountOperationGuard } from './account-operation'
+import {
+  createActiveAccountGuard,
+  type AccountOperationGuard,
+} from './account-operation'
 import {
   CloudBackupReadError,
   groupBackupPullItems,
@@ -37,6 +48,9 @@ import { ProjectDataSchema, ProjectDocumentPlaintextSchema } from './schemas'
 const PROJECT_SCOPE = 'project'
 const PROJECT_DOCUMENT_SCOPE = 'project_document'
 const ENCLAVE_PROJECT_LIST_LIMIT = 100
+const DOCUMENT_UPLOAD_MAX_RETRIES = 3
+const DOCUMENT_UPLOAD_BASE_DELAY_MS = 1000
+const DOCUMENT_UPLOAD_MAX_DELAY_MS = 8000
 
 function projectDocumentId(projectId: string, documentId: string): string {
   return `${projectId}/${documentId}`
@@ -110,6 +124,10 @@ function projectDocumentListItemFromStatus(update: {
 }
 
 export class ProjectStorageService {
+  constructor(
+    private readonly retryScheduler: RetryScheduler = realScheduler,
+  ) {}
+
   private async getHeaders(): Promise<Record<string, string>> {
     return authTokenManager.getAuthHeaders()
   }
@@ -674,7 +692,7 @@ export class ProjectStorageService {
     }
     const plaintext = new TextEncoder().encode(JSON.stringify(docPayload))
 
-    const pushResp = await enclavePush({
+    const pushResp = await this.pushNewDocument({
       scope: PROJECT_DOCUMENT_SCOPE,
       id: projectDocumentId(projectId, documentId),
       keyB64: requirePrimaryKeyB64(),
@@ -695,6 +713,43 @@ export class ProjectStorageService {
       updatedAt: now,
       content,
       thumbnailBase64,
+    }
+  }
+
+  // Every attempt replays the identical request (document id, idempotency
+  // key, encryption key, and bytes), so a save that committed before its
+  // response was lost resolves to the original document instead of a
+  // duplicate.
+  private async pushNewDocument(request: PushRequest): Promise<PushResponse> {
+    const guard = createActiveAccountGuard()
+    try {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await enclavePush(request)
+        } catch (error) {
+          if (
+            attempt >= DOCUMENT_UPLOAD_MAX_RETRIES ||
+            decideRecovery(error).action.type !== 'retry'
+          ) {
+            throw error
+          }
+          const delay = computeBackoffDelay(
+            attempt,
+            DOCUMENT_UPLOAD_BASE_DELAY_MS,
+            DOCUMENT_UPLOAD_MAX_DELAY_MS,
+            this.retryScheduler.random(),
+          )
+          logInfo('Project document save failed, retrying', {
+            component: 'ProjectStorage',
+            action: 'uploadDocument',
+            metadata: { id: request.id, attempt: attempt + 1, delay },
+          })
+          await this.retryScheduler.sleep(delay)
+          guard.assertCurrent()
+        }
+      }
+    } finally {
+      guard.dispose()
     }
   }
 

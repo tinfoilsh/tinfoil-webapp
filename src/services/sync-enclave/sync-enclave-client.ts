@@ -92,9 +92,14 @@ type SyncRequestInit = Omit<RequestInit, 'body'> & {
   body?: string
   skipAuth?: boolean
   requestScope?: SyncEnclaveRequestScope
+  /** Overall request budget; defaults to SYNC_ENCLAVE_TIMEOUTS.REQUEST_MS. */
+  timeoutMs?: number
 }
 
-type SyncRequestOptions = Pick<SyncRequestInit, 'requestScope' | 'signal'>
+type SyncRequestOptions = Pick<
+  SyncRequestInit,
+  'requestScope' | 'signal' | 'timeoutMs'
+>
 
 export class SyncEnclaveClient {
   private constructor(private readonly secure: SecureClient) {}
@@ -152,6 +157,7 @@ export class SyncEnclaveClient {
       skipAuth: _skipAuth,
       signal: callerSignal,
       requestScope,
+      timeoutMs = SYNC_ENCLAVE_TIMEOUTS.REQUEST_MS,
       ...fetchInit
     } = init
     const requestUrl = new URL(path, SYNC_ENCLAVE_URL).toString()
@@ -248,7 +254,7 @@ export class SyncEnclaveClient {
         }
         return undefined as T
       },
-      SYNC_ENCLAVE_TIMEOUTS.REQUEST_MS,
+      timeoutMs,
       () => new SyncRequestTimeoutError(),
       [callerSignal, requestScope ? getRequestScopeSignal(requestScope) : null],
     )

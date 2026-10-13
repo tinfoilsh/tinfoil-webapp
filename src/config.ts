@@ -38,6 +38,12 @@ export const SYNC_ENCLAVE_REPO =
 export const SYNC_ENCLAVE_TIMEOUTS = {
   READY_MS: 30000,
   REQUEST_MS: 30000,
+  // Pushes add the time to upload their body at this minimum uplink speed,
+  // so large saves on slow connections are not cut off at REQUEST_MS.
+  PUSH_MIN_UPLOAD_BYTES_PER_SECOND: 128 * 1024,
+  // The enclave stops reading a push body after 60s and ends the push at
+  // 60s, so waiting much longer than that cannot succeed.
+  PUSH_MAX_MS: 75000,
 } as const
 
 // Pagination settings
