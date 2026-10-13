@@ -1,7 +1,28 @@
-import type { ComponentPropsWithoutRef, CSSProperties } from 'react'
+import {
+  useEffect,
+  useRef,
+  type ComponentPropsWithoutRef,
+  type CSSProperties,
+  type KeyboardEvent,
+} from 'react'
 import { SIDEBAR_PATTERN_EDGE_WIDTH_PX } from '../ui/sidebar-pattern-edge'
 import { cn } from '../ui/utils'
 import { CONSTANTS } from './constants'
+
+/** Id of the expanded sidebar, for the `aria-controls` of controls that open it. */
+export const SIDEBAR_PANEL_ID = 'sidebar-panel'
+
+// Controls that open the sidebar carry `data-sidebar-toggle` so focus can
+// return to one on close; its close button carries `data-sidebar-close` so it
+// can take focus on open.
+const SIDEBAR_TOGGLE_SELECTOR = '[data-sidebar-toggle]'
+const SIDEBAR_CLOSE_SELECTOR = '[data-sidebar-close]'
+
+function isFocusLost(element: Element | null): boolean {
+  return (
+    !element || element === document.body || element.closest('[inert]') !== null
+  )
+}
 
 type SidebarRailProps = ComponentPropsWithoutRef<'nav'> & {
   isOpen: boolean
@@ -45,6 +66,8 @@ type SidebarPanelProps = ComponentPropsWithoutRef<'div'> & {
   isOpen: boolean
   isMobile: boolean
   animate?: boolean
+  /** Closes the mobile sidebar when Escape is pressed inside it. */
+  onDismiss?: () => void
 }
 
 export function SidebarPanel({
@@ -52,13 +75,64 @@ export function SidebarPanel({
   isOpen,
   isMobile,
   animate = true,
+  onDismiss,
   className,
   style,
+  onKeyDown,
   ...props
 }: SidebarPanelProps) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const wasOpenRef = useRef(isOpen)
+
+  useEffect(() => {
+    const wasOpen = wasOpenRef.current
+    wasOpenRef.current = isOpen
+    const panel = panelRef.current
+    if (wasOpen === isOpen || !panel) return
+    const active = document.activeElement
+
+    if (isOpen) {
+      // The control that opened the sidebar unmounts or turns inert, and on
+      // mobile the sidebar covers the chat, so move focus into the sidebar
+      // rather than leaving it on the page body.
+      if (panel.contains(active) || (!isMobile && !isFocusLost(active))) return
+      panel
+        .querySelector<HTMLElement>(SIDEBAR_CLOSE_SELECTOR)
+        ?.focus({ preventScroll: true })
+      return
+    }
+
+    // Closing makes the panel inert, so return focus to whichever control
+    // reopens it unless focus already moved somewhere else.
+    if (!panel.contains(active) && !isFocusLost(active)) return
+    Array.from(document.querySelectorAll<HTMLElement>(SIDEBAR_TOGGLE_SELECTOR))
+      .find((toggle) => !toggle.closest('[inert]'))
+      ?.focus({ preventScroll: true })
+  }, [isOpen, isMobile])
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    onKeyDown?.(event)
+    // React also delivers keys from menus portaled out of the panel; those
+    // close themselves, so only Escape from the panel's own DOM dismisses it.
+    if (
+      event.key !== 'Escape' ||
+      event.defaultPrevented ||
+      !isMobile ||
+      !onDismiss ||
+      !event.currentTarget.contains(event.target as Node)
+    ) {
+      return
+    }
+    event.preventDefault()
+    onDismiss()
+  }
+
   return (
     <Component
+      id={SIDEBAR_PANEL_ID}
       {...props}
+      ref={panelRef}
+      onKeyDown={handleKeyDown}
       data-sidebar-panel
       aria-hidden={!isOpen}
       inert={!isOpen}

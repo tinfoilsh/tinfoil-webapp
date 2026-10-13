@@ -83,6 +83,7 @@ export function MessageOverflowMenu({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        event.preventDefault()
         setIsOpen(false)
         triggerRef.current?.focus()
         return
@@ -152,7 +153,10 @@ export function MessageOverflowMenu({
         <RxDotsVertical className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
       {!isOpen && (
-        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/more:opacity-100">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/more:opacity-100"
+        >
           More
         </span>
       )}

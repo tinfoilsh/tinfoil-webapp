@@ -279,6 +279,40 @@ describe('ChatMessages recovery indicator', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('keeps the conversation log out of live announcements', () => {
+    const { rerender } = render(
+      <ChatMessages
+        {...baseProps}
+        pendingRecoveries={[]}
+        isWaitingForResponse
+        isStreamingResponse
+      />,
+    )
+    const log = screen.getByRole('log', { name: 'Conversation' })
+    expect(log).toHaveAttribute('aria-live', 'off')
+    expect(log).toHaveAttribute('aria-busy', 'true')
+
+    rerender(
+      <ChatMessages
+        {...baseProps}
+        pendingRecoveries={[]}
+        messages={[
+          ...messages,
+          {
+            role: 'assistant',
+            turnId: 'turn-1',
+            content: 'Answer',
+            timestamp: new Date('2026-07-21T00:00:01.000Z'),
+          },
+        ]}
+      />,
+    )
+    expect(screen.getByRole('log', { name: 'Conversation' })).toBe(log)
+    expect(log).toHaveAttribute('aria-live', 'off')
+    expect(log).toHaveAttribute('aria-busy', 'false')
+    expect(log).toHaveTextContent('assistant: Answer')
+  })
+
   it('ignores an active recovery after its pending envelope is removed', () => {
     render(
       <ChatMessages

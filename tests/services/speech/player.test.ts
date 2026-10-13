@@ -226,6 +226,51 @@ describe('buffered speech playback', () => {
     expect(player.getSnapshot().status).toBe('idle')
   })
 
+  it('stops on an unhandled Escape key from anywhere on the page', async () => {
+    await start()
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+    expect(generation.requests.every((request) => request.signal.aborted)).toBe(
+      true,
+    )
+    expect(player.getSnapshot()).toEqual({ owner: null, status: 'idle' })
+    expect(audio.close).toHaveBeenCalledOnce()
+  })
+
+  it('keeps reading when Escape was already handled or another key is pressed', async () => {
+    await start()
+    const dialogEscape = vi.fn((event: KeyboardEvent) => event.preventDefault())
+    document.addEventListener('keydown', dialogEscape, { capture: true })
+    try {
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+    } finally {
+      document.removeEventListener('keydown', dialogEscape, { capture: true })
+    }
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+    expect(dialogEscape).toHaveBeenCalledOnce()
+    expect(generation.requests.some((request) => request.signal.aborted)).toBe(
+      false,
+    )
+    expect(player.getSnapshot()).toEqual({ owner, status: 'loading' })
+  })
+
   it('shows an actionable error if the browser closes playback', async () => {
     await start()
     audio.state = 'closed'

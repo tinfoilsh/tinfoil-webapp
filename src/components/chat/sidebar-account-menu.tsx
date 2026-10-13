@@ -272,6 +272,7 @@ export function SidebarAccountMenu({
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      event.preventDefault()
       closeAndRestoreFocus()
     }
 

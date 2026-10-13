@@ -699,10 +699,13 @@ export function ChatMessages({
 
   return (
     <ImageGalleryProvider messages={messages}>
+      {/* Not a live region: ChatAnnouncer reads each finished response once.
+          role="log" implies aria-live="polite", which would read the
+          response (and every message of a newly opened chat) a second time. */}
       <div
         role="log"
         aria-label="Conversation"
-        aria-live="polite"
+        aria-live="off"
         aria-busy={isStreamingResponse || hasActiveRecovery}
         className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
       >

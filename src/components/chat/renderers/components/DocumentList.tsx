@@ -85,6 +85,7 @@ export const DocumentList = memo(function DocumentList({
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault()
         setModalOpen(false)
       }
     }

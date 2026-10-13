@@ -12,7 +12,11 @@ import { useDrag } from '@/components/chat/drag-context'
 import { consumeFavoriteDrop } from '@/components/chat/favorite-drag'
 import type { SettingsTab } from '@/components/chat/settings-modal'
 import { SidebarAccountMenu } from '@/components/chat/sidebar-account-menu'
-import { SidebarPanel, SidebarRail } from '@/components/chat/sidebar-layout'
+import {
+  SIDEBAR_PANEL_ID,
+  SidebarPanel,
+  SidebarRail,
+} from '@/components/chat/sidebar-layout'
 import { TypingAnimation } from '@/components/chat/typing-animation'
 import { useFavoriteDropTarget } from '@/components/chat/use-favorite-drop-target'
 import { Link } from '@/components/link'
@@ -706,6 +710,9 @@ export function ProjectSidebar({
               onClick={() => setIsOpen(true)}
               className="group/logo relative rounded-lg p-2"
               aria-label="Expand sidebar"
+              aria-expanded={isOpen}
+              aria-controls={SIDEBAR_PANEL_ID}
+              data-sidebar-toggle
             >
               <TfFolder
                 className="h-6 w-6 !text-content-secondary group-hover/logo:opacity-0"
@@ -783,6 +790,7 @@ export function ProjectSidebar({
         isOpen={isOpen}
         isMobile={isMobile}
         style={sidebarTintStyle}
+        onDismiss={() => setIsOpen(false)}
       >
         <SidebarPatternEdge isDarkMode={isDarkMode} />
         {/* Header: the editable project title takes the logo's slot */}
@@ -810,6 +818,7 @@ export function ProjectSidebar({
                   onBlur={handleSaveProjectName}
                   onKeyDown={(e) => {
                     if (e.key === 'Escape') {
+                      e.preventDefault()
                       setEditingProjectName(project.name)
                       setIsEditingProjectName(false)
                     }
@@ -864,6 +873,7 @@ export function ProjectSidebar({
               onClick={() => setIsOpen(false)}
               className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-secondary"
               aria-label="Close sidebar"
+              data-sidebar-close
             >
               <TfSidebarClose
                 className="h-5 w-5 -scale-x-100"
