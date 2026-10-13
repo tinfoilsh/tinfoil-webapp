@@ -1,8 +1,10 @@
+import { CLOUD_SYNC } from '@/config'
 import {
   CloudBackupReadError,
   unwrapBackupPullResult,
 } from '@/services/cloud/backup-read-error'
 import { ProjectStorageService } from '@/services/cloud/project-storage'
+import { MAX_PULL_IDS } from '@/services/sync-enclave/wire-contract'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -84,9 +86,30 @@ async function restoreFromPush(storage: ProjectStorageService) {
   return storage.getDocuments('project-1', ['doc-1'])
 }
 
+// Answers every requested id with a readable document whose filename and
+// content name the composite id the enclave was asked for.
+function servePulledDocuments() {
+  mocks.enclavePull.mockImplementation(async ({ ids }: { ids: string[] }) => ({
+    items: ids.map((id) => ({ id, ok: true, etag: '1' })),
+  }))
+  mocks.pullItemPlaintext.mockImplementation((item: { id: string }) =>
+    new TextEncoder().encode(
+      JSON.stringify({
+        content: `Text of ${item.id}`,
+        filename: `${item.id}.pdf`,
+        contentType: 'application/pdf',
+      }),
+    ),
+  )
+}
+
 describe('ProjectStorageService documents', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.enclavePull.mockReset()
+    mocks.enclavePush.mockReset()
+    mocks.enclaveListStatus.mockReset()
+    mocks.pullItemPlaintext.mockReset()
   })
 
   it('persists and restores the original file size', async () => {
@@ -161,6 +184,63 @@ describe('ProjectStorageService documents', () => {
     const documents = await storage.getDocuments('project-1', ['doc-1'])
 
     expect(documents.get('doc-1')?.sizeBytes).toBe(8)
+  })
+
+  it('loads a project with more documents than one pull allows', async () => {
+    const storage = new ProjectStorageService()
+    const documentIds = Array.from(
+      { length: MAX_PULL_IDS + 5 },
+      (_, index) => `doc-${index}`,
+    )
+    servePulledDocuments()
+
+    const documents = await storage.getDocuments('project-1', documentIds)
+
+    const requests = mocks.enclavePull.mock.calls.map(([request]) => request)
+    expect(requests.length).toBeGreaterThan(1)
+    for (const request of requests) {
+      expect(request.scope).toBe('project_document')
+      expect(request.ids.length).toBeLessThanOrEqual(CLOUD_SYNC.PULL_BATCH_SIZE)
+    }
+    expect(requests.flatMap((request) => request.ids)).toEqual(
+      documentIds.map((id) => `project-1/${id}`),
+    )
+    expect(
+      documentIds.map((id) => {
+        const document = documents.get(id)
+        return {
+          filename: document?.filename,
+          content: document?.content,
+          decryptionFailed: document?.decryptionFailed,
+        }
+      }),
+    ).toEqual(
+      documentIds.map((id) => ({
+        filename: `project-1/${id}.pdf`,
+        content: `Text of project-1/${id}`,
+        decryptionFailed: undefined,
+      })),
+    )
+  })
+
+  it('fails the whole load when a later batch cannot be pulled', async () => {
+    const storage = new ProjectStorageService()
+    const documentIds = Array.from(
+      { length: CLOUD_SYNC.PULL_BATCH_SIZE + 1 },
+      (_, index) => `doc-${index}`,
+    )
+    servePulledDocuments()
+    const transportFailure = new Error('network unavailable')
+    mocks.enclavePull
+      .mockImplementationOnce(async ({ ids }: { ids: string[] }) => ({
+        items: ids.map((id) => ({ id, ok: true, etag: '1' })),
+      }))
+      .mockRejectedValueOnce(transportFailure)
+
+    await expect(storage.getDocuments('project-1', documentIds)).rejects.toBe(
+      transportFailure,
+    )
+    expect(mocks.enclavePull).toHaveBeenCalledTimes(2)
   })
 
   it('strictly distinguishes malformed document data from runtime failures', async () => {

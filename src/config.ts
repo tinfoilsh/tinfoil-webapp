@@ -56,10 +56,11 @@ export const CLOUD_SYNC = {
   // Requires upgraded readers and a server-enforced writer version boundary.
   DOCUMENT_ATTACHMENT_WRITES_ENABLED: true,
   RETRY_DELAY: 100, // milliseconds
-  // Chats per content pull request. The enclave accepts up to MAX_PULL_IDS
-  // but that bound protects the server; the client must decrypt and parse
-  // the whole response on the main thread before REQUEST_MS elapses, and
-  // chats with attachments can be megabytes each, so keep batches small.
+  // Chats or project documents per content pull request. The enclave
+  // accepts up to MAX_PULL_IDS but that bound protects the server; the
+  // client must decrypt and parse the whole response on the main thread
+  // before REQUEST_MS elapses, and chats with attachments or extracted
+  // document text can be megabytes each, so keep batches small.
   PULL_BATCH_SIZE: 20,
   // Mirrors the sync enclave's envelope plaintext cap. Checked before
   // any bytes leave the device so an oversized chat fails fast instead
