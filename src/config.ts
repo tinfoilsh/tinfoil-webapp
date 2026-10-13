@@ -37,6 +37,8 @@ export const SYNC_ENCLAVE_REPO =
 
 export const SYNC_ENCLAVE_TIMEOUTS = {
   READY_MS: 30000,
+  // The enclave's standard request budget; routes it gives longer are in
+  // EXTENDED_ROUTE_BUDGETS_MS.
   REQUEST_MS: 30000,
 } as const
 

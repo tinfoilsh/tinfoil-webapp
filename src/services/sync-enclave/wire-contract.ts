@@ -85,6 +85,26 @@ export const PULL_ITEM_CODES = {
  */
 export const PULL_ITEM_CODE_UNSPECIFIED = 'UNSPECIFIED'
 
+/**
+ * Request budgets of the enclave routes the webapp calls that run longer
+ * than the standard 30 seconds; see confidential-sync
+ * internal/server/http.go (SyncPushRequestTimeout, AttachmentRequestTimeout).
+ * The client waits as long as the enclave works on a request, no longer.
+ */
+const PUSH_REQUEST_BUDGET_MS = 60_000
+const TRANSFER_REQUEST_BUDGET_MS = 5 * 60_000
+
+export const EXTENDED_ROUTE_BUDGETS_MS: Readonly<
+  Partial<Record<string, number>>
+> = {
+  '/v1/sync/push': PUSH_REQUEST_BUDGET_MS,
+  '/v1/sync/fork': TRANSFER_REQUEST_BUDGET_MS,
+  '/v1/attachment/put': TRANSFER_REQUEST_BUDGET_MS,
+  '/v1/attachment/get': TRANSFER_REQUEST_BUDGET_MS,
+  '/v1/attachment/get-public': TRANSFER_REQUEST_BUDGET_MS,
+  '/v1/import/upload': TRANSFER_REQUEST_BUDGET_MS,
+}
+
 export type SyncHeaderName = (typeof SYNC_HEADERS)[keyof typeof SYNC_HEADERS]
 export type RestoreDeletedHeaderName =
   (typeof RESTORE_DELETED_HEADERS)[keyof typeof RESTORE_DELETED_HEADERS]
