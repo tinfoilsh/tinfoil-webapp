@@ -723,34 +723,12 @@ export const CodeBlock = memo(function CodeBlock({
   const canShowPreview =
     languageSupportsPreview && (isExecutable || !isStreaming)
 
-  const userHasToggledRef = useRef(false)
-
   const shouldStartInPreview =
     codeIsWorthPreviewing && !isExecutable && !isStreaming
 
   const [viewMode, setViewMode] = useState<ViewMode>(
     shouldStartInPreview ? 'preview' : 'code',
   )
-
-  const wasStreamingRef = useRef(isStreaming)
-  useEffect(() => {
-    const streamingJustEnded = wasStreamingRef.current && !isStreaming
-    wasStreamingRef.current = isStreaming
-
-    if (
-      streamingJustEnded &&
-      codeIsWorthPreviewing &&
-      !isExecutable &&
-      !userHasToggledRef.current
-    ) {
-      setViewMode('preview')
-    }
-  }, [isStreaming, codeIsWorthPreviewing, isExecutable])
-
-  const handleViewModeChange = (mode: ViewMode) => {
-    userHasToggledRef.current = true
-    setViewMode(mode)
-  }
 
   const showPreview =
     canShowPreview && codeIsWorthPreviewing && viewMode === 'preview'
@@ -790,7 +768,7 @@ export const CodeBlock = memo(function CodeBlock({
         <div className="absolute left-2 top-2 z-10">
           <ViewModeToggle
             mode={viewMode}
-            onModeChange={handleViewModeChange}
+            onModeChange={setViewMode}
             isDarkMode={isDarkMode}
             language={language}
           />
