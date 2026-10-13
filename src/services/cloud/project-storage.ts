@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '@/config'
+import { API_BASE_URL, CLOUD_SYNC } from '@/config'
 import type {
   CreateProjectData,
   Project,
@@ -23,6 +23,7 @@ import {
   SyncEnclaveError,
   type PullItem,
 } from '../sync-enclave/sync-api'
+import { MAX_PULL_IDS } from '../sync-enclave/wire-contract'
 import type { AccountOperationGuard } from './account-operation'
 import {
   CloudBackupReadError,
@@ -37,6 +38,10 @@ import { ProjectDataSchema, ProjectDocumentPlaintextSchema } from './schemas'
 const PROJECT_SCOPE = 'project'
 const PROJECT_DOCUMENT_SCOPE = 'project_document'
 const ENCLAVE_PROJECT_LIST_LIMIT = 100
+const DOCUMENT_PULL_BATCH_SIZE = Math.min(
+  CLOUD_SYNC.PULL_BATCH_SIZE,
+  MAX_PULL_IDS,
+)
 
 function projectDocumentId(projectId: string, documentId: string): string {
   return `${projectId}/${documentId}`
@@ -880,9 +885,11 @@ export class ProjectStorageService {
   }
 
   // Batch variant of getDocument: pulls every requested document for a
-  // project in a single enclave round-trip and returns the decoded
-  // ProjectDocument objects keyed by id. Unavailable rows are represented
-  // explicitly so callers never mistake a pull failure for an empty file.
+  // project and returns the decoded ProjectDocument objects keyed by id.
+  // Requests are split into small batches so a large project stays under
+  // the enclave's id cap and each response finishes inside the request
+  // deadline. Unavailable rows are represented explicitly so callers never
+  // mistake a pull failure for an empty file.
   async getDocuments(
     projectId: string,
     documentIds: string[],
@@ -902,13 +909,21 @@ export class ProjectStorageService {
         compositeToOriginal.set(composite, documentIds[idx])
       })
 
-      const resp = await enclavePull({
-        scope: PROJECT_DOCUMENT_SCOPE,
-        ids: compositeIds,
-        keys,
-      })
+      const items: PullItem[] = []
+      for (
+        let start = 0;
+        start < compositeIds.length;
+        start += DOCUMENT_PULL_BATCH_SIZE
+      ) {
+        const resp = await enclavePull({
+          scope: PROJECT_DOCUMENT_SCOPE,
+          ids: compositeIds.slice(start, start + DOCUMENT_PULL_BATCH_SIZE),
+          keys,
+        })
+        items.push(...resp.items)
+      }
 
-      for (const item of resp.items) {
+      for (const item of items) {
         const originalId = compositeToOriginal.get(item.id)
         if (!originalId) continue
         if (!item.ok) {
