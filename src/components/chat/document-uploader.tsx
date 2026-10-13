@@ -26,6 +26,73 @@ import type { DocumentPage, DocumentProcessingResult } from './types'
  */
 export const getFileIconType = getFileIcon
 
+// Every uploader in the tab shares the device's uplink and the document
+// service, whose admission queue serves all users, so files convert two at
+// a time however many were selected.
+const MAX_CONCURRENT_CONVERSIONS = 2
+let activeConversions = 0
+const waitingConversions: Array<() => void> = []
+
+async function acquireConversionSlot(): Promise<() => void> {
+  if (activeConversions < MAX_CONCURRENT_CONVERSIONS) {
+    activeConversions++
+  } else {
+    await new Promise<void>((resolve) => waitingConversions.push(resolve))
+  }
+  return () => {
+    const next = waitingConversions.shift()
+    if (next) next()
+    else activeConversions--
+  }
+}
+
+// The delay a capacity rejection asks for, or null when the response is
+// final.
+function retryAfterMs(response: Response): number | null {
+  if (response.status !== 429 && response.status !== 503) return null
+  const header = response.headers.get('Retry-After')
+  const seconds = header ? Number(header) : NaN
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : null
+}
+
+// Converts a file once a slot is free. A capacity rejection is retried
+// after the delay the service asks for while the retry still lands within
+// the processing deadline, which starts once the file has a slot.
+async function convertDocument(
+  endpoint: string,
+  file: File,
+): Promise<Response> {
+  const release = await acquireConversionSlot()
+  const deadline = Date.now() + CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS
+  const controller = new AbortController()
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS,
+  )
+  try {
+    const secureFetch = await getSecureFetch()
+    const body = new FormData()
+    body.append('files', file)
+    for (;;) {
+      const response = await secureFetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${await getSessionToken()}` },
+        body,
+        signal: controller.signal,
+      })
+      const delayMs = retryAfterMs(response)
+      if (delayMs === null || Date.now() + delayMs >= deadline) {
+        return response
+      }
+      await response.body?.cancel()
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
+  } finally {
+    clearTimeout(timeoutId)
+    release()
+  }
+}
+
 /**
  * Handles the document upload and processing logic
  */
@@ -291,11 +358,6 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
       }
 
       // For non-txt files, proceed with API processing
-      // Create a FormData object for the file
-      const formData = new FormData()
-
-      formData.append('files', file)
-
       const { endpoint } = await getDocUploadModel()
       // Decided at upload time based on the current model: vision-capable
       // chat attachments get per-page images, while persistent project
@@ -307,22 +369,7 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
           ? `${endpoint}?mode=images`
           : endpoint
 
-      const apiKey = await getSessionToken()
-      const secureFetch = await getSecureFetch()
-      const controller = new AbortController()
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS,
-      )
-
-      const response = await secureFetch(fetchEndpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: formData,
-        signal: controller.signal,
-      }).finally(() => clearTimeout(timeoutId))
+      const response = await convertDocument(fetchEndpoint, file)
 
       // Handle 204 No Content response
       if (response.status === 204) {
