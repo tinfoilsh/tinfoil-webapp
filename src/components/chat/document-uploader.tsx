@@ -1,4 +1,5 @@
 import { getAIModels, type BaseModel } from '@/config/models'
+import { createActiveAccountGuard } from '@/services/cloud/account-operation'
 import {
   getSecureFetch,
   getSessionToken,
@@ -25,6 +26,136 @@ import type { DocumentPage, DocumentProcessingResult } from './types'
  * Re-export getFileIconType for backward compatibility
  */
 export const getFileIconType = getFileIcon
+
+// Every uploader in the tab shares the device's uplink and the document
+// service, whose admission queue serves all users, so files convert two at
+// a time however many were selected.
+const MAX_CONCURRENT_CONVERSIONS = 2
+let activeConversions = 0
+const waitingConversions: Array<() => void> = []
+
+async function acquireConversionSlot(signal: AbortSignal): Promise<() => void> {
+  signal.throwIfAborted()
+  if (activeConversions < MAX_CONCURRENT_CONVERSIONS) {
+    activeConversions++
+  } else {
+    await new Promise<void>((resolve, reject) => {
+      const resume = () => {
+        signal.removeEventListener('abort', abort)
+        resolve()
+      }
+      const abort = () => {
+        waitingConversions.splice(waitingConversions.indexOf(resume), 1)
+        reject(signal.reason)
+      }
+      signal.addEventListener('abort', abort, { once: true })
+      waitingConversions.push(resume)
+    })
+  }
+  return () => {
+    const next = waitingConversions.shift()
+    if (next) next()
+    else activeConversions--
+  }
+}
+
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, delayMs)
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+// The delay a capacity rejection asks for, or null when the response is
+// final.
+function retryAfterMs(response: Response, errorText: string): number | null {
+  if (response.status !== 429 && response.status !== 503) return null
+  // The router also sends Retry-After for exhausted quotas. Those require
+  // a user decision rather than holding a conversion slot until reset.
+  try {
+    const error = JSON.parse(errorText)?.error
+    if (
+      error?.code === 'insufficient_quota' ||
+      error?.type === 'insufficient_quota'
+    )
+      return null
+  } catch {
+    // The document service itself can return a plain-text capacity error.
+  }
+  const header = response.headers.get('Retry-After')
+  if (!header) return null
+  const delay = /^\d+$/.test(header.trim())
+    ? Number(header) * 1000
+    : Date.parse(header) - Date.now()
+  // A zero delay or a date in the past must not create a tight retry loop.
+  return Number.isFinite(delay) ? Math.max(1000, delay) : null
+}
+
+// Converts a file once a slot is free. A capacity rejection is retried
+// after the delay the service asks for while the retry still lands within
+// the processing deadline, which starts once the file has a slot.
+async function convertDocument(
+  endpoint: string,
+  file: File,
+  account: ReturnType<typeof createActiveAccountGuard>,
+): Promise<DocumentProcessingResult> {
+  const release = await acquireConversionSlot(account.signal)
+  const deadline = Date.now() + CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS
+  const controller = new AbortController()
+  const abortForAccount = () => controller.abort(account.signal.reason)
+  account.signal.addEventListener('abort', abortForAccount, { once: true })
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS,
+  )
+  try {
+    account.assertCurrent()
+    const secureFetch = await getSecureFetch()
+    const body = new FormData()
+    body.append('files', file)
+    for (;;) {
+      account.assertCurrent()
+      const token = await getSessionToken()
+      account.assertCurrent()
+      controller.signal.throwIfAborted()
+      const response = await secureFetch(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body,
+        signal: controller.signal,
+      })
+      if (response.ok) {
+        const result: DocumentProcessingResult =
+          response.status === 204 ? {} : await response.json()
+        account.assertCurrent()
+        controller.signal.throwIfAborted()
+        return result
+      }
+      const errorText = await response.text()
+      account.assertCurrent()
+      controller.signal.throwIfAborted()
+      const delayMs = retryAfterMs(response, errorText)
+      if (delayMs === null || Date.now() + delayMs >= deadline) {
+        throw new Error(
+          `Document upload failed with status: ${response.status}. ${errorText}`,
+        )
+      }
+      await waitForRetry(delayMs, controller.signal)
+    }
+  } finally {
+    account.signal.removeEventListener('abort', abortForAccount)
+    clearTimeout(timeoutId)
+    release()
+  }
+}
 
 /**
  * Handles the document upload and processing logic
@@ -164,6 +295,7 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
     options?: { requireTextContent?: boolean },
   ) => {
     const documentId = getDocumentId()
+    const account = createActiveAccountGuard()
 
     try {
       setUploadingDocuments((prev) => ({
@@ -291,11 +423,6 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
       }
 
       // For non-txt files, proceed with API processing
-      // Create a FormData object for the file
-      const formData = new FormData()
-
-      formData.append('files', file)
-
       const { endpoint } = await getDocUploadModel()
       // Decided at upload time based on the current model: vision-capable
       // chat attachments get per-page images, while persistent project
@@ -307,50 +434,12 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
           ? `${endpoint}?mode=images`
           : endpoint
 
-      const apiKey = await getSessionToken()
-      const secureFetch = await getSecureFetch()
-      const controller = new AbortController()
-      const timeoutId = setTimeout(
-        () => controller.abort(),
-        CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS,
+      const processingResult = await convertDocument(
+        fetchEndpoint,
+        file,
+        account,
       )
-
-      const response = await secureFetch(fetchEndpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: formData,
-        signal: controller.signal,
-      }).finally(() => clearTimeout(timeoutId))
-
-      // Handle 204 No Content response
-      if (response.status === 204) {
-        await onSuccess('', documentId)
-        return
-      }
-
-      // Check if submission successful
-      if (!response.ok) {
-        const errorText = await response.text()
-        logError(
-          `Document upload failed with status: ${response.status}`,
-          undefined,
-          {
-            component: 'DocumentUploader',
-            action: 'uploadDocument',
-            metadata: { status: response.status, errorText },
-          },
-        )
-
-        throw new Error(
-          `Document upload failed with status: ${response.status}. ${errorText}`,
-        )
-      }
-
-      // Process the direct response
-      const processingResult =
-        (await response.json()) as DocumentProcessingResult
+      account.assertCurrent()
 
       const doc = processingResult.document
       if (doc?.md_content || doc?.pages?.length) {
@@ -377,6 +466,7 @@ export const useDocumentUploader = (isCurrentModelMultimodal?: boolean) => {
         documentId,
       )
     } finally {
+      account.dispose()
       // Remove this document from uploading state
       setUploadingDocuments((prev) => {
         const newState = { ...prev }

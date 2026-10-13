@@ -101,7 +101,8 @@ export const CONSTANTS = {
   LONG_PASTE_THRESHOLD: 3000,
   // Title generation settings
   TITLE_GENERATION_WORD_THRESHOLD: 100, // Words needed to trigger early title generation during streaming
-  // Document processing timeout in milliseconds (10 minutes)
+  // Document processing timeout in milliseconds (10 minutes), counted from
+  // when the file's conversion starts rather than while it waits its turn
   DOCUMENT_PROCESSING_TIMEOUT_MS: 600000,
   // Retry settings
   VERIFICATION_MAX_RETRIES: 5,
