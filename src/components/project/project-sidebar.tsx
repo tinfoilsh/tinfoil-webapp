@@ -46,6 +46,10 @@ import {
   getNewChatPath,
   isPlainPrimaryClick,
 } from '@/utils/navigation'
+import {
+  estimateTokenCount,
+  getContextTokenBudget,
+} from '@/utils/token-estimation'
 import { useAuth } from '@clerk/react'
 import {
   ArrowLeftIcon,
@@ -65,12 +69,13 @@ import {
   TfSidebarOpen,
   TfThumbtack,
   TfTrash,
+  TfWarning,
   TfWriting,
   TfWriting2,
 } from '@tinfoilsh/tinfoil-icons'
 import { AnimatePresence, motion } from 'framer-motion'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useProject } from './project-context'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { buildProjectContext, useProject } from './project-context'
 
 const MOBILE_BREAKPOINT = 1024
 const FAVORITES_PANEL_ID = 'project-sidebar-favorites-panel'
@@ -132,6 +137,8 @@ interface ProjectSidebarProps {
   onManualSync?: () => Promise<boolean>
   isSyncing?: boolean
   lastSyncFailed?: boolean
+  /** Context window of the model the next reply will use, once known. */
+  contextWindowTokens?: number
 }
 
 function Shimmer({ className }: { className?: string }) {
@@ -246,6 +253,7 @@ export function ProjectSidebar({
   onManualSync,
   isSyncing = false,
   lastSyncFailed = false,
+  contextWindowTokens,
 }: ProjectSidebarProps) {
   const { isSignedIn } = useAuth()
   const syncNeedsAttention = useSyncHealthAttention()
@@ -272,6 +280,19 @@ export function ProjectSidebar({
   } = useProject()
   const { handleDocumentUpload: processDocument, isDocumentUploading } =
     useDocumentUploader()
+  // Every reply in the project carries the full project context, so it has
+  // to fit in the selected model's context budget alongside the chat.
+  const projectContextTokens = useMemo(
+    () =>
+      project && contextWindowTokens !== undefined
+        ? estimateTokenCount(buildProjectContext(project, projectDocuments))
+        : 0,
+    [project, projectDocuments, contextWindowTokens],
+  )
+  const contextBudgetTokens = getContextTokenBudget(contextWindowTokens)
+  const projectExceedsContext =
+    contextWindowTokens !== undefined &&
+    projectContextTokens > contextBudgetTokens
   const [settingsExpanded, setSettingsExpanded] = useState(false)
   const [isFavoritesExpanded, setIsFavoritesExpanded] = useState(false)
   const hasLoadedFavoritesExpandedRef = useRef(false)
@@ -1317,6 +1338,17 @@ export function ProjectSidebar({
                 <span className="font-aeonik font-medium">
                   Documents {isLoading ? '' : `(${projectDocuments.length})`}
                 </span>
+                {projectExceedsContext && (
+                  <>
+                    <TfWarning
+                      className="h-3.5 w-3.5 text-amber-500"
+                      aria-hidden="true"
+                    />
+                    <span className="sr-only">
+                      Too large for the selected model
+                    </span>
+                  </>
+                )}
               </span>
               {documentsExpanded && !isLoading ? (
                 <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
@@ -1347,6 +1379,22 @@ export function ProjectSidebar({
                   )}
                 >
                   <div className="px-2 py-3">
+                    {projectExceedsContext && (
+                      <p
+                        role="status"
+                        className={cn(
+                          'mb-2 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 font-aeonik-fono text-xs',
+                          isDarkMode ? 'text-amber-400' : 'text-amber-700',
+                        )}
+                      >
+                        This project needs about{' '}
+                        {Math.round(projectContextTokens / 1000)}k tokens of
+                        context, but the selected model can fit about{' '}
+                        {Math.round(contextBudgetTokens / 1000)}k. Replies here
+                        may fail. Remove some documents or split them across
+                        projects.
+                      </p>
+                    )}
                     {/* Drag and drop zone - at top */}
                     <button
                       type="button"

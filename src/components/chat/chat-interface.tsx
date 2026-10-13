@@ -4188,6 +4188,7 @@ export function ChatInterface({
                   onManualSync={handleManualSync}
                   isSyncing={syncing}
                   lastSyncFailed={lastSyncFailed}
+                  contextWindowTokens={contextWindowTokens}
                 />
               ) : (
                 <ProjectSidebar
