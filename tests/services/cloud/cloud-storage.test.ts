@@ -7,8 +7,13 @@ import {
 } from '@/services/cloud/cloud-storage'
 import type { AttachmentRewrite } from '@/services/storage/indexed-db'
 import { SyncEnclaveError, SyncNetworkError } from '@/services/sync-enclave'
+import { decideRecovery } from '@/services/sync-enclave/enclave-error-recovery'
 import { MAX_PULL_IDS } from '@/services/sync-enclave/sync-api'
-import { EncryptedAttachmentValidationError } from '@/utils/binary-codec'
+import {
+  encryptAttachment,
+  EncryptedAttachmentValidationError,
+  uint8ArrayToBase64,
+} from '@/utils/binary-codec'
 import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -27,6 +32,10 @@ const mockRevisionSnapshot = vi.fn()
 const mockListStatus = vi.fn()
 const mockAttachmentPut = vi.fn()
 const mockAttachmentGet = vi.fn()
+const ENCLAVE_DOC_ID = 'dd'.repeat(18)
+const ENCLAVE_IMAGE_ID = 'ee'.repeat(18)
+const LEGACY_ATTACHMENT_ID = '8b9b6ffd-306c-4bbc-9a23-50723cfefed7'
+const storedDocument = { id: ENCLAVE_DOC_ID, encryptionKey: 'key' }
 
 function setDocumentWrites(enabled: boolean) {
   Object.defineProperty(CLOUD_SYNC, 'DOCUMENT_ATTACHMENT_WRITES_ENABLED', {
@@ -166,6 +175,30 @@ describe('CloudStorageService auth readiness', () => {
     } as any
   }
 
+  function imageChat(attachment: Record<string, unknown>) {
+    return {
+      id: 'chat-image',
+      title: 'Image',
+      createdAt: '2026-01-01',
+      updatedAt: '2026-01-01',
+      lastAccessedAt: 0,
+      messages: [
+        {
+          role: 'user',
+          content: 'look',
+          timestamp: new Date(),
+          attachments: [{ type: 'image', fileName: 'a.png', ...attachment }],
+        },
+      ],
+    } as any
+  }
+
+  function pushedAttachments() {
+    return JSON.parse(
+      new TextDecoder().decode(mockEnclavePush.mock.calls[0][0].plaintext),
+    ).messages[0].attachments
+  }
+
   it('keeps document text and pages inline when writes are disabled', async () => {
     setDocumentWrites(false)
     expect(CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED).toBe(false)
@@ -189,9 +222,7 @@ describe('CloudStorageService auth readiness', () => {
     mockAttachmentGet.mockResolvedValueOnce(
       new TextEncoder().encode(JSON.stringify(payload)),
     )
-    await new CloudStorageService().uploadChat(
-      documentChat({ encryptionKey: 'key' }),
-    )
+    await new CloudStorageService().uploadChat(documentChat(storedDocument))
     expect(mockAttachmentGet).toHaveBeenCalledTimes(1)
     expect(mockAttachmentPut).not.toHaveBeenCalled()
     expect(
@@ -206,9 +237,7 @@ describe('CloudStorageService auth readiness', () => {
     setCloudSyncEnabled(true)
     mockAttachmentGet.mockRejectedValueOnce(new Error('unavailable'))
     await expect(
-      new CloudStorageService().uploadChat(
-        documentChat({ encryptionKey: 'key' }),
-      ),
+      new CloudStorageService().uploadChat(documentChat(storedDocument)),
     ).rejects.toThrow()
     expect(mockEnclavePush).not.toHaveBeenCalled()
     expect(mockAttachmentPut).not.toHaveBeenCalled()
@@ -242,7 +271,7 @@ describe('CloudStorageService auth readiness', () => {
         ],
       }
       const chat = documentChat(
-        source === 'inline pages' ? payload : { encryptionKey: 'key' },
+        source === 'inline pages' ? payload : storedDocument,
       )
       chat.messages[0].attachments.push({
         id: 'image',
@@ -355,13 +384,11 @@ describe('CloudStorageService auth readiness', () => {
     }
     const network = new SyncNetworkError()
     mockAttachmentGet.mockRejectedValueOnce(network)
-    await expect(storage.loadChatImageForBackup(attachment)).rejects.toBe(
-      network,
-    )
+    await expect(storage.loadServerAttachment(attachment)).rejects.toBe(network)
 
     mockAttachmentGet.mockResolvedValueOnce(null)
     const missing = await storage
-      .loadChatImageForBackup(attachment)
+      .loadServerAttachment(attachment)
       .catch((error: unknown) => error)
     expect(missing).toBeInstanceOf(CloudBackupReadError)
     expect(missing).toMatchObject({
@@ -371,7 +398,7 @@ describe('CloudStorageService auth readiness', () => {
     })
 
     const locked = await storage
-      .loadChatImageForBackup({
+      .loadServerAttachment({
         id: 'missing-key',
         type: 'image',
         fileName: 'image.png',
@@ -400,7 +427,7 @@ describe('CloudStorageService auth readiness', () => {
     )
     mockAttachmentGet.mockRejectedValueOnce(missingByStatus)
     await expect(
-      storage.loadChatImageForBackup(attachment),
+      storage.loadServerAttachment(attachment),
     ).rejects.toMatchObject({
       category: 'item_unavailable',
       reason: 'attachment_not_found',
@@ -414,7 +441,7 @@ describe('CloudStorageService auth readiness', () => {
     )
     mockAttachmentGet.mockRejectedValueOnce(missingByCode)
     await expect(
-      storage.loadChatImageForBackup(attachment),
+      storage.loadServerAttachment(attachment),
     ).rejects.toMatchObject({
       category: 'item_unavailable',
       reason: 'attachment_not_found',
@@ -427,9 +454,7 @@ describe('CloudStorageService auth readiness', () => {
       new Error('Unexpected attachment failure'),
     ]) {
       mockAttachmentGet.mockRejectedValueOnce(fatal)
-      await expect(storage.loadChatImageForBackup(attachment)).rejects.toBe(
-        fatal,
-      )
+      await expect(storage.loadServerAttachment(attachment)).rejects.toBe(fatal)
     }
   })
 
@@ -632,13 +657,13 @@ describe('CloudStorageService auth readiness', () => {
     )
 
     await expect(
-      new CloudStorageService().loadChatImageForBackup({
+      new CloudStorageService().loadServerAttachment({
         id: 'legacy',
         type: 'image',
         fileName: 'legacy.png',
         key: 'AA==',
       } as unknown as Parameters<
-        CloudStorageService['loadChatImageForBackup']
+        CloudStorageService['loadServerAttachment']
       >[0]),
     ).rejects.toBe(runtimeFailure)
   })
@@ -656,13 +681,13 @@ describe('CloudStorageService auth readiness', () => {
     )
 
     await expect(
-      storage.loadChatImageForBackup({
+      storage.loadServerAttachment({
         id: 'malformed-key',
         type: 'image',
         fileName: 'legacy.png',
         key: 'not base64!',
       } as unknown as Parameters<
-        CloudStorageService['loadChatImageForBackup']
+        CloudStorageService['loadServerAttachment']
       >[0]),
     ).rejects.toMatchObject({
       category: 'item_invalid',
@@ -673,13 +698,13 @@ describe('CloudStorageService auth readiness', () => {
 
     const key = btoa(String.fromCharCode(...new Uint8Array(32)))
     const invalidLength = await storage
-      .loadChatImageForBackup({
+      .loadServerAttachment({
         id: 'invalid-key-length',
         type: 'image',
         fileName: 'legacy.png',
         key: 'AA==',
       } as unknown as Parameters<
-        CloudStorageService['loadChatImageForBackup']
+        CloudStorageService['loadServerAttachment']
       >[0])
       .catch((error: unknown) => error)
     expect(invalidLength).toMatchObject({
@@ -700,13 +725,13 @@ describe('CloudStorageService auth readiness', () => {
       }),
     )
     const truncated = await storage
-      .loadChatImageForBackup({
+      .loadServerAttachment({
         id: 'truncated-ciphertext',
         type: 'image',
         fileName: 'legacy.png',
         key,
       } as unknown as Parameters<
-        CloudStorageService['loadChatImageForBackup']
+        CloudStorageService['loadServerAttachment']
       >[0])
       .catch((error: unknown) => error)
     expect(truncated).toMatchObject({
@@ -727,13 +752,13 @@ describe('CloudStorageService auth readiness', () => {
       }),
     )
     await expect(
-      storage.loadChatImageForBackup({
+      storage.loadServerAttachment({
         id: 'corrupt-ciphertext',
         type: 'image',
         fileName: 'legacy.png',
         key,
       } as unknown as Parameters<
-        CloudStorageService['loadChatImageForBackup']
+        CloudStorageService['loadServerAttachment']
       >[0]),
     ).rejects.toMatchObject({
       category: 'item_invalid',
@@ -750,11 +775,11 @@ describe('CloudStorageService auth readiness', () => {
       type: 'image',
       fileName: 'legacy.png',
       key: btoa(String.fromCharCode(...new Uint8Array(32))),
-    } as unknown as Parameters<CloudStorageService['loadChatImageForBackup']>[0]
+    } as unknown as Parameters<CloudStorageService['loadServerAttachment']>[0]
     const networkCause = new TypeError('Network unavailable')
     vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(networkCause))
     await expect(
-      storage.loadChatImageForBackup(attachment),
+      storage.loadServerAttachment(attachment),
     ).rejects.toMatchObject({ code: 'NETWORK', cause: networkCause })
 
     vi.stubGlobal(
@@ -762,7 +787,7 @@ describe('CloudStorageService auth readiness', () => {
       vi.fn().mockResolvedValueOnce({ ok: false, status: 503 }),
     )
     await expect(
-      storage.loadChatImageForBackup(attachment),
+      storage.loadServerAttachment(attachment),
     ).rejects.toMatchObject({ status: 503 })
 
     const runtimeFailure = new Error('Unexpected crypto runtime failure')
@@ -778,7 +803,7 @@ describe('CloudStorageService auth readiness', () => {
       }),
     )
     try {
-      await expect(storage.loadChatImageForBackup(attachment)).rejects.toBe(
+      await expect(storage.loadServerAttachment(attachment)).rejects.toBe(
         runtimeFailure,
       )
     } finally {
@@ -1376,7 +1401,7 @@ describe('CloudStorageService auth readiness', () => {
             content: 'summarize',
             attachments: [
               {
-                id: 'srv-doc',
+                id: ENCLAVE_DOC_ID,
                 type: 'document',
                 fileName: 'scan.pdf',
                 textContent: 'hello',
@@ -1555,7 +1580,7 @@ describe('CloudStorageService auth readiness', () => {
           content: 'hi',
           attachments: [
             {
-              id: 'att-v2',
+              id: ENCLAVE_IMAGE_ID,
               type: 'image',
               fileName: 'image.png',
               base64: 'AQID',
@@ -1579,12 +1604,134 @@ describe('CloudStorageService auth readiness', () => {
       ).messages[0].attachments,
     ).toEqual([
       {
-        id: 'att-v2',
+        id: ENCLAVE_IMAGE_ID,
         type: 'image',
         fileName: 'image.png',
         encryptionKey: 'existing-key',
       },
     ])
+  })
+
+  it('re-uploads a pre-enclave image from its local bytes before the push', async () => {
+    mockAttachmentPut.mockResolvedValueOnce({
+      ok: true,
+      id: ENCLAVE_IMAGE_ID,
+      att_key: 'fresh-key',
+    })
+
+    const result = await new CloudStorageService().uploadChat(
+      imageChat({
+        id: LEGACY_ATTACHMENT_ID,
+        base64: 'AQID',
+        encryptionKey: 'legacy-key',
+      }),
+      { idempotencyKey: 'upload-idem-1' },
+    )
+
+    expect(mockAttachmentGet).not.toHaveBeenCalled()
+    expect(mockAttachmentPut).toHaveBeenCalledOnce()
+    expect(mockAttachmentPut.mock.calls[0][0].chatId).toBe('chat-image')
+    expect([...mockAttachmentPut.mock.calls[0][0].plaintext]).toEqual([1, 2, 3])
+    expect(pushedAttachments()).toEqual([
+      {
+        id: ENCLAVE_IMAGE_ID,
+        type: 'image',
+        fileName: 'a.png',
+        encryptionKey: 'fresh-key',
+      },
+    ])
+    expect(result.rewrites).toEqual([
+      {
+        clientId: LEGACY_ATTACHMENT_ID,
+        serverId: ENCLAVE_IMAGE_ID,
+        encryptionKey: 'fresh-key',
+      },
+    ])
+  })
+
+  it('re-uploads a pre-enclave image this device does not hold from the enclave', async () => {
+    mockAttachmentGet.mockResolvedValueOnce(new Uint8Array([7, 8, 9]))
+    mockAttachmentPut.mockResolvedValueOnce({
+      ok: true,
+      id: ENCLAVE_IMAGE_ID,
+      att_key: 'fresh-key',
+    })
+
+    await new CloudStorageService().uploadChat(
+      imageChat({
+        id: LEGACY_ATTACHMENT_ID,
+        encryptionKey: 'legacy-key',
+        key: 'legacy-key',
+      }),
+    )
+
+    expect(mockAttachmentGet).toHaveBeenCalledExactlyOnceWith({
+      id: LEGACY_ATTACHMENT_ID,
+      attKeyB64: 'legacy-key',
+    })
+    expect([...mockAttachmentPut.mock.calls[0][0].plaintext]).toEqual([7, 8, 9])
+    expect(pushedAttachments()).toEqual([
+      {
+        id: ENCLAVE_IMAGE_ID,
+        type: 'image',
+        fileName: 'a.png',
+        encryptionKey: 'fresh-key',
+      },
+    ])
+  })
+
+  it('re-uploads a key-only legacy image from the legacy storage route', async () => {
+    const image = new Uint8Array([4, 5, 6])
+    const { encryptedData, key } = await encryptAttachment(image)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: async () => encryptedData.slice().buffer,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    mockAttachmentPut.mockResolvedValueOnce({
+      ok: true,
+      id: ENCLAVE_IMAGE_ID,
+      att_key: 'fresh-key',
+    })
+
+    await new CloudStorageService().uploadChat(
+      imageChat({ id: LEGACY_ATTACHMENT_ID, key: uint8ArrayToBase64(key) }),
+    )
+
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith(
+      `${API_BASE_URL}/api/storage/attachment/${LEGACY_ATTACHMENT_ID}`,
+    )
+    expect([...mockAttachmentPut.mock.calls[0][0].plaintext]).toEqual([4, 5, 6])
+    expect(pushedAttachments()).toEqual([
+      {
+        id: ENCLAVE_IMAGE_ID,
+        type: 'image',
+        fileName: 'a.png',
+        encryptionKey: 'fresh-key',
+      },
+    ])
+  })
+
+  it('does not push a chat whose pre-enclave image the server no longer holds', async () => {
+    mockAttachmentGet.mockRejectedValueOnce(
+      new SyncEnclaveError('attachment not found', 404, 'NOT_FOUND'),
+    )
+
+    const failure = await new CloudStorageService()
+      .uploadChat(
+        imageChat({ id: LEGACY_ATTACHMENT_ID, encryptionKey: 'legacy-key' }),
+      )
+      .catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(CloudBackupReadError)
+    expect(failure).toMatchObject({ reason: 'attachment_not_found' })
+    expect(decideRecovery(failure).action).toEqual({
+      type: 'abort',
+      reason: 'UNKNOWN',
+    })
+    expect(mockAttachmentPut).not.toHaveBeenCalled()
+    expect(mockEnclavePush).not.toHaveBeenCalled()
   })
 
   it('uploads attachments before chat push so retries reuse enclave-minted ids', async () => {

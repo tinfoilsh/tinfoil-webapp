@@ -60,6 +60,18 @@ export const WIRE_CODES = {
 } as const
 
 /**
+ * Attachment ids the enclave mints: 18 random bytes, hex encoded. A chat
+ * push reports the id of every attachment carrying a server key, and the
+ * controlplane rejects the push when any of them has another shape; see
+ * controlplane handlers/sync_blob_handler.go (isAttachmentID).
+ */
+const ENCLAVE_ATTACHMENT_ID = /^[0-9a-f]{36}$/
+
+export function isEnclaveAttachmentId(id: string): boolean {
+  return ENCLAVE_ATTACHMENT_ID.test(id)
+}
+
+/**
  * Sync enclave pull contract; see confidential-sync
  * internal/server/ops.go (MaxPullIDs) and errors.go (item codes).
  */

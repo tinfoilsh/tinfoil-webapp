@@ -806,6 +806,7 @@ export function applyAttachmentRewritesInPlace(
         appliedRewrites.add(rewrite)
         att.id = rewrite.serverId
         att.encryptionKey = rewrite.encryptionKey
+        delete (att as { key?: string }).key
       }
     }
   }

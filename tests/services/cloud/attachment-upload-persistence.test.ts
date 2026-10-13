@@ -1,3 +1,4 @@
+import type { Attachment } from '@/components/chat/types'
 import {
   AUTH_ACTIVE_USER_ID,
   SETTINGS_CLOUD_SYNC_ENABLED,
@@ -42,8 +43,11 @@ const CHAT_ID = 'attachment-chat'
 const CREATED_AT = '2026-01-01T00:00:00.000Z'
 const IMAGE_A = new Uint8Array([1, 2, 3])
 const IMAGE_B = new Uint8Array([4, 5, 6])
-const uploadedA = { ok: true as const, id: 'server-a', att_key: 'key-a' }
-const uploadedB = { ok: true as const, id: 'server-b', att_key: 'key-b' }
+const SERVER_A = 'aa'.repeat(18)
+const SERVER_B = 'bb'.repeat(18)
+const HEALED_A = 'cc'.repeat(18)
+const uploadedA = { ok: true as const, id: SERVER_A, att_key: 'key-a' }
+const uploadedB = { ok: true as const, id: SERVER_B, att_key: 'key-b' }
 
 async function readChat(): Promise<StoredChat> {
   const chat = await indexedDBStorage.getChat(CHAT_ID)
@@ -114,7 +118,7 @@ describe('attachment upload persistence', () => {
 
     const partial = await readChat()
     expect(partial.messages[0].attachments).toMatchObject([
-      { id: 'server-a', encryptionKey: 'key-a', base64: 'AQID' },
+      { id: SERVER_A, encryptionKey: 'key-a', base64: 'AQID' },
       { id: 'local-b', base64: 'BAUG' },
     ])
     expect(partial.messages[0].attachments?.[1].encryptionKey).toBeUndefined()
@@ -163,8 +167,8 @@ describe('attachment upload persistence', () => {
       messages: [
         {
           attachments: [
-            { id: 'server-a', encryptionKey: 'key-a' },
-            { id: 'server-b', encryptionKey: 'key-b' },
+            { id: SERVER_A, encryptionKey: 'key-a' },
+            { id: SERVER_B, encryptionKey: 'key-b' },
           ],
         },
       ],
@@ -186,7 +190,7 @@ describe('attachment upload persistence', () => {
     expect(persist).toHaveBeenCalledExactlyOnceWith(CHAT_ID, [
       expect.objectContaining({
         clientId: 'local-a',
-        serverId: 'server-a',
+        serverId: SERVER_A,
         encryptionKey: 'key-a',
       }),
     ])
@@ -279,8 +283,8 @@ describe('attachment upload persistence', () => {
     await service.backupChat(CHAT_ID)
     await expect(service.waitForAllUploads()).rejects.toBe(failure)
     expect((await readChat()).messages[0].attachments).toMatchObject([
-      { id: 'server-a', encryptionKey: 'key-a' },
-      { id: 'server-b', encryptionKey: 'key-b' },
+      { id: SERVER_A, encryptionKey: 'key-a' },
+      { id: SERVER_B, encryptionKey: 'key-b' },
     ])
     expect(await readChat()).toMatchObject({
       locallyModified: true,
@@ -294,19 +298,82 @@ describe('attachment upload persistence', () => {
     })
   })
 
+  it('stores a pre-enclave attachment under an enclave id once and keeps it', async () => {
+    const legacyId = '8b9b6ffd-306c-4bbc-9a23-50723cfefed7'
+    const seeded = await readChat()
+    await indexedDBStorage.saveChat({
+      ...seeded,
+      messages: [
+        {
+          ...seeded.messages[0],
+          attachments: [
+            {
+              id: legacyId,
+              type: 'image',
+              fileName: 'a.png',
+              base64: 'AQID',
+              encryptionKey: 'legacy-key',
+              key: 'legacy-key',
+            } as Attachment,
+          ],
+        },
+      ],
+    })
+    const failure = new SyncNetworkError()
+    vi.mocked(push).mockRejectedValueOnce(failure)
+    const service = new CloudSyncService()
+
+    await expect(service.backupChatNow(CHAT_ID)).rejects.toBe(failure)
+    await service.backupChatNow(CHAT_ID)
+
+    expect(sentAttachments()).toEqual([[...IMAGE_A]])
+    expect(
+      vi
+        .mocked(push)
+        .mock.calls.map(
+          ([request]) =>
+            JSON.parse(new TextDecoder().decode(request.plaintext)).messages[0]
+              .attachments,
+        ),
+    ).toEqual([
+      [
+        {
+          id: SERVER_A,
+          type: 'image',
+          fileName: 'a.png',
+          encryptionKey: 'key-a',
+        },
+      ],
+      [
+        {
+          id: SERVER_A,
+          type: 'image',
+          fileName: 'a.png',
+          encryptionKey: 'key-a',
+        },
+      ],
+    ])
+    const stored = await readChat()
+    expect(stored).toMatchObject({ locallyModified: false, pendingUpload: 0 })
+    expect(stored.messages[0].attachments).toMatchObject([
+      { id: SERVER_A, encryptionKey: 'key-a', base64: 'AQID' },
+    ])
+    expect(stored.messages[0].attachments?.[0]).not.toHaveProperty('key')
+  })
+
   it('re-uploads attachments the server purged and pushes again', async () => {
     await indexedDBStorage.recordAttachmentRewrites(CHAT_ID, [
-      { clientId: 'local-a', serverId: 'server-a', encryptionKey: 'key-a' },
-      { clientId: 'local-b', serverId: 'server-b', encryptionKey: 'key-b' },
+      { clientId: 'local-a', serverId: SERVER_A, encryptionKey: 'key-a' },
+      { clientId: 'local-b', serverId: SERVER_B, encryptionKey: 'key-b' },
     ])
     vi.mocked(push).mockRejectedValueOnce(
       new SyncEnclaveError('Missing blob', 409, 'MISSING_ATTACHMENT', {
-        missing_attachments: ['server-a'],
+        missing_attachments: [SERVER_A],
       }),
     )
     vi.mocked(attachmentPut).mockResolvedValueOnce({
       ok: true,
-      id: 'healed-a',
+      id: HEALED_A,
       att_key: 'healed-key-a',
     })
     const service = new CloudSyncService()
@@ -322,8 +389,8 @@ describe('attachment upload persistence', () => {
       JSON.parse(new TextDecoder().decode(second.plaintext)).messages[0]
         .attachments,
     ).toMatchObject([
-      { id: 'healed-a', encryptionKey: 'healed-key-a' },
-      { id: 'server-b', encryptionKey: 'key-b' },
+      { id: HEALED_A, encryptionKey: 'healed-key-a' },
+      { id: SERVER_B, encryptionKey: 'key-b' },
     ])
     expect(await readChat()).toMatchObject({
       locallyModified: false,
