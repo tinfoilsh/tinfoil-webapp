@@ -150,40 +150,77 @@ describe('useDocumentUploader', () => {
     ])
   })
 
-  it('retries a capacity rejection after the delay the service asks for', async () => {
+  it('starts the processing deadline when a queued file starts converting', async () => {
     vi.useFakeTimers()
-    mocks.secureFetch
-      .mockResolvedValueOnce(rejected(429, '1'))
-      .mockResolvedValueOnce(converted('Statement text'))
+    const answers: Array<(response: Response) => void> = []
+    const signals: Array<AbortSignal | null | undefined> = []
+    mocks.secureFetch.mockImplementation((_endpoint, init) => {
+      signals.push(init?.signal)
+      return new Promise<Response>((resolve) => answers.push(resolve))
+    })
     const { result } = renderHook(() => useDocumentUploader())
-    const onSuccess = vi.fn()
     const onError = vi.fn()
 
-    let upload!: Promise<void>
+    let uploads!: Promise<void>[]
     act(() => {
-      upload = result.current.handleDocumentUpload(
-        pdf('statement.pdf'),
-        onSuccess,
-        onError,
+      uploads = ['a.pdf', 'b.pdf', 'c.pdf'].map((name) =>
+        result.current.handleDocumentUpload(pdf(name), vi.fn(), onError),
       )
     })
-    await vi.advanceTimersByTimeAsync(999)
-    expect(mocks.secureFetch).toHaveBeenCalledTimes(1)
-    await vi.advanceTimersByTimeAsync(1)
-    await act(async () => {
-      await upload
-    })
-
+    await vi.advanceTimersByTimeAsync(0)
     expect(mocks.secureFetch).toHaveBeenCalledTimes(2)
+
+    await vi.advanceTimersByTimeAsync(11 * 60_000)
+    answers[0](converted('first'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(mocks.secureFetch).toHaveBeenCalledTimes(3)
+    expect(signals[2]?.aborted).toBe(false)
+    answers[1](converted('second'))
+    answers[2](converted('third'))
+    await act(async () => {
+      await Promise.all(uploads)
+    })
     expect(onError).not.toHaveBeenCalled()
-    expect(onSuccess).toHaveBeenCalledWith(
-      'Statement text',
-      expect.any(String),
-      undefined,
-      undefined,
-      undefined,
-    )
   })
+
+  it.each([429, 503])(
+    'retries a %i after the delay the service asks for',
+    async (status) => {
+      vi.useFakeTimers()
+      mocks.secureFetch
+        .mockResolvedValueOnce(rejected(status, '1'))
+        .mockResolvedValueOnce(converted('Statement text'))
+      const { result } = renderHook(() => useDocumentUploader())
+      const onSuccess = vi.fn()
+      const onError = vi.fn()
+
+      let upload!: Promise<void>
+      act(() => {
+        upload = result.current.handleDocumentUpload(
+          pdf('statement.pdf'),
+          onSuccess,
+          onError,
+        )
+      })
+      await vi.advanceTimersByTimeAsync(999)
+      expect(mocks.secureFetch).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      await act(async () => {
+        await upload
+      })
+
+      expect(mocks.secureFetch).toHaveBeenCalledTimes(2)
+      expect(onError).not.toHaveBeenCalled()
+      expect(onSuccess).toHaveBeenCalledWith(
+        'Statement text',
+        expect.any(String),
+        undefined,
+        undefined,
+        undefined,
+      )
+    },
+  )
 
   it.each([
     ['names no delay', undefined],
