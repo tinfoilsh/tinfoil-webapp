@@ -38,6 +38,7 @@ interface Session {
   scheduledUntil: number
   started: boolean
   onPageHide: () => void
+  onKeyDown: (event: KeyboardEvent) => void
 }
 
 function createAudioContext(): AudioContext {
@@ -83,6 +84,7 @@ export class SpeechPlayer {
     if (session) {
       session.controller.abort()
       window.removeEventListener('pagehide', session.onPageHide)
+      window.removeEventListener('keydown', session.onKeyDown)
       session.context.onstatechange = null
       for (const node of session.nodes) {
         node.onended = null
@@ -123,9 +125,23 @@ export class SpeechPlayer {
         scheduledUntil: 0,
         started: false,
         onPageHide: () => this.stop(owner),
+        // Escape stops narration from anywhere on the page, so keyboard and
+        // screen-reader users need not find the button while audio plays
+        // over their screen reader. Dialogs, menus and editors that use
+        // Escape mark it handled first.
+        onKeyDown: (event) => {
+          if (
+            event.key === 'Escape' &&
+            !event.defaultPrevented &&
+            !event.isComposing
+          ) {
+            this.stop(owner)
+          }
+        },
       }
       this.session = session
       window.addEventListener('pagehide', session.onPageHide)
+      window.addEventListener('keydown', session.onKeyDown)
       this.update({ owner, status: 'loading' })
       // Resume synchronously within the click gesture, before any network await.
       void context

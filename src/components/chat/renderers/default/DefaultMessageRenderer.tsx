@@ -599,6 +599,7 @@ const DefaultMessageComponent = ({
                   e.preventDefault()
                   handleSubmitAssistantEdit()
                 } else if (e.key === 'Escape') {
+                  e.preventDefault()
                   handleCancelEdit()
                 }
               }}
@@ -791,6 +792,7 @@ const DefaultMessageComponent = ({
                         e.preventDefault()
                         handleSubmitEdit()
                       } else if (e.key === 'Escape') {
+                        e.preventDefault()
                         handleCancelEdit()
                       }
                     }}
@@ -867,7 +869,10 @@ const DefaultMessageComponent = ({
                         >
                           <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
                         </button>
-                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100"
+                        >
                           Regenerate
                         </span>
                       </div>
@@ -882,7 +887,10 @@ const DefaultMessageComponent = ({
                         >
                           <TfWriting className="h-4 w-4" aria-hidden="true" />
                         </button>
-                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100">
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/edit:opacity-100"
+                        >
                           Edit
                         </span>
                       </div>
@@ -896,7 +904,10 @@ const DefaultMessageComponent = ({
                         >
                           <TfFork className="h-4 w-4" aria-hidden="true" />
                         </button>
-                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100">
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100"
+                        >
                           Fork from here
                         </span>
                       </div>
@@ -910,7 +921,10 @@ const DefaultMessageComponent = ({
                         >
                           <TfTrash className="h-4 w-4" aria-hidden="true" />
                         </button>
-                        <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100">
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100"
+                        >
                           Delete
                         </span>
                       </div>
@@ -939,7 +953,10 @@ const DefaultMessageComponent = ({
                           )}
                         </button>
                         {!copiedUser && (
-                          <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/copy:opacity-100">
+                          <span
+                            aria-hidden="true"
+                            className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/copy:opacity-100"
+                          >
                             Copy
                           </span>
                         )}
@@ -988,7 +1005,10 @@ const DefaultMessageComponent = ({
                     >
                       <TfRefresh1 className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
-                    <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100">
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100"
+                    >
                       Regenerate
                     </span>
                   </div>

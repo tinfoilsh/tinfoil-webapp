@@ -44,7 +44,6 @@ export function ReadAloudButton({
       <button
         type="button"
         aria-label={label}
-        aria-pressed={active}
         title={variant === 'menu' ? tooltipLabel : undefined}
         onClick={() => {
           if (status === 'paused') speechPlayer.resume(owner)

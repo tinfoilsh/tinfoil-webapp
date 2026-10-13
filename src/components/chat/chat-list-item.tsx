@@ -258,6 +258,7 @@ export function ChatListItem({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      event.preventDefault()
       setIsMobileMenuOpen(false)
       setMobileMenuView('main')
       mobileMenuButtonRef.current?.focus()
@@ -285,6 +286,7 @@ export function ChatListItem({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
+      e.preventDefault()
       onCancelEdit()
     }
   }

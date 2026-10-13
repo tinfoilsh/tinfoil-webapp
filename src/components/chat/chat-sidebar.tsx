@@ -81,7 +81,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '../link'
 import { Logo } from '../logo'
-import { SidebarPanel, SidebarRail } from './sidebar-layout'
+import { SIDEBAR_PANEL_ID, SidebarPanel, SidebarRail } from './sidebar-layout'
 import { getChatLoadMoreAction } from './sidebar-pagination'
 import type { Chat } from './types'
 
@@ -878,6 +878,9 @@ export function ChatSidebar({
               onClick={() => setIsOpen(true)}
               className="group/logo relative rounded-lg p-2"
               aria-label="Expand sidebar"
+              aria-expanded={isOpen}
+              aria-controls={SIDEBAR_PANEL_ID}
+              data-sidebar-toggle
             >
               <img
                 src={isDarkMode ? '/icon-dark.png' : '/icon-light.png'}
@@ -1029,6 +1032,7 @@ export function ChatSidebar({
         isMobile={isMobile}
         animate={!isInitialLoad}
         style={sidebarTintStyle}
+        onDismiss={() => setIsOpen(false)}
       >
         <SidebarPatternEdge isDarkMode={isDarkMode} />
         {/* Header */}
@@ -1043,6 +1047,7 @@ export function ChatSidebar({
               onClick={() => setIsOpen(false)}
               className="rounded-lg p-1.5 text-content-muted transition-colors hover:bg-surface-chat hover:text-content-secondary"
               aria-label="Close sidebar"
+              data-sidebar-close
             >
               <TfSidebarClose
                 className="h-5 w-5 -scale-x-100"

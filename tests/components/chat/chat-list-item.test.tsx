@@ -392,6 +392,30 @@ describe('ChatListItem message count', () => {
     expect(screen.queryByTitle('New chat')).not.toBeInTheDocument()
   })
 
+  it('cancels a rename on Escape and marks the key handled for the sidebar', () => {
+    const onCancelEdit = vi.fn()
+    render(
+      <ChatListItem
+        chat={savedChat}
+        isSelected={false}
+        isEditing
+        editingTitle="Trip planning"
+        isDarkMode={false}
+        pixelateSidebarChatTitles={false}
+        onSelect={vi.fn()}
+        onStartEdit={vi.fn()}
+        onTitleChange={vi.fn()}
+        onSaveTitle={vi.fn()}
+        onCancelEdit={onCancelEdit}
+        onRequestDelete={vi.fn()}
+      />,
+    )
+
+    const title = screen.getByRole('textbox', { name: 'Chat title' })
+    expect(fireEvent.keyDown(title, { key: 'Escape' })).toBe(false)
+    expect(onCancelEdit).toHaveBeenCalledOnce()
+  })
+
   it('treats hydrated chats by their real messages', () => {
     renderChatListItem({
       chat: {

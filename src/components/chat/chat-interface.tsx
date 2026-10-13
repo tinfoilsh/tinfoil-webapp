@@ -197,6 +197,7 @@ import { QuoteSelectionPopover } from './quote-selection-popover'
 import { initializeRenderers } from './renderers/client'
 import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
+import { SIDEBAR_PANEL_ID } from './sidebar-layout'
 import type { Attachment, Chat, DocumentPage } from './types'
 // Lazy-load modals that aren't shown on initial load. The loaders are
 // hoisted so they can be pre-warmed (see preloadCloudSyncModals) before
@@ -3815,6 +3816,11 @@ export function ChatInterface({
       isAskSidebarOpen ||
       isArtifactSidebarOpen)
 
+  // Below the mobile breakpoint the open sidebar covers the chat, so the chat
+  // must be unreachable by keyboard and screen readers until it closes.
+  const isSidebarCoveringChat =
+    isSidebarOpen && windowWidth < CONSTANTS.MOBILE_BREAKPOINT
+
   const hasVisibleChatHeader = showChatHeader && !hideTopControlsOnMobile
   const sidebarToggle = windowWidth < CONSTANTS.SINGLE_SIDEBAR_BREAKPOINT &&
     !isSidebarOpen &&
@@ -3837,6 +3843,9 @@ export function ChatInterface({
             setIsSettingsModalOpen(false)
           }}
           aria-label="Open sidebar"
+          aria-expanded={isSidebarOpen}
+          aria-controls={SIDEBAR_PANEL_ID}
+          data-sidebar-toggle
         >
           <TfSidebarOpen className="h-5 w-5 -scale-x-100" aria-hidden="true" />
         </button>
@@ -3900,7 +3909,10 @@ export function ChatInterface({
               >
                 <TfGhost2 className="h-4 w-4" aria-hidden="true" />
               </button>
-              <span className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+              >
                 {label}
               </span>
             </div>
@@ -4065,6 +4077,7 @@ export function ChatInterface({
           chat has messages the header's metadata line marks it instead. */}
       {(isTemporaryMode || currentChat?.isTemporary) && !showChatHeader && (
         <div
+          inert={isSidebarCoveringChat}
           className="pointer-events-none fixed top-0 z-40 flex items-center gap-1.5 rounded-br-lg bg-[hsl(18,90%,92%)] py-7 pl-16 pr-3 text-xs font-medium text-orange-600 transition-all duration-300 dark:bg-[hsl(20,40%,15%)] dark:text-orange-500 md:py-2 md:pl-3"
           style={{
             left: (() => {
@@ -4455,8 +4468,17 @@ export function ChatInterface({
         />
       )}
 
+      {/* Outside the main area so it keeps announcing while the mobile
+          sidebar makes that area inert. */}
+      <ChatAnnouncer
+        messages={currentChat?.messages || []}
+        isStreaming={isStreaming}
+        isWaitingForResponse={isWaitingForResponse}
+      />
+
       {/* Main Chat Area - Modified for sliding effect */}
       <div
+        inert={isSidebarCoveringChat}
         className={cn(
           'absolute overflow-hidden @container/conversation',
           CONSTANTS.SIDEBAR_LAYOUT_TRANSITION_CLASS_NAME,
@@ -4565,11 +4587,6 @@ export function ChatInterface({
               }}
             />
             <div className="relative flex min-h-0 flex-1">
-              <ChatAnnouncer
-                messages={currentChat?.messages || []}
-                isStreaming={isStreaming}
-                isWaitingForResponse={isWaitingForResponse}
-              />
               <AnimatePresence>{isForking && <ForkOverlay />}</AnimatePresence>
               <div
                 ref={scrollContainerRef}
@@ -4715,6 +4732,23 @@ export function ChatInterface({
                       background: `linear-gradient(to bottom, hsl(var(--surface-chat-background) / 0) 0%, hsl(var(--surface-chat-background)) ${CONSTANTS.CHAT_INPUT_FADE_SOLID_AT_PX}px)`,
                     }}
                   />
+                  {/* Scroll button - absolutely positioned above the input, and
+                      placed before it so focus order matches what is on screen. */}
+                  {showScrollButton && currentChat?.messages?.length > 0 && (
+                    <div className="pointer-events-auto absolute -top-[50px] left-1/2 z-10 -translate-x-1/2">
+                      <button
+                        onClick={() => scrollToLastMessage()}
+                        className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-surface-sidebar-button shadow-md transition-colors hover:bg-surface-sidebar-button-hover"
+                        aria-label="Scroll to latest message"
+                      >
+                        <ArrowDownIcon
+                          className="h-4 w-4 text-content-secondary"
+                          strokeWidth={2}
+                          aria-hidden="true"
+                        />
+                      </button>
+                    </div>
+                  )}
                   <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 md:px-8">
                     <SafeguardFlagBanner
                       chatId={currentChat.id}
@@ -4866,22 +4900,6 @@ export function ChatInterface({
                         }
                       />
                     </form>
-                  )}
-
-                  {/* Scroll to bottom button - absolutely positioned in parent */}
-                  {showScrollButton && currentChat?.messages?.length > 0 && (
-                    <div className="pointer-events-auto absolute -top-[50px] left-1/2 z-10 -translate-x-1/2">
-                      <button
-                        onClick={() => scrollToLastMessage()}
-                        className="flex h-10 w-10 items-center justify-center rounded-full border border-border-subtle bg-surface-sidebar-button shadow-md transition-colors hover:bg-surface-sidebar-button-hover"
-                        aria-label="Scroll to bottom"
-                      >
-                        <ArrowDownIcon
-                          className="h-4 w-4 text-content-secondary"
-                          strokeWidth={2}
-                        />
-                      </button>
-                    </div>
                   )}
                 </div>
               )}

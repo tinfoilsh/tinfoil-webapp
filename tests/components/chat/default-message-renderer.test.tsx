@@ -2,7 +2,14 @@ import { DefaultMessageRenderer } from '@/components/chat/renderers/default/Defa
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import { ForwardIcon } from '@heroicons/react/24/outline'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  isInaccessible,
+  render,
+  screen,
+  within,
+} from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 const model = {
@@ -580,6 +587,56 @@ describe('DefaultMessageRenderer message actions', () => {
     expect(
       screen.queryByRole('textbox', { name: 'Edit response' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('names each action once for screen readers, not again as its hover tooltip', () => {
+    const { unmount } = render(
+      <Renderer
+        message={{
+          role: 'user',
+          content: 'Hello',
+          timestamp: new Date('2026-08-07T00:00:00.000Z'),
+        }}
+        messageIndex={2}
+        model={model}
+        isDarkMode={false}
+        onRegenerateMessage={vi.fn()}
+        onEditMessage={vi.fn()}
+        onForkMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    )
+    for (const [button, tooltip] of [
+      ['Regenerate response', 'Regenerate'],
+      ['Edit message', 'Edit'],
+      ['Fork conversation from here', 'Fork from here'],
+      ['Delete message', 'Delete'],
+      ['Copy message', 'Copy'],
+    ] as const) {
+      expect(screen.getByRole('button', { name: button })).toBeVisible()
+      expect(isInaccessible(screen.getByText(tooltip))).toBe(true)
+    }
+    unmount()
+
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={3}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+        onRegenerateMessage={vi.fn()}
+        onEditAssistantMessage={vi.fn()}
+      />,
+    )
+    for (const [button, tooltip] of [
+      ['Copy message', 'Copy'],
+      ['Regenerate response', 'Regenerate'],
+      ['More actions', 'More'],
+    ] as const) {
+      expect(screen.getByRole('button', { name: button })).toBeVisible()
+      expect(isInaccessible(screen.getByText(tooltip))).toBe(true)
+    }
   })
 
   it('returns focus to the more menu trigger after cancelling an edit', () => {
