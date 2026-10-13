@@ -17,6 +17,7 @@ import {
 } from '@/services/sync-enclave/sync-enclave-client'
 import {
   EXTENDED_ROUTE_BUDGETS_MS,
+  isEnclaveAttachmentId,
   MAX_PULL_IDS,
   PULL_ITEM_CODE_UNSPECIFIED,
   PULL_ITEM_CODES,
@@ -163,6 +164,20 @@ describe('wire-contract', () => {
       SyncConflict: 'SYNC_CONFLICT',
       ProfileSyncUpgradeRequired: 'PROFILE_SYNC_UPGRADE_REQUIRED',
     })
+  })
+
+  it('attachment ids match controlplane handlers/sync_blob_handler.go (isAttachmentID)', () => {
+    const minted = `${'0123456789abcdef'.repeat(2)}0123`
+    expect(isEnclaveAttachmentId(minted)).toBe(true)
+    expect(
+      [
+        '8b9b6ffd-306c-4bbc-9a23-50723cfefed7',
+        minted.toUpperCase(),
+        'g'.repeat(36),
+        minted.slice(1),
+        `${minted}a`,
+      ].filter(isEnclaveAttachmentId),
+    ).toEqual([])
   })
 
   it('pull contract matches confidential-sync internal/server', () => {
