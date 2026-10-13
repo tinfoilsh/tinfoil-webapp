@@ -291,12 +291,20 @@ describe('useDocumentUploader', () => {
     },
   )
 
-  it('discards old-account queued work and results, then accepts new-account files', async () => {
+  it('cancels old-account queued and in-flight work, then accepts new-account files', async () => {
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-a')
     mocks.getSessionToken.mockResolvedValue('token-a')
     const answers: Array<(response: Response) => void> = []
     mocks.secureFetch.mockImplementation(
-      () => new Promise<Response>((resolve) => answers.push(resolve)),
+      (_endpoint, init) =>
+        new Promise<Response>((resolve, reject) => {
+          answers.push(resolve)
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(init.signal?.reason),
+            { once: true },
+          )
+        }),
     )
     const { result } = renderHook(() => useDocumentUploader())
     const onSuccess = vi.fn(),
@@ -312,8 +320,6 @@ describe('useDocumentUploader', () => {
     window.dispatchEvent(new Event(AUTH_ACTIVE_USER_CHANGED_EVENT))
     mocks.getSessionToken.mockResolvedValue('token-b')
     await act(async () => {
-      answers[0](converted('private a'))
-      answers[1](converted('private b'))
       await Promise.all(uploads)
     })
     expect(onSuccess).not.toHaveBeenCalled()
@@ -379,10 +385,10 @@ describe('useDocumentUploader', () => {
     expect(onError.mock.calls[0][0].name).toBe('AbortError')
   })
 
-  it('does not retry under another account after a capacity delay', async () => {
+  it('cancels a capacity delay immediately when the account changes', async () => {
     vi.useFakeTimers()
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-a')
-    mocks.secureFetch.mockResolvedValueOnce(rejected(429, '1'))
+    mocks.secureFetch.mockResolvedValueOnce(rejected(429, '60'))
     const { result } = renderHook(() => useDocumentUploader())
     const onError = vi.fn(),
       onSuccess = vi.fn()
@@ -398,13 +404,14 @@ describe('useDocumentUploader', () => {
     expect(mocks.secureFetch).toHaveBeenCalledOnce()
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-b')
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000)
+      window.dispatchEvent(new Event(AUTH_ACTIVE_USER_CHANGED_EVENT))
       await upload
     })
     expect(mocks.secureFetch).toHaveBeenCalledOnce()
     expect(onSuccess).not.toHaveBeenCalled()
     expect(onError).toHaveBeenCalledOnce()
     expect(onError.mock.calls[0][0].name).toBe('AbortError')
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it.each([

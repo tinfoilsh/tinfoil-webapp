@@ -1,8 +1,5 @@
 import { getAIModels, type BaseModel } from '@/config/models'
-import {
-  createActiveAccountGuard,
-  type AccountOperationGuard,
-} from '@/services/cloud/account-operation'
+import { createActiveAccountGuard } from '@/services/cloud/account-operation'
 import {
   getSecureFetch,
   getSessionToken,
@@ -37,17 +34,44 @@ const MAX_CONCURRENT_CONVERSIONS = 2
 let activeConversions = 0
 const waitingConversions: Array<() => void> = []
 
-async function acquireConversionSlot(): Promise<() => void> {
+async function acquireConversionSlot(signal: AbortSignal): Promise<() => void> {
+  signal.throwIfAborted()
   if (activeConversions < MAX_CONCURRENT_CONVERSIONS) {
     activeConversions++
   } else {
-    await new Promise<void>((resolve) => waitingConversions.push(resolve))
+    await new Promise<void>((resolve, reject) => {
+      const resume = () => {
+        signal.removeEventListener('abort', abort)
+        resolve()
+      }
+      const abort = () => {
+        waitingConversions.splice(waitingConversions.indexOf(resume), 1)
+        reject(signal.reason)
+      }
+      signal.addEventListener('abort', abort, { once: true })
+      waitingConversions.push(resume)
+    })
   }
   return () => {
     const next = waitingConversions.shift()
     if (next) next()
     else activeConversions--
   }
+}
+
+function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, delayMs)
+    signal.addEventListener('abort', abort, { once: true })
+  })
 }
 
 // The delay a capacity rejection asks for, or null when the response is
@@ -81,11 +105,13 @@ function retryAfterMs(response: Response, errorText: string): number | null {
 async function convertDocument(
   endpoint: string,
   file: File,
-  account: AccountOperationGuard,
+  account: ReturnType<typeof createActiveAccountGuard>,
 ): Promise<DocumentProcessingResult> {
-  const release = await acquireConversionSlot()
+  const release = await acquireConversionSlot(account.signal)
   const deadline = Date.now() + CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS
   const controller = new AbortController()
+  const abortForAccount = () => controller.abort(account.signal.reason)
+  account.signal.addEventListener('abort', abortForAccount, { once: true })
   const timeoutId = setTimeout(
     () => controller.abort(),
     CONSTANTS.DOCUMENT_PROCESSING_TIMEOUT_MS,
@@ -122,9 +148,10 @@ async function convertDocument(
           `Document upload failed with status: ${response.status}. ${errorText}`,
         )
       }
-      await new Promise((resolve) => setTimeout(resolve, delayMs))
+      await waitForRetry(delayMs, controller.signal)
     }
   } finally {
+    account.signal.removeEventListener('abort', abortForAccount)
     clearTimeout(timeoutId)
     release()
   }

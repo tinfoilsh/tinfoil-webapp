@@ -17,16 +17,24 @@ export interface AccountOperationGuard {
 /** A lightweight read guard with no dependency on the cloud-sync coordinator. */
 export function createActiveAccountGuard(
   signal?: AbortSignal,
-): AccountOperationGuard & { dispose(): void } {
+): AccountOperationGuard & { readonly signal: AbortSignal; dispose(): void } {
   const readUserId = () =>
     typeof window === 'undefined'
       ? null
       : localStorage.getItem(AUTH_ACTIVE_USER_ID)
   const userId = readUserId()
-  let invalidated = false
+  const controller = new AbortController()
   const invalidate = () => {
-    invalidated = true
+    controller.abort(
+      new DOMException(
+        'Account changed; retry in the current account.',
+        'AbortError',
+      ),
+    )
   }
+  const abortFromCaller = () => controller.abort(signal?.reason)
+  if (signal?.aborted) abortFromCaller()
+  else signal?.addEventListener('abort', abortFromCaller, { once: true })
   const onStorage = (event: StorageEvent) => {
     if (
       event.key === null ||
@@ -41,22 +49,19 @@ export function createActiveAccountGuard(
     window.addEventListener('storage', onStorage)
   }
   const isCurrent = () =>
-    !invalidated &&
-    !signal?.aborted &&
+    !controller.signal.aborted &&
     readUserId() === userId &&
     (userId === null || !hasRecentExplicitSignoutIntent())
   return {
     userId,
+    signal: controller.signal,
     isCurrent,
     assertCurrent() {
-      signal?.throwIfAborted()
-      if (!isCurrent())
-        throw new DOMException(
-          'Account changed; retry in the current account.',
-          'AbortError',
-        )
+      if (!isCurrent()) invalidate()
+      controller.signal.throwIfAborted()
     },
     dispose() {
+      signal?.removeEventListener('abort', abortFromCaller)
       if (typeof window === 'undefined') return
       window.removeEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, invalidate)
       window.removeEventListener(AUTH_SIGNOUT_REQUESTED_EVENT, invalidate)
