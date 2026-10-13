@@ -6,8 +6,9 @@ import {
 } from '@/utils/reasoning-history'
 import { webSearchHistoryMessages } from '@/utils/web-search-history'
 
-// Fraction of the model's context window reserved for conversation history;
-// the remainder is headroom for the system prompt and the model's response.
+// Fraction of the model's context window the prompt (system prompt plus
+// conversation history) may fill; the remainder is headroom for the
+// model's response.
 export const CONTEXT_WINDOW_USAGE_RATIO = 0.8
 
 export const DEFAULT_CONTEXT_WINDOW_TOKENS = 128000
@@ -125,13 +126,16 @@ export function findContextStartIndex(
 
 /**
  * Selects the most recent messages that fit within the model's context
- * token budget.
+ * token budget after `reservedTokens` (the system prompt).
  */
 export function selectMessagesWithinBudget(
   messages: Message[],
   contextWindowTokens?: number,
-  options: TokenEstimationOptions = {},
+  options: TokenEstimationOptions & { reservedTokens?: number } = {},
 ): Message[] {
-  const budget = getContextTokenBudget(contextWindowTokens)
+  const budget = getHistoryTokenBudget(
+    contextWindowTokens,
+    options.reservedTokens,
+  )
   return messages.slice(findContextStartIndex(messages, budget, options))
 }
