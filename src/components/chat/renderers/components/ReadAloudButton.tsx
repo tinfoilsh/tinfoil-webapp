@@ -66,7 +66,7 @@ export function ReadAloudButton({
         ) : status === 'paused' ? (
           <PlayIcon className="h-3.5 w-3.5" aria-hidden="true" />
         ) : active ? (
-          <TfStop className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfStop className="-m-0.5 h-[18px] w-[18px]" aria-hidden="true" />
         ) : (
           <TfAudio className="h-3.5 w-3.5" aria-hidden="true" />
         )}
@@ -99,7 +99,7 @@ export function ReadAloudButton({
             onClick={() => speechPlayer.stop(owner)}
             className="flex items-center rounded px-2 py-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
           >
-            <TfStop className="h-3.5 w-3.5" aria-hidden="true" />
+            <TfStop className="-m-0.5 h-[18px] w-[18px]" aria-hidden="true" />
           </button>
           <span className="sr-only" role="status">
             Speech paused
