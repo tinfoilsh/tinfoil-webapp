@@ -523,6 +523,8 @@ export interface ImportStatusResponse {
   job_id?: string
   /** Set only when status is 'failed'. */
   failure_reason?: ImportFailureReason
+  /** Which archive check failed, when the enclave knows; refines the reason. */
+  failure_detail?: string
 }
 
 /**

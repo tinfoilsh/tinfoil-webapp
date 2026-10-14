@@ -40,8 +40,10 @@ import {
   PremiumProjectImportRequiredError,
 } from '@/services/chat-import/local-tinfoil-import'
 import {
-  runOffDeviceImport,
+  OffDeviceImportSequenceError,
+  runOffDeviceImports,
   type OffDeviceImportProgress,
+  type OffDeviceImportSequenceResult,
 } from '@/services/chat-import/off-device-import'
 import type { AccountOperationGuard } from '@/services/cloud/account-operation'
 import { hasPrimaryKey } from '@/services/cloud/cek-encoding'
@@ -206,16 +208,97 @@ export function describeOffDeviceImportKickoff(
     pending,
     failed,
     message: failed
-      ? describeImportFailure(status.failure_reason)
+      ? describeImportFailure(
+          status.failure_reason,
+          'chat_import',
+          status.failure_detail,
+        )
       : pending
         ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
         : undefined,
   }
 }
 
+/**
+ * Turns the outcome of an off-device import, possibly split across
+ * several files, into the panel state. Chats from files that already
+ * completed are counted, and a failure names its file and how many files
+ * were never started.
+ */
+export function describeOffDeviceImportOutcome(
+  outcome: OffDeviceImportSequenceResult,
+  fileNames: readonly string[],
+  sourceLabel: string,
+): ImportResult {
+  const kickoff = describeOffDeviceImportKickoff(outcome.status, sourceLabel)
+  const chatsImported = outcome.importedBefore + kickoff.chatsImported
+  if (!outcome.interrupted && !kickoff.failed) {
+    return { ...kickoff, chatsImported }
+  }
+  const explanation = outcome.interrupted
+    ? 'The import stopped before it finished. Chats already imported were kept; select this file again to continue.'
+    : kickoff.message
+  return {
+    success: false,
+    failed: true,
+    pending: false,
+    chatsImported,
+    projectsImported: 0,
+    errors: fileFailureErrors(fileNames, outcome.fileIndex, explanation),
+  }
+}
+
+/**
+ * Panel state for an import that threw. When a later file of a split
+ * export fails, the chats earlier files imported are still counted and
+ * the failing file is named.
+ */
+export function describeOffDeviceImportError(
+  err: unknown,
+  fileNames: readonly string[],
+): ImportResult {
+  const message = err instanceof Error ? err.message : 'Failed to start import'
+  if (!(err instanceof OffDeviceImportSequenceError) || fileNames.length < 2) {
+    return {
+      success: false,
+      chatsImported: 0,
+      projectsImported: 0,
+      errors: [message],
+    }
+  }
+  return {
+    success: false,
+    chatsImported: err.importedBefore,
+    projectsImported: 0,
+    errors: fileFailureErrors(fileNames, err.fileIndex, message),
+  }
+}
+
+function fileFailureErrors(
+  fileNames: readonly string[],
+  fileIndex: number,
+  explanation: string | undefined,
+): string[] {
+  const errors = [`${fileNames[fileIndex]}: ${explanation}`]
+  const notStarted = fileNames.length - fileIndex - 1
+  if (notStarted > 0) {
+    errors.push(
+      `${notStarted} remaining file${notStarted === 1 ? ' was' : 's were'} not imported.`,
+    )
+  }
+  return errors
+}
+
 export type ImportProgress =
   | { type: 'chats' | 'projects'; current: number; total: number }
   | { type: 'upload'; progress: OffDeviceImportProgress }
+  | {
+      type: 'processing'
+      file: number
+      files: number
+      imported: number
+      total: number
+    }
 
 type StagedImportKind = 'chatgpt' | 'claude-conversations' | 'claude-projects'
 type ImportSourceKey = 'chatgpt' | 'claude'
@@ -230,6 +313,14 @@ export function describeImportProgress(progress: ImportProgress): {
   detail: string
   percent: number
 } {
+  if (progress.type === 'processing') {
+    const { file, files, imported, total } = progress
+    return {
+      title: `Importing file ${file} of ${files}...`,
+      detail: `${total > 0 ? `${imported} of ${total} chats` : 'Reading export'}. Keep this page open until every file has started.`,
+      percent: total > 0 ? (imported / total) * 100 : 0,
+    }
+  }
   if (progress.type !== 'upload') {
     return {
       title: `Importing ${progress.type}...`,
@@ -1542,15 +1633,17 @@ export function SettingsModal({
     Boolean(isSignedIn) && isCloudSyncEnabled() && hasPrimaryKey()
 
   // The enclave takes one archive per job, so a split export runs as a
-  // sequence of jobs. Progress is reported against the whole set and the
-  // sequence stops at the first file that fails so the outcome is never
-  // masked by a later success.
+  // sequence of jobs, each finishing before the next file is uploaded.
+  // Upload progress is reported against the whole set.
   const importOffDevice = async (
     source: ImportSection,
     files: readonly File[],
     sourceLabel: string,
   ) => {
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+    const bytesBefore = files.map((_, index) =>
+      files.slice(0, index).reduce((sum, file) => sum + file.size, 0),
+    )
     setImportSource(source)
     setIsImporting(true)
     setImportResult(null)
@@ -1558,33 +1651,31 @@ export function SettingsModal({
       type: 'upload',
       progress: { phase: 'hashing', processedBytes: 0, totalBytes },
     })
-    let completedBytes = 0
-    let result: ImportResult | null = null
     try {
-      for (const file of files) {
-        const { status } = await runOffDeviceImport(source, file, {
-          onProgress: (progress) =>
-            setImportProgress({
-              type: 'upload',
-              progress: {
-                ...progress,
-                processedBytes: completedBytes + progress.processedBytes,
-                totalBytes,
-              },
-            }),
-        })
-        completedBytes += file.size
-        result = describeOffDeviceImportKickoff(status, sourceLabel)
-        if (result.failed) {
-          result = {
-            ...result,
-            errors: [`${file.name}: ${result.message}`],
-            message: undefined,
-          }
-          break
-        }
-      }
-      if (!result) return
+      const outcome = await runOffDeviceImports(source, files, {
+        onUploadProgress: (fileIndex, progress) =>
+          setImportProgress({
+            type: 'upload',
+            progress: {
+              ...progress,
+              processedBytes: bytesBefore[fileIndex] + progress.processedBytes,
+              totalBytes,
+            },
+          }),
+        onProcessing: (fileIndex, status) =>
+          setImportProgress({
+            type: 'processing',
+            file: fileIndex + 1,
+            files: files.length,
+            imported: status.imported,
+            total: status.total,
+          }),
+      })
+      const result = describeOffDeviceImportOutcome(
+        outcome,
+        files.map((file) => file.name),
+        sourceLabel,
+      )
       setImportResult(result)
       if (result.failed) {
         toast({
@@ -1599,19 +1690,19 @@ export function SettingsModal({
         onChatsUpdated()
       }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to start import'
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [message],
-      })
+      const result = describeOffDeviceImportError(
+        err,
+        files.map((file) => file.name),
+      )
+      setImportResult(result)
       toast({
         title: 'Import failed',
         description: `Could not start the ${sourceLabel} import`,
         variant: 'destructive',
       })
+      if (result.chatsImported > 0 && onChatsUpdated) {
+        onChatsUpdated()
+      }
     } finally {
       setIsImporting(false)
       setImportProgress(null)

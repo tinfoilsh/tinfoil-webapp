@@ -17,7 +17,7 @@ describe('describeImportFailure', () => {
       /nothing was written/i,
     )
     expect(describeImportFailure('invalid_archive')).toMatch(
-      /export your chats again/i,
+      /without unzipping or changing it/i,
     )
     expect(describeImportFailure('limit_exceeded')).toMatch(
       /splitting it into smaller exports/i,
@@ -33,6 +33,32 @@ describe('describeImportFailure', () => {
     expect(describeImportFailure('nope', 'backup_restore')).toBe(
       describeImportFailure('internal', 'backup_restore'),
     )
+  })
+
+  it('explains the archive check that failed only when it refines the reason', () => {
+    const invalidArchive = describeImportFailure('invalid_archive')
+    expect(
+      describeImportFailure('invalid_archive', 'chat_import', 'corrupt_zip'),
+    ).toMatch(/download was interrupted/i)
+    expect(
+      describeImportFailure(
+        'invalid_archive',
+        'chat_import',
+        'unexpected_json',
+      ),
+    ).toMatch(/not files like user\.json/i)
+    expect(describeImportFailure('timeout', 'chat_import', 'corrupt_zip')).toBe(
+      describeImportFailure('timeout'),
+    )
+    expect(
+      describeImportFailure('invalid_archive', 'backup_restore', 'corrupt_zip'),
+    ).toBe(describeImportFailure('invalid_archive', 'backup_restore'))
+    expect(
+      describeImportFailure('invalid_archive', 'chat_import', 'future_check'),
+    ).toBe(invalidArchive)
+    expect(
+      describeImportFailure('invalid_archive', 'chat_import', 'toString'),
+    ).toBe(invalidArchive)
   })
 
   it('falls back to the generic explanation for unknown or missing reasons', () => {

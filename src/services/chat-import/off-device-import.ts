@@ -2,10 +2,12 @@ import { requirePrimaryKeyB64 } from '@/services/cloud/cek-encoding'
 import {
   importCreate,
   importStart,
+  importStatus,
   importUploadChunk,
   type ImportSource,
   type ImportStatusResponse,
 } from '@/services/sync-enclave/sync-api'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 import { sha256 } from '@noble/hashes/sha2.js'
 
 /**
@@ -14,7 +16,8 @@ import { sha256 } from '@noble/hashes/sha2.js'
  * so it parses, seals, and stores every chat + attachment without the
  * plaintext ever touching application servers. The enclave emails the
  * user when the detached job finishes; the browser only needs to stay
- * open through the upload and the kickoff.
+ * open through the upload and the kickoff, or, for an export split
+ * across files, until the last file's job has started.
  */
 
 // Mirrors the enclave's MaxImportChunkBytes; both sides must agree on
@@ -145,4 +148,124 @@ export async function runOffDeviceImport(
   )
 
   return { jobId: job_id, status }
+}
+
+const IMPORT_STATUS_POLL_MS = 2000
+// A poll can fail transiently while a long job keeps running; only give
+// up on the sequence once the enclave stays unreachable.
+const MAX_CONSECUTIVE_STATUS_FAILURES = 5
+
+/**
+ * A job we were polling has vanished from the enclave, which only
+ * happens when the enclave restarted or reaped it. Its outcome is
+ * unknown to the browser.
+ */
+export function isImportJobGone(cause: unknown): boolean {
+  return cause instanceof SyncEnclaveError && cause.status === 404
+}
+
+function isImportJobFinished(status: ImportStatusResponse): boolean {
+  return status.status === 'completed' || status.status === 'failed'
+}
+
+export interface OffDeviceImportSequenceOptions {
+  onUploadProgress?: (
+    fileIndex: number,
+    progress: OffDeviceImportProgress,
+  ) => void
+  /** Called with each status polled while an earlier file is processed. */
+  onProcessing?: (fileIndex: number, status: ImportStatusResponse) => void
+  wait?: (ms: number) => Promise<void>
+}
+
+/**
+ * A file of a split import could not be uploaded, started, or followed
+ * to completion. Records which file and how many chats the earlier files
+ * imported, so a partly finished import is not reported as nothing.
+ */
+export class OffDeviceImportSequenceError extends Error {
+  constructor(
+    cause: unknown,
+    readonly fileIndex: number,
+    readonly importedBefore: number,
+  ) {
+    super(cause instanceof Error ? cause.message : 'Failed to start import')
+    this.name = 'OffDeviceImportSequenceError'
+    this.cause = cause
+  }
+}
+
+export interface OffDeviceImportSequenceResult {
+  /**
+   * The last job's status: the one that failed or was interrupted, or
+   * the final file's kickoff snapshot when every earlier file completed.
+   */
+  status: ImportStatusResponse
+  /** Index into the files of the job `status` describes. */
+  fileIndex: number
+  /** Chats imported by the files that completed before `fileIndex`. */
+  importedBefore: number
+  /** The enclave lost the job at `fileIndex` while it was processing. */
+  interrupted: boolean
+}
+
+/**
+ * Imports a split export as one job per file. The enclave runs one
+ * import per user at a time and rejects a second create while a job is
+ * running, so each file except the last is processed to completion
+ * before the next is uploaded. The sequence stops at the first file that
+ * fails so a later success never hides it. The last file's job is left
+ * running; the enclave emails the user when it finishes. Any error is
+ * rethrown as an OffDeviceImportSequenceError.
+ */
+export async function runOffDeviceImports(
+  source: ImportSource,
+  files: readonly File[],
+  options: OffDeviceImportSequenceOptions = {},
+): Promise<OffDeviceImportSequenceResult> {
+  if (files.length === 0) {
+    throw new Error('No export files were selected')
+  }
+  const wait =
+    options.wait ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
+  let importedBefore = 0
+  for (let fileIndex = 0; ; fileIndex++) {
+    let status: ImportStatusResponse
+    try {
+      const started = await runOffDeviceImport(source, files[fileIndex], {
+        onProgress: (progress) =>
+          options.onUploadProgress?.(fileIndex, progress),
+      })
+      status = started.status
+      const isLast = fileIndex === files.length - 1
+      if (!isLast && !isImportJobFinished(status)) {
+        options.onProcessing?.(fileIndex, status)
+      }
+      let consecutiveFailures = 0
+      while (!isLast && !isImportJobFinished(status)) {
+        await wait(IMPORT_STATUS_POLL_MS)
+        try {
+          status = await importStatus(started.jobId)
+          consecutiveFailures = 0
+        } catch (cause) {
+          if (isImportJobGone(cause)) {
+            return { status, fileIndex, importedBefore, interrupted: true }
+          }
+          consecutiveFailures++
+          if (consecutiveFailures >= MAX_CONSECUTIVE_STATUS_FAILURES) {
+            throw cause
+          }
+          continue
+        }
+        options.onProcessing?.(fileIndex, status)
+      }
+      if (isLast || status.status === 'failed') {
+        return { status, fileIndex, importedBefore, interrupted: false }
+      }
+    } catch (cause) {
+      throw new OffDeviceImportSequenceError(cause, fileIndex, importedBefore)
+    }
+    importedBefore += status.imported
+  }
 }

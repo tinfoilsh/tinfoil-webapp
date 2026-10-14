@@ -1,7 +1,9 @@
 import type { Chat } from '@/components/chat/types'
-import { runOffDeviceImport } from '@/services/chat-import/off-device-import'
+import {
+  isImportJobGone,
+  runOffDeviceImport,
+} from '@/services/chat-import/off-device-import'
 import { chatStorage } from '@/services/storage/chat-storage'
-import { SyncEnclaveError } from '@/services/sync-enclave'
 // prettier-ignore
 import { importStatus,type ImportFailureReason,type ImportStatusResponse } from '@/services/sync-enclave/sync-api'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
@@ -57,12 +59,6 @@ const defaults: Dependencies = {
       signal.addEventListener('abort', abort, { once: true })
     })
   },
-}
-
-// A job we were just polling has vanished from the enclave, which only
-// happens when the enclave restarted or reaped it.
-function isImportJobGone(cause: unknown): boolean {
-  return cause instanceof SyncEnclaveError && cause.status === 404
 }
 
 function emptyReport(): NativeRestoreResult['report'] {
