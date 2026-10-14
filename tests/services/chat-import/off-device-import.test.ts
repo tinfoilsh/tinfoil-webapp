@@ -19,6 +19,7 @@ vi.mock('@/services/cloud/cek-encoding', () => ({
 
 import {
   IMPORT_CHUNK_BYTES,
+  OffDeviceImportSequenceError,
   runOffDeviceImport,
   runOffDeviceImports,
 } from '@/services/chat-import/off-device-import'
@@ -314,16 +315,51 @@ describe('runOffDeviceImports', () => {
     const unreachable = new SyncEnclaveError('bad gateway', 502)
     scriptStatuses({ 'job-1': Array.from({ length: 5 }, () => unreachable) })
 
-    await expect(
-      runOffDeviceImports(
-        'chatgpt',
-        [
-          namedFile('conversations-000.json'),
-          namedFile('conversations-001.json'),
-        ],
-        { wait: noWait },
-      ),
-    ).rejects.toBe(unreachable)
+    const error = await runOffDeviceImports(
+      'chatgpt',
+      [
+        namedFile('conversations-000.json'),
+        namedFile('conversations-001.json'),
+      ],
+      { wait: noWait },
+    ).catch((cause: unknown) => cause)
+
+    expect(error).toBeInstanceOf(OffDeviceImportSequenceError)
+    expect(error).toMatchObject({ fileIndex: 0, importedBefore: 0 })
+    expect((error as Error).cause).toBe(unreachable)
     expect(importCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the chats earlier files imported when a later file cannot start', async () => {
+    scriptStatuses({ 'job-1': [job('completed', 4)] })
+    const busy = new SyncEnclaveError(
+      'an import is already in progress',
+      409,
+      'IDEMPOTENCY_CONFLICT',
+    )
+    importCreate
+      .mockImplementationOnce(async () => {
+        events.push('create job-1')
+        return { job_id: 'job-1', upload_id: 'up-1' }
+      })
+      .mockRejectedValueOnce(busy)
+
+    const error = await runOffDeviceImports(
+      'chatgpt',
+      [
+        namedFile('conversations-000.json'),
+        namedFile('conversations-001.json'),
+        namedFile('conversations-002.json'),
+      ],
+      { wait: noWait },
+    ).catch((cause: unknown) => cause)
+
+    expect(error).toBeInstanceOf(OffDeviceImportSequenceError)
+    expect(error).toMatchObject({
+      message: 'an import is already in progress',
+      fileIndex: 1,
+      importedBefore: 4,
+    })
+    expect((error as Error).cause).toBe(busy)
   })
 })

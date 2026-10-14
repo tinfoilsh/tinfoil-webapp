@@ -40,6 +40,7 @@ import {
   PremiumProjectImportRequiredError,
 } from '@/services/chat-import/local-tinfoil-import'
 import {
+  OffDeviceImportSequenceError,
   runOffDeviceImports,
   type OffDeviceImportProgress,
   type OffDeviceImportSequenceResult,
@@ -237,21 +238,55 @@ export function describeOffDeviceImportOutcome(
   const explanation = outcome.interrupted
     ? 'The import stopped before it finished. Chats already imported were kept; select this file again to continue.'
     : kickoff.message
-  const errors = [`${fileNames[outcome.fileIndex]}: ${explanation}`]
-  const notStarted = fileNames.length - outcome.fileIndex - 1
-  if (notStarted > 0) {
-    errors.push(
-      `${notStarted} remaining file${notStarted === 1 ? ' was' : 's were'} not imported.`,
-    )
-  }
   return {
     success: false,
     failed: true,
     pending: false,
     chatsImported,
     projectsImported: 0,
-    errors,
+    errors: fileFailureErrors(fileNames, outcome.fileIndex, explanation),
   }
+}
+
+/**
+ * Panel state for an import that threw. When a later file of a split
+ * export fails, the chats earlier files imported are still counted and
+ * the failing file is named.
+ */
+export function describeOffDeviceImportError(
+  err: unknown,
+  fileNames: readonly string[],
+): ImportResult {
+  const message = err instanceof Error ? err.message : 'Failed to start import'
+  if (!(err instanceof OffDeviceImportSequenceError) || fileNames.length < 2) {
+    return {
+      success: false,
+      chatsImported: 0,
+      projectsImported: 0,
+      errors: [message],
+    }
+  }
+  return {
+    success: false,
+    chatsImported: err.importedBefore,
+    projectsImported: 0,
+    errors: fileFailureErrors(fileNames, err.fileIndex, message),
+  }
+}
+
+function fileFailureErrors(
+  fileNames: readonly string[],
+  fileIndex: number,
+  explanation: string | undefined,
+): string[] {
+  const errors = [`${fileNames[fileIndex]}: ${explanation}`]
+  const notStarted = fileNames.length - fileIndex - 1
+  if (notStarted > 0) {
+    errors.push(
+      `${notStarted} remaining file${notStarted === 1 ? ' was' : 's were'} not imported.`,
+    )
+  }
+  return errors
 }
 
 export type ImportProgress =
@@ -1655,19 +1690,19 @@ export function SettingsModal({
         onChatsUpdated()
       }
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to start import'
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [message],
-      })
+      const result = describeOffDeviceImportError(
+        err,
+        files.map((file) => file.name),
+      )
+      setImportResult(result)
       toast({
         title: 'Import failed',
         description: `Could not start the ${sourceLabel} import`,
         variant: 'destructive',
       })
+      if (result.chatsImported > 0 && onChatsUpdated) {
+        onChatsUpdated()
+      }
     } finally {
       setIsImporting(false)
       setImportProgress(null)

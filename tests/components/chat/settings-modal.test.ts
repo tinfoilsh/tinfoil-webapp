@@ -1,10 +1,12 @@
 import {
+  describeOffDeviceImportError,
   describeOffDeviceImportKickoff,
   describeOffDeviceImportOutcome,
   getDeleteAllChatsSuccessDescription,
   getDeleteAllChatsSuccessTitle,
   importResultTitle,
 } from '@/components/chat/settings-modal'
+import { OffDeviceImportSequenceError } from '@/services/chat-import/off-device-import'
 import { describe, expect, it } from 'vitest'
 
 describe('settings chat deletion confirmation', () => {
@@ -194,5 +196,43 @@ describe('off-device import outcome across split files', () => {
       'conversations-001.json: The import stopped before it finished. Chats already imported were kept; select this file again to continue.',
       '1 remaining file was not imported.',
     ])
+  })
+
+  it('keeps earlier chats and names the file when a later file throws', () => {
+    const result = describeOffDeviceImportError(
+      new OffDeviceImportSequenceError(
+        new Error('an import is already in progress'),
+        1,
+        4,
+      ),
+      files,
+    )
+    expect(result).toEqual({
+      success: false,
+      chatsImported: 4,
+      projectsImported: 0,
+      errors: [
+        'conversations-001.json: an import is already in progress',
+        '1 remaining file was not imported.',
+      ],
+    })
+  })
+
+  it('reports a single file that throws by its message alone', () => {
+    expect(
+      describeOffDeviceImportError(
+        new OffDeviceImportSequenceError(
+          new Error('The export file is empty'),
+          0,
+          0,
+        ),
+        ['export.zip'],
+      ),
+    ).toEqual({
+      success: false,
+      chatsImported: 0,
+      projectsImported: 0,
+      errors: ['The export file is empty'],
+    })
   })
 })

@@ -178,6 +178,23 @@ export interface OffDeviceImportSequenceOptions {
   wait?: (ms: number) => Promise<void>
 }
 
+/**
+ * A file of a split import could not be uploaded, started, or followed
+ * to completion. Records which file and how many chats the earlier files
+ * imported, so a partly finished import is not reported as nothing.
+ */
+export class OffDeviceImportSequenceError extends Error {
+  constructor(
+    cause: unknown,
+    readonly fileIndex: number,
+    readonly importedBefore: number,
+  ) {
+    super(cause instanceof Error ? cause.message : 'Failed to start import')
+    this.name = 'OffDeviceImportSequenceError'
+    this.cause = cause
+  }
+}
+
 export interface OffDeviceImportSequenceResult {
   /**
    * The last job's status: the one that failed or was interrupted, or
@@ -198,7 +215,8 @@ export interface OffDeviceImportSequenceResult {
  * running, so each file except the last is processed to completion
  * before the next is uploaded. The sequence stops at the first file that
  * fails so a later success never hides it. The last file's job is left
- * running; the enclave emails the user when it finishes.
+ * running; the enclave emails the user when it finishes. Any error is
+ * rethrown as an OffDeviceImportSequenceError.
  */
 export async function runOffDeviceImports(
   source: ImportSource,
@@ -213,32 +231,40 @@ export async function runOffDeviceImports(
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   let importedBefore = 0
   for (let fileIndex = 0; ; fileIndex++) {
-    const started = await runOffDeviceImport(source, files[fileIndex], {
-      onProgress: (progress) => options.onUploadProgress?.(fileIndex, progress),
-    })
-    let status = started.status
-    const isLast = fileIndex === files.length - 1
-    if (!isLast && !isImportJobFinished(status)) {
-      options.onProcessing?.(fileIndex, status)
-    }
-    let consecutiveFailures = 0
-    while (!isLast && !isImportJobFinished(status)) {
-      await wait(IMPORT_STATUS_POLL_MS)
-      try {
-        status = await importStatus(started.jobId)
-        consecutiveFailures = 0
-      } catch (cause) {
-        if (isImportJobGone(cause)) {
-          return { status, fileIndex, importedBefore, interrupted: true }
-        }
-        consecutiveFailures++
-        if (consecutiveFailures >= MAX_CONSECUTIVE_STATUS_FAILURES) throw cause
-        continue
+    let status: ImportStatusResponse
+    try {
+      const started = await runOffDeviceImport(source, files[fileIndex], {
+        onProgress: (progress) =>
+          options.onUploadProgress?.(fileIndex, progress),
+      })
+      status = started.status
+      const isLast = fileIndex === files.length - 1
+      if (!isLast && !isImportJobFinished(status)) {
+        options.onProcessing?.(fileIndex, status)
       }
-      options.onProcessing?.(fileIndex, status)
-    }
-    if (isLast || status.status === 'failed') {
-      return { status, fileIndex, importedBefore, interrupted: false }
+      let consecutiveFailures = 0
+      while (!isLast && !isImportJobFinished(status)) {
+        await wait(IMPORT_STATUS_POLL_MS)
+        try {
+          status = await importStatus(started.jobId)
+          consecutiveFailures = 0
+        } catch (cause) {
+          if (isImportJobGone(cause)) {
+            return { status, fileIndex, importedBefore, interrupted: true }
+          }
+          consecutiveFailures++
+          if (consecutiveFailures >= MAX_CONSECUTIVE_STATUS_FAILURES) {
+            throw cause
+          }
+          continue
+        }
+        options.onProcessing?.(fileIndex, status)
+      }
+      if (isLast || status.status === 'failed') {
+        return { status, fileIndex, importedBefore, interrupted: false }
+      }
+    } catch (cause) {
+      throw new OffDeviceImportSequenceError(cause, fileIndex, importedBefore)
     }
     importedBefore += status.imported
   }
