@@ -111,7 +111,7 @@ const defaults: NativeBackupCollectionDependencies = {
   requireUnlockedCek: () => void requirePrimaryKeyB64(),
   getCloudInventory: backupInventory,
   getCloudChats: (requests) => cloudStorage.downloadChatsForBackup(requests),
-  getCloudImage: (value) => cloudStorage.loadChatImageForBackup(value),
+  getCloudImage: (value) => cloudStorage.loadServerAttachment(value),
   getProjects: (requests) => projectStorage.getProjectsForBackup(requests),
   getDocuments: (requests) => projectStorage.getDocumentsForBackup(requests),
   getLocalChats: () => indexedDBStorage.getAllChats(),

@@ -30,6 +30,7 @@ import {
   SyncNetworkError,
 } from '../sync-enclave/sync-enclave-client'
 import {
+  isEnclaveAttachmentId,
   PULL_ITEM_CODE_UNSPECIFIED,
   PULL_ITEM_CODES,
   RESTORE_DELETED_HEADERS,
@@ -515,16 +516,8 @@ export class CloudStorageService {
     const rewrites: AttachmentRewrite[] = []
     for (const msg of messages) {
       for (const att of msg.attachments || []) {
-        const uploadable =
-          (att.type === 'image' && att.base64 && !att.encryptionKey) ||
-          (CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED &&
-            hasInlineDocumentPayload(att) &&
-            !att.encryptionKey)
-        if (uploadable) {
-          const raw =
-            att.type === 'image'
-              ? base64ToUint8Array(att.base64!)
-              : encodeDocumentPayload(att)
+        const raw = await this.attachmentUploadPayload(att)
+        if (raw) {
           // The enclave mints both the durable attachment id and a
           // fresh per-attachment AES-256 key. It uploads the raw
           // plaintext to buckets sealed under that key (buckets's
@@ -552,6 +545,7 @@ export class CloudStorageService {
           ).storagePayloadId
           att.id = enclaveID
           att.encryptionKey = att_key
+          delete (att as { key?: string }).key
           const rewrite: AttachmentRewrite = {
             clientId,
             serverId: enclaveID,
@@ -564,6 +558,31 @@ export class CloudStorageService {
       }
     }
     return rewrites
+  }
+
+  /**
+   * Bytes to store before the chat push, or null when the attachment
+   * needs no upload. Content never uploaded comes from this device. An
+   * attachment stored before the enclave minted ids keeps a server key
+   * under an id the controlplane rejects on push, so it is stored again
+   * under an enclave id, read locally when this device still holds it.
+   */
+  private async attachmentUploadPayload(
+    att: Attachment,
+  ): Promise<Uint8Array<ArrayBuffer> | null> {
+    const serverKey = att.encryptionKey || (att as { key?: string }).key
+    if (serverKey && isEnclaveAttachmentId(att.id)) return null
+    if (att.type === 'image' && att.base64) {
+      return base64ToUint8Array(att.base64)
+    }
+    if (
+      CLOUD_SYNC.DOCUMENT_ATTACHMENT_WRITES_ENABLED &&
+      hasInlineDocumentPayload(att)
+    ) {
+      return encodeDocumentPayload(att)
+    }
+    if (!serverKey) return null
+    return this.loadServerAttachment(att)
   }
 
   async bulkUploadChats(
@@ -858,7 +877,13 @@ export class CloudStorageService {
     return results
   }
 
-  async loadChatImageForBackup(value: Attachment): Promise<Uint8Array | null> {
+  /**
+   * Read the bytes the server holds for an attachment with its embedded
+   * key. Throws `CloudBackupReadError` when the content is unavailable.
+   */
+  async loadServerAttachment(
+    value: Attachment,
+  ): Promise<Uint8Array<ArrayBuffer>> {
     if (value.type !== 'image' && !isOffloadedDocument(value)) {
       throw new CloudBackupReadError(
         'item_invalid',
@@ -876,7 +901,7 @@ export class CloudStorageService {
       )
     }
     if (keyB64) {
-      let plaintext: Uint8Array
+      let plaintext: Uint8Array<ArrayBuffer>
       try {
         plaintext = await enclaveAttachmentGet({
           id: value.id,
@@ -914,7 +939,7 @@ export class CloudStorageService {
   private async fetchLegacyAttachment(
     attachmentId: string,
     keyB64: string,
-  ): Promise<Uint8Array> {
+  ): Promise<Uint8Array<ArrayBuffer>> {
     let response: Response
     try {
       response = await fetch(

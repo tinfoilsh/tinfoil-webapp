@@ -127,7 +127,7 @@ export async function encryptAttachment(
 export async function decryptAttachment(
   encryptedData: Uint8Array,
   key: Uint8Array,
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
   if (key.length !== AES_256_KEY_LENGTH)
     throw new EncryptedAttachmentValidationError('invalid_key_length')
   const { iv, ciphertext } = unpackIvCiphertext(encryptedData)

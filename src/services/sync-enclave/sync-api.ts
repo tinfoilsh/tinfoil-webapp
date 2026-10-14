@@ -617,7 +617,7 @@ function bytesToB64(b: Uint8Array): string {
   return uint8ArrayToBase64(b)
 }
 
-function b64ToBytes(s: string): Uint8Array {
+function b64ToBytes(s: string): Uint8Array<ArrayBuffer> {
   return base64ToUint8Array(s)
 }
 
@@ -1163,7 +1163,7 @@ export async function attachmentPut(
 export async function attachmentGet(
   req: AttachmentGetRequest,
   signal?: AbortSignal,
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
   const client = await getSyncEnclaveClient(signal)
   const resp = await client.post<AttachmentGetResponse>(
     '/v1/attachment/get',
