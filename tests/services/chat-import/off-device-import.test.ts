@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const importCreate = vi.fn()
 const importUploadChunk = vi.fn()
 const importStart = vi.fn()
+const importStatus = vi.fn()
 
 vi.mock('@/services/sync-enclave/sync-api', () => ({
   importCreate: (...args: unknown[]) => importCreate(...args),
   importUploadChunk: (...args: unknown[]) => importUploadChunk(...args),
   importStart: (...args: unknown[]) => importStart(...args),
+  importStatus: (...args: unknown[]) => importStatus(...args),
 }))
 
 vi.mock('@/services/cloud/cek-encoding', () => ({
@@ -18,7 +20,9 @@ vi.mock('@/services/cloud/cek-encoding', () => ({
 import {
   IMPORT_CHUNK_BYTES,
   runOffDeviceImport,
+  runOffDeviceImports,
 } from '@/services/chat-import/off-device-import'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
 
 function fileOf(bytes: Uint8Array): File {
   return new File([new Uint8Array(bytes)], 'export.zip', {
@@ -120,5 +124,206 @@ describe('runOffDeviceImport', () => {
       { phase: 'uploading', processedBytes: size, totalBytes: size },
       { phase: 'starting', processedBytes: size, totalBytes: size },
     ])
+  })
+})
+
+describe('runOffDeviceImports', () => {
+  // The enclave runs one import per user, so the order of creates and
+  // status polls is the contract under test.
+  let events: string[]
+  let jobs: number
+  const noWait = async () => {}
+
+  function namedFile(name: string): File {
+    return new File([new TextEncoder().encode(`[${name}]`)], name, {
+      type: 'application/json',
+    })
+  }
+
+  function job(status: string, imported = 0, extra = {}) {
+    return {
+      status,
+      imported,
+      failed: 0,
+      total: imported,
+      errors: [],
+      ...extra,
+    }
+  }
+
+  beforeEach(() => {
+    events = []
+    jobs = 0
+    importCreate.mockReset()
+    importUploadChunk.mockReset()
+    importStart.mockReset()
+    importStatus.mockReset()
+    importCreate.mockImplementation(async () => {
+      jobs++
+      events.push(`create job-${jobs}`)
+      return { job_id: `job-${jobs}`, upload_id: `up-${jobs}` }
+    })
+    importUploadChunk.mockResolvedValue({ ok: true })
+    importStart.mockImplementation(async ({ jobId }: { jobId: string }) => {
+      events.push(`start ${jobId}`)
+      return job('running')
+    })
+  })
+
+  function scriptStatuses(script: Record<string, Array<object | Error>>) {
+    importStatus.mockImplementation(async (jobId: string) => {
+      const next = script[jobId]?.shift()
+      if (!next) throw new Error(`unexpected status poll for ${jobId}`)
+      events.push(
+        `status ${jobId} ${next instanceof Error ? 'error' : (next as { status: string }).status}`,
+      )
+      if (next instanceof Error) throw next
+      return next
+    })
+  }
+
+  it('finishes each file before uploading the next and leaves the last running', async () => {
+    scriptStatuses({
+      'job-1': [job('running', 1), job('completed', 4)],
+      'job-2': [job('completed', 3)],
+    })
+    const onProcessing = vi.fn()
+
+    const result = await runOffDeviceImports(
+      'chatgpt',
+      [
+        namedFile('conversations-000.json'),
+        namedFile('conversations-001.json'),
+        namedFile('conversations-002.json'),
+      ],
+      { wait: noWait, onProcessing },
+    )
+
+    expect(events).toEqual([
+      'create job-1',
+      'start job-1',
+      'status job-1 running',
+      'status job-1 completed',
+      'create job-2',
+      'start job-2',
+      'status job-2 completed',
+      'create job-3',
+      'start job-3',
+    ])
+    expect(result).toEqual({
+      status: job('running'),
+      fileIndex: 2,
+      importedBefore: 7,
+      interrupted: false,
+    })
+    expect(
+      onProcessing.mock.calls.map(([index, s]) => [index, s.status]),
+    ).toEqual([
+      [0, 'running'],
+      [0, 'running'],
+      [0, 'completed'],
+      [1, 'running'],
+      [1, 'completed'],
+    ])
+  })
+
+  it('stops at the first file that fails', async () => {
+    const failed = job('failed', 0, {
+      failure_reason: 'invalid_archive',
+      failure_detail: 'unexpected_json',
+    })
+    scriptStatuses({ 'job-1': [failed] })
+
+    const result = await runOffDeviceImports(
+      'chatgpt',
+      [namedFile('user.json'), namedFile('conversations-000.json')],
+      { wait: noWait },
+    )
+
+    expect(events).toEqual([
+      'create job-1',
+      'start job-1',
+      'status job-1 failed',
+    ])
+    expect(result).toEqual({
+      status: failed,
+      fileIndex: 0,
+      importedBefore: 0,
+      interrupted: false,
+    })
+  })
+
+  it('reports a job the enclave lost as interrupted without starting the next', async () => {
+    scriptStatuses({
+      'job-1': [
+        job('running', 2),
+        new SyncEnclaveError('import job not found', 404, 'NOT_FOUND'),
+      ],
+    })
+
+    const result = await runOffDeviceImports(
+      'chatgpt',
+      [
+        namedFile('conversations-000.json'),
+        namedFile('conversations-001.json'),
+      ],
+      { wait: noWait },
+    )
+
+    expect(events).toEqual([
+      'create job-1',
+      'start job-1',
+      'status job-1 running',
+      'status job-1 error',
+    ])
+    expect(result).toEqual({
+      status: job('running', 2),
+      fileIndex: 0,
+      importedBefore: 0,
+      interrupted: true,
+    })
+  })
+
+  it('keeps waiting through a transient status failure', async () => {
+    scriptStatuses({
+      'job-1': [new SyncEnclaveError('bad gateway', 502), job('completed', 5)],
+    })
+
+    const result = await runOffDeviceImports(
+      'chatgpt',
+      [
+        namedFile('conversations-000.json'),
+        namedFile('conversations-001.json'),
+      ],
+      { wait: noWait },
+    )
+
+    expect(events).toEqual([
+      'create job-1',
+      'start job-1',
+      'status job-1 error',
+      'status job-1 completed',
+      'create job-2',
+      'start job-2',
+    ])
+    expect(result.importedBefore).toBe(5)
+    expect(result.fileIndex).toBe(1)
+  })
+
+  it('gives up once the enclave stays unreachable instead of starting the next file', async () => {
+    const unreachable = new SyncEnclaveError('bad gateway', 502)
+    scriptStatuses({ 'job-1': Array.from({ length: 5 }, () => unreachable) })
+
+    await expect(
+      runOffDeviceImports(
+        'chatgpt',
+        [
+          namedFile('conversations-000.json'),
+          namedFile('conversations-001.json'),
+        ],
+        { wait: noWait },
+      ),
+    ).rejects.toBe(unreachable)
+    expect(importCreate).toHaveBeenCalledTimes(1)
   })
 })

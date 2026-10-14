@@ -1,5 +1,6 @@
 import {
   describeOffDeviceImportKickoff,
+  describeOffDeviceImportOutcome,
   getDeleteAllChatsSuccessDescription,
   getDeleteAllChatsSuccessTitle,
   importResultTitle,
@@ -110,5 +111,88 @@ describe('off-device import kickoff', () => {
     expect(importResultTitle({ ...base, success: false })).toBe(
       'Import completed with errors',
     )
+  })
+})
+
+describe('off-device import outcome across split files', () => {
+  const files = [
+    'conversations-000.json',
+    'conversations-001.json',
+    'conversations-002.json',
+  ]
+
+  it('counts chats from finished files while the last one runs', () => {
+    const result = describeOffDeviceImportOutcome(
+      {
+        status: { status: 'running', imported: 2, failed: 0, total: 9 },
+        fileIndex: 2,
+        importedBefore: 7,
+        interrupted: false,
+      },
+      files,
+      'ChatGPT',
+    )
+    expect(result).toMatchObject({
+      success: true,
+      pending: true,
+      failed: false,
+      chatsImported: 9,
+    })
+    expect(result.message).toMatch(/email you/)
+  })
+
+  it('names the failed file, explains the check, and counts files never started', () => {
+    const result = describeOffDeviceImportOutcome(
+      {
+        status: {
+          status: 'failed',
+          imported: 0,
+          failed: 0,
+          total: 0,
+          errors: ['import archive could not be read'],
+          failure_reason: 'invalid_archive',
+          failure_detail: 'unexpected_json',
+        },
+        fileIndex: 0,
+        importedBefore: 0,
+        interrupted: false,
+      },
+      files,
+      'ChatGPT',
+    )
+    expect(result).toEqual({
+      success: false,
+      failed: true,
+      pending: false,
+      chatsImported: 0,
+      projectsImported: 0,
+      errors: [
+        'conversations-000.json: This file is from the export but does not contain conversations. Select the conversations JSON files, such as conversations.json or conversations-000.json, not files like user.json.',
+        '2 remaining files were not imported.',
+      ],
+    })
+  })
+
+  it('reports a lost job as a failure on its file, keeping earlier chats', () => {
+    const result = describeOffDeviceImportOutcome(
+      {
+        status: { status: 'running', imported: 3, failed: 0, total: 8 },
+        fileIndex: 1,
+        importedBefore: 4,
+        interrupted: true,
+      },
+      files,
+      'ChatGPT',
+    )
+    expect(result).toMatchObject({
+      success: false,
+      failed: true,
+      pending: false,
+      chatsImported: 7,
+    })
+    expect(result.errors).toEqual([
+      'conversations-001.json: The import stopped before it finished. Chats already imported were kept; select this file again to continue.',
+      '1 remaining file was not imported.',
+    ])
   })
 })
