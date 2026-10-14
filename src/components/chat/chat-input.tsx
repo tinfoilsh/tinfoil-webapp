@@ -1391,7 +1391,7 @@ export function ChatInput({
                   >
                     {isRecording ? (
                       <TfStop
-                        className="h-6 w-6 md:h-4 md:w-4"
+                        className="h-6 w-6 md:h-5 md:w-5"
                         aria-hidden="true"
                       />
                     ) : isTranscribing ? (
@@ -1460,7 +1460,7 @@ export function ChatInput({
                     >
                       {showStopAction ? (
                         <TfStop
-                          className="h-3.5 w-3.5 text-white/80 transition-colors md:h-3 md:w-3"
+                          className="h-6 w-6 text-white/80 transition-colors md:h-5 md:w-5"
                           aria-hidden="true"
                         />
                       ) : (
