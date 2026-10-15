@@ -445,7 +445,7 @@ export function useThread(
             localRuns.current.delete(run.threadId)
             setLocalRunsChanged((count) => count + 1)
           }
-          if (run) forgetReceipt(run.threadId)
+          forgetReceipt(runId)
           void (api.userId ? refresh() : api.refresh()).catch(report)
         }
       }
@@ -454,8 +454,11 @@ export function useThread(
         // A local thread has its id before it starts, so another message may
         // follow a turn the harness did not accept.
         if (run && !run.runId) starting.current = false
-        if (quiet) forgetReceipt(run?.threadId)
-        else report(cause)
+        // A run the harness refused to follow is gone. One that could not be
+        // reached keeps its receipt, so it can still be rejoined.
+        if (!quiet) report(cause)
+        else if (cause instanceof HarnessError && cause.status !== undefined)
+          forgetReceipt(runId)
       }
     } finally {
       followers.current.delete(controller)
@@ -474,10 +477,11 @@ export function useThread(
     if (event.type === 'RUN_ERROR' && event.code === 'QUOTA_EXHAUSTED')
       api.reportRateLimit(exhaustedQuota(event))
   }
-  function forgetReceipt(threadId?: string) {
+  // A run that ended is not followed again after a reload.
+  function forgetReceipt(runId?: string) {
     try {
       const receipt = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null')
-      if (receipt?.local && receipt.threadId === threadId)
+      if (runId && receipt?.runId === runId)
         sessionStorage.removeItem(storageKey)
     } catch {
       /* optional routing hint */
@@ -679,8 +683,8 @@ export function useThread(
       report(cause)
       return false
     }
-    keepStartingPreset()
     if (version !== generation.current) return false
+    keepStartingPreset()
     if (!idRef.current && !temporaryRef.current) setUnsaved(threadId)
     const input: Turn = {
       ...turnFields(fields),

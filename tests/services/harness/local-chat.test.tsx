@@ -568,6 +568,128 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect((await stored(threadId))?.messages).toEqual(savedReply)
   })
 
+  function reloadDuringRun() {
+    sessionStorage.setItem(
+      'harness-run:alice',
+      JSON.stringify({
+        threadId: SEEDED_ID,
+        runId: 'run-a3',
+        temporary: false,
+        local: true,
+      }),
+    )
+    return localThreadStore('device').update(SEEDED_ID, () => seededThread())
+  }
+
+  it('keeps a run it could not reach, so reopening the chat rejoins it', async () => {
+    signIn('alice')
+    await reloadDuringRun()
+    client.events
+      .mockImplementationOnce(async function* () {
+        throw new TypeError('Failed to fetch')
+      })
+      .mockImplementationOnce(
+        frames(
+          {
+            type: 'MESSAGES_SNAPSHOT',
+            messages: [
+              ...seededThread().messages.map(wire),
+              { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+            ],
+            hasOlder: false,
+          },
+          { type: 'RUN_STARTED', threadId: SEEDED_ID, runId: 'run-a3' },
+          {
+            type: 'TEXT_MESSAGE_CHUNK',
+            messageId: 'a3',
+            delta: 'third answer',
+            timestamp: 't6',
+          },
+          { type: 'RUN_FINISHED', threadId: SEEDED_ID, runId: 'run-a3' },
+        ),
+      )
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(client.events).toHaveBeenCalledOnce())
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    expect(result.current.error).toBe('')
+    expect(sessionStorage.getItem('harness-run:alice')).not.toBeNull()
+
+    await act(() => result.current.open(SEEDED_ID, { local: true }))
+
+    expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { threadId: SEEDED_ID, runId: 'run-a3' },
+    ])
+    await waitFor(async () =>
+      expect((await stored(SEEDED_ID))?.messages.slice(4)).toEqual([
+        { id: 'u3', role: 'user', createdAt: 't5', content: 'third' },
+        {
+          id: 'a3',
+          role: 'assistant',
+          createdAt: 't6',
+          content: 'third answer',
+          timeline: [
+            { id: 'a3_content_0', type: 'content', content: 'third answer' },
+          ],
+        },
+      ]),
+    )
+    expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
+  })
+
+  it('forgets a run the harness no longer has', async () => {
+    signIn('alice')
+    await reloadDuringRun()
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        { code: 'KEY_REQUIRED', message: 'A content key is required' },
+        401,
+      )
+    })
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+
+    await waitFor(() =>
+      expect(sessionStorage.getItem('harness-run:alice')).toBeNull(),
+    )
+    expect(client.events).toHaveBeenCalledOnce()
+    expect(result.current.error).toBe('')
+  })
+
+  it('leaves the next chat its own prompt when a late first send is dropped', async () => {
+    signIn('alice')
+    const device = localThreadStore('device')
+    const read = device.get.bind(device)
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.spyOn(device, 'get').mockImplementationOnce(async (id) => {
+      await held
+      return read(id)
+    })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    act(() => result.current.setPresetId('builtin:tutor'))
+    let sending: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'Hi' })
+    })
+
+    act(() => result.current.newChat())
+    expect(result.current.presetId).toBeNull()
+    await act(async () => {
+      release()
+      await sending
+    })
+
+    expect(result.current.presetId).toBeNull()
+    expect(client.events).not.toHaveBeenCalled()
+  })
+
   it('sends the stored transcript with an edit and keeps the truncation', async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seededThread())
@@ -1264,6 +1386,61 @@ describe('cloud chats', () => {
       await sending
     })
     expect(listed()?.activeRun).toBeNull()
+  })
+
+  it('rejoin a temporary run after a reload only until it ends', async () => {
+    localStorage.setItem('tinfoil-settings-cloud-sync-enabled', 'true')
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    const api = signIn('alice')
+    publish({ keyReady: true })
+    vi.spyOn(api, 'key').mockReturnValue('Y29udGVudC1rZXk=')
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/list' ? { threads: [], nextCursor: null } : {},
+    )
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementation(async function* () {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: 'temp-thread', runId: 'run-1' },
+      }
+      await held
+      yield {
+        id: 1,
+        event: {
+          type: 'RUN_FINISHED',
+          threadId: 'temp-thread',
+          runId: 'run-1',
+        },
+      }
+    })
+    const { result, unmount } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    act(() => result.current.setTemporary(true))
+    let sending: Promise<unknown> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'Off the record' })
+    })
+    await waitFor(() =>
+      expect(JSON.parse(sessionStorage.getItem('harness-run:alice')!)).toEqual({
+        threadId: 'temp-thread',
+        runId: 'run-1',
+        temporary: true,
+      }),
+    )
+
+    await act(async () => {
+      release()
+      await sending
+    })
+    expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
+
+    unmount()
+    client.events.mockClear()
+    renderHook(() => useThread())
+    expect(client.events).not.toHaveBeenCalled()
   })
 
   it('are shared by id with the content key', async () => {
