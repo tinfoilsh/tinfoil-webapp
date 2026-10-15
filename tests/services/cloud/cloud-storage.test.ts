@@ -866,22 +866,82 @@ describe('CloudStorageService auth readiness', () => {
     })
   })
 
-  it('enumerates every remote chat ID for a project', async () => {
+  it('enumerates every remote chat for a project with its row metadata', async () => {
     mockListStatus
       .mockResolvedValueOnce({
         updates: [
-          { id: 'chat-1', project_id: 'project-1' },
-          { id: 'other-chat', project_id: 'project-2' },
+          {
+            id: 'chat-1',
+            etag: '3',
+            key_id: 'key-1',
+            project_id: 'project-1',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+          {
+            id: 'other-chat',
+            etag: '1',
+            key_id: 'key-1',
+            project_id: 'project-2',
+            updated_at: '2026-01-02T00:00:00Z',
+          },
+          {
+            id: 'chat-2',
+            etag: '4',
+            key_id: 'key-1',
+            project_id: 'project-1',
+            updated_at: '2026-01-03T00:00:00Z',
+          },
         ],
         next_cursor: 'page-2',
       })
       .mockResolvedValueOnce({
-        updates: [{ id: 'chat-2', project_id: 'project-1' }],
+        updates: [
+          {
+            id: 'chat-3',
+            etag: '2',
+            key_id: 'key-1',
+            project_id: 'project-1',
+            updated_at: '2026-01-04T00:00:00Z',
+          },
+          {
+            id: 'chat-1',
+            etag: '5',
+            key_id: 'key-1',
+            project_id: 'project-1',
+            updated_at: '2026-01-05T00:00:00Z',
+          },
+        ],
       })
 
     await expect(
-      new CloudStorageService().listChatIdsByProject('project-1'),
-    ).resolves.toEqual(['chat-1', 'chat-2'])
+      new CloudStorageService().listProjectChats('project-1'),
+    ).resolves.toEqual([
+      {
+        id: 'chat-1',
+        etag: '5',
+        project_id: 'project-1',
+        updated_at: '2026-01-05T00:00:00Z',
+      },
+      {
+        id: 'chat-2',
+        etag: '4',
+        project_id: 'project-1',
+        updated_at: '2026-01-03T00:00:00Z',
+      },
+      {
+        id: 'chat-3',
+        etag: '2',
+        project_id: 'project-1',
+        updated_at: '2026-01-04T00:00:00Z',
+      },
+    ])
+    expect(mockListStatus).toHaveBeenCalledTimes(2)
+    expect(mockListStatus).toHaveBeenNthCalledWith(1, {
+      scope: 'chat',
+      projectId: 'project-1',
+      cursor: undefined,
+      limit: 500,
+    })
     expect(mockListStatus).toHaveBeenNthCalledWith(2, {
       scope: 'chat',
       projectId: 'project-1',
@@ -908,7 +968,7 @@ describe('CloudStorageService auth readiness', () => {
     }
 
     await expect(
-      new CloudStorageService().listChatIdsByProject('project-1', guard),
+      new CloudStorageService().listProjectChats('project-1', guard),
     ).rejects.toThrow('Cloud account changed')
     expect(mockListStatus).toHaveBeenCalledTimes(1)
   })

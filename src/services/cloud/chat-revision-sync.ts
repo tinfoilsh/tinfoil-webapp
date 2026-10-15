@@ -75,11 +75,21 @@ type RemoteChatMetadata = Pick<
   'id' | 'etag' | 'project_id' | 'updated_at'
 >
 
+/** Rows a tolerant pull skipped instead of failing. */
+export interface SkippedRemoteChats {
+  /** Rows the enclave could not return, other than ones since deleted. */
+  unavailable: { id: string; code: string }[]
+  /** Rows whose content could not be decoded. */
+  undecodableIds: string[]
+}
+
 /**
  * Pull and store content for the given rows. Revision sync must mirror
  * the server exactly, so a row the enclave could not return is fatal
  * unless it was deleted between the listing and the pull; a later
- * delete event reconciles that case.
+ * delete event reconciles that case. When `skipped` is given, rows the
+ * enclave could not return or that fail to decode are recorded there
+ * instead, so they cannot hide the readable rows after them.
  *
  * Rows are downloaded and stored one batch at a time. Each stored chat
  * carries its etag, so when a later batch fails the next sync cycle
@@ -90,6 +100,7 @@ async function pullAndIngest(
   rows: readonly RemoteChatMetadata[],
   userId: string,
   isCurrent: () => boolean,
+  skipped?: SkippedRemoteChats,
 ): Promise<number> {
   let downloaded = 0
   for (
@@ -98,7 +109,7 @@ async function pullAndIngest(
     start += CLOUD_SYNC.PULL_BATCH_SIZE
   ) {
     const batch = rows.slice(start, start + CLOUD_SYNC.PULL_BATCH_SIZE)
-    downloaded += await pullAndIngestBatch(batch, userId, isCurrent)
+    downloaded += await pullAndIngestBatch(batch, userId, isCurrent, skipped)
   }
   return downloaded
 }
@@ -107,6 +118,7 @@ async function pullAndIngestBatch(
   rows: readonly RemoteChatMetadata[],
   userId: string,
   isCurrent: () => boolean,
+  skipped?: SkippedRemoteChats,
 ): Promise<number> {
   if (rows.length === 0) return 0
   const metadata = new Map(rows.map((row) => [row.id, row]))
@@ -116,6 +128,10 @@ async function pullAndIngestBatch(
   for (const result of results) {
     if (result.status === 'unavailable') {
       if (result.code === PULL_ITEM_CODES.NotFound) continue
+      if (skipped) {
+        skipped.unavailable.push({ id: result.id, code: result.code })
+        continue
+      }
       throw new Error(
         `Sync enclave could not return chat ${result.id}: ${result.code}`,
       )
@@ -130,13 +146,50 @@ async function pullAndIngestBatch(
     })
   }
   const ingest = await ingestRemoteChats(remoteChats, { isCurrent, userId })
-  if (ingest.errors.length > 0) {
-    const [failure] = ingest.errors
+  for (const failure of ingest.errors) {
+    if (skipped && failure.stage === 'decode') {
+      skipped.undecodableIds.push(failure.chatId)
+      continue
+    }
     throw new Error(`Failed to process chat ${failure.chatId}`, {
       cause: failure.error,
     })
   }
   return ingest.downloaded
+}
+
+/**
+ * Store a project's chats that the server holds but this device does
+ * not. The bootstrap pulls only the most recent chats and later syncs
+ * only changed ones, so an older project would otherwise stay empty
+ * until each of its chats changes again. Chats already stored locally
+ * are left to revision sync, and chats with a pending local delete are
+ * never brought back.
+ */
+export async function pullMissingProjectChats(
+  projectId: string,
+  userId: string,
+  isCurrent: () => boolean,
+): Promise<{ downloaded: number; skipped: SkippedRemoteChats }> {
+  const skipped: SkippedRemoteChats = { unavailable: [], undecodableIds: [] }
+  const remoteChats = await cloudStorage.listProjectChats(projectId, {
+    userId,
+    isCurrent,
+    assertCurrent: () => ensureCurrent(isCurrent),
+  })
+  ensureCurrent(isCurrent)
+  const [localIds, pendingDeletes] = await Promise.all([
+    indexedDBStorage.getAllChatIds(),
+    indexedDBStorage.getPendingDeletes(userId),
+  ])
+  ensureCurrent(isCurrent)
+  const excludedIds = new Set([
+    ...localIds,
+    ...pendingDeletes.map((entry) => entry.id),
+  ])
+  const missing = remoteChats.filter((chat) => !excludedIds.has(chat.id))
+  const downloaded = await pullAndIngest(missing, userId, isCurrent, skipped)
+  return { downloaded, skipped }
 }
 
 function toRemoteState(

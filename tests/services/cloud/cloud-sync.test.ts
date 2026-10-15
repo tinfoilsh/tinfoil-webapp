@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   drainChatRevisionSync,
+  pullMissingProjectChats,
   isAuthenticated,
   clearRevisionSyncState,
   getChat,
@@ -37,6 +38,7 @@ const {
   reportChatSyncFailed,
 } = vi.hoisted(() => ({
   drainChatRevisionSync: vi.fn(),
+  pullMissingProjectChats: vi.fn(),
   isAuthenticated: vi.fn(),
   clearRevisionSyncState: vi.fn(),
   getChat: vi.fn(),
@@ -62,6 +64,7 @@ const {
 vi.mock('@/services/cloud/chat-revision-sync', () => ({
   BOOTSTRAP_RECENT_CONTENT_LIMIT: 50,
   drainChatRevisionSync,
+  pullMissingProjectChats,
 }))
 vi.mock('@/services/cloud/cloud-storage', () => ({
   cloudStorage: {
@@ -170,12 +173,21 @@ describe('CloudSyncService revision coordinator routing', () => {
       downloaded: 2,
       errors: [],
     })
+    pullMissingProjectChats.mockResolvedValue({
+      downloaded: 0,
+      skipped: { unavailable: [], undecodableIds: [] },
+    })
   })
 
   it('routes smart sync through the account-wide coordinator', async () => {
     const result = await new CloudSyncService().smartSync('project-1')
 
     expect(result).toEqual({ uploaded: 1, downloaded: 2, errors: [] })
+    expect(pullMissingProjectChats).toHaveBeenCalledExactlyOnceWith(
+      'project-1',
+      'user-1',
+      expect.any(Function),
+    )
     expect(navigator.locks.request).toHaveBeenCalledWith(
       CROSS_TAB_SYNC_LOCK,
       expect.objectContaining(CROSS_TAB_SYNC_LOCK_OPTIONS),

@@ -1,5 +1,6 @@
 import type { Attachment, Chat } from '@/components/chat/types'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import type { ProjectChatStatus } from '@/services/cloud/cloud-storage'
 import {
   ChatImagesUnavailableError,
   chatStorage,
@@ -30,7 +31,7 @@ const {
   deleteChatsByProjectSpy,
   acknowledgePendingDeletesSpy,
   deleteRemoteProjectChatsSpy,
-  listChatIdsByProjectSpy,
+  listProjectChatsSpy,
   createAccountOperationGuardSpy,
   withProjectUploadBarrierSpy,
   newIdempotencyKeySpy,
@@ -66,7 +67,7 @@ const {
   deleteChatsByProjectSpy: vi.fn(async () => [] as string[]),
   acknowledgePendingDeletesSpy: vi.fn(async () => {}),
   deleteRemoteProjectChatsSpy: vi.fn(async () => ({ deleted: 0 })),
-  listChatIdsByProjectSpy: vi.fn(async () => [] as string[]),
+  listProjectChatsSpy: vi.fn(async () => [] as ProjectChatStatus[]),
   createAccountOperationGuardSpy: vi.fn(),
   withProjectUploadBarrierSpy: vi.fn(
     async (_projectId: string, operation: () => Promise<unknown>) =>
@@ -129,7 +130,7 @@ vi.mock('@/services/cloud/cloud-sync', () => ({
 vi.mock('@/services/cloud/cloud-storage', () => ({
   cloudStorage: {
     deleteChatsByProject: deleteRemoteProjectChatsSpy,
-    listChatIdsByProject: listChatIdsByProjectSpy,
+    listProjectChats: listProjectChatsSpy,
     deleteAllChats: deleteAllCloudChatsSpy,
     isAuthenticated: isCloudAuthenticatedSpy,
     loadChatAttachments: loadChatAttachmentsSpy,
@@ -242,7 +243,7 @@ beforeEach(() => {
   deleteChatsByProjectSpy.mockResolvedValue([])
   deleteRemoteProjectChatsSpy.mockResolvedValue({ deleted: 0 })
   acknowledgePendingDeletesSpy.mockResolvedValue(undefined)
-  listChatIdsByProjectSpy.mockResolvedValue([])
+  listProjectChatsSpy.mockResolvedValue([])
   deleteChatWithPendingIntentSpy.mockResolvedValue(true)
   hasPendingUploadSpy.mockReturnValue(false)
   getAllChatIdsSpy.mockResolvedValue([])
@@ -374,20 +375,25 @@ describe('chatStorage pendingSave is not persisted', () => {
   })
 
   it('enumerates every remote project chat before durable local cleanup', async () => {
-    const listing = deferred<string[]>()
+    const listing = deferred<ProjectChatStatus[]>()
     const staging = deferred<string[]>()
     const remoteDeletion = deferred<{ deleted: number }>()
-    listChatIdsByProjectSpy.mockReturnValueOnce(listing.promise)
+    listProjectChatsSpy.mockReturnValueOnce(listing.promise)
     deleteChatsByProjectSpy.mockReturnValueOnce(staging.promise)
     deleteRemoteProjectChatsSpy.mockReturnValueOnce(remoteDeletion.promise)
     const deletion = chatStorage.deleteChatsByProjectWithIds('project-1')
 
-    await vi.waitFor(() =>
-      expect(listChatIdsByProjectSpy).toHaveBeenCalledOnce(),
-    )
+    await vi.waitFor(() => expect(listProjectChatsSpy).toHaveBeenCalledOnce())
     expect(deleteChatsByProjectSpy).not.toHaveBeenCalled()
     expect(deleteRemoteProjectChatsSpy).not.toHaveBeenCalled()
-    listing.resolve(['remote-1', 'remote-2'])
+    listing.resolve(
+      ['remote-1', 'remote-2'].map((id) => ({
+        id,
+        etag: '1',
+        project_id: 'project-1',
+        updated_at: '2026-06-02T09:00:00Z',
+      })),
+    )
     await vi.waitFor(() =>
       expect(deleteChatsByProjectSpy).toHaveBeenCalledOnce(),
     )
@@ -404,7 +410,7 @@ describe('chatStorage pendingSave is not persisted', () => {
       'project-1',
       expect.any(Function),
     )
-    expect(listChatIdsByProjectSpy).toHaveBeenCalledWith(
+    expect(listProjectChatsSpy).toHaveBeenCalledWith(
       'project-1',
       expect.any(Object),
     )
@@ -427,7 +433,7 @@ describe('chatStorage pendingSave is not persisted', () => {
   })
 
   it('stops before local staging when the account changes during listing', async () => {
-    listChatIdsByProjectSpy.mockImplementationOnce(async () => {
+    listProjectChatsSpy.mockImplementationOnce(async () => {
       localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-2')
       return []
     })

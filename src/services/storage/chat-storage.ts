@@ -287,11 +287,9 @@ export class ChatStorageService {
 
     return cloudSync.withProjectUploadBarrier(projectId, async () => {
       guard.assertCurrent()
-      const remoteIds = await cloudStorage.listChatIdsByProject(
-        projectId,
-        guard,
-      )
+      const remoteChats = await cloudStorage.listProjectChats(projectId, guard)
       guard.assertCurrent()
+      const remoteIds = remoteChats.map((chat) => chat.id)
 
       const deletedIds = await indexedDBStorage.deleteChatsByProject(
         projectId,
