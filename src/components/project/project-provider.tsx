@@ -45,15 +45,19 @@ export function ProjectProvider({
   const [error, setError] = useState<string | null>(null)
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([])
   const generation = useRef(0)
+  // The project the user opened last. A change to another project that
+  // finishes later must not reopen that one.
+  const openProjectId = useRef<string | null>(null)
   const changed = () => window.dispatchEvent(new Event(PROJECTS_CHANGED))
-  const requirePremiumAccess = () => {
+  const requirePremiumAccess = useCallback(() => {
     if (!hasPremiumAccessRef.current) {
       throw new Error('Premium project access is required')
     }
-  }
+  }, [])
   const enterProjectMode = useCallback<ProjectContextValue['enterProjectMode']>(
     async (id, name, options) => {
       if (!hasPremiumAccessRef.current) return false
+      openProjectId.current = id
       const version = ++generation.current
       setLoadingProject({ id, name: name ?? 'Loading…' })
       try {
@@ -88,6 +92,7 @@ export function ProjectProvider({
   )
   const exitProjectMode = useCallback(() => {
     generation.current++
+    openProjectId.current = null
     setActiveProject(null)
     setProjectDocuments([])
     setLoadingProject(null)
@@ -108,10 +113,14 @@ export function ProjectProvider({
       tracker.current++
     }
   }, [keyReady, exitProjectMode])
-  const refreshDocuments = async () => {
-    requirePremiumAccess()
-    if (activeProject) await enterProjectMode(activeProject.id)
+  // Reloads a changed project, unless the user has opened another since.
+  const reloadProject = async (id: string) => {
+    if (openProjectId.current === id) await enterProjectMode(id)
   }
+  const refreshDocuments = useCallback(async () => {
+    requirePremiumAccess()
+    if (openProjectId.current) await enterProjectMode(openProjectId.current)
+  }, [enterProjectMode, requirePremiumAccess])
   const value: ProjectContextValue = {
     activeProject: hasPremiumAccess ? activeProject : null,
     isProjectMode: hasPremiumAccess && !!activeProject,
@@ -140,7 +149,7 @@ export function ProjectProvider({
           projectId: id,
           facts: memory,
         })
-      if (id === activeProject?.id) await enterProjectMode(id)
+      await reloadProject(id)
       changed()
     },
     deleteProject: async (id) => {
@@ -152,32 +161,39 @@ export function ProjectProvider({
     uploadDocument: async (file) => {
       requirePremiumAccess()
       if (!activeProject) throw new Error('Select a project first.')
+      const projectId = activeProject.id
       const doc = await api.upload<ProjectDocument>(
         '/v1/projects/documents/upload',
         file,
-        { projectId: activeProject.id },
+        { projectId },
       )
-      await refreshDocuments()
+      await reloadProject(projectId)
       return doc
     },
     removeDocument: async (documentId) => {
       requirePremiumAccess()
       if (!activeProject) return
+      const projectId = activeProject.id
       await api.post('/v1/projects/documents/delete', {
-        projectId: activeProject.id,
+        projectId,
         documentId,
       })
-      await refreshDocuments()
+      await reloadProject(projectId)
     },
     refreshDocuments,
     updateProjectMemory: async (facts) => {
       requirePremiumAccess()
       if (!activeProject) return
+      const projectId = activeProject.id
       const result = await api.post<{ facts: Project['memory'] }>(
         '/v1/projects/memory/update',
-        { projectId: activeProject.id, facts },
+        { projectId, facts },
       )
-      setActiveProject({ ...activeProject, memory: result.facts })
+      setActiveProject((current) =>
+        current?.id === projectId
+          ? { ...current, memory: result.facts }
+          : current,
+      )
     },
     addUploadingFile: (file) =>
       setUploadingFiles((previous) => [...previous, file]),

@@ -154,6 +154,36 @@ describe('project sidebar layout', () => {
     expect(chats.map((chat) => chat.id)).toEqual(['old', 'updated', 'created'])
   })
 
+  it('leaves loading the open project to the provider when it renders', () => {
+    const first = vi.fn()
+    projectContext.refreshDocuments = first
+    const sidebar = () => (
+      <DragProvider>
+        <ProjectSidebar
+          isOpen
+          setIsOpen={vi.fn()}
+          isDarkMode={false}
+          isClient
+          pixelateSidebarChatTitles={false}
+          cloudSyncEnabled
+          windowWidth={1200}
+          project={project}
+          onExitProject={vi.fn()}
+          onSelectChat={vi.fn()}
+          onNewChat={vi.fn()}
+        />
+      </DragProvider>
+    )
+    const view = render(sidebar())
+    // The provider hands over a new context value whenever it renders.
+    const next = vi.fn()
+    projectContext.refreshDocuments = next
+    view.rerender(sidebar())
+
+    expect(first).not.toHaveBeenCalled()
+    expect(next).not.toHaveBeenCalled()
+  })
+
   it('uses a compact content-width blue exit button and preserves its action', () => {
     const { onExitProject } = renderSidebar()
     const exit = screen.getByRole('button', {

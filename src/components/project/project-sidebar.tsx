@@ -252,7 +252,6 @@ export function ProjectSidebar({
     updateProject,
     updateProjectMemory,
     deleteProject,
-    refreshDocuments,
     loading: contextLoading,
     uploadingFiles: contextUploadingFiles,
     addUploadingFile,
@@ -333,10 +332,6 @@ export function ProjectSidebar({
       skipNextAnimationRef.current = false
     }
   }, [project])
-
-  useEffect(() => {
-    refreshDocuments()
-  }, [refreshDocuments])
 
   // Expand documents section when signal is set (from file upload to project context)
   useEffect(() => {

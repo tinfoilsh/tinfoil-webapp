@@ -1,16 +1,25 @@
 import { useHarness } from '@/services/harness/provider'
-import { reportHarnessError } from '@/services/harness/runtime'
 import type { Project } from '@/types/project'
-import { useCallback, useEffect, useState } from 'react'
+import { logError } from '@/utils/error-handling'
+import { useCallback, useEffect, useRef, useState } from 'react'
 export const PROJECTS_CHANGED = 'harness-projects-changed'
 export function useProjects({ autoLoad = true }: { autoLoad?: boolean } = {}) {
   const { api, keyReady } = useHarness()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Only the latest refresh applies, so a list read before a change cannot
+  // replace the list read after it.
+  const generation = useRef(0)
+  // A failed refresh keeps its error here and resolves, since callers start
+  // one without waiting for it.
   const refresh = useCallback(async () => {
+    const version = ++generation.current
+    const isCurrent = () =>
+      version === generation.current && !api.lifetime.signal.aborted
     if (!api.userId || !keyReady) {
       setProjects([])
+      setLoading(false)
       return
     }
     setLoading(true)
@@ -23,22 +32,26 @@ export function useProjects({ autoLoad = true }: { autoLoad?: boolean } = {}) {
         all.push(...page.projects)
         cursor = page.nextCursor
       } while (cursor)
+      if (!isCurrent()) return
       setProjects(all)
       setError(null)
     } catch (cause) {
-      if (!api.lifetime.signal.aborted)
-        setError(
-          cause instanceof Error ? cause.message : 'Unable to load projects.',
-        )
-      throw cause
+      if (!isCurrent()) return
+      setError(
+        cause instanceof Error ? cause.message : 'Unable to load projects.',
+      )
+      logError('Failed to load projects', cause, {
+        component: 'useProjects',
+        action: 'refresh',
+      })
     } finally {
-      if (!api.lifetime.signal.aborted) setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
   }, [api, keyReady])
   useEffect(() => {
-    if (autoLoad) void refresh().catch(reportHarnessError)
+    if (autoLoad) void refresh()
     const changed = () => {
-      void refresh().catch(reportHarnessError)
+      void refresh()
     }
     window.addEventListener(PROJECTS_CHANGED, changed)
     return () => window.removeEventListener(PROJECTS_CHANGED, changed)
