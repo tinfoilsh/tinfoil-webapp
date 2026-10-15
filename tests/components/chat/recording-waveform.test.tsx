@@ -1,10 +1,17 @@
 import { ChatInput } from '@/components/chat/chat-input'
 import { CONSTANTS } from '@/components/chat/constants'
 import {
-  RecordingWaveform,
   formatRecordingDuration,
+  RecordingWaveform,
 } from '@/components/chat/recording-waveform'
-import { harnessAPI, publish } from '@/services/harness/runtime'
+import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
+import {
+  activateAPI,
+  HarnessAPI,
+  harnessAPI,
+  publish,
+} from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { createRef, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -426,6 +433,46 @@ describe('ChatInput recording UI', () => {
       expect(handleSubmit).toHaveBeenCalledOnce()
     },
   )
+
+  it('transcribes for a signed-in account whose content key is locked', async () => {
+    const api = new HarnessAPI(harnessAPI().client, 'alice')
+    activateAPI(api)
+    publish({ session: testSession, keyReady: false, profileReady: true })
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    expect(() => api.key()).toThrow(HarnessError)
+    const { transcribe } = stubRecording()
+    const setInput = vi.fn()
+    render(
+      <ChatInput
+        input=""
+        setInput={setInput}
+        handleSubmit={vi.fn()}
+        loadingState="idle"
+        cancelGeneration={vi.fn()}
+        inputRef={createRef<HTMLTextAreaElement>()}
+        handleInputFocus={vi.fn()}
+        inputMinHeight="40px"
+        isDarkMode
+        isPremium
+      />,
+    )
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop recording' }))
+    })
+
+    expect(transcribe).toHaveBeenCalledOnce()
+    expect(setInput).toHaveBeenCalledExactlyOnceWith('More details')
+    expect(api.client.upload).toHaveBeenCalledExactlyOnceWith(
+      '/v1/transcriptions',
+      expect.any(File),
+      {},
+      expect.any(AbortSignal),
+    )
+  })
 
   it.each(['', ' \n'])(
     'swaps an empty draft %j for the waveform while recording and back on stop',

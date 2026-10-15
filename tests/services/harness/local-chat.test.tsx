@@ -1061,6 +1061,55 @@ describe('stored local chat changes', () => {
     )
   })
 
+  it('shares the page text of a document stored without extracted text', async () => {
+    signIn('alice')
+    const page = (number: number, text: string) => ({
+      page: number,
+      text,
+      image: 'cGFnZQ==',
+      is_scanned: true,
+    })
+    await localThreadStore('device').update(SEEDED_ID, () => ({
+      ...seededThread(),
+      messages: [
+        {
+          id: 'u1',
+          role: 'user' as const,
+          createdAt: 't1',
+          content: 'Read this',
+          attachments: [
+            {
+              id: 'att_scan',
+              type: 'document' as const,
+              fileName: 'scan.pdf',
+              pages: [page(1, 'First page'), page(2, 'Second page')],
+            },
+          ],
+        },
+      ],
+    }))
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(1))
+    client.post.mockResolvedValue({ url: 'https://chat.tinfoil.sh/share/x' })
+
+    await act(async () => {
+      await result.current.share(SEEDED_ID)
+    })
+
+    const [path, input] = client.post.mock.calls[0]
+    expect(path).toBe('/v1/threads/share')
+    expect(input.thread.messages[0].attachments).toEqual([
+      {
+        id: 'att_scan',
+        type: 'document',
+        fileName: 'scan.pdf',
+        textContent: 'First page\n\nSecond page',
+      },
+    ])
+  })
+
   it('refuses to send a local share larger than the harness reads', async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => ({

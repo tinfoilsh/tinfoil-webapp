@@ -485,9 +485,14 @@ export function ChatInput({
         setIsTranscribing(true)
 
         const file = new File([blob], 'audio.webm', { type: 'audio/webm' })
+        // The harness transcribes without the content key, so a chat kept
+        // on the device can be dictated to while the key is locked.
         const { text } = await api.upload<{ text: string }>(
           '/v1/transcriptions',
           file,
+          {},
+          undefined,
+          false,
         )
 
         if (text) {

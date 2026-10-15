@@ -388,7 +388,8 @@ export function turnThread(
 }
 
 // The copy of a thread a share carries. A share holds image thumbnails and
-// document text, never image bytes or page images.
+// document text, never image bytes or page images; a document whose text is
+// only in its pages keeps that text.
 export function shareThread(thread: LocalThread): LocalTurnThread {
   return {
     ...turnThread(thread),
@@ -396,9 +397,11 @@ export function shareThread(thread: LocalThread): LocalTurnThread {
       message.attachments
         ? {
             ...message,
-            attachments: message.attachments.map(
-              ({ base64: _, pages: __, ...attachment }) => attachment,
-            ),
+            attachments: message.attachments.map((attachment) => {
+              const { base64: _, pages: __, ...shared } = attachment
+              const text = localDocumentText(attachment)
+              return text ? { ...shared, textContent: text } : shared
+            }),
           }
         : message,
     ),
