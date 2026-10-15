@@ -503,6 +503,48 @@ describe('project chat synchronization', () => {
     expect(await indexedDBStorage.getChat('project-chat')).toBeNull()
   })
 
+  it('stops without reporting when the account changes while storing', async () => {
+    await seedCurrentCheckpoint()
+    serverChats = [
+      {
+        id: 'locked-chat',
+        etag: '2',
+        projectId: PROJECT_ID,
+        updatedAt: '2025-01-01T00:00:00.000Z',
+        unavailableCode: 'UNKNOWN_KEY',
+      },
+      {
+        id: 'readable-chat',
+        etag: '3',
+        projectId: PROJECT_ID,
+        updatedAt: '2025-01-02T00:00:00.000Z',
+      },
+    ]
+    const getChat = indexedDBStorage.getChat.bind(indexedDBStorage)
+    const spy = vi
+      .spyOn(indexedDBStorage, 'getChat')
+      .mockImplementation(async (id) => {
+        if (id === 'readable-chat') {
+          localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user-2')
+        }
+        return getChat(id)
+      })
+
+    try {
+      await expect(
+        new CloudSyncService().smartSync(PROJECT_ID),
+      ).rejects.toThrow('Cloud account changed during synchronization')
+    } finally {
+      spy.mockRestore()
+    }
+
+    expect(pulledIds()).toEqual([['locked-chat', 'readable-chat']])
+    expect(await indexedDBStorage.getChat('readable-chat')).toBeNull()
+    expect(getSyncHealthSnapshot().gate).not.toMatchObject({
+      reason: 'key-recovery',
+    })
+  })
+
   it('does not list project chats for an account-wide sync', async () => {
     await seedCurrentCheckpoint()
     serverChats = [

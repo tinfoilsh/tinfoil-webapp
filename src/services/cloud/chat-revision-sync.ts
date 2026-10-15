@@ -189,6 +189,9 @@ export async function pullMissingProjectChats(
   ])
   const missing = remoteChats.filter((chat) => !excludedIds.has(chat.id))
   const downloaded = await pullAndIngest(missing, userId, isCurrent, skipped)
+  // Ingest stops quietly when the account changes mid-batch; fail here so
+  // the caller cannot report this account's skipped rows to the next one.
+  ensureCurrent(isCurrent)
   return { downloaded, skipped }
 }
 
