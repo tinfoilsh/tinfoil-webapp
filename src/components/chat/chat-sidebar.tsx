@@ -337,10 +337,12 @@ export function ChatSidebar({
   }, [])
   const modKey = isMac ? '⌘' : 'Ctrl+'
   const newChatHref = getNewChatPath({ isLocalOnly: showLocalTab })
+  // With cloud sync, a blank chat kept on the device is not the New chat the
+  // sidebar offers once local chats are turned off.
   const isCurrentNewChat =
     currentChat?.isBlankChat &&
     !currentChat.isTemporary &&
-    (!showStorageTabs || Boolean(currentChat.isLocalOnly) === showLocalTab)
+    (!cloudSyncEnabled || Boolean(currentChat.isLocalOnly) === showLocalTab)
 
   const {
     projects,

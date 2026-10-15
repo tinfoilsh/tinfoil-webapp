@@ -2,7 +2,7 @@ import { useHarness } from '@/services/harness/provider'
 import { initialChat, reduceEvent } from '@/services/harness/reducer'
 import type { Turn } from '@/services/harness/types'
 import { messageView } from '@/services/harness/view-model'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LoadingState, Message } from '../types'
 export interface SidebarChatState {
   messages: Message[]
@@ -98,10 +98,27 @@ export function useSidebarChat({
   }
   const isStreaming = state.status === 'streaming'
   const shown = state.messages.filter((message) => !hidden.has(message.id))
+  // A failed ask shows why as an error reply, also when it failed before the
+  // harness sent any message.
+  const failure = useMemo<Message | null>(
+    () =>
+      state.status === 'error' && state.error
+        ? {
+            role: 'assistant',
+            content: `Error: ${state.error.message}`,
+            timestamp: new Date(),
+            isError: true,
+          }
+        : null,
+    [state.status, state.error],
+  )
   return {
-    messages: shown.map((m, index) =>
-      messageView(m, isStreaming && index === shown.length - 1),
-    ),
+    messages: [
+      ...shown.map((m, index) =>
+        messageView(m, isStreaming && index === shown.length - 1),
+      ),
+      ...(failure ? [failure] : []),
+    ],
     quote,
     loadingState: (isStreaming ? 'streaming' : 'idle') as LoadingState,
     isThinking: false,

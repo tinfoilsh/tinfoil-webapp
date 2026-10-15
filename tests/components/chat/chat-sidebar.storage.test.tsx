@@ -185,6 +185,22 @@ describe('chat sidebar storage modes', () => {
     expect(newChat).toHaveAttribute('aria-current', 'page')
   })
 
+  it('starts a synced chat when local chats are off but a blank local chat is open', () => {
+    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'false')
+    const createNewChat = vi.fn()
+    render(
+      <Sidebar createNewChat={createNewChat} currentChat={blankChat(true)} />,
+    )
+
+    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
+    const [newChat] = screen.getAllByRole('link', { name: /New chat/ })
+    expect(newChat).toHaveAttribute('href', '/newchat')
+    expect(newChat).not.toHaveAttribute('aria-current')
+    fireEvent.click(newChat)
+    expect(createNewChat).toHaveBeenCalledExactlyOnceWith(false, true)
+  })
+
   it('turns on local chats for an account that already has some', () => {
     localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
     render(<Sidebar />)

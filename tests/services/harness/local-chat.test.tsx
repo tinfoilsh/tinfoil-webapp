@@ -523,6 +523,26 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect((await stored(threadId))?.messages).toEqual(savedReply)
   })
 
+  it('lists a chat whose run streams here as active until the run ends', async () => {
+    signIn('alice')
+    const { result, release, sending } = await sendHeld()
+    const threadId = result.current.chat.id
+    const listed = () =>
+      result.current.chats.find((chat) => chat.id === threadId)
+    await waitFor(() =>
+      expect(listed()?.activeRun).toMatchObject({ runId: 'run-1' }),
+    )
+
+    act(() => result.current.newChat())
+    expect(listed()?.activeRun).toMatchObject({ runId: 'run-1' })
+
+    await act(async () => {
+      release()
+      await sending()
+    })
+    await waitFor(() => expect(listed()?.activeRun).toBeNull())
+  })
+
   it('rejoins a run when its chat is reopened', async () => {
     signIn('alice')
     const { result, release, sending } = await sendHeld()
@@ -1145,6 +1165,56 @@ describe('cloud chats', () => {
     expect(turn()).not.toHaveProperty('thread')
     expect(result.current.chat.isLocalOnly).toBe(false)
     expect(await localThreadStore('device').list()).toEqual([])
+  })
+
+  it('list the open chat as active while its run streams', async () => {
+    localStorage.setItem('tinfoil-settings-cloud-sync-enabled', 'true')
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    const api = signIn('alice')
+    publish({ keyReady: true })
+    vi.spyOn(api, 'key').mockReturnValue('Y29udGVudC1rZXk=')
+    const stored = summary('cloud-thread', 'Stored')
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/list'
+        ? { threads: [stored], nextCursor: null }
+        : path === '/v1/threads/get'
+          ? { ...stored, messages: [], hasOlder: false }
+          : {},
+    )
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementation(async function* () {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: stored.id, runId: 'run-1' },
+      }
+      await held
+      yield {
+        id: 1,
+        event: { type: 'RUN_FINISHED', threadId: stored.id, runId: 'run-1' },
+      }
+    })
+    const { result } = renderHook(() => useThread())
+    const listed = () =>
+      result.current.chats.find((chat) => chat.id === stored.id)
+    await waitFor(() => expect(listed()).toMatchObject({ activeRun: null }))
+    await act(() => result.current.open(stored.id))
+    expect(result.current.chat.id).toBe(stored.id)
+
+    let sending: Promise<unknown> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'More' })
+    })
+    await waitFor(() =>
+      expect(listed()?.activeRun).toMatchObject({ runId: 'run-1' }),
+    )
+    await act(async () => {
+      release()
+      await sending
+    })
+    expect(listed()?.activeRun).toBeNull()
   })
 
   it('are shared by id with the content key', async () => {

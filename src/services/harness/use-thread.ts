@@ -185,6 +185,9 @@ export function useThread(
   const lastTurn = useRef<Pick<Turn, 'kind' | 'messageId'> | null>(null)
   const followers = useRef(new Set<AbortController>())
   const localRuns = useRef(new Map<string, LocalRun>())
+  // Renders the chat list again as local runs start and end, including runs
+  // whose chat is no longer open.
+  const [, setLocalRunsChanged] = useState(0)
   const generation = useRef(0)
   const starting = useRef(false)
   const pending = useRef<{ input: Turn; run?: LocalRun } | null>(null)
@@ -404,6 +407,7 @@ export function useThread(
             }
             run.runId = event.runId
             localRuns.current.set(run.threadId, run)
+            setLocalRunsChanged((count) => count + 1)
           }
           if (attached) {
             pending.current = null
@@ -437,8 +441,10 @@ export function useThread(
               setError('This chat could not be saved on this device.')
           })
         if (terminal) {
-          if (run && localRuns.current.get(run.threadId) === run)
+          if (run && localRuns.current.get(run.threadId) === run) {
             localRuns.current.delete(run.threadId)
+            setLocalRunsChanged((count) => count + 1)
+          }
           if (run) forgetReceipt(run.threadId)
           void (api.userId ? refresh() : api.refresh()).catch(report)
         }
@@ -1294,6 +1300,15 @@ export function useThread(
       ),
     }
   })
+  // A run this tab streams is active in the chat list before the list next
+  // reports it, which it never does for a chat kept on the device.
+  const liveRun = (listed: Chat): Chat => {
+    if (listed.activeRun) return listed
+    const runId =
+      localRuns.current.get(listed.id)?.runId ??
+      (listed.id === id && running ? state.runId : undefined)
+    return runId ? { ...listed, activeRun: { runId, lastEventId: 0 } } : listed
+  }
   const summary = state.snapshot.thread
   const chat: Chat = summary
     ? {
@@ -1326,7 +1341,7 @@ export function useThread(
     chats: [
       ...(cloud ? threads.map((t) => threadView(t)) : []),
       ...localThreads.map((t) => ({ ...threadView(t), isLocalOnly: true })),
-    ],
+    ].map(liveRun),
     model,
     setModel,
     presetId,
