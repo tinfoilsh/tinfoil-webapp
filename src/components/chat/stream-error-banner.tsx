@@ -1,9 +1,14 @@
 'use client'
 
-import type { StreamErrorInfo } from '@/components/chat/hooks/use-chat-streams'
 import { cn } from '@/components/ui/utils'
 import { TfBoxX, TfChevronDown, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import { useState, useSyncExternalStore } from 'react'
+
+export type StreamErrorInfo = {
+  message: string
+  code?: string
+  timestamp?: number
+}
 
 interface StreamErrorBannerProps {
   error: StreamErrorInfo
@@ -16,13 +21,7 @@ interface StreamErrorBannerProps {
 // and the retry affordance so the same error always produces a coherent
 // combination of message and action.
 type ErrorKind =
-  | 'connection'
-  | 'auth'
-  | 'rate-limit'
-  | 'timeout'
-  | 'context-length'
-  | 'server'
-  | 'unknown'
+  'connection' | 'auth' | 'rate-limit' | 'context-length' | 'server'
 
 type ErrorClassification = {
   kind: ErrorKind
@@ -48,10 +47,7 @@ function useIsOnline(): boolean {
   return useSyncExternalStore(subscribeToConnectivity, getIsOnline, () => true)
 }
 
-const CLASSIFICATIONS: Record<
-  Exclude<ErrorKind, 'unknown'>,
-  ErrorClassification
-> = {
+const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
   auth: {
     kind: 'auth',
     title: 'Unable to confirm your sign-in',
@@ -62,18 +58,12 @@ const CLASSIFICATIONS: Record<
     kind: 'connection',
     title: 'Connection problem',
     suggestion:
-      'Check your internet connection, then resend your message. Your message was not lost.',
+      'Check your internet connection, then reconnect to the conversation.',
   },
   'rate-limit': {
     kind: 'rate-limit',
     title: 'Usage limit reached',
     suggestion: 'Please wait for the limit to reset before trying again.',
-  },
-  timeout: {
-    kind: 'timeout',
-    title: 'The model took too long to respond',
-    suggestion:
-      'This is usually a temporary problem on our side. Please try again in a moment.',
   },
   'context-length': {
     kind: 'context-length',
@@ -89,80 +79,29 @@ const CLASSIFICATIONS: Record<
   },
 }
 
-// Map a stream failure to a behavioral kind plus human-readable copy. The
-// structured code is authoritative when present; the message-text
-// heuristics below are display-only fallbacks for errors that carry no
-// classification, and both the copy and the retry affordance derive from
-// the same result so they can never disagree. The raw message stays
-// available in the expandable details section.
-function classifyError({
-  message,
-  code,
-}: StreamErrorInfo): ErrorClassification {
-  if (code === 'AUTH_ERROR') return CLASSIFICATIONS.auth
-  if (code === 'FETCH_ERROR') return CLASSIFICATIONS.connection
-  if (code === 'RATE_LIMIT' || code === 'HOURLY_LIMIT') {
-    return CLASSIFICATIONS['rate-limit']
-  }
-  if (code === 'SERVER_ERROR') return CLASSIFICATIONS.server
-
-  const lower = message.toLowerCase()
-
-  if (
-    lower.includes('context deadline exceeded') ||
-    lower.includes('client.timeout') ||
-    lower.includes('timed out') ||
-    lower.includes('timeout') ||
-    lower.includes('etimedout')
-  ) {
-    return CLASSIFICATIONS.timeout
-  }
-
-  if (
-    lower.includes('context length') ||
-    lower.includes('context window') ||
-    lower.includes('maximum context') ||
-    lower.includes('too many tokens') ||
-    lower.includes('token limit') ||
-    lower.includes('input is too long')
-  ) {
-    return CLASSIFICATIONS['context-length']
-  }
-
-  if (
-    lower.includes('overloaded') ||
-    lower.includes('capacity') ||
-    lower.includes('service unavailable') ||
-    lower.includes('bad gateway') ||
-    lower.includes('internal server error') ||
-    /\b5\d\d\b/.test(lower)
-  ) {
-    return CLASSIFICATIONS.server
-  }
-
-  if (
-    lower.includes('network') ||
-    lower.includes('failed to fetch') ||
-    lower.includes('fetch failed') ||
-    lower.includes('connection') ||
-    lower.includes('econnreset') ||
-    lower.includes('offline')
-  ) {
-    return CLASSIFICATIONS.connection
-  }
-
-  return {
-    kind: 'unknown',
-    title: 'Something went wrong',
-    suggestion: 'Please try again. If the problem persists, contact support.',
+// Map a run failure to a behavioral kind plus human-readable copy using the
+// chat service's structured error code. Unclassified failures (an interrupted
+// stream, a transport error) are treated as connection problems. Both the copy
+// and the retry affordance derive from the same result so they can never
+// disagree. The raw message stays available in the expandable details section.
+function classifyError({ code }: StreamErrorInfo): ErrorClassification {
+  switch (code) {
+    case 'UNAUTHENTICATED':
+      return CLASSIFICATIONS.auth
+    case 'QUOTA_EXHAUSTED':
+      return CLASSIFICATIONS['rate-limit']
+    case 'CONTEXT_TOO_LARGE':
+      return CLASSIFICATIONS['context-length']
+    case 'UPSTREAM_REFUSED':
+    case 'MODEL_UNAVAILABLE':
+    case 'TOOL_UNAVAILABLE':
+    case 'MAX_TURNS':
+      return CLASSIFICATIONS.server
+    default:
+      return CLASSIFICATIONS.connection
   }
 }
 
-/**
- * Inline error notice rendered directly above the chat input. Shows a
- * friendly summary with a retry action; the raw error is available in an
- * expandable details section. Stays visible until dismissed or retried.
- */
 export function StreamErrorBanner({
   error,
   onDismiss,

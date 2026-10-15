@@ -20,12 +20,6 @@ const projectContext = vi.hoisted(() => ({
 vi.mock('@/components/project/project-context', () => ({
   useProject: () => projectContext,
 }))
-vi.mock('@/components/chat/document-uploader', () => ({
-  useDocumentUploader: () => ({
-    handleDocumentUpload: vi.fn(),
-    isDocumentUploading: false,
-  }),
-}))
 vi.mock('@clerk/react', () => ({
   useAuth: () => ({
     isSignedIn: true,
@@ -37,8 +31,6 @@ vi.mock('@clerk/react', () => ({
 vi.mock('next/router', () => ({
   useRouter: () => ({ asPath: '/project/test-project' }),
 }))
-vi.mock('@/hooks/use-rate-limit', () => ({ useRateLimit: () => null }))
-vi.mock('@/hooks/use-safeguards', () => ({ useFlaggedChatIds: () => ({}) }))
 
 const project: Project = {
   id: 'test-project',
@@ -64,7 +56,6 @@ function renderSidebar(
         isClient
         pixelateSidebarChatTitles={false}
         cloudSyncEnabled
-        isPremium
         windowWidth={1200}
         project={project}
         onExitProject={onExitProject}

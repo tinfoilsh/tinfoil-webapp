@@ -1,12 +1,6 @@
 import { TextureGrid } from '@/components/texture-grid'
 import { useToast } from '@/hooks/use-toast'
-import {
-  deleteSharedChat,
-  getShareStatus,
-  uploadSharedChat,
-} from '@/services/share-api'
-import { shareSeal as enclaveShareSeal } from '@/services/sync-enclave/sync-api'
-import type { ShareableChatData } from '@/utils/share-payload'
+import { harnessAPI } from '@/services/harness/runtime'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
   TfBoxCheckmark,
@@ -38,11 +32,7 @@ type ShareModalProps = {
   chatId?: string
 }
 
-export function ShareModal(props: ShareModalProps) {
-  return <ShareModalContent key={props.chatId} {...props} />
-}
-
-function ShareModalContent({
+export function ShareModal({
   isOpen,
   onClose,
   messages,
@@ -57,61 +47,20 @@ function ShareModalContent({
   const [isCopied, setIsCopied] = useState(false)
   const [isLinkCopied, setIsLinkCopied] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [isRevoking, setIsRevoking] = useState(false)
-  const [isCheckingShare, setIsCheckingShare] = useState(true)
-  const [hasShare, setHasShare] = useState<boolean | null>(null)
-  const [statusRetry, setStatusRetry] = useState(0)
   const [isShareEnabled, setIsShareEnabled] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
   const contentRef = useRef<HTMLPreElement>(null)
   const shareLinkInputRef = useRef<HTMLInputElement>(null)
   const previousShareUrlRef = useRef<string | null>(null)
-  const isMountedRef = useRef(false)
-  const isBusy = isUploading || isRevoking
-  const canChangeSharing = !isBusy && !isCheckingShare && hasShare !== null
-  const showShareEnabled = hasShare !== null && isShareEnabled
-
-  useEffect(() => {
-    isMountedRef.current = true
-    return () => {
-      isMountedRef.current = false
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isOpen) return
-    if (!chatId) {
-      setHasShare(false)
-      setIsCheckingShare(false)
-      return
-    }
-
-    let ignore = false
-    setHasShare(null)
-    setIsCheckingShare(true)
-    getShareStatus(chatId)
-      .then((shared) => {
-        if (ignore) return
-        setHasShare(shared)
-        setIsShareEnabled(shared)
-        if (!shared) setShareUrl(null)
-      })
-      .catch(() => {
-        if (!ignore) setHasShare(null)
-      })
-      .finally(() => {
-        if (!ignore) setIsCheckingShare(false)
-      })
-    return () => {
-      ignore = true
-    }
-  }, [chatId, isOpen, statusRetry])
+  const shareRequestRef = useRef(0)
 
   // Reset modal state when chatId changes (different chat)
   useEffect(() => {
+    shareRequestRef.current++
     setShareUrl(null)
     setIsShareEnabled(false)
     setIsLinkCopied(false)
+    setIsUploading(false)
     previousShareUrlRef.current = null
   }, [chatId])
 
@@ -119,23 +68,15 @@ function ShareModalContent({
   useEffect(() => {
     if (!isOpen) {
       setIsLinkCopied(false)
-      setShareUrl(null)
     }
-  }, [isOpen, isBusy])
+  }, [isOpen])
 
   useEffect(() => {
-    if (!shareUrl || !hasShare || isCheckingShare) {
-      previousShareUrlRef.current = null
-      return
+    if (shareUrl && previousShareUrlRef.current !== shareUrl) {
+      requestAnimationFrame(() => shareLinkInputRef.current?.focus())
     }
-    if (previousShareUrlRef.current !== shareUrl) {
-      const frame = requestAnimationFrame(() => {
-        shareLinkInputRef.current?.focus()
-        previousShareUrlRef.current = shareUrl
-      })
-      return () => cancelAnimationFrame(frame)
-    }
-  }, [shareUrl, hasShare, isCheckingShare])
+    previousShareUrlRef.current = shareUrl
+  }, [shareUrl])
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -145,7 +86,7 @@ function ShareModalContent({
       // Handle Escape key to close modal
       if (e.key === 'Escape') {
         e.preventDefault()
-        if (!isBusy) onClose()
+        onClose()
         return
       }
 
@@ -180,7 +121,7 @@ function ShareModalContent({
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose, isBusy])
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 
@@ -260,7 +201,6 @@ function ShareModalContent({
   }
 
   const handleShareLink = async () => {
-    if (!canChangeSharing) return
     if (!chatId) {
       toast({
         title: 'Share failed',
@@ -271,89 +211,18 @@ function ShareModalContent({
       return
     }
 
+    // A link for a conversation the user has since left must not appear as
+    // the current conversation's link.
+    const request = ++shareRequestRef.current
     setIsUploading(true)
     try {
-      const shareableData: ShareableChatData = {
-        v: 1,
-        title: chatTitle || 'Shared Chat',
-        messages: messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          modelDisplayName: m.modelDisplayName,
-          documentContent:
-            m.documentContent ??
-            (m.attachments
-              ?.filter((a) => a.type === 'document' && a.textContent)
-              .map(
-                (a) =>
-                  `Document title: ${a.fileName}\nDocument contents:\n${a.textContent}`,
-              )
-              .join('\n\n') ||
-              undefined),
-          documents:
-            m.documents ??
-            (m.attachments?.map((a) => ({ name: a.fileName })) || undefined),
-          timestamp:
-            m.timestamp instanceof Date
-              ? m.timestamp.getTime()
-              : typeof m.timestamp === 'string'
-                ? Date.parse(m.timestamp)
-                : m.timestamp,
-          thoughts: m.thoughts,
-          thinkingDuration: m.thinkingDuration,
-          isError: m.isError,
-          attachments: m.attachments?.length
-            ? m.attachments.map((a) => ({
-                id: a.id,
-                type: a.type,
-                fileName: a.fileName,
-                mimeType: a.mimeType,
-                thumbnailBase64: a.thumbnailBase64,
-                encryptionKey: a.encryptionKey,
-                textContent: a.textContent,
-                description: a.description,
-              }))
-            : undefined,
-          timeline: m.timeline,
-          annotations: m.annotations,
-          webSearch: m.webSearch,
-          webSearchBeforeThinking: m.webSearchBeforeThinking,
-          urlFetches: m.urlFetches,
-        })),
-        createdAt: chatCreatedAt ? chatCreatedAt.getTime() : Date.now(),
-      }
-
-      // Seal through the sync enclave: the enclave generates a fresh
-      // share key, gzips, AES-GCM-seals, and returns key + ciphertext.
-      // The owner uploads ciphertext to controlplane and embeds the
-      // key in the URL fragment with a `v2:` prefix so the recipient
-      // can tell which decryption path to use.
-      const plaintext = new TextEncoder().encode(JSON.stringify(shareableData))
-      let sealed: { share_key: string; ciphertext: string }
-      try {
-        sealed = await enclaveShareSeal({ plaintext })
-      } catch (e) {
-        throw new Error(
-          `Share seal failed: ${e instanceof Error ? e.message : String(e)}`,
-        )
-      }
-
-      try {
-        if (!isMountedRef.current) return
-        const bin = Uint8Array.from(atob(sealed.ciphertext), (c) =>
-          c.charCodeAt(0),
-        )
-        await uploadSharedChat(chatId, bin)
-      } catch (e) {
-        throw new Error(
-          `Upload failed: ${e instanceof Error ? e.message : String(e)}`,
-        )
-      }
-
-      const url = `${window.location.origin}/share/${chatId}#v2:${sealed.share_key}`
-      setShareUrl(url)
-      setHasShare(true)
+      const { url } = await harnessAPI().post<{ url: string }>(
+        '/v1/threads/share',
+        { threadId: chatId },
+      )
+      if (request === shareRequestRef.current) setShareUrl(url)
     } catch (error) {
+      if (request !== shareRequestRef.current) return
       const errorMessage =
         error instanceof Error ? error.message : 'Failed to create share link'
       toast({
@@ -362,51 +231,19 @@ function ShareModalContent({
         variant: 'destructive',
         position: 'top-left',
       })
-      setStatusRetry((value) => value + 1)
     } finally {
-      setIsUploading(false)
-    }
-  }
-
-  const handleShareEnabledChange = async (enabled: boolean) => {
-    if (!canChangeSharing) return
-    if (enabled || !chatId || !hasShare) {
-      setIsShareEnabled(enabled)
-      return
-    }
-
-    setIsRevoking(true)
-    try {
-      await deleteSharedChat(chatId)
-      setIsShareEnabled(false)
-      setHasShare(false)
-      setShareUrl(null)
-      setIsLinkCopied(false)
-    } catch {
-      toast({
-        title: 'Could not disable sharing',
-        description: 'The link may still be active. Please try again.',
-        variant: 'destructive',
-        position: 'top-left',
-      })
-      setStatusRetry((value) => value + 1)
-    } finally {
-      setIsRevoking(false)
+      if (request === shareRequestRef.current) setIsUploading(false)
     }
   }
 
   const markdown = convertToMarkdown()
-  const shareStatus = isRevoking
-    ? 'Revoking share link'
-    : isCheckingShare
-      ? 'Checking share status'
-      : isLinkCopied
-        ? 'Share link copied'
-        : shareUrl
-          ? 'Share link ready'
-          : isUploading
-            ? 'Creating share link'
-            : ''
+  const shareStatus = isLinkCopied
+    ? 'Share link copied'
+    : shareUrl
+      ? 'Share link ready'
+      : isUploading
+        ? 'Creating share link'
+        : ''
 
   // Calculate the positioning to center within the chat area
   const leftOffset = isSidebarOpen ? CONSTANTS.CHAT_SIDEBAR_WIDTH_PX : 0
@@ -418,7 +255,7 @@ function ShareModalContent({
     <DialogPrimitive.Root
       open
       onOpenChange={(nextOpen) => {
-        if (!nextOpen && !isBusy) onClose()
+        if (!nextOpen) onClose()
       }}
     >
       <DialogPrimitive.Portal>
@@ -442,7 +279,6 @@ function ShareModalContent({
             </span>
             <button
               onClick={onClose}
-              disabled={isBusy}
               aria-label="Close share dialog"
               className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
             >
@@ -460,9 +296,7 @@ function ShareModalContent({
                   <CardContent className="p-0">
                     <div className="flex items-start gap-4 p-4">
                       <div className="mt-1 rounded-full bg-surface-chat p-2 text-content-secondary">
-                        {hasShare === null ? (
-                          <TfLink className="h-5 w-5" aria-hidden="true" />
-                        ) : hasShare ? (
+                        {isShareEnabled ? (
                           <TfGlobe className="h-5 w-5" aria-hidden="true" />
                         ) : (
                           <TfLockLocked
@@ -474,41 +308,24 @@ function ShareModalContent({
                       <div className="flex-1 space-y-4">
                         <div className="space-y-1">
                           <h3 className="text-sm font-medium text-content-primary">
-                            {isCheckingShare
-                              ? 'Checking share status...'
-                              : hasShare === null
-                                ? 'Share status unavailable'
-                                : hasShare
-                                  ? 'Shareable link access'
-                                  : 'Private'}
+                            {isShareEnabled
+                              ? 'Shareable link access'
+                              : 'Private'}
                           </h3>
                           <p className="text-sm text-content-secondary">
-                            {hasShare === null
-                              ? 'Confirming whether an existing link is active'
-                              : hasShare
-                                ? 'Anyone with the link can view'
-                                : 'Only you have access'}
+                            {isShareEnabled
+                              ? 'Anyone with the link can view'
+                              : 'Only you have access'}
                           </p>
-                          {!isCheckingShare && hasShare === null && (
-                            <button
-                              onClick={() =>
-                                setStatusRetry((value) => value + 1)
-                              }
-                              className="text-sm underline"
-                            >
-                              Retry share status
-                            </button>
-                          )}
                         </div>
 
                         <label className="group flex cursor-pointer items-center gap-3">
                           <div className="relative flex items-center">
                             <input
                               type="checkbox"
-                              checked={showShareEnabled}
-                              disabled={!canChangeSharing}
+                              checked={isShareEnabled}
                               onChange={(e) =>
-                                void handleShareEnabledChange(e.target.checked)
+                                setIsShareEnabled(e.target.checked)
                               }
                               aria-label="Make this conversation shareable with anyone who has the link"
                               className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-border-subtle bg-surface-chat transition-all checked:border-brand-accent-dark checked:bg-brand-accent-dark"
@@ -524,24 +341,11 @@ function ShareModalContent({
                           </span>
                         </label>
 
-                        <p className="text-sm text-content-secondary">
-                          {isRevoking
-                            ? 'Revoking share link...'
-                            : 'Disabling sharing deactivates existing links. Copies already saved by recipients cannot be removed.'}
-                        </p>
-
-                        {hasShare && !shareUrl && (
-                          <p className="text-sm text-content-secondary">
-                            An existing link is active. Creating a new link will
-                            replace it and invalidate the previous link.
-                          </p>
-                        )}
-
-                        {showShareEnabled && !shareUrl && (
+                        {isShareEnabled && !shareUrl && (
                           <div className="flex justify-start pt-2">
                             <button
                               onClick={handleShareLink}
-                              disabled={!canChangeSharing || !chatId}
+                              disabled={isUploading || !chatId}
                               className="flex items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               {isUploading ? (
@@ -558,16 +362,14 @@ function ShareModalContent({
                                     className="h-4 w-4"
                                     aria-hidden="true"
                                   />
-                                  {hasShare
-                                    ? 'Replace share link'
-                                    : 'Create share link'}
+                                  Create share link
                                 </>
                               )}
                             </button>
                           </div>
                         )}
 
-                        {isShareEnabled && hasShare && shareUrl && (
+                        {isShareEnabled && shareUrl && (
                           <div className="flex items-center gap-2 pt-2">
                             <input
                               ref={shareLinkInputRef}
@@ -580,7 +382,6 @@ function ShareModalContent({
                             />
                             <button
                               onClick={handleCopyShareUrl}
-                              disabled={!canChangeSharing}
                               className="flex items-center justify-center gap-2 rounded-lg bg-brand-accent-dark px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-accent-dark/90"
                             >
                               {isLinkCopied ? (

@@ -1,7 +1,7 @@
 import { AuthCleanupHandler } from '@/components/auth-cleanup-handler'
-import { AuthTokenSync } from '@/components/auth-token-sync'
 import { useChatFontSync } from '@/components/chat/hooks/use-chat-font'
 import { SignoutProgressOverlay } from '@/components/signout-progress-overlay'
+import { HarnessProvider } from '@/services/harness/provider'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { analyticsExcluded } from '@/utils/analytics-routes'
@@ -195,10 +195,17 @@ export default function App({ Component, pageProps, router }: AppProps) {
             },
           }}
         >
-          <AuthTokenSync />
           <AuthCleanupHandler />
           <SignoutProgressOverlay />
-          <Component {...pageProps} />
+          {['/signin', '/signup', '/sso-callback', '/404', '/_error'].includes(
+            router.pathname,
+          ) ? (
+            <Component {...pageProps} />
+          ) : (
+            <HarnessProvider>
+              <Component {...pageProps} />
+            </HarnessProvider>
+          )}
           <Toaster />
         </ClerkProvider>
       </div>

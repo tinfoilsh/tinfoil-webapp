@@ -4,7 +4,6 @@ export const SETTINGS_TABS = [
   'personalization',
   'prompts',
   'cloud-sync',
-  'safeguards',
   'data',
   'account',
 ] as const

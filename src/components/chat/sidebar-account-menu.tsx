@@ -2,18 +2,15 @@
 
 import { UserAvatar } from '@/components/user-avatar'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
-import { useRateLimit } from '@/hooks/use-rate-limit'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useUser } from '@clerk/react'
 import {
-  TfBoxCheckmark,
   TfBug,
   TfChevronRight,
   TfDocument,
   TfExternalLink,
   TfPerson,
   TfQuestionMarkCircle,
-  TfRefresh1,
   TfSetting,
   TfShieldCheck,
 } from '@tinfoilsh/tinfoil-icons'
@@ -28,12 +25,9 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { PiSpinner } from 'react-icons/pi'
 import { Link } from '../link'
 import { cn } from '../ui/utils'
 import { CONSTANTS } from './constants'
-import { useManualSync } from './hooks/use-manual-sync'
-import { hasTokenUsage, RateLimitUsage } from './rate-limit-usage'
 import type { SettingsTab } from './settings-modal'
 
 const MENU_WIDTH_PX = 256
@@ -66,14 +60,7 @@ function focusMenuEdge(menu: HTMLElement | null, edge: MenuEdge): boolean {
 interface SidebarAccountMenuProps {
   isSidebarOpen: boolean
   isSignedIn: boolean
-  isPremium: boolean
   isDarkMode: boolean
-  /** Whether the sync row is offered (signed in with cloud sync enabled). */
-  canSync: boolean
-  isSyncing: boolean
-  syncFailed: boolean
-  syncNeedsAttention: boolean
-  onSync?: () => Promise<boolean>
   onOpenSettings: (tab?: SettingsTab) => void
   onReportBug: () => void
 }
@@ -81,13 +68,7 @@ interface SidebarAccountMenuProps {
 export function SidebarAccountMenu({
   isSidebarOpen,
   isSignedIn,
-  isPremium,
   isDarkMode,
-  canSync,
-  isSyncing,
-  syncFailed,
-  syncNeedsAttention,
-  onSync,
   onOpenSettings,
   onReportBug,
 }: SidebarAccountMenuProps) {
@@ -112,15 +93,6 @@ export function SidebarAccountMenu({
   const triggerId = useId()
   const helpMenuId = useId()
   const isMenuVisible = isSidebarOpen && isOpen
-
-  const rateLimit = useRateLimit()
-  const showUsage = isSignedIn && isPremium && hasTokenUsage(rateLimit)
-
-  const manualSync = useManualSync({
-    isSyncing,
-    syncFailed,
-    onSync: onSync ?? (() => Promise.resolve(false)),
-  })
 
   const displayName = isSignedIn
     ? user?.firstName ||
@@ -421,13 +393,6 @@ export function SidebarAccountMenu({
           ) : (
             <TfPerson className="h-7 w-7" aria-hidden="true" />
           )}
-          {syncNeedsAttention && (
-            <span
-              className="absolute right-0 top-0 h-2 w-2 rounded-full bg-orange-500 ring-2 ring-surface-sidebar"
-              title="Cloud sync needs attention"
-              aria-hidden="true"
-            />
-          )}
         </span>
         <span className="min-w-0 flex-1 truncate font-aeonik font-medium">
           {displayName}
@@ -457,12 +422,6 @@ export function SidebarAccountMenu({
             }}
             className={cn('fixed z-[60]', panelClassName)}
           >
-            {showUsage && (
-              <>
-                <RateLimitUsage isPremium={isPremium} />
-                <div className="my-1.5 border-t border-border-subtle" />
-              </>
-            )}
             {isSignedIn ? (
               <button
                 type="button"
@@ -496,60 +455,11 @@ export function SidebarAccountMenu({
               role="menuitem"
               tabIndex={-1}
               className={MENU_ITEM_CLASS_NAME}
-              onClick={() =>
-                runAndClose(() =>
-                  onOpenSettings(syncNeedsAttention ? 'cloud-sync' : 'general'),
-                )
-              }
+              onClick={() => runAndClose(() => onOpenSettings('general'))}
             >
               <TfSetting className="h-4 w-4" aria-hidden="true" />
               <span className="flex-1">Settings</span>
-              {syncNeedsAttention && (
-                <span
-                  className="h-2 w-2 rounded-full bg-orange-500"
-                  title="Cloud sync needs attention"
-                  aria-hidden="true"
-                />
-              )}
             </button>
-            {canSync && onSync && (
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                className={MENU_ITEM_CLASS_NAME}
-                disabled={manualSync.isDisabled}
-                aria-label={`Sync cloud data. ${manualSync.statusLabel}`}
-                onPointerEnter={handleOtherRowEnter}
-                onClick={() => void manualSync.sync()}
-              >
-                {manualSync.showSpinner ? (
-                  <PiSpinner
-                    className="h-4 w-4 animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : manualSync.showSuccess ? (
-                  <TfBoxCheckmark
-                    className="h-4 w-4 text-green-600 dark:text-green-400"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <TfRefresh1 className="h-4 w-4" aria-hidden="true" />
-                )}
-                <span className="flex-1">Sync now</span>
-                <span
-                  className={cn(
-                    'font-aeonik-fono text-xs',
-                    manualSync.hasSyncFailure
-                      ? 'text-orange-500'
-                      : 'text-content-muted',
-                  )}
-                >
-                  {manualSync.statusLabel}
-                </span>
-              </button>
-            )}
-
             <div className="my-1.5 border-t border-border-subtle" />
 
             <div className="relative">

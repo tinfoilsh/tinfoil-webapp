@@ -40,7 +40,6 @@ describe('settings deep links', () => {
     ['personalization', 'personalization'],
     ['prompts', 'prompts'],
     ['cloud-sync', 'cloud-sync'],
-    ['safeguards', 'safeguards'],
     ['data', 'data'],
     ['account', 'account'],
     ['import', 'data'],
@@ -67,8 +66,8 @@ describe('settings deep links', () => {
     },
   )
 
-  it('preserves a safeguards link until the app and authentication are ready', () => {
-    window.history.replaceState(null, '', '/#settings/safeguards')
+  it('preserves a settings link until the app and authentication are ready', () => {
+    window.history.replaceState(null, '', '/#settings/cloud-sync')
     const onSettingsTabReady = vi.fn()
     const { rerender } = render(
       <UrlHashSettingsHandler
@@ -77,13 +76,13 @@ describe('settings deep links', () => {
       />,
     )
     expect(onSettingsTabReady).not.toHaveBeenCalled()
-    expect(window.location.hash).toBe('#settings/safeguards')
+    expect(window.location.hash).toBe('#settings/cloud-sync')
     rerender(
       <UrlHashSettingsHandler
         isReady
         onSettingsTabReady={onSettingsTabReady}
       />,
     )
-    expect(onSettingsTabReady).toHaveBeenCalledExactlyOnceWith('safeguards')
+    expect(onSettingsTabReady).toHaveBeenCalledExactlyOnceWith('cloud-sync')
   })
 })

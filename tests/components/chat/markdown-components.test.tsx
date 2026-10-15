@@ -1,16 +1,21 @@
 import { MessageContent } from '@/components/chat/renderers/components/MessageContent'
+import { harnessAPI } from '@/services/harness/runtime'
 import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { fetchFavicon } = vi.hoisted(() => ({
-  fetchFavicon: vi.fn<(url: string) => Promise<string | null>>(),
-}))
-vi.mock('@/services/inference/metadata-client', () => ({ fetchFavicon }))
+const fetchFavicon = vi.fn<(url: string) => Promise<{ status: string }>>()
 
 beforeEach(() => {
   fetchFavicon.mockReset().mockImplementation(async () => {
     throw new Error('Unexpected favicon lookup')
   })
+  vi.mocked(harnessAPI().client.post).mockImplementation(
+    async (path: string, input: unknown) => {
+      if (path !== '/v1/metadata/favicon')
+        throw new Error(`Unexpected request: ${path}`)
+      return fetchFavicon((input as { url: string }).url)
+    },
+  )
 })
 
 describe('Markdown citations', () => {
@@ -31,7 +36,7 @@ describe('Markdown citations', () => {
       const citationUrlTitles = new Map([[url, 'Example']])
       fetchFavicon.mockImplementationOnce(async (requested) => {
         expect(requested).toBe(url)
-        return null
+        return { status: 'not_found' }
       })
       await act(async () => {
         render(

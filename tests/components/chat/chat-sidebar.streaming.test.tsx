@@ -5,10 +5,9 @@ import {
   type ChatDragSource,
 } from '@/components/chat/drag-context'
 import type { Chat } from '@/components/chat/types'
-import { streamingTracker } from '@/services/cloud/streaming-tracker'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@clerk/react', () => ({
   useAuth: () => ({ isLoaded: true, isSignedIn: true }),
@@ -23,27 +22,11 @@ vi.mock('@/components/project/project-context', () => ({
 vi.mock('@/hooks/use-projects', () => ({
   useProjects: () => ({ projects: [], loading: false, refresh: vi.fn() }),
 }))
-vi.mock('@/hooks/use-cloud-pagination', () => ({
-  useCloudPagination: () => ({ hasMore: false, isInitialized: true }),
-}))
 vi.mock('@/hooks/use-upgrade-to-pro', () => ({
   useUpgradeToPro: () => ({ startUpgrade: vi.fn() }),
 }))
-vi.mock('@/hooks/use-safeguards', () => ({
-  useFlaggedChatIds: () => ({}),
-}))
-vi.mock('@/hooks/use-sync-health', () => ({
-  useSyncHealthAttention: () => false,
-  useSyncHealthFailed: () => false,
-}))
 vi.mock('@/components/chat/sidebar-account-menu', () => ({
   SidebarAccountMenu: () => null,
-}))
-vi.mock('@/utils/cloud-sync-settings', () => ({
-  isCloudSyncEnabled: () => true,
-  isLocalOnlyModeEnabled: () => true,
-  hasUserSetLocalOnlyPreference: () => true,
-  CLOUD_SYNC_SETTING_CHANGED_EVENT: 'cloudSyncSettingChanged',
 }))
 
 const activeChat: Chat = {
@@ -65,11 +48,19 @@ const otherChat: Chat = {
   isLocalOnly: false,
 }
 
-function DragSource({ source }: { source: ChatDragSource }) {
+function DragSource({
+  source,
+  fromProjectId,
+}: {
+  source: ChatDragSource
+  fromProjectId: string | null
+}) {
   const { setDraggingChat, draggingChatSource } = useDrag()
   return (
     <>
-      <button onClick={() => setDraggingChat(activeChat.id, null, source)}>
+      <button
+        onClick={() => setDraggingChat(activeChat.id, fromProjectId, source)}
+      >
         Start drag
       </button>
       <output aria-label="Drag source">{draggingChatSource ?? 'none'}</output>
@@ -82,11 +73,15 @@ const SIDEBAR_WIDTH = 1440
 function SidebarHarness({
   currentChat = activeChat,
   source,
+  fromProjectId = null,
   ...overrides
-}: Partial<ComponentProps<typeof ChatSidebar>> & { source?: ChatDragSource }) {
+}: Partial<ComponentProps<typeof ChatSidebar>> & {
+  source?: ChatDragSource
+  fromProjectId?: string | null
+}) {
   return (
     <DragProvider>
-      {source && <DragSource source={source} />}
+      {source && <DragSource source={source} fromProjectId={fromProjectId} />}
       <ChatSidebar
         isOpen
         setIsOpen={vi.fn()}
@@ -110,15 +105,14 @@ function SidebarHarness({
 describe('chat sidebar during streaming', () => {
   beforeEach(() => {
     sessionStorage.clear()
-    streamingTracker.reset()
-  })
-
-  afterEach(() => {
-    act(() => streamingTracker.reset())
   })
 
   it('keeps other chats visible and selectable through streaming updates', () => {
     const handleChatSelect = vi.fn()
+    const streamingChat: Chat = {
+      ...activeChat,
+      activeRun: { runId: 'run-1', lastEventId: 0 },
+    }
     const sidebar = (currentChat: Chat) => (
       <SidebarHarness
         currentChat={currentChat}
@@ -126,18 +120,16 @@ describe('chat sidebar during streaming', () => {
       />
     )
     const { rerender } = render(sidebar(activeChat))
-    expect(
-      screen.getByRole('tab', { name: 'Local' }).querySelector('svg'),
-    ).toHaveAttribute('aria-hidden', 'true')
     const otherLink = screen.getByRole('link', { name: otherChat.title })
     expect(otherLink).toBeVisible()
+    expect(screen.queryByText('Generating response')).not.toBeInTheDocument()
 
-    act(() => streamingTracker.startStreaming(activeChat.id))
+    rerender(sidebar(streamingChat))
     expect(screen.getByText('Generating response')).toBeInTheDocument()
     for (const content of ['First', 'First chunk', 'First chunk and more']) {
       rerender(
         sidebar({
-          ...activeChat,
+          ...streamingChat,
           messages: [
             ...activeChat.messages,
             { role: 'assistant', content, timestamp: new Date() },
@@ -151,44 +143,41 @@ describe('chat sidebar during streaming', () => {
     }
 
     fireEvent.click(otherLink)
-    expect(handleChatSelect).toHaveBeenCalledWith(otherChat.id)
-    expect(streamingTracker.isStreaming(activeChat.id)).toBe(true)
+    expect(handleChatSelect).toHaveBeenCalledExactlyOnceWith(otherChat.id)
+    expect(screen.getByText('Generating response')).toBeInTheDocument()
 
-    act(() => streamingTracker.endStreaming(activeChat.id))
+    rerender(sidebar({ ...streamingChat, activeRun: null }))
     expect(screen.queryByText('Generating response')).not.toBeInTheDocument()
     expect(otherLink).toBeVisible()
   })
 
   it.each([
-    { source: 'favorites', isLocalOnly: false, destination: 'Local' },
-    { source: 'chat-history', isLocalOnly: false, destination: 'Local' },
-    { source: 'favorites', isLocalOnly: true, destination: 'Cloud' },
-    { source: 'chat-history', isLocalOnly: true, destination: 'Cloud' },
+    { source: 'favorites', fromProjectId: null, outcome: 'unfavorite' },
+    { source: 'chat-history', fromProjectId: null, outcome: 'none' },
+    {
+      source: 'chat-history',
+      fromProjectId: 'project-1',
+      outcome: 'leave project',
+    },
   ] as const)(
-    'routes a $source drop on the $destination chat list without mixing removal and conversion',
-    async ({ source, isLocalOnly, destination }) => {
-      const droppedChat = { ...activeChat, isLocalOnly }
+    'routes a $source drop from project $fromProjectId on the chat list to $outcome',
+    async ({ source, fromProjectId, outcome }) => {
       const onRemoveFavorite = vi.fn()
-      const onConvertChatToLocal = vi.fn(async () => {})
-      const onConvertChatToCloud = vi.fn(async () => true)
       const onRemoveChatFromProject = vi.fn(async () => {})
       render(
         <SidebarHarness
           source={source}
-          currentChat={droppedChat}
+          fromProjectId={fromProjectId}
           pinnedChatIds={[activeChat.id]}
           onRemoveFavorite={onRemoveFavorite}
-          onConvertChatToLocal={onConvertChatToLocal}
-          onConvertChatToCloud={onConvertChatToCloud}
           onRemoveChatFromProject={onRemoveChatFromProject}
         />,
       )
-      fireEvent.click(screen.getByRole('tab', { name: destination }))
       fireEvent.click(screen.getByRole('button', { name: 'Start drag' }))
       expect(screen.getByLabelText('Drag source')).toHaveTextContent(source)
 
       await act(async () => {
-        fireEvent.drop(screen.getByRole('tabpanel', { name: destination }), {
+        fireEvent.drop(screen.getByRole('link', { name: otherChat.title }), {
           dataTransfer: {
             getData: (type: string) => {
               if (type !== 'application/x-chat-id')
@@ -199,22 +188,14 @@ describe('chat sidebar during streaming', () => {
         })
       })
 
-      if (source === 'favorites') {
+      if (outcome === 'unfavorite')
         expect(onRemoveFavorite).toHaveBeenCalledExactlyOnceWith(activeChat.id)
-        expect(onConvertChatToLocal).not.toHaveBeenCalled()
-        expect(onConvertChatToCloud).not.toHaveBeenCalled()
-      } else {
-        expect(onRemoveFavorite).not.toHaveBeenCalled()
-        const convert = isLocalOnly
-          ? onConvertChatToCloud
-          : onConvertChatToLocal
-        const otherConvert = isLocalOnly
-          ? onConvertChatToLocal
-          : onConvertChatToCloud
-        expect(convert).toHaveBeenCalledExactlyOnceWith(activeChat.id)
-        expect(otherConvert).not.toHaveBeenCalled()
-      }
-      expect(onRemoveChatFromProject).not.toHaveBeenCalled()
+      else expect(onRemoveFavorite).not.toHaveBeenCalled()
+      if (outcome === 'leave project')
+        expect(onRemoveChatFromProject).toHaveBeenCalledExactlyOnceWith(
+          activeChat.id,
+        )
+      else expect(onRemoveChatFromProject).not.toHaveBeenCalled()
       expect(screen.getByLabelText('Drag source')).toHaveTextContent('none')
     },
   )

@@ -38,17 +38,6 @@ try {
 
 try {
   ;(function () {
-    var font =
-      localStorage.getItem('tinfoil-settings-chat-font') ||
-      localStorage.getItem('chatFont')
-    if (font === 'serif' || font === 'mono' || font === 'dyslexic') {
-      document.documentElement.setAttribute('data-chat-font', font)
-    }
-  })()
-} catch (_) {}
-
-try {
-  ;(function () {
     var h =
       (window.visualViewport && window.visualViewport.height) ||
       window.innerHeight ||

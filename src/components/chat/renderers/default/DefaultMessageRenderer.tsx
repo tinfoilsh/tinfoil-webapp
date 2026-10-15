@@ -5,7 +5,6 @@ import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
 import {
   ArrowUturnLeftIcon,
-  ForwardIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline'
 import {
@@ -13,27 +12,18 @@ import {
   TfChevronDown,
   TfClock,
   TfCopy,
-  TfFork,
   TfLockLocked,
   TfRefresh1,
-  TfTrash,
   TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
 import React, { memo, useState, type JSX } from 'react'
 import { hasMessageAttachments } from '../../attachment-helpers'
-import { ConfirmDialog } from '../../components/confirm-dialog'
 import { CONSTANTS } from '../../constants'
-import { hasVisibleAssistantMessage } from '../../hooks/streaming/interrupted-message'
 import { useEnterToNewline } from '../../hooks/use-enter-to-newline'
 import { isImeComposition } from '../../keyboard-utils'
 import { CodeExecProcess } from '../components/CodeExecProcess'
 import { DocumentList } from '../components/DocumentList'
 import { MessageActions } from '../components/MessageActions'
-import {
-  MessageOverflowMenu,
-  type MessageOverflowMenuItem,
-} from '../components/MessageOverflowMenu'
-import { ReadAloudButton } from '../components/ReadAloudButton'
 import { SourcesButton } from '../components/SourcesButton'
 import { StreamingChunkedText } from '../components/StreamingChunkedText'
 import { StreamingContentWrapper } from '../components/StreamingContentWrapper'
@@ -43,7 +33,11 @@ import { URLFetchProcess } from '../components/URLFetchProcess'
 import { WebSearchProcess } from '../components/WebSearchProcess'
 import { WorkProcess } from '../components/WorkProcess'
 import type { MessageRenderer, MessageRenderProps } from '../types'
+import { toDisplayTimeline } from './server-tool-blocks'
 import { isInvisibleBlock, segmentTimeline } from './timeline-segments'
+
+const hasVisibleAssistantMessage = (message: MessageRenderProps['message']) =>
+  !!message.content || !!message.timeline?.length
 
 const MessageMetadata = ({
   modelDisplayName,
@@ -74,10 +68,6 @@ const DefaultMessageComponent = ({
   hideActions,
   onEditMessage,
   onRegenerateMessage,
-  onDeleteMessage,
-  onEditAssistantMessage,
-  onContinueAssistantMessage,
-  onForkMessage,
   onRetryToolCall,
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
@@ -86,7 +76,6 @@ const DefaultMessageComponent = ({
   const [isEditing, setIsEditing] = React.useState(false)
   const [editContent, setEditContent] = React.useState(message.content || '')
   const [copiedUser, setCopiedUser] = React.useState(false)
-  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
   const [isUserMessageExpanded, setIsUserMessageExpanded] =
     React.useState(false)
   const [isUserMessageOverflowing, setIsUserMessageOverflowing] =
@@ -98,7 +87,6 @@ const DefaultMessageComponent = ({
   React.useEffect(() => {
     if (hideActions) {
       setIsEditing(false)
-      setShowDeleteConfirm(false)
     }
   }, [hideActions])
 
@@ -117,9 +105,17 @@ const DefaultMessageComponent = ({
     }
     return map.size > 0 ? map : undefined
   }, [message.annotations])
+  const isStreamingLastMessage = !!isStreaming && !!isLastMessage
+  const displayTimeline = React.useMemo(
+    () =>
+      isUser
+        ? []
+        : toDisplayTimeline(message.timeline ?? [], isStreamingLastMessage),
+    [isUser, message.timeline, isStreamingLastMessage],
+  )
   const timelineSegments = React.useMemo(
-    () => (isUser ? [] : segmentTimeline(message.timeline ?? [])),
-    [isUser, message.timeline],
+    () => segmentTimeline(displayTimeline),
+    [displayTimeline],
   )
   const [showActions, setShowActions] = React.useState(false)
   const lastContentRef = React.useRef(message.content)
@@ -238,35 +234,6 @@ const DefaultMessageComponent = ({
     }
   }, [editContent, messageIndex, onEditMessage])
 
-  const handleSubmitAssistantEdit = React.useCallback(() => {
-    if (editContent.trim() && onEditAssistantMessage) {
-      onEditAssistantMessage(messageIndex, editContent.trim())
-      setIsEditing(false)
-    }
-  }, [editContent, messageIndex, onEditAssistantMessage])
-
-  const handleContinue = React.useCallback(() => {
-    onContinueAssistantMessage?.(messageIndex)
-  }, [messageIndex, onContinueAssistantMessage])
-
-  const handleDelete = React.useCallback(() => {
-    if (!onDeleteMessage) return
-    setShowDeleteConfirm(true)
-  }, [onDeleteMessage])
-
-  const handleConfirmDelete = React.useCallback(() => {
-    setShowDeleteConfirm(false)
-    onDeleteMessage?.(messageIndex)
-  }, [messageIndex, onDeleteMessage])
-
-  const handleCancelDelete = React.useCallback(() => {
-    setShowDeleteConfirm(false)
-  }, [])
-
-  const handleFork = React.useCallback(() => {
-    onForkMessage?.(messageIndex)
-  }, [messageIndex, onForkMessage])
-
   const handleRegenerate = React.useCallback(() => {
     if (onRegenerateMessage) {
       onRegenerateMessage(messageIndex)
@@ -305,56 +272,6 @@ const DefaultMessageComponent = ({
   }, [message.timestamp])
   const showAssistantFooter =
     !isUser && showMetadata && !(isStreaming && isLastMessage)
-
-  const assistantOverflowItems = React.useMemo<
-    MessageOverflowMenuItem[]
-  >(() => {
-    const items: MessageOverflowMenuItem[] = []
-    if (onContinueAssistantMessage && !isLimitError) {
-      items.push({
-        label: 'Continue',
-        ariaLabel: 'Continue response',
-        icon: <ForwardIcon className="h-4 w-4" aria-hidden="true" />,
-        onSelect: handleContinue,
-      })
-    }
-    if (onEditAssistantMessage && !isLimitError) {
-      items.push({
-        label: 'Edit',
-        ariaLabel: 'Edit response',
-        icon: <TfWriting className="h-4 w-4" aria-hidden="true" />,
-        onSelect: handleStartEdit,
-      })
-    }
-    if (onForkMessage) {
-      items.push({
-        label: 'Fork from here',
-        ariaLabel: 'Fork conversation from here',
-        icon: <TfFork className="h-4 w-4" aria-hidden="true" />,
-        onSelect: handleFork,
-      })
-    }
-    if (onDeleteMessage) {
-      items.push({
-        label: 'Delete',
-        ariaLabel: 'Delete message',
-        icon: <TfTrash className="h-4 w-4" aria-hidden="true" />,
-        onSelect: handleDelete,
-        destructive: true,
-      })
-    }
-    return items
-  }, [
-    onContinueAssistantMessage,
-    onEditAssistantMessage,
-    onForkMessage,
-    onDeleteMessage,
-    isLimitError,
-    handleContinue,
-    handleStartEdit,
-    handleFork,
-    handleDelete,
-  ])
 
   return (
     <div
@@ -492,6 +409,7 @@ const DefaultMessageComponent = ({
                         id: block.toolCallId,
                         name: block.name,
                         arguments: block.arguments,
+                        result: block.result,
                       },
                     ]}
                     isStreaming={!!isStreaming && !!isLastMessage}
@@ -520,7 +438,7 @@ const DefaultMessageComponent = ({
               )
             case 'content': {
               const isLastContent =
-                message.timeline!.findLastIndex(
+                displayTimeline.findLastIndex(
                   (b) => b.type === 'content' && !isInvisibleBlock(b),
                 ) === blockIndex
               const isActivelyStreaming =
@@ -577,61 +495,6 @@ const DefaultMessageComponent = ({
             </div>
           )
         })()}
-
-      {/* Full-width edit mode for assistant responses */}
-      {!isUser && isEditing && (
-        <div className="w-full px-4 py-2">
-          <div className="rounded-lg border border-border-subtle bg-surface-chat p-4">
-            <textarea
-              ref={editTextareaRef}
-              aria-label="Edit response"
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && isImeComposition(e)) {
-                  return
-                }
-                if (
-                  e.key === 'Enter' &&
-                  !e.shiftKey &&
-                  (!enterToNewline || e.metaKey || e.ctrlKey)
-                ) {
-                  e.preventDefault()
-                  handleSubmitAssistantEdit()
-                } else if (e.key === 'Escape') {
-                  e.preventDefault()
-                  handleCancelEdit()
-                }
-              }}
-              className={cn(
-                'w-full resize-none bg-transparent font-chat text-base leading-relaxed text-content-primary placeholder:text-content-muted focus:outline-none',
-              )}
-              rows={Math.min(
-                CONSTANTS.EDIT_TEXTAREA_MAX_ROWS,
-                Math.max(
-                  CONSTANTS.EDIT_TEXTAREA_MIN_ROWS,
-                  editContent.split('\n').length,
-                ),
-              )}
-            />
-            <div className="mt-3 flex justify-end gap-2">
-              <button
-                onClick={handleCancelEdit}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmitAssistantEdit}
-                disabled={!editContent.trim()}
-                className="rounded-lg bg-surface-chat-background px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-chat-background/80 disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* User message content (or assistant without timeline, e.g. rate limit errors) */}
       {(message.content || hasUserAttachments) &&
@@ -895,40 +758,6 @@ const DefaultMessageComponent = ({
                         </span>
                       </div>
                     )}
-                    {onForkMessage && (
-                      <div className="group/fork relative">
-                        <button
-                          onClick={handleFork}
-                          aria-label="Fork conversation from here"
-                          className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
-                        >
-                          <TfFork className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                        <span
-                          aria-hidden="true"
-                          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100"
-                        >
-                          Fork from here
-                        </span>
-                      </div>
-                    )}
-                    {onDeleteMessage && (
-                      <div className="group/delete relative">
-                        <button
-                          onClick={handleDelete}
-                          aria-label="Delete message"
-                          className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-red-500"
-                        >
-                          <TfTrash className="h-4 w-4" aria-hidden="true" />
-                        </button>
-                        <span
-                          aria-hidden="true"
-                          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/delete:opacity-100"
-                        >
-                          Delete
-                        </span>
-                      </div>
-                    )}
                     {message.content && (
                       <div className="group/copy relative">
                         <button
@@ -989,12 +818,6 @@ const DefaultMessageComponent = ({
                   content={message.content}
                   isDarkMode={isDarkMode}
                 />
-                {!isStreaming &&
-                  !message.isThinking &&
-                  !message.isError &&
-                  !isLimitError && (
-                    <ReadAloudButton content={message.content} />
-                  )}
                 {/* Regenerate button - only on last assistant message */}
                 {isLastMessage && onRegenerateMessage && messageIndex > 0 && (
                   <div className="group/regen relative">
@@ -1013,29 +836,11 @@ const DefaultMessageComponent = ({
                     </span>
                   </div>
                 )}
-                <MessageOverflowMenu
-                  isDarkMode={isDarkMode}
-                  items={assistantOverflowItems}
-                  triggerRef={editButtonRef}
-                />
               </>
             )}
           </div>
         </div>
       )}
-      <ConfirmDialog
-        isOpen={showDeleteConfirm}
-        title={isUser ? 'Delete message?' : 'Delete response?'}
-        description={
-          isUser
-            ? 'This message will be removed from the conversation. This cannot be undone.'
-            : 'This response will be removed from the conversation. This cannot be undone.'
-        }
-        confirmLabel="Delete"
-        variant="destructive"
-        onConfirm={handleConfirmDelete}
-        onCancel={handleCancelDelete}
-      />
     </div>
   )
 }

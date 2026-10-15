@@ -1,4 +1,4 @@
-import { SETTINGS_CHAT_FONT } from '@/constants/storage-keys'
+import { getView, subscribe } from '@/services/harness/runtime'
 import { useEffect } from 'react'
 
 export type ChatFont = 'system' | 'serif' | 'mono' | 'dyslexic'
@@ -18,49 +18,16 @@ const applyChatFont = (font: ChatFont) => {
 }
 
 /**
- * Keeps the data-chat-font attribute on <html> in sync with the saved
- * setting. The attribute is first set before paint by an inline script in
- * _document.tsx; elements using the `font-chat` class pick the font up from
- * CSS (see globals.css), so no per-component state is needed.
+ * Keeps the data-chat-font attribute on <html> in sync with the profile
+ * setting loaded from the chat service. Elements using the `font-chat` class
+ * pick the font up from CSS (see globals.css), so no per-component state is
+ * needed.
  */
 export const useChatFontSync = () => {
   useEffect(() => {
-    let saved: string | null = null
-    try {
-      saved = localStorage.getItem(SETTINGS_CHAT_FONT)
-    } catch {
-      // Storage can be blocked (e.g. disabled cookies); keep the default font.
-    }
-    applyChatFont(normalizeChatFont(saved))
-
-    const handleStorageChange = (e: StorageEvent | CustomEvent) => {
-      let key: string | null = null
-      let newValue: string | null = null
-
-      if (e instanceof StorageEvent) {
-        key = e.key
-        newValue = e.newValue
-      } else if (e.type === 'chatFontChanged') {
-        key = SETTINGS_CHAT_FONT
-        newValue = (e as CustomEvent).detail
-      }
-
-      if (key === SETTINGS_CHAT_FONT) {
-        applyChatFont(normalizeChatFont(newValue))
-      }
-    }
-
-    window.addEventListener('storage', handleStorageChange)
-    window.addEventListener(
-      'chatFontChanged',
-      handleStorageChange as EventListener,
-    )
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener(
-        'chatFontChanged',
-        handleStorageChange as EventListener,
-      )
-    }
+    const update = () =>
+      applyChatFont(normalizeChatFont(getView().profile.chatFont))
+    update()
+    return subscribe(update)
   }, [])
 }

@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
-import { beforeEach } from 'vitest'
+import { afterEach, beforeEach } from 'vitest'
+import { setupHarness } from './tests/harness-fixture'
 
 // Mock localStorage for tests
 const localStorageMock = (() => {
@@ -29,4 +30,12 @@ Object.defineProperty(globalThis, 'localStorage', {
 // Reset localStorage before each test
 beforeEach(() => {
   localStorage.clear()
+})
+
+let releaseHarness: (() => void) | undefined
+beforeEach(() => {
+  releaseHarness = setupHarness().release
+})
+afterEach(() => {
+  releaseHarness?.()
 })

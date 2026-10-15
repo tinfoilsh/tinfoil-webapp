@@ -8,16 +8,18 @@ import {
   SETTINGS_PASSKEY_RECOVERY_DISMISSED,
   SETTINGS_PASSKEY_SETUP_WARNING_DISMISSED,
 } from '@/constants/storage-keys'
-import type { CloudKeyAuthorizationMode } from '@/services/cloud/cloud-key-authorization'
+import { encryptionService } from '@/services/encryption/encryption-service'
+import { keyCurrent as enclaveKeyCurrent } from '@/services/harness/keys'
+import type { CloudKeyAuthorizationMode } from '@/services/keys/cloud-key-authorization'
 import {
   authorizeCurrentPrimaryKeyOrThrow,
   getCurrentCloudKeyAuthorizationMode,
-} from '@/services/cloud/cloud-key-authorization'
+} from '@/services/keys/cloud-key-authorization'
 import {
   inspectRemoteEncryptedState,
   validateCurrentPrimaryKey,
-} from '@/services/cloud/cloud-key-preflight'
-import { encryptionService } from '@/services/encryption/encryption-service'
+} from '@/services/keys/cloud-key-preflight'
+import { passkeyEvents } from '@/services/keys/passkey-events'
 import {
   addWrappedKeyForCurrentKey,
   createAndWrapTinfoilKey,
@@ -37,9 +39,6 @@ import {
   wrapTinfoilKeyBundle,
 } from '@/services/passkey'
 import { isPrfSupported } from '@/services/passkey/prf-support'
-import { passkeyEvents } from '@/services/sync-enclave/passkey-events'
-import { keyCurrent as enclaveKeyCurrent } from '@/services/sync-enclave/sync-api'
-import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import type { useUser } from '@clerk/react'
 import type { PRFResult } from '@tinfoilsh/passkey-kit'
@@ -477,7 +476,6 @@ export function usePasskeyBackup({
     syncVersion: number | null
     bundleVersion: number
   }): void => {
-    setCloudSyncEnabled(true)
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
     if (recovery.syncVersion !== null) {
       setLocalSyncVersion(recovery.credentialId, recovery.syncVersion)
@@ -548,7 +546,6 @@ export function usePasskeyBackup({
    * setupFirstTimePasskeyUser (init effect) and setupNewKeySplit (UI-triggered).
    */
   const applyNewPasskeyKey = (): void => {
-    setCloudSyncEnabled(true)
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
 
     if (isMountedRef.current) {

@@ -1,7 +1,6 @@
 import { PAGINATION } from '@/config'
 import {
   UI_EXPAND_PROJECTS_ON_MOUNT,
-  UI_SIDEBAR_ACTIVE_TAB,
   UI_SIDEBAR_CHAT_HISTORY_EXPANDED,
   UI_SIDEBAR_EXPAND_SECTION,
   UI_SIDEBAR_FAVORITES_EXPANDED,
@@ -9,24 +8,8 @@ import {
   USER_PREFS_NATIVE_APP_DISMISSED,
 } from '@/constants/storage-keys'
 import { useProjects } from '@/hooks/use-projects'
-import {
-  useSyncHealthAttention,
-  useSyncHealthFailed,
-} from '@/hooks/use-sync-health'
 import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
-import { encryptionService } from '@/services/encryption/encryption-service'
-import { chatStorage } from '@/services/storage/chat-storage'
-import { isResolvedFavoriteChat } from '@/services/storage/pinned-chats'
-import {
-  CLOUD_SYNC_SETTING_CHANGED_EVENT,
-  hasUserSetLocalOnlyPreference,
-  isCloudSyncEnabled,
-  isLocalOnlyModeEnabled,
-  recordCloudSyncPreference,
-  setLocalOnlyModeEnabled as setLocalOnlyModeSetting,
-} from '@/utils/cloud-sync-settings'
-import { logInfo } from '@/utils/error-handling'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/react'
 import {
@@ -35,7 +18,6 @@ import {
   TfChevronDown,
   TfChevronRight,
   TfCloud,
-  TfFloppyDisk,
   TfFolder,
   TfFolderPlus,
   TfLockLocked,
@@ -58,6 +40,7 @@ import { formatRelativeTime } from './chat-list-utils'
 import { CONSTANTS } from './constants'
 import { useDrag } from './drag-context'
 import { consumeFavoriteDrop } from './favorite-drag'
+import { isResolvedFavoriteChat } from './favorite-view'
 import type { SettingsTab } from './settings-modal'
 import { SidebarAccountMenu } from './sidebar-account-menu'
 import { getSidebarUpsellVariant } from './sidebar-upsell-state'
@@ -71,7 +54,7 @@ import {
   PROJECT_COLOR_SIDEBAR_TINT_OPACITY,
   projectColorTintLayer,
 } from '@/constants/project-colors'
-import { useCloudPagination } from '@/hooks/use-cloud-pagination'
+import { useHarness } from '@/services/harness/provider'
 
 import { logError } from '@/utils/error-handling'
 import {
@@ -83,20 +66,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '../link'
 import { Logo } from '../logo'
 import { SIDEBAR_PANEL_ID, SidebarPanel, SidebarRail } from './sidebar-layout'
-import { getChatLoadMoreAction } from './sidebar-pagination'
 import type { Chat } from './types'
 
 const FAVORITES_PANEL_ID = 'sidebar-favorites-panel'
 const ENCRYPTION_NOTE_ID = 'sidebar-encryption-note'
-const STORAGE_TAB_CLASS_NAME =
-  'flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors'
-const STORAGE_TAB_ACTIVE_CLASS_NAME =
-  'border-tinfoil-accent-blue bg-tinfoil-accent-blue text-white hover:bg-tinfoil-accent-blue-hover'
-const STORAGE_TAB_INACTIVE_CLASS_NAME =
-  'border-border-subtle bg-surface-chat-background text-content-secondary hover:border-border-strong hover:text-content-primary'
-const STORAGE_TAB_DROP_TARGET_CLASS_NAME =
-  'border-tinfoil-accent-blue ring-2 ring-tinfoil-accent-blue-soft'
-
 const SIDEBAR_CTA_CLASS_NAME =
   'block w-full rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90'
 
@@ -106,9 +79,9 @@ function isIOSDevice() {
   return /iPad|iPhone|iPod/.test(navigator.userAgent)
 }
 
-// Pagination state is managed by useCloudPagination
-
 type ChatSidebarProps = {
+  hasMore?: boolean
+  onLoadMore?: () => Promise<void>
   isOpen: boolean
   setIsOpen: (isOpen: boolean) => void
   chats: Chat[]
@@ -138,20 +111,12 @@ type ChatSidebarProps = {
   onDismissBackupWarning?: () => void
   onChatsUpdated?: () => void | Promise<void>
   isInitialChatPageReady?: boolean
-  /** Triggers an account revision sync from the sidebar "Sync" button. */
-  onManualSync?: () => Promise<boolean>
-  /** True while a cloud sync is in progress; drives the Sync button spinner. */
-  isSyncing?: boolean
-  /** Whether the most recent cloud sync attempt failed. */
-  lastSyncFailed?: boolean
   isProjectMode?: boolean
   activeProjectName?: string
   onEnterProject?: (projectId: string, projectName?: string) => Promise<void>
   onCreateProject?: () => Promise<void>
   onMoveChatToProject?: (chatId: string, projectId: string) => Promise<void>
   onRemoveChatFromProject?: (chatId: string) => Promise<void>
-  onConvertChatToCloud?: (chatId: string) => Promise<boolean>
-  onConvertChatToLocal?: (chatId: string) => Promise<void>
   onSettingsClick?: (tab?: SettingsTab) => void
   onReportBugClick?: () => void
   onSearchClick?: () => void
@@ -193,6 +158,8 @@ function usePreventZoom() {
 }
 
 export function ChatSidebar({
+  hasMore: hasMoreRemote = false,
+  onLoadMore,
   isOpen,
   setIsOpen,
   chats,
@@ -217,17 +184,12 @@ export function ChatSidebar({
   onDismissBackupWarning,
   onChatsUpdated,
   isInitialChatPageReady = false,
-  onManualSync,
-  isSyncing = false,
-  lastSyncFailed = false,
   isProjectMode,
   activeProjectName,
   onEnterProject,
   onCreateProject,
   onMoveChatToProject,
   onRemoveChatFromProject,
-  onConvertChatToCloud,
-  onConvertChatToLocal,
   onSettingsClick,
   onReportBugClick,
   onSearchClick,
@@ -240,8 +202,6 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const router = useRouter()
   const authRedirectUrl = postAuthRedirectTarget(router.asPath)
-  const syncNeedsAttention = useSyncHealthAttention()
-  const syncHealthFailed = useSyncHealthFailed()
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [isProjectsExpanded, setIsProjectsExpanded] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -305,22 +265,7 @@ export function ChatSidebar({
     upgradeLoading,
     upgradeError,
   } = useUpgradeToPro()
-  const [activeTab, setActiveTab] = useState<'cloud' | 'local'>(() => {
-    if (currentChat?.isBlankChat && currentChat.isLocalOnly) {
-      return 'local'
-    }
-    if (typeof window !== 'undefined') {
-      const stored = sessionStorage.getItem(UI_SIDEBAR_ACTIVE_TAB)
-      if (stored === 'local' && isLocalOnlyModeEnabled()) {
-        return 'local'
-      }
-    }
-    return 'cloud'
-  })
-  const [cloudSyncEnabled, setCloudSyncEnabled] = useState(isCloudSyncEnabled())
-  const [localOnlyModeEnabled, setLocalOnlyModeEnabled] = useState(
-    isLocalOnlyModeEnabled(),
-  )
+  const { keyReady: cloudSyncEnabled } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
   const upsellVariant = getSidebarUpsellVariant({
     isAuthLoaded,
@@ -336,11 +281,9 @@ export function ChatSidebar({
     draggingChatFromProjectId,
     draggingChatSource,
     dropTargetProjectId,
-    dropTargetTab,
     isDropTargetChatHistory,
     setDraggingChat,
     setDropTargetProject,
-    setDropTargetTab,
     setDropTargetChatHistory,
     clearDragState,
   } = useDrag()
@@ -357,12 +300,11 @@ export function ChatSidebar({
     setIsMac(/Mac|iPod|iPhone|iPad/.test(navigator.platform))
   }, [])
   const modKey = isMac ? '⌘' : 'Ctrl+'
-  const newChatHref = getNewChatPath({ isLocalOnly: activeTab === 'local' })
+  const newChatHref = getNewChatPath()
   const isCurrentNewChat =
     currentChat?.isBlankChat &&
     !currentChat.isTemporary &&
-    Boolean(currentChat.isLocalOnly) === (activeTab === 'local')
-  const syncFailed = lastSyncFailed || syncHealthFailed
+    !currentChat.isLocalOnly
 
   const {
     projects,
@@ -391,33 +333,14 @@ export function ChatSidebar({
     null,
   )
 
-  // Cloud pagination state via hook
-  const {
-    hasMore: hasMoreRemote,
-    isLoading: isLoadingMore,
-    hasAttempted: hasAttemptedLoadMore,
-    isInitialized: isPaginationInitialized,
-    canRetryInitialization,
-    loadMore: loadMorePage,
-  } = useCloudPagination({
-    isSignedIn: !!isSignedIn,
-    userId: user?.id,
-    isInitialPageReady: isInitialChatPageReady,
-  })
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [hasAttemptedLoadMore, setHasAttemptedLoadMore] = useState(false)
   const [visibleCloudChatCount, setVisibleCloudChatCount] = useState<number>(
     PAGINATION.CHATS_PER_PAGE,
   )
 
-  // Token getter should be set by parent component that has access to getApiKey
-  // The parent (ChatInterface) already sets this up through useCloudSync
-
   // Apply zoom prevention for mobile
   usePreventZoom()
-
-  // Persist active tab selection to sessionStorage
-  useEffect(() => {
-    sessionStorage.setItem(UI_SIDEBAR_ACTIVE_TAB, activeTab)
-  }, [activeTab])
 
   // Persist projects expanded state to sessionStorage
   useEffect(() => {
@@ -467,95 +390,6 @@ export function ChatSidebar({
     isProjectsExpanded,
   ])
 
-  // Listen for cloud sync setting changes
-  useEffect(() => {
-    const handleCloudSyncChange = () => {
-      setCloudSyncEnabled(isCloudSyncEnabled())
-    }
-
-    // Listen for both storage events and custom events
-    window.addEventListener('storage', handleCloudSyncChange)
-    window.addEventListener(
-      CLOUD_SYNC_SETTING_CHANGED_EVENT,
-      handleCloudSyncChange,
-    )
-
-    return () => {
-      window.removeEventListener('storage', handleCloudSyncChange)
-      window.removeEventListener(
-        CLOUD_SYNC_SETTING_CHANGED_EVENT,
-        handleCloudSyncChange,
-      )
-    }
-  }, [])
-
-  // Listen for local-only mode setting changes
-  useEffect(() => {
-    const handleLocalOnlyModeChange = () => {
-      const enabled = isLocalOnlyModeEnabled()
-      setLocalOnlyModeEnabled(enabled)
-      if (!enabled && activeTab === 'local') {
-        setActiveTab('cloud')
-      }
-    }
-
-    // Listen for both storage events (cross-tab) and custom events (same-tab)
-    window.addEventListener('storage', handleLocalOnlyModeChange)
-    window.addEventListener('localOnlyModeChanged', handleLocalOnlyModeChange)
-    return () => {
-      window.removeEventListener('storage', handleLocalOnlyModeChange)
-      window.removeEventListener(
-        'localOnlyModeChanged',
-        handleLocalOnlyModeChange,
-      )
-    }
-  }, [activeTab])
-
-  // Auto-enable local-only mode if user has existing local chats and hasn't
-  // explicitly set the preference (matches iOS ChatViewModel behavior)
-  useEffect(() => {
-    if (!isSignedIn || !cloudSyncEnabled || hasUserSetLocalOnlyPreference()) {
-      return
-    }
-    const hasLocalChats = chats.some(
-      (chat) => chat.isLocalOnly && !chat.isBlankChat,
-    )
-    if (hasLocalChats) {
-      setLocalOnlyModeSetting(true)
-      setLocalOnlyModeEnabled(true)
-    }
-  }, [isSignedIn, cloudSyncEnabled, chats])
-
-  // Update blank chat's isLocalOnly when active tab changes
-  useEffect(() => {
-    if (!isSignedIn || !cloudSyncEnabled || !localOnlyModeEnabled) return
-
-    const shouldBeLocal = activeTab === 'local'
-
-    // Only switch to blank chat if we're already on a blank chat
-    // This ensures we don't interrupt the user when they've selected a real chat.
-    // Temporary chats are also blank but must not be replaced here — doing so
-    // would silently exit temporary-chat mode whenever the active tab and the
-    // temp chat's isLocalOnly disagree (which is always, since temp chats
-    // leave isLocalOnly undefined).
-    if (
-      currentChat?.isBlankChat &&
-      !currentChat.isTemporary &&
-      currentChat.isLocalOnly !== shouldBeLocal
-    ) {
-      createNewChat(shouldBeLocal, false)
-    }
-  }, [
-    activeTab,
-    isSignedIn,
-    cloudSyncEnabled,
-    localOnlyModeEnabled,
-    createNewChat,
-    currentChat?.isBlankChat,
-    currentChat?.isLocalOnly,
-    currentChat?.isTemporary,
-  ])
-
   // Detect iOS device
   useEffect(() => {
     if (isClient) {
@@ -592,9 +426,6 @@ export function ChatSidebar({
       sessionStorage.removeItem(UI_SIDEBAR_EXPAND_SECTION)
     }
   }, [isOpen, refreshProjects])
-
-  // Track if we're waiting for newly loaded chats to render (prevents scroll jump)
-  const [pendingChatsRender, setPendingChatsRender] = useState(false)
 
   // Instead of trying to detect Safari, let's use CSS custom properties
   // that will apply the padding only when needed
@@ -674,26 +505,10 @@ export function ChatSidebar({
     setIsChatHistoryExpanded(false)
   }, [hideScrollbarWhileSectionsAnimate])
 
-  const filteredChats = useMemo(() => {
-    // The incoming `chats` array is already sorted by `sortChats`
-    // (blank-first, then most-recently-updated). We only filter
-    // here; the display order matches the server's pagination so
-    // newly-loaded pages slot in at the bottom without reshuffling.
-    if (isSignedIn && cloudSyncEnabled) {
-      if (localOnlyModeEnabled && activeTab === 'local') {
-        return chats.filter(
-          (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
-        )
-      }
-      return chats.filter(
-        (chat) => !chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
-      )
-    }
-    return chats.filter(
-      (chat) =>
-        (chat as any).isLocalOnly && !chat.projectId && !chat.isBlankChat,
-    )
-  }, [chats, activeTab, isSignedIn, cloudSyncEnabled, localOnlyModeEnabled])
+  const filteredChats = useMemo(
+    () => chats.filter((chat) => !chat.projectId && !chat.isBlankChat),
+    [chats],
+  )
 
   const favoriteChats = useMemo(() => {
     const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
@@ -718,10 +533,7 @@ export function ChatSidebar({
       clearDragState,
     })
 
-  const paginatesCloudChats =
-    isSignedIn &&
-    cloudSyncEnabled &&
-    (!localOnlyModeEnabled || activeTab === 'cloud')
+  const paginatesCloudChats = Boolean(isSignedIn && cloudSyncEnabled)
   const sortedChats = useMemo(
     () =>
       paginatesCloudChats
@@ -730,64 +542,34 @@ export function ChatSidebar({
     [filteredChats, paginatesCloudChats, visibleCloudChatCount],
   )
   const hasMoreLoadedChats = filteredChats.length > visibleCloudChatCount
-  const canLoadRemoteChats =
-    isInitialChatPageReady &&
-    ((isPaginationInitialized && hasMoreRemote) || canRetryInitialization)
   const shouldShowLoadMore =
-    paginatesCloudChats && (hasMoreLoadedChats || canLoadRemoteChats)
+    paginatesCloudChats && (hasMoreLoadedChats || hasMoreRemote)
 
   useEffect(() => {
     setVisibleCloudChatCount(PAGINATION.CHATS_PER_PAGE)
+    setHasAttemptedLoadMore(false)
   }, [user?.id, isInitialChatPageReady])
 
-  const loadMoreChats = useCallback(async (): Promise<void> => {
-    if (isLoadingMore || !isSignedIn) return
-
-    const action = getChatLoadMoreAction({
-      loadedChatCount: filteredChats.length,
-      visibleChatCount: visibleCloudChatCount,
-      hasRemoteCursor: hasMoreRemote,
-      canRetryRemoteInitialization: canRetryInitialization,
-    })
-    if (action === 'none') return
-    if (action === 'reveal-local') {
+  const loadMoreChats = async (): Promise<void> => {
+    if (isLoadingMore) return
+    if (hasMoreLoadedChats) {
       setVisibleCloudChatCount((count) => count + PAGINATION.CHATS_PER_PAGE)
       return
     }
-
+    setIsLoadingMore(true)
     try {
-      const result = await loadMorePage()
-      if (!result || result.saved === 0) return
-
-      setPendingChatsRender(true)
-      try {
-        await onChatsUpdated?.()
-      } catch (error) {
-        logError('Failed to reload chats after pagination', error, {
-          component: 'ChatSidebar',
-          action: 'loadMoreChats',
-        })
-      } finally {
-        setVisibleCloudChatCount((count) => count + PAGINATION.CHATS_PER_PAGE)
-        setPendingChatsRender(false)
-      }
+      await onLoadMore?.()
+      setVisibleCloudChatCount((count) => count + PAGINATION.CHATS_PER_PAGE)
     } catch (error) {
-      setPendingChatsRender(false)
       logError('Failed to load more chats', error, {
         component: 'ChatSidebar',
         action: 'loadMoreChats',
       })
+    } finally {
+      setHasAttemptedLoadMore(true)
+      setIsLoadingMore(false)
     }
-  }, [
-    canRetryInitialization,
-    filteredChats.length,
-    hasMoreRemote,
-    isLoadingMore,
-    isSignedIn,
-    loadMorePage,
-    onChatsUpdated,
-    visibleCloudChatCount,
-  ])
+  }
 
   // Prefer backing up the existing key with a passkey (PRF-capable devices
   // must stay in the passkey-only flow); fall back to the manual cloud-sync
@@ -814,52 +596,6 @@ export function ChatSidebar({
 
   const [isEncryptionNoteExpanded, setIsEncryptionNoteExpanded] =
     useState(false)
-
-  const handleCloudSyncToggle = async (enabled: boolean) => {
-    if (enabled) {
-      // Check if encryption key exists
-      if (!encryptionService.getKey()) {
-        if (await trySetupPasskeyFirst()) return
-
-        // Turn on the toggle visually (but don't persist yet)
-        setCloudSyncEnabled(true)
-
-        // Show the cloud sync setup modal
-        if (onCloudSyncSetupClick) {
-          onCloudSyncSetupClick()
-        }
-        return
-      }
-
-      // If key exists, proceed with enabling
-      setCloudSyncEnabled(true)
-      recordCloudSyncPreference(true)
-    } else {
-      // Disabling cloud sync
-      setCloudSyncEnabled(false)
-      recordCloudSyncPreference(false)
-
-      try {
-        const deletedCount = await chatStorage.deleteAllNonLocalChats()
-        logInfo(
-          `Deleted ${deletedCount} synced chats when disabling cloud sync`,
-          {
-            component: 'ChatSidebar',
-            action: 'handleCloudSyncToggle',
-          },
-        )
-        if (deletedCount > 0 && onChatsUpdated) {
-          onChatsUpdated()
-        }
-      } catch (error) {
-        logInfo('Failed to delete synced chats', {
-          component: 'ChatSidebar',
-          action: 'handleCloudSyncToggle',
-          metadata: { error },
-        })
-      }
-    }
-  }
 
   // Check if mobile
   const isMobile = windowWidth < MOBILE_BREAKPOINT
@@ -903,7 +639,7 @@ export function ChatSidebar({
                 onClick={(e) => {
                   if (!isPlainPrimaryClick(e)) return
                   e.preventDefault()
-                  createNewChat(activeTab === 'local', true)
+                  createNewChat(false, true)
                 }}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
@@ -1010,13 +746,6 @@ export function ChatSidebar({
                 aria-label="Settings"
               >
                 <TfSetting className="h-5 w-5" aria-hidden="true" />
-                {syncNeedsAttention && (
-                  <span
-                    className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-orange-500"
-                    title="Cloud sync needs attention"
-                    aria-hidden="true"
-                  />
-                )}
               </button>
               <span className="pointer-events-none absolute left-full top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
                 Settings
@@ -1082,7 +811,7 @@ export function ChatSidebar({
                 if (!isPlainPrimaryClick(e)) return
                 e.preventDefault()
                 if (isCurrentNewChat) return
-                createNewChat(activeTab === 'local', true)
+                createNewChat(false, true)
               }}
               className={cn(
                 'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-all duration-200',
@@ -1972,180 +1701,11 @@ export function ChatSidebar({
                   )}
                 >
                   <div className="pt-3">
-                    {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
-                    {isSignedIn && cloudSyncEnabled && localOnlyModeEnabled && (
-                      <div
-                        className="mx-4 mt-4 flex gap-2"
-                        role="tablist"
-                        aria-label="Chat storage"
-                      >
-                        <button
-                          id="chat-cloud-tab"
-                          role="tab"
-                          aria-selected={activeTab === 'cloud'}
-                          aria-controls="chat-storage-panel"
-                          onClick={() => setActiveTab('cloud')}
-                          onDragOver={(e) => {
-                            if (
-                              e.dataTransfer.types.includes(
-                                'application/x-chat-id',
-                              ) &&
-                              onConvertChatToCloud
-                            ) {
-                              e.preventDefault()
-                              if (draggingChatSource !== 'favorites') {
-                                e.dataTransfer.dropEffect = 'move'
-                                setDropTargetTab('cloud')
-                              }
-                            }
-                          }}
-                          onDragEnter={(e) => {
-                            if (
-                              e.dataTransfer.types.includes(
-                                'application/x-chat-id',
-                              ) &&
-                              onConvertChatToCloud
-                            ) {
-                              e.preventDefault()
-                              if (draggingChatSource !== 'favorites') {
-                                setDropTargetTab('cloud')
-                                setActiveTab('cloud')
-                              }
-                            }
-                          }}
-                          onDragLeave={() => {
-                            if (dropTargetTab === 'cloud') {
-                              setDropTargetTab(null)
-                            }
-                          }}
-                          onDrop={async (e) => {
-                            e.preventDefault()
-                            const chatId = e.dataTransfer.getData(
-                              'application/x-chat-id',
-                            )
-                            if (chatId) {
-                              const favoriteDropConsumed = consumeFavoriteDrop({
-                                source: draggingChatSource,
-                                chatId,
-                                pinnedChatIds,
-                                onRemoveFavorite,
-                              })
-                              if (
-                                !favoriteDropConsumed &&
-                                draggingChatFromProjectId &&
-                                onRemoveChatFromProject
-                              ) {
-                                // Chat from project is already cloud, just remove from project
-                                await onRemoveChatFromProject(chatId)
-                              } else if (
-                                !favoriteDropConsumed &&
-                                onConvertChatToCloud
-                              ) {
-                                // Only convert if dragging from local (not from project)
-                                await onConvertChatToCloud(chatId)
-                              }
-                            }
-                            clearDragState()
-                          }}
-                          className={cn(
-                            STORAGE_TAB_CLASS_NAME,
-                            activeTab === 'cloud'
-                              ? STORAGE_TAB_ACTIVE_CLASS_NAME
-                              : STORAGE_TAB_INACTIVE_CLASS_NAME,
-                            dropTargetTab === 'cloud' &&
-                              STORAGE_TAB_DROP_TARGET_CLASS_NAME,
-                          )}
-                        >
-                          <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
-                          Cloud
-                        </button>
-                        <button
-                          id="chat-local-tab"
-                          role="tab"
-                          aria-selected={activeTab === 'local'}
-                          aria-controls="chat-storage-panel"
-                          onClick={() => setActiveTab('local')}
-                          onDragOver={(e) => {
-                            if (
-                              e.dataTransfer.types.includes(
-                                'application/x-chat-id',
-                              ) &&
-                              onConvertChatToLocal
-                            ) {
-                              e.preventDefault()
-                              if (draggingChatSource !== 'favorites') {
-                                e.dataTransfer.dropEffect = 'move'
-                                setDropTargetTab('local')
-                              }
-                            }
-                          }}
-                          onDragEnter={(e) => {
-                            if (
-                              e.dataTransfer.types.includes(
-                                'application/x-chat-id',
-                              ) &&
-                              onConvertChatToLocal
-                            ) {
-                              e.preventDefault()
-                              if (draggingChatSource !== 'favorites') {
-                                setActiveTab('local')
-                                setDropTargetTab('local')
-                              }
-                            }
-                          }}
-                          onDragLeave={() => {
-                            if (dropTargetTab === 'local') {
-                              setDropTargetTab(null)
-                            }
-                          }}
-                          onDrop={async (e) => {
-                            e.preventDefault()
-                            const chatId = e.dataTransfer.getData(
-                              'application/x-chat-id',
-                            )
-                            const favoriteDropConsumed = chatId
-                              ? consumeFavoriteDrop({
-                                  source: draggingChatSource,
-                                  chatId,
-                                  pinnedChatIds,
-                                  onRemoveFavorite,
-                                })
-                              : false
-                            if (
-                              !favoriteDropConsumed &&
-                              chatId &&
-                              onConvertChatToLocal
-                            ) {
-                              // convertChatToLocal also clears projectId
-                              await onConvertChatToLocal(chatId)
-                            }
-                            clearDragState()
-                          }}
-                          className={cn(
-                            STORAGE_TAB_CLASS_NAME,
-                            activeTab === 'local'
-                              ? STORAGE_TAB_ACTIVE_CLASS_NAME
-                              : STORAGE_TAB_INACTIVE_CLASS_NAME,
-                            dropTargetTab === 'local' &&
-                              STORAGE_TAB_DROP_TARGET_CLASS_NAME,
-                          )}
-                        >
-                          <TfFloppyDisk
-                            className="h-3.5 w-3.5"
-                            aria-hidden="true"
-                          />
-                          Local
-                        </button>
-                      </div>
-                    )}
-
                     {/* Description text - show when NOT displaying the cloud sync box */}
                     {(!isSignedIn || cloudSyncEnabled) && (
                       <div className="font-base mx-4 min-h-[36px] pb-3 pt-3 font-aeonik-fono text-xs text-content-muted">
                         {!isSignedIn ? (
                           'Your chats are stored temporarily in this browser tab. Create an account for persistent storage.'
-                        ) : localOnlyModeEnabled && activeTab === 'local' ? (
-                          "Local chats are stored only on this device and won't sync across devices."
                         ) : (
                           <>
                             <button
@@ -2238,13 +1798,6 @@ export function ChatSidebar({
                   )}
                 >
                   <div
-                    id="chat-storage-panel"
-                    role="tabpanel"
-                    aria-labelledby={
-                      activeTab === 'cloud'
-                        ? 'chat-cloud-tab'
-                        : 'chat-local-tab'
-                    }
                     onDragOver={(e) => {
                       if (
                         e.dataTransfer.types.includes('application/x-chat-id')
@@ -2274,7 +1827,6 @@ export function ChatSidebar({
                         'application/x-chat-id',
                       )
                       if (chatId) {
-                        const chat = chats.find((c) => c.id === chatId)
                         const favoriteDropConsumed = consumeFavoriteDrop({
                           source: draggingChatSource,
                           chatId,
@@ -2283,30 +1835,11 @@ export function ChatSidebar({
                         })
                         if (
                           !favoriteDropConsumed &&
-                          draggingChatFromProjectId
+                          draggingChatFromProjectId &&
+                          onRemoveChatFromProject
                         ) {
                           // Dragging from project - remove from project
-                          if (activeTab === 'local' && onConvertChatToLocal) {
-                            await onConvertChatToLocal(chatId)
-                          } else if (onRemoveChatFromProject) {
-                            await onRemoveChatFromProject(chatId)
-                          }
-                        } else if (
-                          !favoriteDropConsumed &&
-                          chat?.isLocalOnly &&
-                          activeTab === 'cloud' &&
-                          onConvertChatToCloud
-                        ) {
-                          // Local chat dropped on cloud tab area - convert to cloud
-                          await onConvertChatToCloud(chatId)
-                        } else if (
-                          !favoriteDropConsumed &&
-                          !chat?.isLocalOnly &&
-                          activeTab === 'local' &&
-                          onConvertChatToLocal
-                        ) {
-                          // Cloud chat dropped on local tab area - convert to local
-                          await onConvertChatToLocal(chatId)
+                          await onRemoveChatFromProject(chatId)
                         }
                       }
                       setIsDropTargetChatList(false)
@@ -2326,7 +1859,6 @@ export function ChatSidebar({
                         chats={sortedChats as ChatItemData[]}
                         currentChatId={currentChat?.id}
                         currentChatIsBlank={currentChat?.isBlankChat}
-                        currentChatIsLocalOnly={currentChat?.isLocalOnly}
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                         showEncryptionStatus={true}
@@ -2334,9 +1866,7 @@ export function ChatSidebar({
                         isDraggable={
                           isSignedIn &&
                           cloudSyncEnabled &&
-                          (!!onMoveChatToProject ||
-                            !!onConvertChatToCloud ||
-                            !!onConvertChatToLocal)
+                          !!onMoveChatToProject
                         }
                         showMoveToProject={
                           isSignedIn &&
@@ -2346,12 +1876,8 @@ export function ChatSidebar({
                         }
                         getChatHref={(chat) =>
                           chat.isBlankChat
-                            ? getNewChatPath({
-                                isLocalOnly: chat.isLocalOnly,
-                              })
-                            : getChatPath(chat.id, {
-                                isLocalOnly: chat.isLocalOnly,
-                              })
+                            ? getNewChatPath()
+                            : getChatPath(chat.id)
                         }
                         onSelectChat={handleChatSelect}
                         onAfterSelect={undefined}
@@ -2386,27 +1912,12 @@ export function ChatSidebar({
                             </div>
                           ) : undefined
                         }
-                        onConvertToCloud={onConvertChatToCloud}
-                        onConvertToLocal={onConvertChatToLocal}
                         pinnedChatIds={pinnedChatIds}
                         onTogglePin={onToggleFavorite}
-                        emptyState={
-                          activeTab === 'local' ? (
-                            <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
-                              <p className="text-sm text-content-muted">
-                                No local chats yet
-                              </p>
-                              <p className="mt-1 text-xs text-content-muted">
-                                Disable cloud sync in settings to create
-                                local-only chats
-                              </p>
-                            </div>
-                          ) : undefined
-                        }
                         loadMoreButton={
                           <>
                             {/* Shimmer placeholder while loading or waiting for chats to render */}
-                            {(isLoadingMore || pendingChatsRender) && (
+                            {isLoadingMore && (
                               <div className="space-y-1 px-2">
                                 {[...Array(3)].map((_, i) => (
                                   <div
@@ -2438,13 +1949,13 @@ export function ChatSidebar({
                                 <button
                                   type="button"
                                   onClick={() => void loadMoreChats()}
-                                  disabled={isLoadingMore || pendingChatsRender}
+                                  disabled={isLoadingMore}
                                   className="flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle bg-surface-sidebar px-3 py-2 text-xs font-medium text-content-secondary transition-colors hover:border-border-strong hover:text-content-primary disabled:cursor-wait disabled:opacity-60"
                                 >
-                                  {(isLoadingMore || pendingChatsRender) && (
+                                  {isLoadingMore && (
                                     <PiSpinner className="h-3.5 w-3.5 animate-spin" />
                                   )}
-                                  {isLoadingMore || pendingChatsRender
+                                  {isLoadingMore
                                     ? 'Loading chats...'
                                     : 'Load more chats'}
                                 </button>
@@ -2514,13 +2025,7 @@ export function ChatSidebar({
           <SidebarAccountMenu
             isSidebarOpen={isOpen}
             isSignedIn={Boolean(isSignedIn)}
-            isPremium={Boolean(isPremium)}
             isDarkMode={isDarkMode}
-            canSync={Boolean(isSignedIn && cloudSyncEnabled)}
-            isSyncing={isSyncing}
-            syncFailed={syncFailed}
-            syncNeedsAttention={syncNeedsAttention}
-            onSync={onManualSync}
             onOpenSettings={(tab) => onSettingsClick?.(tab)}
             onReportBug={() => onReportBugClick?.()}
           />

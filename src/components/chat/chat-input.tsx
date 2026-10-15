@@ -2,7 +2,7 @@ import { useProject } from '@/components/project'
 import { cn } from '@/components/ui/utils'
 import { getProjectColor } from '@/constants/project-colors'
 import { useToast } from '@/hooks/use-toast'
-import { getTinfoilClient } from '@/services/inference/tinfoil-client'
+import { useHarness } from '@/services/harness/provider'
 import { logError } from '@/utils/error-handling'
 import {
   TfAttachment,
@@ -69,7 +69,6 @@ type ChatInputProps = {
   removeDocument?: (id: string) => void
   isPremium?: boolean
   hasMessages?: boolean
-  audioModel?: string
   modelSelectorButton?: React.ReactNode
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
@@ -106,7 +105,6 @@ export function ChatInput({
   removeDocument,
   isPremium,
   hasMessages,
-  audioModel,
   modelSelectorButton,
   webSearchEnabled,
   onWebSearchToggle,
@@ -125,6 +123,8 @@ export function ChatInput({
   const documentsScrollRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
   const { isProjectMode, activeProject } = useProject()
+  const { api, session } = useHarness()
+  const transcriptionAvailable = !!session?.features.transcription
   const enterToNewline = useEnterToNewline()
   const [textareaResetNonce, setTextareaResetNonce] = useState(0)
   const prevInputValueRef = useRef(input)
@@ -484,23 +484,11 @@ export function ChatInput({
       try {
         setIsTranscribing(true)
 
-        if (!audioModel) {
-          throw new Error('No audio model available for transcription')
-        }
-
-        const client = await getTinfoilClient()
         const file = new File([blob], 'audio.webm', { type: 'audio/webm' })
-
-        const transcription = await client.audio.transcriptions.create({
+        const { text } = await api.upload<{ text: string }>(
+          '/v1/transcriptions',
           file,
-          model: audioModel,
-          response_format: 'text',
-        })
-
-        const text =
-          typeof transcription === 'string'
-            ? transcription
-            : (transcription as any).text
+        )
 
         if (text) {
           const currentInput = input.trim()
@@ -534,7 +522,7 @@ export function ChatInput({
         setIsTranscribing(false)
       }
     },
-    [setInput, toast, input, audioModel, resizeTextarea],
+    [api, setInput, toast, input, resizeTextarea],
   )
 
   const isWebMAudioSupported = () => {
@@ -1374,7 +1362,7 @@ export function ChatInput({
                 {!hasMessages && modelSelectorButton && (
                   <div>{modelSelectorButton}</div>
                 )}
-                {isPremium && audioModel && (
+                {isPremium && transcriptionAvailable && (
                   <button
                     type="button"
                     onClick={isRecording ? stopRecording : startRecording}

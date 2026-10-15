@@ -16,10 +16,6 @@ vi.mock('@clerk/react', () => ({
   useUser: () => userState,
 }))
 
-vi.mock('@/hooks/use-rate-limit', () => ({
-  useRateLimit: () => null,
-}))
-
 vi.mock('@/components/user-avatar', () => ({
   UserAvatar: () => <span data-testid="avatar" />,
 }))
@@ -39,24 +35,17 @@ function renderMenu(
 ) {
   const onOpenSettings = vi.fn()
   const onReportBug = vi.fn()
-  const onSync = vi.fn().mockResolvedValue(true)
   render(
     <SidebarAccountMenu
       isSidebarOpen
       isSignedIn
-      isPremium={false}
       isDarkMode={false}
-      canSync
-      isSyncing={false}
-      syncFailed={false}
-      syncNeedsAttention={false}
-      onSync={onSync}
       onOpenSettings={onOpenSettings}
       onReportBug={onReportBug}
       {...overrides}
     />,
   )
-  return { onOpenSettings, onReportBug, onSync }
+  return { onOpenSettings, onReportBug }
 }
 
 describe('SidebarAccountMenu', () => {
@@ -94,14 +83,6 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('routes settings to cloud sync when sync needs attention', () => {
-    const { onOpenSettings } = renderMenu({ syncNeedsAttention: true })
-
-    fireEvent.click(screen.getByRole('button', { name: /Ada/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
-    expect(onOpenSettings).toHaveBeenCalledWith('cloud-sync')
-  })
-
   it('reveals help links and the bug report action in a submenu', () => {
     const { onReportBug } = renderMenu()
 
@@ -123,36 +104,10 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('triggers a manual sync without closing the menu', async () => {
-    vi.useFakeTimers()
-    const { onSync } = renderMenu()
-
-    fireEvent.click(screen.getByRole('button', { name: /Ada/ }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /Sync cloud data/ }))
-
-    expect(onSync).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('menu')).toBeInTheDocument()
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(
-        CONSTANTS.SIDEBAR_SYNC_MIN_SPINNER_MS +
-          CONSTANTS.SIDEBAR_SYNC_SUCCESS_FEEDBACK_MS,
-      )
-    })
-    expect(
-      screen.getByRole('menuitem', { name: /Sync cloud data. Sync healthy/ }),
-    ).toBeEnabled()
-    expect(vi.getTimerCount()).toBe(0)
-  })
-
   it('removes both menus when the parent sidebar closes and does not reopen them automatically', () => {
     const props = {
       isSignedIn: true,
-      isPremium: false,
       isDarkMode: false,
-      canSync: false,
-      isSyncing: false,
-      syncFailed: false,
-      syncNeedsAttention: false,
       onOpenSettings: vi.fn(),
       onReportBug: vi.fn(),
     }
@@ -184,7 +139,7 @@ describe('SidebarAccountMenu', () => {
 
   it('activates the sign-in menu link with Space', () => {
     userState = { user: null }
-    const { onOpenSettings } = renderMenu({ isSignedIn: false, canSync: false })
+    const { onOpenSettings } = renderMenu({ isSignedIn: false })
     fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
     const signIn = screen.getByRole('menuitem', { name: 'Sign in' })
     const click = vi.fn((event: Event) => event.preventDefault())
@@ -195,32 +150,9 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it.each([
-    { gate: 'availability', canSync: false, hasSyncCallback: true },
-    { gate: 'callback', canSync: true, hasSyncCallback: false },
-  ])(
-    'offers sign in and independently gates sync on $gate',
-    ({ canSync, hasSyncCallback }) => {
-      userState = { user: null }
-      renderMenu({
-        isSignedIn: false,
-        canSync,
-        onSync: hasSyncCallback ? vi.fn().mockResolvedValue(true) : undefined,
-      })
-
-      fireEvent.click(screen.getByRole('button', { name: /Menu/ }))
-      expect(
-        screen.getByRole('menuitem', { name: 'Sign in' }),
-      ).toBeInTheDocument()
-      expect(
-        screen.queryByRole('menuitem', { name: /Sync cloud data/ }),
-      ).not.toBeInTheDocument()
-    },
-  )
-
   it('links directly to sign in with the return URL instead of opening account settings', () => {
     userState = { user: null }
-    const { onOpenSettings } = renderMenu({ isSignedIn: false, canSync: false })
+    const { onOpenSettings } = renderMenu({ isSignedIn: false })
     fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
     const signIn = screen.getByRole('menuitem', { name: 'Sign in' })
     expect(signIn.tagName).toBe('A')
@@ -239,7 +171,7 @@ describe('SidebarAccountMenu', () => {
   it('leaves prefilled message text out of the sign-in return URL', () => {
     userState = { user: null }
     routerAsPath = '/newchat?q=private+prompt&view=compact#send=c2VjcmV0'
-    renderMenu({ isSignedIn: false, canSync: false })
+    renderMenu({ isSignedIn: false })
     fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
     const href = screen
       .getByRole('menuitem', { name: 'Sign in' })
@@ -296,8 +228,8 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('skips disabled actions and lets Tab leave the menu', () => {
-    renderMenu({ isSyncing: true })
+  it('moves up through the actions and lets Tab leave the menu', () => {
+    renderMenu()
     const trigger = screen.getByRole('button', { name: 'Ada' })
     fireEvent.keyDown(trigger, { key: 'ArrowUp' })
     const help = screen.getByRole('menuitem', { name: 'Help' })

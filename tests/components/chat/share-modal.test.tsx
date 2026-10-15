@@ -1,8 +1,6 @@
 import { ShareModal } from '@/components/chat/share-modal'
-import type {
-  shareSeal,
-  ShareSealResponse,
-} from '@/services/sync-enclave/sync-api'
+import { harnessAPI } from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import {
   act,
   cleanup,
@@ -14,17 +12,10 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  getShareStatus: vi.fn(),
-  deleteSharedChat: vi.fn(),
-  uploadSharedChat: vi.fn(),
-  shareSeal: vi.fn<typeof shareSeal>(),
   toast: vi.fn(),
+  share: vi.fn<(input: unknown) => Promise<{ url: string }>>(),
 }))
 
-vi.mock('@/services/share-api', () => mocks)
-vi.mock('@/services/sync-enclave/sync-api', () => ({
-  shareSeal: mocks.shareSeal,
-}))
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mocks.toast }),
 }))
@@ -34,6 +25,7 @@ vi.mock('@tinfoilsh/tinfoil-icons', async (importOriginal) => ({
   TfLockLocked: () => <svg data-testid="lock-icon" />,
 }))
 
+const SHARE_URL = 'https://chat.tinfoil.sh/share/chat-id#key'
 const props = {
   isOpen: true,
   onClose: vi.fn(),
@@ -44,342 +36,124 @@ const props = {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  let reject!: (error: Error) => void
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+  const promise = new Promise<T>((resolvePromise) => {
     resolve = resolvePromise
-    reject = rejectPromise
   })
-  return { promise, resolve, reject }
+  return { promise, resolve }
 }
 
-async function readyCheckbox() {
-  const checkbox = screen.getByRole('checkbox')
-  await waitFor(() => expect(checkbox).toBeEnabled())
-  return checkbox
+function enableSharing() {
+  fireEvent.click(
+    screen.getByRole('checkbox', {
+      name: 'Make this conversation shareable with anyone who has the link',
+    }),
+  )
 }
 
-function expectShareSealPayload(title: string, content: string) {
-  expect(mocks.shareSeal).toHaveBeenCalledOnce()
-  expect(
-    JSON.parse(
-      new TextDecoder().decode(mocks.shareSeal.mock.calls[0][0].plaintext),
-    ),
-  ).toEqual({
-    v: 1,
-    title,
-    messages: [{ role: 'user', content, timestamp: 0 }],
-    createdAt: 0,
-  })
-}
+beforeEach(() => {
+  mocks.toast.mockReset()
+  mocks.share.mockReset().mockResolvedValue({ url: SHARE_URL })
+  props.onClose.mockReset()
+  vi.mocked(harnessAPI().client.post).mockImplementation(
+    async (path: string, input: unknown) => {
+      if (path !== '/v1/threads/share')
+        throw new Error(`Unexpected request: ${path}`)
+      return mocks.share(input)
+    },
+  )
+})
 
-describe('ShareModal revocation', () => {
-  let shared: boolean
+afterEach(cleanup)
 
-  beforeEach(() => {
-    vi.resetAllMocks()
-    shared = false
-    mocks.getShareStatus.mockImplementation(async () => shared)
-    mocks.deleteSharedChat.mockImplementation(async () => {
-      shared = false
-    })
-    mocks.uploadSharedChat.mockImplementation(async () => {
-      shared = true
-    })
-    mocks.shareSeal.mockResolvedValue({
-      ok: true,
-      share_key: 'ab'.repeat(32),
-      ciphertext: 'AQID',
-    })
-  })
-
-  afterEach(cleanup)
-
-  it('keeps the privacy icon aligned with actual link access, not the checkbox', async () => {
-    const upload = deferred<void>()
-    mocks.uploadSharedChat.mockReturnValueOnce(upload.promise)
-    render(<ShareModal {...props} />)
-    const checkbox = await readyCheckbox()
-    expect(screen.getByText('Private')).toBeVisible()
-    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
-
-    fireEvent.click(checkbox)
-    expect(checkbox).toBeChecked()
-    expect(screen.getByText('Private')).toBeVisible()
-    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
-    expect(screen.queryByTestId('globe-icon')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
-    await waitFor(() => expect(mocks.uploadSharedChat).toHaveBeenCalled())
-    expect(screen.getByText('Private')).toBeVisible()
-    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
-
-    await act(async () => upload.resolve())
-    expect(screen.getByText('Shareable link access')).toBeVisible()
-    expect(screen.getByTestId('globe-icon')).toBeInTheDocument()
-    expect(screen.queryByTestId('lock-icon')).not.toBeInTheDocument()
-
-    fireEvent.click(await readyCheckbox())
-    expect(await screen.findByText('Private')).toBeVisible()
-    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
-
-    fireEvent.click(await readyCheckbox())
-    expect(checkbox).toBeChecked()
-    expect(screen.getByText('Private')).toBeVisible()
-    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
-  })
-
-  it('preserves encrypted upload bytes and conversation markdown', async () => {
+describe('ShareModal', () => {
+  it('shows the conversation as raw markdown', () => {
     render(
       <ShareModal
         {...props}
-        chatTitle="Test conversation"
-        chatCreatedAt={new Date(0)}
-        messages={[{ role: 'user', content: 'Hello', timestamp: new Date(0) }]}
-      />,
-    )
-    expect(screen.getByLabelText('Raw conversation markdown').textContent).toBe(
-      '## User\n\nHello\n\n---',
-    )
-    fireEvent.click(await readyCheckbox())
-    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
-    expect(
-      await screen.findByRole('textbox', { name: 'Share link' }),
-    ).toHaveValue(
-      `${window.location.origin}/share/chat-id#v2:${'ab'.repeat(32)}`,
-    )
-    expect(mocks.uploadSharedChat).toHaveBeenCalledWith(
-      'chat-id',
-      new Uint8Array([1, 2, 3]),
-    )
-    expectShareSealPayload('Test conversation', 'Hello')
-    await waitFor(() =>
-      expect(screen.getByRole('textbox', { name: 'Share link' })).toHaveFocus(),
-    )
-  })
-
-  it('revokes a created link, clears it, and requires a fresh link when reenabled', async () => {
-    render(<ShareModal {...props} />)
-    fireEvent.click(await readyCheckbox())
-    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
-    expect(
-      await screen.findByRole('textbox', { name: 'Share link' }),
-    ).toHaveValue(
-      `${window.location.origin}/share/chat-id#v2:${'ab'.repeat(32)}`,
-    )
-
-    const deletion = deferred<void>()
-    mocks.deleteSharedChat.mockImplementationOnce(async () => {
-      await deletion.promise
-      shared = false
-    })
-    fireEvent.click(await readyCheckbox())
-    expect(screen.getByRole('checkbox')).toBeChecked()
-    expect(screen.getByRole('checkbox')).toBeDisabled()
-    expect(screen.queryByText('Private')).not.toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Close share dialog' }),
-    ).toBeDisabled()
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(props.onClose).not.toHaveBeenCalled()
-    expect(mocks.deleteSharedChat).toHaveBeenCalledWith('chat-id')
-
-    await act(async () => deletion.resolve())
-    expect(await screen.findByText('Private')).toBeVisible()
-    expect(
-      screen.queryByRole('textbox', { name: 'Share link' }),
-    ).not.toBeInTheDocument()
-    expect(shared).toBe(false)
-    expect(
-      screen.getByRole('button', { name: 'Close share dialog' }),
-    ).toBeEnabled()
-    fireEvent.click(await readyCheckbox())
-    expect(
-      screen.queryByRole('textbox', { name: 'Share link' }),
-    ).not.toBeInTheDocument()
-    mocks.shareSeal.mockResolvedValue({
-      ok: true,
-      share_key: 'cd'.repeat(32),
-      ciphertext: 'BAUG',
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
-    expect(
-      await screen.findByRole('textbox', { name: 'Share link' }),
-    ).toHaveValue(
-      `${window.location.origin}/share/chat-id#v2:${'cd'.repeat(32)}`,
-    )
-    expect(mocks.uploadSharedChat).toHaveBeenLastCalledWith(
-      'chat-id',
-      new Uint8Array([4, 5, 6]),
-    )
-    expect(mocks.getShareStatus).toHaveBeenCalledTimes(1)
-  })
-
-  it('cancels sharing locally when no link has been created', async () => {
-    mocks.deleteSharedChat.mockRejectedValue(new Error('Offline'))
-    render(<ShareModal {...props} />)
-    fireEvent.click(await readyCheckbox())
-    expect(screen.getByRole('checkbox')).toBeChecked()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(screen.getByRole('checkbox')).not.toBeChecked()
-    expect(screen.getByRole('checkbox')).toBeEnabled()
-    expect(screen.getByText('Private')).toBeVisible()
-    expect(mocks.deleteSharedChat).not.toHaveBeenCalled()
-    expect(mocks.toast).not.toHaveBeenCalled()
-  })
-
-  it('does not show stale enabled controls while reopened status is unknown', async () => {
-    shared = true
-    const view = render(<ShareModal {...props} />)
-    expect(await readyCheckbox()).toBeChecked()
-    view.rerender(<ShareModal {...props} isOpen={false} />)
-    const status = deferred<boolean>()
-    mocks.getShareStatus.mockReturnValueOnce(status.promise)
-    view.rerender(<ShareModal {...props} />)
-    expect(screen.getByRole('checkbox')).toBeDisabled()
-    expect(screen.getByRole('checkbox')).not.toBeChecked()
-    expect(
-      screen.queryByRole('button', { name: 'Create share link' }),
-    ).not.toBeInTheDocument()
-    await act(async () => status.reject(new Error('Offline')))
-    expect(screen.getByText('Share status unavailable')).toBeVisible()
-    expect(screen.getByRole('checkbox')).not.toBeChecked()
-    expect(screen.queryByText('Private')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry share status' }))
-    expect(await readyCheckbox()).toBeChecked()
-  })
-
-  it('discovers an existing share after remount and revokes without the original key', async () => {
-    shared = true
-    const view = render(<ShareModal {...props} />)
-    expect(await readyCheckbox()).toBeChecked()
-    expect(screen.getByText(/An existing link is active/)).toBeVisible()
-    view.unmount()
-
-    render(<ShareModal {...props} />)
-    expect(await readyCheckbox()).toBeChecked()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(await screen.findByText('Private')).toBeVisible()
-    expect(shared).toBe(false)
-    expect(mocks.deleteSharedChat).toHaveBeenCalledWith('chat-id')
-    expect(mocks.shareSeal).not.toHaveBeenCalled()
-  })
-
-  it('keeps sharing enabled on deletion failure and allows retry', async () => {
-    shared = true
-    mocks.deleteSharedChat.mockRejectedValueOnce(new Error('Offline'))
-    render(<ShareModal {...props} />)
-    fireEvent.click(await readyCheckbox())
-    await waitFor(() =>
-      expect(mocks.toast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'Could not disable sharing',
-        }),
-      ),
-    )
-    expect(await readyCheckbox()).toBeChecked()
-    expect(screen.queryByText('Private')).not.toBeInTheDocument()
-    expect(shared).toBe(true)
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(await screen.findByText('Private')).toBeVisible()
-    expect(shared).toBe(false)
-  })
-
-  it('does not claim privacy when status fails and can retry', async () => {
-    shared = true
-    mocks.getShareStatus.mockRejectedValueOnce(new Error('Offline'))
-    render(<ShareModal {...props} />)
-    expect(await screen.findByText('Share status unavailable')).toBeVisible()
-    expect(screen.queryByText('Private')).not.toBeInTheDocument()
-    expect(screen.getByRole('checkbox')).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Retry share status' }))
-    expect(await readyCheckbox()).toBeChecked()
-  })
-
-  it('blocks revocation until an in-flight upload completes', async () => {
-    const upload = deferred<void>()
-    mocks.uploadSharedChat.mockImplementationOnce(async () => {
-      await upload.promise
-      shared = true
-    })
-    render(<ShareModal {...props} />)
-    fireEvent.click(await readyCheckbox())
-    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
-    await waitFor(() => expect(mocks.uploadSharedChat).toHaveBeenCalled())
-    expect(screen.getByRole('checkbox')).toBeDisabled()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(mocks.deleteSharedChat).not.toHaveBeenCalled()
-    await act(async () => upload.resolve())
-    expect(await readyCheckbox()).toBeChecked()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(await screen.findByText('Private')).toBeVisible()
-  })
-
-  it('rechecks server state after an upload succeeds but its response is lost', async () => {
-    mocks.uploadSharedChat.mockImplementationOnce(async () => {
-      shared = true
-      throw new TypeError('Connection lost')
-    })
-    render(<ShareModal {...props} />)
-    fireEvent.click(await readyCheckbox())
-    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
-    expect(await screen.findByText(/An existing link is active/)).toBeVisible()
-    expect(await readyCheckbox()).toBeChecked()
-    fireEvent.click(screen.getByRole('checkbox'))
-    expect(await screen.findByText('Private')).toBeVisible()
-  })
-
-  it('refreshes status when reopened after another device revokes the share', async () => {
-    shared = true
-    const view = render(<ShareModal {...props} />)
-    expect(await readyCheckbox()).toBeChecked()
-    view.rerender(<ShareModal {...props} isOpen={false} />)
-    shared = false
-    view.rerender(<ShareModal {...props} />)
-    expect(await readyCheckbox()).not.toBeChecked()
-    expect(screen.getByText('Private')).toBeVisible()
-  })
-
-  it('ignores a stale status response after reopening the same conversation', async () => {
-    const status = deferred<boolean>()
-    mocks.getShareStatus.mockReturnValueOnce(status.promise)
-    const view = render(<ShareModal {...props} />)
-    view.rerender(<ShareModal {...props} isOpen={false} />)
-    view.rerender(<ShareModal {...props} />)
-    expect(await readyCheckbox()).not.toBeChecked()
-    await act(async () => status.resolve(true))
-    expect(screen.getByRole('checkbox')).not.toBeChecked()
-    expect(screen.getByText('Private')).toBeVisible()
-  })
-
-  it('does not publish an abandoned conversation after sealing completes', async () => {
-    const seal = deferred<ShareSealResponse>()
-    mocks.shareSeal.mockReturnValueOnce(seal.promise)
-    const view = render(
-      <ShareModal
-        {...props}
-        chatCreatedAt={new Date(0)}
         messages={[
-          {
-            role: 'user',
-            content: 'Original private conversation',
-            timestamp: new Date(0),
-          },
+          { role: 'user', content: 'Hello', timestamp: new Date(0) },
+          { role: 'assistant', content: 'Hi there', timestamp: new Date(1) },
         ]}
       />,
     )
-    fireEvent.click(await readyCheckbox())
+    expect(screen.getByLabelText('Raw conversation markdown').textContent).toBe(
+      '## User\n\nHello\n\n---\n\n## Assistant\n\nHi there\n\n---',
+    )
+  })
+
+  it('creates a share link through the harness and focuses it', async () => {
+    render(<ShareModal {...props} />)
+    expect(screen.getByText('Private')).toBeVisible()
+    expect(screen.getByTestId('lock-icon')).toBeInTheDocument()
+
+    enableSharing()
+    expect(screen.getByText('Shareable link access')).toBeVisible()
     fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
-    expectShareSealPayload('Shared Chat', 'Original private conversation')
-    view.rerender(<ShareModal {...props} chatId="other-chat" />)
-    await readyCheckbox()
-    await act(async () =>
-      seal.resolve({
-        ok: true,
-        share_key: 'ab'.repeat(32),
-        ciphertext: 'AQID',
+
+    const link = await screen.findByRole('textbox', { name: 'Share link' })
+    expect(link).toHaveValue(SHARE_URL)
+    expect(mocks.share).toHaveBeenCalledExactlyOnceWith({ threadId: 'chat-id' })
+    expect(screen.getByRole('status')).toHaveTextContent('Share link ready')
+    expect(screen.getByTestId('globe-icon')).toBeInTheDocument()
+    await waitFor(() => expect(link).toHaveFocus())
+  })
+
+  it('reports a refused share without showing a link', async () => {
+    mocks.share.mockRejectedValueOnce(
+      new HarnessError(
+        { code: 'UPSTREAM_REFUSED', message: 'The chat could not be shared' },
+        502,
+      ),
+    )
+    render(<ShareModal {...props} />)
+    enableSharing()
+    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
+
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
+        title: 'Share failed',
+        description: 'The chat could not be shared',
+        variant: 'destructive',
+        position: 'top-left',
       }),
     )
-    expect(mocks.uploadSharedChat).not.toHaveBeenCalled()
+    expect(
+      screen.queryByRole('textbox', { name: 'Share link' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Create share link' }),
+    ).toBeEnabled()
+  })
+
+  it('does not show a link created for a conversation the user has left', async () => {
+    const share = deferred<{ url: string }>()
+    mocks.share.mockReturnValueOnce(share.promise)
+    const view = render(<ShareModal {...props} />)
+    enableSharing()
+    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
+    await waitFor(() => expect(mocks.share).toHaveBeenCalledOnce())
+
+    view.rerender(<ShareModal {...props} chatId="other-chat" />)
+    await act(async () => share.resolve({ url: SHARE_URL }))
+
+    expect(
+      screen.queryByRole('textbox', { name: 'Share link' }),
+    ).not.toBeInTheDocument()
     expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.getByText('Private')).toBeVisible()
+    enableSharing()
+    expect(
+      screen.getByRole('button', { name: 'Create share link' }),
+    ).toBeEnabled()
+    expect(mocks.toast).not.toHaveBeenCalled()
+  })
+
+  it('requires a saved conversation before sharing', () => {
+    render(<ShareModal {...props} chatId={undefined} />)
+    enableSharing()
+    expect(
+      screen.getByRole('button', { name: 'Create share link' }),
+    ).toBeDisabled()
+    expect(mocks.share).not.toHaveBeenCalled()
   })
 })

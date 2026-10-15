@@ -4,21 +4,12 @@ import {
   type BaseModel,
 } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
-import {
-  REASONING_HISTORY_POLICIES,
-  type ReasoningHistoryPolicy,
-} from '@/utils/reasoning-history'
-import {
-  findContextStartIndex,
-  getHistoryTokenBudget,
-  resolveContextWindowTokens,
-} from '@/utils/token-estimation'
+import { useHarness } from '@/services/harness/provider'
 import 'katex/dist/katex.min.css'
 import React, {
   memo,
   useCallback,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -26,31 +17,22 @@ import React, {
 } from 'react'
 import { canRemoveChatSpacerWithoutJump } from './chat-scroll'
 import { CONSTANTS } from './constants'
-import { ensureTimeline } from './ensure-timeline'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
 import { ImageGalleryProvider } from './image-gallery-context'
 import { MessageRendererHost } from './message-renderer-host'
 import { PrintableChat } from './PrintableChat'
 import type { PromptPreset } from './prompts/types'
 import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
-import type { LabelType, Message, PendingRecoveryEnvelope } from './types'
+import type { LabelType, Message } from './types'
 import { WelcomeScreen } from './WelcomeScreen'
 
 type ChatMessagesProps = {
   messages: Message[]
-  pendingRecoveries?: PendingRecoveryEnvelope[]
-  recoveryDrafts?: ReadonlyArray<{ turnId: string; message: Message }>
-  activeRecoveryTurnIds?: readonly string[]
-  reasoningHistoryPolicy?: ReasoningHistoryPolicy
-  contextWindowTokens?: number
-  systemPromptTokens?: number
-  pendingContextTokens?: number
   isDarkMode: boolean
   chatId: string
   isWaitingForResponse?: boolean
   isStreamingResponse?: boolean
   activeArtifactToolCallId?: string | null
-  readOnly?: boolean
   isPremium?: boolean
   models?: BaseModel[]
   onSubmit?: (e: React.FormEvent) => void
@@ -73,10 +55,6 @@ type ChatMessagesProps = {
   ) => void
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
-  onDeleteMessage?: (messageIndex: number) => void
-  onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
-  onContinueAssistantMessage?: (messageIndex: number) => void
-  onForkMessage?: (messageIndex: number) => void
   onRetryToolCall?: (
     messageIndex: number,
     toolCallId: string,
@@ -128,10 +106,6 @@ const ChatMessage = memo(
     hideActions = false,
     onEditMessage,
     onRegenerateMessage,
-    onDeleteMessage,
-    onEditAssistantMessage,
-    onContinueAssistantMessage,
-    onForkMessage,
     onRetryToolCall,
   }: {
     message: Message
@@ -144,20 +118,14 @@ const ChatMessage = memo(
     hideActions?: boolean
     onEditMessage?: (messageIndex: number, newContent: string) => void
     onRegenerateMessage?: (messageIndex: number) => void
-    onDeleteMessage?: (messageIndex: number) => void
-    onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
-    onContinueAssistantMessage?: (messageIndex: number) => void
-    onForkMessage?: (messageIndex: number) => void
     onRetryToolCall?: (
       messageIndex: number,
       toolCallId: string,
     ) => Promise<boolean>
   }) {
-    const normalized = ensureTimeline(message)
-
     return (
       <MessageRendererHost
-        message={normalized}
+        message={message}
         messageIndex={messageIndex}
         model={model}
         isDarkMode={isDarkMode}
@@ -167,10 +135,6 @@ const ChatMessage = memo(
         hideActions={hideActions}
         onEditMessage={onEditMessage}
         onRegenerateMessage={onRegenerateMessage}
-        onDeleteMessage={onDeleteMessage}
-        onEditAssistantMessage={onEditAssistantMessage}
-        onContinueAssistantMessage={onContinueAssistantMessage}
-        onForkMessage={onForkMessage}
         onRetryToolCall={onRetryToolCall}
       />
     )
@@ -191,11 +155,6 @@ const ChatMessage = memo(
       prevProps.hideActions === nextProps.hideActions &&
       prevProps.onEditMessage === nextProps.onEditMessage &&
       prevProps.onRegenerateMessage === nextProps.onRegenerateMessage &&
-      prevProps.onDeleteMessage === nextProps.onDeleteMessage &&
-      prevProps.onEditAssistantMessage === nextProps.onEditAssistantMessage &&
-      prevProps.onContinueAssistantMessage ===
-        nextProps.onContinueAssistantMessage &&
-      prevProps.onForkMessage === nextProps.onForkMessage &&
       prevProps.onRetryToolCall === nextProps.onRetryToolCall
     )
   },
@@ -250,71 +209,13 @@ const LoadingMessage = memo(function LoadingMessage({
   )
 })
 
-const RecoveryMessage = memo(function RecoveryMessage() {
-  const titleId = useId()
-
-  return (
-    <div
-      className="no-scroll-anchoring mx-auto -mt-6 mb-6 flex w-full max-w-3xl px-4"
-      role="status"
-      aria-labelledby={titleId}
-    >
-      <div className="flex items-start gap-2.5 py-1.5">
-        <span aria-hidden="true" className="flex h-5 items-center">
-          <StreamingTracerDot tone="secondary" />
-        </span>
-        <span id={titleId} className="text-sm font-medium text-content-primary">
-          Recovering stream...
-        </span>
-      </div>
-    </div>
-  )
-})
-
-const getMessageKey = (
-  prefix: string,
-  message: Message,
-  index: number,
-): string => {
-  // Use role and timestamp for stable unique keys (no index to avoid reordering issues)
-  const timestamp = message.timestamp
-    ? message.timestamp instanceof Date
-      ? message.timestamp.getTime()
-      : String(message.timestamp)
-    : `fallback-${index}` // Only use index as fallback when no timestamp
-  return `${prefix}-${message.role}-${timestamp}`
-}
-
-const MessagesSeparator = memo(function MessagesSeparator({
-  isDarkMode,
-}: {
-  isDarkMode: boolean
-}) {
-  return (
-    <div className={`relative my-6 flex items-center justify-center`}>
-      <div className="absolute w-full border-t border-border-subtle"></div>
-      <span className="relative bg-surface-chat-background px-4 text-sm font-medium text-content-secondary">
-        Archived Messages
-      </span>
-    </div>
-  )
-})
-
 export function ChatMessages({
   messages,
-  pendingRecoveries = [],
-  recoveryDrafts = [],
-  activeRecoveryTurnIds = [],
-  reasoningHistoryPolicy = REASONING_HISTORY_POLICIES.none,
-  contextWindowTokens,
-  systemPromptTokens = 0,
-  pendingContextTokens = 0,
   isDarkMode,
   chatId,
   isWaitingForResponse = false,
   isStreamingResponse = false,
   activeArtifactToolCallId,
-  readOnly = false,
   isPremium,
   models,
   onSubmit,
@@ -334,10 +235,6 @@ export function ChatMessages({
   handleLabelClick,
   onEditMessage,
   onRegenerateMessage,
-  onDeleteMessage,
-  onEditAssistantMessage,
-  onContinueAssistantMessage,
-  onForkMessage,
   onRetryToolCall,
   showScrollButton,
   webSearchEnabled,
@@ -355,6 +252,7 @@ export function ChatMessages({
   onOpenPromptLibrary,
   onSelectPromptPreset,
 }: ChatMessagesProps) {
+  const { api } = useHarness()
   const [mounted, setMounted] = useState(false)
   const [showSpacer, setShowSpacer] = useState(false)
   const prevMessageCountRef = React.useRef(messages.length)
@@ -363,20 +261,6 @@ export function ChatMessages({
   const printRef = useRef<HTMLDivElement>(null)
   const printReadyResolverRef = useRef<(() => void) | null>(null)
   const [printRequested, setPrintRequested] = useState(false)
-  const [expandedArchiveChatId, setExpandedArchiveChatId] = useState<
-    string | null
-  >(null)
-  const messageActions = readOnly
-    ? {}
-    : {
-        onEditMessage,
-        onRegenerateMessage,
-        onDeleteMessage,
-        onEditAssistantMessage,
-        onContinueAssistantMessage,
-        onForkMessage,
-        onRetryToolCall,
-      }
 
   const preparePrint = useCallback(async () => {
     await new Promise<void>((resolve) => {
@@ -468,74 +352,6 @@ export function ChatMessages({
   }, [models, selectedModel])
 
   // Separate messages into archived and live sections - memoize this calculation
-  const computedArchiveStartIndex = useMemo(() => {
-    const budget = getHistoryTokenBudget(
-      contextWindowTokens ??
-        resolveContextWindowTokens(currentModel ?? undefined),
-      systemPromptTokens + pendingContextTokens,
-    )
-    return findContextStartIndex(messages, budget, {
-      reasoningHistoryPolicy,
-      keepMostRecent: pendingContextTokens === 0,
-    })
-  }, [
-    messages,
-    contextWindowTokens,
-    currentModel,
-    reasoningHistoryPolicy,
-    systemPromptTokens,
-    pendingContextTokens,
-  ])
-  const [archiveBoundary, setArchiveBoundary] = useState(() => ({
-    chatId,
-    initialized: messages.length > 0,
-    startIndex: computedArchiveStartIndex,
-  }))
-  let archiveStartIndex: number
-  if (archiveBoundary.chatId !== chatId) {
-    archiveStartIndex = computedArchiveStartIndex
-    setArchiveBoundary({
-      chatId,
-      initialized: messages.length > 0,
-      startIndex: archiveStartIndex,
-    })
-  } else if (messages.length === 0) {
-    archiveStartIndex = 0
-    if (archiveBoundary.initialized || archiveBoundary.startIndex !== 0) {
-      setArchiveBoundary({
-        chatId,
-        initialized: false,
-        startIndex: 0,
-      })
-    }
-  } else if (!archiveBoundary.initialized && messages.length > 0) {
-    archiveStartIndex = computedArchiveStartIndex
-    setArchiveBoundary({
-      chatId,
-      initialized: true,
-      startIndex: archiveStartIndex,
-    })
-  } else {
-    archiveStartIndex = Math.min(
-      archiveBoundary.startIndex,
-      computedArchiveStartIndex,
-      messages.length,
-    )
-    if (archiveStartIndex !== archiveBoundary.startIndex) {
-      setArchiveBoundary({
-        ...archiveBoundary,
-        startIndex: archiveStartIndex,
-      })
-    }
-  }
-  const { archivedMessages, liveMessages } = useMemo(
-    () => ({
-      archivedMessages: messages.slice(0, archiveStartIndex),
-      liveMessages: messages.slice(archiveStartIndex),
-    }),
-    [archiveStartIndex, messages],
-  )
-
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -555,7 +371,7 @@ export function ChatMessages({
             isDarkMode={isDarkMode}
             isPremium={isPremium}
             models={models}
-            onSubmit={readOnly ? undefined : onSubmit}
+            onSubmit={onSubmit}
             input={input}
             setInput={setInput}
             loadingState={loadingState}
@@ -595,113 +411,16 @@ export function ChatMessages({
     return <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-6"></div>
   }
 
-  // Show loading dots only while waiting on a fresh response. When the last
-  // message is already an assistant bubble being streamed into (thinking
-  // has started, or a continuation is resuming it) that bubble carries its
-  // own indicator.
-  const lastMessage = liveMessages[liveMessages.length - 1]
-  const showLoadingPlaceholder =
-    isWaitingForResponse &&
-    !(
-      lastMessage?.role === 'assistant' &&
-      (isStreamingResponse ||
-        lastMessage.isThinking ||
-        (lastMessage.thoughts && !lastMessage.content))
-    )
-  const pendingRecoveryTurnIds = new Set(
-    pendingRecoveries.map((recovery) => recovery.turnId),
-  )
-  const recoveryDraftsByTurnId = new Map(
-    recoveryDrafts.map((draft) => [draft.turnId, draft.message]),
-  )
-  const persistedAssistantTurnIds = new Set(
-    messages.flatMap((message) =>
-      message.role === 'assistant' && message.turnId ? [message.turnId] : [],
-    ),
-  )
-  const activeRecoveryTurns = new Set(
-    activeRecoveryTurnIds.filter((turnId) =>
-      pendingRecoveryTurnIds.has(turnId),
-    ),
-  )
-  const activeOrDraftingRecoveryTurns = new Set(activeRecoveryTurns)
-  for (const draft of recoveryDrafts) {
-    if (pendingRecoveryTurnIds.has(draft.turnId)) {
-      activeOrDraftingRecoveryTurns.add(draft.turnId)
-    }
-  }
-  const archiveHasActiveRecovery = archivedMessages.some(
-    (message) =>
-      message.turnId !== undefined &&
-      activeOrDraftingRecoveryTurns.has(message.turnId),
-  )
-  // Latch the archive open while a recovery streams into it, so the recovered
-  // turn stays visible after its envelope clears instead of collapsing away.
-  if (archiveHasActiveRecovery && expandedArchiveChatId !== chatId) {
-    setExpandedArchiveChatId(chatId)
-  }
-  const showArchivedMessages =
-    expandedArchiveChatId === chatId || archiveHasActiveRecovery
-  const hasActiveRecovery =
-    activeRecoveryTurns.size > 0 ||
-    recoveryDrafts.some((draft) => pendingRecoveryTurnIds.has(draft.turnId))
-  const activeTurnCandidate =
-    isWaitingForResponse || isStreamingResponse
-      ? [...messages].reverse().find((message) => message.role === 'user')
-          ?.turnId
-      : undefined
-  const activeTurnId =
-    activeTurnCandidate && !activeRecoveryTurns.has(activeTurnCandidate)
-      ? activeTurnCandidate
-      : undefined
-  const showRecoveryAfter = (message: Message) =>
-    message.role === 'user' &&
-    message.turnId !== undefined &&
-    message.turnId !== activeTurnId &&
-    pendingRecoveryTurnIds.has(message.turnId) &&
-    !persistedAssistantTurnIds.has(message.turnId)
-  const recoveryDraftForMessage = (message: Message) =>
-    message.role === 'assistant' &&
-    message.turnId &&
-    message.turnId !== activeTurnId &&
-    pendingRecoveryTurnIds.has(message.turnId)
-      ? recoveryDraftsByTurnId.get(message.turnId)
-      : undefined
-  const showRecoveryStatusAfter = (message: Message) =>
-    message.role === 'assistant' &&
-    message.turnId !== undefined &&
-    message.turnId !== activeTurnId &&
-    pendingRecoveryTurnIds.has(message.turnId) &&
-    !recoveryDraftsByTurnId.has(message.turnId)
-  const renderRecoveryAfter = (message: Message, messageIndex: number) => {
-    if (!showRecoveryAfter(message)) return null
-    const draft = message.turnId
-      ? recoveryDraftsByTurnId.get(message.turnId)
-      : undefined
-    return (
-      <>
-        {draft && (
-          <ChatMessage
-            message={draft}
-            messageIndex={messageIndex + 1}
-            model={currentModel}
-            isDarkMode={isDarkMode}
-            isLastMessage
-            isStreaming
-            activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-              draft,
-              activeArtifactToolCallId,
-            )}
-            hideActions={readOnly}
-          />
-        )}
-        {!draft && <RecoveryMessage />}
-      </>
-    )
-  }
-
+  // Show loading dots only if waiting and no assistant thinking message exists yet
+  const showLoadingPlaceholder = isWaitingForResponse
   return (
-    <ImageGalleryProvider messages={messages}>
+    <ImageGalleryProvider
+      key={chatId}
+      messages={messages}
+      loadImage={(attachment, signal) =>
+        api.download('/v1/attachments/get', { id: attachment.id }, signal)
+      }
+    >
       {/* Not a live region: ChatAnnouncer reads each finished response once.
           role="log" implies aria-live="polite", which would read the
           response (and every message of a newly opened chat) a second time. */}
@@ -709,88 +428,27 @@ export function ChatMessages({
         role="log"
         aria-label="Conversation"
         aria-live="off"
-        aria-busy={isStreamingResponse || hasActiveRecovery}
+        aria-busy={isStreamingResponse}
         className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
       >
-        {/* Archived Messages - only shown if there are more than the max prompt messages */}
-        {archivedMessages.length > 0 && (
-          <>
-            {!showArchivedMessages && (
-              <div className="flex justify-center px-4 pb-8">
-                <button
-                  type="button"
-                  onClick={() => setExpandedArchiveChatId(chatId)}
-                  className="hover:bg-surface-secondary rounded-full border border-border-subtle bg-surface-chat px-4 py-2 text-sm text-content-secondary transition-colors hover:text-content-primary"
-                >
-                  Show {archivedMessages.length} earlier messages
-                </button>
-              </div>
+        {messages.map((message, index) => (
+          <ChatMessage
+            key={message.id ?? `${chatId}-${index}`}
+            message={message}
+            messageIndex={index}
+            model={currentModel}
+            isDarkMode={isDarkMode}
+            isLastMessage={index === messages.length - 1}
+            isStreaming={index === messages.length - 1 && isStreamingResponse}
+            activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
+              message,
+              activeArtifactToolCallId,
             )}
-            {showArchivedMessages && (
-              <div className="opacity-70">
-                {archivedMessages.map((message, i) => {
-                  const key = getMessageKey(`${chatId}-archived`, message, i)
-                  const recoveryDraft = recoveryDraftForMessage(message)
-                  return (
-                    <React.Fragment key={key}>
-                      <ChatMessage
-                        message={recoveryDraft ?? message}
-                        messageIndex={i}
-                        model={currentModel}
-                        isDarkMode={isDarkMode}
-                        isLastMessage={Boolean(recoveryDraft)}
-                        isStreaming={Boolean(recoveryDraft)}
-                        activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-                          recoveryDraft ?? message,
-                          activeArtifactToolCallId,
-                        )}
-                        hideActions={readOnly}
-                        {...(recoveryDraft ? {} : messageActions)}
-                      />
-                      {showRecoveryStatusAfter(message) && <RecoveryMessage />}
-                      {renderRecoveryAfter(message, i)}
-                    </React.Fragment>
-                  )
-                })}
-              </div>
-            )}
-
-            {showArchivedMessages && (
-              <MessagesSeparator isDarkMode={isDarkMode} />
-            )}
-          </>
-        )}
-
-        {/* Live Messages - the last messages up to max prompt limit */}
-        {liveMessages.map((message, i) => {
-          const key = getMessageKey(`${chatId}-live`, message, i)
-          const recoveryDraft = recoveryDraftForMessage(message)
-          return (
-            <React.Fragment key={key}>
-              <ChatMessage
-                message={recoveryDraft ?? message}
-                messageIndex={archivedMessages.length + i}
-                model={currentModel}
-                isDarkMode={isDarkMode}
-                isLastMessage={
-                  Boolean(recoveryDraft) || i === liveMessages.length - 1
-                }
-                isStreaming={
-                  Boolean(recoveryDraft) ||
-                  (i === liveMessages.length - 1 && isStreamingResponse)
-                }
-                activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-                  recoveryDraft ?? message,
-                  activeArtifactToolCallId,
-                )}
-                hideActions={readOnly}
-                {...(recoveryDraft ? {} : messageActions)}
-              />
-              {showRecoveryStatusAfter(message) && <RecoveryMessage />}
-              {renderRecoveryAfter(message, archivedMessages.length + i)}
-            </React.Fragment>
-          )
-        })}
+            onEditMessage={onEditMessage}
+            onRegenerateMessage={onRegenerateMessage}
+            onRetryToolCall={onRetryToolCall}
+          />
+        ))}
         {showLoadingPlaceholder && (
           <LoadingMessage
             isDarkMode={isDarkMode}

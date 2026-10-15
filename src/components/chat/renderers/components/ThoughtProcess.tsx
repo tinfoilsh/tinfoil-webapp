@@ -17,7 +17,6 @@ import {
 import ReactMarkdown from 'react-markdown'
 import { formatDurationLabel } from './format-duration'
 import { useMathPlugins } from './use-math-plugins'
-import { useThoughtSummary } from './use-thought-summary'
 
 interface ThoughtProcessProps {
   thoughts: string
@@ -25,10 +24,7 @@ interface ThoughtProcessProps {
   isThinking?: boolean
   shouldDiscard?: boolean
   thinkingDuration?: number
-  /**
-   * Live summary owned by a parent (e.g. a collapsed work group header).
-   * When provided, this component displays it instead of generating its own.
-   */
+  /** Live summary of the trace, shown while thinking when provided. */
   summary?: string
 }
 
@@ -49,12 +45,7 @@ export const ThoughtProcess = memo(function ThoughtProcess({
   const [contentHeight, setContentHeight] = useState<number>(0)
   const lastScrollPositionRef = useRef<number>(0)
   const isUserScrollingRef = useRef<boolean>(false)
-  const ownSummary = useThoughtSummary(
-    thoughts,
-    isThinking,
-    summary === undefined,
-  )
-  const thoughtSummary = summary ?? ownSummary
+  const thoughtSummary = summary ?? ''
   const wasExpandedRef = useRef<boolean>(isExpanded)
 
   const handleToggle = () => {

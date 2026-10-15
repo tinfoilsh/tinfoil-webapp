@@ -1,12 +1,9 @@
 import { cn } from '@/components/ui/utils'
-import type { BaseModel } from '@/config/models'
 import { acquireInteractionLock } from '@/utils/interaction-lock'
 import { ArrowLeftIcon, StarIcon } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
-  TfBookmark,
-  TfBookmarkFilled,
   TfBoxCheckmark,
   TfBoxX,
   TfPlus,
@@ -29,10 +26,6 @@ import {
   stripSystemTags,
   type PresetEditorState,
 } from './prompts/preset-editor'
-import {
-  describePresetSettings,
-  type PresetSettingsSummary,
-} from './prompts/preset-settings'
 import type { PromptPreset } from './prompts/types'
 
 type PromptLibraryModalProps = {
@@ -40,7 +33,6 @@ type PromptLibraryModalProps = {
   onClose: () => void
   activePresetId: string | null
   onSelectPreset: (presetId: string | null) => void
-  models: BaseModel[]
   isSidebarOpen?: boolean
   isRightSidebarOpen?: boolean
 }
@@ -50,7 +42,6 @@ export function PromptLibraryModal({
   onClose,
   activePresetId,
   onSelectPreset,
-  models,
   isSidebarOpen = false,
   isRightSidebarOpen = false,
 }: PromptLibraryModalProps) {
@@ -65,8 +56,6 @@ export function PromptLibraryModal({
     isFavorite,
     canAddFavorite,
     toggleFavorite,
-    defaultPresetId,
-    setDefaultPreset,
   } = usePromptLibrary()
 
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -133,10 +122,6 @@ export function PromptLibraryModal({
     name: preset.name,
     description: preset.description,
     systemPrompt: stripSystemTags(preset.systemPrompt),
-    ...(preset.model !== undefined && { model: preset.model }),
-    ...(preset.webSearchEnabled !== undefined && {
-      webSearchEnabled: preset.webSearchEnabled,
-    }),
   })
 
   const startEdit = (preset: PromptPreset) => {
@@ -193,8 +178,6 @@ export function PromptLibraryModal({
       name,
       description: editor.description.trim(),
       systemPrompt: promptWithTags,
-      model: editor.model,
-      webSearchEnabled: editor.webSearchEnabled,
     }
     if (editor.mode === 'create') {
       const created = createUserPreset(input)
@@ -210,7 +193,6 @@ export function PromptLibraryModal({
     const isSelected = selectedId === preset.id
     const isActive = activePresetId === preset.id
     const isPinned = isFavorite(preset.id)
-    const isDefault = defaultPresetId === preset.id
     const Icon = preset.Icon
     return (
       <button
@@ -242,17 +224,8 @@ export function PromptLibraryModal({
             </span>
           )}
         </span>
-        {(isPinned || isActive || isDefault) && (
+        {(isPinned || isActive) && (
           <span className="absolute right-2 top-2 flex items-center gap-1">
-            {isDefault && (
-              <>
-                <TfBookmarkFilled
-                  className="h-3.5 w-3.5 text-brand-accent-dark dark:text-brand-accent-light"
-                  aria-hidden="true"
-                />
-                <span className="sr-only">Default for new chats</span>
-              </>
-            )}
             {isPinned && (
               <>
                 <StarIconSolid
@@ -391,7 +364,6 @@ export function PromptLibraryModal({
                   {editor ? (
                     <PresetEditor
                       editor={editor}
-                      models={models}
                       onChange={setEditor}
                       onCancel={() => {
                         setEditor(null)
@@ -406,23 +378,10 @@ export function PromptLibraryModal({
                     <PresetDetail
                       key={selectedPreset.id}
                       preset={selectedPreset}
-                      settingsSummary={
-                        selectedPreset.isBuiltIn
-                          ? null
-                          : describePresetSettings(selectedPreset, models)
-                      }
                       isActive={activePresetId === selectedPreset.id}
                       isFavorite={isFavorite(selectedPreset.id)}
                       canAddFavorite={canAddFavorite}
                       onToggleFavorite={() => toggleFavorite(selectedPreset.id)}
-                      isDefault={defaultPresetId === selectedPreset.id}
-                      onToggleDefault={() =>
-                        setDefaultPreset(
-                          defaultPresetId === selectedPreset.id
-                            ? null
-                            : selectedPreset.id,
-                        )
-                      }
                       onUseThis={handleUseThis}
                       onClearActive={handleClearActive}
                       onEdit={() => startEdit(selectedPreset)}
@@ -463,13 +422,10 @@ export function PromptLibraryModal({
 
 type PresetDetailProps = {
   preset: PromptPreset
-  settingsSummary: PresetSettingsSummary | null
   isActive: boolean
   isFavorite: boolean
   canAddFavorite: boolean
   onToggleFavorite: () => void
-  isDefault: boolean
-  onToggleDefault: () => void
   onUseThis: () => void
   onClearActive: () => void
   onEdit: () => void
@@ -480,13 +436,10 @@ type PresetDetailProps = {
 
 function PresetDetail({
   preset,
-  settingsSummary,
   isActive,
   isFavorite,
   canAddFavorite,
   onToggleFavorite,
-  isDefault,
-  onToggleDefault,
   onUseThis,
   onClearActive,
   onEdit,
@@ -636,29 +589,6 @@ function PresetDetail({
           )}
           {isFavorite ? 'Favorited' : 'Favorite'}
         </button>
-        <button
-          type="button"
-          onClick={onToggleDefault}
-          aria-pressed={isDefault}
-          title={
-            isDefault
-              ? 'New chats start with this prompt'
-              : 'Use this prompt for every new chat'
-          }
-          className={cn(
-            'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
-            isDefault
-              ? 'text-brand-accent-dark hover:bg-brand-accent-dark/10 dark:text-brand-accent-light dark:hover:bg-brand-accent-light/10'
-              : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-          )}
-        >
-          {isDefault ? (
-            <TfBookmarkFilled className="h-3.5 w-3.5" aria-hidden="true" />
-          ) : (
-            <TfBookmark className="h-3.5 w-3.5" aria-hidden="true" />
-          )}
-          {isDefault ? 'Default for new chats' : 'Set as default'}
-        </button>
         {!preset.isBuiltIn && (
           <button
             type="button"
@@ -705,23 +635,6 @@ function PresetDetail({
             {preset.systemPrompt}
           </pre>
         </div>
-        {settingsSummary && (
-          <div className="flex flex-none flex-col">
-            <span className="mb-2 text-xs font-semibold text-brand-accent-dark dark:text-brand-accent-light">
-              Chat settings
-            </span>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 rounded-lg border border-border-subtle bg-surface-chat-background px-4 py-3 text-sm">
-              <dt className="font-semibold text-content-primary">Model</dt>
-              <dd className="text-content-secondary">
-                {settingsSummary.model}
-              </dd>
-              <dt className="font-semibold text-content-primary">Web search</dt>
-              <dd className="text-content-secondary">
-                {settingsSummary.webSearch}
-              </dd>
-            </dl>
-          </div>
-        )}
       </div>
     </div>
   )

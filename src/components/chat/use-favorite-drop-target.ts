@@ -1,4 +1,4 @@
-import { canRequestChatPin } from '@/services/storage/pinned-chats'
+import { canRequestChatPin } from '@/components/chat/favorite-view'
 import { logError } from '@/utils/error-handling'
 import {
   useCallback,

@@ -2,116 +2,51 @@ import {
   RateLimitBanner,
   shouldShowRateLimitBanner,
 } from '@/components/chat/rate-limit-banner'
-import { useRateLimit } from '@/hooks/use-rate-limit'
-import {
-  refreshRateLimit,
-  resetTinfoilClient,
-} from '@/services/inference/tinfoil-client'
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { RateLimit } from '@/services/harness/types'
+import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 
-vi.mock('@/config', () => ({
-  API_BASE_URL: 'https://api.example.com',
-  IS_DEV: false,
-}))
-vi.mock('@/services/auth', () => ({
-  authTokenManager: {
-    isInitialized: () => true,
-    isSignedOut: () => false,
-    getValidToken: async () => 'account-a',
-  },
-}))
-vi.mock('@/utils/error-handling', () => ({ logError: vi.fn() }))
-
-const NOW = Date.parse('2026-09-26T10:58:00Z')
 const RESET_AT = '2026-09-26T11:00:00Z'
 
-function LiveBanner() {
-  const rateLimit = useRateLimit()
-  return shouldShowRateLimitBanner(rateLimit) ? (
-    <RateLimitBanner rateLimit={rateLimit} isDarkMode={false} />
-  ) : null
-}
-
-describe('hourly limit recheck', () => {
-  const fetchMock = vi.fn<typeof fetch>()
-
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(NOW)
-    resetTinfoilClient()
-    fetchMock
-      .mockReset()
-      .mockRejectedValue(new Error('Unexpected quota request'))
-      .mockResolvedValueOnce(
-        Response.json(
-          {
-            code: 'HOURLY_LIMIT_REACHED',
-            resets_at: RESET_AT,
-          },
-          { status: 429 },
-        ),
-      )
-    vi.stubGlobal('fetch', fetchMock)
-  })
-
-  afterEach(() => {
-    resetTinfoilClient()
-    vi.useRealTimers()
-    vi.unstubAllGlobals()
-  })
-
-  it('rechecks early, disables duplicate clicks, and removes the banner when access returns', async () => {
-    await refreshRateLimit()
-    render(<LiveBanner />)
-    let resolveResponse!: (response: Response) => void
-    fetchMock.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveResponse = resolve
-        }),
+describe('shouldShowRateLimitBanner', () => {
+  it.each([
+    { name: 'no quota', rateLimit: null, visible: false },
+    {
+      name: 'an unmetered account',
+      rateLimit: { kind: null, maxRequests: 0, remaining: 0 },
+      visible: false,
+    },
+    {
+      name: 'a quota above the warning threshold',
+      rateLimit: { kind: 'free_daily', maxRequests: 10, remaining: 4 },
+      visible: false,
+    },
+    {
+      name: 'a quota at the warning threshold',
+      rateLimit: { kind: 'free_daily', maxRequests: 10, remaining: 3 },
+      visible: true,
+    },
+  ])('returns $visible for $name', ({ rateLimit, visible }) => {
+    expect(shouldShowRateLimitBanner(rateLimit as RateLimit | null)).toBe(
+      visible,
     )
+  })
+})
 
-    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
-    expect(screen.getByRole('button', { name: 'Checking…' })).toBeDisabled()
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(Date.now()).toBe(NOW)
-    await act(async () => {
-      resolveResponse(
-        Response.json({
-          key: 'subscriber-token',
-          expires_at: RESET_AT,
-          rate_limit: {},
-        }),
-      )
-    })
-
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(Date.parse(RESET_AT) - NOW)
-    })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+describe('RateLimitBanner', () => {
+  it('counts down the remaining free requests politely', () => {
+    render(
+      <RateLimitBanner
+        rateLimit={{ kind: 'free_daily', maxRequests: 10, remaining: 1 }}
+        isDarkMode={false}
+      />,
+    )
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent('You have 1 free request left today')
+    expect(status).toHaveAttribute('aria-live', 'polite')
   })
 
-  it('keeps the limit visible and re-enables the action after a failed recheck', async () => {
-    await refreshRateLimit()
-    render(<LiveBanner />)
-    fetchMock.mockResolvedValueOnce(Response.json({}, { status: 503 }))
-
-    await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
-    })
-
-    expect(screen.getByRole('status')).toHaveTextContent('hourly usage limit')
-    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
-    await refreshRateLimit()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
-
-  it('does not offer an hourly recheck for a free daily quota', () => {
+  it('announces an exhausted free daily quota without an hourly recheck', () => {
     render(
       <RateLimitBanner
         rateLimit={{
@@ -123,9 +58,36 @@ describe('hourly limit recheck', () => {
         isDarkMode={false}
       />,
     )
-    expect(screen.getByRole('status')).toHaveTextContent(
-      "You've reached your daily rate limit.",
-    )
+    const status = screen.getByRole('status')
+    expect(status).toHaveTextContent("You've reached your daily rate limit.")
+    expect(status).toHaveAttribute('aria-live', 'assertive')
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
+
+  it.each([
+    {
+      resetsAt: RESET_AT,
+      text: /^You've reached your hourly usage limit — resets at \d{1,2}:\d{2}/,
+    },
+    {
+      resetsAt: 'not-a-date',
+      text: /^You've reached your hourly usage limit$/,
+    },
+  ])(
+    'shows when an hourly limit resets only for a valid time: $resetsAt',
+    ({ resetsAt, text }) => {
+      render(
+        <RateLimitBanner
+          rateLimit={{
+            maxRequests: 50,
+            remaining: 0,
+            resetsAt,
+            kind: 'hourly',
+          }}
+          isDarkMode={false}
+        />,
+      )
+      expect(screen.getByRole('status')).toHaveTextContent(text)
+    },
+  )
 })

@@ -1,10 +1,12 @@
-import type { StreamErrorInfo } from '@/components/chat/hooks/use-chat-streams'
-import { StreamErrorBanner } from '@/components/chat/stream-error-banner'
+import {
+  StreamErrorBanner,
+  type StreamErrorInfo,
+} from '@/components/chat/stream-error-banner'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const CONNECTION_ERROR: StreamErrorInfo = {
-  code: 'FETCH_ERROR',
+  code: 'STREAM_INTERRUPTED',
   message: 'Connection failure details',
 }
 
@@ -15,7 +17,7 @@ describe('StreamErrorBanner', () => {
     render(
       <StreamErrorBanner
         error={{
-          code: 'AUTH_ERROR',
+          code: 'UNAUTHENTICATED',
           message: 'Authentication is not initialized',
         }}
         isDarkMode={false}
@@ -105,19 +107,43 @@ describe('StreamErrorBanner', () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
-  it.each<StreamErrorInfo['code']>([
-    'RATE_LIMIT',
-    'HOURLY_LIMIT',
-    'FETCH_ERROR',
+  it.each([
+    { code: 'QUOTA_EXHAUSTED', title: 'Usage limit reached' },
+    {
+      code: 'CONTEXT_TOO_LARGE',
+      title: 'This conversation is too long for the model',
+    },
+    {
+      code: 'MODEL_UNAVAILABLE',
+      title: 'The service is having trouble right now',
+    },
+  ])('explains $code with its own copy', ({ code, title }) => {
+    render(
+      <StreamErrorBanner
+        error={{ ...CONNECTION_ERROR, code }}
+        isDarkMode={false}
+        onDismiss={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(title)
+    expect(screen.getByRole('alert')).not.toHaveTextContent(
+      'Check your internet connection',
+    )
+  })
+
+  it.each([
+    { code: 'QUOTA_EXHAUSTED', withRetry: true },
+    { code: 'STREAM_INTERRUPTED', withRetry: false },
   ])(
-    'keeps details and dismiss available without a retry action for %s',
-    (code) => {
+    'keeps details and dismiss available without a retry action for $code',
+    ({ code, withRetry }) => {
       render(
         <StreamErrorBanner
           error={{ ...CONNECTION_ERROR, code }}
           isDarkMode={false}
           onDismiss={vi.fn()}
-          onRetry={code === 'FETCH_ERROR' ? undefined : vi.fn()}
+          onRetry={withRetry ? vi.fn() : undefined}
         />,
       )
       expect(screen.getAllByRole('button')).toHaveLength(2)

@@ -1,19 +1,28 @@
 import { MAX_FAVORITE_PRESETS } from '@/components/chat/hooks/use-prompt-library'
 import { PromptLibraryModal } from '@/components/chat/prompt-library-modal'
-import { BUILT_IN_PROMPT_PRESETS } from '@/components/chat/prompts/built-in-presets'
-import {
-  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
-  USER_PREFS_FAVORITE_PROMPT_PRESETS,
-} from '@/constants/storage-keys'
+import { getView, publish } from '@/services/harness/runtime'
+import type { Session } from '@/services/harness/types'
 import { StarIcon } from '@heroicons/react/24/outline'
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid'
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { TfBookmarkFilled, TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { testSession } from '../../harness-fixture'
 
-const PRESET = BUILT_IN_PROMPT_PRESETS[0]
+const PRESETS: Session['presets'] = Array.from(
+  { length: MAX_FAVORITE_PRESETS + 2 },
+  (_, index) => ({
+    id: `preset-${index}`,
+    name: `Preset ${index}`,
+    description: `Description ${index}`,
+    icon: 'code',
+    systemPrompt: `Prompt ${index}`,
+    builtIn: true,
+  }),
+)
+const PRESET = PRESETS[0]
 
 function renderModal(activePresetId: string | null = null) {
   return render(
@@ -22,7 +31,6 @@ function renderModal(activePresetId: string | null = null) {
       onClose={vi.fn()}
       activePresetId={activePresetId}
       onSelectPreset={vi.fn()}
-      models={[]}
     />,
   )
 }
@@ -43,8 +51,12 @@ function expectIcon(actual: Element | null, icon: ReactElement) {
   expect(actual).not.toHaveClass('[stroke-width:initial]')
 }
 
+beforeEach(() => {
+  publish({ session: { ...testSession, presets: PRESETS }, profile: {} })
+})
+
 describe('PromptLibraryModal favorite icons', () => {
-  it('switches between real outline and solid stars when toggled, including the card badge', () => {
+  it('switches between real outline and solid stars when toggled, including the card badge', async () => {
     renderModal()
     const card = screen.getByRole('button', { name: new RegExp(PRESET.name) })
     const favorite = screen.getByRole('button', { name: 'Favorite' })
@@ -53,7 +65,8 @@ describe('PromptLibraryModal favorite icons', () => {
     expect(within(card).queryByText('Favorite')).not.toBeInTheDocument()
 
     fireEvent.click(favorite)
-    const selected = screen.getByRole('button', { name: 'Favorited' })
+    const selected = await screen.findByRole('button', { name: 'Favorited' })
+    expect(getView().profile.favoritePromptPresetIds).toEqual([PRESET.id])
     expectIcon(selected.querySelector('svg'), <StarIconSolid />)
     expect(selected).toHaveClass('text-yellow-600', 'dark:text-yellow-400')
     const badgeLabel = within(card).getByText('Favorite')
@@ -62,19 +75,14 @@ describe('PromptLibraryModal favorite icons', () => {
     expect(badgeLabel.previousElementSibling).toHaveClass('text-yellow-500')
 
     fireEvent.click(selected)
-    expectIcon(
-      screen.getByRole('button', { name: 'Favorite' }).querySelector('svg'),
-      <StarIcon />,
-    )
+    const unselected = await screen.findByRole('button', { name: 'Favorite' })
+    expect(getView().profile.favoritePromptPresetIds).toEqual([])
+    expectIcon(unselected.querySelector('svg'), <StarIcon />)
     expect(within(card).queryByText('Favorite')).not.toBeInTheDocument()
   })
 
-  it('renders a saved favorite badge alongside the Tinfoil default and active badges', () => {
-    localStorage.setItem(
-      USER_PREFS_FAVORITE_PROMPT_PRESETS,
-      JSON.stringify([PRESET.id]),
-    )
-    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, PRESET.id)
+  it('renders a saved favorite badge alongside the active badge', () => {
+    publish({ profile: { favoritePromptPresetIds: [PRESET.id] } })
     renderModal(PRESET.id)
     const card = screen.getByRole('button', { name: new RegExp(PRESET.name) })
     expectIcon(
@@ -86,10 +94,6 @@ describe('PromptLibraryModal favorite icons', () => {
       <StarIconSolid />,
     )
     expectIcon(
-      within(card).getByText('Default for new chats').previousElementSibling,
-      <TfBookmarkFilled />,
-    )
-    expectIcon(
       within(card).getByText('Active').previousElementSibling,
       <TfBoxCheckmark />,
     )
@@ -97,12 +101,13 @@ describe('PromptLibraryModal favorite icons', () => {
     expect(card).toHaveAttribute('aria-current', 'true')
   })
 
-  it('keeps the outline visible at capacity while allowing a solid favorite to be removed', () => {
-    const favorites = BUILT_IN_PROMPT_PRESETS.slice(1, MAX_FAVORITE_PRESETS + 1)
-    localStorage.setItem(
-      USER_PREFS_FAVORITE_PROMPT_PRESETS,
-      JSON.stringify(favorites.map((preset) => preset.id)),
-    )
+  it('keeps the outline visible at capacity while allowing a solid favorite to be removed', async () => {
+    const favorites = PRESETS.slice(1, MAX_FAVORITE_PRESETS + 1)
+    publish({
+      profile: {
+        favoritePromptPresetIds: favorites.map((preset) => preset.id),
+      },
+    })
     renderModal()
     const favorite = screen.getByRole('button', { name: 'Favorite' })
     expect(favorite).toBeDisabled()
@@ -120,7 +125,10 @@ describe('PromptLibraryModal favorite icons', () => {
     expect(selected).toBeEnabled()
     expectIcon(selected.querySelector('svg'), <StarIconSolid />)
     fireEvent.click(selected)
-    const unpinned = screen.getByRole('button', { name: 'Favorite' })
+    const unpinned = await screen.findByRole('button', { name: 'Favorite' })
+    expect(getView().profile.favoritePromptPresetIds).toEqual(
+      favorites.slice(1).map((preset) => preset.id),
+    )
     expect(unpinned).toBeEnabled()
     expectIcon(unpinned.querySelector('svg'), <StarIcon />)
     expect(within(pinnedCard).queryByText('Favorite')).not.toBeInTheDocument()

@@ -13,7 +13,6 @@ import { SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL } from '@/constants/storage-keys'
 import { useToast } from '@/hooks/use-toast'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
-import { setCloudSyncEnabled as persistCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import {
@@ -267,7 +266,6 @@ export function CloudSyncSetupModal({
     if (prfSupported && !manualRecoveryNeeded) {
       const result = await onSetupComplete(newKey, keySetupMode)
       if (result.ok) {
-        persistCloudSyncEnabled(true)
         setKeyAlreadyActivated(true)
         setCurrentStep('key-display')
         return
@@ -298,7 +296,6 @@ export function CloudSyncSetupModal({
         return
       }
 
-      persistCloudSyncEnabled(true)
       localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
 
       logInfo('Restored encryption key for cloud sync', {
@@ -449,7 +446,6 @@ ${generatedKey.replace('key_', '')}
 
     if (keyAlreadyActivated) {
       localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
-      persistCloudSyncEnabled(true)
       onClose()
       return
     }
@@ -465,7 +461,6 @@ ${generatedKey.replace('key_', '')}
         }
 
         localStorage.setItem(SETTINGS_HAS_SEEN_CLOUD_SYNC_MODAL, 'true')
-        persistCloudSyncEnabled(true)
         onClose()
       })
       .catch((error) => {

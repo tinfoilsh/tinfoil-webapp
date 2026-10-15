@@ -1,7 +1,5 @@
 'use client'
 
-import { useFlaggedChatIds } from '@/hooks/use-safeguards'
-import { useStreamingChats } from '@/hooks/use-streaming-chats'
 import { Fragment, useEffect, useState } from 'react'
 import { cn } from '../ui/utils'
 import {
@@ -98,10 +96,6 @@ export function ChatList({
   const [editingChatId, setEditingChatId] = useState<string | null>(null)
   const [editingTitle, setEditingTitle] = useState('')
   const [deletingChatId, setDeletingChatId] = useState<string | null>(null)
-  const flaggedChatIds = useFlaggedChatIds()
-  // App-wide source of truth for which chats are streaming, so the
-  // indicator covers background streams in any chat, not just the active one.
-  const streamingChats = useStreamingChats()
   // Track chat IDs that were manually edited - skip animation for these
   const [manuallyEditedChatId, setManuallyEditedChatId] = useState<
     string | null
@@ -184,10 +178,7 @@ export function ChatList({
     )
   }
 
-  // Chats that failed to decrypt are never displayed. They stay in
-  // storage so the background re-decryption can recover them once the
-  // right key is active, at which point they reappear here.
-  const visibleChats = chats.filter((chat) => !chat.decryptionFailed)
+  const visibleChats = chats
 
   if (visibleChats.length === 0 && emptyState) {
     return (
@@ -218,8 +209,7 @@ export function ChatList({
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                 showEncryptionStatus={showEncryptionStatus}
-                isStreaming={!chat.isBlankChat && streamingChats.has(chat.id)}
-                isFlagged={Boolean(flaggedChatIds[chat.id])}
+                isStreaming={!chat.isBlankChat && !!chat.activeRun}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id
                 }

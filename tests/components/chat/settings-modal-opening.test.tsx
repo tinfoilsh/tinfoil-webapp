@@ -1,8 +1,5 @@
 import { SettingsModal } from '@/components/chat/settings-modal'
-import {
-  SETTINGS_CLOUD_SYNC_ENABLED,
-  SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-} from '@/constants/storage-keys'
+import { getView, publish } from '@/services/harness/runtime'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -25,9 +22,9 @@ vi.mock('@/services/passkey', async (importOriginal) => ({
   loadPasskeyCredentials: vi.fn().mockResolvedValue([]),
 }))
 
-vi.mock('@/services/cloud/cloud-key-preflight', async (importOriginal) => ({
+vi.mock('@/services/keys/cloud-key-preflight', async (importOriginal) => ({
   ...(await importOriginal<
-    typeof import('@/services/cloud/cloud-key-preflight')
+    typeof import('@/services/keys/cloud-key-preflight')
   >()),
   validateCurrentPrimaryKey: vi.fn().mockResolvedValue({
     canWrite: true,
@@ -68,7 +65,6 @@ describe('settings opening', () => {
     'uses theme-aware blue for active passkeys (dark: %s)',
     async (isDarkMode) => {
       authState.isSignedIn = true
-      localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
       render(
         <Harness
           initialTab="cloud-sync"
@@ -91,18 +87,32 @@ describe('settings opening', () => {
     },
   )
 
-  it.each([
-    { isSignedIn: false, isPremium: false },
-    { isSignedIn: true, isPremium: false },
-    { isSignedIn: true, isPremium: true },
-  ])(
-    'gates project deletion and transfers in settings (signed in: $isSignedIn, premium: $isPremium)',
-    ({ isSignedIn, isPremium }) => {
-      authState.isSignedIn = isSignedIn
+  it('keeps account data controls out of the signed-out settings', () => {
+    render(
+      <Harness
+        initialTab="data"
+        isSignedIn={false}
+        encryptionKey={`key_${'ab'.repeat(32)}`}
+      />,
+    )
+    expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument()
+    for (const name of [
+      'Delete all saved chats',
+      'Import from Claude',
+      'Cloud Sync',
+      'Data',
+    ])
+      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+  })
+
+  it.each([false, true])(
+    'gates project transfers in settings (premium: %s)',
+    (isPremium) => {
+      authState.isSignedIn = true
       render(
         <Harness
           initialTab="data"
-          isSignedIn={isSignedIn}
+          isSignedIn
           isPremium={isPremium}
           encryptionKey={`key_${'ab'.repeat(32)}`}
         />,
@@ -111,8 +121,8 @@ describe('settings opening', () => {
         screen.getByRole('button', { name: 'Delete all saved chats' }),
       ).toBeEnabled()
       expect(
-        Boolean(screen.queryByRole('button', { name: 'Delete all projects' })),
-      ).toBe(isSignedIn)
+        screen.getByRole('button', { name: 'Delete all projects' }),
+      ).toBeInTheDocument()
       fireEvent.click(
         screen.getByRole('button', { name: 'Import from Claude' }),
       )
@@ -124,41 +134,29 @@ describe('settings opening', () => {
           screen.queryByRole('button', { name: 'Export Projects for Claude' }),
         ),
       ).toBe(isPremium)
-      if (isSignedIn) {
-        fireEvent.click(
-          screen.getAllByRole('button', { name: 'Cloud Sync' })[0],
-        )
-        expect(
-          Boolean(
-            screen.queryByRole('button', { name: 'Create Tinfoil Backup' }),
-          ),
-        ).toBe(isPremium)
-        expect(
-          Boolean(
-            screen.queryByRole('button', { name: 'Restore Tinfoil Backup' }),
-          ),
-        ).toBe(isPremium)
-      } else {
-        expect(
-          screen.queryByRole('button', { name: 'Cloud Sync' }),
-        ).not.toBeInTheDocument()
-      }
+      fireEvent.click(screen.getAllByRole('button', { name: 'Cloud Sync' })[0])
+      expect(
+        Boolean(
+          screen.queryByRole('button', { name: 'Create Tinfoil Backup' }),
+        ),
+      ).toBe(isPremium)
+      expect(
+        Boolean(
+          screen.queryByRole('button', { name: 'Restore Tinfoil Backup' }),
+        ),
+      ).toBe(isPremium)
     },
   )
 
   it.each([
-    { saved: null, enabled: false },
-    { saved: 'true', enabled: true },
-    { saved: 'false', enabled: false },
+    { saved: undefined, enabled: false },
+    { saved: true, enabled: true },
+    { saved: false, enabled: false },
   ])(
     'defaults title redaction to off and respects saved preference $saved',
-    ({ saved, enabled }) => {
-      if (saved !== null) {
-        localStorage.setItem(
-          SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-          saved,
-        )
-      }
+    async ({ saved, enabled }) => {
+      if (saved !== undefined)
+        publish({ profile: { pixelateSidebarChatTitlesEnabled: saved } })
       render(<Harness isClient />)
       const toggle = screen.getByRole('checkbox', {
         name: 'Redact sidebar chat titles',
@@ -166,25 +164,28 @@ describe('settings opening', () => {
       expect(toggle).toHaveProperty('checked', enabled)
 
       fireEvent.click(toggle)
-      expect(
-        localStorage.getItem(SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED),
-      ).toBe(String(!enabled))
+      await waitFor(() =>
+        expect(getView().profile.pixelateSidebarChatTitlesEnabled).toBe(
+          !enabled,
+        ),
+      )
+      expect(toggle).toHaveProperty('checked', !enabled)
 
       act(() => {
-        localStorage.removeItem(SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED)
-        window.dispatchEvent(
-          new StorageEvent('storage', {
-            key: SETTINGS_PIXELATE_SIDEBAR_CHAT_TITLES_ENABLED,
-            newValue: null,
-          }),
-        )
+        publish({
+          profile: {
+            ...getView().profile,
+            pixelateSidebarChatTitlesEnabled: enabled,
+          },
+        })
       })
-      expect(toggle).not.toBeChecked()
+      expect(toggle).toHaveProperty('checked', enabled)
     },
   )
 
   it('uses headings around the import buttons and associates each expanded panel', () => {
-    render(<Harness initialTab="data" />)
+    authState.isSignedIn = true
+    render(<Harness initialTab="data" isSignedIn />)
     for (const provider of ['ChatGPT', 'Claude', 'Tinfoil']) {
       const name = `Import from ${provider}`
       const button = screen.getByRole('button', { name })
