@@ -1,4 +1,5 @@
 import { cn } from '@/components/ui/utils'
+import { TfVerticalEllipsis } from '@tinfoilsh/tinfoil-icons'
 import React, {
   useEffect,
   useId,
@@ -7,7 +8,6 @@ import React, {
   useState,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { RxDotsVertical } from 'react-icons/rx'
 import { CONSTANTS } from '../../constants'
 
 export interface MessageOverflowMenuItem {
@@ -150,7 +150,7 @@ export function MessageOverflowMenu({
         aria-controls={isOpen ? menuId : undefined}
         className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
       >
-        <RxDotsVertical className="h-3.5 w-3.5" aria-hidden="true" />
+        <TfVerticalEllipsis className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
       {!isOpen && (
         <span

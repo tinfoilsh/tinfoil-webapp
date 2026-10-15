@@ -2,7 +2,7 @@ import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { Favicon } from '@/components/ui/favicon'
 import { fetchLinkMetadata } from '@/services/inference/metadata-client'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { ExternalLink } from 'lucide-react'
+import { TfExternalLink } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -114,7 +114,7 @@ function LinkPreview({ url, title }: Props) {
         </div>
         <div className="flex items-center gap-1 text-xs text-content-muted">
           <span className="truncate">{getDomain(url)}</span>
-          <ExternalLink className="h-3 w-3 shrink-0" />
+          <TfExternalLink className="h-3 w-3 shrink-0" />
         </div>
       </div>
     </a>

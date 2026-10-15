@@ -1,7 +1,7 @@
 'use client'
 
 import { CONSTANTS } from '@/components/chat/constants'
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
+import { TfChevronLeft, TfChevronRight } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const COLLAPSED_MAX_WIDTH_REM = 52
@@ -92,9 +92,9 @@ export function ExpandableTable({ children }: ExpandableTableProps) {
             aria-label={collapsed ? 'Expand table' : 'Collapse table'}
           >
             {collapsed ? (
-              <ChevronLeftIcon className="h-4 w-4" aria-hidden="true" />
+              <TfChevronLeft className="h-4 w-4" aria-hidden="true" />
             ) : (
-              <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+              <TfChevronRight className="h-4 w-4" aria-hidden="true" />
             )}
           </button>
           <button
@@ -105,9 +105,9 @@ export function ExpandableTable({ children }: ExpandableTableProps) {
             aria-label={collapsed ? 'Expand table' : 'Collapse table'}
           >
             {collapsed ? (
-              <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+              <TfChevronRight className="h-4 w-4" aria-hidden="true" />
             ) : (
-              <ChevronLeftIcon className="h-4 w-4" aria-hidden="true" />
+              <TfChevronLeft className="h-4 w-4" aria-hidden="true" />
             )}
           </button>
         </div>

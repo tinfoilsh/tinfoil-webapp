@@ -113,22 +113,19 @@ import {
 } from '@/utils/signout-progress'
 import { useAuth, useUser } from '@clerk/react'
 import { Dialog } from '@headlessui/react'
-import {
-  ArrowDownTrayIcon,
-  ArrowTopRightOnSquareIcon,
-  ArrowUpTrayIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-} from '@heroicons/react/24/outline'
+import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import {
   TfAdjustmentToggle,
   TfBoxCheckmark,
   TfBoxX,
   TfCard,
   TfChat2,
+  TfChevronDown,
+  TfChevronRight,
   TfCloudSync,
   TfComputer,
   TfDownload,
+  TfExternalLink,
   TfEye,
   TfEyeSlash,
   TfKey,
@@ -496,7 +493,7 @@ function ImportAccordionHeader({
         <span className="font-aeonik text-sm font-medium text-content-primary">
           {title}
         </span>
-        <ChevronDownIcon
+        <TfChevronDown
           aria-hidden="true"
           className={cn(
             'h-4 w-4 text-content-muted transition-transform',
@@ -3535,7 +3532,7 @@ ${encryptionKey.replace('key_', '')}
                           Browse built-in prompts and create or manage your own.
                         </span>
                       </span>
-                      <ChevronRightIcon
+                      <TfChevronRight
                         className="h-4 w-4 flex-none text-content-muted"
                         aria-hidden="true"
                       />
@@ -3568,7 +3565,7 @@ ${encryptionKey.replace('key_', '')}
                           How It Works
                         </h3>
                       </div>
-                      <ChevronDownIcon
+                      <TfChevronDown
                         className={cn(
                           'h-4 w-4 text-content-muted transition-transform',
                           isHowItWorksOpen && 'rotate-180',
@@ -3858,7 +3855,7 @@ ${encryptionKey.replace('key_', '')}
                                   aria-label="Download encryption key as PEM file"
                                   className="flex items-center justify-center rounded-lg p-2 text-content-muted transition-all hover:text-content-primary"
                                 >
-                                  <ArrowDownTrayIcon
+                                  <TfDownload
                                     className="h-4 w-4"
                                     aria-hidden="true"
                                   />
@@ -5005,7 +5002,7 @@ ${encryptionKey.replace('key_', '')}
                               {billingLoading ? (
                                 '...'
                               ) : (
-                                <ArrowTopRightOnSquareIcon
+                                <TfExternalLink
                                   className="h-4 w-4"
                                   aria-hidden="true"
                                 />
@@ -5051,7 +5048,7 @@ ${encryptionKey.replace('key_', '')}
                               Manage your account at dash.tinfoil.sh
                             </div>
                           </div>
-                          <ArrowTopRightOnSquareIcon
+                          <TfExternalLink
                             className="h-4 w-4 text-content-muted"
                             aria-hidden="true"
                           />

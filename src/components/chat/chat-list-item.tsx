@@ -3,7 +3,6 @@
 import { DEFAULT_CHAT_TITLE } from '@/constants/chat'
 import { canRequestChatPin } from '@/services/storage/pinned-chats'
 import { isPlainPrimaryClick } from '@/utils/navigation'
-import { EllipsisVerticalIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
   TfBoxX,
@@ -14,6 +13,7 @@ import {
   TfLockLocked,
   TfThumbtack,
   TfTrash,
+  TfVerticalEllipsis,
   TfWriting,
 } from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
@@ -571,7 +571,7 @@ export function ChatListItem({
                 aria-expanded={isMobileMenuOpen}
                 aria-controls={isMobileMenuOpen ? mobileMenuId : undefined}
               >
-                <EllipsisVerticalIcon className="h-5 w-5" aria-hidden="true" />
+                <TfVerticalEllipsis className="h-5 w-5" aria-hidden="true" />
               </button>
 
               {/* Mobile dropdown menu - rendered via portal to escape overflow constraints */}

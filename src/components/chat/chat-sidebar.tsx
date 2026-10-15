@@ -29,10 +29,11 @@ import {
 import { logInfo } from '@/utils/error-handling'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/react'
-import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxX,
   TfChat2,
+  TfChevronDown,
+  TfChevronRight,
   TfCloud,
   TfFloppyDisk,
   TfFolder,
@@ -1309,9 +1310,9 @@ export function ChatSidebar({
                   </span>
                 </span>
                 {isFavoritesExpanded ? (
-                  <ChevronDownIcon className="h-4 w-4" />
+                  <TfChevronDown className="h-4 w-4" />
                 ) : (
-                  <ChevronRightIcon className="h-4 w-4" />
+                  <TfChevronRight className="h-4 w-4" />
                 )}
               </button>
               <AnimatePresence initial={false}>
@@ -1465,9 +1466,9 @@ export function ChatSidebar({
                   </span>
                   <span className="flex items-center gap-1">
                     {isProjectsExpanded ? (
-                      <ChevronDownIcon className="h-4 w-4" />
+                      <TfChevronDown className="h-4 w-4" />
                     ) : (
-                      <ChevronRightIcon className="h-4 w-4" />
+                      <TfChevronRight className="h-4 w-4" />
                     )}
                   </span>
                 </button>
@@ -1925,9 +1926,9 @@ export function ChatSidebar({
                     </span>
                   </span>
                   {isChatHistoryExpanded ? (
-                    <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
+                    <TfChevronDown className="h-4 w-4" aria-hidden="true" />
                   ) : (
-                    <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+                    <TfChevronRight className="h-4 w-4" aria-hidden="true" />
                   )}
                 </button>
                 {onSearchClick && (
@@ -2163,7 +2164,7 @@ export function ChatSidebar({
                               <span className="flex-1">
                                 Your chats are end-to-end encrypted.
                               </span>
-                              <ChevronDownIcon
+                              <TfChevronDown
                                 className={cn(
                                   'h-3.5 w-3.5 shrink-0 transition-transform',
                                   isEncryptionNoteExpanded && 'rotate-180',

@@ -6,13 +6,11 @@ import { useRateLimit } from '@/hooks/use-rate-limit'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useUser } from '@clerk/react'
 import {
-  ArrowTopRightOnSquareIcon,
-  ChevronRightIcon,
-} from '@heroicons/react/24/outline'
-import {
   TfBoxCheckmark,
   TfBug,
+  TfChevronRight,
   TfDocument,
+  TfExternalLink,
   TfPerson,
   TfQuestionMarkCircle,
   TfRefresh1,
@@ -434,7 +432,7 @@ export function SidebarAccountMenu({
         <span className="min-w-0 flex-1 truncate font-aeonik font-medium">
           {displayName}
         </span>
-        <ChevronRightIcon
+        <TfChevronRight
           className={cn(
             'h-4 w-4 flex-none text-content-muted transition-transform',
             isOpen && '-rotate-90',
@@ -582,7 +580,7 @@ export function SidebarAccountMenu({
               >
                 <TfQuestionMarkCircle className="h-4 w-4" aria-hidden="true" />
                 <span className="flex-1">Help</span>
-                <ChevronRightIcon
+                <TfChevronRight
                   className="h-4 w-4 text-content-muted"
                   aria-hidden="true"
                 />
@@ -615,7 +613,7 @@ export function SidebarAccountMenu({
                   >
                     <TfDocument className="h-4 w-4" aria-hidden="true" />
                     <span className="flex-1">Terms of Service</span>
-                    <ArrowTopRightOnSquareIcon
+                    <TfExternalLink
                       className="h-3.5 w-3.5 text-content-muted"
                       aria-hidden="true"
                     />
@@ -632,7 +630,7 @@ export function SidebarAccountMenu({
                   >
                     <TfShieldCheck className="h-4 w-4" aria-hidden="true" />
                     <span className="flex-1">Privacy Policy</span>
-                    <ArrowTopRightOnSquareIcon
+                    <TfExternalLink
                       className="h-3.5 w-3.5 text-content-muted"
                       aria-hidden="true"
                     />

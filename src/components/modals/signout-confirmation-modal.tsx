@@ -1,6 +1,5 @@
 import { Modal, ModalTitle } from '@/components/ui/modal'
-import { ArrowDownTrayIcon } from '@heroicons/react/24/outline'
-import { TfBoxCheckmark } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxCheckmark, TfDownload } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useState } from 'react'
 
 interface SignoutConfirmationModalProps {
@@ -80,7 +79,7 @@ ${encryptionKey.replace('key_', '')}
                 </>
               ) : (
                 <>
-                  <ArrowDownTrayIcon className="hidden h-4 w-4 sm:block" />
+                  <TfDownload className="hidden h-4 w-4 sm:block" />
                   Download Encryption Key
                 </>
               )}

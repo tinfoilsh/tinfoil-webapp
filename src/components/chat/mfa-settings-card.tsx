@@ -3,9 +3,13 @@ import { getClerkErrorMessage } from '@/utils/clerk-errors'
 import { logError, logWarning } from '@/utils/error-handling'
 import { useReverification, useUser } from '@clerk/react'
 import { isReverificationCancelledError } from '@clerk/react/errors'
-import { ArrowDownTrayIcon } from '@heroicons/react/24/outline'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { TfBoxCheckmark, TfCopy, TfShieldCheck } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxCheckmark,
+  TfCopy,
+  TfDownload,
+  TfShieldCheck,
+} from '@tinfoilsh/tinfoil-icons'
 import { memo, useCallback, useRef, useState, type FormEvent } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 import QRCode from 'react-qr-code'
@@ -454,7 +458,7 @@ export function MfaSettingsCard({ isDarkMode }: MfaSettingsCardProps) {
                     onClick={handleDownloadBackupCodes}
                     className="flex items-center gap-2 text-xs font-medium text-content-secondary transition-colors hover:text-content-primary"
                   >
-                    <ArrowDownTrayIcon className="h-4 w-4" aria-hidden="true" />
+                    <TfDownload className="h-4 w-4" aria-hidden="true" />
                     Download .txt
                   </button>
                 </div>
