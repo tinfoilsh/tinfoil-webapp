@@ -91,9 +91,11 @@ export async function cloudTranscript(
   })
 }
 
-// Stores a chat on this device, then deletes its cloud copy. When the cloud
-// copy cannot be deleted, the device copy is removed again, so the chat stays
-// where it was.
+// Stores a chat on this device, then deletes its cloud copy. A deletion that
+// was refused, by the harness or before it was sent, leaves the cloud copy,
+// so the device copy is removed again and the chat stays where it was. One
+// that failed in any other way, such as over a dropped connection, may have
+// committed, so the device copy, perhaps the only one left, is kept.
 export async function placeOnDevice(
   api: HarnessAPI,
   store: LocalThreadStore,
@@ -111,6 +113,7 @@ export async function placeOnDevice(
   try {
     await api.post('/v1/threads/delete', { id: thread.id })
   } catch (cause) {
+    if (!(cause instanceof HarnessError)) throw cause
     await store.delete(thread.id).catch((error) =>
       logError('Failed to remove a chat copied to this device', error, {
         component: 'transfer',
