@@ -4,7 +4,6 @@ import {
   type BaseModel,
 } from '@/config/models'
 import { useChatPrint } from '@/hooks/use-chat-print'
-import { useHarness } from '@/services/harness/provider'
 import 'katex/dist/katex.min.css'
 import React, {
   memo,
@@ -17,6 +16,10 @@ import React, {
 } from 'react'
 import { canRemoveChatSpacerWithoutJump } from './chat-scroll'
 import { CONSTANTS } from './constants'
+import {
+  DocumentTextProvider,
+  type LoadDocumentText,
+} from './document-text-context'
 import type { ReasoningEffort } from './hooks/use-reasoning-effort'
 import { ImageGalleryProvider } from './image-gallery-context'
 import { MessageRendererHost } from './message-renderer-host'
@@ -60,9 +63,10 @@ type ChatMessagesProps = {
     messageIndex: number,
     toolCallId: string,
   ) => Promise<boolean>
-  // Reads a full-size image for the gallery. Defaults to the harness, which
-  // holds the images of the chats it stores.
+  // Reads a full-size image for the gallery, which shows thumbnails without
+  // it, and the text of a document whose message does not carry it.
   loadImage?: (attachment: Attachment, signal: AbortSignal) => Promise<Blob>
+  loadDocumentText?: LoadDocumentText
   showScrollButton?: boolean
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
@@ -246,6 +250,7 @@ export function ChatMessages({
   onForkMessage,
   onRetryToolCall,
   loadImage,
+  loadDocumentText,
   showScrollButton,
   webSearchEnabled,
   onWebSearchToggle,
@@ -262,7 +267,6 @@ export function ChatMessages({
   onOpenPromptLibrary,
   onSelectPromptPreset,
 }: ChatMessagesProps) {
-  const { api } = useHarness()
   const [mounted, setMounted] = useState(false)
   const [showSpacer, setShowSpacer] = useState(false)
   const prevMessageCountRef = React.useRef(messages.length)
@@ -427,67 +431,65 @@ export function ChatMessages({
     <ImageGalleryProvider
       key={chatId}
       messages={messages}
-      loadImage={
-        loadImage ??
-        ((attachment, signal) =>
-          api.download('/v1/attachments/get', { id: attachment.id }, signal))
-      }
+      loadImage={loadImage}
     >
-      {/* Not a live region: ChatAnnouncer reads each finished response once.
+      <DocumentTextProvider load={loadDocumentText}>
+        {/* Not a live region: ChatAnnouncer reads each finished response once.
           role="log" implies aria-live="polite", which would read the
           response (and every message of a newly opened chat) a second time. */}
-      <div
-        role="log"
-        aria-label="Conversation"
-        aria-live="off"
-        aria-busy={isStreamingResponse}
-        className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
-      >
-        {messages.map((message, index) => (
-          <ChatMessage
-            key={message.id ?? `${chatId}-${index}`}
-            message={message}
-            messageIndex={index}
-            model={currentModel}
-            isDarkMode={isDarkMode}
-            isLastMessage={index === messages.length - 1}
-            isStreaming={index === messages.length - 1 && isStreamingResponse}
-            activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-              message,
-              activeArtifactToolCallId,
-            )}
-            onEditMessage={onEditMessage}
-            onRegenerateMessage={onRegenerateMessage}
-            onForkMessage={onForkMessage}
-            onRetryToolCall={onRetryToolCall}
-          />
-        ))}
-        {showLoadingPlaceholder && (
-          <LoadingMessage
-            isDarkMode={isDarkMode}
-            isRetrying={loadingState === 'retrying'}
-            retryInfo={retryInfo}
-          />
-        )}
-        {/* Spacer allows scrollIntoView to bring user message to top of viewport.
+        <div
+          role="log"
+          aria-label="Conversation"
+          aria-live="off"
+          aria-busy={isStreamingResponse}
+          className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
+        >
+          {messages.map((message, index) => (
+            <ChatMessage
+              key={message.id ?? `${chatId}-${index}`}
+              message={message}
+              messageIndex={index}
+              model={currentModel}
+              isDarkMode={isDarkMode}
+              isLastMessage={index === messages.length - 1}
+              isStreaming={index === messages.length - 1 && isStreamingResponse}
+              activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
+                message,
+                activeArtifactToolCallId,
+              )}
+              onEditMessage={onEditMessage}
+              onRegenerateMessage={onRegenerateMessage}
+              onForkMessage={onForkMessage}
+              onRetryToolCall={onRetryToolCall}
+            />
+          ))}
+          {showLoadingPlaceholder && (
+            <LoadingMessage
+              isDarkMode={isDarkMode}
+              isRetrying={loadingState === 'retrying'}
+              retryInfo={retryInfo}
+            />
+          )}
+          {/* Spacer allows scrollIntoView to bring user message to top of viewport.
           Subtracts the composer height (set on the scroll container as
           --input-area-height) so the total over-scroll is just enough for the
           fade above the input area, not a full 70dvh of empty space. */}
-        {showSpacer && (
-          <div
-            ref={spacerRef}
-            data-spacer
-            className="flex-shrink-0"
-            style={{
-              height: `max(0px, calc(70dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
-            }}
-            aria-hidden="true"
-          />
-        )}
-        {printRequested && (
-          <PrintableChat messages={messages} printRef={printRef} />
-        )}
-      </div>
+          {showSpacer && (
+            <div
+              ref={spacerRef}
+              data-spacer
+              className="flex-shrink-0"
+              style={{
+                height: `max(0px, calc(70dvh - var(--input-area-height, 0px) - ${CONSTANTS.CHAT_INPUT_BOTTOM_GAP_PX}px))`,
+              }}
+              aria-hidden="true"
+            />
+          )}
+          {printRequested && (
+            <PrintableChat messages={messages} printRef={printRef} />
+          )}
+        </div>
+      </DocumentTextProvider>
     </ImageGalleryProvider>
   )
 }

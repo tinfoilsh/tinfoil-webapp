@@ -1600,6 +1600,7 @@ export function ChatInterface({
           chatCreatedAt={currentChat.createdAt}
           chatId={currentChat.id}
           share={thread.share}
+          loadDocumentText={thread.documentText}
           // Every harness that seals local shares also reports and revokes
           // shares; no other feature flag marks those routes.
           canRevoke={!!session?.features.localShare}
@@ -1852,9 +1853,8 @@ export function ChatInterface({
                           : undefined
                       }
                       onRetryToolCall={retryToolCall}
-                      loadImage={
-                        thread.runsLocally ? thread.loadImage : undefined
-                      }
+                      loadImage={thread.loadImage}
+                      loadDocumentText={thread.documentText}
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
                       onWebSearchToggle={

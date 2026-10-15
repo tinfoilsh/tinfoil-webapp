@@ -11,6 +11,7 @@ import { turnProfile } from './local-profile'
 import {
   committedReplies,
   localAttachment,
+  localDocumentText,
   localThreadStore,
   localThreadView,
   memoryThreadStore,
@@ -126,6 +127,7 @@ export function useThread(
   const images = useRef(
     new Map<string, { base64: string; mimeType?: string }>(),
   )
+  const documentTexts = useRef(new Map<string, Promise<string>>())
   const store = useMemo(
     () => localThreadStore(api.userId ? 'device' : 'tab'),
     [api.userId],
@@ -207,6 +209,7 @@ export function useThread(
     pending.current = null
     uploads.current = new Map()
     images.current = new Map()
+    documentTexts.current = new Map()
   }, [])
   // The stored transcript with what the view knows of the current run, which
   // may not be saved yet. A new chat starts from an empty thread.
@@ -767,7 +770,21 @@ export function useThread(
       })
     return view
   }
-  async function loadImage(attachment: UIAttachment): Promise<Blob> {
+  // An attachment of the open chat. The harness finds a stored chat's
+  // attachments under the chat; only a fresh upload resolves without it.
+  function download(attachment: UIAttachment, signal?: AbortSignal) {
+    const threadId = idRef.current
+    return api.download(
+      '/v1/attachments/get',
+      { id: attachment.id, ...(threadId ? { threadId } : {}) },
+      signal,
+    )
+  }
+  async function loadImage(
+    attachment: UIAttachment,
+    signal?: AbortSignal,
+  ): Promise<Blob> {
+    if (!runsLocally()) return download(attachment, signal)
     const image = images.current.get(attachment.id)
     if (!image)
       throw new HarnessError({
@@ -777,6 +794,38 @@ export function useThread(
     return new Blob([base64ToUint8Array(image.base64)], {
       type: image.mimeType || 'image/jpeg',
     })
+  }
+  // A document's text. A stored chat's messages leave it out, and the
+  // harness sends a document as its extracted text; a chat on this device
+  // keeps it in the document's descriptor. Reads are shared until the view
+  // moves to another chat.
+  function documentText(attachment: UIAttachment): Promise<string> {
+    if (attachment.textContent !== undefined)
+      return Promise.resolve(attachment.textContent)
+    const texts = documentTexts.current
+    const cached = texts.get(attachment.id)
+    if (cached) return cached
+    const threadId = idRef.current
+    const target = storeFor(temporaryRef.current)
+    const reading = (async () => {
+      if (!runsLocally()) return (await download(attachment)).text()
+      const descriptor =
+        uploads.current.get(attachment.id) ??
+        (threadId ? await target.get(threadId) : null)?.messages
+          .flatMap((message) => message.attachments ?? [])
+          .find((candidate) => candidate.id === attachment.id)
+      if (!descriptor)
+        throw new HarnessError({
+          code: 'THREAD_NOT_FOUND',
+          message: 'This document is not stored on this device.',
+        })
+      return localDocumentText(descriptor)
+    })()
+    texts.set(attachment.id, reading)
+    reading.catch(() => {
+      if (texts.get(attachment.id) === reading) texts.delete(attachment.id)
+    })
+    return reading
   }
   // A local chat is forked on the device, the way the previous client forked
   // chats it stored: the fork keeps the messages up to the chosen one.
@@ -973,6 +1022,7 @@ export function useThread(
     removeAll,
     upload,
     loadImage,
+    documentText,
     fork,
     share,
     askContext,

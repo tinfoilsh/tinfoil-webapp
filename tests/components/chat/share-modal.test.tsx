@@ -103,6 +103,62 @@ describe('ShareModal', () => {
     )
   })
 
+  it('reads the text of stored documents into the markdown', async () => {
+    const load = vi.fn(async () => 'Revenue grew.')
+    render(
+      <ShareModal
+        {...props}
+        loadDocumentText={load}
+        messages={[
+          {
+            role: 'user',
+            content: 'See attached',
+            timestamp: new Date(0),
+            attachments: [
+              { id: 'att_report', type: 'document', fileName: 'report.pdf' },
+              {
+                id: 'att_notes',
+                type: 'document',
+                fileName: 'notes.txt',
+                textContent: 'Inline notes',
+              },
+            ],
+          },
+        ]}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText('Raw conversation markdown').textContent,
+      ).toBe(
+        [
+          '## User',
+          '',
+          'See attached',
+          '',
+          '**Attachments:**',
+          '- report.pdf',
+          '- notes.txt',
+          '',
+          '**Document Content:**',
+          '```',
+          'Document title: report.pdf',
+          'Revenue grew.',
+          '',
+          'Document title: notes.txt',
+          'Inline notes',
+          '```',
+          '',
+          '---',
+        ].join('\n'),
+      ),
+    )
+    expect(load).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: 'att_report' }),
+    )
+  })
+
   it('creates a link through the harness, focuses it, and only then shows the chat as shared', async () => {
     const created = deferred<string>()
     mocks.share.mockReturnValueOnce(created.promise)

@@ -1,11 +1,14 @@
 import type { BaseModel } from '@/config/models'
 import { useHarness } from '@/services/harness/provider'
+import { HarnessError } from '@/services/harness/sse'
 import type { SharedThread } from '@/services/harness/types'
 import { messageView } from '@/services/harness/view-model'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { DocumentTextProvider } from './document-text-context'
 import { ImageGalleryProvider } from './image-gallery-context'
 import { MessageRendererHost } from './message-renderer-host'
+import type { Attachment } from './types'
 export function SharedChatView({
   chatData,
   isDarkMode,
@@ -60,20 +63,43 @@ export function SharedChatView({
       }
     return () => abort.abort()
   }, [api, chatData])
+  // A shared stored document holds its text in its blob, which the harness
+  // reads as text with the share's attachment key.
+  const loadDocumentText = useCallback(
+    async (attachment: Attachment) => {
+      const attKey = chatData.messages
+        .flatMap((message) => message.attachments ?? [])
+        .find((candidate) => candidate.id === attachment.id)?.attKey
+      if (!attKey)
+        throw new HarnessError({
+          code: 'THREAD_NOT_FOUND',
+          message: 'This document is not part of the share.',
+        })
+      const blob = await api.client.download(
+        '/v1/attachments/get-public',
+        { id: attachment.id, attKey },
+        api.signal(undefined, false),
+      )
+      return blob.text()
+    },
+    [api, chatData],
+  )
   return (
     <ImageGalleryProvider messages={messages}>
-      <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">
-        {messages.map((message, index) => (
-          <MessageRendererHost
-            key={message.id}
-            message={message}
-            messageIndex={index}
-            model={model}
-            isDarkMode={isDarkMode}
-            hideActions
-          />
-        ))}
-      </div>
+      <DocumentTextProvider load={loadDocumentText}>
+        <div className="mx-auto w-full min-w-0 max-w-3xl px-4 pb-6 pt-8">
+          {messages.map((message, index) => (
+            <MessageRendererHost
+              key={message.id}
+              message={message}
+              messageIndex={index}
+              model={model}
+              isDarkMode={isDarkMode}
+              hideActions
+            />
+          ))}
+        </div>
+      </DocumentTextProvider>
     </ImageGalleryProvider>
   )
 }

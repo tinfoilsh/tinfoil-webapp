@@ -224,6 +224,16 @@ export function localSummary(thread: LocalThread): ThreadSummary {
   }
 }
 
+// A document's text as the harness reads a stored one: its extracted text,
+// or else the text of its pages.
+export function localDocumentText(attachment: LocalAttachment): string {
+  if (attachment.textContent) return attachment.textContent
+  return (attachment.pages ?? [])
+    .map((page) => page.text)
+    .filter(Boolean)
+    .join('\n\n')
+}
+
 // The harness's publicAttachment: what a client sees of a stored descriptor.
 export function wireAttachment(attachment: LocalAttachment): WireAttachment {
   return {

@@ -6,6 +6,7 @@ import {
   SHARE_TOO_LARGE_MESSAGE,
   shareStatus,
 } from '@/services/harness/shares'
+import { logError } from '@/utils/error-handling'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import {
   TfBoxCheckmark,
@@ -23,6 +24,7 @@ import {
   hasMessageAttachments,
 } from './attachment-helpers'
 import { CONSTANTS } from './constants'
+import type { LoadDocumentText } from './document-text-context'
 import type { Message } from './types'
 
 type ShareModalProps = {
@@ -40,6 +42,9 @@ type ShareModalProps = {
   // The harness reports whether a chat is shared and revokes its link. An
   // older harness only creates links.
   canRevoke?: boolean
+  // Reads the text of a document whose message does not carry it, so the
+  // markdown includes it.
+  loadDocumentText?: LoadDocumentText
 }
 
 export function ShareModal(props: ShareModalProps) {
@@ -58,6 +63,7 @@ function ShareModalContent({
   chatId,
   share,
   canRevoke = false,
+  loadDocumentText,
 }: ShareModalProps) {
   const { toast } = useToast()
   const [isCopied, setIsCopied] = useState(false)
@@ -75,6 +81,9 @@ function ShareModalContent({
   const shareLinkInputRef = useRef<HTMLInputElement>(null)
   const previousShareUrlRef = useRef<string | null>(null)
   const isMountedRef = useRef(false)
+  const [documentTexts, setDocumentTexts] = useState<Record<string, string>>({})
+  const requestedTexts = useRef(new Set<string>())
+  const failedTexts = useRef(new Set<string>())
   const isBusy = isUploading || isRevoking
   const canChangeSharing = !isBusy && !isCheckingShare && hasShare !== null
   const showShareEnabled = hasShare !== null && isShareEnabled
@@ -122,6 +131,42 @@ function ShareModalContent({
     setIsLinkCopied(false)
     previousShareUrlRef.current = null
   }, [chatId])
+
+  // Each document's text is read once while the dialog is open; one that
+  // failed is read again when the dialog next opens.
+  useEffect(() => {
+    if (!isOpen) {
+      for (const id of failedTexts.current) requestedTexts.current.delete(id)
+      failedTexts.current.clear()
+      return
+    }
+    if (!loadDocumentText) return
+    for (const attachment of messages.flatMap(getMessageAttachments)) {
+      if (
+        attachment.type !== 'document' ||
+        attachment.textContent !== undefined ||
+        requestedTexts.current.has(attachment.id)
+      )
+        continue
+      requestedTexts.current.add(attachment.id)
+      loadDocumentText(attachment)
+        .then((text) => {
+          if (isMountedRef.current)
+            setDocumentTexts((previous) => ({
+              ...previous,
+              [attachment.id]: text,
+            }))
+        })
+        .catch((error) => {
+          // The markdown still lists the document by name.
+          failedTexts.current.add(attachment.id)
+          logError('Failed to load document text for sharing', error, {
+            component: 'ShareModal',
+            action: 'loadDocumentText',
+          })
+        })
+    }
+  }, [isOpen, messages, loadDocumentText])
 
   // Reset transient state when modal closes
   useEffect(() => {
@@ -219,8 +264,14 @@ function ShareModalContent({
 
         // Add document text content if any
         const docTexts = allAttachments
-          .filter((a) => a.type === 'document' && a.textContent)
-          .map((a) => `Document title: ${a.fileName}\n${a.textContent}`)
+          .filter(
+            (a) =>
+              a.type === 'document' && (a.textContent ?? documentTexts[a.id]),
+          )
+          .map(
+            (a) =>
+              `Document title: ${a.fileName}\n${a.textContent ?? documentTexts[a.id]}`,
+          )
         if (docTexts.length > 0) {
           markdown += '**Document Content:**\n'
           markdown += '```\n'
