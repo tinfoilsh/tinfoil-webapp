@@ -383,7 +383,23 @@ describe('attested harness transport', () => {
       ),
     ).toBe(true)
   })
-  it('uses fresh tokens per call and never downgrades rejected authentication to anonymous', async () => {
+  it('reads a token for each request', async () => {
+    const secure = transport()
+    secure.fetch.mockImplementation(async () => new Response('{}'))
+    const client = new HarnessClient(
+      'https://harness.example',
+      vi.fn().mockResolvedValueOnce('first').mockResolvedValueOnce('second'),
+      () => secure,
+    )
+    await client.session()
+    await client.session()
+    expect(
+      secure.fetch.mock.calls.map((call) =>
+        new Headers(call[1].headers).get('Authorization'),
+      ),
+    ).toEqual(['Bearer first', 'Bearer second'])
+  })
+  it('never downgrades rejected authentication to anonymous', async () => {
     const secure = transport()
     secure.fetch.mockResolvedValueOnce(new Response('{}', { status: 401 }))
     const client = new HarnessClient(
