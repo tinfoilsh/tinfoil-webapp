@@ -674,6 +674,94 @@ describe('moving a chat from this device to the cloud', () => {
     })
   })
 
+  describe('deleted during the move', () => {
+    let finishImport: () => void
+    // What the harness did, in order: the import it stored and the
+    // deletions it received.
+    let served: string[]
+    async function startMove() {
+      signInWithCloudSync()
+      await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
+      const importing = new Promise<void>((resolve) => {
+        finishImport = resolve
+      })
+      served = []
+      client.post.mockImplementation(async (path: string) => {
+        if (path === '/v1/threads/list')
+          return { threads: [], nextCursor: null }
+        if (path === '/v1/threads/import') {
+          await importing
+          served.push(path)
+          return imported
+        }
+        if (
+          path === '/v1/threads/delete' ||
+          path === '/v1/threads/delete-all'
+        ) {
+          served.push(path)
+          return {}
+        }
+        throw new Error(`Unexpected ${path}`)
+      })
+      const hook = await renderThreads([])
+      await waitFor(() =>
+        expect(hook.result.current.chats.map((chat) => chat.id)).toEqual([
+          CHAT_ID,
+        ]),
+      )
+      let moving: Promise<unknown> | undefined
+      act(() => {
+        moving = hook.result.current.moveToCloud(CHAT_ID).catch(() => {})
+      })
+      await waitFor(() =>
+        expect(transfers().map(([path]) => path)).toEqual([
+          '/v1/threads/import',
+        ]),
+      )
+      return { result: hook.result, moved: () => moving }
+    }
+
+    // A deletion the harness received before the import would leave the
+    // imported chat in the cloud.
+    it('deletes the chat where the move left it', async () => {
+      const { result, moved } = await startMove()
+      let removing: Promise<void> | undefined
+      act(() => {
+        removing = result.current.remove(CHAT_ID)
+      })
+      await act(async () => {
+        finishImport()
+        await moved()
+        await removing
+      })
+
+      expect(served).toEqual(['/v1/threads/import', '/v1/threads/delete'])
+      expect(transfers()[1]).toEqual([
+        '/v1/threads/delete',
+        { key: KEY, id: CHAT_ID },
+      ])
+      expect(await stored(CHAT_ID)).toBeNull()
+      expect(result.current.chats).toEqual([])
+    })
+
+    it('deletes every chat once the move has ended', async () => {
+      const { result, moved } = await startMove()
+      let removing: Promise<unknown> | undefined
+      act(() => {
+        removing = result.current.removeAll()
+      })
+      await act(async () => {
+        finishImport()
+        await moved()
+        await removing
+      })
+
+      expect(served).toEqual(['/v1/threads/import', '/v1/threads/delete-all'])
+      expect(await stored(CHAT_ID)).toBeNull()
+      expect(result.current.chats).toEqual([])
+    })
+  })
+
   it('puts the device copy back under the same id after a move is undone', async () => {
     signInWithCloudSync()
     await localThreadStore('device').update(CHAT_ID, () => deviceCopy)

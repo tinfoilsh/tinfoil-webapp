@@ -197,10 +197,11 @@ export function useThread(
   const [, setLocalRunsChanged] = useState(0)
   const generation = useRef(0)
   const starting = useRef(false)
-  // Chats moving between the cloud and this device. A change made to a chat
-  // during its move would stay with the copy the move deletes, so the chat
-  // takes no turns or edits until the move ends.
-  const moving = useRef(new Set<string>())
+  // Chats moving between the cloud and this device, and their moves. A change
+  // made to a chat during its move would stay with the copy the move deletes,
+  // so the chat takes no turns or edits until the move ends, and is deleted
+  // only once it has.
+  const moving = useRef(new Map<string, Promise<unknown>>())
   const pending = useRef<{ input: Turn; run?: LocalRun } | null>(null)
   const uploads = useRef(new Map<string, LocalAttachment>())
   const images = useRef(
@@ -850,7 +851,10 @@ export function useThread(
       }))
   }
   async function remove(threadId: string) {
-    if (isLocalThread(threadId)) {
+    // A chat deleted during its move is deleted where the move left it.
+    const move = moving.current.get(threadId)
+    if (move) await move.catch(() => {})
+    if (move ? localIds.current.has(threadId) : isLocalThread(threadId)) {
       const runId = localRuns.current.get(threadId)?.runId
       if (runId)
         void api
@@ -912,16 +916,20 @@ export function useThread(
   // A chat takes no changes until its move has ended, the open chat's
   // reopening included.
   async function whileMoving<T>(threadId: string, move: () => Promise<T>) {
-    moving.current.add(threadId)
+    const moved = move()
+    moving.current.set(threadId, moved)
     try {
-      return await move()
+      return await moved
     } finally {
-      moving.current.delete(threadId)
+      if (moving.current.get(threadId) === moved)
+        moving.current.delete(threadId)
     }
   }
   // Deletes every chat the user can see here: the harness's stored chats
   // with cloud sync, and the chats kept on this device.
   async function removeAll() {
+    // A move that ended after the deletion would put its chat back.
+    await Promise.allSettled(moving.current.values())
     let cloudDeletionCompleted = false
     if (cloudRef.current) {
       await api.post('/v1/threads/delete-all')
