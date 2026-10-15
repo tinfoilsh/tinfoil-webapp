@@ -19,6 +19,11 @@ export interface ChatState {
   error?: HarnessErrorBody
   // The run that ended with RUN_ERROR. It is run again rather than rejoined.
   failedRun?: string
+  // A run continuing a reply streams into it, as RUN_STARTED names it.
+  continued?: string
+  // The leading blocks of a continued reply that new text starts after: as
+  // in the harness, only a trailing text block takes the continuation.
+  sealed?: Record<string, number>
   cursors: Record<string, number>
 }
 
@@ -188,6 +193,12 @@ export function reduceEvent(
     value.timeline ??= []
     return value
   }
+  const seal = (id: string) => {
+    const blocks = next.messages.find((m) => m.id === id)?.timeline ?? []
+    next.sealed = {
+      [id]: blocks.length - (blocks.at(-1)?.type === 'content' ? 1 : 0),
+    }
+  }
   const call = (id: string | undefined): TimelineBlock | undefined =>
     next.messages
       .flatMap((m) => m.timeline ?? [])
@@ -198,6 +209,11 @@ export function reduceEvent(
       next.status = 'streaming'
       delete next.error
       delete next.failedRun
+      delete next.sealed
+      if (event.messageId) {
+        next.continued = event.messageId
+        seal(event.messageId)
+      } else delete next.continued
       break
     case 'STATE_SNAPSHOT':
       if (event.snapshot) next.snapshot = event.snapshot
@@ -216,6 +232,8 @@ export function reduceEvent(
     case 'MESSAGES_SNAPSHOT':
       next.messages = event.messages ?? []
       next.hasOlder = event.hasOlder ?? false
+      // The window holds the continued reply as the harness stored it.
+      if (next.continued) seal(next.continued)
       break
     case 'TEXT_MESSAGE_CHUNK':
     case 'REASONING_MESSAGE_CHUNK': {
@@ -228,7 +246,7 @@ export function reduceEvent(
         blocks = m.timeline!
       const type = thinking ? 'thinking' : 'content'
       let block = blocks.at(-1)
-      if (block?.type !== type) {
+      if (block?.type !== type || blocks.length <= (next.sealed?.[id] ?? 0)) {
         block = { id: `${id}_${type}_${blocks.length}`, type, content: '' }
         blocks.push(block)
       }

@@ -5,7 +5,7 @@ import {
   reduceEvent,
 } from '@/services/harness/reducer'
 import { HarnessError, readEvents } from '@/services/harness/sse'
-import type { Frame } from '@/services/harness/types'
+import type { Frame, Message, TimelineBlock } from '@/services/harness/types'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
@@ -232,6 +232,116 @@ describe('harness reducer', () => {
     expect(() =>
       applyPatch({}, [{ op: 'add', path: '/__proto__/polluted', value: true }]),
     ).toThrow(HarnessError)
+  })
+})
+
+describe('continuing a reply', () => {
+  const user: Message = {
+    id: 'u1',
+    role: 'user',
+    createdAt: 't0',
+    content: 'Tell me a story',
+  }
+  function reply(...timeline: TimelineBlock[]): Message {
+    return { id: 'a1', role: 'assistant', createdAt: 't1', timeline }
+  }
+  function run(window: Message[], ...events: Frame['event'][]) {
+    let state = initialChat()
+    for (const [id, event] of [
+      { type: 'RUN_STARTED', threadId: 't', runId: 'run-2', messageId: 'a1' },
+      { type: 'MESSAGES_SNAPSHOT', messages: window, hasOlder: false },
+      ...events,
+      { type: 'RUN_FINISHED', threadId: 't', runId: 'run-2' },
+    ].entries())
+      state = reduceEvent(state, { id, event: event as Frame['event'] })
+    return state
+  }
+
+  it('extends the trailing text of the reply RUN_STARTED names', () => {
+    const state = run(
+      [
+        user,
+        reply(
+          { id: 'r', type: 'thinking', content: 'plan' },
+          { id: 'c', type: 'content', content: 'Once upon' },
+        ),
+      ],
+      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: ' a time' },
+    )
+    expect(state.messages).toHaveLength(2)
+    expect(state.messages[1].timeline).toEqual([
+      { id: 'r', type: 'thinking', content: 'plan' },
+      { id: 'c', type: 'content', content: 'Once upon a time' },
+    ])
+    expect(state.messages[1].isError).toBe(false)
+  })
+
+  it('starts new blocks after a reply that ended in reasoning or a tool call', () => {
+    const state = run(
+      [
+        user,
+        reply(
+          { id: 'r', type: 'thinking', content: 'plan' },
+          {
+            id: 'call',
+            type: 'tool_call',
+            toolCallId: 'call',
+            name: 'render_chart',
+            arguments: '{}',
+            complete: true,
+          },
+        ),
+      ],
+      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'Here it is.' },
+    )
+    expect(state.messages[1].timeline?.map((block) => block.type)).toEqual([
+      'thinking',
+      'tool_call',
+      'content',
+    ])
+    expect(state.messages[1].timeline?.[2]).toMatchObject({
+      id: 'a1_content_2',
+      content: 'Here it is.',
+    })
+  })
+
+  it('keeps finished reasoning apart from new reasoning', () => {
+    const state = run(
+      [user, reply({ id: 'r', type: 'thinking', content: 'first' })],
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'a1-reasoning',
+        delta: 'second',
+      },
+    )
+    expect(state.messages[1].timeline).toEqual([
+      { id: 'r', type: 'thinking', content: 'first' },
+      { id: 'a1_thinking_1', type: 'thinking', content: 'second' },
+    ])
+  })
+
+  it('appends to the last block again once a later run starts', () => {
+    let state = run(
+      [user, reply({ id: 'r', type: 'thinking', content: 'first' })],
+      { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: 'Done.' },
+    )
+    for (const [id, event] of [
+      { type: 'RUN_STARTED', threadId: 't', runId: 'run-3' },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'a2-reasoning',
+        delta: 'a',
+      },
+      {
+        type: 'REASONING_MESSAGE_CHUNK',
+        messageId: 'a2-reasoning',
+        delta: 'b',
+      },
+    ].entries())
+      state = reduceEvent(state, { id, event: event as Frame['event'] })
+    expect(state.messages.at(-1)?.timeline).toEqual([
+      { id: 'a2_thinking_0', type: 'thinking', content: 'ab' },
+    ])
   })
 })
 
