@@ -11,6 +11,8 @@ import {
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { resetHarnessAPI } from '@/services/harness/runtime'
+import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
+import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
   completeSignoutStep,
@@ -64,6 +66,7 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   // Reset renderer registry to clear any cached renderers
   reportStep(SIGNOUT_STEPS.RESET_CACHES)
   resetRendererRegistry()
+  deletedChatsTracker.clear()
 
   logInfo('Cleared in-memory caches', {
     component: context,
@@ -101,10 +104,11 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   }
   completeStep(SIGNOUT_STEPS.CLEAR_STORAGE)
 
-  // Clear IndexedDB
+  // Clear IndexedDB, which holds the chats kept on this device. Other tabs
+  // reset too, and this tab's store refuses writes until it reloads.
   reportStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
   try {
-    await deleteLegacyDatabase()
+    await indexedDBStorage.resetForAccountChange()
   } catch (error) {
     logError('Failed to clear IndexedDB', error, {
       component: context,
@@ -220,17 +224,7 @@ export function hasPasskeyBackup(): boolean {
 }
 
 export async function retryFailedStorageCleanup(): Promise<void> {
-  await deleteLegacyDatabase()
+  await indexedDBStorage.resetForAccountChange(/* notifyOtherTabs */ false)
+  deletedChatsTracker.clear()
   sessionStorage.removeItem(AUTH_ACCOUNT_RESET_FAILED)
-}
-
-async function deleteLegacyDatabase(): Promise<void> {
-  if (typeof indexedDB === 'undefined') return
-  await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.deleteDatabase('tinfoil-chat')
-    request.onsuccess = () => resolve()
-    request.onerror = () => reject(request.error)
-    request.onblocked = () =>
-      reject(new Error('Close other Tinfoil tabs before clearing this device.'))
-  })
 }

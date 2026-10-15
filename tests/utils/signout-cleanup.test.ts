@@ -2,6 +2,7 @@ import { resetRendererRegistry } from '@/components/chat/renderers'
 import { PINNED_CHAT_IDS_CHANGED_EVENT } from '@/constants/settings-events'
 import {
   AUTH_ACCOUNT_RESET_FAILED,
+  AUTH_ACCOUNT_RESET_SIGNAL,
   AUTH_ACTIVE_USER_ID,
   SETTINGS_HAS_SEEN_ONBOARDING,
   USER_ENCRYPTION_KEY,
@@ -10,12 +11,17 @@ import {
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
+import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
+import {
+  IndexedDBStorage,
+  indexedDBStorage,
+} from '@/services/storage/indexed-db'
 import {
   performSignoutCleanup,
   performUserSwitchCleanup,
   retryFailedStorageCleanup,
 } from '@/utils/signout-cleanup'
-import { IDBFactory } from 'fake-indexeddb'
+import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/components/chat/renderers', () => ({
@@ -28,37 +34,40 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 
-const LEGACY_DATABASE = 'tinfoil-chat'
 const ACCOUNT_KEY = `key_${'ar'.repeat(32)}`
 
-async function seedLegacyDatabase(): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open(LEGACY_DATABASE, 1)
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore('chats').put({ title: 'Private' }, 'c1')
-    }
-    request.onsuccess = () => {
-      request.result.close()
-      resolve()
-    }
-    request.onerror = () => reject(request.error)
+// Local chats are written through a separate connection, as another page
+// load would; the cleanup clears them through the app's own store.
+async function seedLocalChat(id: string): Promise<void> {
+  await new IndexedDBStorage().saveChat({
+    id,
+    title: 'Private local chat',
+    messages: [
+      {
+        role: 'user',
+        content: 'Only on this device',
+        timestamp: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ],
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    isLocalOnly: true,
   })
 }
 
-async function databaseNames(): Promise<(string | undefined)[]> {
-  return (await indexedDB.databases()).map((database) => database.name)
-}
+const storedChatIds = () => new IndexedDBStorage().getAllChatIds()
 
-function holdDatabaseDeletion() {
-  const request: {
-    error: DOMException | null
-    onsuccess?: () => void
-    onerror?: () => void
-    onblocked?: () => void
-  } = { error: null }
-  const deleteDatabase = vi.fn(() => request)
-  vi.stubGlobal('indexedDB', { deleteDatabase })
-  return { deleteDatabase, request }
+function holdStorageReset() {
+  let finish!: () => void
+  let fail!: (error: unknown) => void
+  const held = new Promise<void>((resolve, reject) => {
+    finish = resolve
+    fail = reject
+  })
+  const reset = vi
+    .spyOn(indexedDBStorage, 'resetForAccountChange')
+    .mockReturnValue(held)
+  return { reset, finish, fail }
 }
 
 async function withPinnedChatChanges(
@@ -84,6 +93,8 @@ async function withPinnedChatChanges(
 beforeEach(() => {
   vi.mocked(resetRendererRegistry).mockReset()
   vi.stubGlobal('indexedDB', new IDBFactory())
+  vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange)
+  deletedChatsTracker.clear()
   authTokenManager.reset()
   encryptionService.clearKey()
   sessionStorage.clear()
@@ -113,12 +124,13 @@ describe('performSignoutCleanup', () => {
     },
   )
 
-  it('clears the key, harness, caches, and local database of the signed-out account', async () => {
+  it('clears the key, harness, caches, and local chats of the signed-out account', async () => {
     const api = harnessAPI()
     publish({ profile: { nickname: 'Private' } })
     await encryptionService.setKey(ACCOUNT_KEY)
-    await seedLegacyDatabase()
-    expect(await databaseNames()).toEqual([LEGACY_DATABASE])
+    await seedLocalChat('local-1')
+    deletedChatsTracker.markAsDeleted('deleted-1')
+    expect(await storedChatIds()).toEqual(['local-1'])
 
     await performSignoutCleanup()
 
@@ -127,7 +139,20 @@ describe('performSignoutCleanup', () => {
     expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
     expect(() => encryptionService.getKeyBytesOrThrow()).toThrow()
     expect(resetRendererRegistry).toHaveBeenCalledOnce()
-    expect(await databaseNames()).toEqual([])
+    expect(deletedChatsTracker.getDeletedIds()).toEqual([])
+    expect(await storedChatIds()).toEqual([])
+  })
+
+  it('tells other tabs to clear their local data', async () => {
+    const setItem = vi.spyOn(localStorage, 'setItem')
+
+    await performSignoutCleanup()
+
+    expect(setItem).toHaveBeenCalledWith(
+      AUTH_ACCOUNT_RESET_SIGNAL,
+      expect.any(String),
+    )
+    expect(localStorage.getItem(AUTH_ACCOUNT_RESET_SIGNAL)).toBeNull()
   })
 
   it('keeps the encryption key when preserveEncryptionKey is set', async () => {
@@ -172,18 +197,15 @@ describe('performSignoutCleanup', () => {
   })
 
   it('keeps the active-user marker until browser data is cleared', async () => {
-    const deletion = holdDatabaseDeletion()
+    const storage = holdStorageReset()
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
 
     const cleanup = performSignoutCleanup()
     try {
-      expect(deletion.deleteDatabase).toHaveBeenCalledExactlyOnceWith(
-        LEGACY_DATABASE,
-      )
-      await Promise.resolve()
+      await vi.waitFor(() => expect(storage.reset).toHaveBeenCalledOnce())
       expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
     } finally {
-      deletion.request.onsuccess?.()
+      storage.finish()
       await cleanup
     }
 
@@ -191,15 +213,15 @@ describe('performSignoutCleanup', () => {
   })
 
   it('keeps the active-user marker when browser data cannot be cleared', async () => {
-    const deletion = holdDatabaseDeletion()
-    const failure = new DOMException('denied', 'UnknownError')
+    const storage = holdStorageReset()
+    const failure = new Error('Failed to reset IndexedDB for account change')
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
 
     await withPinnedChatChanges(
       async () => {
         const cleanup = performSignoutCleanup()
-        deletion.request.error = failure
-        deletion.request.onerror?.()
+        await vi.waitFor(() => expect(storage.reset).toHaveBeenCalledOnce())
+        storage.fail(failure)
         await expect(cleanup).rejects.toBe(failure)
       },
       (handle) => expect(handle).toHaveBeenCalledTimes(1),
@@ -207,34 +229,16 @@ describe('performSignoutCleanup', () => {
 
     expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
   })
-
-  it('refuses to finish while another tab holds the local database open', async () => {
-    await seedLegacyDatabase()
-    const open = indexedDB.open(LEGACY_DATABASE, 1)
-    const connection = await new Promise<IDBDatabase>((resolve, reject) => {
-      open.onsuccess = () => resolve(open.result)
-      open.onerror = () => reject(open.error)
-    })
-    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_123')
-
-    try {
-      await expect(performSignoutCleanup()).rejects.toThrow(
-        'Close other Tinfoil tabs before clearing this device.',
-      )
-      expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
-    } finally {
-      connection.close()
-    }
-  })
 })
 
 describe('performUserSwitchCleanup', () => {
-  it('aborts the old harness and removes account data', async () => {
+  it('aborts the old harness and removes account data, local chats included', async () => {
     const api = harnessAPI()
     publish({ profile: { nickname: 'Private' } })
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
     localStorage.setItem(USER_ENCRYPTION_KEY, 'key_private')
     sessionStorage.setItem('harness-run:alice', 'routing')
+    await seedLocalChat('alice-local')
 
     await performUserSwitchCleanup('bob')
 
@@ -243,6 +247,7 @@ describe('performUserSwitchCleanup', () => {
     expect(localStorage.getItem(USER_ENCRYPTION_KEY)).toBeNull()
     expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('bob')
     expect(sessionStorage.length).toBe(0)
+    expect(await storedChatIds()).toEqual([])
   })
 
   it('revokes the signed-in token getter', async () => {
@@ -267,13 +272,13 @@ describe('performUserSwitchCleanup', () => {
   })
 
   it('surfaces cleanup failures without replacing the marker', async () => {
-    const deletion = holdDatabaseDeletion()
-    const failure = new DOMException('denied', 'UnknownError')
+    const storage = holdStorageReset()
+    const failure = new Error('IndexedDB account reset was aborted')
     localStorage.setItem(AUTH_ACTIVE_USER_ID, 'user_old')
 
     const cleanup = performUserSwitchCleanup('user_new')
-    deletion.request.error = failure
-    deletion.request.onerror?.()
+    await vi.waitFor(() => expect(storage.reset).toHaveBeenCalledOnce())
+    storage.fail(failure)
 
     await expect(cleanup).rejects.toBe(failure)
     expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_old')
@@ -281,24 +286,30 @@ describe('performUserSwitchCleanup', () => {
 })
 
 describe('retryFailedStorageCleanup', () => {
-  it('deletes the local database and clears the retry flag', async () => {
-    await seedLegacyDatabase()
+  it('clears the local chats and the retry flag without signaling other tabs', async () => {
+    await seedLocalChat('stale-local')
     sessionStorage.setItem(AUTH_ACCOUNT_RESET_FAILED, 'true')
+    const setItem = vi.spyOn(localStorage, 'setItem')
 
     await retryFailedStorageCleanup()
 
-    expect(await databaseNames()).toEqual([])
+    expect(await storedChatIds()).toEqual([])
     expect(sessionStorage.getItem(AUTH_ACCOUNT_RESET_FAILED)).toBeNull()
+    expect(setItem).not.toHaveBeenCalledWith(
+      AUTH_ACCOUNT_RESET_SIGNAL,
+      expect.anything(),
+    )
   })
 
-  it('keeps the retry flag when the database cannot be deleted', async () => {
-    const deletion = holdDatabaseDeletion()
-    const failure = new DOMException('denied', 'UnknownError')
+  it('keeps the retry flag when the local chats cannot be cleared', async () => {
+    const storage = holdStorageReset()
+    const failure = new Error(
+      'Timed out resetting IndexedDB for account change',
+    )
     sessionStorage.setItem(AUTH_ACCOUNT_RESET_FAILED, 'true')
 
     const retry = retryFailedStorageCleanup()
-    deletion.request.error = failure
-    deletion.request.onerror?.()
+    storage.fail(failure)
 
     await expect(retry).rejects.toBe(failure)
     expect(sessionStorage.getItem(AUTH_ACCOUNT_RESET_FAILED)).toBe('true')
