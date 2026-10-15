@@ -6,6 +6,7 @@ import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import {
+  TfChat2,
   TfDocumentPlus,
   TfGhost2,
   TfLockLocked,
@@ -36,7 +37,16 @@ import { cn } from '@/components/ui/utils'
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
 
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { getNewChatPath, isPlainPrimaryClick } from '@/utils/navigation'
+import { useCloudSyncSetting } from '@/services/harness/storage-mode'
+import {
+  isCloudSyncEnabled,
+  setCloudSyncEnabled,
+} from '@/utils/cloud-sync-settings'
+import {
+  getChatPath,
+  getNewChatPath,
+  isPlainPrimaryClick,
+} from '@/utils/navigation'
 import dynamic from 'next/dynamic'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
@@ -129,10 +139,7 @@ const OnboardingView = dynamic(
 
 import { displayModels } from '@/config/models'
 import { useHarness } from '@/services/harness/provider'
-import type {
-  Attachment as HarnessAttachment,
-  Turn,
-} from '@/services/harness/types'
+import type { Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { attachmentView } from '@/services/harness/view-model'
 import {
@@ -157,8 +164,19 @@ export function ChatInterface({
   suppressIntroModals = false,
   inputMinHeight = '60px',
 }: ChatInterfaceProps) {
-  const { api, session, profile, keyReady, error: sessionError } = useHarness()
+  const {
+    api,
+    session,
+    profile,
+    keyReady,
+    profileReady,
+    error: sessionError,
+  } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
+  // The harness stores chats only for a signed-in account with cloud sync;
+  // otherwise every chat stays on this device.
+  const cloudSyncSetting = useCloudSyncSetting()
+  const cloudSyncEnabled = !!isSignedIn && cloudSyncSetting
   const { user } = useUser()
   const router = useRouter()
   const {
@@ -180,7 +198,7 @@ export function ChatInterface({
     createProject,
     uploadDocument,
   } = useProject()
-  const { projects } = useProjects({ autoLoad: !!isSignedIn })
+  const { projects } = useProjects({ autoLoad: cloudSyncEnabled })
   const thread = useThread(
     initialChatId,
     activeProject?.id ?? initialProjectId,
@@ -204,9 +222,10 @@ export function ChatInterface({
       currentChat.id === initialChatId
     )
       return
-    const path = currentChat.projectId
-      ? `/project/${currentChat.projectId}/chat/${currentChat.id}`
-      : `/chat/${currentChat.id}`
+    const path = getChatPath(currentChat.id, {
+      isLocalOnly: currentChat.isLocalOnly,
+      projectId: currentChat.projectId,
+    })
     if (window.location.pathname !== path)
       void router
         .replace(path, undefined, { shallow: true })
@@ -214,6 +233,7 @@ export function ChatInterface({
   }, [
     currentChat.id,
     currentChat.isTemporary,
+    currentChat.isLocalOnly,
     currentChat.projectId,
     initialChatId,
     router,
@@ -248,7 +268,6 @@ export function ChatInterface({
   // while auth loads keeps the toolbar from reflowing once Clerk resolves.
   const showPremiumComposerControls = chat_subscription_active
   const encryptionKey = encryptionService.getKey()
-  const cloudSyncSettingEnabled = !!isSignedIn
   const [input, setInput] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const [expandedLabel, setExpandedLabel] = useState<
@@ -270,7 +289,7 @@ export function ChatInterface({
     isAuthLoaded: isAuthLoaded && !!session,
     isSignedIn,
     userId: user?.id,
-    hasCompletedOnboarding: !keyReady || profile.hasSeenOnboarding === true,
+    hasCompletedOnboarding: !profileReady || profile.hasSeenOnboarding === true,
     suppressIntroModals,
   })
   const [logoAnimDone, setLogoAnimDone] = useState(false)
@@ -339,12 +358,16 @@ export function ChatInterface({
       ? `${currentChat.title} · Tinfoil`
       : 'Tinfoil Private Chat'
   const handleInputFocusWithRateLimitCheck = handleInputFocus
+  const canChat = profileReady && (thread.runsLocally || keyReady)
   const reloadChats = () => thread.refresh()
-  const createNewChat = (_temporary?: boolean, _fromUserAction?: boolean) => {
-    thread.newChat()
+  const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
+    thread.newChat({ local: isLocalOnly })
     setInput('')
     setQuote(null)
     setProcessedDocuments([])
+    // The sidebar switches a blank chat to its tab's storage without moving
+    // the page, which may still be opening a chat from its URL.
+    if (!fromUserAction) return
     void router.push(
       activeProject ? `/project/${activeProject.id}` : '/',
       undefined,
@@ -354,13 +377,16 @@ export function ChatInterface({
   const handleChatSelect = (id: string) => {
     setProcessedDocuments([])
     setQuote(null)
+    const isLocalOnly =
+      !cloudSyncEnabled || !!chats.find((chat) => chat.id === id)?.isLocalOnly
     void thread
-      .open(id)
+      .open(id, { local: isLocalOnly })
       .then(() =>
         router.push(
-          activeProject
-            ? `/project/${activeProject.id}/chat/${id}`
-            : `/chat/${id}`,
+          getChatPath(id, {
+            isLocalOnly,
+            projectId: isLocalOnly ? undefined : activeProject?.id,
+          }),
           undefined,
           { shallow: true },
         ),
@@ -458,6 +484,11 @@ export function ChatInterface({
   }
   const retryLastMessage = () => {
     void thread.reconnect().catch(thread.report)
+  }
+  const forkMessage = (index: number) => {
+    setProcessedDocuments([])
+    setQuote(null)
+    void thread.fork(index).catch(thread.report)
   }
   const cancelGenerationAndResumeQueue = () => {
     void thread.cancel().catch(thread.report)
@@ -586,14 +617,7 @@ export function ChatInterface({
       { id: localId, name: file.name, time: new Date(), isUploading: true },
     ])
     try {
-      const attachment = await api.upload<HarnessAttachment>(
-        '/v1/attachments/upload',
-        file,
-        {
-          ephemeral: String(isTemporaryMode),
-          ...(currentChat.id ? { threadId: currentChat.id } : {}),
-        },
-      )
+      const attachment = await thread.upload(file)
       setProcessedDocuments((previous) =>
         previous.map((d) =>
           d.id === localId
@@ -644,10 +668,6 @@ export function ChatInterface({
     if (!initialProjectId || !keyReady) return
     void enterProjectMode(initialProjectId).catch(thread.report)
   }, [initialProjectId, keyReady, enterProjectMode, thread.report])
-  useEffect(() => {
-    if (!suppressIntroModals && session && isSignedIn && !keyReady)
-      setShowCloudSyncSetupModal(true)
-  }, [suppressIntroModals, session, isSignedIn, keyReady])
   const {
     passkeyActive,
     passkeyRecoveryNeeded,
@@ -678,6 +698,28 @@ export function ChatInterface({
       [api, thread.report],
     ),
   })
+  useEffect(() => {
+    if (suppressIntroModals) return
+    // Passkey recovery opens because remote chats need unlocking, and a
+    // first passkey setup starts here so the cloud sync intro shows first.
+    // Without cloud sync every chat stays on this device.
+    if (passkeyRecoveryNeeded || passkeyFirstTimePromptAvailable)
+      setShowCloudSyncSetupModal(true)
+  }, [
+    passkeyFirstTimePromptAvailable,
+    passkeyRecoveryNeeded,
+    suppressIntroModals,
+  ])
+  // A chat the harness stores cannot stay open once cloud sync is off.
+  const previousCloudSync = useRef(cloudSyncEnabled)
+  useEffect(() => {
+    if (previousCloudSync.current === cloudSyncEnabled) return
+    previousCloudSync.current = cloudSyncEnabled
+    if (!cloudSyncEnabled && currentChat.id && !currentChat.isLocalOnly)
+      createNewChat(true)
+    // Only a change of the storage mode moves the view.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cloudSyncEnabled])
   useEffect(() => {
     if (!router.isReady || router.query.upgrade !== 'projects') return
     setIsSubscribePromptOpen(true)
@@ -947,6 +989,35 @@ export function ChatInterface({
     )
   }
 
+  if (isLocalChatUrl && thread.notFound) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center bg-surface-chat-background px-4 font-aeonik">
+        <div className="max-w-md text-center">
+          <div className="mb-6 flex justify-center">
+            <div className="rounded-full bg-surface-chat p-4">
+              <TfChat2
+                className="h-8 w-8 !text-content-secondary"
+                aria-hidden="true"
+              />
+            </div>
+          </div>
+          <h2 className="mb-3 text-xl font-semibold text-content-primary">
+            Chat not found
+          </h2>
+          <p className="mb-6 text-content-secondary">
+            This local chat may have been deleted from your browser.
+          </p>
+          <Link
+            href="/"
+            className="rounded-lg bg-brand-accent-dark px-6 py-2.5 text-white transition-colors hover:bg-brand-accent-dark/90"
+          >
+            Start new chat
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   const showChatHeader = currentChat.messages.length > 0 && !isChatHydrating
 
   const hideTopControlsOnMobile =
@@ -1060,18 +1131,22 @@ export function ChatInterface({
           )
         })()}
 
-      {/* Share button - only show when there are messages and chat is not temporary */}
-      {!currentChat.isTemporary && currentChat.messages.length > 0 && (
-        <button
-          type="button"
-          onClick={handleOpenShareModal}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
-          aria-label="Share"
-        >
-          <TfShare className="h-4 w-4" aria-hidden="true" />
-          <span className="hidden text-sm @3xl/conversation:inline">Share</span>
-        </button>
-      )}
+      {/* Share button - only for chats the harness stores */}
+      {!currentChat.isTemporary &&
+        !currentChat.isLocalOnly &&
+        currentChat.messages.length > 0 && (
+          <button
+            type="button"
+            onClick={handleOpenShareModal}
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
+            aria-label="Share"
+          >
+            <TfShare className="h-4 w-4" aria-hidden="true" />
+            <span className="hidden text-sm @3xl/conversation:inline">
+              Share
+            </span>
+          </button>
+        )}
 
       {/* Verifier toggle button */}
       <div className="group relative">
@@ -1197,7 +1272,7 @@ export function ChatInterface({
         isReady={
           !isLoadingConfig &&
           isClient &&
-          keyReady &&
+          canChat &&
           !isChatHydrating &&
           hasValidatedModel
         }
@@ -1208,7 +1283,9 @@ export function ChatInterface({
 
       {/* URL Hash Settings Handler */}
       <UrlHashSettingsHandler
-        isReady={!isLoadingConfig && isClient && keyReady && hasValidatedModel}
+        isReady={
+          !isLoadingConfig && isClient && profileReady && hasValidatedModel
+        }
         onSettingsTabReady={(tab) => {
           setSettingsInitialTab(tab)
           setHasMountedSettingsModal(true)
@@ -1319,7 +1396,7 @@ export function ChatInterface({
                   onToggleFavorite={handleToggleFavorite}
                   onRemoveFavorite={unpinChat}
                   onOpenFavorite={handleOpenFavorite}
-                  cloudSyncEnabled={cloudSyncSettingEnabled}
+                  cloudSyncEnabled={cloudSyncEnabled}
                   windowWidth={windowWidth}
                 />
               ) : (
@@ -1348,7 +1425,7 @@ export function ChatInterface({
                   onToggleFavorite={handleToggleFavorite}
                   onRemoveFavorite={unpinChat}
                   onOpenFavorite={handleOpenFavorite}
-                  cloudSyncEnabled={cloudSyncSettingEnabled}
+                  cloudSyncEnabled={cloudSyncEnabled}
                   windowWidth={windowWidth}
                 />
               )}
@@ -1478,7 +1555,7 @@ export function ChatInterface({
           onClose={() => setIsSearchModalOpen(false)}
           chats={chats}
           projects={projects}
-          searchEnabled={Boolean(isSignedIn && keyReady)}
+          searchEnabled={cloudSyncEnabled && keyReady}
           isPremium={isPremium}
           onOpenChat={handleOpenFavorite}
           onOpenProject={(project) =>
@@ -1764,7 +1841,15 @@ export function ChatInterface({
                       handleLabelClick={handleLabelClick}
                       onEditMessage={editMessage}
                       onRegenerateMessage={regenerateMessage}
+                      onForkMessage={
+                        currentChat.isLocalOnly && !isStreaming
+                          ? forkMessage
+                          : undefined
+                      }
                       onRetryToolCall={retryToolCall}
+                      loadImage={
+                        thread.runsLocally ? thread.loadImage : undefined
+                      }
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
                       onWebSearchToggle={
@@ -1980,6 +2065,9 @@ export function ChatInterface({
             setShowCloudSyncSetupModal(false)
             if (passkeyFirstTimePromptAvailable) {
               dismissFirstTimePasskeyPrompt()
+            }
+            if (!encryptionService.getKey() && isCloudSyncEnabled()) {
+              setCloudSyncEnabled(false)
             }
           }}
           onSetupComplete={async (key: string, mode) => {

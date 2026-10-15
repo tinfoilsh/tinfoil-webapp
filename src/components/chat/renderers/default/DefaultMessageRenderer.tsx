@@ -12,6 +12,7 @@ import {
   TfChevronDown,
   TfClock,
   TfCopy,
+  TfFork,
   TfLockLocked,
   TfRefresh1,
   TfWriting,
@@ -68,6 +69,7 @@ const DefaultMessageComponent = ({
   hideActions,
   onEditMessage,
   onRegenerateMessage,
+  onForkMessage,
   onRetryToolCall,
 }: MessageRenderProps) => {
   const isUser = message.role === 'user'
@@ -758,6 +760,23 @@ const DefaultMessageComponent = ({
                         </span>
                       </div>
                     )}
+                    {onForkMessage && (
+                      <div className="group/fork relative">
+                        <button
+                          onClick={() => onForkMessage(messageIndex)}
+                          aria-label="Fork conversation from here"
+                          className="rounded-lg p-2 text-content-secondary transition-colors hover:bg-surface-chat-background hover:text-content-primary"
+                        >
+                          <TfFork className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100"
+                        >
+                          Fork from here
+                        </span>
+                      </div>
+                    )}
                     {message.content && (
                       <div className="group/copy relative">
                         <button
@@ -833,6 +852,23 @@ const DefaultMessageComponent = ({
                       className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/regen:opacity-100"
                     >
                       Regenerate
+                    </span>
+                  </div>
+                )}
+                {onForkMessage && (
+                  <div className="group/fork relative">
+                    <button
+                      onClick={() => onForkMessage(messageIndex)}
+                      aria-label="Fork conversation from here"
+                      className="flex items-center gap-1.5 rounded px-2 py-2 text-xs font-medium text-content-secondary transition-all hover:bg-surface-chat-background hover:text-content-primary"
+                    >
+                      <TfFork className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded border border-border-subtle bg-surface-chat-background px-2 py-1 text-xs text-content-primary opacity-0 shadow-sm transition-opacity group-hover/fork:opacity-100"
+                    >
+                      Fork from here
                     </span>
                   </div>
                 )}

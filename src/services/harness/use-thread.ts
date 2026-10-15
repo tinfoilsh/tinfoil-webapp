@@ -887,6 +887,7 @@ export function useThread(
     temporary,
     setTemporary,
     local: isLocalChat,
+    runsLocally: local,
     loading,
     notFound,
     error: error || state.error?.message || '',

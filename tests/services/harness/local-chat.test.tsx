@@ -710,6 +710,120 @@ describe('local chats of a signed-in account without cloud sync', () => {
   })
 })
 
+describe('stored local chat changes', () => {
+  async function openSeeded() {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => ({
+      ...seededThread(),
+      messages: seededThread().messages.map((message) =>
+        message.id === 'u2'
+          ? {
+              ...message,
+              attachments: [
+                {
+                  id: 'att_photo',
+                  type: 'image' as const,
+                  fileName: 'photo.png',
+                  mimeType: 'image/png',
+                  thumbnailBase64: 'dGh1bWI=',
+                  base64: 'cGhvdG8=',
+                },
+              ],
+            }
+          : message,
+      ),
+    }))
+    const hook = renderHook(() => useThread(SEEDED_ID, null, { local: true }))
+    await waitFor(() =>
+      expect(hook.result.current.chat.messages).toHaveLength(4),
+    )
+    return hook
+  }
+
+  it('renames a chat on the device as a manual title', async () => {
+    const { result } = await openSeeded()
+
+    await act(() => result.current.update(SEEDED_ID, { title: 'Front doors' }))
+
+    expect(await stored(SEEDED_ID)).toMatchObject({
+      title: 'Front doors',
+      titleState: 'manual',
+      messages: seededThread().messages.map((message) =>
+        expect.objectContaining({ id: message.id }),
+      ),
+    })
+    expect(result.current.chat.title).toBe('Front doors')
+    expect(client.post).not.toHaveBeenCalled()
+  })
+
+  it('forks a chat on the device up to the chosen message', async () => {
+    const { result } = await openSeeded()
+
+    let forkId: string | null = null
+    await act(async () => {
+      forkId = await result.current.fork(2)
+    })
+
+    expect(forkId).toMatch(REVERSE_ID)
+    const fork = await stored(forkId!)
+    expect(fork).toMatchObject({
+      id: forkId,
+      title: 'Doors (fork)',
+      titleState: 'manual',
+      model: 'test-model',
+    })
+    expect(fork?.codeExecutionAccessToken).toMatch(/^[0-9a-f]{64}$/)
+    expect(fork?.codeExecutionAccessToken).not.toBe('c'.repeat(64))
+    expect(fork?.messages.map((message) => message.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+    ])
+    const [copy] = fork!.messages[2].attachments!
+    expect(copy).toEqual({
+      id: expect.not.stringMatching(/^att_photo$/),
+      type: 'image',
+      fileName: 'photo.png',
+      mimeType: 'image/png',
+      thumbnailBase64: 'dGh1bWI=',
+      base64: 'cGhvdG8=',
+    })
+    expect((await stored(SEEDED_ID))?.messages).toHaveLength(4)
+    expect(result.current.chat.id).toBe(forkId)
+    expect(result.current.chat.isLocalOnly).toBe(true)
+  })
+
+  it('deletes a chat from the device', async () => {
+    const { result } = await openSeeded()
+
+    await act(() => result.current.remove(SEEDED_ID))
+
+    expect(await stored(SEEDED_ID)).toBeNull()
+    expect(result.current.chat.id).toBe('')
+    expect(client.post).not.toHaveBeenCalled()
+  })
+
+  it('asks about a local chat with its transcript instead of a key', async () => {
+    const { result } = await openSeeded()
+
+    const context = await result.current.askContext()
+
+    expect(context).toEqual({
+      threadId: SEEDED_ID,
+      local: true,
+      thread: expect.objectContaining({ title: 'Doors' }),
+      profile: { nickname: 'Sam', traits: ['direct'] },
+    })
+    expect(context.thread?.messages.map((message) => message.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+    ])
+    expect(context.thread?.messages[2].attachments?.[0].base64).toBe('cGhvdG8=')
+  })
+})
+
 describe('signed-out chats', () => {
   it('stay in session storage and never open IndexedDB', async () => {
     const shared = globalThis.indexedDB

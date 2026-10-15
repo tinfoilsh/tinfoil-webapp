@@ -23,7 +23,7 @@ import { MessageRendererHost } from './message-renderer-host'
 import { PrintableChat } from './PrintableChat'
 import type { PromptPreset } from './prompts/types'
 import { StreamingTracerDot } from './renderers/components/StreamingTracerDot'
-import type { LabelType, Message } from './types'
+import type { Attachment, LabelType, Message } from './types'
 import { WelcomeScreen } from './WelcomeScreen'
 
 type ChatMessagesProps = {
@@ -55,10 +55,14 @@ type ChatMessagesProps = {
   ) => void
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
+  onForkMessage?: (messageIndex: number) => void
   onRetryToolCall?: (
     messageIndex: number,
     toolCallId: string,
   ) => Promise<boolean>
+  // Reads a full-size image for the gallery. Defaults to the harness, which
+  // holds the images of the chats it stores.
+  loadImage?: (attachment: Attachment, signal: AbortSignal) => Promise<Blob>
   showScrollButton?: boolean
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
@@ -106,6 +110,7 @@ const ChatMessage = memo(
     hideActions = false,
     onEditMessage,
     onRegenerateMessage,
+    onForkMessage,
     onRetryToolCall,
   }: {
     message: Message
@@ -118,6 +123,7 @@ const ChatMessage = memo(
     hideActions?: boolean
     onEditMessage?: (messageIndex: number, newContent: string) => void
     onRegenerateMessage?: (messageIndex: number) => void
+    onForkMessage?: (messageIndex: number) => void
     onRetryToolCall?: (
       messageIndex: number,
       toolCallId: string,
@@ -135,6 +141,7 @@ const ChatMessage = memo(
         hideActions={hideActions}
         onEditMessage={onEditMessage}
         onRegenerateMessage={onRegenerateMessage}
+        onForkMessage={onForkMessage}
         onRetryToolCall={onRetryToolCall}
       />
     )
@@ -155,6 +162,7 @@ const ChatMessage = memo(
       prevProps.hideActions === nextProps.hideActions &&
       prevProps.onEditMessage === nextProps.onEditMessage &&
       prevProps.onRegenerateMessage === nextProps.onRegenerateMessage &&
+      prevProps.onForkMessage === nextProps.onForkMessage &&
       prevProps.onRetryToolCall === nextProps.onRetryToolCall
     )
   },
@@ -235,7 +243,9 @@ export function ChatMessages({
   handleLabelClick,
   onEditMessage,
   onRegenerateMessage,
+  onForkMessage,
   onRetryToolCall,
+  loadImage,
   showScrollButton,
   webSearchEnabled,
   onWebSearchToggle,
@@ -417,8 +427,10 @@ export function ChatMessages({
     <ImageGalleryProvider
       key={chatId}
       messages={messages}
-      loadImage={(attachment, signal) =>
-        api.download('/v1/attachments/get', { id: attachment.id }, signal)
+      loadImage={
+        loadImage ??
+        ((attachment, signal) =>
+          api.download('/v1/attachments/get', { id: attachment.id }, signal))
       }
     >
       {/* Not a live region: ChatAnnouncer reads each finished response once.
@@ -446,6 +458,7 @@ export function ChatMessages({
             )}
             onEditMessage={onEditMessage}
             onRegenerateMessage={onRegenerateMessage}
+            onForkMessage={onForkMessage}
             onRetryToolCall={onRetryToolCall}
           />
         ))}
