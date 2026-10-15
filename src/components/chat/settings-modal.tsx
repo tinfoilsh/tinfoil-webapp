@@ -79,6 +79,7 @@ import {
   TfPersonKey,
   TfPlus,
   TfShieldCheck,
+  TfShieldWithExclamation,
   TfSignIn,
   TfStack,
   TfSunLightMode,
@@ -96,10 +97,12 @@ import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { MfaSettingsCard } from './mfa-settings-card'
 import { NativeBackupExport } from './native-backup-export'
 import { NativeBackupRestore } from './native-backup-restore'
+import { SafeguardsSettings } from './safeguards-settings'
 import {
   canDeleteAllProjects,
   canTransferProjectData,
 } from './settings-project-policy'
+import type { Chat } from './types'
 
 const CHARS = '0123456789ABCDEF!@#$%^&*()_+<>?/'
 
@@ -473,6 +476,8 @@ type SettingsModalProps = {
   onAddPasskeyToThisDevice?: () => Promise<boolean>
   onRefreshBundleState?: () => Promise<void>
   initialTab?: SettingsTab
+  // The listed chats, so a flagged chat links to its local or project route.
+  chats?: readonly Pick<Chat, 'id' | 'isLocalOnly' | 'projectId'>[]
 }
 
 function getAddPasskeyErrorTitle(error: unknown): string {
@@ -512,6 +517,7 @@ export function SettingsModal({
   onAddPasskeyToThisDevice,
   onRefreshBundleState,
   initialTab,
+  chats,
 }: SettingsModalProps) {
   const { getToken, signOut } = useAuth()
   const { user } = useUser()
@@ -608,7 +614,10 @@ export function SettingsModal({
   // Signed-in-only tabs disappear from the nav on sign-out; fall back to a
   // tab that still exists so the modal is not left with blank content. This
   // runs after the initial-tab effect so a requested hidden tab cannot win.
-  const signedInOnlyTab = activeTab === 'cloud-sync' || activeTab === 'data'
+  const signedInOnlyTab =
+    activeTab === 'cloud-sync' ||
+    activeTab === 'safeguards' ||
+    activeTab === 'data'
   useEffect(() => {
     if (!isSignedIn && signedInOnlyTab) {
       setActiveTab('account')
@@ -1414,6 +1423,11 @@ ${encryptionKey.replace('key_', '')}
             id: 'cloud-sync' as const,
             label: 'Cloud Sync',
             icon: TfCloudSync,
+          },
+          {
+            id: 'safeguards' as const,
+            label: 'Safeguards',
+            icon: TfShieldWithExclamation,
           },
           { id: 'data' as const, label: 'Data', icon: TfStack },
         ]
@@ -3581,6 +3595,14 @@ ${encryptionKey.replace('key_', '')}
                     </div>
                   )}
                 </>
+              )}
+
+              {activeTab === 'safeguards' && isSignedIn && (
+                <SafeguardsSettings
+                  isDarkMode={isDarkMode}
+                  onNavigateToChat={() => setIsOpen(false)}
+                  chats={chats}
+                />
               )}
 
               {/* Account Tab */}

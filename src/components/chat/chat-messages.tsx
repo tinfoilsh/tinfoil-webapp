@@ -36,6 +36,8 @@ type ChatMessagesProps = {
   isWaitingForResponse?: boolean
   isStreamingResponse?: boolean
   activeArtifactToolCallId?: string | null
+  // A chat the safeguards flagged: its messages offer no actions.
+  readOnly?: boolean
   isPremium?: boolean
   models?: BaseModel[]
   onSubmit?: (e: React.FormEvent) => void
@@ -228,6 +230,7 @@ export function ChatMessages({
   isWaitingForResponse = false,
   isStreamingResponse = false,
   activeArtifactToolCallId,
+  readOnly = false,
   isPremium,
   models,
   onSubmit,
@@ -268,6 +271,9 @@ export function ChatMessages({
   onSelectPromptPreset,
 }: ChatMessagesProps) {
   const [mounted, setMounted] = useState(false)
+  const messageActions = readOnly
+    ? {}
+    : { onEditMessage, onRegenerateMessage, onForkMessage, onRetryToolCall }
   const [showSpacer, setShowSpacer] = useState(false)
   const prevMessageCountRef = React.useRef(messages.length)
   const messageCountWhenSpacerSetRef = React.useRef<number | null>(null)
@@ -385,7 +391,7 @@ export function ChatMessages({
             isDarkMode={isDarkMode}
             isPremium={isPremium}
             models={models}
-            onSubmit={onSubmit}
+            onSubmit={readOnly ? undefined : onSubmit}
             input={input}
             setInput={setInput}
             loadingState={loadingState}
@@ -457,10 +463,8 @@ export function ChatMessages({
                 message,
                 activeArtifactToolCallId,
               )}
-              onEditMessage={onEditMessage}
-              onRegenerateMessage={onRegenerateMessage}
-              onForkMessage={onForkMessage}
-              onRetryToolCall={onRetryToolCall}
+              hideActions={readOnly}
+              {...messageActions}
             />
           ))}
           {showLoadingPlaceholder && (

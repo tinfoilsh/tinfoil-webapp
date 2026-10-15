@@ -22,6 +22,7 @@ function renderChatListItem({
   enableTitleAnimation = false,
   isStreaming = false,
   isPinned = false,
+  isFlagged = false,
   showPinnedIndicator = true,
   showDesktopPinAction = true,
   onTogglePin,
@@ -34,6 +35,7 @@ function renderChatListItem({
   enableTitleAnimation?: boolean
   isStreaming?: boolean
   isPinned?: boolean
+  isFlagged?: boolean
   showPinnedIndicator?: boolean
   showDesktopPinAction?: boolean
   onTogglePin?: () => void
@@ -50,6 +52,7 @@ function renderChatListItem({
       enableTitleAnimation={enableTitleAnimation}
       isStreaming={streaming}
       isPinned={isPinned}
+      isFlagged={isFlagged}
       showPinnedIndicator={showPinnedIndicator}
       showDesktopPinAction={showDesktopPinAction}
       onTogglePin={onTogglePin}
@@ -269,6 +272,35 @@ describe('ChatListItem favorites', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Pin to Favorites' }))
 
     expect(onTogglePin).toHaveBeenCalledOnce()
+  })
+})
+
+describe('ChatListItem safeguards', () => {
+  it('keeps the flag beside the title when the row has a favorite indicator and a timestamp', () => {
+    renderChatListItem({
+      isFlagged: true,
+      isPinned: true,
+      href: '/chat/chat-123',
+      chat: savedChat,
+      pixelateSidebarChatTitles: false,
+    })
+    const flag = screen.getByLabelText('Flagged by safeguards')
+    expect(flag.parentElement).toContainElement(
+      screen.getByText('Trip planning'),
+    )
+    expect(flag.parentElement).toContainElement(
+      screen.getByLabelText('Pinned to Favorites'),
+    )
+    expect(
+      screen.getByRole('link', { name: /Trip planning/ }),
+    ).toContainElement(flag)
+  })
+
+  it('does not show a flag for unflagged chats', () => {
+    renderChatListItem()
+    expect(
+      screen.queryByLabelText('Flagged by safeguards'),
+    ).not.toBeInTheDocument()
   })
 })
 

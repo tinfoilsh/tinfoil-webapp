@@ -7,6 +7,7 @@ import {
   TfBoxCheckmark,
   TfBoxX,
   TfCloud,
+  TfFlagFilled,
   TfFloppyDisk,
   TfFolder,
   TfLockLocked,
@@ -80,6 +81,12 @@ interface ChatListItemProps {
    * Drives the live "streaming" indicator.
    */
   isStreaming?: boolean
+  /**
+   * True when the safeguards service flagged this chat for review. Shows a
+   * red flag so the user can find the chat from the Safeguards settings
+   * page.
+   */
+  isFlagged?: boolean
   enableTitleAnimation?: boolean
   isDraggable?: boolean
   showMoveToProject?: boolean
@@ -158,6 +165,7 @@ export function ChatListItem({
   pixelateSidebarChatTitles,
   showEncryptionStatus = false,
   isStreaming = false,
+  isFlagged = false,
   enableTitleAnimation = false,
   isDraggable = false,
   showMoveToProject = false,
@@ -446,6 +454,13 @@ export function ChatListItem({
                   className="h-3.5 w-3.5 flex-shrink-0 text-content-muted"
                   title="Pinned to Favorites"
                   aria-label="Pinned to Favorites"
+                />
+              )}
+              {isFlagged && (
+                <TfFlagFilled
+                  className="h-3.5 w-3.5 flex-shrink-0 -translate-y-px text-red-600"
+                  title="Flagged by safeguards"
+                  aria-label="Flagged by safeguards"
                 />
               )}
             </span>

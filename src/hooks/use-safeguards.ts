@@ -1,0 +1,116 @@
+'use client'
+
+import { useToast } from '@/hooks/use-toast'
+import {
+  getSafeguardsServerSnapshot,
+  getSafeguardsSnapshot,
+  refreshSafeguards,
+  resetSafeguards,
+  subscribeSafeguards,
+  type SafeguardsSnapshot,
+} from '@/services/safeguards'
+import { useAuth } from '@clerk/react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
+
+export function useSafeguards(): SafeguardsSnapshot {
+  return useSyncExternalStore(
+    subscribeSafeguards,
+    getSafeguardsSnapshot,
+    getSafeguardsServerSnapshot,
+  )
+}
+
+/**
+ * Narrow subscription for the sidebar flag badge. The store keeps the
+ * `flaggedChatIds` reference stable across unrelated updates so list items
+ * only re-render when the set of flagged chats changes.
+ */
+export function useFlaggedChatIds(): SafeguardsSnapshot['flaggedChatIds'] {
+  return useSyncExternalStore(
+    subscribeSafeguards,
+    () => getSafeguardsSnapshot().flaggedChatIds,
+    () => getSafeguardsServerSnapshot().flaggedChatIds,
+  )
+}
+
+export function useSafeguardsLoaded(): boolean {
+  return useSyncExternalStore(
+    subscribeSafeguards,
+    () => getSafeguardsSnapshot().hasLoaded,
+    () => getSafeguardsServerSnapshot().hasLoaded,
+  )
+}
+
+export function useSafeguardsStatus(): SafeguardsSnapshot['status'] {
+  return useSyncExternalStore(
+    subscribeSafeguards,
+    () => getSafeguardsSnapshot().status,
+    () => getSafeguardsServerSnapshot().status,
+  )
+}
+
+export function useSafeguardStatusNotification(): void {
+  const { isSignedIn } = useAuth()
+  const safeguardsLoaded = useSafeguardsLoaded()
+  const safeguardsStatus = useSafeguardsStatus()
+  const notifiedRef = useRef(false)
+  const { toast } = useToast()
+
+  useEffect(() => {
+    if (safeguardsStatus === 'idle') {
+      notifiedRef.current = false
+      return
+    }
+    if (
+      !isSignedIn ||
+      safeguardsLoaded ||
+      safeguardsStatus !== 'error' ||
+      notifiedRef.current
+    ) {
+      return
+    }
+    notifiedRef.current = true
+    toast({
+      title: 'Unable to check safeguard status',
+      description: 'We’ll retry automatically. Generation is paused for now.',
+      variant: 'destructive',
+    })
+  }, [isSignedIn, safeguardsLoaded, safeguardsStatus, toast])
+}
+
+const SAFEGUARDS_REFRESH_INTERVAL_MS = 30_000
+
+/**
+ * Keeps the signed-in user's flags current and clears them on sign-out.
+ * Background tabs pause polling and refresh immediately when active again.
+ */
+export function useSafeguardsLoader(): void {
+  const { isSignedIn, userId } = useAuth()
+  useEffect(() => {
+    if (!isSignedIn || !userId) {
+      resetSafeguards()
+      return
+    }
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') void refreshSafeguards()
+    }
+    const handleVisibilityChange = () => refreshIfVisible()
+
+    void refreshSafeguards()
+    const interval = window.setInterval(
+      refreshIfVisible,
+      SAFEGUARDS_REFRESH_INTERVAL_MS,
+    )
+    window.addEventListener('focus', refreshIfVisible)
+    window.addEventListener('online', refreshIfVisible)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refreshIfVisible)
+      window.removeEventListener('online', refreshIfVisible)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      resetSafeguards()
+    }
+  }, [isSignedIn, userId])
+}
