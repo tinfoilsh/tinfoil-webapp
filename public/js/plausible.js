@@ -63,6 +63,7 @@
     var path = location.pathname.replace(/\/+$/, '') || '/'
     return (
       '/' === path ||
+      '/harness' === path ||
       '/newchat' === path ||
       '/share' === path ||
       0 === path.indexOf('/share/') ||

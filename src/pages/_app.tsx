@@ -5,6 +5,7 @@ import { HarnessProvider } from '@/services/harness/provider'
 import '@/styles/globals.css'
 import '@/styles/tailwind.css'
 import { analyticsExcluded } from '@/utils/analytics-routes'
+import { isCatchAllSection } from '@/utils/navigation'
 import { migrateStorageKeys } from '@/utils/storage-migration'
 import { Clerk } from '@clerk/clerk-js/no-rhc'
 import { ClerkProvider } from '@clerk/react'
@@ -136,6 +137,15 @@ const Toaster = dynamic(
 
 export default function App({ Component, pageProps, router }: AppProps) {
   useChatFontSync()
+  // Pages that never use the chat service, including the not-found page the
+  // catch-all route shows for an unknown path.
+  const withoutHarness =
+    ['/signin', '/signup', '/sso-callback', '/404', '/_error'].includes(
+      router.pathname,
+    ) ||
+    (router.pathname === '/[...slug]' &&
+      router.isReady &&
+      !isCatchAllSection(router.query.slug))
 
   return (
     <>
@@ -171,7 +181,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
           data-domain="chat.tinfoil.sh"
           data-api="https://plausible.io/api/event"
           src="/js/plausible.js"
-          integrity="sha384-aYMHIcBsKU/BHnHb9YQ87pJcRsIlDvGVpR2yNRsefRzlfiI6WF2f+V4YKT5JO8f/"
+          integrity="sha384-16WR01x+yRwHfXmY2ZXU2v+IWfYQGXaBUkIOraub2kI6pB1Qxeqoo7Ag1/8OY06g"
           crossOrigin="anonymous"
           strategy="afterInteractive"
         />
@@ -197,9 +207,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
         >
           <AuthCleanupHandler />
           <SignoutProgressOverlay />
-          {['/signin', '/signup', '/sso-callback', '/404', '/_error'].includes(
-            router.pathname,
-          ) ? (
+          {withoutHarness ? (
             <Component {...pageProps} />
           ) : (
             <HarnessProvider>
