@@ -459,10 +459,7 @@ export function ChatInterface({
     })
   }
   const regenerateMessage = (index: number) => {
-    void handleQuery('', {
-      kind: 'regenerate',
-      messageId: currentChat.messages[index]?.id,
-    })
+    void thread.regenerate(index, { options }).catch(thread.report)
   }
   const resolveInputToolCall = (
     toolCallId: string,

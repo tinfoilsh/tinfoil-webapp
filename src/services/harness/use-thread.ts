@@ -606,6 +606,47 @@ export function useThread(
     if (!idRef.current) starting.current = true
     return stream('/v1/threads/turn', input)
   }
+  function cancel() {
+    return api.post(
+      '/v1/threads/cancel',
+      {
+        ...runKey(),
+        threadId: idRef.current,
+        runId:
+          current.current.snapshot.thread?.activeRun?.runId ??
+          current.current.runId,
+      },
+      undefined,
+      false,
+    )
+  }
+  // The harness regenerates the reply it is named. The message actions name
+  // a message by its index: a reply, or the user message it answers. A user
+  // message left without a reply is sent again with its own text, as the
+  // previous client regenerated it. A run in progress is stopped first.
+  async function regenerate(index: number, fields: Partial<Turn> = {}) {
+    const messages = current.current.messages
+    const target = messages[index]
+    if (!target) return false
+    const reply =
+      target.role === 'assistant'
+        ? target
+        : messages[index + 1]?.role === 'assistant'
+          ? messages[index + 1]
+          : undefined
+    const turn: Partial<Turn> = reply
+      ? { kind: 'regenerate', messageId: reply.id, content: '' }
+      : { kind: 'edit', messageId: target.id, content: target.content ?? '' }
+    const status = current.current.status
+    if (status === 'streaming' || status === 'queued')
+      await cancel().catch((cause) =>
+        logError('Failed to stop a run before regenerating', cause, {
+          component: 'useThread',
+          action: 'regenerate',
+        }),
+      )
+    return send({ ...fields, ...turn })
+  }
   const isLocalThread = (threadId: string) =>
     idRef.current === threadId
       ? localRef.current
@@ -924,19 +965,8 @@ export function useThread(
         /* optional */
       }
     },
-    cancel: () =>
-      api.post(
-        '/v1/threads/cancel',
-        {
-          ...runKey(),
-          threadId: id,
-          runId:
-            current.current.snapshot.thread?.activeRun?.runId ??
-            current.current.runId,
-        },
-        undefined,
-        false,
-      ),
+    cancel,
+    regenerate,
     sendQueued: (queueId: string) =>
       api.post(
         '/v1/threads/queue/send',
