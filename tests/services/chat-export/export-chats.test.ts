@@ -228,6 +228,7 @@ describe('collecting chats for an export', () => {
 
     const source = await collectChatExport(api, {
       cloud: false,
+      transcripts: true,
       signal: new AbortController().signal,
     })
     const { conversations, manifest, entries, archive } = await exported(source)
@@ -261,6 +262,7 @@ describe('collecting chats for an export', () => {
     const { conversations, archive } = await exported(
       await collectChatExport(api, {
         cloud: false,
+        transcripts: true,
         signal: new AbortController().signal,
       }),
     )
@@ -331,6 +333,7 @@ describe('collecting chats for an export', () => {
 
     const source = await collectChatExport(api, {
       cloud: true,
+      transcripts: true,
       signal: new AbortController().signal,
     })
     const { conversations, entries } = await exported(source)
@@ -463,6 +466,7 @@ describe('collecting chats for an export', () => {
     const { conversations, manifest, entries } = await exported(
       await collectChatExport(api, {
         cloud: true,
+        transcripts: true,
         signal: new AbortController().signal,
       }),
     )
@@ -542,6 +546,57 @@ describe('collecting chats for an export', () => {
     expect(manifest.warnings).toEqual(['Could not fetch attachment lost'])
   })
 
+  it('reads every stored chat through its messages from a harness without transcripts', async () => {
+    const api = connect('alice', true)
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list')
+        return { threads: [summary('cloud-1', 'Trip')], nextCursor: null }
+      if (path === '/v1/threads/get')
+        return {
+          ...summary('cloud-1', 'Trip'),
+          hasOlder: false,
+          messages: [
+            {
+              id: 'q',
+              role: 'user',
+              createdAt: '2026-05-01T10:00:01Z',
+              content: 'Packing list?',
+            },
+          ],
+        }
+      throw new Error(`Unexpected ${path}`)
+    })
+
+    const { conversations } = await exported(
+      await collectChatExport(api, {
+        cloud: true,
+        transcripts: false,
+        signal: new AbortController().signal,
+      }),
+    )
+
+    expect(client.post.mock.calls.map(([path]) => path)).toEqual([
+      '/v1/threads/list',
+      '/v1/threads/get',
+    ])
+    expect(conversations).toEqual([
+      {
+        uuid: 'cloud-1',
+        name: 'Trip',
+        created_at: '2026-05-01T10:00:00.000Z',
+        updated_at: '2026-05-02T10:00:00.000Z',
+        chat_messages: [
+          {
+            uuid: 'cloud-1_msg_0',
+            text: 'Packing list?',
+            sender: 'human',
+            created_at: '2026-05-01T10:00:01.000Z',
+          },
+        ],
+      },
+    ])
+  })
+
   it('fails when a stored chat cannot be read at all', async () => {
     const api = connect('alice', true)
     const failure = new HarnessError(
@@ -558,6 +613,7 @@ describe('collecting chats for an export', () => {
     await expect(
       collectChatExport(api, {
         cloud: true,
+        transcripts: true,
         signal: new AbortController().signal,
       }),
     ).rejects.toBe(failure)
