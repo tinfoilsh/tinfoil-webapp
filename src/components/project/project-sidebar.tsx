@@ -120,6 +120,7 @@ interface ProjectSidebarProps {
   onOpenFavorite?: (chat: ChatItemData) => void | Promise<void>
   cloudSyncEnabled: boolean
   windowWidth: number
+  isPremium?: boolean
   hasMore?: boolean
   onLoadMore?: () => Promise<void>
 }
@@ -232,6 +233,7 @@ export function ProjectSidebar({
   onOpenFavorite,
   cloudSyncEnabled,
   windowWidth,
+  isPremium = false,
   hasMore,
   onLoadMore,
 }: ProjectSidebarProps) {
@@ -1566,6 +1568,7 @@ export function ProjectSidebar({
           <SidebarAccountMenu
             isSidebarOpen={isOpen}
             isSignedIn={Boolean(isSignedIn)}
+            isPremium={Boolean(isPremium)}
             isDarkMode={isDarkMode}
             onOpenSettings={(tab) => onSettingsClick?.(tab)}
             onReportBug={() => onReportBugClick?.()}

@@ -2,6 +2,7 @@ import { getSelectedModelLabel } from '@/config/models'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
+import { useRateLimit } from '@/hooks/use-rate-limit'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
@@ -248,10 +249,7 @@ export function ChatInterface({
   const isWaitingForResponse =
     isStreaming && currentChat.messages.at(-1)?.role !== 'assistant'
   const isTemporaryMode = thread.temporary
-  const snapshotLimit = thread.state.snapshot.rateLimit
-  const rateLimit = snapshotLimit?.kind
-    ? snapshotLimit
-    : (session?.rateLimit ?? null)
+  const rateLimit = useRateLimit()
   const retryInfo = null
   const streamError = thread.error
     ? {
@@ -1399,6 +1397,7 @@ export function ChatInterface({
                   onOpenFavorite={handleOpenFavorite}
                   cloudSyncEnabled={cloudSyncEnabled}
                   windowWidth={windowWidth}
+                  isPremium={isPremium}
                 />
               ) : (
                 <ProjectSidebar
@@ -1428,6 +1427,7 @@ export function ChatInterface({
                   onOpenFavorite={handleOpenFavorite}
                   cloudSyncEnabled={cloudSyncEnabled}
                   windowWidth={windowWidth}
+                  isPremium={isPremium}
                 />
               )}
             </motion.div>

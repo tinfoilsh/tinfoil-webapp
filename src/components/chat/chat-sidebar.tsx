@@ -2187,6 +2187,7 @@ export function ChatSidebar({
           <SidebarAccountMenu
             isSidebarOpen={isOpen}
             isSignedIn={Boolean(isSignedIn)}
+            isPremium={Boolean(isPremium)}
             isDarkMode={isDarkMode}
             onOpenSettings={(tab) => onSettingsClick?.(tab)}
             onReportBug={() => onReportBugClick?.()}

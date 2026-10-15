@@ -2,6 +2,7 @@
 
 import { UserAvatar } from '@/components/user-avatar'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
+import { useRateLimit } from '@/hooks/use-rate-limit'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useUser } from '@clerk/react'
 import {
@@ -28,6 +29,7 @@ import { createPortal } from 'react-dom'
 import { Link } from '../link'
 import { cn } from '../ui/utils'
 import { CONSTANTS } from './constants'
+import { hasTokenUsage, RateLimitUsage } from './rate-limit-usage'
 import type { SettingsTab } from './settings-modal'
 
 const MENU_WIDTH_PX = 256
@@ -60,6 +62,7 @@ function focusMenuEdge(menu: HTMLElement | null, edge: MenuEdge): boolean {
 interface SidebarAccountMenuProps {
   isSidebarOpen: boolean
   isSignedIn: boolean
+  isPremium: boolean
   isDarkMode: boolean
   onOpenSettings: (tab?: SettingsTab) => void
   onReportBug: () => void
@@ -68,6 +71,7 @@ interface SidebarAccountMenuProps {
 export function SidebarAccountMenu({
   isSidebarOpen,
   isSignedIn,
+  isPremium,
   isDarkMode,
   onOpenSettings,
   onReportBug,
@@ -93,6 +97,9 @@ export function SidebarAccountMenu({
   const triggerId = useId()
   const helpMenuId = useId()
   const isMenuVisible = isSidebarOpen && isOpen
+
+  const rateLimit = useRateLimit()
+  const showUsage = isSignedIn && isPremium && hasTokenUsage(rateLimit)
 
   const displayName = isSignedIn
     ? user?.firstName ||
@@ -422,6 +429,12 @@ export function SidebarAccountMenu({
             }}
             className={cn('fixed z-[60]', panelClassName)}
           >
+            {showUsage && (
+              <>
+                <RateLimitUsage isPremium={isPremium} />
+                <div className="my-1.5 border-t border-border-subtle" />
+              </>
+            )}
             {isSignedIn ? (
               <button
                 type="button"

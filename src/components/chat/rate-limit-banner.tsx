@@ -7,7 +7,7 @@ import type { RateLimit as RateLimitInfo } from '@/services/harness/types'
 const RATE_LIMIT_WARNING_THRESHOLD = 3
 
 interface RateLimitBannerProps {
-  rateLimit: RateLimitInfo
+  rateLimit: RateLimitInfo & { remaining: number }
   isDarkMode: boolean
   /** Tailwind classes applied to the outer wrapper (positioning, visibility). */
   className?: string
@@ -15,12 +15,14 @@ interface RateLimitBannerProps {
   pillClassName?: string
 }
 
+// A subscriber has no request quota until the hourly cap refuses requests.
 export function shouldShowRateLimitBanner(
   rateLimit: RateLimitInfo | null,
-): rateLimit is RateLimitInfo {
+): rateLimit is RateLimitInfo & { remaining: number } {
   return (
     rateLimit !== null &&
     rateLimit.kind !== null &&
+    typeof rateLimit.remaining === 'number' &&
     rateLimit.remaining <= RATE_LIMIT_WARNING_THRESHOLD
   )
 }

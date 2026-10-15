@@ -1,6 +1,7 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { SidebarAccountMenu } from '@/components/chat/sidebar-account-menu'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
+import { publish } from '@/services/harness/runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -39,6 +40,7 @@ function renderMenu(
     <SidebarAccountMenu
       isSidebarOpen
       isSignedIn
+      isPremium={false}
       isDarkMode={false}
       onOpenSettings={onOpenSettings}
       onReportBug={onReportBug}
@@ -107,6 +109,7 @@ describe('SidebarAccountMenu', () => {
   it('removes both menus when the parent sidebar closes and does not reopen them automatically', () => {
     const props = {
       isSignedIn: true,
+      isPremium: false,
       isDarkMode: false,
       onOpenSettings: vi.fn(),
       onReportBug: vi.fn(),
@@ -184,6 +187,31 @@ describe('SidebarAccountMenu', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ada' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Account' }))
     expect(onOpenSettings).toHaveBeenCalledWith('account')
+  })
+
+  it("shows a subscriber's token usage above the menu items", () => {
+    act(() =>
+      publish({
+        rateLimit: {
+          kind: 'hourly',
+          inputTokens: { max: 2_000_000, used: 500_000, remaining: 1_500_000 },
+          outputTokens: { max: 100_000, used: 1_000, remaining: 99_000 },
+        },
+      }),
+    )
+    renderMenu({ isPremium: true })
+    fireEvent.click(screen.getByRole('button', { name: 'Ada' }))
+    expect(screen.getByText('Hourly usage')).toBeInTheDocument()
+    expect(screen.getByText('500K / 2M')).toBeInTheDocument()
+    cleanup()
+
+    for (const overrides of [{ isPremium: false }, { isSignedIn: false }]) {
+      renderMenu({ isPremium: true, ...overrides })
+      fireEvent.click(screen.getByRole('button', { name: /Ada|Menu/ }))
+      expect(screen.getByRole('menu')).toBeInTheDocument()
+      expect(screen.queryByText('Hourly usage')).not.toBeInTheDocument()
+      cleanup()
+    }
   })
 
   it('closes on Escape and on outside clicks', () => {

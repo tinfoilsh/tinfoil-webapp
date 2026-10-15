@@ -88,11 +88,22 @@ export interface Thread extends ThreadSummary {
   presetId?: string | null
 }
 
-export interface RateLimit {
-  kind: string | null
-  maxRequests: number
+// One dimension (input or output) of a token budget.
+export interface TokenBudget {
+  max: number
+  used: number
   remaining: number
+}
+
+// A free key's daily request quota (free_daily), or a subscriber's hourly
+// token budgets (hourly), which have a request quota only once capped.
+export interface RateLimit {
+  kind: 'free_daily' | 'hourly' | null
+  maxRequests?: number
+  remaining?: number
   resetsAt?: string
+  inputTokens?: TokenBudget
+  outputTokens?: TokenBudget
 }
 
 export interface Session {

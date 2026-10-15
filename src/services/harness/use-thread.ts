@@ -28,11 +28,13 @@ import {
 } from './local-threads'
 import { useHarness } from './provider'
 import { initialChat, reduceEvent, type ChatState } from './reducer'
+import type { RunSpend } from './runtime'
 import { MAX_SHARE_REQUEST_BYTES, requestBytes, shareTooLarge } from './shares'
 import { HarnessError } from './sse'
 import { useCloudSyncSetting } from './storage-mode'
 import type {
   Frame,
+  RateLimit,
   Thread,
   ThreadSummary,
   Turn,
@@ -58,6 +60,15 @@ interface LocalRun {
 }
 
 type FollowInput = { key?: string; threadId: string; runId: string }
+
+function runSpend(value: unknown): RunSpend | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const { prompt_tokens: prompt, completion_tokens: completion } =
+    value as Record<string, unknown>
+  return typeof prompt === 'number' && typeof completion === 'number'
+    ? { prompt, completion }
+    : undefined
+}
 
 function withStoredPrefix(state: ChatState, base: LocalThread): ChatState {
   if (!state.hasOlder) return state
@@ -301,8 +312,11 @@ export function useThread(
         const attached = version === generation.current
         if (!attached && !run) break
         runId = frame.event.runId ?? runId
-        let next = reduceEvent(attached ? current.current : view, frame, runId)
+        const base = attached ? current.current : view
+        let next = reduceEvent(base, frame, runId)
         const event = frame.event
+        // A replayed frame leaves the view as it was.
+        if (next !== base) reportQuota(event)
         if (run && event.type === 'MESSAGES_SNAPSHOT')
           next = withStoredPrefix(next, run.base)
         view = next
@@ -374,6 +388,16 @@ export function useThread(
       followers.current.delete(controller)
     }
     return succeeded && version === generation.current
+  }
+  // The quota a run reports, and its spend once it finishes.
+  function reportQuota(event: Frame['event']) {
+    if (event.type === 'STATE_SNAPSHOT')
+      api.reportRateLimit(event.snapshot?.rateLimit)
+    else if (event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR')
+      api.reportRateLimit(
+        event.metadata?.rateLimit as RateLimit | undefined,
+        runSpend(event.metadata?.usage),
+      )
   }
   function forgetReceipt(threadId?: string) {
     try {

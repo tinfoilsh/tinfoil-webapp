@@ -4,7 +4,7 @@ import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { HarnessClient } from './client'
 import { loadLocalProfile, saveLocalProfile } from './local-profile'
 import { HarnessError } from './sse'
-import type { Session } from './types'
+import type { RateLimit, Session, TokenBudget } from './types'
 
 export type Profile = Record<string, any>
 type View = {
@@ -16,6 +16,8 @@ type View = {
   keyReady: boolean
   // The settings of the current storage mode have loaded.
   profileReady: boolean
+  // The account's quota as the session and its runs last reported it.
+  rateLimit?: RateLimit
 }
 const empty: View = { profile: {}, keyReady: false, profileReady: false }
 let view: View = empty
@@ -32,6 +34,72 @@ export const getServerView = () => empty
 export function publish(patch: Partial<View>) {
   view = { ...view, ...patch }
   for (const listener of listeners) listener()
+}
+
+// Tokens a run spent, as its final event reports them.
+export interface RunSpend {
+  prompt: number
+  completion: number
+}
+
+function spentBudget(
+  previous: TokenBudget | undefined,
+  reported: TokenBudget | undefined,
+  spent: number,
+): TokenBudget | undefined {
+  const base = reported ?? previous
+  if (!base) return undefined
+  const used = Math.max(base.used, previous?.used ?? 0) + spent
+  const remaining = Math.min(base.remaining, previous?.remaining ?? Infinity)
+  return {
+    max: base.max,
+    used,
+    remaining: Math.max(0, remaining - spent),
+  }
+}
+
+// The harness reports the budgets its last credential exchange saw, which
+// lag the tokens spent since, so within one quota window a report never
+// moves usage back, and a run's spend counts until a later exchange does.
+// A new window (another kind or reset time) starts from its report.
+function mergeRateLimit(
+  current: RateLimit | undefined,
+  next: RateLimit | undefined,
+  spend?: RunSpend,
+): RateLimit | undefined {
+  const reported = next?.kind ? next : undefined
+  const sameWindow =
+    !!current &&
+    (!reported ||
+      (current.kind === reported.kind &&
+        current.resetsAt === reported.resetsAt))
+  const base = reported ?? current
+  if (!base) return undefined
+  const previous = sameWindow ? current : undefined
+  const remaining =
+    typeof base.remaining === 'number'
+      ? Math.min(base.remaining, previous?.remaining ?? Infinity)
+      : undefined
+  const inputTokens = spentBudget(
+    previous?.inputTokens,
+    reported?.inputTokens ?? (reported ? undefined : current?.inputTokens),
+    spend?.prompt ?? 0,
+  )
+  const outputTokens = spentBudget(
+    previous?.outputTokens,
+    reported?.outputTokens ?? (reported ? undefined : current?.outputTokens),
+    spend?.completion ?? 0,
+  )
+  return {
+    kind: base.kind,
+    ...(typeof base.maxRequests === 'number'
+      ? { maxRequests: base.maxRequests }
+      : {}),
+    ...(remaining !== undefined ? { remaining } : {}),
+    ...(base.resetsAt ? { resetsAt: base.resetsAt } : {}),
+    ...(inputTokens ? { inputTokens } : {}),
+    ...(outputTokens ? { outputTokens } : {}),
+  }
 }
 
 export class HarnessAPI {
@@ -130,6 +198,18 @@ export class HarnessAPI {
     return result
   }
 
+  // Records the quota a session or run reported, and a finished run's
+  // spend, for this account only.
+  reportRateLimit(limit: RateLimit | undefined, spend?: RunSpend) {
+    if (active !== this || this.lifetime.signal.aborted) return
+    const rateLimit = mergeRateLimit(view.rateLimit, limit, spend)
+    if (
+      rateLimit &&
+      JSON.stringify(rateLimit) !== JSON.stringify(view.rateLimit)
+    )
+      publish({ rateLimit })
+  }
+
   async refresh() {
     const session = await this.post<Session>(
       '/v1/session',
@@ -139,11 +219,12 @@ export class HarnessAPI {
     )
     if (
       session.user.anonymous &&
-      !session.rateLimit.kind &&
+      !session.rateLimit?.kind &&
       this.client.anonymousRateLimit
     )
       session.rateLimit = this.client.anonymousRateLimit
     publish({ session, error: undefined })
+    this.reportRateLimit(session.rateLimit)
     await this.refreshProfile()
     return session
   }
