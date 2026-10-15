@@ -20,6 +20,10 @@ import {
 } from '@/services/harness/archives'
 import { useHarness } from '@/services/harness/provider'
 import { reportHarnessError } from '@/services/harness/runtime'
+import {
+  useCloudSyncSetting,
+  useLocalChatsSetting,
+} from '@/services/harness/storage-mode'
 import { validateCurrentPrimaryKey } from '@/services/keys/cloud-key-preflight'
 import {
   deletePasskeyCredential,
@@ -33,6 +37,10 @@ import {
   clearExplicitSignoutIntent,
   requestExplicitSignout,
 } from '@/utils/auth-signout-intent'
+import {
+  recordCloudSyncPreference,
+  setLocalOnlyModeEnabled,
+} from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
 import { clearPersonalizationDetails } from '@/utils/personalization-settings'
 import {
@@ -451,6 +459,8 @@ type SettingsModalProps = {
   onOpenPromptLibrary: () => void
   onCloudSyncSetupClick?: () => void
   onChatsUpdated?: () => void | Promise<void>
+  // Deletes the chats on this device, and with cloud sync the harness's.
+  onDeleteAllChats: () => Promise<{ cloudDeletionCompleted: boolean }>
   onAllChatsDeleted?: () => void
   onAllProjectsDeleted?: () => void
   isSignedIn?: boolean
@@ -489,6 +499,7 @@ export function SettingsModal({
   onOpenPromptLibrary,
   onCloudSyncSetupClick,
   onChatsUpdated,
+  onDeleteAllChats,
   onAllChatsDeleted,
   onAllProjectsDeleted,
   isSignedIn,
@@ -551,8 +562,10 @@ export function SettingsModal({
   const [isUsingCustomPrompt, setIsUsingCustomPrompt] = useState<boolean>(false)
   const [customSystemPrompt, setCustomSystemPrompt] = useState<string>('')
 
-  // Cloud sync setting
-  const [cloudSyncEnabled, setCloudSyncEnabledState] = useState<boolean>(false)
+  // Without cloud sync every chat and setting stays on this device.
+  const cloudSyncSetting = useCloudSyncSetting()
+  const cloudSyncEnabled = !!isSignedIn && cloudSyncSetting
+  const localChatsEnabled = useLocalChatsSetting()
 
   // Web Search PII check setting (defaults to on)
   const [piiCheckEnabled, setPiiCheckEnabled] = useState<boolean>(true)
@@ -692,7 +705,6 @@ export function SettingsModal({
     setLanguage(profile.language ?? SYSTEM_RESPONSE_LANGUAGE)
     setIsUsingCustomPrompt(profile.isUsingCustomPrompt ?? false)
     setCustomSystemPrompt(profile.customSystemPrompt ?? '')
-    setCloudSyncEnabledState(!!isSignedIn)
     setPiiCheckEnabled(profile.piiCheckEnabled ?? true)
     setEnterToNewlineEnabled(profile.enterToNewlineEnabled ?? false)
     setPixelateSidebarChatTitles(
@@ -702,7 +714,7 @@ export function SettingsModal({
     setWebSearchAvailable(profile.webSearchEnabled ?? true)
     setGenUIEnabled(profile.genUIEnabled ?? true)
     setChatFont(normalizeChatFont(profile.chatFont))
-  }, [isOpen, profile, isSignedIn])
+  }, [isOpen, profile])
 
   const refreshPasskeyBundles = useCallback(async () => {
     // Latest-wins sequencing: overlapping refreshes (panel-open effect
@@ -891,6 +903,34 @@ export function SettingsModal({
     void api
       .updateProfile({ customSystemPrompt: '', isUsingCustomPrompt: false })
       .catch(reportHarnessError)
+  }
+
+  // Turning cloud sync on needs the encryption key, which a passkey can
+  // create; turning it off keeps the harness's chats for when it returns.
+  const handleCloudSyncToggle = async (enabled: boolean) => {
+    if (!enabled || encryptionKey) {
+      recordCloudSyncPreference(enabled)
+      return
+    }
+    setIsOpen(false)
+    if (passkeySetupAvailable && onSetupPasskey) {
+      try {
+        if (await onSetupPasskey()) return
+      } catch (error) {
+        toast({
+          title:
+            error instanceof PrfNotSupportedError
+              ? 'Passkey provider not supported'
+              : 'Passkey setup failed',
+          description:
+            error instanceof PrfNotSupportedError
+              ? error.message
+              : 'Could not create passkey backup. You can try again later.',
+          variant: 'destructive',
+        })
+      }
+    }
+    onCloudSyncSetupClick?.()
   }
 
   const handleUpgradeToPro = useCallback(async () => {
@@ -1195,18 +1235,28 @@ export function SettingsModal({
       return
     setIsDeletingAllChats(true)
     try {
-      await api.post('/v1/threads/delete-all')
+      const { cloudDeletionCompleted } = await onDeleteAllChats()
       onAllChatsDeleted?.()
       await onChatsUpdated?.()
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
-      toast({
-        title: getDeleteAllChatsSuccessTitle(Boolean(isSignedIn), true),
-        description: getDeleteAllChatsSuccessDescription(
-          Boolean(isSignedIn),
-          true,
-        ),
-      })
+      toast(
+        cloudSyncEnabled
+          ? {
+              title: getDeleteAllChatsSuccessTitle(
+                Boolean(isSignedIn),
+                cloudDeletionCompleted,
+              ),
+              description: getDeleteAllChatsSuccessDescription(
+                Boolean(isSignedIn),
+                cloudDeletionCompleted,
+              ),
+            }
+          : {
+              title: 'All chats deleted',
+              description: 'Removed all chats from this device.',
+            },
+      )
     } catch (cause) {
       toast({
         title: 'Delete failed',
@@ -2326,10 +2376,10 @@ ${encryptionKey.replace('key_', '')}
                     )}
                   </div>
 
-                  {/* Encryption and backups */}
+                  {/* Cloud Sync */}
                   <div className="space-y-3">
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Encryption and backups
+                      Cloud Sync
                     </h3>
                     <div
                       className={cn(
@@ -2340,36 +2390,52 @@ ${encryptionKey.replace('key_', '')}
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-aeonik text-sm font-medium text-content-primary">
-                            Encrypted chats
+                            Encrypted Cloud Sync
                           </div>
                           <div className="font-aeonik-fono text-xs text-content-muted">
-                            {keyReady
-                              ? 'End-to-end encrypted. Only you can access your chats and data.'
-                              : 'Unlock your encryption key to access your saved chats.'}
+                            {!cloudSyncEnabled
+                              ? 'Turn on Cloud Sync to back up and access your data across devices.'
+                              : keyReady
+                                ? 'End-to-end encrypted. Only you can access your chats and data.'
+                                : 'Unlock your encryption key to access your saved chats.'}
                           </div>
                         </div>
+                        <label className="relative inline-flex cursor-pointer items-center">
+                          <input
+                            type="checkbox"
+                            aria-label="Encrypted Cloud Sync"
+                            checked={cloudSyncEnabled}
+                            onChange={(e) =>
+                              void handleCloudSyncToggle(e.target.checked)
+                            }
+                            className="peer sr-only"
+                          />
+                          <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                        </label>
+                      </div>
+                      {cloudSyncEnabled && (
                         <button
                           type="button"
                           onClick={() => {
                             setIsOpen(false)
                             onCloudSyncSetupClick?.()
                           }}
-                          className="shrink-0 rounded-site-control border border-border-subtle px-3 py-1.5 text-sm text-content-primary transition-colors hover:bg-surface-chat"
+                          className="mt-3 rounded-site-control border border-border-subtle px-3 py-1.5 text-sm text-content-primary transition-colors hover:bg-surface-chat"
                         >
                           {keyReady ? 'Manage key' : 'Unlock'}
                         </button>
-                      </div>
+                      )}
                     </div>
                     <NativeBackupExport
                       available={Boolean(
-                        isSignedIn &&
+                        cloudSyncEnabled &&
                         canTransferProjectData(Boolean(isPremium)) &&
                         encryptionKey,
                       )}
                     />
                     <NativeBackupRestore
                       available={Boolean(
-                        isSignedIn &&
+                        cloudSyncEnabled &&
                         canTransferProjectData(Boolean(isPremium)) &&
                         user?.id &&
                         encryptionKey,
@@ -2808,6 +2874,55 @@ ${encryptionKey.replace('key_', '')}
                           )}
                       </div>
                     )}
+
+                  {/* Local Chats Section */}
+                  {cloudSyncEnabled && (
+                    <div className="space-y-3">
+                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                        Local Chats
+                      </h3>
+                      <div
+                        className={cn(
+                          'rounded-lg border border-border-subtle p-4',
+                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                        )}
+                      >
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between">
+                            <div className="mr-3 flex-1">
+                              <div className="font-aeonik text-sm font-medium text-content-primary">
+                                Enable local chats
+                              </div>
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                Enable to create chats that stay only on this
+                                device and are never synced to the cloud.
+                              </div>
+                            </div>
+                            <label className="relative inline-flex cursor-pointer items-center">
+                              <input
+                                type="checkbox"
+                                aria-label="Enable local chats"
+                                checked={localChatsEnabled}
+                                onChange={(e) =>
+                                  setLocalOnlyModeEnabled(e.target.checked)
+                                }
+                                className="peer sr-only"
+                              />
+                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none" />
+                            </label>
+                          </div>
+                          {localChatsEnabled && (
+                            <div className="rounded-md border border-orange-500/30 bg-orange-500/10 px-3 py-2">
+                              <p className="text-xs font-medium text-orange-500">
+                                Local chats will be permanently erased when you
+                                sign out. Treat local chats as temporary.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
 
@@ -2833,9 +2948,9 @@ ${encryptionKey.replace('key_', '')}
                                 Delete all saved chats
                               </div>
                               <div className="font-aeonik-fono text-xs text-content-muted">
-                                {isSignedIn
+                                {cloudSyncEnabled
                                   ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
-                                  : 'Permanently delete every chat from this browser. This cannot be undone.'}
+                                  : 'Permanently delete every chat from this device. This cannot be undone.'}
                               </div>
                             </div>
                             {!showDeleteAllChatsConfirm && (
@@ -2939,337 +3054,211 @@ ${encryptionKey.replace('key_', '')}
                       </div>
 
                       {/* Delete all projects remains available for account data control. */}
-                      {canDeleteAllProjects(Boolean(isSignedIn)) && (
-                        <div
-                          className={cn(
-                            'rounded-lg border border-border-subtle p-4',
-                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          )}
-                        >
-                          <div className="space-y-3">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-                              <div>
-                                <div className="font-aeonik text-sm font-medium text-content-primary">
-                                  Delete all projects
+                      {cloudSyncEnabled &&
+                        canDeleteAllProjects(Boolean(isSignedIn)) && (
+                          <div
+                            className={cn(
+                              'rounded-lg border border-border-subtle p-4',
+                              isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                            )}
+                          >
+                            <div className="space-y-3">
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+                                <div>
+                                  <div className="font-aeonik text-sm font-medium text-content-primary">
+                                    Delete all projects
+                                  </div>
+                                  <div className="font-aeonik-fono text-xs text-content-muted">
+                                    Permanently delete every project and its
+                                    documents. Chats inside projects will be
+                                    detached but kept. This cannot be undone.
+                                  </div>
                                 </div>
-                                <div className="font-aeonik-fono text-xs text-content-muted">
-                                  Permanently delete every project and its
-                                  documents. Chats inside projects will be
-                                  detached but kept. This cannot be undone.
-                                </div>
+                                {!showDeleteAllProjectsConfirm && (
+                                  <button
+                                    onClick={() =>
+                                      setShowDeleteAllProjectsConfirm(true)
+                                    }
+                                    className={cn(
+                                      'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
+                                      isDarkMode
+                                        ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
+                                        : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
+                                    )}
+                                  >
+                                    <TfTrash
+                                      className="h-4 w-4 shrink-0"
+                                      aria-hidden="true"
+                                    />
+                                    Delete all projects
+                                  </button>
+                                )}
                               </div>
-                              {!showDeleteAllProjectsConfirm && (
-                                <button
-                                  onClick={() =>
-                                    setShowDeleteAllProjectsConfirm(true)
-                                  }
-                                  className={cn(
-                                    'flex w-full shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md border px-3 py-2 text-sm font-medium transition-colors sm:w-52',
-                                    isDarkMode
-                                      ? 'border-red-500/40 bg-red-950/30 text-red-400 hover:bg-red-950/50'
-                                      : 'border-red-300 bg-white text-red-600 hover:bg-red-100',
-                                  )}
-                                >
-                                  <TfTrash
-                                    className="h-4 w-4 shrink-0"
-                                    aria-hidden="true"
-                                  />
-                                  Delete all projects
-                                </button>
+                              {showDeleteAllProjectsConfirm && (
+                                <div className="space-y-2">
+                                  <label className="block">
+                                    <span className="font-aeonik-fono text-xs text-content-muted">
+                                      Type{' '}
+                                      <code className="font-mono text-content-primary">
+                                        {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
+                                      </code>{' '}
+                                      to confirm.
+                                    </span>
+                                    <input
+                                      type="text"
+                                      autoComplete="off"
+                                      autoCorrect="off"
+                                      autoCapitalize="off"
+                                      spellCheck={false}
+                                      value={deleteAllProjectsConfirmText}
+                                      onChange={(e) =>
+                                        setDeleteAllProjectsConfirmText(
+                                          e.target.value,
+                                        )
+                                      }
+                                      disabled={isDeletingAllProjects}
+                                      placeholder={
+                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                      }
+                                      className={cn(
+                                        'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
+                                        isDarkMode
+                                          ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
+                                          : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
+                                      )}
+                                    />
+                                  </label>
+                                  <div className="flex flex-col gap-2 sm:flex-row">
+                                    <button
+                                      onClick={handleDeleteAllProjects}
+                                      disabled={
+                                        isDeletingAllProjects ||
+                                        deleteAllProjectsConfirmText
+                                          .trim()
+                                          .toLowerCase() !==
+                                          DELETE_ALL_PROJECTS_CONFIRM_PHRASE
+                                      }
+                                      className={cn(
+                                        'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                                        isDarkMode
+                                          ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
+                                          : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
+                                      )}
+                                    >
+                                      {isDeletingAllProjects && (
+                                        <PiSpinner
+                                          className="h-4 w-4 animate-spin"
+                                          aria-hidden="true"
+                                        />
+                                      )}
+                                      <span>
+                                        {isDeletingAllProjects
+                                          ? 'Requesting…'
+                                          : 'Yes, delete all my projects'}
+                                      </span>
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        setShowDeleteAllProjectsConfirm(false)
+                                        setDeleteAllProjectsConfirmText('')
+                                      }}
+                                      disabled={isDeletingAllProjects}
+                                      className={cn(
+                                        'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
+                                        isDarkMode
+                                          ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
+                                          : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
+                                      )}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
                               )}
                             </div>
-                            {showDeleteAllProjectsConfirm && (
-                              <div className="space-y-2">
-                                <label className="block">
-                                  <span className="font-aeonik-fono text-xs text-content-muted">
-                                    Type{' '}
-                                    <code className="font-mono text-content-primary">
-                                      {DELETE_ALL_PROJECTS_CONFIRM_PHRASE}
-                                    </code>{' '}
-                                    to confirm.
-                                  </span>
-                                  <input
-                                    type="text"
-                                    autoComplete="off"
-                                    autoCorrect="off"
-                                    autoCapitalize="off"
-                                    spellCheck={false}
-                                    value={deleteAllProjectsConfirmText}
-                                    onChange={(e) =>
-                                      setDeleteAllProjectsConfirmText(
-                                        e.target.value,
-                                      )
-                                    }
-                                    disabled={isDeletingAllProjects}
-                                    placeholder={
-                                      DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                    }
-                                    className={cn(
-                                      'mt-1 w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-60',
-                                      isDarkMode
-                                        ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                        : 'border-border-subtle bg-white text-content-primary placeholder:text-content-muted',
-                                    )}
-                                  />
-                                </label>
-                                <div className="flex flex-col gap-2 sm:flex-row">
-                                  <button
-                                    onClick={handleDeleteAllProjects}
-                                    disabled={
-                                      isDeletingAllProjects ||
-                                      deleteAllProjectsConfirmText
-                                        .trim()
-                                        .toLowerCase() !==
-                                        DELETE_ALL_PROJECTS_CONFIRM_PHRASE
-                                    }
-                                    className={cn(
-                                      'flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                                      isDarkMode
-                                        ? 'bg-red-600 text-white hover:bg-red-500 disabled:bg-red-900 disabled:text-red-300'
-                                        : 'bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:text-white/70',
-                                    )}
-                                  >
-                                    {isDeletingAllProjects && (
-                                      <PiSpinner
-                                        className="h-4 w-4 animate-spin"
-                                        aria-hidden="true"
-                                      />
-                                    )}
-                                    <span>
-                                      {isDeletingAllProjects
-                                        ? 'Requesting…'
-                                        : 'Yes, delete all my projects'}
-                                    </span>
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setShowDeleteAllProjectsConfirm(false)
-                                      setDeleteAllProjectsConfirmText('')
-                                    }}
-                                    disabled={isDeletingAllProjects}
-                                    className={cn(
-                                      'flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors',
-                                      isDarkMode
-                                        ? 'border-border-strong bg-surface-chat text-content-secondary hover:bg-surface-chat/80'
-                                        : 'border-border-subtle bg-white text-content-primary hover:bg-surface-chat',
-                                    )}
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            )}
                           </div>
-                        </div>
-                      )}
+                        )}
                     </>
                   </div>
 
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Import
-                    </h3>
-                    {/* ChatGPT Import */}
-                    <div
-                      className={cn(
-                        'rounded-lg border border-border-subtle',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <ImportAccordionHeader
-                        title="Import from ChatGPT"
-                        panelId={`${importSectionId}-chatgpt`}
-                        expanded={openImportSection === 'chatgpt'}
-                        onToggle={() => toggleImportSection('chatgpt')}
-                      />
-                      {openImportSection === 'chatgpt' && (
+                  {!cloudSyncEnabled && (
+                    <p className="font-aeonik-fono text-xs text-content-muted">
+                      Importing and exporting chats requires end-to-end
+                      encrypted cloud sync to be enabled on this device.
+                    </p>
+                  )}
+                  {cloudSyncEnabled && (
+                    <>
+                      <div className="space-y-3">
+                        <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                          Import
+                        </h3>
+                        {/* ChatGPT Import */}
                         <div
-                          id={`${importSectionId}-chatgpt`}
-                          className="space-y-3 border-t border-border-subtle p-4"
-                        >
-                          <ImportStep step={1}>
-                            Open{' '}
-                            <a
-                              href="https://chatgpt.com/#settings/DataControls"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={cn(
-                                'hover:underline',
-                                isDarkMode
-                                  ? 'text-brand-accent-light'
-                                  : 'text-[#004444]',
-                              )}
-                            >
-                              ChatGPT Settings &gt; Data Controls
-                            </a>
-                          </ImportStep>
-                          <ImportStep step={2}>
-                            Click on &quot;Export data&quot; and confirm the
-                            export.
-                          </ImportStep>
-                          <ImportStep step={3}>
-                            Download the ZIP file you receive by email.
-                          </ImportStep>
-                          <ImportStep step={4}>
-                            Select the ZIP export to include attachments, or a{' '}
-                            <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                              conversations*.json
-                            </code>{' '}
-                            file for chat text only. Exports split into several
-                            files are imported one file at a time.
-                          </ImportStep>
-                          <input
-                            ref={chatGptFileInputRef}
-                            type="file"
-                            accept=".json,.zip"
-                            onChange={handleImportChatGPT}
-                            className="hidden"
-                            disabled={isImporting}
-                          />
-                          {renderImportStatus('chatgpt') ?? (
-                            <button
-                              onClick={() =>
-                                chatGptFileInputRef.current?.click()
-                              }
-                              disabled={isImporting}
-                              className={cn(
-                                'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                isImporting
-                                  ? 'cursor-not-allowed opacity-50'
-                                  : 'hover:bg-surface-chat',
-                                isDarkMode
-                                  ? 'bg-surface-chat text-content-primary'
-                                  : 'bg-surface-sidebar text-content-primary',
-                              )}
-                            >
-                              <ArrowUpTrayIcon
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                              Select File
-                            </button>
+                          className={cn(
+                            'rounded-lg border border-border-subtle',
+                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
                           )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Claude Import */}
-                    <div
-                      className={cn(
-                        'rounded-lg border border-border-subtle',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <ImportAccordionHeader
-                        title="Import from Claude"
-                        panelId={`${importSectionId}-claude`}
-                        expanded={openImportSection === 'claude'}
-                        onToggle={() => toggleImportSection('claude')}
-                      />
-                      {openImportSection === 'claude' && (
-                        <div
-                          id={`${importSectionId}-claude`}
-                          className="space-y-3 border-t border-border-subtle p-4"
                         >
-                          <ImportStep step={1}>
-                            Open{' '}
-                            <a
-                              href="https://claude.ai/settings/data-privacy-controls"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={cn(
-                                'hover:underline',
-                                isDarkMode
-                                  ? 'text-brand-accent-light'
-                                  : 'text-[#004444]',
-                              )}
+                          <ImportAccordionHeader
+                            title="Import from ChatGPT"
+                            panelId={`${importSectionId}-chatgpt`}
+                            expanded={openImportSection === 'chatgpt'}
+                            onToggle={() => toggleImportSection('chatgpt')}
+                          />
+                          {openImportSection === 'chatgpt' && (
+                            <div
+                              id={`${importSectionId}-chatgpt`}
+                              className="space-y-3 border-t border-border-subtle p-4"
                             >
-                              Claude Settings &gt; Privacy
-                            </a>
-                          </ImportStep>
-                          <ImportStep step={2}>
-                            Click on &quot;Export data&quot; and confirm the
-                            export.
-                          </ImportStep>
-                          <ImportStep step={3}>
-                            {isPremium
-                              ? 'Download the ZIP file you receive by email.'
-                              : 'Download and unzip the file you receive by email.'}
-                          </ImportStep>
-                          <ImportStep step={4}>
-                            {isPremium ? (
-                              <>
-                                Select the ZIP export with the Conversations
-                                button to include attachments. For projects,
-                                select a file from the unzipped{' '}
-                                <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
-                                  projects
-                                </code>{' '}
-                                folder. Claude exports do not record which
-                                project a chat belonged to, so project chats
-                                import as regular chats.
-                              </>
-                            ) : (
-                              <>
-                                Select a{' '}
+                              <ImportStep step={1}>
+                                Open{' '}
+                                <a
+                                  href="https://chatgpt.com/#settings/DataControls"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={cn(
+                                    'hover:underline',
+                                    isDarkMode
+                                      ? 'text-brand-accent-light'
+                                      : 'text-[#004444]',
+                                  )}
+                                >
+                                  ChatGPT Settings &gt; Data Controls
+                                </a>
+                              </ImportStep>
+                              <ImportStep step={2}>
+                                Click on &quot;Export data&quot; and confirm the
+                                export.
+                              </ImportStep>
+                              <ImportStep step={3}>
+                                Download the ZIP file you receive by email.
+                              </ImportStep>
+                              <ImportStep step={4}>
+                                Select the ZIP export to include attachments, or
+                                a{' '}
                                 <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
                                   conversations*.json
                                 </code>{' '}
-                                file from the unzipped folder. Exports split
-                                into several files are imported one file at a
-                                time.
-                              </>
-                            )}
-                          </ImportStep>
-                          <input
-                            ref={claudeConversationsFileInputRef}
-                            type="file"
-                            accept={isPremium ? '.json,.zip' : '.json'}
-                            onChange={handleImportClaude}
-                            className="hidden"
-                            disabled={isImporting}
-                          />
-                          {isPremium && (
-                            <input
-                              ref={claudeProjectsFileInputRef}
-                              type="file"
-                              accept=".json"
-                              onChange={handleImportClaude}
-                              className="hidden"
-                              disabled={isImporting}
-                            />
-                          )}
-                          {renderImportStatus('claude') ?? (
-                            <div className="mt-2 flex gap-2">
-                              <button
-                                onClick={() =>
-                                  claudeConversationsFileInputRef.current?.click()
-                                }
+                                file for chat text only. Exports split into
+                                several files are imported one file at a time.
+                              </ImportStep>
+                              <input
+                                ref={chatGptFileInputRef}
+                                type="file"
+                                accept=".json,.zip"
+                                onChange={handleImportChatGPT}
+                                className="hidden"
                                 disabled={isImporting}
-                                className={cn(
-                                  'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                  isImporting
-                                    ? 'cursor-not-allowed opacity-50'
-                                    : 'hover:bg-surface-chat',
-                                  isDarkMode
-                                    ? 'bg-surface-chat text-content-primary'
-                                    : 'bg-surface-sidebar text-content-primary',
-                                )}
-                              >
-                                <ArrowUpTrayIcon
-                                  className="h-4 w-4"
-                                  aria-hidden="true"
-                                />
-                                Conversations
-                              </button>
-                              {isPremium && (
+                              />
+                              {renderImportStatus('chatgpt') ?? (
                                 <button
                                   onClick={() =>
-                                    claudeProjectsFileInputRef.current?.click()
+                                    chatGptFileInputRef.current?.click()
                                   }
                                   disabled={isImporting}
                                   className={cn(
-                                    'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                    'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
                                     isImporting
                                       ? 'cursor-not-allowed opacity-50'
                                       : 'hover:bg-surface-chat',
@@ -3282,118 +3271,259 @@ ${encryptionKey.replace('key_', '')}
                                     className="h-4 w-4"
                                     aria-hidden="true"
                                   />
-                                  Projects
+                                  Select File
                                 </button>
                               )}
                             </div>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* Tinfoil Import */}
-                    <div
-                      className={cn(
-                        'rounded-lg border border-border-subtle',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <ImportAccordionHeader
-                        title="Import from Tinfoil"
-                        panelId={`${importSectionId}-tinfoil`}
-                        expanded={openImportSection === 'tinfoil'}
-                        onToggle={() => toggleImportSection('tinfoil')}
-                      />
-                      {openImportSection === 'tinfoil' && (
+                        {/* Claude Import */}
                         <div
-                          id={`${importSectionId}-tinfoil`}
-                          className="space-y-3 border-t border-border-subtle p-4"
+                          className={cn(
+                            'rounded-lg border border-border-subtle',
+                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                          )}
+                        >
+                          <ImportAccordionHeader
+                            title="Import from Claude"
+                            panelId={`${importSectionId}-claude`}
+                            expanded={openImportSection === 'claude'}
+                            onToggle={() => toggleImportSection('claude')}
+                          />
+                          {openImportSection === 'claude' && (
+                            <div
+                              id={`${importSectionId}-claude`}
+                              className="space-y-3 border-t border-border-subtle p-4"
+                            >
+                              <ImportStep step={1}>
+                                Open{' '}
+                                <a
+                                  href="https://claude.ai/settings/data-privacy-controls"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={cn(
+                                    'hover:underline',
+                                    isDarkMode
+                                      ? 'text-brand-accent-light'
+                                      : 'text-[#004444]',
+                                  )}
+                                >
+                                  Claude Settings &gt; Privacy
+                                </a>
+                              </ImportStep>
+                              <ImportStep step={2}>
+                                Click on &quot;Export data&quot; and confirm the
+                                export.
+                              </ImportStep>
+                              <ImportStep step={3}>
+                                {isPremium
+                                  ? 'Download the ZIP file you receive by email.'
+                                  : 'Download and unzip the file you receive by email.'}
+                              </ImportStep>
+                              <ImportStep step={4}>
+                                {isPremium ? (
+                                  <>
+                                    Select the ZIP export with the Conversations
+                                    button to include attachments. For projects,
+                                    select a file from the unzipped{' '}
+                                    <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                      projects
+                                    </code>{' '}
+                                    folder. Claude exports do not record which
+                                    project a chat belonged to, so project chats
+                                    import as regular chats.
+                                  </>
+                                ) : (
+                                  <>
+                                    Select a{' '}
+                                    <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
+                                      conversations*.json
+                                    </code>{' '}
+                                    file from the unzipped folder. Exports split
+                                    into several files are imported one file at
+                                    a time.
+                                  </>
+                                )}
+                              </ImportStep>
+                              <input
+                                ref={claudeConversationsFileInputRef}
+                                type="file"
+                                accept={isPremium ? '.json,.zip' : '.json'}
+                                onChange={handleImportClaude}
+                                className="hidden"
+                                disabled={isImporting}
+                              />
+                              {isPremium && (
+                                <input
+                                  ref={claudeProjectsFileInputRef}
+                                  type="file"
+                                  accept=".json"
+                                  onChange={handleImportClaude}
+                                  className="hidden"
+                                  disabled={isImporting}
+                                />
+                              )}
+                              {renderImportStatus('claude') ?? (
+                                <div className="mt-2 flex gap-2">
+                                  <button
+                                    onClick={() =>
+                                      claudeConversationsFileInputRef.current?.click()
+                                    }
+                                    disabled={isImporting}
+                                    className={cn(
+                                      'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                      isImporting
+                                        ? 'cursor-not-allowed opacity-50'
+                                        : 'hover:bg-surface-chat',
+                                      isDarkMode
+                                        ? 'bg-surface-chat text-content-primary'
+                                        : 'bg-surface-sidebar text-content-primary',
+                                    )}
+                                  >
+                                    <ArrowUpTrayIcon
+                                      className="h-4 w-4"
+                                      aria-hidden="true"
+                                    />
+                                    Conversations
+                                  </button>
+                                  {isPremium && (
+                                    <button
+                                      onClick={() =>
+                                        claudeProjectsFileInputRef.current?.click()
+                                      }
+                                      disabled={isImporting}
+                                      className={cn(
+                                        'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                        isImporting
+                                          ? 'cursor-not-allowed opacity-50'
+                                          : 'hover:bg-surface-chat',
+                                        isDarkMode
+                                          ? 'bg-surface-chat text-content-primary'
+                                          : 'bg-surface-sidebar text-content-primary',
+                                      )}
+                                    >
+                                      <ArrowUpTrayIcon
+                                        className="h-4 w-4"
+                                        aria-hidden="true"
+                                      />
+                                      Projects
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Tinfoil Import */}
+                        <div
+                          className={cn(
+                            'rounded-lg border border-border-subtle',
+                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                          )}
+                        >
+                          <ImportAccordionHeader
+                            title="Import from Tinfoil"
+                            panelId={`${importSectionId}-tinfoil`}
+                            expanded={openImportSection === 'tinfoil'}
+                            onToggle={() => toggleImportSection('tinfoil')}
+                          />
+                          {openImportSection === 'tinfoil' && (
+                            <div
+                              id={`${importSectionId}-tinfoil`}
+                              className="space-y-3 border-t border-border-subtle p-4"
+                            >
+                              <div className="font-aeonik-fono text-xs text-content-muted">
+                                Re-import a Tinfoil conversations export or
+                                backup archive into your encrypted account.
+                              </div>
+                              <input
+                                ref={tinfoilFileInputRef}
+                                type="file"
+                                accept=".json,.zip"
+                                onChange={handleImportTinfoil}
+                                className="hidden"
+                                disabled={isImporting}
+                              />
+                              {renderImportStatus('tinfoil') ?? (
+                                <button
+                                  onClick={() =>
+                                    tinfoilFileInputRef.current?.click()
+                                  }
+                                  disabled={isImporting}
+                                  className={cn(
+                                    'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                    isImporting
+                                      ? 'cursor-not-allowed opacity-50'
+                                      : 'hover:bg-surface-chat',
+                                    isDarkMode
+                                      ? 'bg-surface-chat text-content-primary'
+                                      : 'bg-surface-sidebar text-content-primary',
+                                  )}
+                                >
+                                  <ArrowUpTrayIcon
+                                    className="h-4 w-4"
+                                    aria-hidden="true"
+                                  />
+                                  Select Tinfoil Export
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Export Chats */}
+                      <div className="space-y-3">
+                        <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                          Export Chats
+                        </h3>
+                        <div
+                          className={cn(
+                            'space-y-3 rounded-lg border border-border-subtle p-4',
+                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                          )}
                         >
                           <div className="font-aeonik-fono text-xs text-content-muted">
-                            Re-import a Tinfoil conversations export or backup
-                            archive into your encrypted account.
+                            Export all your conversations as a ZIP archive. This
+                            format can be re-imported into Tinfoil Chat.
                           </div>
-                          <input
-                            ref={tinfoilFileInputRef}
-                            type="file"
-                            accept=".json,.zip"
-                            onChange={handleImportTinfoil}
-                            className="hidden"
-                            disabled={isImporting}
-                          />
-                          {renderImportStatus('tinfoil') ?? (
-                            <button
-                              onClick={() =>
-                                tinfoilFileInputRef.current?.click()
-                              }
-                              disabled={isImporting}
-                              className={cn(
-                                'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                isImporting
-                                  ? 'cursor-not-allowed opacity-50'
-                                  : 'hover:bg-surface-chat',
-                                isDarkMode
-                                  ? 'bg-surface-chat text-content-primary'
-                                  : 'bg-surface-sidebar text-content-primary',
-                              )}
-                            >
-                              <ArrowUpTrayIcon
+                          <button
+                            onClick={handleExportAllChats}
+                            disabled={isExporting}
+                            className={cn(
+                              'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                              isExporting
+                                ? 'cursor-not-allowed opacity-50'
+                                : 'hover:bg-surface-chat',
+                              isDarkMode
+                                ? 'bg-surface-chat text-content-primary'
+                                : 'bg-surface-sidebar text-content-primary',
+                            )}
+                          >
+                            {isExporting && exportType === 'chats' ? (
+                              <PiSpinner
+                                className="h-4 w-4 animate-spin"
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <TfDownload
                                 className="h-4 w-4"
                                 aria-hidden="true"
                               />
-                              Select Tinfoil Export
-                            </button>
-                          )}
+                            )}
+                            {isExporting && exportType === 'chats'
+                              ? 'Exporting...'
+                              : 'Export Chats'}
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Export Chats */}
-                  <div className="space-y-3">
-                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                      Export Chats
-                    </h3>
-                    <div
-                      className={cn(
-                        'space-y-3 rounded-lg border border-border-subtle p-4',
-                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                      )}
-                    >
-                      <div className="font-aeonik-fono text-xs text-content-muted">
-                        Export all your conversations as a ZIP archive. This
-                        format can be re-imported into Tinfoil Chat.
                       </div>
-                      <button
-                        onClick={handleExportAllChats}
-                        disabled={isExporting}
-                        className={cn(
-                          'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                          isExporting
-                            ? 'cursor-not-allowed opacity-50'
-                            : 'hover:bg-surface-chat',
-                          isDarkMode
-                            ? 'bg-surface-chat text-content-primary'
-                            : 'bg-surface-sidebar text-content-primary',
-                        )}
-                      >
-                        {isExporting && exportType === 'chats' ? (
-                          <PiSpinner
-                            className="h-4 w-4 animate-spin"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <TfDownload className="h-4 w-4" aria-hidden="true" />
-                        )}
-                        {isExporting && exportType === 'chats'
-                          ? 'Exporting...'
-                          : 'Export Chats'}
-                      </button>
-                    </div>
-                  </div>
+                    </>
+                  )}
 
                   {/* Export Projects (premium only) */}
-                  {isPremium && (
+                  {cloudSyncEnabled && isPremium && (
                     <div className="space-y-3">
                       <h3 className="font-aeonik text-sm font-medium text-content-secondary">
                         Export Projects for Claude

@@ -1560,7 +1560,8 @@ export function ChatInterface({
             isSignedIn ? handleOpenCloudSyncSetup : undefined
           }
           onChatsUpdated={reloadChats}
-          onAllChatsDeleted={createNewChat}
+          onDeleteAllChats={thread.removeAll}
+          onAllChatsDeleted={() => createNewChat()}
           onAllProjectsDeleted={() => {
             exitProjectMode()
             thread.newChat()

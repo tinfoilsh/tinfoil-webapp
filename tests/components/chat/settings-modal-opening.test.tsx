@@ -1,10 +1,20 @@
 import { SettingsModal } from '@/components/chat/settings-modal'
+import {
+  SETTINGS_CLOUD_SYNC_ENABLED,
+  SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
+  SETTINGS_LOCAL_ONLY_MODE_ENABLED,
+} from '@/constants/storage-keys'
 import { getView, publish } from '@/services/harness/runtime'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const authState = vi.hoisted(() => ({ isSignedIn: false }))
+const toasts = vi.hoisted(() => vi.fn())
+
+vi.mock('@/hooks/use-toast', () => ({
+  useToast: () => ({ toast: toasts }),
+}))
 
 vi.mock('@clerk/react', () => ({
   useAuth: () => ({
@@ -47,6 +57,7 @@ function Harness(props: Partial<Parameters<typeof SettingsModal>[0]> = {}) {
         setThemeMode={vi.fn()}
         isClient={false}
         onOpenPromptLibrary={vi.fn()}
+        onDeleteAllChats={vi.fn()}
         encryptionKey={null}
         initialTab="general"
         {...props}
@@ -59,12 +70,14 @@ describe('settings opening', () => {
   beforeEach(() => {
     localStorage.clear()
     authState.isSignedIn = false
+    toasts.mockReset()
   })
 
   it.each([false, true])(
     'uses theme-aware blue for active passkeys (dark: %s)',
     async (isDarkMode) => {
       authState.isSignedIn = true
+      localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
       render(
         <Harness
           initialTab="cloud-sync"
@@ -109,6 +122,7 @@ describe('settings opening', () => {
     'gates project transfers in settings (premium: %s)',
     (isPremium) => {
       authState.isSignedIn = true
+      localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
       render(
         <Harness
           initialTab="data"
@@ -185,6 +199,7 @@ describe('settings opening', () => {
 
   it('uses headings around the import buttons and associates each expanded panel', () => {
     authState.isSignedIn = true
+    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
     render(<Harness initialTab="data" isSignedIn />)
     for (const provider of ['ChatGPT', 'Claude', 'Tinfoil']) {
       const name = `Import from ${provider}`
@@ -263,5 +278,150 @@ describe('settings opening', () => {
     expect(
       screen.queryByRole('dialog', { name: 'Settings' }),
     ).not.toBeInTheDocument()
+  })
+
+  describe('without cloud sync', () => {
+    beforeEach(() => {
+      authState.isSignedIn = true
+    })
+
+    it('keeps import, export, and project data controls with cloud sync', () => {
+      render(
+        <Harness
+          initialTab="data"
+          isSignedIn
+          isPremium
+          encryptionKey={`key_${'ab'.repeat(32)}`}
+        />,
+      )
+      expect(
+        screen.getByRole('button', { name: 'Delete all saved chats' }),
+      ).toBeEnabled()
+      expect(
+        screen.getByText(
+          'Permanently delete every chat from this device. This cannot be undone.',
+        ),
+      ).toBeInTheDocument()
+      for (const name of [
+        'Delete all projects',
+        'Import from ChatGPT',
+        'Export Chats',
+        'Export Projects for Claude',
+      ])
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+      expect(
+        screen.getByText(
+          /Importing and exporting chats requires end-to-end encrypted cloud sync/,
+        ),
+      ).toBeInTheDocument()
+    })
+
+    it('deletes the chats on this device', async () => {
+      const onDeleteAllChats = vi.fn(async () => ({
+        cloudDeletionCompleted: false,
+      }))
+      const onAllChatsDeleted = vi.fn()
+      render(
+        <Harness
+          initialTab="data"
+          isSignedIn
+          isClient
+          onDeleteAllChats={onDeleteAllChats}
+          onAllChatsDeleted={onAllChatsDeleted}
+        />,
+      )
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Delete all saved chats' }),
+      )
+      fireEvent.change(screen.getByPlaceholderText('delete all chats'), {
+        target: { value: 'delete all chats' },
+      })
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Yes, delete all my chats' }),
+      )
+
+      await waitFor(() => expect(onAllChatsDeleted).toHaveBeenCalledOnce())
+      expect(onDeleteAllChats).toHaveBeenCalledOnce()
+      expect(toasts).toHaveBeenCalledExactlyOnceWith({
+        title: 'All chats deleted',
+        description: 'Removed all chats from this device.',
+      })
+    })
+
+    it('opens the key setup instead of turning sync on without a key', async () => {
+      const setIsOpen = vi.fn()
+      const onCloudSyncSetupClick = vi.fn()
+      render(
+        <Harness
+          initialTab="cloud-sync"
+          isSignedIn
+          setIsOpen={setIsOpen}
+          onCloudSyncSetupClick={onCloudSyncSetupClick}
+        />,
+      )
+      expect(
+        screen.queryByRole('checkbox', { name: 'Enable local chats' }),
+      ).not.toBeInTheDocument()
+      const toggle = screen.getByRole('checkbox', {
+        name: 'Encrypted Cloud Sync',
+      })
+      expect(toggle).not.toBeChecked()
+
+      fireEvent.click(toggle)
+
+      await waitFor(() => expect(onCloudSyncSetupClick).toHaveBeenCalledOnce())
+      expect(setIsOpen).toHaveBeenCalledWith(false)
+      expect(localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED)).toBeNull()
+    })
+
+    it('turns sync on and off with a key and offers local chats while on', async () => {
+      render(
+        <Harness
+          initialTab="cloud-sync"
+          isSignedIn
+          encryptionKey={`key_${'ab'.repeat(32)}`}
+        />,
+      )
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: 'Encrypted Cloud Sync' }),
+      )
+      await waitFor(() =>
+        expect(
+          screen.getByRole('checkbox', { name: 'Encrypted Cloud Sync' }),
+        ).toBeChecked(),
+      )
+      expect(localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED)).toBe('true')
+
+      const localChats = screen.getByRole('checkbox', {
+        name: 'Enable local chats',
+      })
+      expect(localChats).not.toBeChecked()
+      fireEvent.click(localChats)
+      await waitFor(() => expect(localChats).toBeChecked())
+      expect(localStorage.getItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED)).toBe(
+        'true',
+      )
+      expect(
+        screen.getByText(
+          'Local chats will be permanently erased when you sign out. Treat local chats as temporary.',
+        ),
+      ).toBeInTheDocument()
+
+      fireEvent.click(
+        screen.getByRole('checkbox', { name: 'Encrypted Cloud Sync' }),
+      )
+      await waitFor(() =>
+        expect(
+          screen.getByRole('checkbox', { name: 'Encrypted Cloud Sync' }),
+        ).not.toBeChecked(),
+      )
+      expect(localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED)).toBe('false')
+      expect(
+        localStorage.getItem(SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED),
+      ).toBe('true')
+      expect(
+        screen.queryByRole('checkbox', { name: 'Enable local chats' }),
+      ).not.toBeInTheDocument()
+    })
   })
 })

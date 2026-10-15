@@ -39,6 +39,7 @@ import {
   wrapTinfoilKeyBundle,
 } from '@/services/passkey'
 import { isPrfSupported } from '@/services/passkey/prf-support'
+import { setCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
 import type { useUser } from '@clerk/react'
 import type { PRFResult } from '@tinfoilsh/passkey-kit'
@@ -476,6 +477,7 @@ export function usePasskeyBackup({
     syncVersion: number | null
     bundleVersion: number
   }): void => {
+    setCloudSyncEnabled(true)
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
     if (recovery.syncVersion !== null) {
       setLocalSyncVersion(recovery.credentialId, recovery.syncVersion)
@@ -546,6 +548,7 @@ export function usePasskeyBackup({
    * setupFirstTimePasskeyUser (init effect) and setupNewKeySplit (UI-triggered).
    */
   const applyNewPasskeyKey = (): void => {
+    setCloudSyncEnabled(true)
     localStorage.setItem(SECRET_PASSKEY_BACKED_UP, 'true')
 
     if (isMountedRef.current) {
