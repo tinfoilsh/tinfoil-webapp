@@ -177,6 +177,16 @@ export class HarnessClient {
   ): Promise<Blob> {
     return (await this.request(path, JSON.stringify(input), signal)).blob()
   }
+  // A response whose body the caller reads as it arrives, such as read-aloud
+  // audio. Aborting the signal ends the body; the caller cancels it when it
+  // stops reading early.
+  async stream(
+    path: string,
+    input: unknown,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    return this.request(path, JSON.stringify(input), signal)
+  }
   async *events(
     path: '/v1/threads/turn' | '/v1/threads/follow',
     input: Turn | { key?: string; threadId: string; runId: string },

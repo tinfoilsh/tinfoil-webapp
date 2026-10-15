@@ -1,13 +1,15 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
+import { publish } from '@/services/harness/runtime'
 import {
   fireEvent,
   isInaccessible,
   render,
   screen,
 } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { testSession } from '../../harness-fixture'
 
 const model = {
   modelName: 'current-model',
@@ -411,6 +413,78 @@ describe('DefaultMessageRenderer message actions', () => {
       expect(isInaccessible(screen.getByText(tooltip))).toBe(true)
     }
   })
+})
+
+describe('DefaultMessageRenderer read aloud', () => {
+  beforeEach(() => {
+    publish({
+      session: {
+        ...testSession,
+        features: { ...testSession.features, speech: true },
+      },
+    })
+  })
+
+  it('offers read aloud only on completed assistant responses', () => {
+    renderMessage({
+      role: 'assistant',
+      content: 'Hello.',
+      timestamp: new Date(),
+    })
+    expect(
+      screen.getByRole('button', { name: 'Read aloud' }),
+    ).toBeInTheDocument()
+  })
+
+  it('does not offer read aloud when the harness does not offer speech', () => {
+    publish({ session: testSession })
+    renderMessage({
+      role: 'assistant',
+      content: 'Hello.',
+      timestamp: new Date(),
+    })
+    expect(
+      screen.queryByRole('button', { name: 'Read aloud' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Copy message' }),
+    ).toBeInTheDocument()
+  })
+
+  it.each([
+    { role: 'user' as const, content: 'Hello.' },
+    { role: 'assistant' as const, content: '' },
+    { role: 'assistant' as const, content: 'Error.', isError: true },
+    { role: 'assistant' as const, content: 'Thinking.', isThinking: true },
+  ])('does not offer read aloud for $role / $content', (message) => {
+    renderMessage({ ...message, timestamp: new Date() })
+    expect(
+      screen.queryByRole('button', { name: 'Read aloud' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it.each([true, false])(
+    'does not offer speech while a response is streaming (last=%s)',
+    (isLastMessage) => {
+      render(
+        <Renderer
+          message={{
+            role: 'assistant',
+            content: 'Partial.',
+            timestamp: new Date(),
+          }}
+          messageIndex={0}
+          model={model}
+          isDarkMode={false}
+          isLastMessage={isLastMessage}
+          isStreaming
+        />,
+      )
+      expect(
+        screen.queryByRole('button', { name: 'Read aloud' }),
+      ).not.toBeInTheDocument()
+    },
+  )
 })
 
 describe('DefaultMessageRenderer work traces', () => {

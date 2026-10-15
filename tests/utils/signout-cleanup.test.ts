@@ -11,6 +11,8 @@ import {
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { getView, harnessAPI, publish } from '@/services/harness/runtime'
+import { SPEECH } from '@/services/speech/constants'
+import { speechPlayer } from '@/services/speech/player'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
   IndexedDBStorage,
@@ -23,6 +25,18 @@ import {
 } from '@/utils/signout-cleanup'
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { controlledSpeech, FakeAudioContext } from '../services/speech/fixtures'
+
+const speechMocks = vi.hoisted(() => ({
+  stream: vi.fn(),
+  AudioContext: vi.fn(),
+}))
+vi.mock('@/services/speech/stream', () => ({
+  streamSpeech: speechMocks.stream,
+}))
+vi.mock('@/utils/audio-context', () => ({
+  getAudioContextClass: () => speechMocks.AudioContext,
+}))
 
 vi.mock('@/components/chat/renderers', () => ({
   resetRendererRegistry: vi.fn(),
@@ -101,6 +115,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  speechPlayer.stop()
   authTokenManager.reset()
   encryptionService.clearKey()
   sessionStorage.clear()
@@ -229,6 +244,45 @@ describe('performSignoutCleanup', () => {
 
     expect(localStorage.getItem(AUTH_ACTIVE_USER_ID)).toBe('user_123')
   })
+})
+
+describe('speech during cleanup', () => {
+  it.each([
+    ['signout', () => performSignoutCleanup()],
+    [
+      'signout preserving the encryption key',
+      () => performSignoutCleanup({ preserveEncryptionKey: true }),
+    ],
+    ['account switch', () => performUserSwitchCleanup('user_new')],
+  ])(
+    'stops immediately during %s, before asynchronous storage cleanup',
+    async (_name, cleanup) => {
+      const audio = new FakeAudioContext()
+      const generation = controlledSpeech()
+      speechMocks.AudioContext.mockImplementation(function () {
+        return audio
+      })
+      speechMocks.stream.mockImplementation(generation.stream)
+      speechPlayer.read(Symbol('private response'), 'Private response.')
+      await vi.waitFor(() => expect(generation.requests).toHaveLength(1))
+      generation.requests[0].push(SPEECH.START_BUFFER_SECONDS)
+      await vi.waitFor(() =>
+        expect(speechPlayer.getSnapshot().status).toBe('playing'),
+      )
+      const { finish } = holdStorageReset()
+      const result = cleanup()
+      try {
+        expect(speechPlayer.getSnapshot().status).toBe('idle')
+        expect(generation.requests[0].signal.aborted).toBe(true)
+        expect(audio.scheduled).toHaveLength(1)
+        expect(audio.scheduled.every((source) => source.stopped)).toBe(true)
+        expect(audio.close).toHaveBeenCalledOnce()
+      } finally {
+        finish()
+        await result
+      }
+    },
+  )
 })
 
 describe('performUserSwitchCleanup', () => {

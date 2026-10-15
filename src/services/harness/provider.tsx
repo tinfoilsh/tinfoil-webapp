@@ -138,6 +138,15 @@ export function useHarness() {
   const api = useContext(HarnessContext)
   return { ...view, api: api ?? harnessAPI() }
 }
+// Whether the harness's session offers a feature. Features are absent until
+// the session loads, and from an older harness that lacks them.
+export function useSessionFeature(feature: string): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => getView().session?.features[feature] === true,
+    () => false,
+  )
+}
 export function useProfileSetting<T>(
   field: string,
   fallback: T,

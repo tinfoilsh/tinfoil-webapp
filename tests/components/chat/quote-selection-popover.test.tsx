@@ -9,9 +9,37 @@ import {
 import type { MessageRenderer } from '@/components/chat/renderers/types'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
 import type { BaseModel } from '@/config/models'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { publish } from '@/services/harness/runtime'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { testSession } from '../../harness-fixture'
+import {
+  controlledSpeech,
+  FakeAudioContext,
+} from '../../services/speech/fixtures'
+
+const audioMocks = vi.hoisted(() => ({ stream: vi.fn(), context: vi.fn() }))
+vi.mock('@/services/speech/player', async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import('@/services/speech/player')>()
+  return {
+    ...original,
+    speechPlayer: new original.SpeechPlayer(
+      audioMocks.stream,
+      audioMocks.context,
+    ),
+  }
+})
+let generation: ReturnType<typeof controlledSpeech>
+let audio: FakeAudioContext
 
 const frames = new Map<number, FrameRequestCallback>()
 let nextFrame = 0
@@ -111,6 +139,16 @@ beforeEach(() => {
   resetRendererRegistry()
   getRendererRegistry().setDefaultMessageRenderer(DefaultMessageRenderer)
   getRendererRegistry().registerMessageRenderer(customRenderer)
+  generation = controlledSpeech()
+  audio = new FakeAudioContext()
+  audioMocks.stream.mockReset().mockImplementation(generation.stream)
+  audioMocks.context.mockReset().mockReturnValue(audio)
+  publish({
+    session: {
+      ...testSession,
+      features: { ...testSession.features, speech: true },
+    },
+  })
   frames.clear()
   nextFrame = 0
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
@@ -196,6 +234,63 @@ describe('QuoteSelectionPopover', () => {
     expect(window.getSelection()!.toString()).toBe('Selected text')
     flushFrames()
     expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
+  })
+
+  it('reads only the highlighted portion and keeps a stop control in the menu', async () => {
+    render(<Harness enabled />)
+    selectText('Selected text', 9)
+    flushFrames()
+    const button = screen.getByRole('button', { name: 'Read' })
+    expect(button).toHaveTextContent('Read')
+    fireEvent.mouseDown(button)
+    fireEvent.click(button)
+    await waitFor(() => expect(generation.requests).toHaveLength(1))
+    expect(generation.requests[0].text).toBe('text')
+    expect(window.getSelection()?.toString()).toBe('text')
+    expect(screen.getByRole('toolbar')).toBeInTheDocument()
+    await act(async () => {
+      generation.requests[0].push(2)
+      generation.requests[0].finish()
+    })
+    const stop = screen.getByRole('button', { name: 'Stop reading aloud' })
+    expect(stop).toHaveClass('animate-pulse', 'text-red-600')
+    fireEvent.click(stop)
+    expect(audio.close).toHaveBeenCalledOnce()
+  })
+
+  it('does not reinterpret selected text as Markdown', async () => {
+    const text = '**literal** [1](source)'
+    render(<Harness enabled text={text} />)
+    selectText(text)
+    flushFrames()
+    fireEvent.click(screen.getByRole('button', { name: 'Read' }))
+    await waitFor(() => expect(generation.requests).toHaveLength(1))
+    expect(generation.requests[0].text).toBe(text)
+  })
+
+  it('cancels speech when the selection menu is dismissed', async () => {
+    render(<Harness enabled />)
+    selectText()
+    flushFrames()
+    fireEvent.click(screen.getByRole('button', { name: 'Read' }))
+    await waitFor(() => expect(generation.requests).toHaveLength(1))
+    window.getSelection()?.removeAllRanges()
+    fireEvent(document, new Event('selectionchange'))
+    flushFrames()
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument()
+    expect(generation.requests[0].signal.aborted).toBe(true)
+    expect(audio.close).toHaveBeenCalledOnce()
+  })
+
+  it('does not offer reading the selection when the harness does not offer speech', () => {
+    publish({ session: testSession })
+    render(<Harness enabled />)
+    selectText()
+    flushFrames()
+    expect(screen.getByRole('toolbar')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Read' }),
+    ).not.toBeInTheDocument()
   })
 
   it('keeps the wider toolbar inside the viewport near either edge', () => {

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { ReadAloudButton } from './renderers/components/ReadAloudButton'
 
 type PopoverPosition = {
   top: number
@@ -232,6 +233,11 @@ export function QuoteSelectionPopover({
           <span>Ask</span>
         </button>
       )}
+      <ReadAloudButton
+        content={selectedText}
+        textFormat="plain"
+        variant="menu"
+      />
     </div>
   )
 }

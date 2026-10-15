@@ -183,6 +183,17 @@ export class HarnessAPI {
     requestSignal.throwIfAborted()
     return result
   }
+  // A keyless request whose response body streams, such as speech.
+  async stream(
+    path: string,
+    input: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const requestSignal = this.signal(signal, false)
+    const response = await this.client.stream(path, input, requestSignal)
+    requestSignal.throwIfAborted()
+    return response
+  }
   async download(
     path: string,
     input: Record<string, unknown> = {},
