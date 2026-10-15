@@ -1,8 +1,14 @@
+import {
+  SETTINGS_CLOUD_SYNC_ENABLED,
+  SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
+  USER_ENCRYPTION_KEY,
+  USER_PREFS_LOCAL_PROFILE,
+} from '@/constants/storage-keys'
 import { authTokenManager } from '@/services/auth'
 import { encryptionService } from '@/services/encryption/encryption-service'
 import { HarnessProvider, useHarness } from '@/services/harness/provider'
 import { act, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { testSession } from './harness-fixture'
 
 const { auth, secure, controlplane } = vi.hoisted(() => ({
@@ -184,4 +190,76 @@ it('shows the loader without contacting services until Clerk loads', () => {
   expect(controlplane).not.toHaveBeenCalled()
   expect(secure.fetch).not.toHaveBeenCalled()
   expect(authTokenManager.isInitialized()).toBe(false)
+})
+
+function StorageMode() {
+  const { session, keyReady, profileReady, profile } = useHarness()
+  if (!session || !profileReady) return <p>Loading settings</p>
+  return (
+    <p>
+      {`${keyReady ? 'Key ready' : 'No key'} with ${profile.nickname ?? 'no nickname'}`}
+    </p>
+  )
+}
+
+describe('signed-in storage modes', () => {
+  beforeEach(() => {
+    auth.userId = 'storage-user'
+    auth.getToken.mockReset().mockResolvedValue('signed-in-jwt')
+    secure.fetch.mockReset().mockImplementation(async (url) =>
+      String(url).endsWith('/v1/session')
+        ? Response.json({
+            ...testSession,
+            user: { id: 'storage-user', anonymous: false },
+          })
+        : Response.json(
+            { error: { code: 'BAD_REQUEST', message: 'Unexpected request' } },
+            { status: 400 },
+          ),
+    )
+  })
+
+  it('reads an account’s local settings without the harness when it does not sync', async () => {
+    localStorage.setItem(
+      USER_PREFS_LOCAL_PROFILE,
+      JSON.stringify({ nickname: 'Local Sam' }),
+    )
+    render(
+      <HarnessProvider>
+        <StorageMode />
+      </HarnessProvider>,
+    )
+    await waitFor(() =>
+      expect(screen.getByText('No key with Local Sam')).toBeInTheDocument(),
+    )
+    expect(secure.fetch.mock.calls.map(([url]) => url)).toEqual([
+      'https://harness.example/v1/session',
+    ])
+    expect(localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED)).toBeNull()
+  })
+
+  it.each([
+    { disabled: null, enabled: 'true' },
+    { disabled: 'true', enabled: null },
+  ])(
+    'turns cloud sync on for a key on this device unless it was turned off ($disabled)',
+    async ({ disabled, enabled }) => {
+      localStorage.setItem(USER_ENCRYPTION_KEY, `key_${'cd'.repeat(32)}`)
+      if (disabled)
+        localStorage.setItem(SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED, disabled)
+      render(
+        <HarnessProvider>
+          <StorageMode />
+        </HarnessProvider>,
+      )
+      // The session is requested once the saved key has been checked.
+      await waitFor(() =>
+        expect(secure.fetch.mock.calls[0]?.[0]).toBe(
+          'https://harness.example/v1/session',
+        ),
+      )
+      expect(encryptionService.initialize).toHaveBeenCalledOnce()
+      expect(localStorage.getItem(SETTINGS_CLOUD_SYNC_ENABLED)).toBe(enabled)
+    },
+  )
 })
