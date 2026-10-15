@@ -64,7 +64,8 @@ export function NativeBackupExport({ available }: { available: boolean }) {
     <div>
       <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4">
         <p className="font-aeonik-fono text-xs text-content-muted">
-          Export your chats, projects and settings as a portable ZIP archive.
+          Export your synced chats, projects and settings as a portable ZIP
+          archive. Chats kept only on this device are not included.
         </p>
         <button
           type="button"

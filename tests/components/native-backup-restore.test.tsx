@@ -74,6 +74,33 @@ it('ignores a restore response when the owner changes', async () => {
     screen.queryByText('Backup restored successfully.'),
   ).not.toBeInTheDocument()
 })
+it('lets the same archive be chosen again after waiting is cancelled', async () => {
+  mocks.startImport.mockReturnValue(new Promise(() => {}))
+  const { container } = render(
+    <NativeBackupRestore available ownerId="alice" />,
+  )
+  const input = container.querySelector('input')!
+  // The browser fires change for a choice only when it differs from the
+  // value the input still holds.
+  Object.defineProperty(input, 'value', {
+    configurable: true,
+    writable: true,
+    value: 'C:\\fakepath\\backup.zip',
+  })
+  choose(container)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }))
+
+  expect(input.value).toBe('')
+  expect(
+    screen.getByText(
+      'Stopped waiting. Any accepted restore continues on the server.',
+    ),
+  ).toBeVisible()
+  expect(
+    screen.getByRole('button', { name: 'Restore Tinfoil Backup' }),
+  ).toBeEnabled()
+})
 it('explains why the server rejected a restore', async () => {
   mocks.startImport.mockResolvedValue({
     status: 'failed',

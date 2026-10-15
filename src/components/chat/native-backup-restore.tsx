@@ -128,6 +128,8 @@ export function NativeBackupRestore({
             onClick={() => {
               controller.current?.abort()
               controller.current = null
+              // The same archive can then be chosen again.
+              if (input.current) input.current.value = ''
               setBusy(false)
               setMessage(
                 'Stopped waiting. Any accepted restore continues on the server.',
