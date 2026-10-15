@@ -152,6 +152,7 @@ type ChatInterfaceProps = {
 export function ChatInterface({
   initialChatId,
   initialProjectId,
+  isLocalChatUrl = false,
   initialNewChatIsLocalOnly = false,
   suppressIntroModals = false,
   inputMinHeight = '60px',
@@ -183,7 +184,10 @@ export function ChatInterface({
   const thread = useThread(
     initialChatId,
     activeProject?.id ?? initialProjectId,
-    initialNewChatIsLocalOnly,
+    {
+      local: isLocalChatUrl,
+      newChatLocal: initialNewChatIsLocalOnly,
+    },
   )
   const {
     chat: currentChat,
@@ -574,7 +578,7 @@ export function ChatInterface({
     await setupPasskey()
   }
   const isCloudSyncRoutePending = false
-  const sidebarChat = useSidebarChat({ threadId: currentChat.id, options })
+  const sidebarChat = useSidebarChat({ context: thread.askContext, options })
   async function processFileForChat(file: File) {
     const localId = crypto.randomUUID()
     setProcessedDocuments((previous) => [

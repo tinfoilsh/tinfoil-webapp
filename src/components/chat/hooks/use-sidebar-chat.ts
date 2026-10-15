@@ -13,23 +13,34 @@ export interface SidebarChatState {
   isStreaming: boolean
   retryInfo: null
 }
+type AskContext = Pick<
+  Turn,
+  'key' | 'threadId' | 'local' | 'thread' | 'profile'
+>
 export function useSidebarChat({
-  threadId,
+  context,
   options,
 }: {
-  threadId: string
+  // The thread an ask reads: a stored thread by id and key, or a local
+  // thread's transcript.
+  context: () => Promise<AskContext>
   options: Turn['options']
 }) {
   const { api } = useHarness()
   const [state, setState] = useState(initialChat)
   const [quote, setQuote] = useState<string | null>(null)
+  // A local ask's run starts from the whole transcript; only the quote and
+  // its answer belong in the sidebar.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
   const controller = useRef<AbortController | null>(null)
   const run = useRef<{ threadId: string; runId: string } | null>(null)
+  const local = useRef(false)
   const reset = () => {
     controller.current?.abort()
     run.current = null
     setState(initialChat())
     setQuote(null)
+    setHidden(new Set())
   }
   useEffect(() => () => controller.current?.abort(), [])
   const askQuote = (text: string) => {
@@ -39,11 +50,16 @@ export function useSidebarChat({
     controller.current = abort
     void (async () => {
       try {
+        const thread = await context()
+        if (abort.signal.aborted) return
+        local.current = !!thread.local
+        setHidden(
+          new Set(thread.thread?.messages.map((message) => message.id) ?? []),
+        )
         const input: Turn = {
-          key: api.key(),
-          threadId,
+          ...thread,
           kind: 'ask',
-          ephemeral: true,
+          ...(thread.local ? {} : { ephemeral: true }),
           clientRequestId: crypto.randomUUID(),
           content: text,
           quote: text,
@@ -52,7 +68,7 @@ export function useSidebarChat({
         for await (const frame of api.client.events(
           '/v1/threads/turn',
           input,
-          api.signal(abort.signal),
+          api.signal(abort.signal, !thread.local),
         )) {
           if (abort.signal.aborted) return
           if (frame.event.type === 'RUN_STARTED')
@@ -81,21 +97,28 @@ export function useSidebarChat({
     })()
   }
   const isStreaming = state.status === 'streaming'
+  const shown = state.messages.filter((message) => !hidden.has(message.id))
   return {
-    messages: state.messages.map((m, index) =>
-      messageView(m, isStreaming && index === state.messages.length - 1),
+    messages: shown.map((m, index) =>
+      messageView(m, isStreaming && index === shown.length - 1),
     ),
     quote,
     loadingState: (isStreaming ? 'streaming' : 'idle') as LoadingState,
     isThinking: false,
     isWaitingForResponse:
-      isStreaming && !state.messages.some((m) => m.role === 'assistant'),
+      isStreaming && !shown.some((m) => m.role === 'assistant'),
     isStreaming,
     retryInfo: null,
     askQuote,
     reset,
     cancel: () => {
-      if (run.current) void api.post('/v1/threads/cancel', run.current)
+      if (run.current)
+        void api.post(
+          '/v1/threads/cancel',
+          run.current,
+          undefined,
+          !local.current,
+        )
       controller.current?.abort()
     },
   }

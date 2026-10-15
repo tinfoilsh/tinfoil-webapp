@@ -1,36 +1,137 @@
 import { GENUI_WIDGETS } from '@/components/chat/genui/registry'
-import type { Chat } from '@/components/chat/types'
+import type { Chat, Attachment as UIAttachment } from '@/components/chat/types'
 import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { chatEvents } from '@/services/storage/chat-events'
+import { buildForkedChat } from '@/services/storage/chat-fork'
+import { base64ToUint8Array, uint8ArrayToBase64 } from '@/utils/binary-codec'
+import { logError } from '@/utils/error-handling'
+import { generateReverseId } from '@/utils/reverse-id'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { turnProfile } from './local-profile'
+import {
+  committedReplies,
+  localAttachment,
+  localThreadStore,
+  localThreadView,
+  memoryThreadStore,
+  mergeLocalThread,
+  newLocalThread,
+  now,
+  readLocalThread,
+  turnThread,
+  wireMessage,
+  type LocalAttachment,
+  type LocalThread,
+  type LocalThreadStore,
+} from './local-threads'
 import { useHarness } from './provider'
-import { initialChat, reduceEvent } from './reducer'
+import { initialChat, reduceEvent, type ChatState } from './reducer'
 import { HarnessError } from './sse'
-import type { Thread, ThreadSummary, Turn } from './types'
+import { useCloudSyncSetting } from './storage-mode'
+import type {
+  Frame,
+  Thread,
+  ThreadSummary,
+  Turn,
+  Attachment as WireAttachment,
+} from './types'
 import { messageView, threadView } from './view-model'
+
+export interface ThreadRoute {
+  // The route names a chat stored on this device (/chat/local/:id).
+  local?: boolean
+  // A new chat starts on this device, as from the sidebar's Local tab.
+  newChatLocal?: boolean
+}
+
+// A run of a thread the browser stores. It keeps the transcript it sent, so
+// the run's window can be merged back, and the descriptors of new uploads.
+interface LocalRun {
+  threadId: string
+  base: LocalThread
+  store: LocalThreadStore
+  uploads: ReadonlyMap<string, LocalAttachment>
+  runId?: string
+}
+
+type FollowInput = { key?: string; threadId: string; runId: string }
+
+function withStoredPrefix(state: ChatState, base: LocalThread): ChatState {
+  if (!state.hasOlder) return state
+  const index = base.messages.findIndex(
+    (message) => message.id === state.messages[0]?.id,
+  )
+  if (index <= 0) return state
+  return {
+    ...state,
+    messages: [
+      ...base.messages.slice(0, index).map(wireMessage),
+      ...state.messages,
+    ],
+    hasOlder: false,
+  }
+}
 
 export function useThread(
   initialId?: string | null,
   projectId?: string | null,
-  initiallyTemporary = false,
+  route: ThreadRoute = {},
 ) {
   const { api, session, profile, keyReady } = useHarness()
+  const cloudSyncSetting = useCloudSyncSetting()
+  const cloud = !!api.userId && cloudSyncSetting
+  const cloudRef = useRef(cloud)
+  cloudRef.current = cloud
+  const profileRef = useRef(profile)
+  profileRef.current = profile
   const [state, setState] = useState(initialChat)
   const current = useRef(state)
   current.current = state
   const [id, setId] = useState<string | null>(null)
   const idRef = useRef(id)
   idRef.current = id
-  const [temporary, setTemporary] = useState(initiallyTemporary || !api.userId)
+  const [temporary, setTemporary] = useState(false)
+  const temporaryRef = useRef(temporary)
+  temporaryRef.current = temporary
+  // Whether the open chat is a thread the browser stores: every chat of a
+  // signed-out visitor or of an account without cloud sync, and chats from
+  // the Local tab. A temporary chat without cloud sync is one too, with its
+  // transcript held in memory.
+  const [local, setLocal] = useState(
+    () => !cloud || !!route.local || !!route.newChatLocal,
+  )
+  const localRef = useRef(local)
+  localRef.current = local
   const [model, setModel] = useState('')
   const [presetId, setPresetId] = useState<string | null>(null)
   const [threads, setThreads] = useState<ThreadSummary[]>([])
+  const [localThreads, setLocalThreads] = useState<ThreadSummary[]>([])
+  const localIds = useRef(new Set<string>())
+  localIds.current = new Set(localThreads.map((thread) => thread.id))
   const [cursor, setCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [notFound, setNotFound] = useState(false)
   const [error, setError] = useState('')
   const followers = useRef(new Set<AbortController>())
+  // Streams of runs the browser stores keep reading when the view moves to
+  // another chat, so their replies are still saved.
+  const localStreams = useRef(new Set<AbortController>())
+  const localRuns = useRef(new Map<string, LocalRun>())
   const generation = useRef(0)
   const starting = useRef(false)
-  const pending = useRef<Turn | null>(null)
+  const pending = useRef<{ input: Turn; run?: LocalRun } | null>(null)
+  const uploads = useRef(new Map<string, LocalAttachment>())
+  const images = useRef(
+    new Map<string, { base64: string; mimeType?: string }>(),
+  )
+  const store = useMemo(
+    () => localThreadStore(api.userId ? 'device' : 'tab'),
+    [api.userId],
+  )
+  const memory = useRef(memoryThreadStore())
+  const storeFor = (isTemporary: boolean) =>
+    isTemporary ? memory.current : store
+  const runsLocally = () => localRef.current
   const storageKey = `harness-run:${api.userId ?? 'anonymous'}`
   const contentKey = () => api.key()
   const report = useCallback(
@@ -59,7 +160,7 @@ export function useThread(
   )
   const refresh = useCallback(
     async (next?: string) => {
-      if (!api.userId || !keyReady) return
+      if (!cloud || !keyReady) return
       const version = generation.current
       const result = await api.post<{
         threads: ThreadSummary[]
@@ -78,8 +179,17 @@ export function useThread(
       )
       setCursor(result.nextCursor)
     },
-    [api, keyReady, projectId],
+    [api, cloud, keyReady, projectId],
   )
+  const rememberImages = (thread: LocalThread) => {
+    for (const message of thread.messages)
+      for (const attachment of message.attachments ?? [])
+        if (attachment.base64)
+          images.current.set(attachment.id, {
+            base64: attachment.base64,
+            mimeType: attachment.mimeType,
+          })
+  }
   const reset = useCallback(() => {
     generation.current++
     for (const controller of followers.current) controller.abort()
@@ -89,71 +199,229 @@ export function useThread(
     idRef.current = null
     setId(null)
     setError('')
+    setNotFound(false)
     starting.current = false
     pending.current = null
+    uploads.current = new Map()
+    images.current = new Map()
   }, [])
+  // The stored transcript with what the view knows of the current run, which
+  // may not be saved yet. A new chat starts from an empty thread.
+  async function localTranscript(
+    threadId: string,
+    target: LocalThreadStore,
+  ): Promise<LocalThread> {
+    const stored =
+      (await target.get(threadId)) ??
+      newLocalThread(threadId, {
+        model,
+        presetId: presetId ?? undefined,
+      })
+    if (idRef.current !== threadId) return stored
+    return mergeLocalThread(
+      stored,
+      {
+        messages: current.current.messages,
+        hasOlder: current.current.hasOlder,
+      },
+      {
+        uploads: uploads.current,
+        summary: current.current.snapshot.thread,
+        updatedAt: stored.updatedAt,
+      },
+    )
+  }
+  async function persist(run: LocalRun, view: ChatState, frame: Frame) {
+    const terminal =
+      frame.event.type === 'RUN_FINISHED' || frame.event.type === 'RUN_ERROR'
+    const saved = await run.store.update(run.threadId, (stored) =>
+      mergeLocalThread(
+        stored ?? run.base,
+        { messages: view.messages, hasOlder: view.hasOlder },
+        {
+          uploads: run.uploads,
+          replies: terminal ? committedReplies(frame.event.metadata) : [],
+          summary: view.snapshot.thread,
+        },
+      ),
+    )
+    if (saved && idRef.current === run.threadId) {
+      rememberImages(saved)
+      // A title the user set during the run outranks the run's title.
+      if (terminal && saved.titleState === 'manual')
+        setState((previous) =>
+          previous.snapshot.thread
+            ? {
+                ...previous,
+                snapshot: {
+                  ...previous.snapshot,
+                  thread: {
+                    ...previous.snapshot.thread,
+                    title: saved.title,
+                    titleState: saved.titleState,
+                  },
+                },
+              }
+            : previous,
+        )
+    }
+  }
   async function stream(
     path: '/v1/threads/turn' | '/v1/threads/follow',
-    input: Turn | { key?: string; threadId: string; runId: string },
+    input: Turn | FollowInput,
     lastEventId?: number,
+    run?: LocalRun,
+    quiet = false,
   ) {
     const controller = new AbortController()
-    followers.current.add(controller)
+    const streams = run ? localStreams.current : followers.current
+    streams.add(controller)
     const version = generation.current
     let runId = 'runId' in input ? input.runId : undefined
     let succeeded = false
+    let windowed = false
+    let view = current.current
     try {
       for await (const frame of api.client.events(
         path,
         input,
-        api.signal(controller.signal),
+        api.signal(controller.signal, !run),
         lastEventId,
       )) {
-        if (version !== generation.current) break
+        const attached = version === generation.current
+        if (!attached && !run) break
         runId = frame.event.runId ?? runId
-        const next = reduceEvent(current.current, frame, runId)
-        current.current = next
-        setState(next)
-        if (frame.event.type === 'RUN_FINISHED')
-          succeeded = frame.event.metadata?.cancelled !== true
-        if (frame.event.type === 'RUN_STARTED') {
-          pending.current = null
-          starting.current = false
-          initial.current = frame.event.threadId!
-          setId(frame.event.threadId!)
-          idRef.current = frame.event.threadId!
-          try {
-            sessionStorage.setItem(
-              storageKey,
-              JSON.stringify({
-                threadId: frame.event.threadId,
-                runId,
-                temporary,
-              }),
-            )
-          } catch {
-            /* routing hints are optional */
+        let next = reduceEvent(attached ? current.current : view, frame, runId)
+        const event = frame.event
+        if (run && event.type === 'MESSAGES_SNAPSHOT')
+          next = withStoredPrefix(next, run.base)
+        view = next
+        if (attached) {
+          current.current = next
+          setState(next)
+        }
+        const terminal =
+          event.type === 'RUN_FINISHED' || event.type === 'RUN_ERROR'
+        if (event.type === 'RUN_FINISHED')
+          succeeded = event.metadata?.cancelled !== true
+        if (event.type === 'MESSAGES_SNAPSHOT') windowed = true
+        if (event.type === 'RUN_STARTED') {
+          if (run) {
+            if (event.threadId && event.threadId !== run.threadId) {
+              run.threadId = event.threadId
+              run.base = { ...run.base, id: event.threadId }
+            }
+            run.runId = event.runId
+            localRuns.current.set(run.threadId, run)
+          }
+          if (attached) {
+            pending.current = null
+            starting.current = false
+            initial.current = event.threadId!
+            setId(event.threadId!)
+            idRef.current = event.threadId!
+            try {
+              sessionStorage.setItem(
+                storageKey,
+                JSON.stringify({
+                  threadId: event.threadId,
+                  runId,
+                  temporary,
+                  ...(run ? { local: true } : {}),
+                }),
+              )
+            } catch {
+              /* routing hints are optional */
+            }
           }
         }
-        if (
-          frame.event.type === 'RUN_FINISHED' ||
-          frame.event.type === 'RUN_ERROR'
-        )
+        // A run has committed nothing until its first window arrives.
+        if (run && windowed && (event.type === 'MESSAGES_SNAPSHOT' || terminal))
+          await persist(run, next, frame).catch((cause) => {
+            logError('Failed to save a local chat', cause, {
+              component: 'useThread',
+              action: 'persist',
+            })
+            if (attached)
+              setError('This chat could not be saved on this device.')
+          })
+        if (terminal) {
+          if (run && localRuns.current.get(run.threadId) === run)
+            localRuns.current.delete(run.threadId)
+          if (run) forgetReceipt(run.threadId)
           void (api.userId ? refresh() : api.refresh()).catch(report)
+        }
       }
     } catch (cause) {
-      if (!controller.signal.aborted && version === generation.current)
-        report(cause)
+      if (!controller.signal.aborted && version === generation.current) {
+        // A local thread has its id before it starts, so another message may
+        // follow a turn the harness did not accept.
+        if (run && !run.runId) starting.current = false
+        if (quiet) forgetReceipt(run?.threadId)
+        else report(cause)
+      }
     } finally {
-      followers.current.delete(controller)
+      streams.delete(controller)
     }
     return succeeded && version === generation.current
   }
-  async function open(threadId: string) {
+  function forgetReceipt(threadId?: string) {
+    try {
+      const receipt = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null')
+      if (receipt?.local && receipt.threadId === threadId)
+        sessionStorage.removeItem(storageKey)
+    } catch {
+      /* optional routing hint */
+    }
+  }
+  // Rejoins a run of a stored chat: one this page started, or one a
+  // reloaded page left behind, so its reply is still saved.
+  function resumeLocalRun(thread: LocalThread) {
+    let runId = localRuns.current.get(thread.id)?.runId
+    if (!runId)
+      try {
+        const receipt = JSON.parse(sessionStorage.getItem(storageKey) ?? 'null')
+        if (receipt?.local && receipt.threadId === thread.id)
+          runId = receipt.runId
+      } catch {
+        /* discard invalid routing hints */
+      }
+    if (typeof runId !== 'string') return
+    void stream(
+      '/v1/threads/follow',
+      { threadId: thread.id, runId },
+      undefined,
+      { threadId: thread.id, base: thread, store, uploads: new Map() },
+      true,
+    )
+  }
+  async function openLocal(threadId: string, version: number) {
+    const thread = await store.get(threadId)
+    if (version !== generation.current) return
+    setTemporary(false)
+    setLocal(true)
+    if (!thread) {
+      setNotFound(true)
+      return
+    }
+    rememberImages(thread)
+    const next = initialChat(localThreadView(thread))
+    current.current = next
+    setState(next)
+    setId(thread.id)
+    idRef.current = thread.id
+    setModel(thread.model ?? '')
+    setPresetId(thread.presetId ?? null)
+    resumeLocalRun(thread)
+  }
+  async function open(threadId: string, options: { local?: boolean } = {}) {
+    const openLocally =
+      options.local ?? (!cloudRef.current || localIds.current.has(threadId))
     reset()
     const version = generation.current
     setLoading(true)
     try {
+      if (openLocally) return await openLocal(threadId, version)
       const thread = await api.post<Thread>('/v1/threads/get', { id: threadId })
       if (version !== generation.current) return
       const next = initialChat(thread)
@@ -162,6 +430,7 @@ export function useThread(
       setId(thread.id)
       idRef.current = thread.id
       setTemporary(false)
+      setLocal(false)
       setModel(thread.model)
       setPresetId(thread.presetId ?? null)
       if (thread.activeRun)
@@ -183,22 +452,55 @@ export function useThread(
     void refresh().catch(report)
   }, [refresh, report])
   useEffect(() => {
+    let sequence = 0
+    const load = () => {
+      const request = ++sequence
+      void store
+        .list()
+        .then((list) => {
+          if (request === sequence) setLocalThreads(list)
+        })
+        .catch((cause) =>
+          logError('Failed to list local chats', cause, {
+            component: 'useThread',
+            action: 'listLocal',
+          }),
+        )
+    }
+    load()
+    return chatEvents.on(load)
+  }, [store])
+  const previousCloud = useRef(cloud)
+  useEffect(() => {
+    if (previousCloud.current === cloud) return
+    previousCloud.current = cloud
+    if (!cloud) setThreads([])
+    // A blank chat follows the storage mode; a stored chat of the harness
+    // cannot stay open once cloud sync is off.
+    if (!idRef.current) setLocal(!cloud || !!route.newChatLocal)
+    else if (!cloud && !localRef.current) {
+      reset()
+      setLocal(true)
+    }
+  }, [cloud, reset, route.newChatLocal])
+  useEffect(() => {
     if (
       !initialId ||
-      !keyReady ||
       initial.current === initialId ||
       idRef.current === initialId
     )
       return
+    if (!route.local && !keyReady) return
     initial.current = initialId
-    void open(initialId).catch(report)
+    void open(initialId, { local: !!route.local }).catch(report)
     // Opening a route must not run again when its stream updates the view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialId, keyReady])
+  }, [initialId, keyReady, route.local])
   useEffect(() => {
     const clear = () => {
-      reset()
       setThreads([])
+      if (localRef.current) return
+      reset()
       initial.current = null
       try {
         sessionStorage.removeItem(storageKey)
@@ -206,10 +508,12 @@ export function useThread(
         /* optional routing hint */
       }
     }
+    const streams = localStreams.current
     window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, clear)
     return () => {
       window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, clear)
       reset()
+      for (const controller of streams) controller.abort()
     }
   }, [reset, storageKey])
   useEffect(() => {
@@ -221,7 +525,7 @@ export function useThread(
         typeof receipt?.runId !== 'string'
       )
         return
-      if (receipt.temporary) {
+      if (receipt.temporary && !receipt.local) {
         setTemporary(true)
         setId(receipt.threadId)
         void stream('/v1/threads/follow', {
@@ -235,17 +539,11 @@ export function useThread(
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, keyReady, !!session])
-  function send(fields: Partial<Turn> = {}) {
-    if (!idRef.current && starting.current) return
-    setError('')
-    const input: Turn = {
-      key: contentKey(),
-      threadId: idRef.current,
+  function turnFields(fields: Partial<Turn>): Turn {
+    return {
       clientRequestId: crypto.randomUUID(),
+      threadId: idRef.current,
       kind: 'send',
-      ephemeral: temporary,
-      projectId: idRef.current ? undefined : projectId,
-      presetId: idRef.current ? undefined : presetId,
       widgets: GENUI_WIDGETS.map((widget) => widget.name).filter((name) =>
         session?.widgets.includes(name),
       ),
@@ -255,11 +553,105 @@ export function useThread(
       },
       ...fields,
     }
-    pending.current = { ...input, key: undefined }
+  }
+  // A local turn carries the thread and the settings a prompt reads instead
+  // of the content key, which it never uses.
+  async function sendLocal(fields: Partial<Turn>) {
+    starting.current = true
+    const version = generation.current
+    const target = storeFor(temporaryRef.current)
+    const threadId =
+      idRef.current ?? pending.current?.run?.threadId ?? generateReverseId().id
+    let base: LocalThread
+    try {
+      base = await localTranscript(threadId, target)
+    } catch (cause) {
+      starting.current = false
+      report(cause)
+      return false
+    }
+    if (version !== generation.current) return false
+    const input: Turn = {
+      ...turnFields(fields),
+      threadId,
+      local: true,
+      thread: turnThread(base),
+      profile: turnProfile(profileRef.current),
+    }
+    const run: LocalRun = {
+      threadId,
+      base,
+      store: target,
+      uploads: new Map(uploads.current),
+    }
+    pending.current = { input, run }
+    return stream('/v1/threads/turn', input, undefined, run)
+  }
+  function send(fields: Partial<Turn> = {}) {
+    if ((!idRef.current || runsLocally()) && starting.current) return
+    setError('')
+    if (runsLocally()) return sendLocal(fields)
+    const input = turnFields({
+      key: contentKey(),
+      ephemeral: temporary,
+      projectId: idRef.current ? undefined : projectId,
+      presetId: idRef.current ? undefined : presetId,
+      ...fields,
+    })
+    pending.current = { input: { ...input, key: undefined } }
     if (!idRef.current) starting.current = true
     return stream('/v1/threads/turn', input)
   }
+  const isLocalThread = (threadId: string) =>
+    idRef.current === threadId
+      ? localRef.current
+      : !cloudRef.current || localIds.current.has(threadId)
   async function update(threadId: string, patch: Record<string, unknown>) {
+    if (isLocalThread(threadId)) {
+      const target = storeFor(
+        idRef.current === threadId && temporaryRef.current,
+      )
+      const saved = await target.update(
+        threadId,
+        (thread) =>
+          thread && {
+            ...thread,
+            ...(typeof patch.title === 'string'
+              ? { title: patch.title, titleState: 'manual' as const }
+              : {}),
+            ...(typeof patch.model === 'string' ? { model: patch.model } : {}),
+            ...('presetId' in patch
+              ? { presetId: (patch.presetId as string | null) || undefined }
+              : {}),
+            ...(typeof patch.webSearchEnabled === 'boolean'
+              ? { webSearchEnabled: patch.webSearchEnabled }
+              : {}),
+            updatedAt: now(),
+          },
+      )
+      if (saved && idRef.current === threadId)
+        setState((previous) =>
+          previous.snapshot.thread
+            ? {
+                ...previous,
+                snapshot: {
+                  ...previous.snapshot,
+                  thread: {
+                    ...previous.snapshot.thread,
+                    title: saved.title,
+                    titleState: saved.titleState,
+                    model: saved.model ?? previous.snapshot.thread.model,
+                    webSearchEnabled:
+                      saved.webSearchEnabled ??
+                      previous.snapshot.thread.webSearchEnabled,
+                    updatedAt: saved.updatedAt,
+                  },
+                },
+              }
+            : previous,
+        )
+      return
+    }
     const summary = await api.post<ThreadSummary>('/v1/threads/update', {
       id: threadId,
       ...patch,
@@ -274,29 +666,154 @@ export function useThread(
       }))
   }
   async function remove(threadId: string) {
+    if (isLocalThread(threadId)) {
+      const runId = localRuns.current.get(threadId)?.runId
+      if (runId)
+        void api
+          .post('/v1/threads/cancel', { threadId, runId }, undefined, false)
+          .catch(() => {})
+      await store.delete(threadId)
+      localRuns.current.delete(threadId)
+      setLocalThreads((previous) => previous.filter((t) => t.id !== threadId))
+      if (idRef.current === threadId) reset()
+      return
+    }
     await api.post('/v1/threads/delete', { id: threadId })
     setThreads((previous) => previous.filter((t) => t.id !== threadId))
     if (idRef.current === threadId) reset()
+  }
+  // Deletes every chat the user can see here: the harness's stored chats
+  // with cloud sync, and the chats kept on this device.
+  async function removeAll() {
+    let cloudDeletionCompleted = false
+    if (cloudRef.current) {
+      await api.post('/v1/threads/delete-all')
+      cloudDeletionCompleted = true
+    }
+    await store.deleteAll()
+    reset()
+    setThreads([])
+    setLocalThreads([])
+    return { cloudDeletionCompleted }
+  }
+  async function upload(file: File): Promise<WireAttachment> {
+    if (!runsLocally())
+      return api.upload<WireAttachment>('/v1/attachments/upload', file, {
+        ephemeral: String(temporary),
+        ...(idRef.current ? { threadId: idRef.current } : {}),
+      })
+    const { descriptor, ...view } = await api.upload<
+      WireAttachment & { descriptor: unknown }
+    >('/v1/attachments/upload', file, { local: 'true' }, undefined, false)
+    // The harness keeps an upload's image bytes only briefly; a local
+    // thread sends them back with later turns.
+    const base64 =
+      view.kind === 'image'
+        ? uint8ArrayToBase64(new Uint8Array(await file.arrayBuffer()))
+        : undefined
+    const attachment = localAttachment(descriptor, base64)
+    uploads.current.set(attachment.id, attachment)
+    if (base64)
+      images.current.set(attachment.id, {
+        base64,
+        mimeType: attachment.mimeType,
+      })
+    return view
+  }
+  async function loadImage(attachment: UIAttachment): Promise<Blob> {
+    const image = images.current.get(attachment.id)
+    if (!image)
+      throw new HarnessError({
+        code: 'THREAD_NOT_FOUND',
+        message: 'This image is not stored on this device.',
+      })
+    return new Blob([base64ToUint8Array(image.base64)], {
+      type: image.mimeType || 'image/jpeg',
+    })
+  }
+  // A local chat is forked on the device, the way the previous client forked
+  // chats it stored: the fork keeps the messages up to the chosen one.
+  async function fork(messageIndex: number) {
+    const threadId = idRef.current
+    if (!threadId || !localRef.current || temporaryRef.current) return null
+    const source = await localTranscript(threadId, store)
+    const forkId = generateReverseId().id
+    const forked = buildForkedChat(
+      {
+        ...source,
+        createdAt: new Date(source.createdAt),
+        presetId: source.presetId,
+        isLocalOnly: true,
+        messages: source.messages as unknown as Chat['messages'],
+      },
+      messageIndex + 1,
+      forkId,
+    )
+    const thread = readLocalThread({
+      ...newLocalThread(forkId, source),
+      title: forked.title,
+      titleState: forked.titleState,
+      messages: forked.messages,
+    })
+    await store.update(forkId, () => thread)
+    await open(forkId, { local: true })
+    return forkId
+  }
+  // The thread an ask carries: a local chat sends its transcript.
+  async function askContext(): Promise<
+    Pick<Turn, 'key' | 'threadId' | 'local' | 'thread' | 'profile'>
+  > {
+    const threadId = idRef.current
+    if (threadId && runsLocally())
+      return {
+        threadId,
+        local: true,
+        thread: turnThread(
+          await localTranscript(threadId, storeFor(temporaryRef.current)),
+        ),
+        profile: turnProfile(profileRef.current),
+      }
+    return { key: contentKey(), threadId }
   }
   async function reconnect() {
     setError('')
     const runId =
       current.current.runId ?? current.current.snapshot.thread?.activeRun?.runId
-    if (idRef.current && runId)
+    const threadId = idRef.current
+    if (threadId && runId) {
+      if (!runsLocally())
+        return stream(
+          '/v1/threads/follow',
+          { key: contentKey(), threadId, runId },
+          current.current.cursors[runId],
+        )
+      const target = storeFor(temporaryRef.current)
+      const run = localRuns.current.get(threadId) ?? {
+        threadId,
+        base: await localTranscript(threadId, target),
+        store: target,
+        uploads: new Map(uploads.current),
+      }
       return stream(
         '/v1/threads/follow',
-        { key: contentKey(), threadId: idRef.current, runId },
+        { threadId, runId },
         current.current.cursors[runId],
+        run,
       )
-    if (pending.current)
-      return stream('/v1/threads/turn', {
-        ...pending.current,
-        key: contentKey(),
-      })
-    if (initialId) return open(initialId)
+    }
+    if (pending.current) {
+      const { input, run } = pending.current
+      return stream(
+        '/v1/threads/turn',
+        run ? input : { ...input, key: contentKey() },
+        undefined,
+        run,
+      )
+    }
+    if (initialId) return open(initialId, { local: !!route.local })
   }
   async function older() {
-    if (!id) return
+    if (!id || local) return
     const version = generation.current
     const thread = await api.post<Thread>('/v1/threads/get', {
       id,
@@ -314,15 +831,32 @@ export function useThread(
         hasOlder: thread.hasOlder,
       }))
   }
+  const runKey = () => (runsLocally() ? {} : { key: contentKey() })
   const running = state.status === 'streaming' || state.status === 'queued'
-  const messages = state.messages.map((m, index) =>
-    messageView(m, running && index === state.messages.length - 1),
-  )
+  const isLocalChat = local && !temporary
+  const messages = state.messages.map((m, index) => {
+    const view = messageView(m, running && index === state.messages.length - 1)
+    if (!local || !view.attachments?.length) return view
+    // An image the previous client stored without a thumbnail shows its
+    // bytes; others load them when opened in the gallery.
+    return {
+      ...view,
+      attachments: view.attachments.map((attachment) =>
+        attachment.thumbnailBase64 || !images.current.has(attachment.id)
+          ? attachment
+          : {
+              ...attachment,
+              base64: images.current.get(attachment.id)!.base64,
+            },
+      ),
+    }
+  })
   const summary = state.snapshot.thread
   const chat: Chat = summary
     ? {
         ...threadView(summary, messages),
         isTemporary: temporary,
+        isLocalOnly: isLocalChat,
         presetId: presetId ?? undefined,
       }
     : {
@@ -332,8 +866,9 @@ export function useThread(
         createdAt: new Date(),
         isBlankChat: !id,
         isTemporary: temporary,
+        isLocalOnly: isLocalChat,
         model,
-        projectId: projectId ?? undefined,
+        projectId: local ? undefined : (projectId ?? undefined),
         presetId: presetId ?? undefined,
       }
   return {
@@ -341,29 +876,41 @@ export function useThread(
     state,
     chat,
     threads,
-    chats: threads.map((t) => threadView(t)),
+    chats: [
+      ...(cloud ? threads.map((t) => threadView(t)) : []),
+      ...localThreads.map((t) => ({ ...threadView(t), isLocalOnly: true })),
+    ],
     model,
     setModel,
     presetId,
     setPresetId,
     temporary,
     setTemporary,
+    local: isLocalChat,
     loading,
+    notFound,
     error: error || state.error?.message || '',
     report,
     open,
     send,
     update,
     remove,
+    removeAll,
+    upload,
+    loadImage,
+    fork,
+    askContext,
     refresh,
     reconnect,
     older,
     hasOlder: state.hasOlder,
     cursor,
     running,
-    newChat: () => {
+    newChat: (options: { local?: boolean } = {}) => {
       initial.current = null
       reset()
+      setLocal(!cloudRef.current || !!options.local)
+      memory.current = memoryThreadStore()
       try {
         sessionStorage.removeItem(storageKey)
       } catch {
@@ -374,7 +921,7 @@ export function useThread(
       api.post(
         '/v1/threads/cancel',
         {
-          key: contentKey(),
+          ...runKey(),
           threadId: id,
           runId:
             current.current.snapshot.thread?.activeRun?.runId ??
@@ -386,14 +933,14 @@ export function useThread(
     sendQueued: (queueId: string) =>
       api.post(
         '/v1/threads/queue/send',
-        { key: contentKey(), threadId: id, queueId },
+        { ...runKey(), threadId: id, queueId },
         undefined,
         false,
       ),
     removeQueued: (queueId: string) =>
       api.post(
         '/v1/threads/queue/remove',
-        { key: contentKey(), threadId: id, queueId },
+        { ...runKey(), threadId: id, queueId },
         undefined,
         false,
       ),

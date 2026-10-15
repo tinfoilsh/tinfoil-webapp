@@ -70,7 +70,7 @@ beforeEach(() => {
     keyReady: true,
   })
 })
-it('sends the first turn selections and renders the server transcript without storing content', async () => {
+it('runs a signed-out first turn as a local thread with its preset and keeps it in the tab', async () => {
   events.mockImplementation(async function* () {
     yield started
     yield messages
@@ -82,19 +82,29 @@ it('sends the first turn selections and renders the server transcript without st
   const input = events.mock.calls[0][1] as Turn
   expect(input).toMatchObject({
     content: 'private question',
-    projectId: 'project-1',
-    presetId: 'builtin:tutor',
-    ephemeral: true,
+    local: true,
     widgets: ['render_chart'],
+    thread: { presetId: 'builtin:tutor', messages: [] },
   })
+  expect(input).not.toHaveProperty('key')
+  expect(input).not.toHaveProperty('projectId')
   expect(input.clientRequestId).toBeTruthy()
   expect(result.current.chat.messages.map((m) => m.content)).toEqual([
     'private question',
     'private answer',
   ])
-  expect(sessionStorage.getItem('harness-run:anonymous')).toBe(
-    JSON.stringify({ threadId: 'thread-1', runId: 'run-1', temporary: true }),
+  expect(sessionStorage.getItem('harness-run:anonymous')).toBeNull()
+  const [saved] = JSON.parse(
+    sessionStorage.getItem('tinfoil-sync-session-chats') ?? '[]',
   )
+  expect(saved).toMatchObject({
+    id: 'thread-1',
+    presetId: 'builtin:tutor',
+    messages: [
+      { id: 'u', content: 'private question' },
+      { id: 'a', content: 'private answer' },
+    ],
+  })
   expect(localStorage.length).toBe(0)
 })
 it('retries an ambiguous initial request with its original nonce and input', async () => {
