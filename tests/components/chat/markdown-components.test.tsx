@@ -36,7 +36,7 @@ describe('Markdown citations', () => {
       const citationUrlTitles = new Map([[url, 'Example']])
       fetchFavicon.mockImplementationOnce(async (requested) => {
         expect(requested).toBe(url)
-        return { status: 'not_found' }
+        return { status: 'missing' }
       })
       await act(async () => {
         render(

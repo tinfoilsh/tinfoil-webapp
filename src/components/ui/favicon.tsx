@@ -1,6 +1,21 @@
 import { harnessAPI } from '@/services/harness/runtime'
 import { useEffect, useState } from 'react'
-async function fetchFavicon(url: string): Promise<string | null> {
+
+// Lookups in flight by hostname, so the citations of one site share a
+// request until it settles.
+const FAVICON_REQUESTS = new Map<string, Promise<string | null>>()
+
+function fetchFavicon(url: string, cacheKey: string): Promise<string | null> {
+  const pending = FAVICON_REQUESTS.get(cacheKey)
+  if (pending) return pending
+  const request = lookupFavicon(url).finally(() => {
+    FAVICON_REQUESTS.delete(cacheKey)
+  })
+  FAVICON_REQUESTS.set(cacheKey, request)
+  return request
+}
+
+async function lookupFavicon(url: string): Promise<string | null> {
   const data = await harnessAPI().post<{
     status: string
     favicon_bytes: string
@@ -138,7 +153,7 @@ function FaviconForHost({
     } else if (isFailureCached(cacheKey)) {
       setResolved({ src: '', state: 'error' })
     } else {
-      fetchFavicon(url)
+      fetchFavicon(url, cacheKey)
         .then((faviconDataUrl) => {
           if (!faviconDataUrl) {
             cacheFailure(cacheKey)
