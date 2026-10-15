@@ -101,20 +101,32 @@ describe('settings opening', () => {
     },
   )
 
-  it('keeps account data controls out of the signed-out settings', () => {
+  it("offers a signed-out visitor this browser's chats but no account data", () => {
     render(
       <Harness
         initialTab="data"
         isSignedIn={false}
+        isPremium
         encryptionKey={`key_${'ab'.repeat(32)}`}
       />,
     )
     expect(screen.getByRole('dialog', { name: 'Settings' })).toBeInTheDocument()
+    expect(
+      screen.getAllByRole('button', { name: 'Data' }).length,
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getByRole('button', { name: 'Delete all saved chats' }),
+    ).toBeEnabled()
+    expect(
+      screen.getByText(
+        'Permanently delete every chat from this browser. This cannot be undone.',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export Chats' })).toBeEnabled()
     for (const name of [
-      'Delete all saved chats',
-      'Import from Claude',
       'Cloud Sync',
-      'Data',
+      'Delete all projects',
+      'Export Projects for Claude',
     ])
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
   })
@@ -286,7 +298,7 @@ describe('settings opening', () => {
       authState.isSignedIn = true
     })
 
-    it('keeps import, export, and project data controls with cloud sync', () => {
+    it('keeps import and project data controls with cloud sync', () => {
       render(
         <Harness
           initialTab="data"
@@ -303,16 +315,16 @@ describe('settings opening', () => {
           'Permanently delete every chat from this device. This cannot be undone.',
         ),
       ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Export Chats' })).toBeEnabled()
       for (const name of [
         'Delete all projects',
         'Import from ChatGPT',
-        'Export Chats',
         'Export Projects for Claude',
       ])
         expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
       expect(
         screen.getByText(
-          /Importing and exporting chats requires end-to-end encrypted cloud sync/,
+          /Importing chats requires end-to-end encrypted cloud sync/,
         ),
       ).toBeInTheDocument()
     })

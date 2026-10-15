@@ -11,6 +11,11 @@ import type { SettingsTab } from '@/constants/settings-tabs'
 import { useProjects } from '@/hooks/use-projects'
 import { useToast } from '@/hooks/use-toast'
 import { authTokenManager } from '@/services/auth'
+import {
+  buildChatExport,
+  type AttachmentBytesFetcher,
+} from '@/services/chat-export/export-archive'
+import { collectChatExport } from '@/services/chat-export/export-chats'
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 import {
   exportArchive,
@@ -106,6 +111,8 @@ import { SafeguardsSettings } from './safeguards-settings'
 import {
   canDeleteAllProjects,
   canTransferProjectData,
+  countExcludedProjectChats,
+  filterExportableChats,
 } from './settings-project-policy'
 import type { Chat } from './types'
 
@@ -746,9 +753,7 @@ export function SettingsModal({
   // tab that still exists so the modal is not left with blank content. This
   // runs after the initial-tab effect so a requested hidden tab cannot win.
   const signedInOnlyTab =
-    activeTab === 'cloud-sync' ||
-    activeTab === 'safeguards' ||
-    activeTab === 'data'
+    activeTab === 'cloud-sync' || activeTab === 'safeguards'
   useEffect(() => {
     if (!isSignedIn && signedInOnlyTab) {
       setActiveTab('account')
@@ -799,6 +804,7 @@ export function SettingsModal({
 
   // Export state
   const [isExporting, setIsExporting] = useState(false)
+  const [isPreparingExport, setIsPreparingExport] = useState(false)
   const [exportType, setExportType] = useState<'chats' | 'projects' | null>(
     null,
   )
@@ -1524,20 +1530,117 @@ export function SettingsModal({
     return null
   }
 
-  const handleExportAllChats = async () => {
+  // Export chats as conversations.json, or a ZIP holding their images
+  const downloadChats = async (
+    chatsToExport: Chat[],
+    fetchAttachmentBytes: AttachmentBytesFetcher,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted()
+    if (chatsToExport.length === 0) {
+      toast({
+        title: 'No chats to export',
+        description: 'You have no chats to export yet.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     setIsExporting(true)
     setExportType('chats')
+
     try {
-      await exportArchive('tinfoil-backup')
-    } catch (cause) {
+      // One binary attachment is fetched at a time so the browser never
+      // holds every attachment's bytes in memory at once.
+      const archive = await buildChatExport(chatsToExport, fetchAttachmentBytes)
+      signal.throwIfAborted()
+      const blob =
+        typeof archive.data === 'string'
+          ? new Blob([archive.data], { type: archive.mimeType })
+          : new Blob([new Uint8Array(archive.data)], {
+              type: archive.mimeType,
+            })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = archive.filename
+      document.body.appendChild(a)
+      try {
+        signal.throwIfAborted()
+        a.click()
+      } finally {
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      }
+
+      signal.throwIfAborted()
+      toast({
+        title: 'Export complete',
+        description: `Exported ${chatsToExport.length} conversation${chatsToExport.length !== 1 ? 's' : ''} successfully.`,
+      })
+    } catch (error) {
+      if (signal.aborted) return
+      logError('Failed to create conversations export', error, {
+        component: 'SettingsModal',
+        action: 'downloadChats',
+      })
       toast({
         title: 'Export failed',
-        description:
-          cause instanceof Error ? cause.message : 'Unable to export chats.',
+        description: 'Failed to download conversations. Please try again.',
         variant: 'destructive',
       })
     } finally {
       setIsExporting(false)
+      setExportType(null)
+    }
+  }
+
+  // Exports the chats kept on this device and, with cloud sync, the stored
+  // chats. An account change ends the export without a download.
+  const handleExportAllChats = async () => {
+    const signal = api.lifetime.signal
+    setIsPreparingExport(true)
+    setExportType('chats')
+
+    try {
+      const source = await collectChatExport(api, {
+        cloud: cloudSyncEnabled,
+        signal,
+      })
+      const hasPremiumProjectAccess = Boolean(isPremium)
+      const exportableChats = filterExportableChats(
+        source.chats,
+        hasPremiumProjectAccess,
+      )
+      const excludedProjectChats = countExcludedProjectChats(
+        source.chats,
+        hasPremiumProjectAccess,
+      )
+
+      setIsPreparingExport(false)
+      if (excludedProjectChats > 0) {
+        toast({
+          title: 'Project chats not included',
+          description: `${excludedProjectChats} project chat${excludedProjectChats === 1 ? '' : 's'} could not be exported. Premium is required to export project chats.`,
+        })
+      }
+      await downloadChats(exportableChats, source.fetchAttachmentBytes, signal)
+    } catch (error) {
+      if (signal.aborted) {
+        setIsPreparingExport(false)
+        setExportType(null)
+        return
+      }
+      logError('Failed to prepare chats for export', error, {
+        component: 'SettingsModal',
+        action: 'handleExportAllChats',
+      })
+      toast({
+        title: 'Export failed',
+        description: 'Failed to prepare chats for export. Please try again.',
+        variant: 'destructive',
+      })
+      setIsPreparingExport(false)
       setExportType(null)
     }
   }
@@ -1556,7 +1659,7 @@ export function SettingsModal({
       setShowDeleteAllChatsConfirm(false)
       setDeleteAllChatsConfirmText('')
       toast(
-        cloudSyncEnabled
+        cloudSyncEnabled || !isSignedIn
           ? {
               title: getDeleteAllChatsSuccessTitle(
                 Boolean(isSignedIn),
@@ -1735,9 +1838,9 @@ ${encryptionKey.replace('key_', '')}
             label: 'Safeguards',
             icon: TfShieldWithExclamation,
           },
-          { id: 'data' as const, label: 'Data', icon: TfStack },
         ]
       : []),
+    { id: 'data' as const, label: 'Data', icon: TfStack },
   ]
 
   return (
@@ -3326,9 +3429,11 @@ ${encryptionKey.replace('key_', '')}
                                 Delete all saved chats
                               </div>
                               <div className="font-aeonik-fono text-xs text-content-muted">
-                                {cloudSyncEnabled
-                                  ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
-                                  : 'Permanently delete every chat from this device. This cannot be undone.'}
+                                {!isSignedIn
+                                  ? 'Permanently delete every chat from this browser. This cannot be undone.'
+                                  : cloudSyncEnabled
+                                    ? 'Permanently delete every chat from this device and your encrypted cloud backup. This cannot be undone.'
+                                    : 'Permanently delete every chat from this device. This cannot be undone.'}
                               </div>
                             </div>
                             {!showDeleteAllChatsConfirm && (
@@ -3561,8 +3666,8 @@ ${encryptionKey.replace('key_', '')}
 
                   {!cloudSyncEnabled && (
                     <p className="font-aeonik-fono text-xs text-content-muted">
-                      Importing and exporting chats requires end-to-end
-                      encrypted cloud sync to be enabled on this device.
+                      Importing chats requires end-to-end encrypted cloud sync
+                      to be enabled on this device.
                     </p>
                   )}
                   {cloudSyncEnabled && (
@@ -3860,54 +3965,54 @@ ${encryptionKey.replace('key_', '')}
                           )}
                         </div>
                       </div>
-
-                      {/* Export Chats */}
-                      <div className="space-y-3">
-                        <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                          Export Chats
-                        </h3>
-                        <div
-                          className={cn(
-                            'space-y-3 rounded-lg border border-border-subtle p-4',
-                            isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                          )}
-                        >
-                          <div className="font-aeonik-fono text-xs text-content-muted">
-                            Export all your conversations as a ZIP archive. This
-                            format can be re-imported into Tinfoil Chat.
-                          </div>
-                          <button
-                            onClick={handleExportAllChats}
-                            disabled={isExporting}
-                            className={cn(
-                              'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                              isExporting
-                                ? 'cursor-not-allowed opacity-50'
-                                : 'hover:bg-surface-chat',
-                              isDarkMode
-                                ? 'bg-surface-chat text-content-primary'
-                                : 'bg-surface-sidebar text-content-primary',
-                            )}
-                          >
-                            {isExporting && exportType === 'chats' ? (
-                              <PiSpinner
-                                className="h-4 w-4 animate-spin"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <TfDownload
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                            )}
-                            {isExporting && exportType === 'chats'
-                              ? 'Exporting...'
-                              : 'Export Chats'}
-                          </button>
-                        </div>
-                      </div>
                     </>
                   )}
+
+                  {/* Export Chats */}
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Export Chats
+                    </h3>
+                    <div
+                      className={cn(
+                        'space-y-3 rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="font-aeonik-fono text-xs text-content-muted">
+                        Export all your conversations as a JSON file. This
+                        format can be re-imported into Tinfoil Chat.
+                      </div>
+                      <button
+                        onClick={handleExportAllChats}
+                        disabled={isExporting || isPreparingExport}
+                        className={cn(
+                          'flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                          isExporting || isPreparingExport
+                            ? 'cursor-not-allowed opacity-50'
+                            : 'hover:bg-surface-chat',
+                          isDarkMode
+                            ? 'bg-surface-chat text-content-primary'
+                            : 'bg-surface-sidebar text-content-primary',
+                        )}
+                      >
+                        {(isExporting || isPreparingExport) &&
+                        exportType === 'chats' ? (
+                          <PiSpinner
+                            className="h-4 w-4 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <TfDownload className="h-4 w-4" aria-hidden="true" />
+                        )}
+                        {isPreparingExport && exportType === 'chats'
+                          ? 'Please wait while we prepare the export...'
+                          : isExporting && exportType === 'chats'
+                            ? 'Exporting...'
+                            : 'Export Chats'}
+                      </button>
+                    </div>
+                  </div>
 
                   {/* Export Projects (premium only) */}
                   {cloudSyncEnabled && isPremium && (
