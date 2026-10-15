@@ -14,8 +14,10 @@ import { authTokenManager } from '@/services/auth'
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
 import {
   exportArchive,
+  ImportSequenceError,
   importStatus,
-  startImport,
+  runImports,
+  type ImportSequenceResult,
   type ImportStatusResponse,
 } from '@/services/harness/archives'
 import { useHarness } from '@/services/harness/provider'
@@ -42,6 +44,7 @@ import {
   setLocalOnlyModeEnabled,
 } from '@/utils/cloud-sync-settings'
 import { logError } from '@/utils/error-handling'
+import { formatFileSize } from '@/utils/format-file-size'
 import { clearPersonalizationDetails } from '@/utils/personalization-settings'
 import {
   RESPONSE_LANGUAGES,
@@ -95,6 +98,7 @@ import QRCode from 'react-qr-code'
 import { CONSTANTS } from './constants'
 import { normalizeChatFont, type ChatFont } from './hooks/use-chat-font'
 import { usePromptLibrary } from './hooks/use-prompt-library'
+import { ImportFileList } from './import-file-list'
 import { MfaSettingsCard } from './mfa-settings-card'
 import { NativeBackupExport } from './native-backup-export'
 import { NativeBackupRestore } from './native-backup-restore'
@@ -151,6 +155,121 @@ export function describeOffDeviceImportKickoff(
       : pending
         ? `Your ${sourceLabel} export is being imported securely. We'll email you when it's done.`
         : undefined,
+  }
+}
+
+/**
+ * Turns the outcome of an import, possibly split across several files,
+ * into the panel state. Chats from files that already completed are
+ * counted, and a failure names its file and how many files were never
+ * started.
+ */
+export function describeOffDeviceImportOutcome(
+  outcome: ImportSequenceResult,
+  fileNames: readonly string[],
+  sourceLabel: string,
+): ImportResult {
+  const kickoff = describeOffDeviceImportKickoff(outcome.status, sourceLabel)
+  const chatsImported = outcome.importedBefore + kickoff.chatsImported
+  if (!outcome.interrupted && !kickoff.failed) {
+    return { ...kickoff, chatsImported }
+  }
+  const explanation = outcome.interrupted
+    ? 'The import stopped before it finished. Chats already imported were kept; select this file again to continue.'
+    : kickoff.message
+  return {
+    success: false,
+    failed: true,
+    pending: false,
+    chatsImported,
+    projectsImported: 0,
+    errors: fileFailureErrors(fileNames, outcome.fileIndex, explanation),
+  }
+}
+
+/**
+ * Panel state for an import that threw. When a later file of a split
+ * export fails, the chats earlier files imported are still counted and
+ * the failing file is named.
+ */
+export function describeOffDeviceImportError(
+  err: unknown,
+  fileNames: readonly string[],
+): ImportResult {
+  const message = err instanceof Error ? err.message : 'Failed to start import'
+  if (!(err instanceof ImportSequenceError) || fileNames.length < 2) {
+    return {
+      success: false,
+      chatsImported: 0,
+      projectsImported: 0,
+      errors: [message],
+    }
+  }
+  return {
+    success: false,
+    chatsImported: err.importedBefore,
+    projectsImported: 0,
+    errors: fileFailureErrors(fileNames, err.fileIndex, message),
+  }
+}
+
+function fileFailureErrors(
+  fileNames: readonly string[],
+  fileIndex: number,
+  explanation: string | undefined,
+): string[] {
+  const errors = [`${fileNames[fileIndex]}: ${explanation}`]
+  const notStarted = fileNames.length - fileIndex - 1
+  if (notStarted > 0) {
+    errors.push(
+      `${notStarted} remaining file${notStarted === 1 ? ' was' : 's were'} not imported.`,
+    )
+  }
+  return errors
+}
+
+// The chat service receives each file of an export in one request, so an
+// upload advances a file at a time.
+export type ImportProgress =
+  | {
+      type: 'upload'
+      file: number
+      files: number
+      uploadedBytes: number
+      totalBytes: number
+    }
+  | {
+      type: 'processing'
+      file: number
+      files: number
+      imported: number
+      total: number
+    }
+
+export function describeImportProgress(progress: ImportProgress): {
+  title: string
+  detail: string
+  percent: number
+} {
+  if (progress.type === 'processing') {
+    const { file, files, imported, total } = progress
+    return {
+      title: `Importing file ${file} of ${files}...`,
+      detail: `${total > 0 ? `${imported} of ${total} chats` : 'Reading export'}. Keep this page open until every file has started.`,
+      percent: total > 0 ? (imported / total) * 100 : 0,
+    }
+  }
+  const { file, files, uploadedBytes, totalBytes } = progress
+  return {
+    title:
+      files > 1
+        ? `Uploading file ${file} of ${files}...`
+        : 'Uploading export...',
+    detail:
+      files > 1
+        ? `${formatFileSize(uploadedBytes)} of ${formatFileSize(totalBytes)} uploaded`
+        : formatFileSize(totalBytes),
+    percent: totalBytes > 0 ? (uploadedBytes / totalBytes) * 100 : 0,
   }
 }
 
@@ -276,6 +395,8 @@ function StepNumber({ step }: { step: keyof typeof STEP_ICONS }) {
 }
 
 type ImportSection = 'chatgpt' | 'claude' | 'tinfoil'
+type StagedImportKind = 'chatgpt' | 'claude-conversations' | 'claude-projects'
+type ImportSourceKey = 'chatgpt' | 'claude'
 
 function ImportAccordionHeader({
   title,
@@ -661,6 +782,13 @@ export function SettingsModal({
   const [importSource, setImportSource] = useState<ImportSection | null>(null)
   const [isImporting, setIsImporting] = useState(false)
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(
+    null,
+  )
+  // Files picked for an import, shown for review before it starts.
+  const [stagedImports, setStagedImports] = useState<
+    Partial<Record<ImportSourceKey, { kind: StagedImportKind; files: File[] }>>
+  >({})
   const chatGptFileInputRef = useRef<HTMLInputElement>(null)
   const claudeConversationsFileInputRef = useRef<HTMLInputElement>(null)
   const claudeProjectsFileInputRef = useRef<HTMLInputElement>(null)
@@ -1045,14 +1173,19 @@ export function SettingsModal({
 
   // Imports upload the original export to the chat service, which converts
   // and stores it off device and emails the user when a long job finishes.
-  const importFile = async (
-    event: React.ChangeEvent<HTMLInputElement>,
+  // An export split across files runs as a sequence of jobs, each finishing
+  // before the next file is uploaded.
+  const importFiles = async (
     source: ImportSection,
+    files: readonly File[],
     sourceLabel: string,
   ) => {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
+    if (files.length === 0) return
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0)
+    const bytesBefore = files.map((_, index) =>
+      files.slice(0, index).reduce((sum, file) => sum + file.size, 0),
+    )
+    const fileNames = files.map((file) => file.name)
     setIsImporting(true)
     setImportSource(source)
     setImportResult(null)
@@ -1060,41 +1193,59 @@ export function SettingsModal({
     const controller = new AbortController()
     localTinfoilImportAbortControllerRef.current = controller
     try {
-      const status = await startImport(file, source, controller.signal)
-      const result = describeOffDeviceImportKickoff(status, sourceLabel)
+      const outcome = await runImports(source, files, {
+        signal: controller.signal,
+        onUpload: (fileIndex) =>
+          setImportProgress({
+            type: 'upload',
+            file: fileIndex + 1,
+            files: files.length,
+            uploadedBytes: bytesBefore[fileIndex],
+            totalBytes,
+          }),
+        onProcessing: (fileIndex, status) =>
+          setImportProgress({
+            type: 'processing',
+            file: fileIndex + 1,
+            files: files.length,
+            imported: status.imported,
+            total: status.total,
+          }),
+      })
+      const result = describeOffDeviceImportOutcome(
+        outcome,
+        fileNames,
+        sourceLabel,
+      )
       setImportResult(result)
       if (result.failed) {
         toast({
           title: 'Import failed',
-          description: result.message,
+          description: result.errors[0] ?? result.message,
           variant: 'destructive',
         })
       } else if (result.pending) {
         toast({ title: 'Import started', description: result.message })
       }
-      if (status.status === 'completed' || status.status === 'partial') {
+      if (!result.pending || result.chatsImported > 0) {
         await onChatsUpdated?.()
         await refreshProjects()
       }
     } catch (cause) {
       if (controller.signal.aborted) return
-      setImportResult({
-        success: false,
-        chatsImported: 0,
-        projectsImported: 0,
-        errors: [
-          cause instanceof Error ? cause.message : 'Unable to import archive.',
-        ],
-      })
+      const result = describeOffDeviceImportError(cause, fileNames)
+      setImportResult(result)
       toast({
         title: 'Import failed',
         description: `Could not start the ${sourceLabel} import`,
         variant: 'destructive',
       })
+      if (result.chatsImported > 0) await onChatsUpdated?.()
     } finally {
       if (localTinfoilImportAbortControllerRef.current === controller) {
         localTinfoilImportAbortControllerRef.current = null
         setIsImporting(false)
+        setImportProgress(null)
       }
     }
   }
@@ -1112,32 +1263,177 @@ export function SettingsModal({
     }
   }
 
-  const handleImportChatGPT = (event: React.ChangeEvent<HTMLInputElement>) =>
-    importFile(event, 'chatgpt', 'ChatGPT')
-  const handleImportTinfoil = (event: React.ChangeEvent<HTMLInputElement>) =>
-    importFile(event, 'tinfoil', 'Tinfoil')
-  const handleImportClaude = (event: React.ChangeEvent<HTMLInputElement>) =>
-    importFile(event, 'claude', 'Claude')
+  const handleImportTinfoil = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file) void importFiles('tinfoil', [file], 'Tinfoil')
+  }
+
+  // File pickers only stage the selection; the import runs once the user
+  // confirms the set from the staged file list.
+  const stageImportFiles = (
+    kind: StagedImportKind,
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const selected = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (selected.length === 0) return
+    if (
+      kind === 'claude-conversations' &&
+      !isPremium &&
+      selected.some(
+        (file) =>
+          file.name.toLowerCase().endsWith('.zip') ||
+          file.type === 'application/zip',
+      )
+    ) {
+      toast({
+        title: 'Premium required',
+        description: 'Claude archives containing projects require Premium',
+        variant: 'destructive',
+      })
+      return
+    }
+    setImportResult(null)
+    const source = stagedImportSource(kind)
+    setStagedImports((previous) => {
+      const current = previous[source]
+      const existing = current?.kind === kind ? current.files : []
+      const isDuplicate = (file: File) =>
+        existing.some(
+          (other) =>
+            other.name === file.name &&
+            other.size === file.size &&
+            other.lastModified === file.lastModified,
+        )
+      return {
+        ...previous,
+        [source]: {
+          kind,
+          files: [
+            ...existing,
+            ...selected.filter((file) => !isDuplicate(file)),
+          ],
+        },
+      }
+    })
+  }
+
+  const clearStagedImport = (source: ImportSourceKey) => {
+    setStagedImports((previous) => {
+      const { [source]: _removed, ...rest } = previous
+      return rest
+    })
+  }
+
+  const removeStagedFile = (source: ImportSourceKey, index: number) => {
+    setStagedImports((previous) => {
+      const current = previous[source]
+      if (!current) return previous
+      const files = current.files.filter((_, i) => i !== index)
+      if (files.length === 0) {
+        const { [source]: _removed, ...rest } = previous
+        return rest
+      }
+      return { ...previous, [source]: { ...current, files } }
+    })
+  }
+
+  // The chat service reads Claude's conversation and project files as one
+  // Claude export.
+  const runStagedImport = async (source: ImportSourceKey) => {
+    const staged = stagedImports[source]
+    if (!staged) return
+    clearStagedImport(source)
+    await importFiles(
+      source,
+      staged.files,
+      source === 'chatgpt' ? 'ChatGPT' : 'Claude',
+    )
+  }
+
+  const stagedImportSource = (kind: StagedImportKind): ImportSourceKey =>
+    kind === 'chatgpt' ? 'chatgpt' : 'claude'
+
+  const stagedImportInputRef = (kind: StagedImportKind) => {
+    switch (kind) {
+      case 'chatgpt':
+        return chatGptFileInputRef
+      case 'claude-projects':
+        return claudeProjectsFileInputRef
+      case 'claude-conversations':
+        return claudeConversationsFileInputRef
+    }
+  }
+
+  const stagedImportLabel = (kind: StagedImportKind) =>
+    kind === 'claude-projects' ? 'Import projects' : 'Import conversations'
+
+  const renderStagedImport = (source: ImportSourceKey) => {
+    const staged = stagedImports[source]
+    if (!staged) return null
+    return (
+      <ImportFileList
+        files={staged.files}
+        isDarkMode={isDarkMode}
+        onRemove={(index) => removeStagedFile(source, index)}
+        onAddMore={() => stagedImportInputRef(staged.kind).current?.click()}
+        onImport={() => void runStagedImport(source)}
+        onCancel={() => clearStagedImport(source)}
+        importLabel={stagedImportLabel(staged.kind)}
+        importDisabled={isImporting}
+      />
+    )
+  }
 
   // Rendered in place of a source's upload button so progress and the
   // outcome appear inside the box the user is importing from.
   const renderImportStatus = (source: ImportSection) => {
     if (importSource !== source) return null
     if (isImporting) {
+      const { title, detail, percent } = describeImportProgress(
+        importProgress ?? {
+          type: 'upload',
+          file: 1,
+          files: 1,
+          uploadedBytes: 0,
+          totalBytes: 0,
+        },
+      )
       return (
         <div
           role="status"
           className={cn(
-            'flex items-center gap-3 rounded-lg border border-border-subtle p-4',
+            'rounded-lg border border-border-subtle p-4',
             isDarkMode ? 'bg-surface-chat' : 'bg-surface-sidebar',
           )}
         >
-          <PiSpinner
-            className="h-5 w-5 animate-spin text-brand-accent-light"
-            aria-hidden="true"
-          />
-          <div className="font-aeonik text-sm font-medium text-content-primary">
-            Uploading export...
+          <div className="flex items-center gap-3">
+            <PiSpinner
+              className="h-5 w-5 animate-spin text-brand-accent-light"
+              aria-hidden="true"
+            />
+            <div className="flex-1">
+              <div className="font-aeonik text-sm font-medium text-content-primary">
+                {title}
+              </div>
+              {detail && (
+                <div className="font-aeonik-fono text-xs text-content-muted">
+                  {detail}
+                </div>
+              )}
+            </div>
+          </div>
+          <div
+            className={cn(
+              'mt-3 h-2 overflow-hidden rounded-full',
+              isDarkMode ? 'bg-surface-sidebar' : 'bg-surface-chat',
+            )}
+          >
+            <div
+              className="h-full bg-brand-accent-light transition-all"
+              style={{ width: `${percent}%` }}
+            />
           </div>
         </div>
       )
@@ -3317,44 +3613,46 @@ ${encryptionKey.replace('key_', '')}
                               </ImportStep>
                               <ImportStep step={4}>
                                 Select the ZIP export to include attachments, or
-                                a{' '}
+                                the{' '}
                                 <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
                                   conversations*.json
                                 </code>{' '}
-                                file for chat text only. Exports split into
-                                several files are imported one file at a time.
+                                files for chat text only. Large exports are
+                                split into several files; select them all.
                               </ImportStep>
                               <input
                                 ref={chatGptFileInputRef}
                                 type="file"
                                 accept=".json,.zip"
-                                onChange={handleImportChatGPT}
+                                onChange={(e) => stageImportFiles('chatgpt', e)}
                                 className="hidden"
                                 disabled={isImporting}
+                                multiple
                               />
-                              {renderImportStatus('chatgpt') ?? (
-                                <button
-                                  onClick={() =>
-                                    chatGptFileInputRef.current?.click()
-                                  }
-                                  disabled={isImporting}
-                                  className={cn(
-                                    'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                    isImporting
-                                      ? 'cursor-not-allowed opacity-50'
-                                      : 'hover:bg-surface-chat',
-                                    isDarkMode
-                                      ? 'bg-surface-chat text-content-primary'
-                                      : 'bg-surface-sidebar text-content-primary',
-                                  )}
-                                >
-                                  <ArrowUpTrayIcon
-                                    className="h-4 w-4"
-                                    aria-hidden="true"
-                                  />
-                                  Select File
-                                </button>
-                              )}
+                              {renderImportStatus('chatgpt') ??
+                                renderStagedImport('chatgpt') ?? (
+                                  <button
+                                    onClick={() =>
+                                      chatGptFileInputRef.current?.click()
+                                    }
+                                    disabled={isImporting}
+                                    className={cn(
+                                      'mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                      isImporting
+                                        ? 'cursor-not-allowed opacity-50'
+                                        : 'hover:bg-surface-chat',
+                                      isDarkMode
+                                        ? 'bg-surface-chat text-content-primary'
+                                        : 'bg-surface-sidebar text-content-primary',
+                                    )}
+                                  >
+                                    <ArrowUpTrayIcon
+                                      className="h-4 w-4"
+                                      aria-hidden="true"
+                                    />
+                                    Select File
+                                  </button>
+                                )}
                             </div>
                           )}
                         </div>
@@ -3407,7 +3705,7 @@ ${encryptionKey.replace('key_', '')}
                                   <>
                                     Select the ZIP export with the Conversations
                                     button to include attachments. For projects,
-                                    select a file from the unzipped{' '}
+                                    select every file in the unzipped{' '}
                                     <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
                                       projects
                                     </code>{' '}
@@ -3417,13 +3715,13 @@ ${encryptionKey.replace('key_', '')}
                                   </>
                                 ) : (
                                   <>
-                                    Select a{' '}
+                                    Select the{' '}
                                     <code className="rounded bg-surface-chat px-1.5 py-0.5 font-mono text-xs">
                                       conversations*.json
                                     </code>{' '}
-                                    file from the unzipped folder. Exports split
-                                    into several files are imported one file at
-                                    a time.
+                                    files from the unzipped folder. Large
+                                    exports are split into several files; select
+                                    them all.
                                   </>
                                 )}
                               </ImportStep>
@@ -3431,47 +3729,32 @@ ${encryptionKey.replace('key_', '')}
                                 ref={claudeConversationsFileInputRef}
                                 type="file"
                                 accept={isPremium ? '.json,.zip' : '.json'}
-                                onChange={handleImportClaude}
+                                onChange={(e) =>
+                                  stageImportFiles('claude-conversations', e)
+                                }
                                 className="hidden"
                                 disabled={isImporting}
+                                multiple
                               />
                               {isPremium && (
                                 <input
                                   ref={claudeProjectsFileInputRef}
                                   type="file"
                                   accept=".json"
-                                  onChange={handleImportClaude}
+                                  onChange={(e) =>
+                                    stageImportFiles('claude-projects', e)
+                                  }
                                   className="hidden"
                                   disabled={isImporting}
+                                  multiple
                                 />
                               )}
-                              {renderImportStatus('claude') ?? (
-                                <div className="mt-2 flex gap-2">
-                                  <button
-                                    onClick={() =>
-                                      claudeConversationsFileInputRef.current?.click()
-                                    }
-                                    disabled={isImporting}
-                                    className={cn(
-                                      'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
-                                      isImporting
-                                        ? 'cursor-not-allowed opacity-50'
-                                        : 'hover:bg-surface-chat',
-                                      isDarkMode
-                                        ? 'bg-surface-chat text-content-primary'
-                                        : 'bg-surface-sidebar text-content-primary',
-                                    )}
-                                  >
-                                    <ArrowUpTrayIcon
-                                      className="h-4 w-4"
-                                      aria-hidden="true"
-                                    />
-                                    Conversations
-                                  </button>
-                                  {isPremium && (
+                              {renderImportStatus('claude') ??
+                                renderStagedImport('claude') ?? (
+                                  <div className="mt-2 flex gap-2">
                                     <button
                                       onClick={() =>
-                                        claudeProjectsFileInputRef.current?.click()
+                                        claudeConversationsFileInputRef.current?.click()
                                       }
                                       disabled={isImporting}
                                       className={cn(
@@ -3488,11 +3771,33 @@ ${encryptionKey.replace('key_', '')}
                                         className="h-4 w-4"
                                         aria-hidden="true"
                                       />
-                                      Projects
+                                      Conversations
                                     </button>
-                                  )}
-                                </div>
-                              )}
+                                    {isPremium && (
+                                      <button
+                                        onClick={() =>
+                                          claudeProjectsFileInputRef.current?.click()
+                                        }
+                                        disabled={isImporting}
+                                        className={cn(
+                                          'flex flex-1 items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors',
+                                          isImporting
+                                            ? 'cursor-not-allowed opacity-50'
+                                            : 'hover:bg-surface-chat',
+                                          isDarkMode
+                                            ? 'bg-surface-chat text-content-primary'
+                                            : 'bg-surface-sidebar text-content-primary',
+                                        )}
+                                      >
+                                        <ArrowUpTrayIcon
+                                          className="h-4 w-4"
+                                          aria-hidden="true"
+                                        />
+                                        Projects
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
                             </div>
                           )}
                         </div>

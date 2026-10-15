@@ -4,7 +4,7 @@ import {
   SETTINGS_CLOUD_SYNC_EXPLICITLY_DISABLED,
   SETTINGS_LOCAL_ONLY_MODE_ENABLED,
 } from '@/constants/storage-keys'
-import { getView, publish } from '@/services/harness/runtime'
+import { getView, harnessAPI, publish } from '@/services/harness/runtime'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -494,5 +494,129 @@ describe('settings prompts', () => {
     expect(
       screen.queryByRole('combobox', { name: 'Default prompt for new chats' }),
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('settings imports', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    authState.isSignedIn = true
+    toasts.mockReset()
+    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+  })
+
+  const exportFile = (name: string, size: number) =>
+    new File([new Uint8Array(size)], name, { type: 'application/json' })
+
+  it('imports the files of a split export one after another from a reviewed list', async () => {
+    const client = harnessAPI().client
+    const uploaded: string[] = []
+    vi.mocked(client.upload).mockImplementation(async (_path, file) => {
+      uploaded.push(file.name)
+      return { jobId: `job-${uploaded.length}` }
+    })
+    const statuses: Record<string, object> = {
+      'job-1': { status: 'completed', imported: 3, failed: 0, total: 3 },
+      'job-2': { status: 'running', imported: 0, failed: 0, total: 0 },
+    }
+    vi.mocked(client.post).mockImplementation(async (path, input) =>
+      path === '/v1/import/status'
+        ? statuses[(input as { jobId: string }).jobId]
+        : path === '/v1/projects/list'
+          ? { projects: [], nextCursor: null }
+          : {},
+    )
+    const onChatsUpdated = vi.fn()
+    render(
+      <Harness initialTab="data" isSignedIn onChatsUpdated={onChatsUpdated} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Import from ChatGPT' }))
+    const picker = document.querySelector<HTMLInputElement>(
+      'input[type="file"][multiple][accept=".json,.zip"]',
+    )!
+    fireEvent.change(picker, {
+      target: {
+        files: [
+          exportFile('conversations-000.json', 2048),
+          exportFile('user.json', 10),
+        ],
+      },
+    })
+    fireEvent.change(picker, {
+      target: { files: [exportFile('conversations-001.json', 1024)] },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove user.json' }))
+    expect(
+      screen
+        .getAllByText(/^conversations-00\d\.json$/)
+        .map((n) => n.textContent),
+    ).toEqual(['conversations-000.json', 'conversations-001.json'])
+    expect(uploaded).toEqual([])
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Import conversations' }),
+    )
+
+    expect(await screen.findByText('Import in progress')).toBeInTheDocument()
+    expect(uploaded).toEqual([
+      'conversations-000.json',
+      'conversations-001.json',
+    ])
+    expect(screen.getByText('3 chats imported')).toBeInTheDocument()
+    expect(toasts).toHaveBeenCalledWith({
+      title: 'Import started',
+      description:
+        "Your ChatGPT export is being imported securely. We'll email you when it's done.",
+    })
+    expect(onChatsUpdated).toHaveBeenCalled()
+  })
+
+  it('names the file that failed and the files never started', async () => {
+    const client = harnessAPI().client
+    vi.mocked(client.upload).mockResolvedValue({ jobId: 'job-1' })
+    vi.mocked(client.post).mockImplementation(async (path) =>
+      path === '/v1/import/status'
+        ? {
+            status: 'failed',
+            imported: 0,
+            failed: 0,
+            total: 0,
+            failureReason: 'invalid_archive',
+            failureDetail: 'unexpected_json',
+          }
+        : path === '/v1/projects/list'
+          ? { projects: [], nextCursor: null }
+          : {},
+    )
+    render(<Harness initialTab="data" isSignedIn />)
+    fireEvent.click(screen.getByRole('button', { name: 'Import from ChatGPT' }))
+    fireEvent.change(
+      document.querySelector(
+        'input[type="file"][multiple][accept=".json,.zip"]',
+      )!,
+      {
+        target: {
+          files: [
+            exportFile('user.json', 10),
+            exportFile('conversations-000.json', 10),
+          ],
+        },
+      },
+    )
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Import conversations' }),
+    )
+
+    expect(await screen.findByText('Import failed')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'user.json: This file is from the export but does not contain conversations. Select the conversations JSON files, such as conversations.json or conversations-000.json, not files like user.json.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('1 remaining file was not imported.'),
+    ).toBeInTheDocument()
+    expect(client.upload).toHaveBeenCalledOnce()
   })
 })
