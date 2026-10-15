@@ -22,8 +22,14 @@ it('uploads the archive and displays server warnings and counts', async () => {
     counts: { chats: { imported: 2, skipped: 1, failed: 1, blocked: 0 } },
   })
   const reload = vi.fn()
+  const reloadProjects = vi.fn()
   const { container } = render(
-    <NativeBackupRestore available ownerId="alice" onChatsUpdated={reload} />,
+    <NativeBackupRestore
+      available
+      ownerId="alice"
+      onChatsUpdated={reload}
+      onProjectsUpdated={reloadProjects}
+    />,
   )
   choose(container)
   expect(
@@ -38,6 +44,8 @@ it('uploads the archive and displays server warnings and counts', async () => {
     expect.any(AbortSignal),
   )
   expect(reload).toHaveBeenCalledOnce()
+  // A backup restores projects as well as chats.
+  await waitFor(() => expect(reloadProjects).toHaveBeenCalledOnce())
 })
 it('checks an accepted import by job id without reuploading', async () => {
   mocks.startImport.mockResolvedValue({ status: 'running', jobId: 'job' })

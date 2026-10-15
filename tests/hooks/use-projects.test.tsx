@@ -60,6 +60,41 @@ it('keeps the list read after a change when an earlier read finishes last', asyn
   ])
 })
 
+it('lists the projects once for the hooks that load them together', async () => {
+  post.mockResolvedValue({ projects: [ALPHA], nextCursor: null })
+  // The chat page and its sidebar both load the list when they mount.
+  const { result } = renderHook(() => [useProjects(), useProjects()])
+
+  await waitFor(() =>
+    expect(result.current.map((hook) => hook.projects)).toEqual([
+      [ALPHA],
+      [ALPHA],
+    ]),
+  )
+  expect(post).toHaveBeenCalledExactlyOnceWith(
+    '/v1/projects/list',
+    { key: 'Y29udGVudC1rZXk=', cursor: null },
+    expect.any(AbortSignal),
+  )
+})
+
+it('shows a refresh from one hook wherever the projects are listed', async () => {
+  post
+    .mockResolvedValueOnce({ projects: [ALPHA], nextCursor: null })
+    .mockResolvedValueOnce({ projects: [ALPHA, BETA], nextCursor: null })
+  // The sidebar lists the projects; settings refreshes them after an import.
+  const { result } = renderHook(() => ({
+    sidebar: useProjects(),
+    settings: useProjects({ autoLoad: false }),
+  }))
+  await waitFor(() => expect(result.current.sidebar.projects).toEqual([ALPHA]))
+
+  await act(() => result.current.settings.refresh())
+
+  expect(result.current.sidebar.projects).toEqual([ALPHA, BETA])
+  expect(post).toHaveBeenCalledTimes(2)
+})
+
 it('resolves a failed refresh and keeps its error', async () => {
   post.mockRejectedValue(
     new HarnessError(

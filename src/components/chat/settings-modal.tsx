@@ -2819,6 +2819,7 @@ ${encryptionKey.replace('key_', '')}
                       )}
                       ownerId={user?.id}
                       onChatsUpdated={onChatsUpdated}
+                      onProjectsUpdated={refreshProjects}
                     />
                   </div>
 
