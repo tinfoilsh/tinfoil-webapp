@@ -370,6 +370,184 @@ describe('local chats of a signed-in account without cloud sync', () => {
     )
   })
 
+  it('keeps a new local chat pending until its first save lands', async () => {
+    signIn('alice')
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementation(async function* (
+      _path: string,
+      input: Turn,
+    ) {
+      const threadId = input.threadId!
+      yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
+      await held
+      yield {
+        id: 1,
+        event: {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [
+            { id: 'msg_user', role: 'user', createdAt: 't1', content: 'Hi' },
+          ],
+          hasOlder: false,
+        },
+      }
+      yield {
+        id: 2,
+        event: { type: 'RUN_FINISHED', threadId, runId: 'run-1' },
+      }
+    })
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(result.current.model).toBe('test-model'))
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = result.current.send({ content: 'Hi' })
+    })
+
+    await waitFor(() => expect(result.current.chat.id).toMatch(REVERSE_ID))
+    const threadId = result.current.chat.id
+    expect(result.current.chat.pendingSave).toBe(true)
+    expect(await stored(threadId)).toBeNull()
+
+    await act(async () => {
+      release()
+      await sending
+    })
+
+    expect(result.current.chat.pendingSave).toBe(false)
+    expect((await stored(threadId))?.messages.map((m) => m.id)).toEqual([
+      'msg_user',
+    ])
+  })
+
+  function heldRun() {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    client.events.mockImplementation(async function* (
+      path: string,
+      input: Turn,
+    ) {
+      const threadId = input.threadId!
+      yield { id: 0, event: { type: 'RUN_STARTED', threadId, runId: 'run-1' } }
+      yield {
+        id: 1,
+        event: {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: [
+            { id: 'msg_user', role: 'user', createdAt: 't1', content: 'Q' },
+          ],
+          hasOlder: false,
+        },
+      }
+      yield {
+        id: 2,
+        event: {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'msg_reply',
+          delta: 'Long answer',
+          timestamp: 't2',
+        },
+      }
+      if (path === '/v1/threads/turn') await held
+      yield {
+        id: 3,
+        event: {
+          type: 'RUN_FINISHED',
+          threadId,
+          runId: 'run-1',
+          metadata: {
+            messages: [
+              {
+                id: 'msg_reply',
+                model: 'test-model',
+                modelDisplayName: 'Test model',
+                usage: USAGE,
+                isError: false,
+                isInterrupted: false,
+              },
+            ],
+          },
+        },
+      }
+    })
+    return release
+  }
+  const savedReply = [
+    { id: 'msg_user', role: 'user', createdAt: 't1', content: 'Q' },
+    {
+      id: 'msg_reply',
+      role: 'assistant',
+      createdAt: 't2',
+      content: 'Long answer',
+      model: 'test-model',
+      modelDisplayName: 'Test model',
+      usage: USAGE,
+      timeline: [
+        { id: 'msg_reply_content_0', type: 'content', content: 'Long answer' },
+      ],
+    },
+  ]
+  async function sendHeld() {
+    const release = heldRun()
+    const hook = renderHook(() => useThread())
+    await waitFor(() => expect(hook.result.current.model).toBe('test-model'))
+    let sending!: Promise<boolean | undefined> | undefined
+    act(() => {
+      sending = hook.result.current.send({ content: 'Q' })
+    })
+    await waitFor(() =>
+      expect(hook.result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Q',
+        'Long answer',
+      ]),
+    )
+    return { ...hook, release, sending: () => sending }
+  }
+
+  it('saves a reply that finishes after the view moved to another chat', async () => {
+    signIn('alice')
+    const { result, release, sending } = await sendHeld()
+    const threadId = result.current.chat.id
+
+    act(() => result.current.newChat())
+    await act(async () => {
+      release()
+      await sending()
+    })
+
+    expect(result.current.chat.messages).toEqual([])
+    expect(client.events).toHaveBeenCalledOnce()
+    expect((await stored(threadId))?.messages).toEqual(savedReply)
+  })
+
+  it('rejoins a run when its chat is reopened', async () => {
+    signIn('alice')
+    const { result, release, sending } = await sendHeld()
+    const threadId = result.current.chat.id
+
+    act(() => result.current.newChat())
+    await act(() => result.current.open(threadId, { local: true }))
+
+    expect(client.events.mock.calls[1].slice(0, 2)).toEqual([
+      '/v1/threads/follow',
+      { threadId, runId: 'run-1' },
+    ])
+    await waitFor(() =>
+      expect(result.current.chat.messages.map((m) => m.content)).toEqual([
+        'Q',
+        'Long answer',
+      ]),
+    )
+    await act(async () => {
+      release()
+      await sending()
+    })
+    expect((await stored(threadId))?.messages).toEqual(savedReply)
+  })
+
   it('sends the stored transcript with an edit and keeps the truncation', async () => {
     signIn('alice')
     await localThreadStore('device').update(SEEDED_ID, () => seededThread())

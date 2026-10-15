@@ -219,6 +219,7 @@ export function ChatInterface({
     if (
       !currentChat.id ||
       currentChat.isTemporary ||
+      currentChat.pendingSave ||
       currentChat.id === initialChatId
     )
       return
@@ -234,6 +235,7 @@ export function ChatInterface({
     currentChat.id,
     currentChat.isTemporary,
     currentChat.isLocalOnly,
+    currentChat.pendingSave,
     currentChat.projectId,
     initialChatId,
     router,

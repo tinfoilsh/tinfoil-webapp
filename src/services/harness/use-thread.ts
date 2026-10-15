@@ -111,11 +111,11 @@ export function useThread(
   const [cursor, setCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [notFound, setNotFound] = useState(false)
+  // A new local chat until its first save lands. Its route waits, since
+  // opening the route before then would find nothing on the device.
+  const [unsaved, setUnsaved] = useState<string | null>(null)
   const [error, setError] = useState('')
   const followers = useRef(new Set<AbortController>())
-  // Streams of runs the browser stores keep reading when the view moves to
-  // another chat, so their replies are still saved.
-  const localStreams = useRef(new Set<AbortController>())
   const localRuns = useRef(new Map<string, LocalRun>())
   const generation = useRef(0)
   const starting = useRef(false)
@@ -200,6 +200,7 @@ export function useThread(
     setId(null)
     setError('')
     setNotFound(false)
+    setUnsaved(null)
     starting.current = false
     pending.current = null
     uploads.current = new Map()
@@ -245,6 +246,8 @@ export function useThread(
         },
       ),
     )
+    if (saved)
+      setUnsaved((threadId) => (threadId === saved.id ? null : threadId))
     if (saved && idRef.current === run.threadId) {
       rememberImages(saved)
       // A title the user set during the run outranks the run's title.
@@ -274,8 +277,10 @@ export function useThread(
     quiet = false,
   ) {
     const controller = new AbortController()
-    const streams = run ? localStreams.current : followers.current
-    streams.add(controller)
+    // A run the browser stores keeps reading when the view moves to another
+    // chat, or the page to another route, so its reply is still saved. An
+    // account change ends it with the API's lifetime.
+    if (!run) followers.current.add(controller)
     const version = generation.current
     let runId = 'runId' in input ? input.runId : undefined
     let succeeded = false
@@ -361,7 +366,7 @@ export function useThread(
         else report(cause)
       }
     } finally {
-      streams.delete(controller)
+      followers.current.delete(controller)
     }
     return succeeded && version === generation.current
   }
@@ -508,12 +513,10 @@ export function useThread(
         /* optional routing hint */
       }
     }
-    const streams = localStreams.current
     window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, clear)
     return () => {
       window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, clear)
       reset()
-      for (const controller of streams) controller.abort()
     }
   }, [reset, storageKey])
   useEffect(() => {
@@ -571,6 +574,7 @@ export function useThread(
       return false
     }
     if (version !== generation.current) return false
+    if (!idRef.current && !temporaryRef.current) setUnsaved(threadId)
     const input: Turn = {
       ...turnFields(fields),
       threadId,
@@ -857,6 +861,7 @@ export function useThread(
         ...threadView(summary, messages),
         isTemporary: temporary,
         isLocalOnly: isLocalChat,
+        pendingSave: unsaved === summary.id,
         presetId: presetId ?? undefined,
       }
     : {
@@ -867,6 +872,7 @@ export function useThread(
         isBlankChat: !id,
         isTemporary: temporary,
         isLocalOnly: isLocalChat,
+        pendingSave: !!id && unsaved === id,
         model,
         projectId: local ? undefined : (projectId ?? undefined),
         presetId: presetId ?? undefined,
