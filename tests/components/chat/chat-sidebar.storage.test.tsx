@@ -265,12 +265,14 @@ describe('chat sidebar storage modes', () => {
       const onConvertChatToLocal = vi.fn(async () => {})
       const onToggleFavorite = vi.fn()
       const onRemoveChatFromProject = vi.fn(async () => {})
+      const onMoveChatToProject = vi.fn(async () => {})
       render(
         <Sidebar
           onConvertChatToCloud={onConvertChatToCloud}
           onConvertChatToLocal={onConvertChatToLocal}
           onToggleFavorite={onToggleFavorite}
           onRemoveChatFromProject={onRemoveChatFromProject}
+          onMoveChatToProject={onMoveChatToProject}
         />,
       )
       const tabs = within(screen.getByRole('tablist', { name: 'Chat storage' }))
@@ -279,6 +281,7 @@ describe('chat sidebar storage modes', () => {
         onConvertChatToLocal,
         onToggleFavorite,
         onRemoveChatFromProject,
+        onMoveChatToProject,
         cloudTab: tabs.getByRole('tab', { name: 'Cloud' }),
         localTab: tabs.getByRole('tab', { name: 'Local' }),
       }
@@ -352,9 +355,13 @@ describe('chat sidebar storage modes', () => {
         expect.objectContaining({ id: localChat.id, isLocalOnly: true }),
       )
       fireEvent.click(screen.getByRole('button', { name: 'More chat options' }))
-      expect(
-        screen.getByRole('menuitem', { name: /Move to project/ }),
-      ).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('menuitem', { name: /Move to project/ }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Garden' }))
+      expect(moves.onMoveChatToProject).toHaveBeenCalledExactlyOnceWith(
+        localChat.id,
+        'project-1',
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'More chat options' }))
       expect(
         screen.queryByRole('menuitem', { name: 'Move to local' }),
       ).not.toBeInTheDocument()
@@ -363,6 +370,7 @@ describe('chat sidebar storage modes', () => {
       expect(moves.onConvertChatToCloud).toHaveBeenCalledExactlyOnceWith(
         localChat.id,
       )
+      expect(moves.onConvertChatToLocal).not.toHaveBeenCalled()
     })
 
     it('moves a synced chat to this device from its menu', () => {
