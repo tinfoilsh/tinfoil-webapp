@@ -25,8 +25,17 @@ interface UseUIStateReturn {
 const useIsomorphicLayoutEffect =
   typeof window !== 'undefined' ? useLayoutEffect : useEffect
 
+// The theme this device showed last, which public/js/boot.js applies before
+// the first paint.
+function savedThemeMode(): ThemeMode {
+  const mode = localStorage.getItem(SETTINGS_THEME_MODE)
+  if (mode === 'light' || mode === 'dark' || mode === 'system') return mode
+  const theme = localStorage.getItem(SETTINGS_THEME)
+  return theme === 'light' || theme === 'dark' ? theme : 'system'
+}
+
 export function useUIState(): UseUIStateReturn {
-  const { profile, api } = useHarness()
+  const { profile, profileReady, api } = useHarness()
   const [isClient, setIsClient] = useState(false)
   const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -43,16 +52,20 @@ export function useUIState(): UseUIStateReturn {
   useEffect(() => {
     setIsClient(true)
   }, [])
+  // Until the settings load, the theme stays the one this device saved, which
+  // they may still import.
   useEffect(() => {
-    const mode: ThemeMode = profile.themeMode ?? 'system'
+    const mode: ThemeMode = profileReady
+      ? (profile.themeMode ?? 'system')
+      : savedThemeMode()
     setThemeModeState(mode)
     setIsDarkMode(
       mode === 'system'
         ? window.matchMedia('(prefers-color-scheme: dark)').matches
         : mode === 'dark',
     )
-    localStorage.setItem(SETTINGS_THEME_MODE, mode)
-  }, [profile.themeMode])
+    if (profileReady) localStorage.setItem(SETTINGS_THEME_MODE, mode)
+  }, [profile.themeMode, profileReady])
 
   // Add effect to handle window resizing
   useEffect(() => {
