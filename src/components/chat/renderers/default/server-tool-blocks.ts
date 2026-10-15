@@ -24,8 +24,10 @@ function serverToolBlock(
     block.result && typeof block.result === 'object'
       ? (block.result as Record<string, any>)
       : {}
-  const failed = !!result.error
+  // A call still without a result once the reply stops streaming was cut
+  // off by a failed or stopped run.
   const running = isStreaming && block.result === undefined
+  const failed = !!result.error || (!isStreaming && block.result === undefined)
   if (block.name === 'web_search')
     return {
       type: 'web_search',

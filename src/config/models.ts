@@ -29,7 +29,11 @@ export type BaseModel = {
 export type AutoIntelligenceLevelId = string
 export type AutoIntelligenceLevel = { id: string; label: string; value: number }
 export const AUTO_MODEL_ID = 'auto'
-export const isAutoModelId = (id: string) => id === AUTO_MODEL_ID
+// The two Auto tiers of the previous design, which settings and chats kept
+// on the device can still name. The harness reads them as Auto.
+const LEGACY_AUTO_MODEL_IDS = ['auto-smart', 'auto-fast']
+export const isAutoModelId = (id: string) =>
+  id === AUTO_MODEL_ID || LEGACY_AUTO_MODEL_IDS.includes(id)
 export const getAutoIntelligenceLevels = (): AutoIntelligenceLevel[] =>
   (getView().session?.auto?.levels ?? []).map((level, value) => ({
     ...level,
@@ -45,7 +49,9 @@ export const getAutoDisplayName = (id: string) =>
   `Auto · ${getAutoIntelligenceLevel(id).label}`
 export function displayModels(session?: Session): BaseModel[] {
   if (!session) return []
-  const models: BaseModel[] = session.models.map((m) => ({
+  // Free chat models serve free-tier keys server-side and are never offered.
+  const offered = session.models.filter((m) => m.paid !== false)
+  const models: BaseModel[] = offered.map((m) => ({
     ...m,
     modelName: m.id,
     nameShort: m.nameShort ?? m.name,
@@ -97,7 +103,9 @@ export const getSelectableChatModels = (
       (model.deprecated !== true || model.modelName === selectedModel),
   )
 export const findSelectableModel = (id: string, models: BaseModel[]) =>
-  models.find((m) => m.modelName === id)
+  isAutoModelId(id)
+    ? getAutoModel(models)
+    : models.find((m) => m.modelName === id)
 export const getSelectedModelLabel = (
   id: string,
   models: BaseModel[],

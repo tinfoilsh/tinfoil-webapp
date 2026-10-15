@@ -120,10 +120,12 @@ const CLASSIFICATIONS: Record<ErrorKind, ErrorClassification> = {
 }
 
 // Map a run failure to a behavioral kind plus human-readable copy using the
-// chat service's structured error code. Unclassified failures (an interrupted
-// stream, a transport error) are treated as connection problems. Both the copy
-// and the retry affordance derive from the same result so they can never
-// disagree. The raw message stays available in the expandable details section.
+// chat service's structured error code. Only a failure without a response (a
+// transport error, an interrupted stream, a connection that could not be
+// verified) is a connection problem; any other code came from the service.
+// Both the copy and the retry affordance derive from the same result so they
+// can never disagree. The raw message stays available in the expandable
+// details section.
 function formatResetTime(error: StreamErrorInfo): string | null {
   const at = error.resetsAt
     ? Date.parse(error.resetsAt)
@@ -179,12 +181,12 @@ function classifyError(error: StreamErrorInfo): ErrorClassification {
       return CLASSIFICATIONS['too-large']
     case 'MODEL_UNAVAILABLE':
       return CLASSIFICATIONS.model
-    case 'UPSTREAM_REFUSED':
-    case 'TOOL_UNAVAILABLE':
-    case 'MAX_TURNS':
-      return CLASSIFICATIONS.server
-    default:
+    case undefined:
+    case 'STREAM_INTERRUPTED':
+    case 'CONNECTION':
       return CLASSIFICATIONS.connection
+    default:
+      return CLASSIFICATIONS.server
   }
 }
 

@@ -14,3 +14,19 @@ it('uses the session to display model capabilities and Auto', () => {
     testSession.auto!.levels.map((level) => level.id),
   )
 })
+it('never offers the free chat models that serve free-tier keys', () => {
+  const free = {
+    id: 'free-model',
+    name: 'Free model',
+    paid: false,
+    multimodal: false,
+    reasoning: null,
+  }
+  const paid = { ...free, id: 'paid-model', name: 'Paid model', paid: true }
+  expect(
+    displayModels({
+      ...testSession,
+      models: [...testSession.models, free, paid],
+    }).map((m) => m.modelName),
+  ).toEqual(['auto', 'test-model', 'paid-model'])
+})

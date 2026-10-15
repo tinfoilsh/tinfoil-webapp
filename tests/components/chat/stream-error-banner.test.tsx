@@ -137,6 +137,48 @@ describe('StreamErrorBanner', () => {
     )
   })
 
+  it.each(['RUN_IN_FLIGHT', 'PII_BLOCKED', 'INVALID_STREAM'])(
+    'treats %s, which the service answered with, as a service error',
+    (code) => {
+      vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+      const onRetry = vi.fn()
+      render(
+        <StreamErrorBanner
+          error={{ code, message: 'Refused' }}
+          isDarkMode={false}
+          onRetry={onRetry}
+          onDismiss={vi.fn()}
+        />,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'The service is having trouble right now',
+      )
+      expect(screen.getByRole('alert')).not.toHaveTextContent(
+        'Check your internet connection',
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+      expect(onRetry).toHaveBeenCalledOnce()
+    },
+  )
+
+  it.each([undefined, 'CONNECTION'])(
+    'treats a failure without a response (code %s) as a connection problem',
+    (code) => {
+      render(
+        <StreamErrorBanner
+          error={{ code, message: 'Failed to fetch' }}
+          isDarkMode={false}
+          onRetry={vi.fn()}
+          onDismiss={vi.fn()}
+        />,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent('Connection problem')
+      expect(
+        screen.getByRole('button', { name: 'Resend message' }),
+      ).toBeEnabled()
+    },
+  )
+
   it.each([
     { code: 'QUOTA_EXHAUSTED', withRetry: true },
     { code: 'THREAD_TOO_LARGE', withRetry: true },

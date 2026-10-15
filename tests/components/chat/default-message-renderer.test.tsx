@@ -884,6 +884,40 @@ describe('DefaultMessageRenderer work traces', () => {
     expect(screen.queryByText(/Worked/)).not.toBeInTheDocument()
   })
 
+  it.each([
+    { isStreaming: true, label: 'Searching the web...' },
+    { isStreaming: false, label: 'Search failed for "tinfoil"' },
+  ])(
+    'shows a search without a result while streaming=$isStreaming as $label',
+    ({ isStreaming, label }) => {
+      const { container } = render(
+        <Renderer
+          message={{
+            role: 'assistant',
+            content: '',
+            timestamp: new Date('2026-08-07T00:00:01.000Z'),
+            timeline: [
+              {
+                type: 'tool_call',
+                id: 'call-1',
+                toolCallId: 'call-1',
+                name: 'web_search',
+                arguments: '{"query":"tinfoil"}',
+              },
+            ],
+          }}
+          messageIndex={0}
+          model={model}
+          isDarkMode={false}
+          isLastMessage
+          isStreaming={isStreaming}
+        />,
+      )
+      expect(container).toHaveTextContent(label)
+      expect(container).not.toHaveTextContent('Searched the web')
+    },
+  )
+
   it('does not treat an earlier run as active when answer text follows it', () => {
     render(
       <Renderer
