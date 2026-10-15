@@ -363,7 +363,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       getToken,
-      secure,
+      () => secure,
     )
     const body = { key: 'cek', clientRequestId: 'nonce' }
     await expect(client.post('/v1/threads/turn', body)).resolves.toEqual({
@@ -389,7 +389,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       vi.fn().mockResolvedValueOnce('old').mockResolvedValueOnce(null),
-      secure,
+      () => secure,
     )
     await expect(client.session()).rejects.toMatchObject({ status: 401 })
     expect(secure.fetch).toHaveBeenCalledTimes(1)
@@ -399,7 +399,7 @@ describe('attested harness transport', () => {
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      secure,
+      () => secure,
     )
     secure.fetch.mockResolvedValueOnce(new Response('{"id":"attachment"}'))
     await client.upload(
@@ -431,12 +431,45 @@ describe('attested harness transport', () => {
       new Headers(secure.fetch.mock.calls[2][1].headers).get('Last-Event-ID'),
     ).toBe('0')
   })
+  it('abandons an attestation that stalls and verifies again with a new client', async () => {
+    vi.useFakeTimers()
+    try {
+      const stalled = transport()
+      stalled.ready.mockReturnValue(new Promise(() => {}))
+      const fresh = transport()
+      fresh.fetch.mockResolvedValue(new Response('{"ok":true}'))
+      const created = [stalled, fresh]
+      const client = new HarnessClient(
+        'https://harness.example',
+        async () => 'clerk',
+        () => created.shift()!,
+      )
+
+      const stuck = expect(
+        client.post('/v1/session', {}),
+      ).rejects.toMatchObject({ code: 'CONNECTION' })
+      await vi.advanceTimersByTimeAsync(20_000)
+      await stuck
+
+      await expect(client.post('/v1/session', {})).resolves.toEqual({
+        ok: true,
+      })
+      expect(created).toEqual([])
+      expect(stalled.fetch).not.toHaveBeenCalled()
+      expect(fresh.fetch).toHaveBeenCalledExactlyOnceWith(
+        'https://harness.example/v1/session',
+        expect.objectContaining({ method: 'POST', body: '{}' }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   it('does not send keys or JWTs to arbitrary URLs', async () => {
     const secure = transport()
     const client = new HarnessClient(
       'https://harness.example',
       async () => 'clerk',
-      secure,
+      () => secure,
     )
     for (const path of [
       'https://other.example/v1/session',
@@ -450,7 +483,11 @@ describe('attested harness transport', () => {
     expect(secure.fetch).not.toHaveBeenCalled()
     expect(
       () =>
-        new HarnessClient('http://harness.example', async () => null, secure),
+        new HarnessClient(
+          'http://harness.example',
+          async () => null,
+          () => secure,
+        ),
     ).toThrow(HarnessError)
   })
 })

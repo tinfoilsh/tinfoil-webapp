@@ -144,7 +144,7 @@ describe('speech requests', () => {
         new HarnessClient(
           'https://harness.example/',
           async () => 'clerk-session',
-          secure,
+          () => secure,
         ),
         'alice',
       ),

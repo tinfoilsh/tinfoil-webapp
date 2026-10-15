@@ -40,7 +40,10 @@ vi.mock('@/services/harness/client', async (importOriginal) => {
         super(
           args[0],
           args[1],
-          secure as unknown as ConstructorParameters<typeof HarnessClient>[2],
+          () =>
+            secure as unknown as ReturnType<
+              NonNullable<ConstructorParameters<typeof HarnessClient>[2]>
+            >,
         )
       }
     },

@@ -24,7 +24,11 @@ function setup(getToken = async (): Promise<string | null> => null) {
     fetch: vi.fn().mockImplementation(async () => Response.json({ ok: true })),
     getVerificationDocument: vi.fn(),
   }
-  const client = new HarnessClient('https://harness.example', getToken, secure)
+  const client = new HarnessClient(
+    'https://harness.example',
+    getToken,
+    () => secure,
+  )
   return { client, secure }
 }
 

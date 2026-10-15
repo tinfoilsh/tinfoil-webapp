@@ -4,6 +4,9 @@ import { HarnessError, readEvents } from './sse'
 import type { Frame, HarnessErrorBody, Session, Turn } from './types'
 
 const harnessRepo = 'tinfoilsh/confidential-tinfoil-harness'
+// An attestation that has not finished by then is abandoned: the request
+// fails, and the next one verifies the enclave again with a new client.
+const ATTESTATION_TIMEOUT_MS = 20_000
 type GetToken = (options?: { skipCache?: boolean }) => Promise<string | null>
 type Transport = Pick<
   SecureClient,
@@ -13,6 +16,7 @@ type Transport = Pick<
 export class HarnessClient {
   private readonly origin: string
   private readonly anonymous = new AnonymousCredentialCache()
+  private secure: Transport
 
   get anonymousRateLimit() {
     return this.anonymous.rateLimit
@@ -25,10 +29,8 @@ export class HarnessClient {
   constructor(
     url: string,
     private readonly getToken: GetToken,
-    private readonly secure: Transport = new SecureClient({
-      enclaveURL: url,
-      configRepo: harnessRepo,
-    }),
+    private readonly createTransport: () => Transport = () =>
+      new SecureClient({ enclaveURL: url, configRepo: harnessRepo }),
   ) {
     const parsed = new URL(url)
     if (
@@ -45,10 +47,31 @@ export class HarnessClient {
       })
     }
     this.origin = parsed.origin
+    this.secure = createTransport()
   }
 
   async ready() {
-    await this.secure.ready()
+    const secure = this.secure
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      await Promise.race([
+        secure.ready(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            if (this.secure === secure) this.secure = this.createTransport()
+            reject(
+              new HarnessError({
+                code: 'CONNECTION',
+                message:
+                  'The chat service could not be verified in time. Check your connection and try again.',
+              }),
+            )
+          }, ATTESTATION_TIMEOUT_MS)
+        }),
+      ])
+    } finally {
+      clearTimeout(timer)
+    }
   }
   get verification() {
     return this.secure.getVerificationDocument()

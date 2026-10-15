@@ -59,11 +59,18 @@ beforeEach(async () => {
   await encryptionService.setKey(PRIMARY_KEY)
   activateAPI(
     new HarnessAPI(
-      new HarnessClient('https://harness.example', async () => 'test-jwt', {
-        ready: async () => {},
-        fetch: secureFetch,
-        getVerificationDocument: vi.fn(),
-      } as unknown as ConstructorParameters<typeof HarnessClient>[2]),
+      new HarnessClient(
+        'https://harness.example',
+        async () => 'test-jwt',
+        () =>
+          ({
+            ready: async () => {},
+            fetch: secureFetch,
+            getVerificationDocument: vi.fn(),
+          }) as unknown as ReturnType<
+            NonNullable<ConstructorParameters<typeof HarnessClient>[2]>
+          >,
+      ),
       'user_1',
     ),
   )
