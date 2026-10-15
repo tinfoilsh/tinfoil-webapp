@@ -9,25 +9,33 @@ beforeEach(() => {
 })
 
 it('stops streaming a cancelled ask and keeps its partial answer', async () => {
+  let streamSignal: AbortSignal | undefined
+  let streamExited!: () => void
+  const exited = new Promise<void>((resolve) => (streamExited = resolve))
   vi.mocked(harnessAPI().client.events).mockImplementation(
     async function* (_path, _input, signal) {
-      yield {
-        id: 0,
-        event: { type: 'RUN_STARTED', threadId: 'thread-1', runId: 'run-1' },
+      streamSignal = signal
+      try {
+        yield {
+          id: 0,
+          event: { type: 'RUN_STARTED', threadId: 'thread-1', runId: 'run-1' },
+        }
+        yield {
+          id: 1,
+          event: {
+            type: 'TEXT_MESSAGE_CHUNK',
+            messageId: 'answer',
+            delta: 'It means',
+            timestamp: '2026-05-01T10:00:00Z',
+          },
+        }
+        // Like a fetch, the stream fails once its signal aborts.
+        await new Promise((_, reject) =>
+          signal!.addEventListener('abort', () => reject(signal!.reason)),
+        )
+      } finally {
+        streamExited()
       }
-      yield {
-        id: 1,
-        event: {
-          type: 'TEXT_MESSAGE_CHUNK',
-          messageId: 'answer',
-          delta: 'It means',
-          timestamp: '2026-05-01T10:00:00Z',
-        },
-      }
-      // Like a fetch, the stream fails once its signal aborts.
-      await new Promise((_, reject) =>
-        signal!.addEventListener('abort', () => reject(signal!.reason)),
-      )
     },
   )
   const { result } = renderHook(() =>
@@ -44,6 +52,9 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
 
   await act(async () => result.current.cancel())
 
+  // The stream itself must end, not only the hook's view of it.
+  expect(streamSignal?.aborted).toBe(true)
+  await exited
   expect(result.current.isStreaming).toBe(false)
   expect(result.current.loadingState).toBe('idle')
   expect(result.current.messages.map((m) => m.content)).toEqual(['It means'])
