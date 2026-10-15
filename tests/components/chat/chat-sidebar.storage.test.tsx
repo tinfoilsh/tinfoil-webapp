@@ -7,6 +7,7 @@ import {
   UI_SIDEBAR_ACTIVE_TAB,
 } from '@/constants/storage-keys'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -27,8 +28,15 @@ vi.mock('next/router', () => ({
 vi.mock('@/components/project/project-context', () => ({
   useProject: () => ({ activeProject: null, deleteProject: vi.fn() }),
 }))
+const sidebarProjects = vi.hoisted(() => ({
+  list: [] as { id: string; name: string }[],
+}))
 vi.mock('@/hooks/use-projects', () => ({
-  useProjects: () => ({ projects: [], loading: false, refresh: vi.fn() }),
+  useProjects: () => ({
+    projects: sidebarProjects.list,
+    loading: false,
+    refresh: vi.fn(),
+  }),
 }))
 vi.mock('@/hooks/use-upgrade-to-pro', () => ({
   useUpgradeToPro: () => ({ startUpgrade: vi.fn() }),
@@ -96,10 +104,29 @@ const chatTitles = () =>
     .queryAllByRole('listitem')
     .map((item) => within(item).queryByRole('link')?.textContent ?? '')
 
+// A drag's data, shared by the events of one drag as a browser shares it.
+function dragData() {
+  const data = new Map<string, string>()
+  return {
+    get types() {
+      return [...data.keys()]
+    },
+    setData: (type: string, value: string) => void data.set(type, value),
+    getData: (type: string) => data.get(type) ?? '',
+  }
+}
+
+// The row a chat is dragged by; its link is never draggable itself.
+const listItem = (title: string) =>
+  screen
+    .getByRole('link', { name: title })
+    .parentElement!.closest('[draggable]')!
+
 describe('chat sidebar storage modes', () => {
   beforeEach(() => {
     auth.isSignedIn = true
     sessionStorage.clear()
+    sidebarProjects.list = []
   })
 
   it('lists only local chats and offers cloud sync to an account without it', async () => {
@@ -122,11 +149,7 @@ describe('chat sidebar storage modes', () => {
     expect(
       screen.queryByRole('button', { name: 'Pin to Favorites' }),
     ).not.toBeInTheDocument()
-    expect(
-      screen
-        .getByRole('link', { name: localChat.title })
-        .closest('[draggable]'),
-    ).toHaveAttribute('draggable', 'false')
+    expect(listItem(localChat.title)).toHaveAttribute('draggable', 'false')
     expect(screen.getByRole('link', { name: localChat.title })).toHaveAttribute(
       'href',
       `/chat/local/${localChat.id}`,
@@ -209,6 +232,153 @@ describe('chat sidebar storage modes', () => {
     expect(
       screen.getByRole('tablist', { name: 'Chat storage' }),
     ).toBeInTheDocument()
+  })
+
+  it('offers no way to move or pin a device chat without the transfer routes', () => {
+    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+    localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'true')
+    sessionStorage.setItem(UI_SIDEBAR_ACTIVE_TAB, 'local')
+    sidebarProjects.list = [{ id: 'project-1', name: 'Garden' }]
+    render(<Sidebar />)
+
+    expect(chatTitles()).toEqual([localChat.title])
+    expect(listItem(localChat.title)).toHaveAttribute('draggable', 'false')
+    expect(
+      screen.queryByRole('button', { name: 'Pin to Favorites' }),
+    ).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'More chat options' }))
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('menuitem', { name: 'Move to cloud' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('menuitem', { name: /Move to project/ }),
+    ).not.toBeInTheDocument()
+  })
+
+  describe('with the transfer routes', () => {
+    function renderMovable(tab: 'cloud' | 'local') {
+      localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
+      localStorage.setItem(SETTINGS_LOCAL_ONLY_MODE_ENABLED, 'true')
+      sessionStorage.setItem(UI_SIDEBAR_ACTIVE_TAB, tab)
+      const onConvertChatToCloud = vi.fn(async () => true)
+      const onConvertChatToLocal = vi.fn(async () => {})
+      const onToggleFavorite = vi.fn()
+      const onRemoveChatFromProject = vi.fn(async () => {})
+      render(
+        <Sidebar
+          onConvertChatToCloud={onConvertChatToCloud}
+          onConvertChatToLocal={onConvertChatToLocal}
+          onToggleFavorite={onToggleFavorite}
+          onRemoveChatFromProject={onRemoveChatFromProject}
+        />,
+      )
+      const tabs = within(screen.getByRole('tablist', { name: 'Chat storage' }))
+      return {
+        onConvertChatToCloud,
+        onConvertChatToLocal,
+        onToggleFavorite,
+        onRemoveChatFromProject,
+        cloudTab: tabs.getByRole('tab', { name: 'Cloud' }),
+        localTab: tabs.getByRole('tab', { name: 'Local' }),
+      }
+    }
+
+    it('moves a device chat to the cloud when it is dropped on the Cloud tab', async () => {
+      const moves = renderMovable('local')
+      const drag = dragData()
+      expect(listItem(localChat.title)).toHaveAttribute('draggable', 'true')
+
+      fireEvent.dragStart(listItem(localChat.title), { dataTransfer: drag })
+      fireEvent.dragEnter(moves.cloudTab, { dataTransfer: drag })
+      expect(moves.cloudTab).toHaveAttribute('aria-selected', 'true')
+      fireEvent.dragOver(moves.cloudTab, { dataTransfer: drag })
+      await act(async () => {
+        fireEvent.drop(moves.cloudTab, { dataTransfer: drag })
+      })
+
+      expect(moves.onConvertChatToCloud).toHaveBeenCalledExactlyOnceWith(
+        localChat.id,
+      )
+      expect(moves.onConvertChatToLocal).not.toHaveBeenCalled()
+    })
+
+    it('moves a synced chat to this device when it is dropped on the Local tab', async () => {
+      const moves = renderMovable('cloud')
+      const drag = dragData()
+
+      fireEvent.dragStart(listItem(cloudChat.title), { dataTransfer: drag })
+      fireEvent.dragEnter(moves.localTab, { dataTransfer: drag })
+      expect(moves.localTab).toHaveAttribute('aria-selected', 'true')
+      await act(async () => {
+        fireEvent.drop(moves.localTab, { dataTransfer: drag })
+      })
+
+      expect(moves.onConvertChatToLocal).toHaveBeenCalledExactlyOnceWith(
+        cloudChat.id,
+      )
+      expect(moves.onConvertChatToCloud).not.toHaveBeenCalled()
+    })
+
+    it('moves a chat dropped on the list of the tab it was dragged to', async () => {
+      const moves = renderMovable('local')
+      const drag = dragData()
+
+      fireEvent.dragStart(listItem(localChat.title), { dataTransfer: drag })
+      fireEvent.dragEnter(moves.cloudTab, { dataTransfer: drag })
+      await act(async () => {
+        fireEvent.drop(screen.getByRole('tabpanel'), { dataTransfer: drag })
+      })
+
+      expect(moves.onConvertChatToCloud).toHaveBeenCalledExactlyOnceWith(
+        localChat.id,
+      )
+
+      // A chat dropped back on the list it came from stays where it is.
+      fireEvent.dragStart(listItem(cloudChat.title), { dataTransfer: drag })
+      await act(async () => {
+        fireEvent.drop(screen.getByRole('tabpanel'), { dataTransfer: drag })
+      })
+      expect(moves.onConvertChatToCloud).toHaveBeenCalledOnce()
+      expect(moves.onConvertChatToLocal).not.toHaveBeenCalled()
+    })
+
+    it('moves, pins, and files a device chat from its menu', () => {
+      sidebarProjects.list = [{ id: 'project-1', name: 'Garden' }]
+      const moves = renderMovable('local')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Pin to Favorites' }))
+      expect(moves.onToggleFavorite).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: localChat.id, isLocalOnly: true }),
+      )
+      fireEvent.click(screen.getByRole('button', { name: 'More chat options' }))
+      expect(
+        screen.getByRole('menuitem', { name: /Move to project/ }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('menuitem', { name: 'Move to local' }),
+      ).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Move to cloud' }))
+
+      expect(moves.onConvertChatToCloud).toHaveBeenCalledExactlyOnceWith(
+        localChat.id,
+      )
+    })
+
+    it('moves a synced chat to this device from its menu', () => {
+      const moves = renderMovable('cloud')
+
+      fireEvent.click(screen.getByRole('button', { name: 'More chat options' }))
+      expect(
+        screen.queryByRole('menuitem', { name: 'Move to cloud' }),
+      ).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Move to local' }))
+
+      expect(moves.onConvertChatToLocal).toHaveBeenCalledExactlyOnceWith(
+        cloudChat.id,
+      )
+      expect(moves.onConvertChatToCloud).not.toHaveBeenCalled()
+    })
   })
 
   it('keeps a signed-out visitor’s chats in the browser tab', () => {

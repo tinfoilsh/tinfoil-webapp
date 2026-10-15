@@ -50,6 +50,9 @@ interface ChatListProps {
   showPinnedIndicators?: boolean
   showDesktopPinActions?: boolean
   onTogglePin?: (chat: ChatItemData) => void | Promise<void>
+  // Whether a chat kept on this device offers pinning, which moves it to
+  // the cloud first.
+  canPinLocalChats?: boolean
   loadMoreButton?: React.ReactNode
   emptyState?: React.ReactNode
   /**
@@ -90,6 +93,7 @@ export function ChatList({
   showPinnedIndicators = true,
   showDesktopPinActions = true,
   onTogglePin,
+  canPinLocalChats = false,
   loadMoreButton,
   emptyState,
   loadingIndicator,
@@ -254,6 +258,7 @@ export function ChatList({
                 showPinnedIndicator={showPinnedIndicators}
                 showDesktopPinAction={showDesktopPinActions}
                 onTogglePin={onTogglePin ? () => onTogglePin(chat) : undefined}
+                canPinLocalChats={canPinLocalChats}
               />
               {deletingChatId === chat.id && (
                 <DeleteConfirmation

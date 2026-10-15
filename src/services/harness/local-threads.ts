@@ -79,6 +79,10 @@ export interface LocalThreadStore {
     id: string,
     change: (current: LocalThread | null) => LocalThread | null,
   ): Promise<LocalThread | null>
+  // Stores a chat that arrives from elsewhere, such as the cloud, under its
+  // own id, even one deleted from this device before. A chat already stored
+  // under the id is kept, and null is returned.
+  add(thread: LocalThread): Promise<LocalThread | null>
   delete(id: string): Promise<void>
   deleteAll(): Promise<number>
 }
@@ -722,6 +726,15 @@ function createStore(
         if (!(await backend.write(next))) return null
         emit({ reason: 'save', ids: [id] })
         return next
+      })
+    },
+    add(thread) {
+      return serialize(thread.id, async () => {
+        if (await backend.read(thread.id)) return null
+        markDeleted([thread.id], false)
+        if (!(await backend.write(thread))) return null
+        emit({ reason: 'save', ids: [thread.id] })
+        return thread
       })
     },
     delete(id) {

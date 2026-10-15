@@ -42,8 +42,11 @@ export interface ChatItemData {
   pendingSave?: boolean
 }
 
-export function canPinChat(chat: ChatItemData): boolean {
-  return canRequestChatPin(chat)
+export function canPinChat(
+  chat: ChatItemData,
+  canPinLocalChats = false,
+): boolean {
+  return canRequestChatPin(chat, canPinLocalChats)
 }
 
 /**
@@ -108,6 +111,7 @@ interface ChatListItemProps {
   showPinnedIndicator?: boolean
   showDesktopPinAction?: boolean
   onTogglePin?: () => void | Promise<void>
+  canPinLocalChats?: boolean
 }
 
 function ChatSelectionControl({
@@ -187,7 +191,9 @@ export function ChatListItem({
   showPinnedIndicator = true,
   showDesktopPinAction = true,
   onTogglePin,
+  canPinLocalChats = false,
 }: ChatListItemProps) {
+  const canTogglePin = isPinned || canPinChat(chat, canPinLocalChats)
   const [displayTitle, setDisplayTitle] = useState(chat.title)
   const [isAnimating, setIsAnimating] = useState(false)
   const [animationFromTitle, setAnimationFromTitle] = useState('')
@@ -478,35 +484,31 @@ export function ChatListItem({
       {!isEditing && (
         <div className="flex flex-shrink-0 items-center gap-1.5">
           <div className="pointer-events-none hidden items-center opacity-0 transition-opacity md:flex md:w-0 md:overflow-hidden md:group-focus-within:pointer-events-auto md:group-focus-within:w-auto md:group-focus-within:opacity-100 md:group-hover:pointer-events-auto md:group-hover:w-auto md:group-hover:opacity-100">
-            {showDesktopPinAction &&
-              (isPinned || canPinChat(chat)) &&
-              onTogglePin && (
-                <button
-                  type="button"
-                  className={cn(
-                    'mr-1 rounded p-1 transition-colors',
-                    isPinned
-                      ? 'text-content-primary'
-                      : 'text-content-muted hover:text-content-secondary',
-                    isDarkMode
-                      ? 'hover:bg-surface-chat hover:text-white'
-                      : 'hover:bg-surface-sidebar',
-                  )}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    void onTogglePin()
-                  }}
-                  aria-label={
-                    isPinned ? 'Remove from Favorites' : 'Pin to Favorites'
-                  }
-                  aria-pressed={isPinned}
-                  title={
-                    isPinned ? 'Remove from Favorites' : 'Pin to Favorites'
-                  }
-                >
-                  <TfThumbtack className="h-4 w-4" aria-hidden="true" />
-                </button>
-              )}
+            {showDesktopPinAction && canTogglePin && onTogglePin && (
+              <button
+                type="button"
+                className={cn(
+                  'mr-1 rounded p-1 transition-colors',
+                  isPinned
+                    ? 'text-content-primary'
+                    : 'text-content-muted hover:text-content-secondary',
+                  isDarkMode
+                    ? 'hover:bg-surface-chat hover:text-white'
+                    : 'hover:bg-surface-sidebar',
+                )}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void onTogglePin()
+                }}
+                aria-label={
+                  isPinned ? 'Remove from Favorites' : 'Pin to Favorites'
+                }
+                aria-pressed={isPinned}
+                title={isPinned ? 'Remove from Favorites' : 'Pin to Favorites'}
+              >
+                <TfThumbtack className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
             {hasRealTitle && (
               <button
                 type="button"
@@ -620,7 +622,7 @@ export function ChatListItem({
                           </button>
                         )}
 
-                        {(isPinned || canPinChat(chat)) && onTogglePin && (
+                        {canTogglePin && onTogglePin && (
                           <button
                             type="button"
                             role="menuitem"

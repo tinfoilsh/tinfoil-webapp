@@ -151,6 +151,7 @@ const OnboardingView = dynamic(
 
 import { displayModels } from '@/config/models'
 import { useHarness } from '@/services/harness/provider'
+import { isAttachmentsUnavailable } from '@/services/harness/transfer'
 import type { Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { attachmentView } from '@/services/harness/view-model'
@@ -620,11 +621,127 @@ export function ChatInterface({
   const unpinChat = (id: string) => {
     void thread.update(id, { pinned: false }).catch(thread.report)
   }
-  const handleToggleFavorite = (chat: { id: string }) =>
-    thread.update(chat.id, { pinned: !pinnedChatIds.includes(chat.id) })
+  // Chats move between the cloud and this device when the harness offers it.
+  const canMoveChats = cloudSyncEnabled && !!features.transfer
+  const isAbort = (cause: unknown) =>
+    cause instanceof DOMException && cause.name === 'AbortError'
+  const handleConvertChatToCloud = async (chatId: string): Promise<boolean> => {
+    try {
+      await thread.moveToCloud(chatId)
+      await reloadChats()
+      toast({
+        title: 'Chat moved to cloud',
+        description: 'The chat will now sync across your devices.',
+      })
+      return true
+    } catch (error) {
+      if (isAbort(error)) return false
+      logError('Failed to convert chat to cloud', error, {
+        component: 'ChatInterface',
+        action: 'handleConvertChatToCloud',
+        metadata: { chatId },
+      })
+      toast({
+        title: 'Failed to move chat to cloud',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+      return false
+    }
+  }
+  const handleConvertChatToLocal = async (chatId: string): Promise<void> => {
+    try {
+      await thread.moveToDevice(chatId)
+      await reloadChats()
+      toast({
+        title: 'Chat moved to local',
+        description: 'The chat is now only stored on this device.',
+      })
+    } catch (error) {
+      if (isAbort(error)) return
+      logError('Failed to convert chat to local', error, {
+        component: 'ChatInterface',
+        action: 'handleConvertChatToLocal',
+        metadata: { chatId },
+      })
+      toast({
+        title: 'Failed to move chat to local',
+        description: isAttachmentsUnavailable(error)
+          ? 'Some attachments in this chat could not be downloaded. Check your connection and try again.'
+          : 'Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
+  // Pinning a chat kept on this device moves it to the cloud first, where
+  // favorites are stored.
+  const handleToggleFavorite = async (favorite: {
+    id: string
+    isLocalOnly?: boolean
+  }) => {
+    if (pinnedChatIds.includes(favorite.id)) {
+      unpinChat(favorite.id)
+      return
+    }
+    const chat = chats.find((candidate) => candidate.id === favorite.id)
+    if (chat?.isLocalOnly ?? favorite.isLocalOnly) {
+      if (!canMoveChats) return
+      if (!(await handleConvertChatToCloud(favorite.id))) return
+    }
+    await thread.update(favorite.id, { pinned: true }).catch(thread.report)
+  }
   const handleOpenFavorite = (chat: { id: string }) => handleChatSelect(chat.id)
-  const handleMoveChatToProject = (id: string, projectId: string) =>
-    thread.update(id, { projectId }).then(reloadChats)
+  // A chat kept on this device moves to the cloud before it joins a project;
+  // when the move into the project fails, it returns to the device as it was.
+  const handleMoveChatToProject = async (chatId: string, projectId: string) => {
+    if (!isPremium) {
+      setIsSubscribePromptOpen(true)
+      return
+    }
+    const moving = chats.find((chat) => chat.id === chatId)
+    let original: Awaited<ReturnType<typeof thread.moveToCloud>> | undefined
+    try {
+      if (moving?.isLocalOnly) {
+        if (!canMoveChats) throw new Error('Chats cannot move to the cloud')
+        original = await thread.moveToCloud(chatId)
+      }
+      await thread.update(chatId, { projectId })
+      await reloadChats()
+      if (currentChat.id === chatId) createNewChat(false, true)
+      toast({
+        title: 'Chat moved to project',
+        description: 'The chat has been moved successfully.',
+      })
+    } catch (error) {
+      if (original) {
+        try {
+          await thread.moveToDevice(chatId, original)
+        } catch (rollbackError) {
+          logError(
+            'Failed to restore local chat after project move',
+            rollbackError,
+            {
+              component: 'ChatInterface',
+              action: 'handleMoveChatToProject.rollback',
+              metadata: { chatId, projectId },
+            },
+          )
+        }
+      }
+      if (isAbort(error)) return
+      logError('Failed to move chat to project', error, {
+        component: 'ChatInterface',
+        action: 'handleMoveChatToProject',
+        metadata: { chatId, projectId },
+      })
+      await reloadChats().catch(thread.report)
+      toast({
+        title: 'Failed to move chat',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
   const handleRemoveChatFromProject = (id: string) =>
     thread.update(id, { projectId: null }).then(reloadChats)
   const handleDeleteProjectChats = async () => {
@@ -643,7 +760,13 @@ export function ChatInterface({
     thread.newChat()
     void router.push('/')
   }
-  const handleExitProjectWhileDragging = handleExitProject
+  // Leaving a project while one of its chats is dragged keeps the open chat
+  // and the page, so the drag can end on the Cloud or Local tab.
+  const handleExitProjectWhileDragging = () => {
+    setPendingProjectUpload(null)
+    setShowAddToProjectModal(false)
+    exitProjectMode()
+  }
   const canToggleTemporaryChat = (chat: Chat) =>
     !chat.id && !processedDocuments.length && !isStreaming
   const handleToggleTemporaryMode = () => {
@@ -1652,6 +1775,12 @@ export function ChatInterface({
                 onCreateProject={handleCreateProject}
                 onMoveChatToProject={handleMoveChatToProject}
                 onRemoveChatFromProject={handleRemoveChatFromProject}
+                onConvertChatToCloud={
+                  canMoveChats ? handleConvertChatToCloud : undefined
+                }
+                onConvertChatToLocal={
+                  canMoveChats ? handleConvertChatToLocal : undefined
+                }
                 onSettingsClick={handleOpenSettingsModal}
                 onReportBugClick={handleOpenReportBugModal}
                 onSearchClick={handleOpenSearchModal}

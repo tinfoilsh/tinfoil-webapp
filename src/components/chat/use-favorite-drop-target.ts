@@ -16,6 +16,8 @@ interface FavoriteDropTargetOptions {
   onToggleFavorite?: (chat: ChatItemData) => void | Promise<void>
   onActivate?: () => void
   clearDragState: () => void
+  // Pinning a chat kept on this device moves it to the cloud first.
+  canPinLocalChats?: boolean
 }
 
 export function useFavoriteDropTarget({
@@ -25,6 +27,7 @@ export function useFavoriteDropTarget({
   onToggleFavorite,
   onActivate,
   clearDragState,
+  canPinLocalChats = false,
 }: FavoriteDropTargetOptions) {
   const [isFavoriteDropTarget, setIsFavoriteDropTarget] = useState(false)
   const draggedChat = useMemo(
@@ -35,7 +38,7 @@ export function useFavoriteDropTarget({
     draggedChat &&
     onToggleFavorite &&
     !pinnedChatIds.includes(draggedChat.id) &&
-    canRequestChatPin(draggedChat),
+    canRequestChatPin(draggedChat, canPinLocalChats),
   )
 
   useEffect(() => {
@@ -78,7 +81,7 @@ export function useFavoriteDropTarget({
       const chat = chats.find((candidate) => candidate.id === chatId)
       if (
         !chat ||
-        !canRequestChatPin(chat) ||
+        !canRequestChatPin(chat, canPinLocalChats) ||
         pinnedChatIds.includes(chatId) ||
         !onToggleFavorite
       ) {
@@ -99,7 +102,7 @@ export function useFavoriteDropTarget({
       }
       void toggleFavorite()
     },
-    [chats, clearDragState, onToggleFavorite, pinnedChatIds],
+    [canPinLocalChats, chats, clearDragState, onToggleFavorite, pinnedChatIds],
   )
 
   return {

@@ -87,6 +87,8 @@ const STORAGE_TAB_ACTIVE_CLASS_NAME =
   'border-tinfoil-accent-blue bg-tinfoil-accent-blue text-white hover:bg-tinfoil-accent-blue-hover'
 const STORAGE_TAB_INACTIVE_CLASS_NAME =
   'border-border-subtle bg-surface-chat-background text-content-secondary hover:border-border-strong hover:text-content-primary'
+const STORAGE_TAB_DROP_TARGET_CLASS_NAME =
+  'border-tinfoil-accent-blue ring-2 ring-tinfoil-accent-blue-soft'
 const SIDEBAR_CTA_CLASS_NAME =
   'block w-full rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90'
 
@@ -134,6 +136,8 @@ type ChatSidebarProps = {
   onCreateProject?: () => Promise<void>
   onMoveChatToProject?: (chatId: string, projectId: string) => Promise<void>
   onRemoveChatFromProject?: (chatId: string) => Promise<void>
+  onConvertChatToCloud?: (chatId: string) => Promise<boolean>
+  onConvertChatToLocal?: (chatId: string) => Promise<void>
   onSettingsClick?: (tab?: SettingsTab) => void
   onReportBugClick?: () => void
   onSearchClick?: () => void
@@ -207,6 +211,8 @@ export function ChatSidebar({
   onCreateProject,
   onMoveChatToProject,
   onRemoveChatFromProject,
+  onConvertChatToCloud,
+  onConvertChatToLocal,
   onSettingsClick,
   onReportBugClick,
   onSearchClick,
@@ -317,9 +323,11 @@ export function ChatSidebar({
     draggingChatFromProjectId,
     draggingChatSource,
     dropTargetProjectId,
+    dropTargetTab,
     isDropTargetChatHistory,
     setDraggingChat,
     setDropTargetProject,
+    setDropTargetTab,
     setDropTargetChatHistory,
     clearDragState,
   } = useDrag()
@@ -624,6 +632,7 @@ export function ChatSidebar({
       onToggleFavorite,
       onActivate: expandFavoritesSection,
       clearDragState,
+      canPinLocalChats: !!onConvertChatToCloud,
     })
 
   const paginatesCloudChats = cloudSyncEnabled && !showLocalTab
@@ -1807,11 +1816,77 @@ export function ChatSidebar({
                           aria-selected={activeTab === 'cloud'}
                           aria-controls="chat-storage-panel"
                           onClick={() => setActiveTab('cloud')}
+                          onDragOver={(e) => {
+                            if (
+                              e.dataTransfer.types.includes(
+                                'application/x-chat-id',
+                              ) &&
+                              onConvertChatToCloud
+                            ) {
+                              e.preventDefault()
+                              if (draggingChatSource !== 'favorites') {
+                                e.dataTransfer.dropEffect = 'move'
+                                setDropTargetTab('cloud')
+                              }
+                            }
+                          }}
+                          onDragEnter={(e) => {
+                            if (
+                              e.dataTransfer.types.includes(
+                                'application/x-chat-id',
+                              ) &&
+                              onConvertChatToCloud
+                            ) {
+                              e.preventDefault()
+                              if (draggingChatSource !== 'favorites') {
+                                setDropTargetTab('cloud')
+                                setActiveTab('cloud')
+                              }
+                            }
+                          }}
+                          onDragLeave={() => {
+                            if (dropTargetTab === 'cloud') {
+                              setDropTargetTab(null)
+                            }
+                          }}
+                          onDrop={async (e) => {
+                            e.preventDefault()
+                            const chatId = e.dataTransfer.getData(
+                              'application/x-chat-id',
+                            )
+                            if (chatId) {
+                              const favoriteDropConsumed = consumeFavoriteDrop({
+                                source: draggingChatSource,
+                                chatId,
+                                pinnedChatIds,
+                                onRemoveFavorite,
+                              })
+                              if (
+                                !favoriteDropConsumed &&
+                                draggingChatFromProjectId &&
+                                onRemoveChatFromProject
+                              ) {
+                                // Chat from project is already cloud, just remove from project
+                                await onRemoveChatFromProject(chatId)
+                              } else if (
+                                !favoriteDropConsumed &&
+                                onConvertChatToCloud &&
+                                chats.find((chat) => chat.id === chatId)
+                                  ?.isLocalOnly
+                              ) {
+                                // Only convert if dragging from local (not from project)
+                                await onConvertChatToCloud(chatId)
+                              }
+                            }
+                            clearDragState()
+                          }}
                           className={cn(
                             STORAGE_TAB_CLASS_NAME,
                             activeTab === 'cloud'
                               ? STORAGE_TAB_ACTIVE_CLASS_NAME
                               : STORAGE_TAB_INACTIVE_CLASS_NAME,
+                            dropTargetTab === 'cloud' &&
+                              STORAGE_TAB_DROP_TARGET_CLASS_NAME,
                           )}
                         >
                           <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1823,11 +1898,71 @@ export function ChatSidebar({
                           aria-selected={activeTab === 'local'}
                           aria-controls="chat-storage-panel"
                           onClick={() => setActiveTab('local')}
+                          onDragOver={(e) => {
+                            if (
+                              e.dataTransfer.types.includes(
+                                'application/x-chat-id',
+                              ) &&
+                              onConvertChatToLocal
+                            ) {
+                              e.preventDefault()
+                              if (draggingChatSource !== 'favorites') {
+                                e.dataTransfer.dropEffect = 'move'
+                                setDropTargetTab('local')
+                              }
+                            }
+                          }}
+                          onDragEnter={(e) => {
+                            if (
+                              e.dataTransfer.types.includes(
+                                'application/x-chat-id',
+                              ) &&
+                              onConvertChatToLocal
+                            ) {
+                              e.preventDefault()
+                              if (draggingChatSource !== 'favorites') {
+                                setActiveTab('local')
+                                setDropTargetTab('local')
+                              }
+                            }
+                          }}
+                          onDragLeave={() => {
+                            if (dropTargetTab === 'local') {
+                              setDropTargetTab(null)
+                            }
+                          }}
+                          onDrop={async (e) => {
+                            e.preventDefault()
+                            const chatId = e.dataTransfer.getData(
+                              'application/x-chat-id',
+                            )
+                            const favoriteDropConsumed = chatId
+                              ? consumeFavoriteDrop({
+                                  source: draggingChatSource,
+                                  chatId,
+                                  pinnedChatIds,
+                                  onRemoveFavorite,
+                                })
+                              : false
+                            if (
+                              !favoriteDropConsumed &&
+                              chatId &&
+                              onConvertChatToLocal &&
+                              !chats.find((chat) => chat.id === chatId)
+                                ?.isLocalOnly
+                            ) {
+                              // A chat moved to this device leaves its project
+                              await onConvertChatToLocal(chatId)
+                            }
+                            clearDragState()
+                          }}
                           className={cn(
                             STORAGE_TAB_CLASS_NAME,
                             activeTab === 'local'
                               ? STORAGE_TAB_ACTIVE_CLASS_NAME
                               : STORAGE_TAB_INACTIVE_CLASS_NAME,
+                            dropTargetTab === 'local' &&
+                              STORAGE_TAB_DROP_TARGET_CLASS_NAME,
                           )}
                         >
                           <TfFloppyDisk
@@ -1976,6 +2111,7 @@ export function ChatSidebar({
                         'application/x-chat-id',
                       )
                       if (chatId) {
+                        const chat = chats.find((c) => c.id === chatId)
                         const favoriteDropConsumed = consumeFavoriteDrop({
                           source: draggingChatSource,
                           chatId,
@@ -1984,11 +2120,32 @@ export function ChatSidebar({
                         })
                         if (
                           !favoriteDropConsumed &&
-                          draggingChatFromProjectId &&
-                          onRemoveChatFromProject
+                          draggingChatFromProjectId
                         ) {
                           // Dragging from project - remove from project
-                          await onRemoveChatFromProject(chatId)
+                          if (showLocalTab && onConvertChatToLocal) {
+                            await onConvertChatToLocal(chatId)
+                          } else if (onRemoveChatFromProject) {
+                            await onRemoveChatFromProject(chatId)
+                          }
+                        } else if (
+                          !favoriteDropConsumed &&
+                          chat?.isLocalOnly &&
+                          showStorageTabs &&
+                          !showLocalTab &&
+                          onConvertChatToCloud
+                        ) {
+                          // Local chat dropped on cloud tab area - convert to cloud
+                          await onConvertChatToCloud(chatId)
+                        } else if (
+                          !favoriteDropConsumed &&
+                          chat &&
+                          !chat.isLocalOnly &&
+                          showLocalTab &&
+                          onConvertChatToLocal
+                        ) {
+                          // Cloud chat dropped on local tab area - convert to local
+                          await onConvertChatToLocal(chatId)
                         }
                       }
                       setIsDropTargetChatList(false)
@@ -2014,12 +2171,18 @@ export function ChatSidebar({
                         showEncryptionStatus={true}
                         enableTitleAnimation={true}
                         isDraggable={
-                          paginatesCloudChats && !!onMoveChatToProject
+                          cloudSyncEnabled &&
+                          (!!onConvertChatToCloud ||
+                            !!onConvertChatToLocal ||
+                            (paginatesCloudChats && !!onMoveChatToProject))
                         }
+                        // A chat kept on this device joins a project by
+                        // moving to the cloud.
                         showMoveToProject={
-                          paginatesCloudChats &&
+                          cloudSyncEnabled &&
                           isPremium &&
-                          !!onMoveChatToProject
+                          !!onMoveChatToProject &&
+                          (paginatesCloudChats || !!onConvertChatToCloud)
                         }
                         getChatHref={(chat) =>
                           chat.isBlankChat
@@ -2063,8 +2226,13 @@ export function ChatSidebar({
                             </div>
                           ) : undefined
                         }
+                        onConvertToCloud={onConvertChatToCloud}
+                        onConvertToLocal={onConvertChatToLocal}
                         pinnedChatIds={pinnedChatIds}
                         onTogglePin={onToggleFavorite}
+                        // Pinning a chat kept on this device moves it to
+                        // the cloud, where favorites are stored.
+                        canPinLocalChats={!!onConvertChatToCloud}
                         emptyState={
                           showLocalTab ? (
                             <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">

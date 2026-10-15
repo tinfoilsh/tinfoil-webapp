@@ -13,6 +13,7 @@ import {
   committedReplies,
   localAttachment,
   localDocumentText,
+  localSummary,
   localThreadStore,
   localThreadView,
   memoryThreadStore,
@@ -34,6 +35,12 @@ import type { RunSpend } from './runtime'
 import { MAX_SHARE_REQUEST_BYTES, requestBytes, shareTooLarge } from './shares'
 import { HarnessError } from './sse'
 import { useCloudSyncSetting } from './storage-mode'
+import {
+  moveThreadToCloud,
+  moveThreadToDevice,
+  placeOnDevice,
+  transferInFlight,
+} from './transfer'
 import type {
   Frame,
   RateLimit,
@@ -853,6 +860,41 @@ export function useThread(
     setThreads((previous) => previous.filter((t) => t.id !== threadId))
     if (idRef.current === threadId) reset()
   }
+  // Moves a stored chat to this device under the same id. A chat the
+  // harness stored a moment ago is put back as it was on the device, so a
+  // move that is undone keeps its original attachments.
+  async function moveToDevice(threadId: string, original?: LocalThread) {
+    const moved = original
+      ? await placeOnDevice(api, store, original)
+      : await moveThreadToDevice(api, store, threadId)
+    localIds.current.add(threadId)
+    setThreads((previous) => previous.filter((t) => t.id !== threadId))
+    setLocalThreads((previous) => [
+      localSummary(moved),
+      ...previous.filter((t) => t.id !== threadId),
+    ])
+    if (idRef.current === threadId) await open(threadId, { local: true })
+  }
+  // Moves a chat from this device to the cloud under the same id, and
+  // returns the device copy it replaced.
+  async function moveToCloud(threadId: string) {
+    const running =
+      localRuns.current.has(threadId) ||
+      (idRef.current === threadId &&
+        (current.current.status === 'streaming' ||
+          current.current.status === 'queued' ||
+          starting.current))
+    if (running) throw transferInFlight()
+    const { summary, original } = await moveThreadToCloud(api, store, threadId)
+    localIds.current.delete(threadId)
+    setLocalThreads((previous) => previous.filter((t) => t.id !== threadId))
+    setThreads((previous) => [
+      summary,
+      ...previous.filter((t) => t.id !== threadId),
+    ])
+    if (idRef.current === threadId) await open(threadId, { local: false })
+    return original
+  }
   // Deletes every chat the user can see here: the harness's stored chats
   // with cloud sync, and the chats kept on this device.
   async function removeAll() {
@@ -1365,6 +1407,8 @@ export function useThread(
     update,
     remove,
     removeAll,
+    moveToDevice,
+    moveToCloud,
     upload,
     loadImage,
     documentText,
