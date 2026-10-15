@@ -8,7 +8,7 @@ NEVER run npm run dev, npm start, or start the development server. Only make cod
 
 # API Requests
 
-NEVER use raw fetch() for API requests to Tinfoil enclaves. Always use the TinfoilAI SDK client (via src/services/harness/client.ts). The SDK handles attestation verification which is critical for security.
+NEVER use raw fetch() for API requests to Tinfoil enclaves. Always use the Tinfoil SDK client for the enclave: `HarnessClient` (src/services/harness/client.ts) for the chat harness, and the SDK's `SecureClient` for another enclave, as src/services/inference/summary-client.ts does for the summarizer. The SDK handles attestation verification which is critical for security.
 
 # Error Classification
 
