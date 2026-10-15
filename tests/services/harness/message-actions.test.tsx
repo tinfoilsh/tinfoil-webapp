@@ -7,7 +7,13 @@ import {
   localThreadStore,
   type LocalThread,
 } from '@/services/harness/local-threads'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
+import {
+  activateAPI,
+  getView,
+  HarnessAPI,
+  publish,
+} from '@/services/harness/runtime'
+import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Message, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { chatEvents } from '@/services/storage/chat-events'
@@ -359,5 +365,117 @@ describe('regenerating a reply', () => {
     )
     expect(turn(1)).toMatchObject({ kind: 'regenerate', messageId: 'a2' })
     release()
+  })
+})
+
+describe('retrying after an error', () => {
+  function openCloud() {
+    signIn({ cloud: true })
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/get'
+        ? cloudThread(transcript.slice(0, 2))
+        : path === '/v1/threads/list'
+          ? { threads: [], nextCursor: null }
+          : {},
+    )
+    return renderHook(() => useThread(THREAD_ID, null))
+  }
+
+  it('runs a failed reply again instead of rejoining its finished run', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
+    client.events.mockImplementationOnce(async function* () {
+      const events: Frame['event'][] = [
+        { type: 'RUN_STARTED', threadId: THREAD_ID, runId: 'run-1' },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: transcript.slice(0, 3).map(wire),
+          hasOlder: false,
+        },
+        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'msg_err', delta: 'Half' },
+        {
+          type: 'RUN_ERROR',
+          threadId: THREAD_ID,
+          runId: 'run-1',
+          code: 'MODEL_UNAVAILABLE',
+          message: 'The model is temporarily unavailable',
+        },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+    })
+    client.events.mockImplementationOnce(
+      regenerated(transcript.slice(0, 3).map(wire)),
+    )
+    await act(() => result.current.send({ content: 'two' }))
+    expect(result.current.state.error).toEqual({
+      code: 'MODEL_UNAVAILABLE',
+      message: 'The model is temporarily unavailable',
+    })
+
+    await act(() => result.current.retry())
+
+    expect(client.events.mock.calls[1][0]).toBe('/v1/threads/turn')
+    expect(turn(1)).toMatchObject({ kind: 'regenerate', messageId: 'msg_err' })
+    expect(result.current.chat.messages.at(-1)?.content).toBe('new answer')
+  })
+
+  it('sends a refused turn again with its nonce rather than following the previous run', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
+    client.events.mockImplementationOnce(
+      regenerated(transcript.slice(0, 2).map(wire)),
+    )
+    await act(() => result.current.send({ content: 'first' }))
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        {
+          code: 'RATE_LIMITED',
+          message: 'Chat access is busy; retry shortly',
+          retryAfter: 2,
+        },
+        429,
+      )
+    })
+    await act(() => result.current.send({ content: 'second' }))
+    expect(result.current.state.error).toMatchObject({
+      code: 'RATE_LIMITED',
+      retryAfter: 2,
+    })
+    expect(result.current.errorAt).toBeGreaterThan(0)
+    client.events.mockImplementationOnce(
+      regenerated(transcript.slice(0, 3).map(wire)),
+    )
+
+    await act(() => result.current.retry())
+
+    expect(client.events.mock.calls[2][0]).toBe('/v1/threads/turn')
+    expect(turn(2)).toEqual({ ...turn(1), key: KEY })
+    expect(turn(2).content).toBe('second')
+  })
+
+  it('records the exhausted quota a refused turn names', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
+    client.events.mockImplementationOnce(async function* () {
+      throw new HarnessError(
+        {
+          code: 'QUOTA_EXHAUSTED',
+          message: 'The hourly usage limit is reached',
+          kind: 'hourly',
+          resetsAt: '2026-07-24T11:00:00Z',
+          retryAfter: 900,
+        },
+        429,
+      )
+    })
+
+    await act(() => result.current.send({ content: 'more' }))
+
+    expect(getView().rateLimit).toEqual({
+      kind: 'hourly',
+      maxRequests: 0,
+      remaining: 0,
+      resetsAt: '2026-07-24T11:00:00Z',
+    })
   })
 })

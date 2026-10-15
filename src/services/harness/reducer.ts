@@ -17,6 +17,8 @@ export interface ChatState {
   runId?: string
   status: 'idle' | 'queued' | 'streaming' | 'error'
   error?: HarnessErrorBody
+  // The run that ended with RUN_ERROR. It is run again rather than rejoined.
+  failedRun?: string
   cursors: Record<string, number>
 }
 
@@ -195,6 +197,7 @@ export function reduceEvent(
       next.runId = event.runId
       next.status = 'streaming'
       delete next.error
+      delete next.failedRun
       break
     case 'STATE_SNAPSHOT':
       if (event.snapshot) next.snapshot = event.snapshot
@@ -298,12 +301,16 @@ export function reduceEvent(
         (item) => item.queueId !== runId,
       )
       next.status = event.type === 'RUN_ERROR' ? 'error' : 'idle'
-      if (event.type === 'RUN_ERROR')
+      if (event.type === 'RUN_ERROR') {
         next.error = {
           code: event.code ?? 'UPSTREAM_REFUSED',
           message: event.message ?? 'The run could not finish.',
-          retryAfter: event.retryAfter,
+          ...(event.kind ? { kind: event.kind } : {}),
+          ...(event.resetsAt ? { resetsAt: event.resetsAt } : {}),
+          ...(event.retryAfter ? { retryAfter: event.retryAfter } : {}),
         }
+        if (runId) next.failedRun = runId
+      }
       if (event.metadata?.rateLimit)
         next.snapshot.rateLimit = event.metadata
           .rateLimit as unknown as Snapshot['rateLimit']

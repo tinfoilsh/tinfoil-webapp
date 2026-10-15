@@ -2,9 +2,18 @@ import {
   RateLimitBanner,
   shouldShowRateLimitBanner,
 } from '@/components/chat/rate-limit-banner'
+import { useRateLimit } from '@/hooks/use-rate-limit'
+import { harnessAPI } from '@/services/harness/runtime'
 import type { RateLimit } from '@/services/harness/types'
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { testSession } from '../../harness-fixture'
+
+vi.mock('@/utils/error-handling', () => ({
+  logError: vi.fn(),
+  logInfo: vi.fn(),
+  logWarning: vi.fn(),
+}))
 
 const RESET_AT = '2026-09-26T11:00:00Z'
 
@@ -90,4 +99,82 @@ describe('RateLimitBanner', () => {
       expect(screen.getByRole('status')).toHaveTextContent(text)
     },
   )
+})
+
+describe('hourly limit recheck', () => {
+  const capped: RateLimit = {
+    kind: 'hourly',
+    maxRequests: 0,
+    remaining: 0,
+    resetsAt: RESET_AT,
+    inputTokens: { max: 1_000, used: 1_000, remaining: 0 },
+  }
+  const session = vi.fn<() => Promise<unknown>>()
+
+  function LiveBanner() {
+    const rateLimit = useRateLimit()
+    return shouldShowRateLimitBanner(rateLimit) ? (
+      <RateLimitBanner
+        rateLimit={rateLimit}
+        isDarkMode={false}
+        onCheckAgain={() => harnessAPI().refresh()}
+      />
+    ) : null
+  }
+
+  beforeEach(async () => {
+    session
+      .mockReset()
+      .mockResolvedValueOnce({
+        ...structuredClone(testSession),
+        rateLimit: capped,
+      })
+    vi.mocked(harnessAPI().client.post).mockImplementation(async (path) =>
+      path === '/v1/session' ? session() : {},
+    )
+    await act(async () => {
+      await harnessAPI().refresh()
+    })
+  })
+
+  it('rechecks the session, disables duplicate clicks, and removes the banner when access returns', async () => {
+    render(<LiveBanner />)
+    expect(screen.getByRole('status')).toHaveTextContent('hourly usage limit')
+    let respond!: (value: unknown) => void
+    session.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          respond = resolve
+        }),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    expect(screen.getByRole('button', { name: 'Checking…' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Checking…' }))
+    expect(session).toHaveBeenCalledTimes(2)
+
+    await act(async () =>
+      respond({
+        ...structuredClone(testSession),
+        rateLimit: {
+          kind: 'hourly',
+          resetsAt: RESET_AT,
+          inputTokens: { max: 1_000, used: 1_000, remaining: 0 },
+        },
+      }),
+    )
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('keeps the limit visible and re-enables the action after a failed recheck', async () => {
+    render(<LiveBanner />)
+    session.mockRejectedValueOnce(new Error('offline'))
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }))
+    })
+
+    expect(screen.getByRole('status')).toHaveTextContent('hourly usage limit')
+    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled()
+  })
 })

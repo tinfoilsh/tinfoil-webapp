@@ -3,6 +3,8 @@
 import { cn } from '@/components/ui/utils'
 import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
 import type { RateLimit as RateLimitInfo } from '@/services/harness/types'
+import { logError } from '@/utils/error-handling'
+import { useState } from 'react'
 
 const RATE_LIMIT_WARNING_THRESHOLD = 3
 
@@ -13,6 +15,8 @@ interface RateLimitBannerProps {
   className?: string
   /** Tailwind classes applied to the inner pill (e.g. corner radius). */
   pillClassName?: string
+  /** Reads the quota again, as a capped subscriber's may lift early. */
+  onCheckAgain?: () => Promise<unknown>
 }
 
 // A subscriber has no request quota until the hourly cap refuses requests.
@@ -39,10 +43,28 @@ export function RateLimitBanner({
   isDarkMode,
   className,
   pillClassName,
+  onCheckAgain,
 }: RateLimitBannerProps) {
+  const [isChecking, setIsChecking] = useState(false)
   const exhausted = rateLimit.remaining <= 0
   const isHourly = rateLimit.kind === 'hourly'
   const resetLabel = formatResetTime(rateLimit.resetsAt)
+
+  const checkAgain = async () => {
+    if (!onCheckAgain) return
+    setIsChecking(true)
+    try {
+      await onCheckAgain()
+    } catch (error) {
+      // The limit stays shown until a check reads that it lifted.
+      logError('Failed to check the usage limit again', error, {
+        component: 'RateLimitBanner',
+        action: 'checkAgain',
+      })
+    } finally {
+      setIsChecking(false)
+    }
+  }
 
   return (
     <div
@@ -69,6 +91,16 @@ export function RateLimitBanner({
               ? DAILY_RATE_LIMIT_MESSAGE
               : `You have ${rateLimit.remaining} free request${rateLimit.remaining === 1 ? '' : 's'} left today`}
         </span>
+        {isHourly && onCheckAgain && (
+          <button
+            type="button"
+            onClick={checkAgain}
+            disabled={isChecking}
+            className="shrink-0 font-aeonik text-xs underline underline-offset-2 disabled:opacity-50"
+          >
+            {isChecking ? 'Checking…' : 'Check again'}
+          </button>
+        )}
       </div>
     </div>
   )

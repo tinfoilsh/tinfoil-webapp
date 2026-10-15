@@ -156,7 +156,14 @@ export interface Turn {
   key?: string
   clientRequestId: string
   threadId: string | null
-  kind: 'send' | 'edit' | 'regenerate' | 'resolve' | 'retryToolCall' | 'ask'
+  kind:
+    | 'send'
+    | 'edit'
+    | 'regenerate'
+    | 'continue'
+    | 'resolve'
+    | 'retryToolCall'
+    | 'ask'
   ephemeral?: boolean
   local?: boolean
   thread?: LocalTurnThread
@@ -218,6 +225,8 @@ export interface HarnessEvent {
   patch?: Patch[]
   code?: string
   message?: string
+  kind?: string
+  resetsAt?: string
   retryAfter?: number
 }
 

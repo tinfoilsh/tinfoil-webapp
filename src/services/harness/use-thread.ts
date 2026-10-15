@@ -61,6 +61,30 @@ interface LocalRun {
 
 type FollowInput = { key?: string; threadId: string; runId: string }
 
+// The quota a refusal for an exhausted quota describes.
+function exhaustedQuota({
+  kind,
+  resetsAt,
+  retryAfter,
+}: {
+  kind?: string
+  resetsAt?: string
+  retryAfter?: number
+}): RateLimit | undefined {
+  if (kind !== 'hourly' && kind !== 'free_daily') return undefined
+  const reset =
+    resetsAt ||
+    (retryAfter
+      ? new Date(Date.now() + retryAfter * 1000).toISOString()
+      : undefined)
+  return {
+    kind,
+    maxRequests: 0,
+    remaining: 0,
+    ...(reset ? { resetsAt: reset } : {}),
+  }
+}
+
 function runSpend(value: unknown): RunSpend | undefined {
   if (!value || typeof value !== 'object') return undefined
   const { prompt_tokens: prompt, completion_tokens: completion } =
@@ -129,6 +153,11 @@ export function useThread(
   // opening the route before then would find nothing on the device.
   const [unsaved, setUnsaved] = useState<string | null>(null)
   const [error, setError] = useState('')
+  // When the current error happened, so a wait the harness asks for counts
+  // from then.
+  const errorAt = useRef(0)
+  // The kind of the last turn sent, and the reply a continuation extends.
+  const lastTurn = useRef<Pick<Turn, 'kind' | 'messageId'> | null>(null)
   const followers = useRef(new Set<AbortController>())
   const localRuns = useRef(new Map<string, LocalRun>())
   const generation = useRef(0)
@@ -156,6 +185,7 @@ export function useThread(
         (cause instanceof DOMException && cause.name === 'AbortError')
       )
         return
+      errorAt.current = Date.now()
       if (cause instanceof HarnessError) {
         const next = {
           ...current.current,
@@ -164,6 +194,8 @@ export function useThread(
         }
         current.current = next
         setState(next)
+        if (cause.code === 'QUOTA_EXHAUSTED')
+          api.reportRateLimit(exhaustedQuota(cause.detail))
       }
       setError(
         cause instanceof Error
@@ -316,7 +348,11 @@ export function useThread(
         let next = reduceEvent(base, frame, runId)
         const event = frame.event
         // A replayed frame leaves the view as it was.
-        if (next !== base) reportQuota(event)
+        if (next !== base) {
+          reportQuota(event)
+          if (event.type === 'RUN_ERROR' && attached)
+            errorAt.current = Date.now()
+        }
         if (run && event.type === 'MESSAGES_SNAPSHOT')
           next = withStoredPrefix(next, run.base)
         view = next
@@ -398,6 +434,8 @@ export function useThread(
         event.metadata?.rateLimit as RateLimit | undefined,
         runSpend(event.metadata?.usage),
       )
+    if (event.type === 'RUN_ERROR' && event.code === 'QUOTA_EXHAUSTED')
+      api.reportRateLimit(exhaustedQuota(event))
   }
   function forgetReceipt(threadId?: string) {
     try {
@@ -623,6 +661,10 @@ export function useThread(
   function send(fields: Partial<Turn> = {}) {
     if ((!idRef.current || runsLocally()) && starting.current) return
     setError('')
+    lastTurn.current = {
+      kind: fields.kind ?? 'send',
+      messageId: fields.messageId,
+    }
     if (runsLocally()) return sendLocal(fields)
     const input = turnFields({
       key: contentKey(),
@@ -922,6 +964,17 @@ export function useThread(
   }
   async function reconnect() {
     setError('')
+    // A request whose acceptance never arrived is sent again with its nonce,
+    // which the harness answers with the run it may already have started.
+    if (pending.current) {
+      const { input, run } = pending.current
+      return stream(
+        '/v1/threads/turn',
+        run ? input : { ...input, key: contentKey() },
+        undefined,
+        run,
+      )
+    }
     const runId =
       current.current.runId ?? current.current.snapshot.thread?.activeRun?.runId
     const threadId = idRef.current
@@ -946,16 +999,31 @@ export function useThread(
         run,
       )
     }
-    if (pending.current) {
-      const { input, run } = pending.current
-      return stream(
-        '/v1/threads/turn',
-        run ? input : { ...input, key: contentKey() },
-        undefined,
-        run,
-      )
-    }
     if (initialId) return open(initialId, { local: !!route.local })
+  }
+  // Retries what failed. A run that ended with an error runs again: a
+  // continuation continues its reply again, and any other turn regenerates
+  // the reply to the last user message. A refused request or a dropped
+  // stream reconnects.
+  async function retry(fields: Partial<Turn> = {}) {
+    const failed = current.current.failedRun
+    if (!failed || current.current.status !== 'error') return reconnect()
+    const messages = current.current.messages
+    if (lastTurn.current?.kind === 'continue') {
+      const replyId =
+        lastTurn.current.messageId ??
+        messages.findLast((message) => message.role === 'assistant')?.id
+      if (replyId)
+        return send({
+          ...fields,
+          kind: 'continue',
+          messageId: replyId,
+          content: '',
+        })
+    }
+    const index = messages.findLastIndex((message) => message.role === 'user')
+    if (index < 0) return reconnect()
+    return regenerate(index, fields)
   }
   async function older() {
     if (!id || local) return
@@ -1052,6 +1120,8 @@ export function useThread(
     askContext,
     refresh,
     reconnect,
+    retry,
+    errorAt: errorAt.current,
     older,
     hasOlder: state.hasOlder,
     cursor,

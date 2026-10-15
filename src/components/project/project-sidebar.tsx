@@ -17,6 +17,7 @@ import {
   SidebarRail,
 } from '@/components/chat/sidebar-layout'
 import { TypingAnimation } from '@/components/chat/typing-animation'
+import { uploadErrorMessage } from '@/components/chat/upload-error'
 import { useFavoriteDropTarget } from '@/components/chat/use-favorite-drop-target'
 import { Link } from '@/components/link'
 import { SidebarPatternEdge } from '@/components/ui/sidebar-pattern-edge'
@@ -535,10 +536,10 @@ export function ProjectSidebar({
           } catch (cause) {
             toast({
               title: 'Upload failed',
-              description:
-                cause instanceof Error
-                  ? cause.message
-                  : 'Unable to upload document.',
+              description: uploadErrorMessage(
+                cause,
+                'Unable to upload document.',
+              ),
               variant: 'destructive',
             })
           } finally {

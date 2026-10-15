@@ -4,6 +4,7 @@ import { useOnboarding } from '@/hooks/use-onboarding'
 import { useProjects } from '@/hooks/use-projects'
 import { useRateLimit } from '@/hooks/use-rate-limit'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
+import { toast } from '@/hooks/use-toast'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import {
@@ -91,6 +92,7 @@ import type { ProcessedDocument } from './renderers/types'
 import type { SettingsTab } from './settings-modal'
 import { SIDEBAR_PANEL_ID } from './sidebar-layout'
 import type { Chat } from './types'
+import { uploadErrorMessage } from './upload-error'
 // Lazy-load modals that aren't shown on initial load. The loaders are
 // hoisted so they can be pre-warmed (see preloadCloudSyncModals) before
 // the user clicks, keeping the chunk fetch off the click critical path.
@@ -251,14 +253,20 @@ export function ChatInterface({
   const isTemporaryMode = thread.temporary
   const rateLimit = useRateLimit()
   const retryInfo = null
+  const failure = thread.state.error
   const streamError = thread.error
     ? {
         message: thread.error,
-        code: thread.state.error?.code,
-        timestamp: Date.now(),
-        retryable: true,
+        code: failure?.code,
+        kind: failure?.kind,
+        resetsAt: failure?.resetsAt,
+        retryAfter: failure?.retryAfter,
+        upstreamCode: failure?.upstreamCode,
+        timestamp: thread.errorAt,
       }
     : null
+  // A capped subscriber's cap may lift before it resets.
+  const checkQuota = () => api.refresh()
   const dismissStreamError = thread.dismissError
   const { isLoading: isSubscriptionLoading, chat_subscription_active } =
     useSubscriptionStatus()
@@ -485,7 +493,7 @@ export function ChatInterface({
     )
   }
   const retryLastMessage = () => {
-    void thread.reconnect().catch(thread.report)
+    void thread.retry({ options }).catch(thread.report)
   }
   const forkMessage = (index: number) => {
     setProcessedDocuments([])
@@ -636,7 +644,13 @@ export function ChatInterface({
       setProcessedDocuments((previous) =>
         previous.filter((d) => d.id !== localId),
       )
-      thread.report(cause)
+      if (cause instanceof DOMException && cause.name === 'AbortError') return
+      toast({
+        title: 'Processing failed',
+        description: uploadErrorMessage(cause),
+        variant: 'destructive',
+        position: 'top-right',
+      })
     }
   }
   const handleFileUpload = async (file: File) => {
@@ -653,8 +667,23 @@ export function ChatInterface({
     setPendingProjectUpload(null)
     setShowAddToProjectModal(false)
     for (const file of pending?.files ?? []) {
-      if (addToProject) await uploadDocument(file, '')
-      else await processFileForChat(file)
+      if (!addToProject) {
+        await processFileForChat(file)
+        continue
+      }
+      try {
+        await uploadDocument(file, '')
+      } catch (cause) {
+        toast({
+          title: 'Upload failed',
+          description: uploadErrorMessage(
+            cause,
+            'Failed to add document to project context.',
+          ),
+          variant: 'destructive',
+          position: 'top-right',
+        })
+      }
     }
   }
   const removeDocument = (id: string) =>
@@ -1729,6 +1758,7 @@ export function ChatInterface({
             {!hasVisibleChatHeader && shouldShowRateLimitBanner(rateLimit) && (
               <RateLimitBanner
                 rateLimit={rateLimit}
+                onCheckAgain={checkQuota}
                 isDarkMode={isDarkMode}
                 className="hidden md:flex"
               />
@@ -1744,6 +1774,7 @@ export function ChatInterface({
                   shouldShowRateLimitBanner(rateLimit) ? (
                     <RateLimitBanner
                       rateLimit={rateLimit}
+                      onCheckAgain={checkQuota}
                       isDarkMode={isDarkMode}
                       className="w-auto px-0"
                     />
@@ -1942,6 +1973,7 @@ export function ChatInterface({
                       {shouldShowRateLimitBanner(rateLimit) && (
                         <RateLimitBanner
                           rateLimit={rateLimit}
+                          onCheckAgain={checkQuota}
                           isDarkMode={isDarkMode}
                           className="mb-2 flex @3xl/conversation:hidden"
                           pillClassName="rounded-full border"
@@ -1949,6 +1981,7 @@ export function ChatInterface({
                       )}
                       {streamError && (
                         <StreamErrorBanner
+                          key={streamError.timestamp}
                           error={streamError}
                           onDismiss={dismissStreamError}
                           onRetry={retryLastMessage}

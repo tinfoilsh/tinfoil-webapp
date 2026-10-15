@@ -1,5 +1,6 @@
 'use client'
 
+import { uploadErrorMessage } from '@/components/chat/upload-error'
 import { cn } from '@/components/ui/utils'
 import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import { useCallback, useRef, useState } from 'react'
@@ -43,9 +44,7 @@ export function ProjectDocumentUpload({
         await uploadDocument(file, '')
         setUploadStatus(null)
       } catch (cause) {
-        setError(
-          cause instanceof Error ? cause.message : 'Unable to upload document.',
-        )
+        setError(uploadErrorMessage(cause, 'Unable to upload document.'))
         setUploadStatus(null)
       }
 

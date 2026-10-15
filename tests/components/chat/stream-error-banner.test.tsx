@@ -2,6 +2,7 @@ import {
   StreamErrorBanner,
   type StreamErrorInfo,
 } from '@/components/chat/stream-error-banner'
+import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -115,6 +116,10 @@ describe('StreamErrorBanner', () => {
     },
     {
       code: 'MODEL_UNAVAILABLE',
+      title: 'This model is unavailable right now',
+    },
+    {
+      code: 'UPSTREAM_REFUSED',
       title: 'The service is having trouble right now',
     },
   ])('explains $code with its own copy', ({ code, title }) => {
@@ -134,6 +139,7 @@ describe('StreamErrorBanner', () => {
 
   it.each([
     { code: 'QUOTA_EXHAUSTED', withRetry: true },
+    { code: 'THREAD_TOO_LARGE', withRetry: true },
     { code: 'STREAM_INTERRUPTED', withRetry: false },
   ])(
     'keeps details and dismiss available without a retry action for $code',
@@ -156,4 +162,125 @@ describe('StreamErrorBanner', () => {
       ).toBeEnabled()
     },
   )
+
+  it('counts down a requested wait before allowing a resend', async () => {
+    vi.useFakeTimers()
+    try {
+      const onRetry = vi.fn()
+      render(
+        <StreamErrorBanner
+          error={{
+            code: 'RATE_LIMITED',
+            message: 'Chat access is busy; retry shortly',
+            retryAfter: 3,
+            timestamp: Date.now(),
+          }}
+          isDarkMode={false}
+          onDismiss={vi.fn()}
+          onRetry={onRetry}
+        />,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Too many requests right now',
+      )
+      const retry = screen.getByRole('button', { name: 'Resend in 3s' })
+      expect(retry).toBeDisabled()
+      fireEvent.click(retry)
+      expect(onRetry).not.toHaveBeenCalled()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000)
+      })
+      expect(
+        screen.getByRole('button', { name: 'Resend in 2s' }),
+      ).toBeDisabled()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000)
+      })
+      const ready = screen.getByRole('button', { name: 'Resend message' })
+      expect(ready).toBeEnabled()
+      fireEvent.click(ready)
+      expect(onRetry).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('names when an hourly cap resets and offers no retry', () => {
+    const resetsAt = '2026-07-24T11:00:00Z'
+    const label = new Date(resetsAt).toLocaleTimeString([], {
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'QUOTA_EXHAUSTED',
+          kind: 'hourly',
+          resetsAt,
+          message: 'The hourly usage limit is reached',
+        }}
+        isDarkMode={false}
+        onDismiss={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Hourly usage limit reached',
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      `Your limit resets at ${label}.`,
+    )
+    expect(
+      screen.queryByRole('button', { name: /Resend|Try again/ }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers an upgrade for an exhausted free daily quota', () => {
+    const upgrade = vi.fn()
+    window.addEventListener(REQUEST_UPGRADE_EVENT, upgrade)
+    try {
+      render(
+        <StreamErrorBanner
+          error={{
+            code: 'QUOTA_EXHAUSTED',
+            kind: 'free_daily',
+            message: 'The daily quota is exhausted',
+          }}
+          isDarkMode={false}
+          onDismiss={vi.fn()}
+          onRetry={vi.fn()}
+        />,
+      )
+      expect(screen.getByRole('alert')).toHaveTextContent('Daily limit reached')
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Upgrade to Premium' }),
+      )
+      expect(upgrade).toHaveBeenCalledOnce()
+    } finally {
+      window.removeEventListener(REQUEST_UPGRADE_EVENT, upgrade)
+    }
+  })
+
+  it("shows a document failure's own explanation", () => {
+    const message =
+      'Could not extract content from the document. Try exporting it again or uploading a text version.'
+    render(
+      <StreamErrorBanner
+        error={{
+          code: 'UPSTREAM_REFUSED',
+          upstreamCode: 'document_extraction_failed',
+          message,
+        }}
+        isDarkMode={false}
+        onDismiss={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'A document could not be processed',
+    )
+    expect(screen.getByRole('alert')).toHaveTextContent(message)
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeEnabled()
+  })
 })
