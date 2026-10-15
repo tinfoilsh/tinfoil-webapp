@@ -63,6 +63,9 @@ export function usePromptLibrary() {
   const getPresetById = (id: string | null | undefined) =>
     allPresets.find((p) => p.id === id) ?? null
   const favoritePresetIds: string[] = profile.favoritePromptPresetIds ?? []
+  const favoritePresets = favoritePresetIds.flatMap((id) =>
+    allPresets.filter((p) => p.id === id),
+  )
   // The harness keeps the preset new chats start with, and stamps it on a
   // stored chat's first turn. An older harness has no such setting.
   const canSetDefaultPreset = !!session?.features.defaultPromptPreset
@@ -138,17 +141,23 @@ export function usePromptLibrary() {
       const p = allPresets.find((p) => p.id === id)
       return p ? createUserPreset({ ...p, name: `${p.name} copy` }) : null
     },
-    favoritePresets: favoritePresetIds.flatMap((id) =>
-      allPresets.filter((p) => p.id === id),
-    ),
+    favoritePresets,
     isFavorite: (id: string) => favoritePresetIds.includes(id),
-    canAddFavorite: favoritePresetIds.length < MAX_FAVORITE_PRESETS,
+    // Only favorites that are still prompts take a slot, so one deleted on
+    // another device does not block adding another.
+    canAddFavorite: favoritePresets.length < MAX_FAVORITE_PRESETS,
+    // Each toggle applies to the profile as the previous change left it.
     toggleFavorite: (id: string) => {
-      const ids = favoritePresetIds.includes(id)
-        ? favoritePresetIds.filter((p) => p !== id)
-        : [...favoritePresetIds, id].slice(0, MAX_FAVORITE_PRESETS)
       void api
-        .updateProfile({ favoritePromptPresetIds: ids })
+        .updateProfile((current) => {
+          const ids: string[] = current.favoritePromptPresetIds ?? []
+          if (ids.includes(id))
+            return { favoritePromptPresetIds: ids.filter((p) => p !== id) }
+          const kept = ids.filter((p) => allPresets.some((q) => q.id === p))
+          return kept.length < MAX_FAVORITE_PRESETS
+            ? { favoritePromptPresetIds: [...ids, id] }
+            : {}
+        })
         .catch(reportHarnessError)
     },
     // Clears the model of saved prompts whose model the catalog no longer

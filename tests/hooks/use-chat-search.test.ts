@@ -108,6 +108,45 @@ describe('useChatSearch', () => {
     expect(search).toHaveBeenCalledTimes(2)
   })
 
+  it('never renders the previous term results for a new term', async () => {
+    search
+      .mockResolvedValueOnce(page(['old']))
+      .mockResolvedValueOnce(page(['new']))
+    const renders: { term: string; ids: string[]; isSearching: boolean }[] = []
+    const { rerender } = renderHook(
+      ({ term }) => {
+        const state = useChatSearch(term, true)
+        renders.push({
+          term,
+          ids: state.results.map((thread) => thread.id),
+          isSearching: state.isSearching,
+        })
+        return state
+      },
+      { initialProps: { term: 'old' } },
+    )
+    await flushDebounce()
+    expect(renders.at(-1)).toEqual({
+      term: 'old',
+      ids: ['old'],
+      isSearching: false,
+    })
+
+    rerender({ term: 'new' })
+    await flushDebounce()
+
+    const forNewTerm = renders.filter((render) => render.term === 'new')
+    expect(forNewTerm[0]).toEqual({ term: 'new', ids: [], isSearching: true })
+    expect(forNewTerm.filter((render) => render.ids.includes('old'))).toEqual(
+      [],
+    )
+    expect(forNewTerm.at(-1)).toEqual({
+      term: 'new',
+      ids: ['new'],
+      isSearching: false,
+    })
+  })
+
   it('hides project hits immediately when the allowed search scope changes', async () => {
     const mixed = {
       results: [

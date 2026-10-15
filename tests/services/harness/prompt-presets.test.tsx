@@ -362,6 +362,50 @@ describe('the prompt library', () => {
     )
   })
 
+  it('keeps both prompts favorited in quick succession', async () => {
+    signIn({ cloud: true })
+    const { result } = renderHook(() => usePromptLibrary())
+
+    act(() => {
+      result.current.toggleFavorite(RESEARCH.id)
+      result.current.toggleFavorite(QUIET.id)
+    })
+
+    await waitFor(() =>
+      expect(result.current.favoritePresets.map((p) => p.id)).toEqual([
+        RESEARCH.id,
+        QUIET.id,
+      ]),
+    )
+    expect(
+      client.post.mock.calls
+        .filter(([path]) => path === '/v1/profile/update')
+        .map(([, input]) => input.patch),
+    ).toEqual([
+      { favoritePromptPresetIds: [RESEARCH.id] },
+      { favoritePromptPresetIds: [RESEARCH.id, QUIET.id] },
+    ])
+  })
+
+  it('frees the slot of a favorite that is no longer a prompt', async () => {
+    signIn({
+      cloud: true,
+      profile: {
+        favoritePromptPresetIds: ['user:gone', 'builtin:gone', RESEARCH.id],
+      },
+    })
+    const { result } = renderHook(() => usePromptLibrary())
+    expect(result.current.canAddFavorite).toBe(true)
+
+    act(() => result.current.toggleFavorite(QUIET.id))
+
+    await waitFor(() => expect(result.current.isFavorite(QUIET.id)).toBe(true))
+    expect(result.current.favoritePresets.map((p) => p.id)).toEqual([
+      RESEARCH.id,
+      QUIET.id,
+    ])
+  })
+
   it('stores the settings a saved prompt chooses, and removes unset ones', async () => {
     signIn({ cloud: true })
     const { result } = renderHook(() => usePromptLibrary())

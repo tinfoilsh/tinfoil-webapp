@@ -7,56 +7,67 @@ export function useChatSearch(
   includeProjectChats = true,
 ) {
   const { api, keyReady } = useHarness()
-  const [results, setResults] = useState<
-    (ThreadSummary & { score?: number })[]
-  >([])
-  const [isSearching, setIsSearching] = useState(false)
-  const [failed, setFailed] = useState(false)
+  // The results, with the search they answer: a render after the term
+  // changes shows none of the previous term's rows.
+  const [outcome, setOutcome] = useState<{
+    query: string
+    includeProjectChats: boolean
+    results: (ThreadSummary & { score?: number })[]
+    failed: boolean
+  } | null>(null)
   const [isIndexing, setIsIndexing] = useState(false)
   const available = !!api.userId && keyReady
+  const query = term.trim()
+  const active = !!query && enabled && available
   useEffect(() => {
     const controller = new AbortController()
-    setResults([])
-    setFailed(false)
-    if (!term.trim() || !enabled || !available) {
-      setIsSearching(false)
+    if (!active) {
+      setOutcome(null)
       setIsIndexing(false)
       return
     }
-    setIsSearching(true)
     const timer = setTimeout(() => {
       void api
         .post<{
           results: (ThreadSummary & { score?: number })[]
           indexing: boolean
-        }>(
-          '/v1/threads/search',
-          { query: term.trim(), limit: 20 },
-          controller.signal,
-        )
+        }>('/v1/threads/search', { query, limit: 20 }, controller.signal)
         .then((page) => {
-          if (!controller.signal.aborted) {
-            setIsIndexing(page.indexing)
-            setResults(
-              page.results.filter((t) => includeProjectChats || !t.projectId),
-            )
-          }
+          if (controller.signal.aborted) return
+          setIsIndexing(page.indexing)
+          setOutcome({
+            query,
+            includeProjectChats,
+            results: page.results.filter(
+              (t) => includeProjectChats || !t.projectId,
+            ),
+            failed: false,
+          })
         })
         .catch(() => {
           if (controller.signal.aborted) return
           // A failed search cannot report a finished rebuild, so clear the
           // indexing flag rather than leaving "building index" up.
           setIsIndexing(false)
-          setFailed(true)
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setIsSearching(false)
+          setOutcome({ query, includeProjectChats, results: [], failed: true })
         })
     }, 250)
     return () => {
       clearTimeout(timer)
       controller.abort()
     }
-  }, [api, available, enabled, includeProjectChats, term])
-  return { results, isSearching, failed, available, isIndexing }
+  }, [api, active, includeProjectChats, query])
+  const current =
+    active &&
+    outcome?.query === query &&
+    outcome.includeProjectChats === includeProjectChats
+      ? outcome
+      : null
+  return {
+    results: current?.results ?? [],
+    isSearching: active && !current,
+    failed: !!current?.failed,
+    available,
+    isIndexing: active && isIndexing,
+  }
 }
