@@ -19,6 +19,7 @@ import {
   newLocalThread,
   now,
   readLocalThread,
+  replaceReplyText,
   shareThread,
   turnThread,
   wireMessage,
@@ -893,11 +894,29 @@ export function useThread(
     })
     return reading
   }
-  // A local chat is forked on the device, the way the previous client forked
-  // chats it stored: the fork keeps the messages up to the chosen one.
+  // Forks the open chat from a message into a new chat holding the messages
+  // through it. The harness copies a stored chat with its attachments; a
+  // local chat is forked on the device, the way the previous client forked
+  // the chats it stored.
   async function fork(messageIndex: number) {
     const threadId = idRef.current
-    if (!threadId || !localRef.current || temporaryRef.current) return null
+    if (!threadId || temporaryRef.current) return null
+    if (!localRef.current) {
+      const messageId = current.current.messages[messageIndex]?.id
+      if (!messageId) return null
+      const version = generation.current
+      const forked = await api.post<ThreadSummary>('/v1/threads/fork', {
+        threadId,
+        messageId,
+      })
+      if (version !== generation.current) return null
+      setThreads((previous) => [
+        forked,
+        ...previous.filter((thread) => thread.id !== forked.id),
+      ])
+      await open(forked.id, { local: false })
+      return forked.id
+    }
     const source = await localTranscript(threadId, store)
     const forkId = generateReverseId().id
     const forked = buildForkedChat(
@@ -920,6 +939,123 @@ export function useThread(
     await store.update(forkId, () => thread)
     await open(forkId, { local: true })
     return forkId
+  }
+  // Message actions change one message of the open chat. The harness changes
+  // a stored chat and answers with its latest window; a chat on this device
+  // changes its own copy, which its next turn sends.
+  async function changeMessage(
+    index: number,
+    stored: { path: string; fields: Record<string, unknown> },
+    change: (thread: LocalThread, messageId: string) => LocalThread | null,
+  ) {
+    const threadId = idRef.current
+    const messageId = current.current.messages[index]?.id
+    if (!threadId || !messageId) return
+    const version = generation.current
+    if (!runsLocally()) {
+      const thread = await api.post<Thread>(stored.path, {
+        threadId,
+        messageId,
+        ...stored.fields,
+      })
+      if (version !== generation.current) return
+      const {
+        messages,
+        hasOlder,
+        revision: _,
+        presetId: __,
+        ...summary
+      } = thread
+      const next = {
+        ...current.current,
+        messages,
+        hasOlder,
+        snapshot: { ...current.current.snapshot, thread: summary },
+      }
+      current.current = next
+      setState(next)
+      setThreads((previous) =>
+        previous.map((item) => (item.id === summary.id ? summary : item)),
+      )
+      return
+    }
+    const target = storeFor(temporaryRef.current)
+    const saved = await target.update(
+      threadId,
+      (thread) => thread && change(thread, messageId),
+    )
+    if (!saved || version !== generation.current) return
+    const view = localThreadView(saved)
+    const shown = current.current.snapshot.thread
+    const next = {
+      ...current.current,
+      messages: view.messages,
+      snapshot: {
+        ...current.current.snapshot,
+        thread: shown && {
+          ...shown,
+          messageCount: view.messageCount,
+          updatedAt: view.updatedAt,
+        },
+      },
+    }
+    current.current = next
+    setState(next)
+  }
+  // Removes one message; its reply, or the message it answers, stays. As on
+  // main, a chat keeps its last message.
+  function deleteMessage(index: number) {
+    if (current.current.messages.length <= 1) return Promise.resolve()
+    return changeMessage(
+      index,
+      { path: '/v1/threads/messages/delete', fields: {} },
+      (thread, messageId) =>
+        thread.messages.length > 1 &&
+        thread.messages.some((message) => message.id === messageId)
+          ? {
+              ...thread,
+              messages: thread.messages.filter(
+                (message) => message.id !== messageId,
+              ),
+              updatedAt: now(),
+            }
+          : null,
+    )
+  }
+  // Rewrites a reply's text in place; later messages stay.
+  function editReply(index: number, content: string) {
+    if (current.current.messages[index]?.role !== 'assistant')
+      return Promise.resolve()
+    return changeMessage(
+      index,
+      { path: '/v1/threads/messages/update', fields: { content } },
+      (thread, messageId) =>
+        thread.messages.some(
+          (message) => message.id === messageId && message.role === 'assistant',
+        )
+          ? {
+              ...thread,
+              messages: thread.messages.map((message) =>
+                message.id === messageId
+                  ? replaceReplyText(message, content)
+                  : message,
+              ),
+              updatedAt: now(),
+            }
+          : null,
+    )
+  }
+  // Asks the model to resume a reply where it stopped. The harness drops the
+  // messages after it, so the continued reply ends the chat.
+  function continueReply(index: number, fields: Partial<Turn> = {}) {
+    const reply = current.current.messages[index]
+    if (reply?.role !== 'assistant') return
+    return send({
+      ...fields,
+      kind: 'continue',
+      messageId: reply.id,
+      content: '',
+    })
   }
   // Creates a share link. A chat kept on this device is shared from its own
   // copy, which the harness seals without storing it.
@@ -1116,6 +1252,9 @@ export function useThread(
     loadImage,
     documentText,
     fork,
+    deleteMessage,
+    editReply,
+    continueReply,
     share,
     askContext,
     refresh,

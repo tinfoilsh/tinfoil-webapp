@@ -29,7 +29,13 @@ export interface MessageRenderProps {
   hideActions?: boolean
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
-  /** Copy the conversation up to this message into a new chat. */
+  /** Remove this message from the conversation. */
+  onDeleteMessage?: (messageIndex: number) => void
+  /** Rewrite an assistant response's text in place. */
+  onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+  /** Ask the model to resume an assistant response. */
+  onContinueAssistantMessage?: (messageIndex: number) => void
+  /** Start a new conversation containing every message up to this one. */
   onForkMessage?: (messageIndex: number) => void
   /**
    * Retry a single failed GenUI tool call in place. Resolves true when repaired

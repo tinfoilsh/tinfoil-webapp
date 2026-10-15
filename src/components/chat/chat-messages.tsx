@@ -60,6 +60,9 @@ type ChatMessagesProps = {
   ) => void
   onEditMessage?: (messageIndex: number, newContent: string) => void
   onRegenerateMessage?: (messageIndex: number) => void
+  onDeleteMessage?: (messageIndex: number) => void
+  onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+  onContinueAssistantMessage?: (messageIndex: number) => void
   onForkMessage?: (messageIndex: number) => void
   onRetryToolCall?: (
     messageIndex: number,
@@ -116,6 +119,9 @@ const ChatMessage = memo(
     hideActions = false,
     onEditMessage,
     onRegenerateMessage,
+    onDeleteMessage,
+    onEditAssistantMessage,
+    onContinueAssistantMessage,
     onForkMessage,
     onRetryToolCall,
   }: {
@@ -129,6 +135,9 @@ const ChatMessage = memo(
     hideActions?: boolean
     onEditMessage?: (messageIndex: number, newContent: string) => void
     onRegenerateMessage?: (messageIndex: number) => void
+    onDeleteMessage?: (messageIndex: number) => void
+    onEditAssistantMessage?: (messageIndex: number, newContent: string) => void
+    onContinueAssistantMessage?: (messageIndex: number) => void
     onForkMessage?: (messageIndex: number) => void
     onRetryToolCall?: (
       messageIndex: number,
@@ -147,6 +156,9 @@ const ChatMessage = memo(
         hideActions={hideActions}
         onEditMessage={onEditMessage}
         onRegenerateMessage={onRegenerateMessage}
+        onDeleteMessage={onDeleteMessage}
+        onEditAssistantMessage={onEditAssistantMessage}
+        onContinueAssistantMessage={onContinueAssistantMessage}
         onForkMessage={onForkMessage}
         onRetryToolCall={onRetryToolCall}
       />
@@ -168,6 +180,10 @@ const ChatMessage = memo(
       prevProps.hideActions === nextProps.hideActions &&
       prevProps.onEditMessage === nextProps.onEditMessage &&
       prevProps.onRegenerateMessage === nextProps.onRegenerateMessage &&
+      prevProps.onDeleteMessage === nextProps.onDeleteMessage &&
+      prevProps.onEditAssistantMessage === nextProps.onEditAssistantMessage &&
+      prevProps.onContinueAssistantMessage ===
+        nextProps.onContinueAssistantMessage &&
       prevProps.onForkMessage === nextProps.onForkMessage &&
       prevProps.onRetryToolCall === nextProps.onRetryToolCall
     )
@@ -250,6 +266,9 @@ export function ChatMessages({
   handleLabelClick,
   onEditMessage,
   onRegenerateMessage,
+  onDeleteMessage,
+  onEditAssistantMessage,
+  onContinueAssistantMessage,
   onForkMessage,
   onRetryToolCall,
   loadImage,
@@ -273,7 +292,15 @@ export function ChatMessages({
   const [mounted, setMounted] = useState(false)
   const messageActions = readOnly
     ? {}
-    : { onEditMessage, onRegenerateMessage, onForkMessage, onRetryToolCall }
+    : {
+        onEditMessage,
+        onRegenerateMessage,
+        onDeleteMessage,
+        onEditAssistantMessage,
+        onContinueAssistantMessage,
+        onForkMessage,
+        onRetryToolCall,
+      }
   const [showSpacer, setShowSpacer] = useState(false)
   const prevMessageCountRef = React.useRef(messages.length)
   const messageCountWhenSpacerSetRef = React.useRef<number | null>(null)

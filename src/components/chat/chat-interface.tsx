@@ -11,6 +11,7 @@ import {
 } from '@/hooks/use-safeguards'
 import { useSubscriptionStatus } from '@/hooks/use-subscription-status'
 import { toast } from '@/hooks/use-toast'
+import { logError } from '@/utils/error-handling'
 import { useAuth, useUser } from '@clerk/react'
 import { ArrowDownIcon } from '@heroicons/react/24/outline'
 import {
@@ -74,6 +75,7 @@ import { ChatSidebar } from './chat-sidebar'
 import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
+import { ForkOverlay } from './fork-overlay'
 import { GenUIInputAreaRenderer } from './genui/GenUIInputAreaRenderer'
 import { selectPendingInputToolCallFromChat } from './genui/pending-input-tool-call'
 import {
@@ -386,6 +388,17 @@ export function ChatInterface({
       ? `${currentChat.title} · Tinfoil`
       : 'Tinfoil Private Chat'
   const handleInputFocusWithRateLimitCheck = handleInputFocus
+  const features = session?.features ?? {}
+  // A chat on this device changes its own copy; a stored chat needs the
+  // harness's message actions, and a temporary one is not stored at all.
+  const canChangeMessages =
+    !!currentChat.id &&
+    (thread.runsLocally || (!isTemporaryMode && !!features.messageActions))
+  const canFork =
+    !!currentChat.id &&
+    !currentChat.isTemporary &&
+    !currentChat.isBlankChat &&
+    (currentChat.isLocalOnly || !!features.fork)
   const canShare =
     !!isSignedIn &&
     !currentChat.isTemporary &&
@@ -528,10 +541,56 @@ export function ChatInterface({
     if (generationBlocked) return
     void thread.retry({ options }).catch(thread.report)
   }
-  const forkMessage = (index: number) => {
-    setProcessedDocuments([])
-    setQuote(null)
-    void thread.fork(index).catch(thread.report)
+  // Message actions wait for the reply in progress, as on main.
+  const deleteMessage = (index: number) => {
+    if (isStreaming || currentChatIsFlagged) return
+    void thread.deleteMessage(index).catch(thread.report)
+  }
+  const editAssistantMessage = (index: number, content: string) => {
+    if (isStreaming || currentChatIsFlagged) return
+    void thread.editReply(index, content).catch(thread.report)
+  }
+  const continueAssistantMessage = (index: number) => {
+    if (isStreaming || generationBlocked) return
+    try {
+      void thread.continueReply(index, { options })
+    } catch (cause) {
+      thread.report(cause)
+    }
+  }
+  const [isForking, setIsForking] = useState(false)
+  const forkInFlight = useRef(false)
+  const handleForkMessage = async (index: number) => {
+    if (isStreaming || forkInFlight.current) return
+    forkInFlight.current = true
+    setIsForking(true)
+    const startedAt = Date.now()
+    try {
+      const forkId = await thread.fork(index)
+      if (!forkId) return
+      setProcessedDocuments([])
+      setQuote(null)
+      // The overlay stays long enough to read as a step, not a flicker.
+      const elapsed = Date.now() - startedAt
+      if (elapsed < CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS)
+        await new Promise((resolve) =>
+          setTimeout(resolve, CONSTANTS.FORK_OVERLAY_MIN_VISIBLE_MS - elapsed),
+        )
+    } catch (cause) {
+      if (cause instanceof DOMException && cause.name === 'AbortError') return
+      logError('Failed to fork conversation', cause, {
+        component: 'ChatInterface',
+        action: 'handleForkMessage',
+      })
+      toast({
+        title: 'Failed to fork conversation',
+        description: 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      forkInFlight.current = false
+      setIsForking(false)
+    }
   }
   const cancelGenerationAndResumeQueue = () => {
     void thread.cancel().catch(thread.report)
@@ -1874,6 +1933,7 @@ export function ChatInterface({
               }}
             />
             <div className="relative flex min-h-0 flex-1">
+              <AnimatePresence>{isForking && <ForkOverlay />}</AnimatePresence>
               {thread.hasOlder && (
                 <button
                   className="absolute top-16 z-10 rounded-full border border-border-subtle px-4 py-2 text-content-secondary"
@@ -1943,9 +2003,20 @@ export function ChatInterface({
                       handleLabelClick={handleLabelClick}
                       onEditMessage={editMessage}
                       onRegenerateMessage={regenerateMessage}
+                      onDeleteMessage={
+                        canChangeMessages && currentChat.messages.length > 1
+                          ? deleteMessage
+                          : undefined
+                      }
+                      onEditAssistantMessage={
+                        canChangeMessages ? editAssistantMessage : undefined
+                      }
+                      onContinueAssistantMessage={
+                        features.continue ? continueAssistantMessage : undefined
+                      }
                       onForkMessage={
-                        currentChat.isLocalOnly && !isStreaming
-                          ? forkMessage
+                        canFork && !isStreaming && !isForking
+                          ? handleForkMessage
                           : undefined
                       }
                       onRetryToolCall={retryToolCall}
@@ -1988,7 +2059,15 @@ export function ChatInterface({
                 <div
                   ref={inputAreaRef}
                   data-chat-input-area
-                  className="pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 px-4 pb-4"
+                  aria-busy={isForking || undefined}
+                  className={cn(
+                    'pointer-events-none absolute inset-x-0 bottom-0 isolate z-20 px-4 pb-4',
+                    // The fork overlay only covers the transcript; the
+                    // composer lives in this sibling layer, so it goes
+                    // inert here or a send could race the fork.
+                    isForking &&
+                      '[&_.pointer-events-auto]:pointer-events-none [&_.pointer-events-auto]:opacity-50',
+                  )}
                   style={{
                     minHeight: '80px',
                     maxHeight: '50dvh',

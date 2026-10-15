@@ -479,3 +479,293 @@ describe('retrying after an error', () => {
     })
   })
 })
+
+describe('changing messages of a stored chat', () => {
+  function openCloud() {
+    signIn({ cloud: true })
+    client.post.mockImplementation(async (path: string, input: unknown) => {
+      if (path === '/v1/threads/get')
+        return (input as { id: string }).id === THREAD_ID
+          ? cloudThread()
+          : { ...cloudThread(transcript.slice(0, 2)), id: 'fork-1' }
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/threads/messages/delete')
+        return cloudThread([transcript[0], transcript[2], transcript[3]])
+      if (path === '/v1/threads/messages/update')
+        return cloudThread([
+          ...transcript.slice(0, 3),
+          {
+            ...transcript[3],
+            timeline: [{ id: 'b2', type: 'content', content: 'Better' }],
+          },
+        ])
+      if (path === '/v1/threads/fork')
+        return {
+          ...cloudThread(transcript.slice(0, 2)),
+          id: 'fork-1',
+          title: 'Numbers (fork)',
+          messages: undefined,
+        }
+      return {}
+    })
+    return renderHook(() => useThread(THREAD_ID, null))
+  }
+  const posted = (path: string) =>
+    client.post.mock.calls.filter(([called]) => called === path)
+
+  it('deletes a message through the harness and shows its window', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    await act(() => result.current.deleteMessage(1))
+
+    expect(posted('/v1/threads/messages/delete')).toEqual([
+      [
+        '/v1/threads/messages/delete',
+        { key: KEY, threadId: THREAD_ID, messageId: 'a1' },
+        expect.any(AbortSignal),
+      ],
+    ])
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'u2',
+      'a2',
+    ])
+    expect(result.current.chat.messageCount).toBe(3)
+  })
+
+  it("rewrites a reply's text through the harness", async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    await act(() => result.current.editReply(3, 'Better'))
+
+    expect(posted('/v1/threads/messages/update')).toEqual([
+      [
+        '/v1/threads/messages/update',
+        { key: KEY, threadId: THREAD_ID, messageId: 'a2', content: 'Better' },
+        expect.any(AbortSignal),
+      ],
+    ])
+    expect(result.current.chat.messages[3].content).toBe('Better')
+  })
+
+  it('does not edit a user message in place', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    await act(() => result.current.editReply(2, 'Changed question'))
+
+    expect(posted('/v1/threads/messages/update')).toEqual([])
+    expect(result.current.chat.messages[2].content).toBe('two')
+  })
+
+  it('forks through the harness and opens the fork', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+
+    let forkId: string | null = null
+    await act(async () => {
+      forkId = await result.current.fork(1)
+    })
+
+    expect(forkId).toBe('fork-1')
+    expect(posted('/v1/threads/fork')).toEqual([
+      [
+        '/v1/threads/fork',
+        { key: KEY, threadId: THREAD_ID, messageId: 'a1' },
+        expect.any(AbortSignal),
+      ],
+    ])
+    expect(result.current.chat.id).toBe('fork-1')
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual(['u1', 'a1'])
+    expect(result.current.threads.map((t) => t.id)).toEqual(['fork-1'])
+  })
+
+  it('continues a reply in place', async () => {
+    const { result } = openCloud()
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
+    client.events.mockImplementationOnce(async function* () {
+      const events: Frame['event'][] = [
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-continue',
+          messageId: 'a1',
+        },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: transcript.slice(0, 2).map(wire),
+          hasOlder: false,
+        },
+        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: ', continued' },
+        { type: 'RUN_FINISHED', threadId: THREAD_ID, runId: 'run-continue' },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+    })
+
+    await act(() => result.current.continueReply(1))
+
+    expect(turn()).toMatchObject({
+      kind: 'continue',
+      messageId: 'a1',
+      threadId: THREAD_ID,
+      key: KEY,
+    })
+    expect(result.current.chat.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer, continued'],
+    ])
+  })
+})
+
+describe('changing messages of a local chat', () => {
+  async function openLocal(messages = transcript) {
+    signIn({ cloud: false })
+    await localThreadStore('device').update(THREAD_ID, () =>
+      storedThread(messages),
+    )
+    const hook = renderHook(() => useThread(THREAD_ID, null, { local: true }))
+    await waitFor(() =>
+      expect(hook.result.current.chat.messages).toHaveLength(messages.length),
+    )
+    return hook
+  }
+  const saved = () => localThreadStore('device').get(THREAD_ID)
+
+  it('deletes a message from the stored copy without the harness', async () => {
+    const { result } = await openLocal()
+
+    await act(() => result.current.deleteMessage(2))
+
+    expect((await saved())?.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'a2',
+    ])
+    expect(result.current.chat.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'a2',
+    ])
+    expect(client.post).not.toHaveBeenCalled()
+  })
+
+  it('keeps the last message', async () => {
+    const { result } = await openLocal(transcript.slice(0, 1))
+
+    await act(() => result.current.deleteMessage(0))
+
+    expect((await saved())?.messages.map((m) => m.id)).toEqual(['u1'])
+  })
+
+  it("rewrites a reply's text in its copy, which the next turn sends", async () => {
+    const { result } = await openLocal([
+      ...transcript.slice(0, 3),
+      {
+        ...transcript[3],
+        timeline: [
+          { id: 't2', type: 'thinking', content: 'hmm' },
+          { id: 'b2', type: 'content', content: 'second ' },
+          { id: 'b3', type: 'content', content: 'answer' },
+        ],
+      },
+    ])
+
+    await act(() => result.current.editReply(3, 'Better'))
+
+    const edited = (await saved())?.messages[3]
+    expect(edited).toMatchObject({
+      id: 'a2',
+      content: 'Better',
+      timeline: [
+        { id: 't2', type: 'thinking', content: 'hmm' },
+        { id: 'b2', type: 'content', content: 'Better' },
+      ],
+    })
+    expect(result.current.chat.messages[3].content).toBe('Better')
+    expect(client.post).not.toHaveBeenCalled()
+
+    client.events.mockImplementationOnce(regenerated([...transcript.map(wire)]))
+    await act(() => result.current.send({ content: 'three' }))
+    expect(turn().thread?.messages[3]).toMatchObject({
+      id: 'a2',
+      content: 'Better',
+    })
+  })
+
+  it('continues a reply with its transcript and drops what followed it', async () => {
+    const { result } = await openLocal()
+    client.events.mockImplementationOnce(async function* () {
+      const events: Frame['event'][] = [
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-continue',
+          messageId: 'a1',
+        },
+        {
+          type: 'MESSAGES_SNAPSHOT',
+          messages: transcript.slice(0, 2).map(wire),
+          hasOlder: false,
+        },
+        { type: 'TEXT_MESSAGE_CHUNK', messageId: 'a1', delta: ', continued' },
+        {
+          type: 'RUN_FINISHED',
+          threadId: THREAD_ID,
+          runId: 'run-continue',
+          metadata: { messages: [{ id: 'a1', model: 'test-model' }] },
+        },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+    })
+
+    await act(() => result.current.continueReply(1))
+
+    expect(turn()).toMatchObject({
+      kind: 'continue',
+      messageId: 'a1',
+      local: true,
+    })
+    expect(turn().thread?.messages.map((m) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+    ])
+    expect((await saved())?.messages.map((m) => [m.id, m.content])).toEqual([
+      ['u1', 'one'],
+      ['a1', 'first answer, continued'],
+    ])
+  })
+
+  it('continues a failed continuation again on retry', async () => {
+    const { result } = await openLocal()
+    client.events.mockImplementationOnce(async function* () {
+      const events: Frame['event'][] = [
+        {
+          type: 'RUN_STARTED',
+          threadId: THREAD_ID,
+          runId: 'run-continue',
+          messageId: 'a1',
+        },
+        {
+          type: 'RUN_ERROR',
+          threadId: THREAD_ID,
+          runId: 'run-continue',
+          code: 'MODEL_UNAVAILABLE',
+          message: 'The model is temporarily unavailable',
+        },
+      ]
+      for (const [id, event] of events.entries()) yield { id, event }
+    })
+    await act(() => result.current.continueReply(1))
+    client.events.mockImplementationOnce(
+      regenerated(transcript.slice(0, 2).map(wire)),
+    )
+
+    await act(() => result.current.retry())
+
+    expect(turn(1)).toMatchObject({ kind: 'continue', messageId: 'a1' })
+  })
+})

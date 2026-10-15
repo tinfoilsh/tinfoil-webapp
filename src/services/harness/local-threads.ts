@@ -224,6 +224,30 @@ export function localSummary(thread: LocalThread): ThreadSummary {
   }
 }
 
+// A reply's text rewritten as the harness rewrites a stored one: its text
+// blocks collapse into one holding the new text, where the first was, and
+// its reasoning, search and tool blocks stay.
+export function replaceReplyText(
+  message: LocalMessage,
+  text: string,
+): LocalMessage {
+  const timeline = message.timeline ?? []
+  let first = timeline.findIndex((block) => block.type === 'content')
+  const edited: TimelineBlock = {
+    id: first < 0 ? 'edited-content' : timeline[first].id,
+    type: 'content',
+    content: text,
+  }
+  if (first < 0) first = timeline.length
+  const blocks: TimelineBlock[] = []
+  for (let i = 0; i <= timeline.length; i++) {
+    if (i === first && text !== '') blocks.push(edited)
+    if (i < timeline.length && timeline[i].type !== 'content')
+      blocks.push(timeline[i])
+  }
+  return { ...message, content: text, timeline: blocks }
+}
+
 // A document's text as the harness reads a stored one: its extracted text,
 // or else the text of its pages.
 export function localDocumentText(attachment: LocalAttachment): string {

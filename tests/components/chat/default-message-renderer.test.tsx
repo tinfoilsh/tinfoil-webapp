@@ -2,11 +2,14 @@ import { DefaultMessageRenderer } from '@/components/chat/renderers/default/Defa
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
 import { publish } from '@/services/harness/runtime'
+import { ForwardIcon } from '@heroicons/react/24/outline'
 import {
+  act,
   fireEvent,
   isInaccessible,
   render,
   screen,
+  within,
 } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { testSession } from '../../harness-fixture'
@@ -22,6 +25,19 @@ const model = {
 } satisfies BaseModel
 
 const Renderer = DefaultMessageRenderer.render
+
+const openMoreActions = () =>
+  fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+
+const getDeleteConfirmation = (title: string) =>
+  screen.getByRole('alertdialog', { name: title })
+
+const confirmDelete = (title: string) =>
+  fireEvent.click(
+    within(getDeleteConfirmation(title)).getByRole('button', {
+      name: 'Delete',
+    }),
+  )
 
 const renderMessage = (message: Message, hideActions = false) =>
   render(
@@ -146,6 +162,7 @@ describe('DefaultMessageRenderer metadata', () => {
         isDarkMode={false}
         hideActions
         onEditMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
         onRegenerateMessage={vi.fn()}
       />,
     )
@@ -153,6 +170,7 @@ describe('DefaultMessageRenderer metadata', () => {
     for (const name of [
       'Copy message',
       'Edit message',
+      'Delete message',
       'Regenerate response',
     ]) {
       expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
@@ -180,6 +198,9 @@ describe('DefaultMessageRenderer metadata', () => {
 
     expect(screen.getByText('Retired Model')).toBeInTheDocument()
     expect(screen.getByText('Encrypted')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Read aloud' }),
+    ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('button', { name: 'Copy message' }),
     ).not.toBeInTheDocument()
@@ -244,6 +265,8 @@ describe('DefaultMessageRenderer message actions', () => {
 
     it('offers message actions without a text bubble or copy button', () => {
       const messageIndex = 2
+      const onDeleteMessage = vi.fn()
+      const onForkMessage = vi.fn()
       const onRegenerateMessage = vi.fn()
       const onEditMessage = vi.fn()
       const props = {
@@ -251,6 +274,8 @@ describe('DefaultMessageRenderer message actions', () => {
         messageIndex,
         model,
         isDarkMode: false,
+        onDeleteMessage,
+        onForkMessage,
         onRegenerateMessage,
         onEditMessage,
       }
@@ -261,14 +286,23 @@ describe('DefaultMessageRenderer message actions', () => {
         screen.queryByRole('button', { name: 'Copy message' }),
       ).not.toBeInTheDocument()
       expect(container.querySelector('.prose')).not.toBeInTheDocument()
-      fireEvent.click(
-        screen.getByRole('button', { name: 'Regenerate response' }),
-      )
-      expect(onRegenerateMessage).toHaveBeenCalledExactlyOnceWith(messageIndex)
+      for (const [name, handler] of [
+        ['Fork conversation from here', onForkMessage],
+        ['Regenerate response', onRegenerateMessage],
+      ] as const) {
+        fireEvent.click(screen.getByRole('button', { name }))
+        expect(handler).toHaveBeenCalledWith(messageIndex)
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+      expect(onDeleteMessage).not.toHaveBeenCalled()
+      confirmDelete('Delete message?')
+      expect(onDeleteMessage).toHaveBeenCalledExactlyOnceWith(messageIndex)
 
       rerender(<Renderer {...props} hideActions />)
       for (const name of [
         'Edit message',
+        'Delete message',
+        'Fork conversation from here',
         'Regenerate response',
         'Copy message',
       ]) {
@@ -338,11 +372,93 @@ describe('DefaultMessageRenderer message actions', () => {
         model={model}
         isDarkMode={false}
         onEditMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
+        onForkMessage={vi.fn()}
         onRegenerateMessage={vi.fn()}
       />,
     )
 
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('deletes and forks a user message with its own index', () => {
+    const onDeleteMessage = vi.fn()
+    const onForkMessage = vi.fn()
+    render(
+      <Renderer
+        message={{
+          role: 'user',
+          content: 'Hello',
+          timestamp: new Date('2026-08-07T00:00:00.000Z'),
+        }}
+        messageIndex={4}
+        model={model}
+        isDarkMode={false}
+        onDeleteMessage={onDeleteMessage}
+        onForkMessage={onForkMessage}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+    expect(onDeleteMessage).not.toHaveBeenCalled()
+    confirmDelete('Delete message?')
+    expect(onDeleteMessage).toHaveBeenCalledExactlyOnceWith(4)
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Fork conversation from here' }),
+    )
+    expect(onForkMessage).toHaveBeenCalledExactlyOnceWith(4)
+  })
+
+  it('does not delete a user message when the confirmation is cancelled', () => {
+    const onDeleteMessage = vi.fn()
+    render(
+      <Renderer
+        message={{
+          role: 'user',
+          content: 'Hello',
+          timestamp: new Date('2026-08-07T00:00:00.000Z'),
+        }}
+        messageIndex={4}
+        model={model}
+        isDarkMode={false}
+        onDeleteMessage={onDeleteMessage}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+    fireEvent.click(
+      within(getDeleteConfirmation('Delete message?')).getByRole('button', {
+        name: 'Cancel',
+      }),
+    )
+    expect(onDeleteMessage).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete message' })).toBeVisible()
+  })
+
+  it('closes a pending delete confirmation when the conversation becomes read-only', () => {
+    const onDeleteMessage = vi.fn()
+    const props = {
+      message: {
+        role: 'user' as const,
+        content: 'Hello',
+        timestamp: new Date('2026-08-07T00:00:00.000Z'),
+      },
+      messageIndex: 0,
+      model,
+      isDarkMode: false,
+      onDeleteMessage,
+    }
+    const { rerender } = render(<Renderer {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
+    expect(getDeleteConfirmation('Delete message?')).toBeInTheDocument()
+
+    rerender(<Renderer {...props} hideActions />)
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    expect(onDeleteMessage).not.toHaveBeenCalled()
   })
 
   it('closes an active edit when the conversation becomes read-only', () => {
@@ -370,6 +486,112 @@ describe('DefaultMessageRenderer message actions', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('deletes an assistant message with its own index', () => {
+    const onDeleteMessage = vi.fn()
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={3}
+        model={model}
+        isDarkMode={false}
+        onDeleteMessage={onDeleteMessage}
+      />,
+    )
+
+    openMoreActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete message' }))
+    expect(onDeleteMessage).not.toHaveBeenCalled()
+    confirmDelete('Delete response?')
+    expect(onDeleteMessage).toHaveBeenCalledExactlyOnceWith(3)
+  })
+
+  it('forks from an assistant message with its own index', () => {
+    const onForkMessage = vi.fn()
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={5}
+        model={model}
+        isDarkMode={false}
+        onForkMessage={onForkMessage}
+      />,
+    )
+
+    openMoreActions()
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: 'Fork conversation from here' }),
+    )
+    expect(onForkMessage).toHaveBeenCalledWith(5)
+  })
+
+  it('does not offer fork when no handler is provided', () => {
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        onDeleteMessage={vi.fn()}
+      />,
+    )
+
+    openMoreActions()
+    expect(
+      screen.queryByRole('menuitem', { name: 'Fork conversation from here' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('continues an assistant response without editing', () => {
+    const onContinueAssistantMessage = vi.fn()
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={3}
+        model={model}
+        isDarkMode={false}
+        onContinueAssistantMessage={onContinueAssistantMessage}
+      />,
+    )
+
+    openMoreActions()
+    const continueButton = screen.getByRole('menuitem', {
+      name: 'Continue response',
+    })
+    const expectedIcon = render(<ForwardIcon />)
+    expect(continueButton.querySelector('svg')?.innerHTML).toBe(
+      expectedIcon.container.querySelector('svg')?.innerHTML,
+    )
+    fireEvent.click(continueButton)
+    expect(onContinueAssistantMessage).toHaveBeenCalledWith(3)
+  })
+
+  it('saves an assistant edit in place', () => {
+    const onEditAssistantMessage = vi.fn()
+    const onContinueAssistantMessage = vi.fn()
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={3}
+        model={model}
+        isDarkMode={false}
+        onEditAssistantMessage={onEditAssistantMessage}
+        onContinueAssistantMessage={onContinueAssistantMessage}
+      />,
+    )
+
+    openMoreActions()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Edit response' }))
+    const textarea = screen.getByRole('textbox', { name: 'Edit response' })
+    fireEvent.change(textarea, { target: { value: 'Cleaned up answer' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(onEditAssistantMessage).toHaveBeenCalledWith(3, 'Cleaned up answer')
+    expect(onContinueAssistantMessage).not.toHaveBeenCalled()
+    expect(
+      screen.queryByRole('textbox', { name: 'Edit response' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('names each action once for screen readers, not again as its hover tooltip', () => {
     const { unmount } = render(
       <Renderer
@@ -383,11 +605,15 @@ describe('DefaultMessageRenderer message actions', () => {
         isDarkMode={false}
         onRegenerateMessage={vi.fn()}
         onEditMessage={vi.fn()}
+        onForkMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
       />,
     )
     for (const [button, tooltip] of [
       ['Regenerate response', 'Regenerate'],
       ['Edit message', 'Edit'],
+      ['Fork conversation from here', 'Fork from here'],
+      ['Delete message', 'Delete'],
       ['Copy message', 'Copy'],
     ] as const) {
       expect(screen.getByRole('button', { name: button })).toBeVisible()
@@ -403,15 +629,102 @@ describe('DefaultMessageRenderer message actions', () => {
         isDarkMode={false}
         isLastMessage
         onRegenerateMessage={vi.fn()}
+        onEditAssistantMessage={vi.fn()}
       />,
     )
     for (const [button, tooltip] of [
       ['Copy message', 'Copy'],
       ['Regenerate response', 'Regenerate'],
+      ['More actions', 'More'],
     ] as const) {
       expect(screen.getByRole('button', { name: button })).toBeVisible()
       expect(isInaccessible(screen.getByText(tooltip))).toBe(true)
     }
+  })
+
+  it('returns focus to the more menu trigger after cancelling an edit', () => {
+    vi.useFakeTimers()
+    try {
+      render(
+        <Renderer
+          message={assistantMessage}
+          messageIndex={3}
+          model={model}
+          isDarkMode={false}
+          onEditAssistantMessage={vi.fn()}
+        />,
+      )
+
+      openMoreActions()
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Edit response' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      act(() => {
+        vi.runAllTimers()
+      })
+
+      expect(screen.getByRole('button', { name: 'More actions' })).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('supports arrow key navigation and tab dismissal in the more menu', () => {
+    render(
+      <Renderer
+        message={assistantMessage}
+        messageIndex={3}
+        model={model}
+        isDarkMode={false}
+        onEditAssistantMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    )
+
+    openMoreActions()
+    const editItem = screen.getByRole('menuitem', { name: 'Edit response' })
+    const deleteItem = screen.getByRole('menuitem', { name: 'Delete message' })
+    editItem.focus()
+
+    fireEvent.keyDown(document, { key: 'ArrowDown' })
+    expect(deleteItem).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'ArrowDown' })
+    expect(editItem).toHaveFocus()
+    fireEvent.keyDown(document, { key: 'ArrowUp' })
+    expect(deleteItem).toHaveFocus()
+
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
+  it('does not offer edit or continue on rate limit errors', () => {
+    render(
+      <Renderer
+        message={{
+          role: 'assistant',
+          content: 'Error: limit',
+          isError: true,
+          isRateLimitError: true,
+          timestamp: new Date('2026-08-07T00:00:01.000Z'),
+        }}
+        messageIndex={1}
+        model={model}
+        isDarkMode={false}
+        onEditAssistantMessage={vi.fn()}
+        onContinueAssistantMessage={vi.fn()}
+        onDeleteMessage={vi.fn()}
+      />,
+    )
+
+    openMoreActions()
+    expect(
+      screen.queryByRole('menuitem', { name: 'Edit response' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('menuitem', { name: 'Continue response' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('menuitem', { name: 'Delete message' }),
+    ).toBeInTheDocument()
   })
 })
 
