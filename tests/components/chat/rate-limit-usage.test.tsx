@@ -188,7 +188,12 @@ describe('usage reported by runs', () => {
       new HarnessAPI(
         {
           events,
-          post: vi.fn().mockResolvedValue({}),
+          // A finished run refreshes the session.
+          post: vi
+            .fn()
+            .mockImplementation(async (path: string) =>
+              path === '/v1/session' ? structuredClone(testSession) : {},
+            ),
         } as unknown as HarnessClient,
         null,
       ),
@@ -259,6 +264,8 @@ describe('usage reported by runs', () => {
     )
     await act(() => result.current.send({ content: 'fourth' }))
     expect(screen.getByText('5K / 2M')).toBeInTheDocument()
+    expect(result.current.error).toBe('')
+    expect(getView().error).toBeUndefined()
   })
 
   it('does not count a replayed final event twice', async () => {

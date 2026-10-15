@@ -330,6 +330,21 @@ describe('ShareModal', () => {
     expect(screen.getByText('Private')).toBeVisible()
   })
 
+  it('ignores a stale status response after reopening the same conversation', async () => {
+    const status = deferred<{ shared: boolean }>()
+    mocks.status.mockReturnValueOnce(status.promise)
+    const view = render(<ShareModal {...props} />)
+    view.rerender(<ShareModal {...props} isOpen={false} />)
+    view.rerender(<ShareModal {...props} />)
+    expect(await readyCheckbox()).not.toBeChecked()
+    expect(mocks.status).toHaveBeenCalledTimes(2)
+
+    await act(async () => status.resolve({ shared: true }))
+
+    expect(screen.getByRole('checkbox')).not.toBeChecked()
+    expect(screen.getByText('Private')).toBeVisible()
+  })
+
   it('reports a refused share without showing a link', async () => {
     mocks.share.mockRejectedValueOnce(
       new HarnessError(

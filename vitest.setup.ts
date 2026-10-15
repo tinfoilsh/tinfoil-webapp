@@ -1,6 +1,5 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach } from 'vitest'
-import { setupHarness } from './tests/harness-fixture'
 
 // Mock localStorage for tests
 const localStorageMock = (() => {
@@ -32,8 +31,11 @@ beforeEach(() => {
   localStorage.clear()
 })
 
+// Imported per test rather than with this file, so that the harness runtime
+// and its dependencies load after a test file's mocks are registered.
 let releaseHarness: (() => void) | undefined
-beforeEach(() => {
+beforeEach(async () => {
+  const { setupHarness } = await import('./tests/harness-fixture')
   releaseHarness = setupHarness().release
 })
 afterEach(() => {

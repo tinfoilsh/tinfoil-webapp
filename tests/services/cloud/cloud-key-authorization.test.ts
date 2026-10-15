@@ -1,4 +1,10 @@
 import {
+  USER_ENCRYPTION_KEY,
+  USER_ENCRYPTION_KEY_HISTORY,
+} from '@/constants/storage-keys'
+import { encryptionService } from '@/services/encryption/encryption-service'
+import { harnessAPI } from '@/services/harness/runtime'
+import {
   authorizeCurrentPrimaryKeyOrThrow,
   registerStartFreshKeyIfNeeded,
 } from '@/services/keys/cloud-key-authorization'
@@ -46,6 +52,37 @@ it('registers a new account key through the harness', async () => {
     createdVia: 'manual',
     idempotencyKey: 'nonce',
   })
+})
+it('moves existing encrypted data to the active key through the harness', async () => {
+  const stored = new Uint8Array(32).fill(1)
+  const previous = new Uint8Array(32).fill(2)
+  localStorage.setItem(
+    USER_ENCRYPTION_KEY,
+    encryptionService.encodeKeyFromBytes(stored),
+  )
+  localStorage.setItem(
+    USER_ENCRYPTION_KEY_HISTORY,
+    JSON.stringify([encryptionService.encodeKeyFromBytes(previous)]),
+  )
+  mocks.validate.mockResolvedValue({ canWrite: true, remoteState: 'exists' })
+  mocks.current.mockResolvedValue({ key_id: null, has_data: true })
+
+  await authorizeCurrentPrimaryKeyOrThrow()
+
+  const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64')
+  expect(harnessAPI().client.post).toHaveBeenCalledExactlyOnceWith(
+    '/v1/keys/migrate-all',
+    {
+      keys: [
+        { key: 'active-key' },
+        { key: base64(stored) },
+        { key: base64(previous) },
+      ],
+      target: { key: 'active-key' },
+    },
+    expect.any(AbortSignal),
+  )
+  expect(mocks.register).not.toHaveBeenCalled()
 })
 it('uses the current etag for an explicitly requested fresh start', async () => {
   mocks.current.mockResolvedValue({ key_id: 'old', etag: 'revision' })
