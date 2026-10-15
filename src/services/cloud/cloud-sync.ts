@@ -39,6 +39,7 @@ import { ingestRemoteChats, type RemoteChatEntry } from './chat-ingestion'
 import {
   BOOTSTRAP_RECENT_CONTENT_LIMIT,
   drainChatRevisionSync,
+  pullMissingProjectChats,
 } from './chat-revision-sync'
 import { canWriteToCloud } from './cloud-key-authorization'
 import {
@@ -532,7 +533,7 @@ export class CloudSyncService {
     }
   }
 
-  private async doRevisionSync(): Promise<SyncResult> {
+  private async doRevisionSync(projectId?: string): Promise<SyncResult> {
     const generation = this.accountGeneration
     if (!(await cloudStorage.isAuthenticated())) {
       return { uploaded: 0, downloaded: 0, errors: [] }
@@ -553,6 +554,13 @@ export class CloudSyncService {
       userId,
       () => this.isCurrentGeneration(generation),
     )
+    if (projectId) {
+      result.downloaded += await this.fillMissingProjectChats(
+        projectId,
+        generation,
+        userId,
+      )
+    }
     if (result.uploaded > 0 || result.downloaded > 0) {
       try {
         localStorage.setItem(SYNC_CHAT_DELETION_REVISION, crypto.randomUUID())
@@ -562,6 +570,45 @@ export class CloudSyncService {
     }
     void this.kickLegacyBlobMigration(generation)
     return result
+  }
+
+  /**
+   * Store the open project's chats that are on the server but not on
+   * this device. Revision sync has already succeeded by now, so a
+   * failure here is logged rather than failing the sync.
+   */
+  private async fillMissingProjectChats(
+    projectId: string,
+    generation: number,
+    userId: string,
+  ): Promise<number> {
+    const isCurrent = () =>
+      this.isCurrentGeneration(generation) && this.readActiveUserId() === userId
+    try {
+      const { downloaded, skipped } = await pullMissingProjectChats(
+        projectId,
+        userId,
+        isCurrent,
+      )
+      for (const chatId of skipped.undecodableIds) {
+        reportChatSyncFailed(chatId, "This chat couldn't be read")
+      }
+      if (skipped.unavailable.length > 0) {
+        this.reportUnavailableChats(
+          skipped.unavailable,
+          'fillMissingProjectChats',
+        )
+      }
+      return downloaded
+    } catch (error) {
+      if (!isCurrent()) throw error
+      logError('Failed to load missing project chats', error, {
+        component: 'CloudSync',
+        action: 'fillMissingProjectChats',
+        metadata: { projectId },
+      })
+      return 0
+    }
   }
 
   private async kickLegacyBlobMigration(generation: number): Promise<void> {
@@ -594,8 +641,8 @@ export class CloudSyncService {
     }
   }
 
-  async smartSync(_projectId?: string): Promise<SyncResult> {
-    return this.withSyncLock(() => this.doRevisionSync())
+  async smartSync(projectId?: string): Promise<SyncResult> {
+    return this.withSyncLock(() => this.doRevisionSync(projectId))
   }
 
   get syncing(): boolean {
@@ -1270,7 +1317,9 @@ export class CloudSyncService {
         metadata: { chatIds: skippedIds },
       })
     }
-    if (unavailable.length > 0) this.reportUnavailableChats(unavailable)
+    if (unavailable.length > 0) {
+      this.reportUnavailableChats(unavailable, 'hydrateChats')
+    }
     return { saved: ingest.downloaded, unavailable, skippedIds }
   }
 
@@ -1282,6 +1331,7 @@ export class CloudSyncService {
    */
   private reportUnavailableChats(
     unavailable: readonly UnavailableRemoteChat[],
+    action: string,
   ): void {
     for (const row of unavailable) {
       switch (row.code) {
@@ -1296,7 +1346,7 @@ export class CloudSyncService {
     }
     logWarning('Sync enclave could not return some chats', {
       component: 'CloudSync',
-      action: 'hydrateChats',
+      action,
       metadata: { unavailable },
     })
   }

@@ -105,6 +105,14 @@ export type PulledChatResult =
   | { status: 'ok'; id: string; syncVersion: number; content: string }
   | { status: 'unavailable'; id: string; code: string }
 
+/** Server row metadata for a chat filed under a project. */
+export interface ProjectChatStatus {
+  id: string
+  etag: string
+  project_id: string
+  updated_at: string
+}
+
 export interface ProfileSyncStatus {
   exists: boolean
   version?: number
@@ -1095,11 +1103,11 @@ export class CloudStorageService {
     return { deleted: result.deleted }
   }
 
-  async listChatIdsByProject(
+  async listProjectChats(
     projectId: string,
     guard?: AccountOperationGuard,
-  ): Promise<string[]> {
-    const ids = new Set<string>()
+  ): Promise<ProjectChatStatus[]> {
+    const chats = new Map<string, ProjectChatStatus>()
     let cursor: string | undefined
     do {
       guard?.assertCurrent()
@@ -1111,11 +1119,17 @@ export class CloudStorageService {
       })
       guard?.assertCurrent()
       for (const update of status.updates) {
-        if (update.project_id === projectId) ids.add(update.id)
+        if (update.project_id !== projectId) continue
+        chats.set(update.id, {
+          id: update.id,
+          etag: update.etag,
+          project_id: projectId,
+          updated_at: update.updated_at,
+        })
       }
       cursor = status.next_cursor
     } while (cursor)
-    return [...ids]
+    return [...chats.values()]
   }
 
   /**
