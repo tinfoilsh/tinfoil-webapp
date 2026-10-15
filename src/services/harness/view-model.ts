@@ -22,13 +22,16 @@ export function attachmentView(a: WireAttachment): Attachment {
   }
 }
 export function messageView(message: WireMessage, streaming = false): Message {
-  const timeline: TimelineBlock[] = (message.timeline ?? []).map((block) => {
+  const blocks = message.timeline ?? []
+  const timeline: TimelineBlock[] = blocks.map((block, index) => {
+    // A reply thinks only in its last block: reasoning ends once the reply
+    // goes on to text or a tool call.
     if (block.type === 'thinking')
       return {
         ...block,
         type: 'thinking',
         content: block.content ?? '',
-        isThinking: streaming && !block.complete,
+        isThinking: streaming && index === blocks.length - 1 && !block.complete,
       }
     if (block.type === 'content')
       return { ...block, type: 'content', content: block.content ?? '' }

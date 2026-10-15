@@ -15,6 +15,7 @@ import {
   isAnyURLFetching,
   URLFetchProcess,
 } from './URLFetchProcess'
+import { useThoughtSummary } from './use-thought-summary'
 import { WebSearchProcess } from './WebSearchProcess'
 
 export type WorkBlock =
@@ -117,6 +118,13 @@ export const WorkProcess = memo(function WorkProcess({
     () => (isActive ? getLiveActivity(blocks) : null),
     [blocks, isActive],
   )
+  const activeThinking = activity?.kind === 'thinking' ? activity.block : null
+  const summary = useThoughtSummary(
+    activeThinking?.content ?? '',
+    activeThinking !== null,
+    true,
+    activeThinking?.id,
+  )
 
   const duration = useMemo(
     () => (isActive ? undefined : getWorkDurationSeconds(blocks)),
@@ -146,10 +154,27 @@ export const WorkProcess = memo(function WorkProcess({
         </span>
         <span className="min-w-0 text-base text-content-primary/50">
           {activity?.kind === 'thinking' ? (
-            <span className="flex items-center gap-1.5">
-              <span className="font-medium">Thinking</span>
-              <LoadingDots size="small" />
-            </span>
+            summary ? (
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span
+                  className="block animate-shimmer truncate bg-clip-text font-medium text-transparent motion-reduce:animate-none"
+                  style={{
+                    backgroundImage: isDarkMode
+                      ? 'linear-gradient(90deg, #9ca3af 0%, #e5e7eb 25%, #f9fafb 50%, #e5e7eb 75%, #9ca3af 100%)'
+                      : 'linear-gradient(90deg, #4b5563 0%, #6b7280 25%, #9ca3af 50%, #6b7280 75%, #4b5563 100%)',
+                    backgroundSize: '200% 100%',
+                  }}
+                >
+                  {summary}
+                </span>
+                <LoadingDots size="small" />
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                <span className="font-medium">Thinking</span>
+                <LoadingDots size="small" />
+              </span>
+            )
           ) : activity?.kind === 'action' ? (
             <span className="font-medium">{activity.label}</span>
           ) : activity?.kind === 'idle' ? (
@@ -187,6 +212,7 @@ export const WorkProcess = memo(function WorkProcess({
                       isDarkMode={isDarkMode}
                       isThinking={block.isThinking}
                       thinkingDuration={block.duration}
+                      summary={block === activeThinking ? summary : ''}
                     />
                   )
                 case 'web_search':

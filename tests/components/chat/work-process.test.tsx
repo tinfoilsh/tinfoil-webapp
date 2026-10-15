@@ -3,8 +3,11 @@ import {
   getWorkDurationSeconds,
   type WorkBlock,
 } from '@/components/chat/renderers/components/WorkProcess'
-import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const summarize = vi.hoisted(() => vi.fn())
+vi.mock('@/services/inference/summary-client', () => ({ summarize }))
 
 const thinking = (
   id: string,
@@ -38,6 +41,15 @@ const renderWork = (blocks: WorkBlock[], isActive = false) =>
 // Nested step rows keep their own (inert) buttons in the DOM, so the group
 // header is always the first button.
 const getHeader = () => screen.getAllByRole('button')[0]
+
+beforeEach(() => {
+  summarize.mockReset()
+  summarize.mockResolvedValue('')
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
 
 describe('getWorkDurationSeconds', () => {
   it('spans the run wall-clock rather than summing overlapping steps', () => {
@@ -113,6 +125,12 @@ describe('WorkProcess once the run has finished', () => {
     ])
     expect(getHeader()).toHaveTextContent('Worked through 3 steps')
   })
+
+  it('does not call the summarizer for finished thinking', async () => {
+    renderWork([thinking('t0'), search('s1')])
+    await act(async () => {})
+    expect(summarize).not.toHaveBeenCalled()
+  })
 })
 
 describe('WorkProcess while the run is active', () => {
@@ -178,15 +196,77 @@ describe('WorkProcess while the run is active', () => {
     expect(getHeader()).toHaveTextContent(/^Working$/)
   })
 
-  it('labels an open thinking step as Thinking', () => {
+  it('surfaces the live thinking summary in the header and shares it with the step', async () => {
+    const longThought = Array.from({ length: 30 }, (_, i) => `word${i}`).join(
+      ' ',
+    )
+    summarize.mockResolvedValue('Weighing the tradeoffs')
+
     renderWork(
       [
         search('s0'),
-        thinking('t1', { content: 'Fresh start', isThinking: true }),
+        thinking('t1', { content: longThought, isThinking: true }),
       ],
       true,
     )
-    expect(getHeader()).toHaveTextContent(/^Thinking$/)
+    const header = getHeader()
+    expect(header).toHaveTextContent('Thinking')
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(summarize).toHaveBeenCalledTimes(1)
+    expect(summarize).toHaveBeenCalledWith({
+      content: longThought,
+      style: 'thoughts_summary',
+    })
+    expect(header).toHaveTextContent('Weighing the tradeoffs')
+    // The nested ThoughtProcess shows the same summary without its own call.
+    expect(screen.getAllByText('Weighing the tradeoffs')).toHaveLength(2)
+    expect(summarize).toHaveBeenCalledTimes(1)
+  })
+
+  it('discards a summary that lands after its thinking block has closed', async () => {
+    const longThought = Array.from({ length: 30 }, (_, i) => `word${i}`).join(
+      ' ',
+    )
+    let resolveSummary!: (value: string) => void
+    summarize.mockReturnValue(
+      new Promise<string>((resolve) => {
+        resolveSummary = resolve
+      }),
+    )
+
+    const { rerender } = renderWork(
+      [
+        search('s0'),
+        thinking('t1', { content: longThought, isThinking: true }),
+      ],
+      true,
+    )
+    await act(async () => {})
+    expect(summarize).toHaveBeenCalledTimes(1)
+
+    // The first thought closes and a second one opens while the request is
+    // still pending for the first.
+    rerender(
+      <WorkProcess
+        blocks={[
+          search('s0'),
+          thinking('t1', { content: longThought }),
+          thinking('t2', { content: 'Fresh start', isThinking: true }),
+        ]}
+        isActive
+        isDarkMode={false}
+      />,
+    )
+    await act(async () => {
+      resolveSummary('Stale summary of the first thought')
+    })
+
+    expect(getHeader()).toHaveTextContent('Thinking')
+    expect(screen.queryByText('Stale summary of the first thought')).toBeNull()
   })
 
   it('settles into "Worked for" once the run completes', () => {
