@@ -367,6 +367,33 @@ describe('settings opening', () => {
       })
     })
 
+    it.each([
+      { key: true, available: true },
+      { key: false, available: false },
+    ])(
+      'offers native backups with a key, as on main (key: $key)',
+      ({ key, available }) => {
+        render(
+          <Harness
+            initialTab="cloud-sync"
+            isSignedIn
+            isPremium
+            encryptionKey={key ? `key_${'ab'.repeat(32)}` : null}
+          />,
+        )
+        for (const name of ['Create Tinfoil Backup', 'Restore Tinfoil Backup'])
+          expect(Boolean(screen.queryByRole('button', { name }))).toBe(
+            available,
+          )
+        if (available)
+          expect(
+            screen.getByText(
+              'Export your cloud and local data as a portable ZIP archive.',
+            ),
+          ).toBeInTheDocument()
+      },
+    )
+
     it('opens the key setup instead of turning sync on without a key', async () => {
       const setIsOpen = vi.fn()
       const onCloudSyncSetupClick = vi.fn()

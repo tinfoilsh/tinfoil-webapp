@@ -1,9 +1,6 @@
 import { describeImportFailure } from '@/services/chat-import/import-failure-copy'
-import {
-  importStatus,
-  startImport,
-  type ImportStatusResponse,
-} from '@/services/harness/archives'
+// prettier-ignore
+import { NATIVE_RESTORE_KINDS,restoreNativeBackup,type NativeRestoreResult } from '@/services/native-backup/orchestrate'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 const INITIAL_RESTORE_PHASE = 'uploading'
@@ -22,13 +19,16 @@ export function NativeBackupRestore({
 }) {
   const input = useRef<HTMLInputElement>(null)
   const controller = useRef<AbortController | null>(null)
+  const started = useRef(false)
+  const dismissed = useRef(false)
   const guard = useRef({ available, ownerId })
   const [busy, setBusy] = useState(false)
   const [phase, setPhase] = useState(INITIAL_RESTORE_PHASE)
-  const [result, setResult] = useState<ImportStatusResponse | null>(null)
+  const [result, setResult] = useState<NativeRestoreResult | null>(null)
   const [message, setMessage] = useState<string | null>(null)
 
-  useEffect(() => () => controller.current?.abort(), [])
+  // prettier-ignore
+  useEffect(() => () => { if (!started.current) controller.current?.abort() }, [])
   useLayoutEffect(() => {
     const changed =
       guard.current.available !== available || guard.current.ownerId !== ownerId
@@ -37,50 +37,66 @@ export function NativeBackupRestore({
       controller.current?.abort()
       controller.current = null
       if (input.current) input.current.value = ''
+      started.current = false
+      dismissed.current = false
+      setBusy(false)
       setPhase(INITIAL_RESTORE_PHASE)
       setResult(null)
       setMessage(null)
-      setBusy(false)
     }
   }, [available, ownerId])
 
-  const run = async (
-    request: (signal: AbortSignal) => Promise<ImportStatusResponse>,
-  ) => {
+  const restore = async (file: File) => {
     if (!ownerId) return
     const current = new AbortController()
-    controller.current?.abort()
     controller.current = current
+    const isCurrent = () =>
+      controller.current === current && !current.signal.aborted
+    started.current = false
+    dismissed.current = false
     setBusy(true)
+    setResult(null)
     setMessage(null)
     try {
-      const next = await request(current.signal)
-      if (current.signal.aborted || controller.current !== current) return
-      setPhase(next.phase ?? next.status)
-      setResult(next)
-      const text =
-        next.status === 'failed'
-          ? `Backup restore failed. ${describeImportFailure(
-              next.failureReason ?? next.failure_reason,
-              'backup_restore',
-            )}`
-          : next.status === 'completed'
-            ? 'Backup restored successfully.'
-            : next.status === 'partial'
-              ? 'Backup restored with warnings.'
-              : 'Backup restore is running. You can close this panel.'
-      setMessage(text)
-      if (next.status === 'completed' || next.status === 'partial') {
+      const next = await restoreNativeBackup(file, ownerId, current.signal, {
+        onStarted: (status) => {
+          if (!isCurrent()) return
+          started.current = true
+          setPhase(status.phase ?? 'running')
+        },
+        // prettier-ignore
+        onPhase: (value) => { if (isCurrent() && !dismissed.current && value) setPhase(value) },
+      })
+      if (!isCurrent()) return
+      let refreshFailed = false
+      if (next.state === 'completed' || next.state === 'partial') {
         try {
           await onChatsUpdated?.()
           await onProjectsUpdated?.()
         } catch {
-          if (!current.signal.aborted)
-            setMessage(text + ' Reload to see restored chats.')
+          refreshFailed = true
         }
       }
+      if (!isCurrent()) return
+      if (!dismissed.current || next.state !== 'pending') setResult(next)
+      if (!dismissed.current || next.state !== 'pending')
+        setMessage(
+          refreshFailed
+            ? next.state === 'partial'
+              ? 'Backup restored with warnings, but chats could not be refreshed. Reload to see restored chats.'
+              : 'Backup restored successfully, but chats could not be refreshed. Reload to see restored chats.'
+            : next.state === 'pending'
+              ? "The cloud restore is still running. We'll email you when it finishes. No local chats were restored; reselect this archive afterward to restore them."
+              : next.state === 'interrupted'
+                ? "The cloud restore was interrupted before we could confirm the result. We'll email you whether it finished or failed. No local chats were restored; reselect this archive afterward to restore them."
+                : next.state === 'failed'
+                  ? `The cloud restore failed. ${describeImportFailure(next.failureReason, 'backup_restore')} No local chats were restored.`
+                  : next.state === 'partial'
+                    ? 'Backup restored with warnings.'
+                    : 'Backup restored successfully.',
+        )
     } catch (cause) {
-      if (!current.signal.aborted)
+      if (isCurrent())
         setMessage(cause instanceof Error ? cause.message : 'Restore failed')
     } finally {
       if (controller.current === current) {
@@ -89,11 +105,6 @@ export function NativeBackupRestore({
         if (input.current) input.current.value = ''
       }
     }
-  }
-  const restore = (file: File) => {
-    setResult(null)
-    setPhase(INITIAL_RESTORE_PHASE)
-    return run((signal) => startImport(file, 'tinfoil', signal))
   }
 
   if (!available) return null
@@ -121,58 +132,49 @@ export function NativeBackupRestore({
       >
         Restore Tinfoil Backup
       </button>
-      {busy && (
+      {busy && !dismissed.current && (
         <div className="mt-3 flex items-center justify-between text-xs text-content-muted">
-          <span>
-            {phase === 'uploading' ? 'Uploading...' : 'Checking restore...'}
-          </span>
+          {/* prettier-ignore */}
+          <span>{started.current ? `Enclave restore: ${phase}...` : 'Validating and uploading...'}</span>
           <button
             type="button"
             className="font-medium text-content-primary hover:underline"
             onClick={() => {
-              controller.current?.abort()
-              controller.current = null
-              // The same archive can then be chosen again.
-              if (input.current) input.current.value = ''
-              setBusy(false)
-              setMessage(
-                'Stopped waiting. Any accepted restore continues on the server.',
-              )
+              if (!started.current) return controller.current?.abort()
+              dismissed.current = true
+              // prettier-ignore
+              setMessage("The enclave restore continues. We'll email you when it finishes.")
             }}
           >
-            Cancel
+            {started.current ? 'Close' : 'Cancel'}
           </button>
         </div>
       )}
-      {!busy &&
-        result?.jobId &&
-        (result.status === 'running' || result.status === 'staging') && (
-          <button
-            type="button"
-            className="mt-3 text-xs text-content-primary hover:underline"
-            onClick={() => {
-              void run((signal) => importStatus(result.jobId!, signal))
-            }}
-          >
-            Check restore progress
-          </button>
-        )}
       {message && (
         <p className="mt-3 text-xs text-content-primary" role="status">
           {message}
         </p>
       )}
-      {result?.counts && (
-        <ul className="mt-2 space-y-1 text-xs text-content-muted">
-          {Object.entries(result.counts).map(([kind, value]) => (
-            <li key={kind}>
-              {kind.replaceAll('_', ' ')}: {value.imported} imported,{' '}
-              {value.skipped} skipped, {value.failed} failed, {value.blocked}{' '}
-              blocked
-            </li>
-          ))}
-        </ul>
-      )}
+      {result &&
+        result.state !== 'pending' &&
+        result.state !== 'interrupted' && (
+          <ul className="mt-2 space-y-1 text-xs text-content-muted">
+            {NATIVE_RESTORE_KINDS.map((kind) => {
+              const value = result.report[kind]
+              return (
+                <li key={kind}>
+                  {kind.replaceAll('_', ' ')}: {value.imported} imported,{' '}
+                  {value.skipped} skipped, {value.failed} failed,{' '}
+                  {value.blocked} blocked
+                  {value.warnings.length > 0 &&
+                    `, warnings: ${value.warnings.join('; ')}`}
+                  {value.errors.length > 0 &&
+                    `, errors: ${value.errors.join('; ')}`}
+                </li>
+              )
+            })}
+          </ul>
+        )}
     </div>
   )
 }

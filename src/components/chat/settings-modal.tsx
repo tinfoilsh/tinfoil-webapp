@@ -23,7 +23,7 @@ import {
   PremiumProjectImportRequiredError,
 } from '@/services/chat-import/local-tinfoil-import'
 import {
-  exportArchive,
+  exportClaudeProjects,
   ImportSequenceError,
   importStatus,
   runImports,
@@ -1977,7 +1977,7 @@ export function SettingsModal({
     setExportType('projects')
     setProjectExportResult(null)
     try {
-      await exportArchive('claude-projects')
+      await exportClaudeProjects()
     } catch (cause) {
       setProjectExportResult({
         error:
@@ -3166,14 +3166,14 @@ ${encryptionKey.replace('key_', '')}
                     </div>
                     <NativeBackupExport
                       available={Boolean(
-                        cloudSyncEnabled &&
+                        isSignedIn &&
                         canTransferProjectData(Boolean(isPremium)) &&
                         encryptionKey,
                       )}
                     />
                     <NativeBackupRestore
                       available={Boolean(
-                        cloudSyncEnabled &&
+                        isSignedIn &&
                         canTransferProjectData(Boolean(isPremium)) &&
                         user?.id &&
                         encryptionKey,

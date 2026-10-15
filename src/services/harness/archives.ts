@@ -20,7 +20,7 @@ export interface ImportStatusResponse {
     { imported: number; skipped: number; failed: number; blocked: number }
   >
 }
-export function saveDownload(blob: Blob, filename: string) {
+function saveDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
@@ -28,16 +28,16 @@ export function saveDownload(blob: Blob, filename: string) {
   anchor.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
-export async function exportArchive(
-  format: 'tinfoil-backup' | 'claude-projects',
-  signal?: AbortSignal,
-) {
-  const blob = await harnessAPI().download('/v1/export', { format }, signal)
-  signal?.throwIfAborted()
-  saveDownload(
-    blob,
-    format === 'tinfoil-backup' ? 'tinfoil-backup.zip' : 'projects.json',
+// The harness builds the Claude-compatible projects.json. Native backups are
+// built in services/native-backup, which adds the chats on this device.
+export async function exportClaudeProjects(signal?: AbortSignal) {
+  const blob = await harnessAPI().download(
+    '/v1/export',
+    { format: 'claude-projects' },
+    signal,
   )
+  signal?.throwIfAborted()
+  saveDownload(blob, 'projects.json')
 }
 export async function startImport(
   file: File,

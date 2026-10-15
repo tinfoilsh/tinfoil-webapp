@@ -1,8 +1,11 @@
-import { exportArchive } from '@/services/harness/archives'
+import {
+  nativeBackupExportError,
+  runNativeBackupExport,
+  type NativeBackupExportProgress,
+} from '@/services/native-backup/export'
 import { TfDownload } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
-type NativeBackupExportProgress = 'collecting' | 'formatting' | 'writing'
 
 const progressLabel: Record<NativeBackupExportProgress, string> = {
   collecting: 'Collecting cloud data...',
@@ -40,16 +43,34 @@ export function NativeBackupExport({ available }: { available: boolean }) {
     controller.current = current
     const isCurrent = () => controller.current === current
     try {
-      setProgress('collecting')
-      await exportArchive('tinfoil-backup', current.signal)
-      if (isCurrent() && availableRef.current)
-        setMessage('Backup saved successfully.')
+      const result = await runNativeBackupExport(current.signal, (value) => {
+        if (isCurrent()) setProgress(value)
+      })
+      if (!isCurrent() || !availableRef.current) return
+      const warningDetails = result
+        ? [
+            result.omitted
+              ? `${result.omitted} source item${result.omitted === 1 ? '' : 's'} could not be included.`
+              : '',
+            result.adjustedRelationships
+              ? `${result.adjustedRelationships} relationship${result.adjustedRelationships === 1 ? ' was' : 's were'} adjusted to keep the archive valid.`
+              : '',
+            result.localInventoryUnstable
+              ? 'Local chats changed repeatedly; included local chats are a partial snapshot.'
+              : '',
+          ]
+            .filter(Boolean)
+            .join(' ')
+        : ''
+      setMessage(
+        result && !result.complete
+          ? `Backup saved with warnings. ${warningDetails}`
+          : 'Backup saved successfully.',
+      )
     } catch (error) {
       if (!isCurrent()) return
       setFailed(true)
-      setMessage(
-        error instanceof Error ? error.message : 'Unable to export backup.',
-      )
+      setMessage(nativeBackupExportError(error))
     } finally {
       if (isCurrent()) {
         controller.current = null
@@ -64,8 +85,7 @@ export function NativeBackupExport({ available }: { available: boolean }) {
     <div>
       <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4">
         <p className="font-aeonik-fono text-xs text-content-muted">
-          Export your synced chats, projects and settings as a portable ZIP
-          archive. Chats kept only on this device are not included.
+          Export your cloud and local data as a portable ZIP archive.
         </p>
         <button
           type="button"
