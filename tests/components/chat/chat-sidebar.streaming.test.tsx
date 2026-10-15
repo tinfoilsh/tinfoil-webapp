@@ -5,6 +5,7 @@ import {
   type ChatDragSource,
 } from '@/components/chat/drag-context'
 import type { Chat } from '@/components/chat/types'
+import { SETTINGS_CLOUD_SYNC_ENABLED } from '@/constants/storage-keys'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -105,6 +106,7 @@ function SidebarHarness({
 describe('chat sidebar during streaming', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
   })
 
   it('keeps other chats visible and selectable through streaming updates', () => {

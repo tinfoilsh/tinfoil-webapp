@@ -1,6 +1,7 @@
 import { PAGINATION } from '@/config'
 import {
   UI_EXPAND_PROJECTS_ON_MOUNT,
+  UI_SIDEBAR_ACTIVE_TAB,
   UI_SIDEBAR_CHAT_HISTORY_EXPANDED,
   UI_SIDEBAR_EXPAND_SECTION,
   UI_SIDEBAR_FAVORITES_EXPANDED,
@@ -10,6 +11,15 @@ import {
 import { useProjects } from '@/hooks/use-projects'
 import { toast } from '@/hooks/use-toast'
 import { useUpgradeToPro } from '@/hooks/use-upgrade-to-pro'
+import {
+  useCloudSyncSetting,
+  useLocalChatsSetting,
+} from '@/services/harness/storage-mode'
+import {
+  hasUserSetLocalOnlyPreference,
+  isLocalOnlyModeEnabled,
+  setLocalOnlyModeEnabled,
+} from '@/utils/cloud-sync-settings'
 import { postAuthRedirectTarget } from '@/utils/redirect-url'
 import { useAuth, useUser } from '@clerk/react'
 import {
@@ -18,6 +28,7 @@ import {
   TfChevronDown,
   TfChevronRight,
   TfCloud,
+  TfFloppyDisk,
   TfFolder,
   TfFolderPlus,
   TfLockLocked,
@@ -70,6 +81,12 @@ import type { Chat } from './types'
 
 const FAVORITES_PANEL_ID = 'sidebar-favorites-panel'
 const ENCRYPTION_NOTE_ID = 'sidebar-encryption-note'
+const STORAGE_TAB_CLASS_NAME =
+  'flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors'
+const STORAGE_TAB_ACTIVE_CLASS_NAME =
+  'border-tinfoil-accent-blue bg-tinfoil-accent-blue text-white hover:bg-tinfoil-accent-blue-hover'
+const STORAGE_TAB_INACTIVE_CLASS_NAME =
+  'border-border-subtle bg-surface-chat-background text-content-secondary hover:border-border-strong hover:text-content-primary'
 const SIDEBAR_CTA_CLASS_NAME =
   'block w-full rounded-md bg-brand-accent-dark px-4 py-2 text-center text-sm font-medium text-white transition-all hover:bg-brand-accent-dark/90'
 
@@ -265,8 +282,27 @@ export function ChatSidebar({
     upgradeLoading,
     upgradeError,
   } = useUpgradeToPro()
-  const { keyReady: cloudSyncEnabled } = useHarness()
+  const { keyReady } = useHarness()
   const { isLoaded: isAuthLoaded, isSignedIn } = useAuth()
+  // Without cloud sync every chat stays on this device. With it, "Enable
+  // local chats" adds a Local tab whose new chats stay on this device.
+  const cloudSyncSetting = useCloudSyncSetting()
+  const cloudSyncEnabled = Boolean(isSignedIn && cloudSyncSetting)
+  const localOnlyModeEnabled = useLocalChatsSetting()
+  const showStorageTabs = cloudSyncEnabled && localOnlyModeEnabled
+  const [activeTab, setActiveTab] = useState<'cloud' | 'local'>(() => {
+    if (currentChat?.isBlankChat && currentChat.isLocalOnly) {
+      return 'local'
+    }
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem(UI_SIDEBAR_ACTIVE_TAB)
+      if (stored === 'local' && isLocalOnlyModeEnabled()) {
+        return 'local'
+      }
+    }
+    return 'cloud'
+  })
+  const showLocalTab = showStorageTabs && activeTab === 'local'
   const upsellVariant = getSidebarUpsellVariant({
     isAuthLoaded,
     isSignedIn,
@@ -300,17 +336,19 @@ export function ChatSidebar({
     setIsMac(/Mac|iPod|iPhone|iPad/.test(navigator.platform))
   }, [])
   const modKey = isMac ? '⌘' : 'Ctrl+'
-  const newChatHref = getNewChatPath()
+  const newChatHref = getNewChatPath({ isLocalOnly: showLocalTab })
   const isCurrentNewChat =
     currentChat?.isBlankChat &&
     !currentChat.isTemporary &&
-    !currentChat.isLocalOnly
+    (!showStorageTabs || Boolean(currentChat.isLocalOnly) === showLocalTab)
 
   const {
     projects,
     loading: projectsLoading,
     refresh: refreshProjects,
-  } = useProjects({ autoLoad: isSignedIn && cloudSyncEnabled && isPremium })
+  } = useProjects({
+    autoLoad: cloudSyncEnabled && keyReady && isPremium,
+  })
 
   const { deleteProject, activeProject } = useProject()
 
@@ -341,6 +379,45 @@ export function ChatSidebar({
 
   // Apply zoom prevention for mobile
   usePreventZoom()
+
+  // Persist active tab selection to sessionStorage
+  useEffect(() => {
+    sessionStorage.setItem(UI_SIDEBAR_ACTIVE_TAB, activeTab)
+  }, [activeTab])
+
+  useEffect(() => {
+    if (!localOnlyModeEnabled && activeTab === 'local') setActiveTab('cloud')
+  }, [localOnlyModeEnabled, activeTab])
+
+  // Auto-enable local-only mode if user has existing local chats and hasn't
+  // explicitly set the preference (matches iOS ChatViewModel behavior)
+  useEffect(() => {
+    if (!cloudSyncEnabled || hasUserSetLocalOnlyPreference()) return
+    if (chats.some((chat) => chat.isLocalOnly && !chat.isBlankChat)) {
+      setLocalOnlyModeEnabled(true)
+    }
+  }, [cloudSyncEnabled, chats])
+
+  // Update blank chat's isLocalOnly when active tab changes. Only a blank
+  // chat switches, so a selected chat is never interrupted, and temporary
+  // chats keep their mode.
+  useEffect(() => {
+    if (!showStorageTabs) return
+    if (
+      currentChat?.isBlankChat &&
+      !currentChat.isTemporary &&
+      Boolean(currentChat.isLocalOnly) !== showLocalTab
+    ) {
+      createNewChat(showLocalTab, false)
+    }
+  }, [
+    showStorageTabs,
+    showLocalTab,
+    createNewChat,
+    currentChat?.isBlankChat,
+    currentChat?.isLocalOnly,
+    currentChat?.isTemporary,
+  ])
 
   // Persist projects expanded state to sessionStorage
   useEffect(() => {
@@ -505,10 +582,24 @@ export function ChatSidebar({
     setIsChatHistoryExpanded(false)
   }, [hideScrollbarWhileSectionsAnimate])
 
-  const filteredChats = useMemo(
-    () => chats.filter((chat) => !chat.projectId && !chat.isBlankChat),
-    [chats],
-  )
+  const filteredChats = useMemo(() => {
+    // The incoming `chats` array is already sorted. We only filter here;
+    // the display order matches the server's pagination so newly-loaded
+    // pages slot in at the bottom without reshuffling.
+    if (cloudSyncEnabled) {
+      if (showLocalTab) {
+        return chats.filter(
+          (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
+        )
+      }
+      return chats.filter(
+        (chat) => !chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
+      )
+    }
+    return chats.filter(
+      (chat) => chat.isLocalOnly && !chat.projectId && !chat.isBlankChat,
+    )
+  }, [chats, cloudSyncEnabled, showLocalTab])
 
   const favoriteChats = useMemo(() => {
     const chatsById = new Map(chats.map((chat) => [chat.id, chat]))
@@ -533,7 +624,7 @@ export function ChatSidebar({
       clearDragState,
     })
 
-  const paginatesCloudChats = Boolean(isSignedIn && cloudSyncEnabled)
+  const paginatesCloudChats = cloudSyncEnabled && !showLocalTab
   const sortedChats = useMemo(
     () =>
       paginatesCloudChats
@@ -639,7 +730,7 @@ export function ChatSidebar({
                 onClick={(e) => {
                   if (!isPlainPrimaryClick(e)) return
                   e.preventDefault()
-                  createNewChat(false, true)
+                  createNewChat(showLocalTab, true)
                 }}
                 className={cn(
                   'flex h-10 w-10 items-center justify-center rounded-lg transition-colors',
@@ -811,7 +902,7 @@ export function ChatSidebar({
                 if (!isPlainPrimaryClick(e)) return
                 e.preventDefault()
                 if (isCurrentNewChat) return
-                createNewChat(false, true)
+                createNewChat(showLocalTab, true)
               }}
               className={cn(
                 'flex min-w-0 flex-1 items-center justify-between rounded-lg border px-2 py-2 text-sm transition-all duration-200',
@@ -1701,11 +1792,58 @@ export function ChatSidebar({
                   )}
                 >
                   <div className="pt-3">
+                    {/* Tabs for Cloud/Local chats - show when signed in, cloud sync enabled, and local-only mode enabled */}
+                    {showStorageTabs && (
+                      <div
+                        className="mx-4 mt-4 flex gap-2"
+                        role="tablist"
+                        aria-label="Chat storage"
+                      >
+                        <button
+                          id="chat-cloud-tab"
+                          role="tab"
+                          aria-selected={activeTab === 'cloud'}
+                          aria-controls="chat-storage-panel"
+                          onClick={() => setActiveTab('cloud')}
+                          className={cn(
+                            STORAGE_TAB_CLASS_NAME,
+                            activeTab === 'cloud'
+                              ? STORAGE_TAB_ACTIVE_CLASS_NAME
+                              : STORAGE_TAB_INACTIVE_CLASS_NAME,
+                          )}
+                        >
+                          <TfCloud className="h-3.5 w-3.5" aria-hidden="true" />
+                          Cloud
+                        </button>
+                        <button
+                          id="chat-local-tab"
+                          role="tab"
+                          aria-selected={activeTab === 'local'}
+                          aria-controls="chat-storage-panel"
+                          onClick={() => setActiveTab('local')}
+                          className={cn(
+                            STORAGE_TAB_CLASS_NAME,
+                            activeTab === 'local'
+                              ? STORAGE_TAB_ACTIVE_CLASS_NAME
+                              : STORAGE_TAB_INACTIVE_CLASS_NAME,
+                          )}
+                        >
+                          <TfFloppyDisk
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
+                          Local
+                        </button>
+                      </div>
+                    )}
+
                     {/* Description text - show when NOT displaying the cloud sync box */}
                     {(!isSignedIn || cloudSyncEnabled) && (
                       <div className="font-base mx-4 min-h-[36px] pb-3 pt-3 font-aeonik-fono text-xs text-content-muted">
                         {!isSignedIn ? (
                           'Your chats are stored temporarily in this browser tab. Create an account for persistent storage.'
+                        ) : showLocalTab ? (
+                          "Local chats are stored only on this device and won't sync across devices."
                         ) : (
                           <>
                             <button
@@ -1798,6 +1936,15 @@ export function ChatSidebar({
                   )}
                 >
                   <div
+                    {...(showStorageTabs
+                      ? {
+                          id: 'chat-storage-panel',
+                          role: 'tabpanel',
+                          'aria-labelledby': showLocalTab
+                            ? 'chat-local-tab'
+                            : 'chat-cloud-tab',
+                        }
+                      : {})}
                     onDragOver={(e) => {
                       if (
                         e.dataTransfer.types.includes('application/x-chat-id')
@@ -1859,25 +2006,27 @@ export function ChatSidebar({
                         chats={sortedChats as ChatItemData[]}
                         currentChatId={currentChat?.id}
                         currentChatIsBlank={currentChat?.isBlankChat}
+                        currentChatIsLocalOnly={currentChat?.isLocalOnly}
                         isDarkMode={isDarkMode}
                         pixelateSidebarChatTitles={pixelateSidebarChatTitles}
                         showEncryptionStatus={true}
                         enableTitleAnimation={true}
                         isDraggable={
-                          isSignedIn &&
-                          cloudSyncEnabled &&
-                          !!onMoveChatToProject
+                          paginatesCloudChats && !!onMoveChatToProject
                         }
                         showMoveToProject={
-                          isSignedIn &&
+                          paginatesCloudChats &&
                           isPremium &&
-                          cloudSyncEnabled &&
                           !!onMoveChatToProject
                         }
                         getChatHref={(chat) =>
                           chat.isBlankChat
-                            ? getNewChatPath()
-                            : getChatPath(chat.id)
+                            ? getNewChatPath({
+                                isLocalOnly: chat.isLocalOnly,
+                              })
+                            : getChatPath(chat.id, {
+                                isLocalOnly: chat.isLocalOnly,
+                              })
                         }
                         onSelectChat={handleChatSelect}
                         onAfterSelect={undefined}
@@ -1914,6 +2063,19 @@ export function ChatSidebar({
                         }
                         pinnedChatIds={pinnedChatIds}
                         onTogglePin={onToggleFavorite}
+                        emptyState={
+                          showLocalTab ? (
+                            <div className="rounded-lg border border-border-subtle bg-surface-sidebar p-4 text-center">
+                              <p className="text-sm text-content-muted">
+                                No local chats yet
+                              </p>
+                              <p className="mt-1 text-xs text-content-muted">
+                                Disable cloud sync in settings to create
+                                local-only chats
+                              </p>
+                            </div>
+                          ) : undefined
+                        }
                         loadMoreButton={
                           <>
                             {/* Shimmer placeholder while loading or waiting for chats to render */}
