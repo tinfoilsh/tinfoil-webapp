@@ -648,7 +648,7 @@ export function usePasskeyBackup({
 
       if (authorizationMode === 'explicit_start_fresh') {
         try {
-          await authorizeCurrentPrimaryKeyOrThrow('explicit_start_fresh')
+          await authorizeCurrentPrimaryKeyOrThrow()
           return { mode: 'explicit_start_fresh' }
         } catch {
           await rollbackToPreviousKeys(previousKeys)
@@ -670,7 +670,7 @@ export function usePasskeyBackup({
       }
 
       try {
-        await authorizeCurrentPrimaryKeyOrThrow('validated')
+        await authorizeCurrentPrimaryKeyOrThrow()
         return { mode: 'validated' }
       } catch {
         await rollbackToPreviousKeys(previousKeys)
@@ -1287,7 +1287,7 @@ export function usePasskeyBackup({
         if (!validation.canWrite) {
           return false
         }
-        await authorizeCurrentPrimaryKeyOrThrow('validated')
+        await authorizeCurrentPrimaryKeyOrThrow()
         authorizationMode = 'validated'
       }
 
@@ -1354,7 +1354,7 @@ export function usePasskeyBackup({
       if (!newKey) return null
       didSetNewKey = true
 
-      await authorizeCurrentPrimaryKeyOrThrow('explicit_start_fresh')
+      await authorizeCurrentPrimaryKeyOrThrow()
       applyNewPasskeyKey()
 
       logInfo('New key split created with passkey', {

@@ -10,13 +10,10 @@ export type CloudKeyAuthorizationMode = 'validated' | 'explicit_start_fresh'
 export async function getCurrentCloudKeyAuthorizationMode(): Promise<CloudKeyAuthorizationMode | null> {
   return (await validateCurrentPrimaryKey()).canWrite ? 'validated' : null
 }
-export async function authorizeCurrentPrimaryKeyOrThrow(
-  mode: CloudKeyAuthorizationMode = 'validated',
-): Promise<void> {
-  if (mode === 'explicit_start_fresh') {
-    await registerStartFreshKeyIfNeeded()
-    return
-  }
+// A key recovered from a Start Fresh backup is authorized like any other, as
+// on main: it never replaces another registered key or drops legacy data.
+// Only an explicit Start Fresh calls registerStartFreshKeyIfNeeded.
+export async function authorizeCurrentPrimaryKeyOrThrow(): Promise<void> {
   const validation = await validateCurrentPrimaryKey()
   if (!validation.canWrite)
     throw new CloudKeySetupError(
@@ -55,16 +52,6 @@ export async function authorizeCurrentPrimaryKeyOrThrow(
         createdVia: 'manual',
         idempotencyKey: newIdempotencyKey(),
       })
-  }
-}
-export async function authorizeCurrentPrimaryKey(
-  mode: CloudKeyAuthorizationMode,
-): Promise<boolean> {
-  try {
-    await authorizeCurrentPrimaryKeyOrThrow(mode)
-    return true
-  } catch {
-    return false
   }
 }
 export async function registerStartFreshKeyIfNeeded() {
