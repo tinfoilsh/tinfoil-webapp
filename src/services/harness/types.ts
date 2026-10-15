@@ -1,3 +1,5 @@
+import type { LocalTurnThread } from './local-threads'
+
 export type Json =
   null | boolean | number | string | Json[] | { [key: string]: Json }
 export type RecordValue = { [key: string]: Json }
@@ -19,6 +21,7 @@ export interface Attachment {
   size: number
   thumbnail?: string | null
   textContent?: string
+  description?: string
   attKey?: string
   pages?: number | null
   status: string
@@ -52,6 +55,7 @@ export interface Message {
   attachments?: Attachment[]
   isError?: boolean
   isInterrupted?: boolean
+  usage?: Json
 }
 
 export interface ThreadSummary {
@@ -139,6 +143,9 @@ export interface Turn {
   threadId: string | null
   kind: 'send' | 'edit' | 'regenerate' | 'resolve' | 'retryToolCall' | 'ask'
   ephemeral?: boolean
+  local?: boolean
+  thread?: LocalTurnThread
+  profile?: RecordValue
   projectId?: string | null
   presetId?: string | null
   content?: string
