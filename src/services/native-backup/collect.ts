@@ -182,7 +182,7 @@ function collectLocalChat(thread: LocalThread): ChatCollection {
     messageIndex: number,
     attachmentIndex: number,
     attachment: LocalAttachment,
-    base64: string,
+    base64: string | undefined,
     page?: number,
   ): string => {
     const id = JSON.stringify(
@@ -203,6 +203,9 @@ function collectLocalChat(thread: LocalThread): ChatCollection {
             page,
           ],
     )
+    // An image kept only as a thumbnail has no bytes to back up.
+    if (!base64)
+      throw new OmittedItem(id, 'unavailable', 'attachment_not_found')
     let bytes: Uint8Array
     try {
       bytes = base64ToUint8Array(base64)
@@ -297,8 +300,6 @@ function collectLocalChat(thread: LocalThread): ChatCollection {
                 : {}),
             },
           ]
-        // An image kept only as a thumbnail has no bytes to back up.
-        if (!attachment.base64) return []
         try {
           return [
             {

@@ -161,12 +161,6 @@ const deviceChat: LocalThread = {
           base64: uint8ArrayToBase64(png),
         },
         {
-          id: 'thumb-only',
-          type: 'image',
-          fileName: 'old.png',
-          thumbnailBase64: 'dGh1bWI=',
-        },
-        {
           id: 'scan',
           type: 'document',
           fileName: 'scan.pdf',
@@ -221,7 +215,7 @@ const deviceChat: LocalThread = {
 }
 
 const photoId = JSON.stringify(['attachment', LOCAL_ID, 0, 0, 'photo'])
-const pageId = JSON.stringify(['page', LOCAL_ID, 0, 2, 'scan', 1])
+const pageId = JSON.stringify(['page', LOCAL_ID, 0, 1, 'scan', 1])
 
 // deviceChat in the backup's format, as the harness writes a cloud chat.
 const backedUpChat = {
@@ -460,13 +454,19 @@ describe('creating a native backup', () => {
           id: 'u1',
           role: 'user',
           createdAt: '2026-04-01T09:00:01Z',
-          content: 'Two files',
+          content: 'Three files',
           attachments: [
             {
               id: 'not-an-image',
               type: 'image',
               fileName: 'notes.png',
               base64: btoa('plain text'),
+            },
+            {
+              id: 'thumb-only',
+              type: 'image',
+              fileName: 'old.png',
+              thumbnailBase64: 'dGh1bWI=',
             },
             {
               id: 'photo',
@@ -481,7 +481,7 @@ describe('creating a native backup', () => {
 
     const { result, file } = await exportBackup()
 
-    expect(result).toMatchObject({ complete: false, omitted: 2 })
+    expect(result).toMatchObject({ complete: false, omitted: 3 })
     const contents = await readNativeBackup(file)
     expect(contents.backup).toMatchObject({
       complete: false,
@@ -500,16 +500,30 @@ describe('creating a native backup', () => {
           category: 'invalid',
           reason: 'attachment_type_unsupported',
         },
+        // An image kept only as a thumbnail has no bytes to back up.
+        {
+          kind: 'attachment',
+          source_id: JSON.stringify([
+            'attachment',
+            LOCAL_ID,
+            0,
+            1,
+            'thumb-only',
+          ]),
+          parent_source_id: LOCAL_ID,
+          category: 'unavailable',
+          reason: 'attachment_not_found',
+        },
       ],
       warnings: [
-        { code: 'source_items_omitted', category: 'source_coverage', count: 2 },
+        { code: 'source_items_omitted', category: 'source_coverage', count: 3 },
       ],
     })
     expect(contents.localChats[0].messages[0].attachments).toEqual([
       {
         type: 'image',
         id: 'photo',
-        imageId: JSON.stringify(['attachment', LOCAL_ID, 0, 1, 'photo']),
+        imageId: JSON.stringify(['attachment', LOCAL_ID, 0, 2, 'photo']),
       },
     ])
   })
