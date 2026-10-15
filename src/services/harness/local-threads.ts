@@ -343,6 +343,20 @@ export function newLocalThread(
   }
 }
 
+// A chat parsed from an export, as a local chat. Its messages use the
+// previous client's format, which is upgraded as that client's rows are; it
+// is dated by its import, as the previous client dated a saved chat.
+export function importedLocalThread(chat: Chat): LocalThread {
+  const createdAt = isoTime(chat.createdAt) || now()
+  return readLocalThread({
+    ...newLocalThread(chat.id, {}, createdAt),
+    title: chat.title,
+    titleState: chat.titleState,
+    updatedAt: now(),
+    messages: chat.messages,
+  })
+}
+
 const carriesBytes = (attachment: LocalAttachment) =>
   !!attachment.base64 || !!attachment.pages?.some((page) => page.image)
 

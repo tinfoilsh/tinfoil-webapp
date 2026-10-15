@@ -122,7 +122,13 @@ describe('settings opening', () => {
         'Permanently delete every chat from this browser. This cannot be undone.',
       ),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Export Chats' })).toBeEnabled()
+    for (const name of [
+      'Import from ChatGPT',
+      'Import from Claude',
+      'Import from Tinfoil',
+      'Export Chats',
+    ])
+      expect(screen.getByRole('button', { name })).toBeEnabled()
     for (const name of [
       'Cloud Sync',
       'Delete all projects',
@@ -298,7 +304,7 @@ describe('settings opening', () => {
       authState.isSignedIn = true
     })
 
-    it('keeps import and project data controls with cloud sync', () => {
+    it('keeps project data controls with cloud sync', () => {
       render(
         <Harness
           initialTab="data"
@@ -315,18 +321,18 @@ describe('settings opening', () => {
           'Permanently delete every chat from this device. This cannot be undone.',
         ),
       ).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Export Chats' })).toBeEnabled()
       for (const name of [
-        'Delete all projects',
         'Import from ChatGPT',
-        'Export Projects for Claude',
+        'Import from Claude',
+        'Import from Tinfoil',
+        'Export Chats',
       ])
+        expect(screen.getByRole('button', { name })).toBeEnabled()
+      for (const name of ['Delete all projects', 'Export Projects for Claude'])
         expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
       expect(
-        screen.getByText(
-          /Importing chats requires end-to-end encrypted cloud sync/,
-        ),
-      ).toBeInTheDocument()
+        screen.queryByText(/requires end-to-end encrypted cloud sync/),
+      ).not.toBeInTheDocument()
     })
 
     it('deletes the chats on this device', async () => {

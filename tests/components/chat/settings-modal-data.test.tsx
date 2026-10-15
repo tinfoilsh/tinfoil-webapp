@@ -3,6 +3,7 @@ import {
   AUTH_ACTIVE_USER_ID,
   SETTINGS_CLOUD_SYNC_ENABLED,
 } from '@/constants/storage-keys'
+import { buildChatExport } from '@/services/chat-export/export-archive'
 import type { HarnessClient } from '@/services/harness/client'
 import {
   localThreadStore,
@@ -26,6 +27,7 @@ import {
   vi,
 } from 'vitest'
 import { testSession } from '../../harness-fixture'
+import { createFunctionalImportWorker } from '../../services/chat-import/functional-import-worker'
 
 const page = vi.hoisted(() => ({
   isSignedIn: true,
@@ -204,6 +206,7 @@ afterEach(() => {
   chatEvents.clear()
   deletedChatsTracker.clear()
   sessionStorage.clear()
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -313,5 +316,294 @@ describe('exporting chats from the Data tab', () => {
       variant: 'destructive',
     })
     expect(downloads).toEqual([])
+  })
+})
+
+const REVERSE_ID = /^\d{13}_[0-9a-f-]{36}$/
+
+// Picks files in a source's import panel, as its file picker would.
+function pickFiles(provider: string, files: File[], input = 0) {
+  const toggle = screen.getByRole('button', { name: `Import from ${provider}` })
+  if (toggle.getAttribute('aria-expanded') !== 'true') fireEvent.click(toggle)
+  const panel = document.getElementById(toggle.getAttribute('aria-controls')!)!
+  fireEvent.change(panel.querySelectorAll('input[type="file"]')[input], {
+    target: { files },
+  })
+}
+
+const chatGptExport = new File(
+  [
+    JSON.stringify([
+      {
+        title: 'Plants',
+        create_time: 1767261600,
+        update_time: 1767261700,
+        mapping: {
+          root: { id: 'root', children: ['q'] },
+          q: {
+            id: 'q',
+            parent: 'root',
+            children: ['a'],
+            message: {
+              author: { role: 'user' },
+              content: { content_type: 'text', parts: ['Which herbs?'] },
+              create_time: 1767261601,
+            },
+          },
+          a: {
+            id: 'a',
+            parent: 'q',
+            children: [],
+            message: {
+              author: { role: 'assistant' },
+              content: { content_type: 'text', parts: ['Basil.'] },
+              create_time: 1767261602,
+            },
+          },
+        },
+      },
+    ]),
+  ],
+  'conversations.json',
+  { type: 'application/json' },
+)
+
+describe('importing chats from the Data tab', () => {
+  async function importStaged(label = 'Import conversations') {
+    fireEvent.click(screen.getByRole('button', { name: label }))
+    await waitFor(() => expect(page.toast).toHaveBeenCalled())
+  }
+
+  it('stores ChatGPT conversations on this device without cloud sync', async () => {
+    connect()
+    renderData()
+
+    pickFiles('ChatGPT', [chatGptExport])
+    await importStaged()
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import complete',
+      description: 'Imported 1 chat from ChatGPT',
+    })
+    const [listed] = await localThreadStore('device').list()
+    expect(listed.id).toMatch(REVERSE_ID)
+    const stored = await localThreadStore('device').get(listed.id)
+    expect(stored).toMatchObject({
+      title: 'Plants',
+      titleState: 'generated',
+      createdAt: '2026-01-01T10:00:00Z',
+      messages: [
+        {
+          id: `${listed.id}-message-0`,
+          role: 'user',
+          createdAt: '2026-01-01T10:00:01Z',
+          content: 'Which herbs?',
+        },
+        {
+          id: `${listed.id}-message-1`,
+          role: 'assistant',
+          createdAt: '2026-01-01T10:00:02Z',
+          content: 'Basil.',
+          timeline: [
+            {
+              type: 'content',
+              id: `${listed.id}-message-1-content`,
+              content: 'Basil.',
+            },
+          ],
+        },
+      ],
+    })
+    expect(stored?.codeExecutionAccessToken).toMatch(/^[0-9a-f]{64}$/)
+    expect(client.upload).not.toHaveBeenCalled()
+    expect(screen.getByRole('status')).toHaveTextContent('1 chat imported')
+  })
+
+  it("stores a signed-out visitor's Claude conversations in this tab", async () => {
+    page.isSignedIn = false
+    connect()
+    renderData()
+
+    pickFiles('Claude', [
+      new File(
+        [
+          JSON.stringify([
+            {
+              uuid: 'c-1',
+              name: 'Soup',
+              created_at: '2026-01-02T10:00:00Z',
+              updated_at: '2026-01-02T10:05:00Z',
+              chat_messages: [
+                {
+                  uuid: 'm-1',
+                  text: 'Leek soup?',
+                  sender: 'human',
+                  created_at: '2026-01-02T10:00:01Z',
+                },
+                {
+                  uuid: 'm-2',
+                  text: 'Yes.',
+                  sender: 'assistant',
+                  created_at: '2026-01-02T10:00:02Z',
+                  content: [{ type: 'thinking', thinking: 'Warm' }],
+                },
+              ],
+            },
+          ]),
+        ],
+        'conversations.json',
+      ),
+    ])
+    await importStaged()
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import complete',
+      description: 'Imported 1 chat from Claude',
+    })
+    expect(await localThreadStore('device').list()).toEqual([])
+    const [listed] = await localThreadStore('tab').list()
+    const stored = await localThreadStore('tab').get(listed.id)
+    expect(
+      stored?.messages.map((m) => [m.role, m.content, m.timeline]),
+    ).toEqual([
+      ['user', 'Leek soup?', undefined],
+      [
+        'assistant',
+        'Yes.',
+        [
+          {
+            type: 'thinking',
+            id: `${listed.id}-message-1-thinking`,
+            content: 'Warm',
+            duration: null,
+          },
+          {
+            type: 'content',
+            id: `${listed.id}-message-1-content`,
+            content: 'Yes.',
+          },
+        ],
+      ],
+    ])
+  })
+
+  it('stores a Tinfoil export with its images on this device', async () => {
+    connect()
+    vi.stubGlobal('Worker', createFunctionalImportWorker())
+    const image = new Uint8Array([137, 80, 78, 71, 9])
+    const archive = await buildChatExport(
+      [
+        {
+          id: 'source',
+          title: 'Trip',
+          createdAt: new Date('2026-02-01T10:00:00Z'),
+          messages: [
+            {
+              role: 'user',
+              content: 'Our map',
+              timestamp: new Date('2026-02-01T10:00:01Z'),
+              attachments: [
+                {
+                  id: 'map',
+                  type: 'image',
+                  fileName: 'map.png',
+                  mimeType: 'image/png',
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'project-chat',
+          title: 'Budget',
+          projectId: 'project-1',
+          createdAt: new Date('2026-02-01T10:00:00Z'),
+          messages: [
+            {
+              role: 'user',
+              content: 'Costs',
+              timestamp: new Date('2026-02-01T10:00:01Z'),
+            },
+          ],
+        },
+      ],
+      async () => image,
+    )
+    renderData()
+
+    pickFiles('Tinfoil', [
+      new File([archive.data as Uint8Array<ArrayBuffer>], archive.filename, {
+        type: archive.mimeType,
+      }),
+    ])
+    await waitFor(() => expect(page.toast).toHaveBeenCalled())
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Chats imported; project chats skipped',
+      description:
+        'Imported 1 chat. Premium is required to import the 1 project chat.',
+    })
+    const [listed] = await localThreadStore('device').list()
+    const stored = await localThreadStore('device').get(listed.id)
+    expect(stored?.title).toBe('Trip')
+    expect(stored?.messages[0].attachments).toEqual([
+      {
+        id: 'map',
+        type: 'image',
+        fileName: 'map.png',
+        mimeType: 'image/png',
+        fileSize: image.length,
+        base64: 'iVBORwk=',
+      },
+    ])
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Skipped 1 project chat. Premium is required to import project chats.',
+    )
+  })
+
+  it('reports an export that cannot be parsed', async () => {
+    connect()
+    renderData()
+
+    pickFiles('ChatGPT', [new File(['{ nope'], 'conversations.json')])
+    await importStaged()
+
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import failed',
+      description: 'Could not parse the ChatGPT export file',
+      variant: 'destructive',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'conversations.json is not valid JSON',
+    )
+    expect(await localThreadStore('device').list()).toEqual([])
+  })
+
+  it('uploads the export to the chat service with cloud sync', async () => {
+    connect({ cloud: true })
+    client.upload.mockResolvedValue({ jobId: 'job-1' })
+    client.post.mockResolvedValue({
+      status: 'running',
+      imported: 0,
+      failed: 0,
+      total: 1,
+    })
+    renderData()
+
+    pickFiles('ChatGPT', [chatGptExport])
+    await importStaged()
+
+    expect(client.upload).toHaveBeenCalledExactlyOnceWith(
+      '/v1/import',
+      chatGptExport,
+      { key: KEY, source: 'chatgpt' },
+      expect.any(AbortSignal),
+    )
+    expect(page.toast).toHaveBeenCalledExactlyOnceWith({
+      title: 'Import started',
+      description:
+        "Your ChatGPT export is being imported securely. We'll email you when it's done.",
+    })
+    expect(await localThreadStore('device').list()).toEqual([])
   })
 })
