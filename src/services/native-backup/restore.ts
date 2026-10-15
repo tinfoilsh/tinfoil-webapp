@@ -369,7 +369,7 @@ export async function readNativeBackup(
     const images: NativeBackupImageInput[] = []
     for (const image of value.images)
       await readImage(image, options.signal, (bytes) => {
-        images.push({ metadata: image.metadata, bytes })
+        images.push({ metadata: image.metadata, bytes: bytes.slice() })
       })
     // prettier-ignore
     return { backup: value.backup, projects: value.projects, documents: value.documents, cloudChats: value.cloudChats, localChats: value.localChats, relationships: value.relationships, images }

@@ -545,6 +545,29 @@ describe('native backup restore validation and cloud packaging', () => {
       })),
     )
 
+    // An archive reader may reuse an entry's buffer once it is released.
+    const reused: NativeRestoreArchive = {
+      entries: [
+        { path: 'manifest.json', bytes: formatted.manifestBytes },
+        ...formatted.files,
+      ].map(({ path, bytes }) => ({
+        path,
+        directory: false,
+        encrypted: false,
+        compressedSize: bytes.length,
+        uncompressedSize: bytes.length,
+        read: async () => {
+          const buffer = new Uint8Array(bytes)
+          return { bytes: buffer, release: () => buffer.fill(0) }
+        },
+      })),
+      close: async () => undefined,
+    }
+    const released = await readNativeBackup(new File([], 'backup.zip'), {
+      dependencies: { openArchive: async () => reused },
+    })
+    expect(released.images.map(({ bytes }) => bytes)).toEqual([png, png])
+
     const tampered = formatted.files.map((file) =>
       file.path.endsWith('.bin')
         ? { ...file, bytes: new Uint8Array([...file.bytes.slice(0, -1), 1]) }
