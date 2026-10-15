@@ -353,6 +353,24 @@ export function turnThread(
   }
 }
 
+// The copy of a thread a share carries. A share holds image thumbnails and
+// document text, never image bytes or page images.
+export function shareThread(thread: LocalThread): LocalTurnThread {
+  return {
+    ...turnThread(thread),
+    messages: thread.messages.map((message) =>
+      message.attachments
+        ? {
+            ...message,
+            attachments: message.attachments.map(
+              ({ base64: _, pages: __, ...attachment }) => attachment,
+            ),
+          }
+        : message,
+    ),
+  }
+}
+
 export interface CommittedReply {
   id: string
   model?: string

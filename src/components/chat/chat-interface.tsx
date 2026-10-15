@@ -360,6 +360,11 @@ export function ChatInterface({
       ? `${currentChat.title} · Tinfoil`
       : 'Tinfoil Private Chat'
   const handleInputFocusWithRateLimitCheck = handleInputFocus
+  const canShare =
+    !!isSignedIn &&
+    !currentChat.isTemporary &&
+    currentChat.messages.length > 0 &&
+    (!currentChat.isLocalOnly || !!session?.features.localShare)
   const canChat = profileReady && (thread.runsLocally || keyReady)
   const reloadChats = () => thread.refresh()
   const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
@@ -1130,22 +1135,19 @@ export function ChatInterface({
           )
         })()}
 
-      {/* Share button - only for chats the harness stores */}
-      {!currentChat.isTemporary &&
-        !currentChat.isLocalOnly &&
-        currentChat.messages.length > 0 && (
-          <button
-            type="button"
-            onClick={handleOpenShareModal}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
-            aria-label="Share"
-          >
-            <TfShare className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden text-sm @3xl/conversation:inline">
-              Share
-            </span>
-          </button>
-        )}
+      {/* Share button - a signed-in user shares a chat the harness stores,
+          or one kept on this device when the harness seals local shares */}
+      {canShare && (
+        <button
+          type="button"
+          onClick={handleOpenShareModal}
+          className="flex items-center justify-center gap-1.5 rounded-lg border border-transparent bg-surface-chat-background p-2.5 text-content-secondary transition-all duration-200 hover:border-border-subtle hover:bg-surface-chat hover:text-content-primary @3xl/conversation:px-3 @3xl/conversation:py-2"
+          aria-label="Share"
+        >
+          <TfShare className="h-4 w-4" aria-hidden="true" />
+          <span className="hidden text-sm @3xl/conversation:inline">Share</span>
+        </button>
+      )}
 
       {/* Verifier toggle button */}
       <div className="group relative">
@@ -1597,6 +1599,10 @@ export function ChatInterface({
           chatTitle={currentChat.title}
           chatCreatedAt={currentChat.createdAt}
           chatId={currentChat.id}
+          share={thread.share}
+          // Every harness that seals local shares also reports and revokes
+          // shares; no other feature flag marks those routes.
+          canRevoke={!!session?.features.localShare}
         />
       )}
 

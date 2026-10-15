@@ -11,6 +11,10 @@ export interface HarnessErrorBody {
   retryAfter?: number
   resetsAt?: string
   keyId?: string
+  // The status a downstream service answered with, when the harness maps it.
+  status?: number
+  // A document conversion failure's document_* code.
+  upstreamCode?: string
 }
 
 export interface Attachment {

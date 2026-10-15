@@ -18,6 +18,7 @@ import {
   newLocalThread,
   now,
   readLocalThread,
+  shareThread,
   turnThread,
   wireMessage,
   type LocalAttachment,
@@ -26,6 +27,7 @@ import {
 } from './local-threads'
 import { useHarness } from './provider'
 import { initialChat, reduceEvent, type ChatState } from './reducer'
+import { MAX_SHARE_REQUEST_BYTES, requestBytes, shareTooLarge } from './shares'
 import { HarnessError } from './sse'
 import { useCloudSyncSetting } from './storage-mode'
 import type {
@@ -804,6 +806,31 @@ export function useThread(
     await open(forkId, { local: true })
     return forkId
   }
+  // Creates a share link. A chat kept on this device is shared from its own
+  // copy, which the harness seals without storing it.
+  async function share(threadId: string): Promise<string> {
+    if (!isLocalThread(threadId)) {
+      const { url } = await api.post<{ url: string }>('/v1/threads/share', {
+        threadId,
+      })
+      return url
+    }
+    const thread = shareThread(
+      await localTranscript(
+        threadId,
+        storeFor(idRef.current === threadId && temporaryRef.current),
+      ),
+    )
+    const input = { local: true, threadId, thread }
+    if (requestBytes(input) > MAX_SHARE_REQUEST_BYTES) throw shareTooLarge()
+    const { url } = await api.post<{ url: string }>(
+      '/v1/threads/share',
+      input,
+      undefined,
+      false,
+    )
+    return url
+  }
   // The thread an ask carries: a local chat sends its transcript.
   async function askContext(): Promise<
     Pick<Turn, 'key' | 'threadId' | 'local' | 'thread' | 'profile'>
@@ -947,6 +974,7 @@ export function useThread(
     upload,
     loadImage,
     fork,
+    share,
     askContext,
     refresh,
     reconnect,

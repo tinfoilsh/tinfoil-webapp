@@ -1000,6 +1000,72 @@ describe('stored local chat changes', () => {
     ])
     expect(context.thread?.messages[2].attachments?.[0].base64).toBe('cGhvdG8=')
   })
+
+  it('shares a local chat from its copy without image bytes or a key', async () => {
+    const { result } = await openSeeded()
+    client.post.mockResolvedValue({ url: 'https://chat.tinfoil.sh/share/x' })
+
+    let url = ''
+    await act(async () => {
+      url = await result.current.share(SEEDED_ID)
+    })
+
+    expect(url).toBe('https://chat.tinfoil.sh/share/x')
+    expect(client.post).toHaveBeenCalledOnce()
+    const [path, input] = client.post.mock.calls[0]
+    expect(path).toBe('/v1/threads/share')
+    expect(input).not.toHaveProperty('key')
+    expect(input).toMatchObject({
+      local: true,
+      threadId: SEEDED_ID,
+      thread: { title: 'Doors', presetId: null },
+    })
+    expect(input.thread.messages.map((m: { id: string }) => m.id)).toEqual([
+      'u1',
+      'a1',
+      'u2',
+      'a2',
+    ])
+    expect(input.thread.messages[2].attachments).toEqual([
+      {
+        id: 'att_photo',
+        type: 'image',
+        fileName: 'photo.png',
+        mimeType: 'image/png',
+        thumbnailBase64: 'dGh1bWI=',
+      },
+    ])
+    // The stored copy keeps its bytes.
+    expect((await stored(SEEDED_ID))?.messages[2].attachments?.[0].base64).toBe(
+      'cGhvdG8=',
+    )
+  })
+
+  it('refuses to send a local share larger than the harness reads', async () => {
+    signIn('alice')
+    await localThreadStore('device').update(SEEDED_ID, () => ({
+      ...seededThread(),
+      messages: [
+        ...seededThread().messages,
+        {
+          id: 'u3',
+          role: 'user' as const,
+          createdAt: 't5',
+          content: 'x'.repeat(8 * 1024 * 1024),
+        },
+      ],
+    }))
+    const { result } = renderHook(() =>
+      useThread(SEEDED_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(5))
+
+    const refusal = await result.current.share(SEEDED_ID).catch((e) => e)
+
+    expect(refusal).toBeInstanceOf(HarnessError)
+    expect(refusal).toMatchObject({ code: 'THREAD_TOO_LARGE', status: 413 })
+    expect(client.post).not.toHaveBeenCalled()
+  })
 })
 
 describe('signed-out chats', () => {
@@ -1079,5 +1145,29 @@ describe('cloud chats', () => {
     expect(turn()).not.toHaveProperty('thread')
     expect(result.current.chat.isLocalOnly).toBe(false)
     expect(await localThreadStore('device').list()).toEqual([])
+  })
+
+  it('are shared by id with the content key', async () => {
+    localStorage.setItem('tinfoil-settings-cloud-sync-enabled', 'true')
+    localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
+    const api = signIn('alice')
+    publish({ keyReady: true })
+    vi.spyOn(api, 'key').mockReturnValue('Y29udGVudC1rZXk=')
+    client.post.mockImplementation(async (path: string) =>
+      path === '/v1/threads/list'
+        ? { threads: [], nextCursor: null }
+        : { url: 'https://chat.tinfoil.sh/share/cloud-thread#v2:k' },
+    )
+    const { result } = renderHook(() => useThread())
+    await waitFor(() => expect(client.post).toHaveBeenCalled())
+
+    const url = await result.current.share('cloud-thread')
+
+    expect(url).toBe('https://chat.tinfoil.sh/share/cloud-thread#v2:k')
+    expect(client.post).toHaveBeenLastCalledWith(
+      '/v1/threads/share',
+      { key: 'Y29udGVudC1rZXk=', threadId: 'cloud-thread' },
+      expect.any(AbortSignal),
+    )
   })
 })
