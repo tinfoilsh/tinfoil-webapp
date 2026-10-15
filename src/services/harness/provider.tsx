@@ -1,10 +1,18 @@
 import { LogoLoading } from '@/components/ui/logo-loading'
 import { AUTH_ACTIVE_USER_CHANGED_EVENT } from '@/constants/auth-events'
+import {
+  SETTINGS_CLOUD_SYNC_ENABLED,
+  USER_PREFS_LOCAL_PROFILE,
+} from '@/constants/storage-keys'
 import { authTokenManager, AuthTokenUnavailableError } from '@/services/auth'
 import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   encryptionService,
 } from '@/services/encryption/encryption-service'
+import {
+  CLOUD_SYNC_SETTING_CHANGED_EVENT,
+  enableCloudSyncForExistingKey,
+} from '@/utils/cloud-sync-settings'
 import { useAuth } from '@clerk/react'
 import {
   createContext,
@@ -60,7 +68,7 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
       setSessionAPI(api)
       const refresh = () => {
         const initialization = userId
-          ? encryptionService.initialize()
+          ? encryptionService.initialize().then(enableCloudSyncForExistingKey)
           : Promise.resolve()
         void initialization.then(() => api.refresh()).catch(reportHarnessError)
       }
@@ -72,12 +80,27 @@ export function HarnessProvider({ children }: { children: ReactNode }) {
         api.invalidateKey()
         void api.refreshProfile().catch(reportHarnessError)
       }
+      const modeChanged = () => {
+        void api.storageModeChanged().catch(reportHarnessError)
+      }
+      const storageChanged = (event: StorageEvent) => {
+        if (event.key === SETTINGS_CLOUD_SYNC_ENABLED) modeChanged()
+        else if (event.key === USER_PREFS_LOCAL_PROFILE && !api.cloud)
+          void api.refreshProfile().catch(reportHarnessError)
+      }
       window.addEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
       refresh()
       window.addEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
+      window.addEventListener(CLOUD_SYNC_SETTING_CHANGED_EVENT, modeChanged)
+      window.addEventListener('storage', storageChanged)
       setAccount(userId ?? 'anonymous')
       return () => {
         window.removeEventListener(ENCRYPTION_KEY_CHANGED_EVENT, keyChanged)
+        window.removeEventListener(
+          CLOUD_SYNC_SETTING_CHANGED_EVENT,
+          modeChanged,
+        )
+        window.removeEventListener('storage', storageChanged)
         window.removeEventListener(AUTH_ACTIVE_USER_CHANGED_EVENT, unlock)
         release?.()
         authTokenManager.reset()

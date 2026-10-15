@@ -52,6 +52,6 @@ export function setupHarness() {
   }
   const api = new HarnessAPI(client as unknown as HarnessClient, null)
   const release = activateAPI(api)
-  publish({ session: testSession, keyReady: true })
+  publish({ session: testSession, keyReady: true, profileReady: true })
   return { api, client, release }
 }

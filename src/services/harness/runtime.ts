@@ -1,6 +1,8 @@
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
+import { isCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { HarnessClient } from './client'
+import { loadLocalProfile, saveLocalProfile } from './local-profile'
 import { HarnessError } from './sse'
 import type { Session } from './types'
 
@@ -9,9 +11,13 @@ type View = {
   session?: Session
   profile: Profile
   error?: string
+  // The content key is unlocked for the harness's stored chats. A signed-out
+  // visitor needs no key.
   keyReady: boolean
+  // The settings of the current storage mode have loaded.
+  profileReady: boolean
 }
-const empty: View = { profile: {}, keyReady: false }
+const empty: View = { profile: {}, keyReady: false, profileReady: false }
 let view: View = empty
 const listeners = new Set<() => void>()
 let active: HarnessAPI | undefined
@@ -33,11 +39,17 @@ export class HarnessAPI {
   private contentLifetime = new AbortController()
   private profileVersion = 0
   private profileWrites: Promise<unknown> = Promise.resolve()
+  private profileSource: 'cloud' | 'local' | null = null
   invalidateKey() {
     this.contentLifetime.abort()
     this.contentLifetime = new AbortController()
     this.profileVersion++
-    publish({ profile: {}, keyReady: false })
+    publish({ profile: {}, keyReady: false, profileReady: false })
+  }
+  // The harness stores this account's chats and settings. Without cloud
+  // sync, and for a signed-out visitor, both stay in the browser.
+  get cloud() {
+    return !!this.userId && isCloudSyncEnabled()
   }
   constructor(
     readonly client: HarnessClient,
@@ -90,9 +102,10 @@ export class HarnessAPI {
     file: File,
     fields: Record<string, string> = {},
     signal?: AbortSignal,
+    withKey = true,
   ): Promise<T> {
-    const key = this.key()
-    const requestSignal = this.signal(signal)
+    const key = withKey ? this.key() : undefined
+    const requestSignal = this.signal(signal, withKey)
     const result = await this.client.upload<T>(
       path,
       file,
@@ -136,20 +149,34 @@ export class HarnessAPI {
   }
   async refreshProfile() {
     const version = ++this.profileVersion
-    if (!this.userId) {
-      publish({ keyReady: true })
+    if (!this.cloud) {
+      this.profileSource = 'local'
+      publish({
+        profile: loadLocalProfile(),
+        keyReady: !this.userId,
+        profileReady: true,
+        error: undefined,
+      })
       return
     }
     try {
       const profile = await this.post<Profile>('/v1/profile/get')
-      if (version === this.profileVersion)
-        publish({ profile, keyReady: true, error: undefined })
+      if (version === this.profileVersion) {
+        this.profileSource = 'cloud'
+        publish({
+          profile,
+          keyReady: true,
+          profileReady: true,
+          error: undefined,
+        })
+      }
     } catch (cause) {
       this.lifetime.signal.throwIfAborted()
       if (version !== this.profileVersion) return
       publish({
         profile: {},
         keyReady: false,
+        profileReady: false,
         error:
           cause instanceof Error
             ? cause.message
@@ -157,10 +184,19 @@ export class HarnessAPI {
       })
     }
   }
+  // Cloud sync was turned on or off. Turning it off keeps the settings the
+  // harness held, as the previous client kept synced settings on the device.
+  storageModeChanged() {
+    if (!this.cloud && this.profileSource === 'cloud' && view.profileReady)
+      saveLocalProfile(view.profile, true)
+    this.invalidateKey()
+    return this.refreshProfile()
+  }
   updateProfile(
     change: Profile | ((current: Profile) => Profile),
   ): Promise<Profile> {
-    const signal = this.signal()
+    const cloud = this.cloud
+    const signal = this.signal(undefined, cloud)
     const update = this.profileWrites
       .catch(() => {})
       .then(async () => {
@@ -168,9 +204,9 @@ export class HarnessAPI {
         const version = ++this.profileVersion
         const patch =
           typeof change === 'function' ? change(view.profile) : change
-        const profile = this.userId
+        const profile = cloud
           ? await this.post<Profile>('/v1/profile/update', { patch }, signal)
-          : { ...view.profile, ...patch }
+          : saveLocalProfile(patch)
         signal.throwIfAborted()
         if (version === this.profileVersion) publish({ profile })
         return profile
