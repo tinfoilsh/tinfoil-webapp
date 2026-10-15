@@ -25,7 +25,10 @@ export interface KeyRegisterBundleInput {
 export interface KeyRegisterRequest {
   /** Base64 raw 32-byte CEK. */
   keyB64: string
-  /** Equivalent of If-Match for the user_keys row; "" for first register. */
+  /**
+   * Equivalent of If-Match for the user_keys row: its etag, or '*'
+   * (IF_MATCH_SENTINELS.AnyKey) while the account has no key.
+   */
   ifMatch: string
   /**
    * Origin label persisted on `user_keys.created_via`. The enclave
