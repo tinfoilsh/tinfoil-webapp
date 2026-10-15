@@ -8,6 +8,7 @@ import { getView, publish } from '@/services/harness/runtime'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { testSession } from '../../harness-fixture'
 
 const authState = vi.hoisted(() => ({ isSignedIn: false }))
 const toasts = vi.hoisted(() => vi.fn())
@@ -423,5 +424,75 @@ describe('settings opening', () => {
         screen.queryByRole('checkbox', { name: 'Enable local chats' }),
       ).not.toBeInTheDocument()
     })
+  })
+})
+
+describe('settings prompts', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    authState.isSignedIn = false
+  })
+
+  it('chooses the prompt new chats start with where the harness keeps one', async () => {
+    const profile = {
+      customPromptPresets: [
+        {
+          id: 'user:quiet',
+          name: 'Quiet',
+          description: '',
+          systemPrompt: 'Be brief.',
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    }
+    localStorage.setItem(
+      'tinfoil-user-prefs-local-profile',
+      JSON.stringify(profile),
+    )
+    publish({
+      session: {
+        ...testSession,
+        presets: [
+          {
+            id: 'builtin:tutor',
+            name: 'Tutor',
+            description: 'Teaches',
+            systemPrompt: 'Teach.',
+            builtIn: true,
+          },
+        ],
+        features: { ...testSession.features, defaultPromptPreset: true },
+      },
+      profile,
+    })
+    render(<Harness initialTab="prompts" />)
+
+    const picker = screen.getByRole('combobox', {
+      name: 'Default prompt for new chats',
+    })
+    expect(picker).toHaveValue('')
+    expect(
+      screen.queryByRole('checkbox', { name: 'Custom default prompt' }),
+    ).not.toBeInTheDocument()
+
+    fireEvent.change(picker, { target: { value: 'user:quiet' } })
+
+    await waitFor(() =>
+      expect(getView().profile.defaultPromptPresetId).toBe('user:quiet'),
+    )
+    expect(picker).toHaveValue('user:quiet')
+  })
+
+  it('keeps the custom default prompt against a harness without one', () => {
+    publish({ session: testSession, profile: {} })
+    render(<Harness initialTab="prompts" />)
+
+    expect(
+      screen.getByRole('checkbox', { name: 'Custom default prompt' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('combobox', { name: 'Default prompt for new chats' }),
+    ).not.toBeInTheDocument()
   })
 })

@@ -18,6 +18,7 @@ import {
   USER_PREFS_CUSTOM_PROMPT_ENABLED,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
   USER_PREFS_CUSTOM_SYSTEM_PROMPT,
+  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
   USER_PREFS_FAVORITE_PROMPT_PRESETS,
   USER_PREFS_LANGUAGE,
   USER_PREFS_LOCAL_PROFILE,
@@ -43,6 +44,8 @@ const STRING_FIELDS = [
   'profession',
   'additionalContext',
   'customSystemPrompt',
+  // The preset new chats start with; an empty string for none.
+  'defaultPromptPresetId',
   'selectedModel',
   'autoIntelligence',
   'reasoningEffort',
@@ -121,10 +124,12 @@ function validField(field: string, value: unknown): value is Json {
           preset.id !== '' &&
           typeof preset.name === 'string' &&
           preset.name !== '' &&
-          ['description', 'systemPrompt'].every(
+          ['description', 'systemPrompt', 'model'].every(
             (key) =>
               preset[key] === undefined || typeof preset[key] === 'string',
-          ),
+          ) &&
+          (preset.webSearchEnabled === undefined ||
+            typeof preset.webSearchEnabled === 'boolean'),
       )
     )
   if (field === 'dismissed')
@@ -179,6 +184,7 @@ function previousClientSettings(): LocalProfile {
     favoritePromptPresetIds: parseJSON(
       localStorage.getItem(USER_PREFS_FAVORITE_PROMPT_PRESETS),
     ),
+    defaultPromptPresetId: text(USER_PREFS_DEFAULT_PROMPT_PRESET_ID),
     selectedModel: text(SETTINGS_SELECTED_MODEL),
     autoIntelligence: text(SETTINGS_AUTO_INTELLIGENCE),
     reasoningEffort: text(SETTINGS_REASONING_EFFORT),

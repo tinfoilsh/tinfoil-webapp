@@ -102,6 +102,51 @@ function mergeRateLimit(
   }
 }
 
+// Main moved the custom default prompt into the prompt library: an enabled
+// one becomes a saved prompt, under the id the iOS app also uses, that new
+// chats start with unless another default was chosen. The old setting is
+// turned off either way.
+export const MIGRATED_CUSTOM_PROMPT_PRESET_ID = 'user:migrated-custom-prompt'
+
+function legacyCustomPromptPatch(
+  profile: Profile,
+  now = Date.now(),
+): Profile | null {
+  if (profile.isUsingCustomPrompt !== true) return null
+  const prompt =
+    typeof profile.customSystemPrompt === 'string'
+      ? profile.customSystemPrompt
+      : ''
+  const patch: Profile = { isUsingCustomPrompt: false, customSystemPrompt: '' }
+  const hasContent =
+    prompt
+      .replace(/^<system>\s*\n?/, '')
+      .replace(/\n?<\/system>\s*$/, '')
+      .trim().length > 0
+  if (!hasContent || profile.defaultPromptPresetId) return patch
+  const presets: Record<string, unknown>[] = Array.isArray(
+    profile.customPromptPresets,
+  )
+    ? profile.customPromptPresets
+    : []
+  if (
+    !presets.some((preset) => preset?.id === MIGRATED_CUSTOM_PROMPT_PRESET_ID)
+  )
+    patch.customPromptPresets = [
+      ...presets,
+      {
+        id: MIGRATED_CUSTOM_PROMPT_PRESET_ID,
+        name: 'My default prompt',
+        description: 'Migrated from the custom default prompt setting',
+        systemPrompt: prompt,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]
+  patch.defaultPromptPresetId = MIGRATED_CUSTOM_PROMPT_PRESET_ID
+  return patch
+}
+
 export class HarnessAPI {
   readonly lifetime = new AbortController()
   private contentLifetime = new AbortController()
@@ -239,16 +284,27 @@ export class HarnessAPI {
     await this.refreshProfile()
     return session
   }
+  // Moves a profile still using the custom default prompt to the prompt
+  // library, where the harness keeps the default prompt.
+  private adoptLegacyCustomPrompt(profile: Profile) {
+    if (!view.session?.features.defaultPromptPreset) return
+    if (!legacyCustomPromptPatch(profile)) return
+    void this.updateProfile(
+      (current) => legacyCustomPromptPatch(current) ?? {},
+    ).catch(reportHarnessError)
+  }
   async refreshProfile() {
     const version = ++this.profileVersion
     if (!this.cloud) {
       this.profileSource = 'local'
+      const profile = loadLocalProfile()
       publish({
-        profile: loadLocalProfile(),
+        profile,
         keyReady: !this.userId,
         profileReady: true,
         error: undefined,
       })
+      this.adoptLegacyCustomPrompt(profile)
       return
     }
     try {
@@ -261,6 +317,7 @@ export class HarnessAPI {
           profileReady: true,
           error: undefined,
         })
+        this.adoptLegacyCustomPrompt(profile)
       }
     } catch (cause) {
       this.lifetime.signal.throwIfAborted()

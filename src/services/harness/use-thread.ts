@@ -1,5 +1,6 @@
 import { GENUI_WIDGETS } from '@/components/chat/genui/registry'
 import type { Chat, Attachment as UIAttachment } from '@/components/chat/types'
+import { displayModels } from '@/config/models'
 import { ENCRYPTION_KEY_CHANGED_EVENT } from '@/services/encryption/encryption-service'
 import { chatEvents } from '@/services/storage/chat-events'
 import { buildForkedChat } from '@/services/storage/chat-fork'
@@ -142,7 +143,30 @@ export function useThread(
   const localRef = useRef(local)
   localRef.current = local
   const [model, setModel] = useState('')
-  const [presetId, setPresetId] = useState<string | null>(null)
+  const [chosenPresetId, setChosenPresetId] = useState<string | null>(null)
+  // Whether the open chat's prompt was chosen, rather than left at the
+  // default a new chat starts with.
+  const [presetChosen, setPresetChosen] = useState(false)
+  const presetChosenRef = useRef(presetChosen)
+  presetChosenRef.current = presetChosen
+  // The open chat's web search setting, where a saved prompt or the toggle
+  // set it before the chat stores it.
+  const [webSearch, setWebSearch] = useState<boolean | undefined>()
+  // Counts new chats, so the default prompt applies to each one.
+  const [blankChats, setBlankChats] = useState(0)
+  // The prompt new chats start with, which the harness keeps in the profile.
+  const defaultPresetId =
+    session?.features.defaultPromptPreset &&
+    typeof profile.defaultPromptPresetId === 'string' &&
+    profile.defaultPromptPresetId
+      ? profile.defaultPromptPresetId
+      : null
+  const presetId = !id && !presetChosen ? defaultPresetId : chosenPresetId
+  const choosePreset = (next: string | null) => {
+    presetChosenRef.current = true
+    setPresetChosen(true)
+    setChosenPresetId(next)
+  }
   const [threads, setThreads] = useState<ThreadSummary[]>([])
   const [localThreads, setLocalThreads] = useState<ThreadSummary[]>([])
   const localIds = useRef(new Set<string>())
@@ -254,6 +278,11 @@ export function useThread(
     uploads.current = new Map()
     images.current = new Map()
     documentTexts.current = new Map()
+    presetChosenRef.current = false
+    setPresetChosen(false)
+    setChosenPresetId(null)
+    setWebSearch(undefined)
+    setBlankChats((count) => count + 1)
   }, [])
   // The stored transcript with what the view knows of the current run, which
   // may not be saved yet. A new chat starts from an empty thread.
@@ -266,6 +295,7 @@ export function useThread(
       newLocalThread(threadId, {
         model,
         presetId: presetId ?? undefined,
+        webSearchEnabled: webSearch,
       })
     if (idRef.current !== threadId) return stored
     return mergeLocalThread(
@@ -484,7 +514,8 @@ export function useThread(
     setId(thread.id)
     idRef.current = thread.id
     setModel(thread.model ?? '')
-    setPresetId(thread.presetId ?? null)
+    choosePreset(thread.presetId ?? null)
+    setWebSearch(undefined)
     resumeLocalRun(thread)
   }
   async function open(threadId: string, options: { local?: boolean } = {}) {
@@ -505,7 +536,8 @@ export function useThread(
       setTemporary(false)
       setLocal(false)
       setModel(thread.model)
-      setPresetId(thread.presetId ?? null)
+      choosePreset(thread.presetId ?? null)
+      setWebSearch(undefined)
       if (thread.activeRun)
         void stream('/v1/threads/follow', {
           key: api.key(),
@@ -641,6 +673,7 @@ export function useThread(
       report(cause)
       return false
     }
+    keepStartingPreset()
     if (version !== generation.current) return false
     if (!idRef.current && !temporaryRef.current) setUnsaved(threadId)
     const input: Turn = {
@@ -659,6 +692,10 @@ export function useThread(
     pending.current = { input, run }
     return stream('/v1/threads/turn', input, undefined, run)
   }
+  // A new chat keeps showing the prompt it started with once it has an id.
+  function keepStartingPreset() {
+    if (!idRef.current && !presetChosenRef.current) choosePreset(presetId)
+  }
   function send(fields: Partial<Turn> = {}) {
     if ((!idRef.current || runsLocally()) && starting.current) return
     setError('')
@@ -671,9 +708,16 @@ export function useThread(
       key: contentKey(),
       ephemeral: temporary,
       projectId: idRef.current ? undefined : projectId,
-      presetId: idRef.current ? undefined : presetId,
+      // The harness starts a stored chat with the default prompt when its
+      // first turn names none, and keeps a first turn's choice, null too. A
+      // temporary chat is not stamped, so it names the default itself.
+      presetId:
+        idRef.current || (!presetChosenRef.current && !temporary)
+          ? undefined
+          : presetId,
       ...fields,
     })
+    keepStartingPreset()
     pending.current = { input: { ...input, key: undefined } }
     if (!idRef.current) starting.current = true
     return stream('/v1/threads/turn', input)
@@ -1082,6 +1126,56 @@ export function useThread(
     )
     return url
   }
+  // The model and web search setting a saved prompt applies when it is
+  // chosen. Built-in prompts carry none, and a model the catalog no longer
+  // offers is skipped.
+  function presetSettings(id: string | null): {
+    model?: string
+    webSearchEnabled?: boolean
+  } {
+    const saved = Array.isArray(profileRef.current.customPromptPresets)
+      ? (profileRef.current.customPromptPresets as Record<string, unknown>[])
+      : []
+    const preset = saved.find((candidate) => candidate?.id === id)
+    if (!preset) return {}
+    const models = displayModels(session ?? undefined)
+    return {
+      ...(typeof preset.model === 'string' &&
+      models.some((candidate) => candidate.modelName === preset.model)
+        ? { model: preset.model }
+        : {}),
+      ...(typeof preset.webSearchEnabled === 'boolean'
+        ? { webSearchEnabled: preset.webSearchEnabled }
+        : {}),
+    }
+  }
+  // Chooses the open chat's prompt and applies the prompt's settings to the
+  // chat, once, as later turns may change them.
+  async function selectPreset(next: string | null) {
+    choosePreset(next)
+    const settings = presetSettings(next)
+    if (settings.model) setModel(settings.model)
+    if (settings.webSearchEnabled !== undefined)
+      setWebSearch(settings.webSearchEnabled)
+    const threadId = idRef.current
+    if (threadId && !temporaryRef.current)
+      await update(threadId, { presetId: next, ...settings })
+  }
+  // A new chat that keeps the default prompt takes the prompt's settings.
+  const defaultSettings = presetSettings(defaultPresetId)
+  useEffect(() => {
+    if (id || presetChosen) return
+    if (defaultSettings.model) setModel(defaultSettings.model)
+    setWebSearch(defaultSettings.webSearchEnabled)
+    // The settings apply when a new chat opens or the default changes.
+  }, [
+    id,
+    presetChosen,
+    blankChats,
+    defaultPresetId,
+    defaultSettings.model,
+    defaultSettings.webSearchEnabled,
+  ])
   // The thread an ask carries: a local chat sends its transcript.
   async function askContext(): Promise<
     Pick<Turn, 'key' | 'threadId' | 'local' | 'thread' | 'profile'>
@@ -1204,6 +1298,7 @@ export function useThread(
   const chat: Chat = summary
     ? {
         ...threadView(summary, messages),
+        ...(webSearch !== undefined ? { webSearchEnabled: webSearch } : {}),
         isTemporary: temporary,
         isLocalOnly: isLocalChat,
         pendingSave: unsaved === summary.id,
@@ -1221,6 +1316,7 @@ export function useThread(
         model,
         projectId: local ? undefined : (projectId ?? undefined),
         presetId: presetId ?? undefined,
+        webSearchEnabled: webSearch,
       }
   return {
     api,
@@ -1234,7 +1330,9 @@ export function useThread(
     model,
     setModel,
     presetId,
-    setPresetId,
+    setPresetId: choosePreset,
+    selectPreset,
+    setWebSearch,
     temporary,
     setTemporary,
     local: isLocalChat,
