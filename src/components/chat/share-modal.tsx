@@ -84,6 +84,8 @@ function ShareModalContent({
   const [documentTexts, setDocumentTexts] = useState<Record<string, string>>({})
   const requestedTexts = useRef(new Set<string>())
   const failedTexts = useRef(new Set<string>())
+  const isOpenRef = useRef(isOpen)
+  isOpenRef.current = isOpen
   const isBusy = isUploading || isRevoking
   const canChangeSharing = !isBusy && !isCheckingShare && hasShare !== null
   const showShareEnabled = hasShare !== null && isShareEnabled
@@ -158,8 +160,10 @@ function ShareModalContent({
             }))
         })
         .catch((error) => {
-          // The markdown still lists the document by name.
-          failedTexts.current.add(attachment.id)
+          // The markdown still lists the document by name. A read that
+          // failed after the dialog closed is also read again next time.
+          if (isOpenRef.current) failedTexts.current.add(attachment.id)
+          else requestedTexts.current.delete(attachment.id)
           logError('Failed to load document text for sharing', error, {
             component: 'ShareModal',
             action: 'loadDocumentText',

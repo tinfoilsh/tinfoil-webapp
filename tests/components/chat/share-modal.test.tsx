@@ -159,6 +159,101 @@ describe('ShareModal', () => {
     )
   })
 
+  it('reads a document again when the dialog reopens after its read failed while closed', async () => {
+    const first = deferred<string>()
+    const load = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce('Revenue grew.')
+    const messages = [
+      {
+        role: 'user' as const,
+        content: 'See attached',
+        timestamp: new Date(0),
+        attachments: [
+          {
+            id: 'att_report',
+            type: 'document' as const,
+            fileName: 'report.pdf',
+          },
+        ],
+      },
+    ]
+    const { rerender } = render(
+      <ShareModal {...props} loadDocumentText={load} messages={messages} />,
+    )
+    expect(load).toHaveBeenCalledOnce()
+    rerender(
+      <ShareModal
+        {...props}
+        isOpen={false}
+        loadDocumentText={load}
+        messages={messages}
+      />,
+    )
+    await act(async () => first.reject(new Error('Offline')))
+
+    rerender(
+      <ShareModal {...props} loadDocumentText={load} messages={messages} />,
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText('Raw conversation markdown').textContent,
+      ).toContain('Document title: report.pdf\nRevenue grew.'),
+    )
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('waits for the next opening to read a document whose read failed while open', async () => {
+    const load = vi.fn().mockRejectedValue(new Error('Offline'))
+    const message = {
+      role: 'user' as const,
+      content: 'See attached',
+      timestamp: new Date(0),
+      attachments: [
+        { id: 'att_report', type: 'document' as const, fileName: 'report.pdf' },
+      ],
+    }
+    const reply = {
+      role: 'assistant' as const,
+      content: 'Hi',
+      timestamp: new Date(1),
+    }
+    const { rerender } = render(
+      <ShareModal {...props} loadDocumentText={load} messages={[message]} />,
+    )
+    await waitFor(() => expect(load).toHaveBeenCalledOnce())
+    await act(async () => {})
+
+    // A reply streaming in changes the messages while the dialog stays open.
+    rerender(
+      <ShareModal
+        {...props}
+        loadDocumentText={load}
+        messages={[message, reply]}
+      />,
+    )
+    expect(load).toHaveBeenCalledOnce()
+
+    rerender(
+      <ShareModal
+        {...props}
+        isOpen={false}
+        loadDocumentText={load}
+        messages={[message, reply]}
+      />,
+    )
+    rerender(
+      <ShareModal
+        {...props}
+        loadDocumentText={load}
+        messages={[message, reply]}
+      />,
+    )
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
   it('creates a link through the harness, focuses it, and only then shows the chat as shared', async () => {
     const created = deferred<string>()
     mocks.share.mockReturnValueOnce(created.promise)

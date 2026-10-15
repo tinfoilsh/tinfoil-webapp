@@ -32,7 +32,7 @@ export function SharedChatView({
           .download(
             '/v1/attachments/get-public',
             { id: attachment.id, attKey: attachment.attKey },
-            api.signal(abort.signal),
+            api.signal(abort.signal, false),
           )
           .then((blob) => blob.arrayBuffer())
           .then((bytes) => {
