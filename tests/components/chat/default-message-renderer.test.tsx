@@ -918,6 +918,34 @@ describe('DefaultMessageRenderer work traces', () => {
     },
   )
 
+  it('shows a search the model called with null arguments as failed', () => {
+    const { container } = render(
+      <Renderer
+        message={{
+          role: 'assistant',
+          content: '',
+          timestamp: new Date('2026-08-07T00:00:01.000Z'),
+          timeline: [
+            {
+              type: 'tool_call',
+              id: 'call-1',
+              toolCallId: 'call-1',
+              name: 'web_search',
+              arguments: 'null',
+              result: { error: 'A search query is required' },
+            },
+          ],
+        }}
+        messageIndex={0}
+        model={model}
+        isDarkMode={false}
+        isLastMessage
+      />,
+    )
+    expect(container).toHaveTextContent('Search failed')
+    expect(container).not.toHaveTextContent('Search failed for')
+  })
+
   it('does not treat an earlier run as active when answer text follows it', () => {
     render(
       <Renderer

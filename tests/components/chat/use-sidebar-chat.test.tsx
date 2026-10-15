@@ -8,6 +8,52 @@ beforeEach(() => {
   vi.mocked(harnessAPI().client.events).mockReset()
 })
 
+it('stops streaming a cancelled ask and keeps its partial answer', async () => {
+  vi.mocked(harnessAPI().client.events).mockImplementation(
+    async function* (_path, _input, signal) {
+      yield {
+        id: 0,
+        event: { type: 'RUN_STARTED', threadId: 'thread-1', runId: 'run-1' },
+      }
+      yield {
+        id: 1,
+        event: {
+          type: 'TEXT_MESSAGE_CHUNK',
+          messageId: 'answer',
+          delta: 'It means',
+          timestamp: '2026-05-01T10:00:00Z',
+        },
+      }
+      // Like a fetch, the stream fails once its signal aborts.
+      await new Promise((_, reject) =>
+        signal!.addEventListener('abort', () => reject(signal!.reason)),
+      )
+    },
+  )
+  const { result } = renderHook(() =>
+    useSidebarChat({
+      context: async () => ({ threadId: 'thread-1', key: 'content-key' }),
+      options: { model: 'test-model' },
+    }),
+  )
+  act(() => result.current.askQuote('What does this mean?'))
+  await waitFor(() =>
+    expect(result.current.messages.map((m) => m.content)).toEqual(['It means']),
+  )
+  expect(result.current.isStreaming).toBe(true)
+
+  await act(async () => result.current.cancel())
+
+  expect(result.current.isStreaming).toBe(false)
+  expect(result.current.loadingState).toBe('idle')
+  expect(result.current.messages.map((m) => m.content)).toEqual(['It means'])
+  expect(vi.mocked(harnessAPI().client.post)).toHaveBeenCalledWith(
+    '/v1/threads/cancel',
+    expect.objectContaining({ threadId: 'thread-1', runId: 'run-1' }),
+    expect.any(AbortSignal),
+  )
+})
+
 it('shows why an ask failed before the harness sent any message', async () => {
   vi.mocked(harnessAPI().client.events).mockImplementation(async function* () {
     throw new HarnessError(

@@ -137,6 +137,13 @@ export function useSidebarChat({
           !local.current,
         )
       controller.current?.abort()
+      // The aborted stream reports nothing more, so the ask stops here and
+      // keeps what it received.
+      setState((previous) =>
+        previous.status === 'streaming' || previous.status === 'queued'
+          ? { ...previous, status: 'idle' }
+          : previous,
+      )
     },
   }
 }

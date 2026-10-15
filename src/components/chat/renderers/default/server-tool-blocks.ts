@@ -16,7 +16,10 @@ function serverToolBlock(
 ): ServerToolBlock {
   let args: Record<string, any> = {}
   try {
-    args = JSON.parse(block.arguments)
+    // The model's arguments can be any JSON, such as null.
+    const parsed: unknown = JSON.parse(block.arguments)
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+      args = parsed as Record<string, any>
   } catch {
     /* arguments can still be streaming */
   }
