@@ -2,8 +2,7 @@
 
 import type { StreamErrorInfo } from '@/components/chat/hooks/use-chat-streams'
 import { cn } from '@/components/ui/utils'
-import { ChevronDownIcon } from '@heroicons/react/24/outline'
-import { TfBoxX, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import { TfBoxX, TfChevronDown, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import { useState, useSyncExternalStore } from 'react'
 
 interface StreamErrorBannerProps {
@@ -259,7 +258,7 @@ export function StreamErrorBanner({
               isDarkMode ? 'hover:bg-red-500/20' : 'hover:bg-red-500/10',
             )}
           >
-            <ChevronDownIcon
+            <TfChevronDown
               className={cn(
                 'h-4 w-4 transition-transform',
                 isExpanded && 'rotate-180',

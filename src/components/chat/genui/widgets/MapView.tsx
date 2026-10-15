@@ -5,9 +5,9 @@ import {
 } from '@/components/preview/sandbox-frame'
 import { usePreviewMessages } from '@/components/preview/use-preview-messages'
 import { Card } from '@/components/ui/card'
-import { TfCopy } from '@tinfoilsh/tinfoil-icons'
+import { TfCopy, TfExternalLink } from '@tinfoilsh/tinfoil-icons'
 import type { LucideIcon } from 'lucide-react'
-import { ExternalLink, MapPin, Navigation } from 'lucide-react'
+import { MapPin, Navigation } from 'lucide-react'
 import { memo, useId, useMemo, useRef, useState } from 'react'
 import type { Location, Props } from './Map'
 
@@ -356,7 +356,7 @@ export default function MapWidget(props: Props & { isDarkMode?: boolean }) {
                   className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-surface-card px-2 py-1 text-[11px] text-content-muted transition-colors hover:border-content-primary/40 hover:text-content-primary"
                 >
                   Open
-                  <ExternalLink className="h-3 w-3" />
+                  <TfExternalLink className="h-3 w-3" />
                 </a>
               </li>
             ))}

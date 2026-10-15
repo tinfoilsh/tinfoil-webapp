@@ -3,7 +3,7 @@ import {
   runNativeBackupExport,
   type NativeBackupExportProgress,
 } from '@/services/native-backup/export'
-import { ArrowDownTrayIcon } from '@heroicons/react/24/outline'
+import { TfDownload } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useRef, useState } from 'react'
 import { ConfirmDialog } from './components/confirm-dialog'
 
@@ -93,7 +93,7 @@ export function NativeBackupExport({ available }: { available: boolean }) {
           disabled={progress !== null}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-border-subtle px-4 py-2.5 text-sm font-medium transition-colors hover:bg-surface-chat disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <ArrowDownTrayIcon className="h-4 w-4" />
+          <TfDownload className="h-4 w-4" />
           Create Tinfoil Backup
         </button>
         {progress && (

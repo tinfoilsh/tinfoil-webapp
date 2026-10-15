@@ -1,6 +1,6 @@
 import { ImageWithSkeleton } from '@/components/preview/image-with-skeleton'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { TfBoxX, TfChevronLeft, TfChevronRight } from '@tinfoilsh/tinfoil-icons'
 import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
 import { defineGenUIWidget } from '../types'
@@ -103,7 +103,7 @@ function ImageLightbox({
         aria-label="Close image preview"
         className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
       >
-        <X className="h-5 w-5" />
+        <TfBoxX className="h-5 w-5" />
       </button>
 
       {images.length > 1 && (
@@ -117,7 +117,7 @@ function ImageLightbox({
             aria-label="Previous image"
             className="absolute left-4 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
           >
-            <ChevronLeft className="h-6 w-6" />
+            <TfChevronLeft className="h-6 w-6" />
           </button>
           <button
             type="button"
@@ -128,7 +128,7 @@ function ImageLightbox({
             aria-label="Next image"
             className="absolute right-4 top-1/2 inline-flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25"
           >
-            <ChevronRight className="h-6 w-6" />
+            <TfChevronRight className="h-6 w-6" />
           </button>
         </>
       )}

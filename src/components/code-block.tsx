@@ -12,7 +12,13 @@ import {
 import { cn } from '@/components/ui/utils'
 import { toast } from '@/hooks/use-toast'
 import { downloadMarkdownAsPdf } from '@/utils/markdown-pdf-export'
-import { TfBoxCheckmark, TfCode, TfCopy, TfEye } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxCheckmark,
+  TfCode,
+  TfCopy,
+  TfEye,
+  TfPlay,
+} from '@tinfoilsh/tinfoil-icons'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { BsFiletypeMd, BsFiletypePdf } from 'react-icons/bs'
 import ReactMarkdown from 'react-markdown'
@@ -29,19 +35,7 @@ const CodeIcon = () => (
 )
 
 const PlayIcon = () => (
-  <svg
-    className="h-4 w-4"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-    focusable="false"
-  >
-    <polygon points="5 3 19 12 5 21 5 3" />
-  </svg>
+  <TfPlay className="h-4 w-4" aria-hidden="true" focusable="false" />
 )
 
 const EXECUTABLE_LANGUAGES = [

@@ -47,16 +47,13 @@ import {
   isPlainPrimaryClick,
 } from '@/utils/navigation'
 import { useAuth } from '@clerk/react'
-import {
-  ArrowLeftIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  ChevronUpIcon,
-  NoSymbolIcon,
-} from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, NoSymbolIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
   TfChat2,
+  TfChevronDown,
+  TfChevronRight,
+  TfChevronUp,
   TfDocument,
   TfDocumentPlus,
   TfFolder,
@@ -1018,9 +1015,9 @@ export function ProjectSidebar({
                   </span>
                 </span>
                 {isFavoritesExpanded ? (
-                  <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
+                  <TfChevronDown className="h-4 w-4" aria-hidden="true" />
                 ) : (
-                  <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+                  <TfChevronRight className="h-4 w-4" aria-hidden="true" />
                 )}
               </button>
               <AnimatePresence initial={false}>
@@ -1102,9 +1099,9 @@ export function ProjectSidebar({
                 </span>
               </span>
               {settingsExpanded && !isLoading ? (
-                <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
+                <TfChevronDown className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+                <TfChevronRight className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
 
@@ -1245,12 +1242,12 @@ export function ProjectSidebar({
                         >
                           <span>Danger Zone</span>
                           {dangerZoneExpanded ? (
-                            <ChevronUpIcon
+                            <TfChevronUp
                               className="h-4 w-4"
                               aria-hidden="true"
                             />
                           ) : (
-                            <ChevronDownIcon
+                            <TfChevronDown
                               className="h-4 w-4"
                               aria-hidden="true"
                             />
@@ -1319,9 +1316,9 @@ export function ProjectSidebar({
                 </span>
               </span>
               {documentsExpanded && !isLoading ? (
-                <ChevronDownIcon className="h-4 w-4" aria-hidden="true" />
+                <TfChevronDown className="h-4 w-4" aria-hidden="true" />
               ) : (
-                <ChevronRightIcon className="h-4 w-4" aria-hidden="true" />
+                <TfChevronRight className="h-4 w-4" aria-hidden="true" />
               )}
             </button>
             <input

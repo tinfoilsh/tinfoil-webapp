@@ -15,11 +15,12 @@ import { encryptionService } from '@/services/encryption/encryption-service'
 import { PasskeyTimeoutError, PrfNotSupportedError } from '@/services/passkey'
 import { setCloudSyncEnabled as persistCloudSyncEnabled } from '@/utils/cloud-sync-settings'
 import { logError, logInfo } from '@/utils/error-handling'
-import { ArrowDownTrayIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'
+import { ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
   TfCloud,
   TfCopy,
+  TfDownload,
   TfFingerprint,
   TfKey,
   TfLockLocked,
@@ -661,7 +662,7 @@ ${generatedKey.replace('key_', '')}
               className="w-full min-w-[5rem]"
               title="Download as PEM file"
             >
-              <ArrowDownTrayIcon className="h-4 w-4" />
+              <TfDownload className="h-4 w-4" />
               Download
             </Button>
             <Button

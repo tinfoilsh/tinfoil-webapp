@@ -7,8 +7,7 @@ import {
   type FlaggedChat,
 } from '@/services/safeguards'
 import { getChatPath } from '@/utils/navigation'
-import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
-import { TfFlag, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
+import { TfExternalLink, TfFlag, TfRefresh1 } from '@tinfoilsh/tinfoil-icons'
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { PiSpinner } from 'react-icons/pi'
@@ -279,10 +278,7 @@ export function SafeguardsSettings({
             className="inline-flex items-center gap-1.5 text-sm text-brand-accent-dark hover:underline dark:text-brand-accent-light"
           >
             Learn how safeguards work
-            <ArrowTopRightOnSquareIcon
-              className="h-3.5 w-3.5"
-              aria-hidden="true"
-            />
+            <TfExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
           </a>
         </div>
       </div>

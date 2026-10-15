@@ -9,8 +9,12 @@ import {
   type AutoIntelligenceLevelId,
   type BaseModel,
 } from '@/config/models'
-import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline'
-import { TfBoxCheckmark, TfShuffle } from '@tinfoilsh/tinfoil-icons'
+import {
+  TfBoxCheckmark,
+  TfChevronDown,
+  TfChevronRight,
+  TfShuffle,
+} from '@tinfoilsh/tinfoil-icons'
 import {
   useCallback,
   useLayoutEffect,
@@ -545,7 +549,7 @@ export function ModelSelector({
                 <span className="text-xs">
                   {isThinkingActive ? currentEffort.label : 'Off'}
                 </span>
-                <ChevronRightIcon
+                <TfChevronRight
                   className={`h-4 w-4 transition-transform ${showEffortOptions && isMobileLayout ? 'rotate-90' : ''}`}
                   aria-hidden="true"
                 />
@@ -594,7 +598,7 @@ export function ModelSelector({
               {...menuItemHandlers(() => setShowOtherModels((prev) => !prev))}
             >
               <span>Other models</span>
-              <ChevronDownIcon
+              <TfChevronDown
                 className={`h-4 w-4 text-content-muted transition-transform ${showOtherModels ? 'rotate-180' : ''}`}
                 aria-hidden="true"
               />

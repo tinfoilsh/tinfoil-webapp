@@ -5,12 +5,12 @@ import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { DAILY_RATE_LIMIT_MESSAGE } from '@/constants/rate-limits'
 import {
   ArrowUturnLeftIcon,
-  ChevronDownIcon,
   ForwardIcon,
   InformationCircleIcon,
 } from '@heroicons/react/24/outline'
 import {
   TfBoxCheckmark,
+  TfChevronDown,
   TfClock,
   TfCopy,
   TfFork,
@@ -756,7 +756,7 @@ const DefaultMessageComponent = ({
                           <span>
                             {isUserMessageExpanded ? 'Show less' : 'Show more'}
                           </span>
-                          <ChevronDownIcon
+                          <TfChevronDown
                             aria-hidden="true"
                             className={cn(
                               'h-3 w-3 transition-transform',

@@ -25,8 +25,8 @@ import {
 } from '@/components/ui/card'
 import { cn } from '@/components/ui/utils'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { TfCode2 } from '@tinfoilsh/tinfoil-icons'
-import { Download, ExternalLink, Eye, FileText } from 'lucide-react'
+import { TfCode2, TfDownload, TfExternalLink } from '@tinfoilsh/tinfoil-icons'
+import { Eye, FileText } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { z } from 'zod'
@@ -422,7 +422,7 @@ export function ArtifactPreviewPanel({
               rel="noopener noreferrer"
               className="flex h-6 items-center gap-1 rounded px-2 text-xs text-content-muted hover:bg-surface-card hover:text-content-primary"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
+              <TfExternalLink className="h-3.5 w-3.5" />
               <span>Open</span>
             </a>
           )}
@@ -540,7 +540,7 @@ function ArtifactPreviewInlineCard({
         className="mr-4 inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-card"
         aria-label="Download artifact"
       >
-        <Download className="h-3.5 w-3.5" />
+        <TfDownload className="h-3.5 w-3.5" />
         Download
       </button>
     </div>
