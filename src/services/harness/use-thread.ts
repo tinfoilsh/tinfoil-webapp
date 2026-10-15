@@ -197,6 +197,10 @@ export function useThread(
   const [, setLocalRunsChanged] = useState(0)
   const generation = useRef(0)
   const starting = useRef(false)
+  // Chats moving between the cloud and this device. A change made to a chat
+  // during its move would stay with the copy the move deletes, so the chat
+  // takes no turns or edits until the move ends.
+  const moving = useRef(new Set<string>())
   const pending = useRef<{ input: Turn; run?: LocalRun } | null>(null)
   const uploads = useRef(new Map<string, LocalAttachment>())
   const images = useRef(
@@ -715,6 +719,7 @@ export function useThread(
   }
   function send(fields: Partial<Turn> = {}) {
     if ((!idRef.current || runsLocally()) && starting.current) return
+    if (idRef.current && moving.current.has(idRef.current)) return
     setError('')
     lastTurn.current = {
       kind: fields.kind ?? 'send',
@@ -785,6 +790,7 @@ export function useThread(
       ? localRef.current
       : !cloudRef.current || localIds.current.has(threadId)
   async function update(threadId: string, patch: Record<string, unknown>) {
+    if (moving.current.has(threadId)) return
     if (isLocalThread(threadId)) {
       const target = storeFor(
         idRef.current === threadId && temporaryRef.current,
@@ -864,16 +870,18 @@ export function useThread(
   // harness stored a moment ago is put back as it was on the device, so a
   // move that is undone keeps its original attachments.
   async function moveToDevice(threadId: string, original?: LocalThread) {
-    const moved = original
-      ? await placeOnDevice(api, store, original)
-      : await moveThreadToDevice(api, store, threadId)
-    localIds.current.add(threadId)
-    setThreads((previous) => previous.filter((t) => t.id !== threadId))
-    setLocalThreads((previous) => [
-      localSummary(moved),
-      ...previous.filter((t) => t.id !== threadId),
-    ])
-    if (idRef.current === threadId) await open(threadId, { local: true })
+    return whileMoving(threadId, async () => {
+      const moved = original
+        ? await placeOnDevice(api, store, original)
+        : await moveThreadToDevice(api, store, threadId)
+      localIds.current.add(threadId)
+      setThreads((previous) => previous.filter((t) => t.id !== threadId))
+      setLocalThreads((previous) => [
+        localSummary(moved),
+        ...previous.filter((t) => t.id !== threadId),
+      ])
+      if (idRef.current === threadId) await open(threadId, { local: true })
+    })
   }
   // Moves a chat from this device to the cloud under the same id, and
   // returns the device copy it replaced.
@@ -885,15 +893,31 @@ export function useThread(
           current.current.status === 'queued' ||
           starting.current))
     if (running) throw transferInFlight()
-    const { summary, original } = await moveThreadToCloud(api, store, threadId)
-    localIds.current.delete(threadId)
-    setLocalThreads((previous) => previous.filter((t) => t.id !== threadId))
-    setThreads((previous) => [
-      summary,
-      ...previous.filter((t) => t.id !== threadId),
-    ])
-    if (idRef.current === threadId) await open(threadId, { local: false })
-    return original
+    return whileMoving(threadId, async () => {
+      const { summary, original } = await moveThreadToCloud(
+        api,
+        store,
+        threadId,
+      )
+      localIds.current.delete(threadId)
+      setLocalThreads((previous) => previous.filter((t) => t.id !== threadId))
+      setThreads((previous) => [
+        summary,
+        ...previous.filter((t) => t.id !== threadId),
+      ])
+      if (idRef.current === threadId) await open(threadId, { local: false })
+      return original
+    })
+  }
+  // A chat takes no changes until its move has ended, the open chat's
+  // reopening included.
+  async function whileMoving<T>(threadId: string, move: () => Promise<T>) {
+    moving.current.add(threadId)
+    try {
+      return await move()
+    } finally {
+      moving.current.delete(threadId)
+    }
   }
   // Deletes every chat the user can see here: the harness's stored chats
   // with cloud sync, and the chats kept on this device.
@@ -1046,7 +1070,7 @@ export function useThread(
   ) {
     const threadId = idRef.current
     const messageId = current.current.messages[index]?.id
-    if (!threadId || !messageId) return
+    if (!threadId || !messageId || moving.current.has(threadId)) return
     const version = generation.current
     if (!runsLocally()) {
       const thread = await api.post<Thread>(stored.path, {

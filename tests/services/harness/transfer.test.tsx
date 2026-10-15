@@ -397,6 +397,77 @@ describe('moving a stored chat to this device', () => {
       'Nice beds',
     ])
   })
+
+  it('changes nothing in the open chat until its move ends', async () => {
+    signInWithCloudSync()
+    const cloud = [summary(CHAT_ID, 'Garden plans')]
+    let finishReading!: () => void
+    const reading = new Promise<void>((resolve) => {
+      finishReading = resolve
+    })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list')
+        return { threads: cloud, nextCursor: null }
+      if (path === '/v1/threads/get')
+        return {
+          ...summary(CHAT_ID, 'Garden plans'),
+          hasOlder: false,
+          messages: [
+            {
+              id: 'u1',
+              role: 'user',
+              createdAt: '2026-04-01T09:00:00Z',
+              content: 'Look at these',
+            },
+            {
+              id: 'r1',
+              role: 'assistant',
+              createdAt: '2026-04-01T09:00:02Z',
+              content: 'Nice beds',
+            },
+          ],
+        }
+      if (path === '/v1/threads/transcript') {
+        await reading
+        return { thread: transcript() }
+      }
+      if (path === '/v1/threads/delete') return {}
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { result } = await renderThreads(cloud)
+    await act(() => result.current.open(CHAT_ID))
+    let moving: Promise<void> | undefined
+    act(() => {
+      moving = result.current.moveToDevice(CHAT_ID)
+    })
+    await waitFor(() =>
+      expect(transfers().map(([path]) => path)).toContain(
+        '/v1/threads/transcript',
+      ),
+    )
+
+    // Each would change the cloud copy after its transcript was read, and
+    // be lost when the cloud copy is deleted.
+    expect(result.current.send({ content: 'More?' })).toBeUndefined()
+    await act(() => result.current.update(CHAT_ID, { title: 'Renamed' }))
+    await act(() => result.current.deleteMessage(1))
+    await act(async () => {
+      finishReading()
+      await moving
+    })
+
+    expect(client.events).not.toHaveBeenCalled()
+    expect(transfers()).toEqual([
+      ['/v1/threads/get', { key: KEY, id: CHAT_ID }],
+      ['/v1/threads/transcript', { key: KEY, threadId: CHAT_ID }],
+      ['/v1/threads/delete', { key: KEY, id: CHAT_ID }],
+    ])
+    expect(await stored(CHAT_ID)).toEqual(deviceCopy)
+    expect(result.current.chat).toMatchObject({
+      id: CHAT_ID,
+      isLocalOnly: true,
+    })
+  })
 })
 
 describe('moving a chat from this device to the cloud', () => {
@@ -541,6 +612,66 @@ describe('moving a chat from this device to the cloud', () => {
       await sending
     })
     expect((await stored(CHAT_ID))?.id).toBe(CHAT_ID)
+  })
+
+  it('changes nothing in the open chat until its move ends', async () => {
+    signInWithCloudSync()
+    await localThreadStore('device').update(CHAT_ID, () => deviceCopy)
+    let finishImport!: () => void
+    const importing = new Promise<void>((resolve) => {
+      finishImport = resolve
+    })
+    client.post.mockImplementation(async (path: string) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/threads/import') {
+        await importing
+        return imported
+      }
+      if (path === '/v1/threads/get')
+        return { ...imported, hasOlder: false, messages: [] }
+      throw new Error(`Unexpected ${path}`)
+    })
+    const { result } = renderHook(() =>
+      useThread(CHAT_ID, null, { local: true }),
+    )
+    await waitFor(() => expect(result.current.chat.messages).toHaveLength(2))
+    let moving: Promise<unknown> | undefined
+    act(() => {
+      moving = result.current.moveToCloud(CHAT_ID)
+    })
+    await waitFor(() =>
+      expect(transfers().map(([path]) => path)).toEqual(['/v1/threads/import']),
+    )
+
+    // Each would change the device copy after the import read it, and be
+    // lost when the device copy is deleted.
+    expect(result.current.send({ content: 'More?' })).toBeUndefined()
+    await act(() => result.current.update(CHAT_ID, { title: 'Renamed' }))
+    await act(() => result.current.deleteMessage(1))
+    expect(await stored(CHAT_ID)).toEqual(deviceCopy)
+    await act(async () => {
+      finishImport()
+      await moving
+    })
+
+    expect(client.events).not.toHaveBeenCalled()
+    expect(transfers()).toEqual([
+      [
+        '/v1/threads/import',
+        expect.objectContaining({
+          thread: expect.objectContaining({
+            title: 'Garden plans',
+            messages: deviceCopy.messages,
+          }),
+        }),
+      ],
+      ['/v1/threads/get', { key: KEY, id: CHAT_ID }],
+    ])
+    expect(await stored(CHAT_ID)).toBeNull()
+    expect(result.current.chat).toMatchObject({
+      id: CHAT_ID,
+      isLocalOnly: false,
+    })
   })
 
   it('puts the device copy back under the same id after a move is undone', async () => {
