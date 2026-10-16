@@ -163,7 +163,6 @@ export function useThread(
   const [blankChats, setBlankChats] = useState(0)
   // The prompt new chats start with, which the harness keeps in the profile.
   const defaultPresetId =
-    session?.features.defaultPromptPreset &&
     typeof profile.defaultPromptPresetId === 'string' &&
     profile.defaultPromptPresetId
       ? profile.defaultPromptPresetId

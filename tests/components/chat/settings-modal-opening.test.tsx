@@ -478,7 +478,7 @@ describe('settings prompts', () => {
     authState.isSignedIn = false
   })
 
-  it('chooses the prompt new chats start with where the harness keeps one', async () => {
+  it('chooses the prompt new chats start with', async () => {
     const profile = {
       customPromptPresets: [
         {
@@ -507,7 +507,6 @@ describe('settings prompts', () => {
             builtIn: true,
           },
         ],
-        features: { ...testSession.features, defaultPromptPreset: true },
       },
       profile,
     })
@@ -517,9 +516,6 @@ describe('settings prompts', () => {
       name: 'Default prompt for new chats',
     })
     expect(picker).toHaveValue('')
-    expect(
-      screen.queryByRole('checkbox', { name: 'Custom default prompt' }),
-    ).not.toBeInTheDocument()
 
     fireEvent.change(picker, { target: { value: 'user:quiet' } })
 
@@ -527,18 +523,6 @@ describe('settings prompts', () => {
       expect(getView().profile.defaultPromptPresetId).toBe('user:quiet'),
     )
     expect(picker).toHaveValue('user:quiet')
-  })
-
-  it('keeps the custom default prompt against a harness without one', () => {
-    publish({ session: testSession, profile: {} })
-    render(<Harness initialTab="prompts" />)
-
-    expect(
-      screen.getByRole('checkbox', { name: 'Custom default prompt' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('combobox', { name: 'Default prompt for new chats' }),
-    ).not.toBeInTheDocument()
   })
 })
 

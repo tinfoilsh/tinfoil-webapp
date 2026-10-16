@@ -65,7 +65,6 @@ const session: Session = {
       reasoning: null,
     },
   ],
-  features: { ...testSession.features, defaultPromptPreset: true },
 }
 
 let client: {
@@ -78,11 +77,9 @@ let client: {
 function signIn({
   cloud,
   profile = {},
-  features = session.features,
 }: {
   cloud: boolean
   profile?: Record<string, unknown>
-  features?: Record<string, boolean>
 }) {
   localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
   localStorage.setItem(
@@ -105,7 +102,7 @@ function signIn({
   vi.spyOn(api, 'key').mockReturnValue(KEY)
   activateAPI(api)
   publish({
-    session: { ...session, features },
+    session,
     profile: {
       customPromptPresets: [RESEARCH, QUIET],
       ...profile,
@@ -197,20 +194,6 @@ describe('the default prompt of a new stored chat', () => {
     await act(() => result.current.send({ content: 'Hi' }))
 
     expect(turn()).toMatchObject({ ephemeral: true, presetId: QUIET.id })
-  })
-
-  it('ignores the default against a harness that keeps none', async () => {
-    signIn({
-      cloud: true,
-      profile: { defaultPromptPresetId: QUIET.id },
-      features: testSession.features,
-    })
-    client.events.mockImplementation(finished('thread-1'))
-    const { result } = renderHook(() => useThread())
-    await waitFor(() => expect(result.current.model).toBe('test-model'))
-
-    expect(result.current.presetId).toBeNull()
-    expect(result.current.chat.webSearchEnabled).toBeUndefined()
   })
 
   it("applies the default prompt's model to a new chat", async () => {
@@ -322,7 +305,6 @@ describe('the prompt library', () => {
   it('sets and clears the default prompt in the profile', async () => {
     signIn({ cloud: true })
     const { result } = renderHook(() => usePromptLibrary())
-    expect(result.current.canSetDefaultPreset).toBe(true)
 
     act(() => result.current.setDefaultPreset(RESEARCH.id))
     await waitFor(() =>
@@ -513,24 +495,6 @@ describe('the custom default prompt', () => {
         defaultPromptPresetId: 'builtin:tutor',
       }),
     )
-  })
-
-  it('stays where the harness keeps no default prompt', async () => {
-    const api = signIn({ cloud: false, features: testSession.features })
-    localStorage.setItem(
-      'tinfoil-user-prefs-local-profile',
-      JSON.stringify({
-        isUsingCustomPrompt: true,
-        customSystemPrompt: 'Answer in French.',
-      }),
-    )
-
-    await act(() => api.refreshProfile())
-
-    expect(getView().profile).toEqual({
-      isUsingCustomPrompt: true,
-      customSystemPrompt: 'Answer in French.',
-    })
   })
 })
 

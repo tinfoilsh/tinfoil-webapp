@@ -171,11 +171,7 @@ describe('PromptLibraryModal favorite icons', () => {
 describe('PromptLibraryModal default prompt', () => {
   const withDefaults = (profile: Record<string, unknown> = {}) =>
     publish({
-      session: {
-        ...testSession,
-        presets: PRESETS,
-        features: { ...testSession.features, defaultPromptPreset: true },
-      },
+      session: { ...testSession, presets: PRESETS },
       profile,
     })
 
@@ -203,14 +199,6 @@ describe('PromptLibraryModal default prompt', () => {
     fireEvent.click(current)
     await screen.findByRole('button', { name: 'Set as default' })
     expect(getView().profile.defaultPromptPresetId).toBe('')
-  })
-
-  it('offers no default against a harness that keeps none', () => {
-    renderModal()
-    expect(screen.getByRole('button', { name: 'Favorite' })).toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Set as default' }),
-    ).not.toBeInTheDocument()
   })
 
   it("shows a saved prompt's chat settings and edits them", async () => {

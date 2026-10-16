@@ -676,15 +676,10 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const { getToken, signOut } = useAuth()
   const { user } = useUser()
-  // The prompt new chats start with replaces the custom default prompt where
-  // the harness keeps one, as on main.
-  const {
-    builtInPresets,
-    userPresets,
-    defaultPreset,
-    setDefaultPreset,
-    canSetDefaultPreset,
-  } = usePromptLibrary()
+  // The prompt new chats start with replaces the custom default prompt, as
+  // on main.
+  const { builtInPresets, userPresets, defaultPreset, setDefaultPreset } =
+    usePromptLibrary()
   const { toast } = useToast()
   const { api, session, profile, keyReady } = useHarness()
 
@@ -727,10 +722,6 @@ export function SettingsModal({
 
   // Language setting (separate from personalization)
   const [language, setLanguage] = useState<string>(SYSTEM_RESPONSE_LANGUAGE)
-
-  // Custom system prompt settings
-  const [isUsingCustomPrompt, setIsUsingCustomPrompt] = useState<boolean>(false)
-  const [customSystemPrompt, setCustomSystemPrompt] = useState<string>('')
 
   // Without cloud sync every chat and setting stays on this device.
   const cloudSyncSetting = useCloudSyncSetting()
@@ -882,8 +873,6 @@ export function SettingsModal({
     })
     setIsUsingPersonalization(profile.isUsingPersonalization ?? true)
     setLanguage(profile.language ?? SYSTEM_RESPONSE_LANGUAGE)
-    setIsUsingCustomPrompt(profile.isUsingCustomPrompt ?? false)
-    setCustomSystemPrompt(profile.customSystemPrompt ?? '')
     setPiiCheckEnabled(profile.piiCheckEnabled ?? true)
     setEnterToNewlineEnabled(profile.enterToNewlineEnabled ?? false)
     setPixelateSidebarChatTitles(
@@ -1063,25 +1052,6 @@ export function SettingsModal({
   const handleChatFontChange = (font: ChatFont) => {
     setChatFont(font)
     void api.updateProfile({ chatFont: font }).catch(reportHarnessError)
-  }
-
-  const handleToggleCustomPrompt = (enabled: boolean) => {
-    setIsUsingCustomPrompt(enabled)
-    void api
-      .updateProfile({ isUsingCustomPrompt: enabled })
-      .catch(reportHarnessError)
-  }
-
-  const handleCustomPromptBlur = () => {
-    void api.updateProfile({ customSystemPrompt }).catch(reportHarnessError)
-  }
-
-  const handleRestoreDefaultPrompt = () => {
-    setCustomSystemPrompt('')
-    setIsUsingCustomPrompt(false)
-    void api
-      .updateProfile({ customSystemPrompt: '', isUsingCustomPrompt: false })
-      .catch(reportHarnessError)
   }
 
   // Turning cloud sync on needs the encryption key, which a passkey can
@@ -2872,153 +2842,60 @@ ${encryptionKey.replace('key_', '')}
               {/* Prompts Tab */}
               {activeTab === 'prompts' && (
                 <>
-                  {canSetDefaultPreset ? (
-                    <div className="space-y-3">
-                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                        Default Prompt
-                      </h3>
-                      <div
-                        className={cn(
-                          'rounded-lg border border-border-subtle p-4',
-                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                        )}
-                      >
-                        <div className="space-y-3">
-                          <div>
-                            <div className="font-aeonik text-sm font-medium text-content-primary">
-                              Default prompt for new chats
-                            </div>
-                            <div className="font-aeonik-fono text-xs text-content-muted">
-                              New chats start with this prompt from your
-                              library. You can still switch prompts in any chat.
-                            </div>
+                  <div className="space-y-3">
+                    <h3 className="font-aeonik text-sm font-medium text-content-secondary">
+                      Default Prompt
+                    </h3>
+                    <div
+                      className={cn(
+                        'rounded-lg border border-border-subtle p-4',
+                        isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
+                      )}
+                    >
+                      <div className="space-y-3">
+                        <div>
+                          <div className="font-aeonik text-sm font-medium text-content-primary">
+                            Default prompt for new chats
                           </div>
-                          <select
-                            value={defaultPreset?.id ?? ''}
-                            onChange={(e) =>
-                              setDefaultPreset(e.target.value || null)
-                            }
-                            aria-label="Default prompt for new chats"
-                            className={cn(
-                              'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
-                              isDarkMode
-                                ? 'border-border-strong bg-surface-chat text-content-secondary'
-                                : 'border-border-subtle bg-surface-sidebar text-content-primary',
-                            )}
-                          >
-                            <option value="">Tinfoil default</option>
-                            {userPresets.length > 0 && (
-                              <optgroup label="Your prompts">
-                                {userPresets.map((preset) => (
-                                  <option key={preset.id} value={preset.id}>
-                                    {preset.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            )}
-                            <optgroup label="Built-in">
-                              {builtInPresets.map((preset) => (
+                          <div className="font-aeonik-fono text-xs text-content-muted">
+                            New chats start with this prompt from your library.
+                            You can still switch prompts in any chat.
+                          </div>
+                        </div>
+                        <select
+                          value={defaultPreset?.id ?? ''}
+                          onChange={(e) =>
+                            setDefaultPreset(e.target.value || null)
+                          }
+                          aria-label="Default prompt for new chats"
+                          className={cn(
+                            'w-full rounded-md border py-2 pl-3 pr-8 text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
+                            isDarkMode
+                              ? 'border-border-strong bg-surface-chat text-content-secondary'
+                              : 'border-border-subtle bg-surface-sidebar text-content-primary',
+                          )}
+                        >
+                          <option value="">Tinfoil default</option>
+                          {userPresets.length > 0 && (
+                            <optgroup label="Your prompts">
+                              {userPresets.map((preset) => (
                                 <option key={preset.id} value={preset.id}>
                                   {preset.name}
                                 </option>
                               ))}
                             </optgroup>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <h3 className="font-aeonik text-sm font-medium text-content-secondary">
-                        Default System Prompt
-                      </h3>
-                      <div
-                        className={cn(
-                          'rounded-lg border border-border-subtle p-4',
-                          isDarkMode ? 'bg-surface-sidebar' : 'bg-white',
-                        )}
-                      >
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <div className="mr-3 flex-1">
-                              <div className="font-aeonik text-sm font-medium text-content-primary">
-                                Custom default prompt
-                              </div>
-                              <div className="font-aeonik-fono text-xs text-content-muted">
-                                Override the system prompt for chats that
-                                don&apos;t have a preset selected.
-                              </div>
-                            </div>
-                            <label className="relative inline-flex cursor-pointer items-center">
-                              <input
-                                type="checkbox"
-                                aria-label="Custom default prompt"
-                                checked={isUsingCustomPrompt}
-                                onChange={(e) =>
-                                  handleToggleCustomPrompt(e.target.checked)
-                                }
-                                className="peer sr-only"
-                              />
-                              <div className="peer h-5 w-9 rounded-full border border-border-subtle bg-content-muted/40 after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-content-muted/70 after:shadow-sm after:transition-all after:content-[''] peer-checked:bg-brand-accent-light peer-checked:after:translate-x-full peer-checked:after:bg-white peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-border-strong" />
-                            </label>
-                          </div>
-                          {isUsingCustomPrompt && (
-                            <>
-                              <textarea
-                                aria-label="Custom system prompt"
-                                value={customSystemPrompt}
-                                onChange={(e) =>
-                                  setCustomSystemPrompt(e.target.value)
-                                }
-                                onBlur={handleCustomPromptBlur}
-                                placeholder="Enter your custom system prompt..."
-                                rows={6}
-                                className={cn(
-                                  'w-full resize-none rounded-md border px-3 py-2 font-mono text-sm focus:outline-none focus-visible:ring-1 focus-visible:ring-border-strong',
-                                  isDarkMode
-                                    ? 'border-border-strong bg-surface-chat text-content-secondary placeholder:text-content-muted'
-                                    : 'border-border-subtle bg-surface-sidebar text-content-primary placeholder:text-content-muted',
-                                )}
-                              />
-                              <div className="rounded-lg border border-border-subtle bg-surface-chat p-3">
-                                <div className="font-aeonik-fono text-xs text-content-muted">
-                                  <span
-                                    className={cn(
-                                      'font-aeonik font-medium',
-                                      isDarkMode
-                                        ? 'text-brand-accent-light'
-                                        : 'text-brand-accent-dark',
-                                    )}
-                                  >
-                                    Tip:
-                                  </span>{' '}
-                                  Use placeholders like {'{USER_PREFERENCES}'},{' '}
-                                  {'{LANGUAGE}'}, and {'{TIMEZONE}'} to tell the
-                                  model about your preferences and timezone. The
-                                  current time and date are always provided to
-                                  the model automatically.
-                                </div>
-                              </div>
-                              <div className="flex justify-center">
-                                <button
-                                  type="button"
-                                  onClick={handleRestoreDefaultPrompt}
-                                  className={cn(
-                                    'rounded-md px-3 py-1.5 text-xs transition-all hover:underline',
-                                    isDarkMode
-                                      ? 'text-red-400 hover:text-red-300'
-                                      : 'text-red-600 hover:text-red-500',
-                                  )}
-                                >
-                                  Restore default prompt
-                                </button>
-                              </div>
-                            </>
                           )}
-                        </div>
+                          <optgroup label="Built-in">
+                            {builtInPresets.map((preset) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        </select>
                       </div>
                     </div>
-                  )}
+                  </div>
 
                   <div className="space-y-3">
                     <h3 className="font-aeonik text-sm font-medium text-content-secondary">

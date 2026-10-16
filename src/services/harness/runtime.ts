@@ -287,7 +287,6 @@ export class HarnessAPI {
   // Moves a profile still using the custom default prompt to the prompt
   // library, where the harness keeps the default prompt.
   private adoptLegacyCustomPrompt(profile: Profile) {
-    if (!view.session?.features.defaultPromptPreset) return
     if (!legacyCustomPromptPatch(profile)) return
     void this.updateProfile(
       (current) => legacyCustomPromptPatch(current) ?? {},

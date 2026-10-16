@@ -67,10 +67,8 @@ export function usePromptLibrary() {
     allPresets.filter((p) => p.id === id),
   )
   // The harness keeps the preset new chats start with, and stamps it on a
-  // stored chat's first turn. An older harness has no such setting.
-  const canSetDefaultPreset = !!session?.features.defaultPromptPreset
+  // stored chat's first turn.
   const defaultPresetId =
-    canSetDefaultPreset &&
     typeof profile.defaultPromptPresetId === 'string' &&
     profile.defaultPromptPresetId
       ? profile.defaultPromptPresetId
@@ -131,7 +129,7 @@ export function usePromptLibrary() {
           favoritePromptPresetIds: (
             (current.favoritePromptPresetIds ?? []) as string[]
           ).filter((favorite) => favorite !== id),
-          ...(canSetDefaultPreset && current.defaultPromptPresetId === id
+          ...(current.defaultPromptPresetId === id
             ? { defaultPromptPresetId: '' }
             : {}),
         }))
@@ -183,13 +181,11 @@ export function usePromptLibrary() {
       )
       return stale
     },
-    canSetDefaultPreset,
     defaultPresetId,
     defaultPreset: getPresetById(defaultPresetId),
     // An empty string clears the default, as the harness and the iOS app
     // store it.
     setDefaultPreset: (id: string | null) => {
-      if (!canSetDefaultPreset) return
       void api
         .updateProfile({ defaultPromptPresetId: id ?? '' })
         .catch(reportHarnessError)

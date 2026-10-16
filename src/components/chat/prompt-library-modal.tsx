@@ -67,7 +67,6 @@ export function PromptLibraryModal({
     toggleFavorite,
     defaultPresetId,
     setDefaultPreset,
-    canSetDefaultPreset,
   } = usePromptLibrary()
 
   const [selectedId, setSelectedId] = useState<string | null>(
@@ -417,15 +416,12 @@ export function PromptLibraryModal({
                       canAddFavorite={canAddFavorite}
                       onToggleFavorite={() => toggleFavorite(selectedPreset.id)}
                       isDefault={defaultPresetId === selectedPreset.id}
-                      onToggleDefault={
-                        canSetDefaultPreset
-                          ? () =>
-                              setDefaultPreset(
-                                defaultPresetId === selectedPreset.id
-                                  ? null
-                                  : selectedPreset.id,
-                              )
-                          : undefined
+                      onToggleDefault={() =>
+                        setDefaultPreset(
+                          defaultPresetId === selectedPreset.id
+                            ? null
+                            : selectedPreset.id,
+                        )
                       }
                       onUseThis={handleUseThis}
                       onClearActive={handleClearActive}
@@ -473,8 +469,7 @@ type PresetDetailProps = {
   canAddFavorite: boolean
   onToggleFavorite: () => void
   isDefault: boolean
-  // Absent when the harness keeps no default preset.
-  onToggleDefault?: () => void
+  onToggleDefault: () => void
   onUseThis: () => void
   onClearActive: () => void
   onEdit: () => void
@@ -641,31 +636,29 @@ function PresetDetail({
           )}
           {isFavorite ? 'Favorited' : 'Favorite'}
         </button>
-        {onToggleDefault && (
-          <button
-            type="button"
-            onClick={onToggleDefault}
-            aria-pressed={isDefault}
-            title={
-              isDefault
-                ? 'New chats start with this prompt'
-                : 'Use this prompt for every new chat'
-            }
-            className={cn(
-              'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
-              isDefault
-                ? 'text-brand-accent-dark hover:bg-brand-accent-dark/10 dark:text-brand-accent-light dark:hover:bg-brand-accent-light/10'
-                : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
-            )}
-          >
-            {isDefault ? (
-              <TfBookmarkFilled className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <TfBookmark className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
-            {isDefault ? 'Default for new chats' : 'Set as default'}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onToggleDefault}
+          aria-pressed={isDefault}
+          title={
+            isDefault
+              ? 'New chats start with this prompt'
+              : 'Use this prompt for every new chat'
+          }
+          className={cn(
+            'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors',
+            isDefault
+              ? 'text-brand-accent-dark hover:bg-brand-accent-dark/10 dark:text-brand-accent-light dark:hover:bg-brand-accent-light/10'
+              : 'text-content-secondary hover:bg-surface-chat hover:text-content-primary',
+          )}
+        >
+          {isDefault ? (
+            <TfBookmarkFilled className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <TfBookmark className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          {isDefault ? 'Default for new chats' : 'Set as default'}
+        </button>
         {!preset.isBuiltIn && (
           <button
             type="button"
