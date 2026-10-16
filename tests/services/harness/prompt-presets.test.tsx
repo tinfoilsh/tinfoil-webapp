@@ -1,30 +1,19 @@
 import { usePromptLibrary } from '@/components/chat/hooks/use-prompt-library'
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import type { HarnessClient } from '@/services/harness/client'
 import {
-  activateAPI,
   getView,
-  HarnessAPI,
   MIGRATED_CUSTOM_PROMPT_PRESET_ID,
-  publish,
 } from '@/services/harness/runtime'
 import type { Frame, Session, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
-import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { testSession } from '../../harness-fixture'
+import {
+  client,
+  KEY,
+  resetChatStoresAroundEachTest,
+  signIn as signInTo,
+} from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -33,7 +22,6 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 
-const KEY = 'Y29udGVudC1rZXk='
 const RESEARCH = {
   id: 'user:research',
   name: 'Research',
@@ -66,13 +54,6 @@ const session: Session = {
   ],
 }
 
-let client: {
-  events: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  upload: ReturnType<typeof vi.fn>
-  download: ReturnType<typeof vi.fn>
-}
-
 function signIn({
   cloud,
   profile = {},
@@ -80,35 +61,19 @@ function signIn({
   cloud: boolean
   profile?: Record<string, unknown>
 }) {
-  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
-  localStorage.setItem(
-    'tinfoil-settings-cloud-sync-enabled',
-    cloud ? 'true' : 'false',
-  )
-  client = {
-    events: vi.fn(),
-    post: vi.fn(async (path: string, input: Record<string, unknown>) =>
+  const api = signInTo({
+    cloud,
+    session,
+    profile: { customPromptPresets: [RESEARCH, QUIET], ...profile },
+  })
+  client.post.mockImplementation(
+    async (path: string, input: Record<string, unknown>) =>
       path === '/v1/threads/list'
         ? { threads: [], nextCursor: null }
         : path === '/v1/profile/update'
           ? { ...getView().profile, ...(input.patch as object) }
           : {},
-    ),
-    upload: vi.fn(),
-    download: vi.fn(),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
-  vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({
-    session,
-    profile: {
-      customPromptPresets: [RESEARCH, QUIET],
-      ...profile,
-    },
-    keyReady: true,
-    profileReady: true,
-  })
+  )
   return api
 }
 
@@ -123,29 +88,7 @@ const turn = (call = 0) => client.events.mock.calls[call][1] as Turn
 // What the attested client sends: the turn as JSON, without undefined fields.
 const sent = (call = 0) => JSON.parse(JSON.stringify(turn(call)))
 
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
-})
-
-beforeEach(async () => {
-  sessionStorage.clear()
-  deletedChatsTracker.clear()
-  await indexedDBStorage.deleteAllChats()
-  deletedChatsTracker.clear()
-})
-
-afterEach(() => {
-  chatEvents.clear()
-  deletedChatsTracker.clear()
-  vi.restoreAllMocks()
-})
+resetChatStoresAroundEachTest()
 
 describe('the default prompt of a new stored chat', () => {
   it('shows the default and leaves it to the harness to stamp', async () => {

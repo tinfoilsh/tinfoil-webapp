@@ -1,28 +1,18 @@
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import type { HarnessClient } from '@/services/harness/client'
 import {
   localThreadStore,
   type LocalThread,
 } from '@/services/harness/local-threads'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Thread } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
-import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { renderHook, waitFor } from '@testing-library/react'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
+import { describe, expect, it, vi } from 'vitest'
 import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
-import { testSession } from '../../harness-fixture'
+  client,
+  KEY,
+  resetChatStoresAroundEachTest,
+  signIn,
+} from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -32,37 +22,6 @@ vi.mock('@/utils/error-handling', () => ({
 }))
 
 const THREAD_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
-const KEY = 'Y29udGVudC1rZXk='
-
-let client: {
-  events: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  upload: ReturnType<typeof vi.fn>
-  download: ReturnType<typeof vi.fn>
-}
-
-function signIn({ cloud }: { cloud: boolean }) {
-  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
-  localStorage.setItem(
-    'tinfoil-settings-cloud-sync-enabled',
-    cloud ? 'true' : 'false',
-  )
-  client = {
-    events: vi.fn(),
-    post: vi.fn().mockResolvedValue({}),
-    upload: vi.fn(),
-    download: vi.fn(),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
-  vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({
-    session: testSession,
-    profile: {},
-    keyReady: true,
-    profileReady: true,
-  })
-}
 
 const thread: Thread = {
   id: THREAD_ID,
@@ -108,30 +67,7 @@ const thread: Thread = {
   ],
 }
 
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
-})
-
-beforeEach(async () => {
-  sessionStorage.clear()
-  deletedChatsTracker.clear()
-  await indexedDBStorage.deleteAllChats()
-  deletedChatsTracker.clear()
-})
-
-afterEach(() => {
-  chatEvents.clear()
-  deletedChatsTracker.clear()
-  sessionStorage.clear()
-  vi.restoreAllMocks()
-})
+resetChatStoresAroundEachTest()
 
 describe('attachments of a stored chat', () => {
   async function openStored() {
