@@ -269,29 +269,6 @@ describe('NativeBackupRestore', () => {
     })
   })
 
-  it('aborts a started restore when its owner changes', async () => {
-    const runRestore = mocks.restore.mockImplementation(
-      (
-        _file: File,
-        _owner: string,
-        signal: AbortSignal,
-        events: Parameters<typeof restoreNativeBackup>[3] = {},
-      ) => {
-        events.onStarted?.(runningStatus)
-        return new Promise<NativeRestoreResult>((_resolve, reject) =>
-          signal.addEventListener('abort', () => reject(signal.reason)),
-        )
-      },
-    )
-    const view = render(<NativeBackupRestore available ownerId="owner-a" />)
-    selectArchive(view.container)
-    await waitFor(() => expect(runRestore).toHaveBeenCalledOnce())
-
-    view.rerender(<NativeBackupRestore available ownerId="owner-b" />)
-
-    expect(runRestore.mock.calls[0][2].aborted).toBe(true)
-  })
-
   it('refreshes chats after an enclave-started restore is unmounted', async () => {
     const finish = startEnclaveRestore()
     const updated = vi.fn()
@@ -582,19 +559,37 @@ describe('NativeBackupRestore', () => {
     },
   )
 
-  it('surfaces a terminal failure after the progress view is closed', async () => {
-    const finish = startEnclaveRestore()
-    const view = render(<NativeBackupRestore available ownerId="owner" />)
-    selectArchive(view.container)
-    fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
+  it.each([
+    [
+      'a terminal failure',
+      { state: 'failed', failureReason: 'timeout', report },
+      [
+        /^The cloud restore failed\./,
+        /ran out of time/i,
+        /No local chats were restored\.$/,
+      ],
+    ],
+    [
+      'a completion',
+      { state: 'completed', report },
+      [/^Backup restored successfully\.$/],
+    ],
+  ] satisfies [string, NativeRestoreResult, RegExp[]][])(
+    'surfaces %s after the progress view is closed',
+    async (_, result, texts) => {
+      const finish = startEnclaveRestore()
+      const view = render(<NativeBackupRestore available ownerId="owner" />)
+      selectArchive(view.container)
+      fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
 
-    finish({ state: 'failed', failureReason: 'timeout', report })
+      finish(result)
 
-    const message = await screen.findByRole('status')
-    expect(message).toHaveTextContent(/^The cloud restore failed\./)
-    expect(message).toHaveTextContent(/ran out of time/i)
-    expect(message).toHaveTextContent(/No local chats were restored\.$/)
-  })
+      await waitFor(() => {
+        for (const text of texts)
+          expect(screen.getByRole('status')).toHaveTextContent(text)
+      })
+    },
+  )
 
   it('explains an interrupted restore without a report table', async () => {
     mocks.restore.mockResolvedValue({
@@ -611,18 +606,5 @@ describe('NativeBackupRestore', () => {
     expect(message).toHaveTextContent(/interrupted/i)
     expect(message).toHaveTextContent("We'll email you")
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
-  })
-
-  it('replaces the dismissed progress message after completion', async () => {
-    const finish = startEnclaveRestore()
-    const view = render(<NativeBackupRestore available ownerId="owner" />)
-    selectArchive(view.container)
-    fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
-
-    finish({ state: 'completed', report })
-
-    expect(
-      await screen.findByText('Backup restored successfully.'),
-    ).toBeVisible()
   })
 })

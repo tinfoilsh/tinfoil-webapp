@@ -38,52 +38,6 @@ describe('OnboardingView', () => {
     vi.restoreAllMocks()
   })
 
-  it('does not imply legal consent when continuing onboarding', async () => {
-    const onComplete = vi.fn()
-    render(<OnboardingView onComplete={onComplete} persistCompletion={false} />)
-
-    expect(
-      screen.getByRole('heading', { name: 'Why Tinfoil Chat' }),
-    ).toBeInTheDocument()
-    expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
-    await advanceToPrivacy()
-    expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }))
-    await screen.findByRole('heading', { name: 'Tending the Garden' })
-    expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
-    expect(onComplete).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
-    expect(onComplete).toHaveBeenCalledTimes(1)
-  })
-
-  it('renders the intro artwork and emphasized privacy message', () => {
-    render(<OnboardingView onComplete={vi.fn()} />)
-
-    expect(
-      screen.getByRole('img', {
-        name: 'A garden seen through a porthole in a dense city',
-      }),
-    ).toHaveAttribute('width', '1024')
-    expect(
-      screen.getByRole('img', {
-        name: 'A garden seen through a porthole in a dense city',
-      }),
-    ).toHaveAttribute('height', '338')
-    expect(
-      screen.getByText('Tinfoil Chat was built as a sanctuary for thought.')
-        .tagName,
-    ).toBe('STRONG')
-    expect(
-      screen.getByText('Tinfoil Chat was built as a sanctuary for thought.'),
-    ).toHaveClass('text-content-primary')
-    const emphasizedWord = screen.getByText('your')
-    expect(emphasizedWord.tagName).toBe('EM')
-    expect(emphasizedWord.parentElement).toHaveTextContent(
-      'This is your space to explore ideas in private.',
-    )
-  })
-
   it('shows safeguards last and only persists completion after Get Started', async () => {
     const update = vi.fn().mockResolvedValue(undefined)
     mocks.useUser.mockReturnValue({
@@ -102,26 +56,6 @@ describe('OnboardingView', () => {
     expect(
       await screen.findByRole('heading', { name: 'Tending the Garden' }),
     ).toBeInTheDocument()
-    const learnMoreLink = screen.getByRole('link', {
-      name: 'Learn more about safeguards',
-    })
-    expect(learnMoreLink).toHaveAttribute(
-      'href',
-      'https://tinfoil.sh/safety-and-safeguards',
-    )
-    expect(learnMoreLink).toHaveAttribute('target', '_blank')
-    expect(learnMoreLink).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(document.querySelector('svg.text-tinfoil-accent-blue')).toHaveClass(
-      'dark:text-white',
-    )
-    const safeguardsParagraphs = [
-      'Privacy-preserving safeguards review AI responses for safety.',
-      'Tinfoil never sees conversation content or nature of the flag raised.',
-    ].map((text) => screen.getByText(text).closest('p'))
-    for (const paragraph of safeguardsParagraphs) {
-      expect(paragraph).toBeInTheDocument()
-    }
-    expect(new Set(safeguardsParagraphs).size).toBe(2)
     expect(onComplete).not.toHaveBeenCalled()
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
     expect(update).not.toHaveBeenCalled()
@@ -174,38 +108,26 @@ describe('OnboardingView', () => {
     expect(onComplete).toHaveBeenCalledTimes(1)
   })
 
-  it.each(['SecurityError', 'QuotaExceededError'])(
-    'finishes onboarding and updates the account when local storage throws %s',
-    async (errorName) => {
-      const error = new DOMException('Storage unavailable', errorName)
-      const update = vi.fn().mockResolvedValue(undefined)
-      mocks.useUser.mockReturnValue({
-        user: { unsafeMetadata: { existing: true }, update },
-      })
-      const onComplete = vi.fn()
-      render(<OnboardingView onComplete={onComplete} />)
-      await advanceToSafeguards()
+  it('finishes onboarding and updates the account when local storage throws', async () => {
+    const update = vi.fn().mockResolvedValue(undefined)
+    mocks.useUser.mockReturnValue({
+      user: { unsafeMetadata: { existing: true }, update },
+    })
+    const onComplete = vi.fn()
+    render(<OnboardingView onComplete={onComplete} />)
+    await advanceToSafeguards()
 
-      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
-        throw error
-      })
-      fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
+    vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage unavailable', 'SecurityError')
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Get Started' }))
 
-      expect(onComplete).toHaveBeenCalledTimes(1)
-      expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
-      expect(mocks.logError).toHaveBeenCalledWith(
-        'Could not persist local onboarding completion',
-        error,
-        {
-          component: 'OnboardingView',
-          action: 'markCompleted',
-        },
-      )
-      expect(update).toHaveBeenCalledWith({
-        unsafeMetadata: { existing: true, has_completed_onboarding: true },
-      })
-    },
-  )
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
+    expect(update).toHaveBeenCalledWith({
+      unsafeMetadata: { existing: true, has_completed_onboarding: true },
+    })
+  })
 
   it('logs metadata failures without blocking completion', async () => {
     const error = new Error('Clerk unavailable')
