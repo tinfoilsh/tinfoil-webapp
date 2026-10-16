@@ -93,9 +93,6 @@ describe('formatRecordingDuration', () => {
     expect(formatRecordingDuration(59.9)).toBe('0:59')
     expect(formatRecordingDuration(60)).toBe('1:00')
     expect(formatRecordingDuration(605)).toBe('10:05')
-  })
-
-  it('clamps negative input to zero', () => {
     expect(formatRecordingDuration(-3)).toBe('0:00')
   })
 })
