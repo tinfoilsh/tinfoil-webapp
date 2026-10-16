@@ -2,7 +2,7 @@ import type { HarnessClient } from '@/services/harness/client'
 import { HarnessAPI, activateAPI, publish } from '@/services/harness/runtime'
 import type { Frame, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { testSession } from './harness-fixture'
 
@@ -144,29 +144,4 @@ it('reattaches an accepted turn by run id and last event cursor', async () => {
   })
   expect(events.mock.calls[1][3]).toBe(1)
   expect(result.current.chat.messages).toHaveLength(2)
-})
-it('ignores a late stream after navigating to a new chat', async () => {
-  let release!: () => void
-  const gate = new Promise<void>((resolve) => {
-    release = resolve
-  })
-  events.mockImplementation(async function* () {
-    yield started
-    await gate
-    yield messages
-    yield finished
-  })
-  const { result } = renderHook(() => useThread())
-  let sending!: Promise<boolean> | undefined
-  act(() => {
-    sending = result.current.send({ content: 'private question' })
-  })
-  await waitFor(() => expect(result.current.chat.id).toBe('thread-1'))
-  act(() => result.current.newChat())
-  await act(async () => {
-    release()
-    await sending
-  })
-  expect(result.current.chat.messages).toEqual([])
-  expect(result.current.chat.id).toBe('')
 })

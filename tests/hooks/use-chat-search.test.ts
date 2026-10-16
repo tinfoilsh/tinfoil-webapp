@@ -86,28 +86,6 @@ describe('useChatSearch', () => {
     expect(result.current.isSearching).toBe(false)
   })
 
-  it('hides the old query results as soon as the user edits the search', async () => {
-    search
-      .mockResolvedValueOnce(page(['old']))
-      .mockResolvedValueOnce(page(['new']))
-    const { result, rerender } = renderHook(
-      ({ term }) => useChatSearch(term, true),
-      { initialProps: { term: 'old' } },
-    )
-    await flushDebounce()
-    expect(result.current.results[0].id).toBe('old')
-    rerender({ term: 'new' })
-    expect(result.current.results).toEqual([])
-    expect(result.current.isSearching).toBe(true)
-    await flushDebounce()
-    expect(result.current.results[0].id).toBe('new')
-    expect(result.current.isSearching).toBe(false)
-    rerender({ term: '' })
-    expect(result.current.results).toEqual([])
-    expect(result.current.isSearching).toBe(false)
-    expect(search).toHaveBeenCalledTimes(2)
-  })
-
   it('never renders the previous term results for a new term', async () => {
     search
       .mockResolvedValueOnce(page(['old']))
@@ -145,6 +123,10 @@ describe('useChatSearch', () => {
       ids: ['new'],
       isSearching: false,
     })
+
+    rerender({ term: '' })
+    expect(renders.at(-1)).toEqual({ term: '', ids: [], isSearching: false })
+    expect(search).toHaveBeenCalledTimes(2)
   })
 
   it('hides project hits immediately when the allowed search scope changes', async () => {
