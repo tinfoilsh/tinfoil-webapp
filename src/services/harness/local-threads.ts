@@ -661,15 +661,23 @@ function indexedDBBackend(storage: IndexedDBStorage): Backend {
   }
 }
 
+// The images session storage leaves out of an attachment: an image's bytes,
+// and a document's page images by page.
+interface HeldImages {
+  base64?: string
+  pageImages?: string[]
+}
+
 // A signed-out visitor's chats last as long as the browser tab. Session
-// storage cannot hold large images, so an image's bytes stay in this page's
-// memory only, by chat and attachment id; after a reload the chat keeps the
-// image's thumbnail.
+// storage cannot hold large images, so an image's bytes and a document's
+// page images stay in this page's memory only, by chat and attachment id;
+// after a reload the chat keeps the image's thumbnail and the document's
+// text.
 function sessionBackend(): Backend {
-  const images = new Map<string, Map<string, string>>()
+  const images = new Map<string, Map<string, HeldImages>>()
   const withImages = (
     row: Value,
-    kept: ReadonlyMap<string, string>,
+    kept: ReadonlyMap<string, HeldImages>,
   ): Value => ({
     ...row,
     messages: arr(row.messages).map((item) => {
@@ -679,10 +687,23 @@ function sessionBackend(): Backend {
             ...message,
             attachments: message.attachments.map((value) => {
               const attachment = obj(value)
-              const base64 = kept.get(str(attachment.id))
-              return base64 && !attachment.base64
-                ? { ...attachment, base64 }
-                : attachment
+              const held = kept.get(str(attachment.id))
+              if (!held) return attachment
+              const { base64, pageImages } = held
+              return {
+                ...attachment,
+                ...(base64 && !attachment.base64 ? { base64 } : {}),
+                ...(pageImages && Array.isArray(attachment.pages)
+                  ? {
+                      pages: attachment.pages.map((page, index) => {
+                        const image = pageImages[index]
+                        return image && !obj(page).image
+                          ? { ...obj(page), image }
+                          : page
+                      }),
+                    }
+                  : {}),
+              }
             }),
           }
         : message
@@ -702,17 +723,31 @@ function sessionBackend(): Backend {
       return row && kept ? withImages(row, kept) : row
     },
     async write(thread) {
-      const kept = new Map<string, string>()
+      const kept = new Map<string, HeldImages>()
       const messages = thread.messages.map((message) =>
         message.attachments
           ? {
               ...message,
               attachments: message.attachments.map((attachment) => {
-                if (attachment.type !== 'image' || !attachment.base64)
-                  return attachment
-                kept.set(attachment.id, attachment.base64)
-                const { base64: _, ...stored } = attachment
-                return stored
+                const base64 =
+                  attachment.type === 'image' ? attachment.base64 : undefined
+                const pages = attachment.pages?.some((page) => page.image)
+                  ? attachment.pages
+                  : undefined
+                if (!base64 && !pages) return attachment
+                kept.set(attachment.id, {
+                  ...(base64 ? { base64 } : {}),
+                  ...(pages
+                    ? { pageImages: pages.map((page) => page.image) }
+                    : {}),
+                })
+                const { base64: _, ...rest } = attachment
+                return {
+                  ...(base64 ? rest : attachment),
+                  ...(pages
+                    ? { pages: pages.map((page) => ({ ...page, image: '' })) }
+                    : {}),
+                }
               }),
             }
           : message,

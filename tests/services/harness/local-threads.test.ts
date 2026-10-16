@@ -358,8 +358,19 @@ describe('tab store', () => {
     }
   })
 
-  it("stores a signed-out chat's image as its thumbnail and keeps its bytes in memory", async () => {
+  it("keeps a signed-out chat's image bytes and page images in memory, not session storage", async () => {
     const store = localThreadStore('tab')
+    const scan: LocalAttachment = {
+      id: 'att_scan',
+      type: 'document',
+      fileName: 'scan.pdf',
+      mimeType: 'application/pdf',
+      fileSize: 8,
+      pages: [
+        { page: 1, text: 'Typed text', image: '', is_scanned: false },
+        { page: 2, text: 'Scanned text', image: 'cGFnZQ==', is_scanned: true },
+      ],
+    }
     const saved = thread({
       messages: [
         {
@@ -367,7 +378,7 @@ describe('tab store', () => {
           role: 'user',
           createdAt: '2026-05-01T10:00:01Z',
           content: 'What is this?',
-          attachments: [IMAGE],
+          attachments: [IMAGE, scan],
         },
       ],
     })
@@ -392,6 +403,17 @@ describe('tab store', () => {
               mimeType: 'image/png',
               fileSize: 4,
               thumbnailBase64: 'dGh1bWI=',
+            },
+            {
+              id: 'att_scan',
+              type: 'document',
+              fileName: 'scan.pdf',
+              mimeType: 'application/pdf',
+              fileSize: 8,
+              pages: [
+                { page: 1, text: 'Typed text', image: '', is_scanned: false },
+                { page: 2, text: 'Scanned text', image: '', is_scanned: true },
+              ],
             },
           ],
         },
