@@ -127,7 +127,6 @@ describe('performSignoutCleanup', () => {
 
       await performSignoutCleanup({ preserveEncryptionKey })
 
-      expect(authTokenManager.isInitialized()).toBe(true)
       expect(authTokenManager.isSignedOut()).toBe(true)
       await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
         reason: 'unavailable',
@@ -297,7 +296,6 @@ describe('performUserSwitchCleanup', () => {
 
     await performUserSwitchCleanup('user_new')
 
-    expect(authTokenManager.isInitialized()).toBe(false)
     expect(authTokenManager.isSignedOut()).toBe(false)
     await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
       reason: 'not-initialized',

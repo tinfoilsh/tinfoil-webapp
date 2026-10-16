@@ -29,10 +29,6 @@ export class AuthTokenManager {
     this.initialized = true
   }
 
-  isInitialized(): boolean {
-    return this.initialized
-  }
-
   isSignedOut(): boolean {
     return this.initialized && this.getToken === null
   }

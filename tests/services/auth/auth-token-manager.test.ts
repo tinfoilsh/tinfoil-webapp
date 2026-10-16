@@ -15,19 +15,22 @@ function deferred<T>() {
 describe('AuthTokenManager', () => {
   it('distinguishes a confirmed signed-out session from unresolved auth', async () => {
     const manager = new AuthTokenManager()
-    expect(manager.isInitialized()).toBe(false)
     expect(manager.isSignedOut()).toBe(false)
+    await expect(manager.getAuthHeaders()).rejects.toMatchObject({
+      reason: 'not-initialized',
+    })
 
     manager.initialize(null)
-    expect(manager.isInitialized()).toBe(true)
     expect(manager.isSignedOut()).toBe(true)
     await expect(manager.getAuthHeaders()).rejects.toMatchObject({
       reason: 'unavailable',
     })
 
     manager.reset()
-    expect(manager.isInitialized()).toBe(false)
     expect(manager.isSignedOut()).toBe(false)
+    await expect(manager.getAuthHeaders()).rejects.toMatchObject({
+      reason: 'not-initialized',
+    })
   })
 
   it('rejects an in-flight token read after confirmed sign-out', async () => {
