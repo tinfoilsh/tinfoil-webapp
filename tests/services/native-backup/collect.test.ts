@@ -592,7 +592,6 @@ describe('creating a native backup', () => {
   })
 
   it('marks local chats that keep changing as a partial snapshot', async () => {
-    signIn(cloudBackup())
     let reads = 0
     const collected = await collectNativeBackupV2(
       new AbortController().signal,
