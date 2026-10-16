@@ -6,9 +6,9 @@ import {
   LOCAL_IMPORT_MAX_ARCHIVE_BYTES,
   LocalImportBackgroundProcessingUnavailableError,
   LocalImportWorkerTimeoutError,
-  parseLocalTinfoilExport,
   parseLocalTinfoilExportForAccess,
   PremiumProjectImportRequiredError,
+  type LocalTinfoilImportOptions,
 } from '@/services/chat-import/local-tinfoil-import'
 import { parseTinfoilExportBytes } from '@/services/chat-import/local-tinfoil-import-parser'
 import { createFunctionalImportWorker } from './functional-import-worker'
@@ -17,6 +17,12 @@ const options = {
   generateChatId: () => 'imported-chat',
   isCloudSyncEnabled: false,
 }
+
+// Every chat of an export, as an account with project access imports it.
+const parseLocalTinfoilExport = async (
+  file: File,
+  parseOptions: LocalTinfoilImportOptions,
+) => (await parseLocalTinfoilExportForAccess(file, parseOptions, true)).chats
 
 function conversation(attachments?: unknown[]) {
   return [

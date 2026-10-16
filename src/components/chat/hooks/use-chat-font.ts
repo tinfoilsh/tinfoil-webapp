@@ -1,4 +1,5 @@
 import { SETTINGS_CHAT_FONT } from '@/constants/storage-keys'
+import { getView, subscribe } from '@/services/harness/runtime'
 import { useEffect } from 'react'
 
 export type ChatFont = 'system' | 'serif' | 'mono' | 'dyslexic'
@@ -18,49 +19,30 @@ const applyChatFont = (font: ChatFont) => {
 }
 
 /**
- * Keeps the data-chat-font attribute on <html> in sync with the saved
- * setting. The attribute is first set before paint by an inline script in
- * _document.tsx; elements using the `font-chat` class pick the font up from
- * CSS (see globals.css), so no per-component state is needed.
+ * Keeps the data-chat-font attribute on <html> in sync with the profile
+ * setting loaded from the chat service. Elements using the `font-chat` class
+ * pick the font up from CSS (see globals.css), so no per-component state is
+ * needed. The font is also kept on the device, where public/js/boot.js
+ * applies it before the first paint; until the settings load, that font
+ * stays.
  */
 export const useChatFontSync = () => {
   useEffect(() => {
-    let saved: string | null = null
-    try {
-      saved = localStorage.getItem(SETTINGS_CHAT_FONT)
-    } catch {
-      // Storage can be blocked (e.g. disabled cookies); keep the default font.
-    }
-    applyChatFont(normalizeChatFont(saved))
-
-    const handleStorageChange = (e: StorageEvent | CustomEvent) => {
-      let key: string | null = null
-      let newValue: string | null = null
-
-      if (e instanceof StorageEvent) {
-        key = e.key
-        newValue = e.newValue
-      } else if (e.type === 'chatFontChanged') {
-        key = SETTINGS_CHAT_FONT
-        newValue = (e as CustomEvent).detail
-      }
-
-      if (key === SETTINGS_CHAT_FONT) {
-        applyChatFont(normalizeChatFont(newValue))
+    let applied: ChatFont | undefined
+    const update = () => {
+      const { profile, profileReady } = getView()
+      if (!profileReady) return
+      const font = normalizeChatFont(profile.chatFont)
+      if (font === applied) return
+      applied = font
+      applyChatFont(font)
+      try {
+        localStorage.setItem(SETTINGS_CHAT_FONT, font)
+      } catch {
+        // Storage can be blocked; the next page load starts with the default.
       }
     }
-
-    window.addEventListener('storage', handleStorageChange)
-    window.addEventListener(
-      'chatFontChanged',
-      handleStorageChange as EventListener,
-    )
-    return () => {
-      window.removeEventListener('storage', handleStorageChange)
-      window.removeEventListener(
-        'chatFontChanged',
-        handleStorageChange as EventListener,
-      )
-    }
+    update()
+    return subscribe(update)
   }, [])
 }

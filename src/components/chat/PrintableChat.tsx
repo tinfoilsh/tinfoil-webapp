@@ -12,7 +12,6 @@ import {
   getMessageAttachments,
   hasMessageAttachments,
 } from './attachment-helpers'
-import { ensureTimeline } from './ensure-timeline'
 import { useMathPlugins } from './renderers/components/use-math-plugins'
 import type { Message } from './types'
 
@@ -37,7 +36,7 @@ const PrintableMessage = memo(function PrintableMessage({
 }: {
   message: Message
 }) {
-  const message = ensureTimeline(rawMessage)
+  const message = rawMessage
   const { remarkPlugins, rehypePlugins } = useMathPlugins()
 
   const renderContent = (content: string, isUser: boolean) => {

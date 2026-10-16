@@ -1,310 +1,194 @@
+import type { BaseModel } from '@/config/models'
+import { useHarness } from '@/services/harness/provider'
+import { reportHarnessError } from '@/services/harness/runtime'
 import {
-  USER_PREFS_CUSTOM_PROMPT_PRESETS,
-  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
-  USER_PREFS_FAVORITE_PROMPT_PRESETS,
-} from '@/constants/storage-keys'
-import { logError } from '@/utils/error-handling'
-import { TfWriting } from '@tinfoilsh/tinfoil-icons'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { BUILT_IN_PROMPT_PRESETS } from '../prompts/built-in-presets'
-import {
-  PROMPT_LIBRARY_CHANGED_EVENT,
-  generateUserPresetId,
-  migrateLegacyCustomPrompt,
-  readDefaultPresetId,
-  readUserPresets,
-  writeDefaultPresetId,
-  writeUserPresets,
-} from '../prompts/default-preset'
-import type { PromptPreset, UserPromptPreset } from '../prompts/types'
-
-const COMPONENT = 'usePromptLibrary'
-
+  TfCode2,
+  TfLightbulb,
+  TfLightning,
+  TfMask,
+  TfScholar,
+  TfTranslation,
+  TfWriting,
+  TfWriting2,
+  type IconType,
+} from '@tinfoilsh/tinfoil-icons'
+import { isPresetModelAvailable } from '../prompts/preset-settings'
+import type {
+  PromptPreset,
+  PromptPresetSettings,
+  UserPromptPreset,
+} from '../prompts/types'
+const presetIcons: Record<string, IconType> = {
+  student: TfScholar,
+  code: TfCode2,
+  'pencil-line': TfWriting2,
+  lightbulb: TfLightbulb,
+  translate: TfTranslation,
+  lightning: TfLightning,
+  'mask-happy': TfMask,
+}
 export const MAX_FAVORITE_PRESETS = 3
 
-const DEFAULT_USER_PRESET_ICON = TfWriting
-
-export type UserPresetInput = Pick<
-  UserPromptPreset,
-  'name' | 'description' | 'systemPrompt' | 'model' | 'webSearchEnabled'
->
-
-type UsePromptLibraryReturn = {
-  builtInPresets: PromptPreset[]
-  userPresets: PromptPreset[]
-  allPresets: PromptPreset[]
-  getPresetById: (id: string | null | undefined) => PromptPreset | null
-  createUserPreset: (input: UserPresetInput) => PromptPreset
-  updateUserPreset: (id: string, patch: Partial<UserPresetInput>) => void
-  deleteUserPreset: (id: string) => void
-  duplicatePreset: (sourceId: string) => PromptPreset | null
-  favoritePresetIds: string[]
-  favoritePresets: PromptPreset[]
-  isFavorite: (id: string) => boolean
-  canAddFavorite: boolean
-  toggleFavorite: (id: string) => void
-  defaultPresetId: string | null
-  defaultPreset: PromptPreset | null
-  setDefaultPreset: (id: string | null) => void
-}
-
-function safeReadFavoriteIds(): string[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = localStorage.getItem(USER_PREFS_FAVORITE_PROMPT_PRESETS)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    if (!Array.isArray(parsed)) return []
-    return parsed.filter((id): id is string => typeof id === 'string')
-  } catch (err) {
-    logError('Failed to parse favorite prompt presets', err, {
-      component: COMPONENT,
-    })
-    return []
-  }
-}
-
-function safeWriteFavoriteIds(ids: string[]): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(
-      USER_PREFS_FAVORITE_PROMPT_PRESETS,
-      JSON.stringify(ids),
-    )
-    window.dispatchEvent(new CustomEvent(PROMPT_LIBRARY_CHANGED_EVENT))
-  } catch (err) {
-    logError('Failed to persist favorite prompt presets', err, {
-      component: COMPONENT,
-    })
-  }
-}
-
-function toPromptPreset(stored: UserPromptPreset): PromptPreset {
-  return {
-    id: stored.id,
-    name: stored.name,
-    description: stored.description,
-    Icon: DEFAULT_USER_PRESET_ICON,
-    systemPrompt: stored.systemPrompt,
-    isBuiltIn: false,
-    model: stored.model,
-    webSearchEnabled: stored.webSearchEnabled,
-  }
-}
-
-// Optional settings are omitted rather than written as undefined so the
-// serialized preset matches the wire format shared with the iOS app.
-function withPresetSettings<T extends object>(
-  base: T,
-  input: Partial<UserPresetInput>,
-): T {
-  const next = { ...base } as T & Partial<UserPresetInput>
-  if ('model' in input) {
-    if (input.model === undefined) delete next.model
-    else next.model = input.model
-  }
-  if ('webSearchEnabled' in input) {
-    if (input.webSearchEnabled === undefined) delete next.webSearchEnabled
-    else next.webSearchEnabled = input.webSearchEnabled
+// Applies the settings a change names. A setting set to undefined is
+// removed rather than stored as undefined; one the change leaves out stays.
+function withSettings<T extends object>(
+  preset: T,
+  settings: PromptPresetSettings,
+): T & PromptPresetSettings {
+  const next: T & PromptPresetSettings = { ...preset }
+  for (const key of ['model', 'webSearchEnabled'] as const) {
+    if (!(key in settings)) continue
+    if (settings[key] === undefined) delete next[key]
+    else Object.assign(next, { [key]: settings[key] })
   }
   return next
 }
 
-export function usePromptLibrary(): UsePromptLibraryReturn {
-  const [userPresetsRaw, setUserPresetsRaw] = useState<UserPromptPreset[]>([])
-  const [favoritePresetIds, setFavoritePresetIds] = useState<string[]>([])
-  const [defaultPresetId, setDefaultPresetId] = useState<string | null>(null)
-
-  useEffect(() => {
-    migrateLegacyCustomPrompt()
-    const refresh = () => {
-      setUserPresetsRaw(readUserPresets())
-      setFavoritePresetIds(safeReadFavoriteIds())
-      setDefaultPresetId(readDefaultPresetId())
-    }
-    refresh()
-
-    const handleChange = () => refresh()
-    const handleStorage = (event: StorageEvent) => {
-      // A null key means localStorage.clear() in another tab.
-      if (
-        event.key === null ||
-        event.key === USER_PREFS_CUSTOM_PROMPT_PRESETS ||
-        event.key === USER_PREFS_FAVORITE_PROMPT_PRESETS ||
-        event.key === USER_PREFS_DEFAULT_PROMPT_PRESET_ID
-      ) {
-        refresh()
-      }
-    }
-
-    window.addEventListener(PROMPT_LIBRARY_CHANGED_EVENT, handleChange)
-    window.addEventListener('storage', handleStorage)
-    return () => {
-      window.removeEventListener(PROMPT_LIBRARY_CHANGED_EVENT, handleChange)
-      window.removeEventListener('storage', handleStorage)
-    }
-  }, [])
-
-  const userPresets: PromptPreset[] = useMemo(
-    () => userPresetsRaw.map(toPromptPreset),
-    [userPresetsRaw],
+export function usePromptLibrary() {
+  const { session, profile, api } = useHarness()
+  const raw: UserPromptPreset[] = profile.customPromptPresets ?? []
+  const userPresets: PromptPreset[] = raw.map((p) => ({
+    ...p,
+    Icon: TfWriting,
+    isBuiltIn: false,
+  }))
+  const builtInPresets: PromptPreset[] = (session?.presets ?? []).map((p) => ({
+    ...p,
+    description: p.description ?? '',
+    Icon: presetIcons[p.icon ?? ''] ?? TfWriting,
+    isBuiltIn: true,
+    systemPrompt: p.systemPrompt ?? '',
+  }))
+  const allPresets = [...builtInPresets, ...userPresets]
+  const getPresetById = (id: string | null | undefined) =>
+    allPresets.find((p) => p.id === id) ?? null
+  const favoritePresetIds: string[] = profile.favoritePromptPresetIds ?? []
+  const favoritePresets = favoritePresetIds.flatMap((id) =>
+    allPresets.filter((p) => p.id === id),
   )
-
-  const allPresets = useMemo(
-    () => [...BUILT_IN_PROMPT_PRESETS, ...userPresets],
-    [userPresets],
-  )
-
-  const getPresetById = useCallback(
-    (id: string | null | undefined): PromptPreset | null => {
-      if (!id) return null
-      return allPresets.find((p) => p.id === id) ?? null
-    },
-    [allPresets],
-  )
-
-  const createUserPreset = useCallback(
-    (input: UserPresetInput): PromptPreset => {
-      const now = Date.now()
-      const newPreset: UserPromptPreset = withPresetSettings(
-        {
-          id: generateUserPresetId(),
-          name: input.name,
-          description: input.description,
-          systemPrompt: input.systemPrompt,
-          createdAt: now,
-          updatedAt: now,
-        },
-        input,
-      )
-      const next = [...readUserPresets(), newPreset]
-      writeUserPresets(next)
-      return toPromptPreset(newPreset)
-    },
-    [],
-  )
-
-  const updateUserPreset = useCallback(
-    (id: string, patch: Partial<UserPresetInput>) => {
-      const current = readUserPresets()
-      const idx = current.findIndex((p) => p.id === id)
-      if (idx === -1) return
-      const updated: UserPromptPreset = withPresetSettings(
-        {
-          ...current[idx],
-          ...(patch.name !== undefined && { name: patch.name }),
-          ...(patch.description !== undefined && {
-            description: patch.description,
-          }),
-          ...(patch.systemPrompt !== undefined && {
-            systemPrompt: patch.systemPrompt,
-          }),
-          updatedAt: Date.now(),
-        },
-        patch,
-      )
-      const next = [...current]
-      next[idx] = updated
-      writeUserPresets(next)
-    },
-    [],
-  )
-
-  const deleteUserPreset = useCallback((id: string) => {
-    const next = readUserPresets().filter((p) => p.id !== id)
-    writeUserPresets(next)
-    const favorites = safeReadFavoriteIds()
-    if (favorites.includes(id)) {
-      safeWriteFavoriteIds(favorites.filter((favoriteId) => favoriteId !== id))
-    }
-    if (readDefaultPresetId() === id) {
-      writeDefaultPresetId(null)
-    }
-  }, [])
-
-  const duplicatePreset = useCallback(
-    (sourceId: string): PromptPreset | null => {
-      const builtIn = BUILT_IN_PROMPT_PRESETS.find((p) => p.id === sourceId)
-      if (builtIn) {
-        return createUserPreset({
-          name: `${builtIn.name} (copy)`,
-          description: builtIn.description,
-          systemPrompt: builtIn.systemPrompt,
-        })
-      }
-      const userSource = readUserPresets().find((p) => p.id === sourceId)
-      if (!userSource) return null
-      return createUserPreset({
-        name: `${userSource.name} (copy)`,
-        description: userSource.description,
-        systemPrompt: userSource.systemPrompt,
-        model: userSource.model,
-        webSearchEnabled: userSource.webSearchEnabled,
-      })
-    },
-    [createUserPreset],
-  )
-
-  const favoritePresets = useMemo(
-    () =>
-      favoritePresetIds
-        .map((id) => allPresets.find((p) => p.id === id))
-        .filter((p): p is PromptPreset => p != null),
-    [favoritePresetIds, allPresets],
-  )
-
-  const isFavorite = useCallback(
-    (id: string) => favoritePresetIds.includes(id),
-    [favoritePresetIds],
-  )
-
-  // Capacity is measured against favorites that actually resolve to a
-  // preset. Stale ids (e.g. a custom preset deleted on another device, or
-  // one not yet synced here) must never count toward the cap and block
-  // adding a valid favorite.
-  const canAddFavorite = favoritePresets.length < MAX_FAVORITE_PRESETS
-
-  const toggleFavorite = useCallback(
-    (id: string) => {
-      const current = safeReadFavoriteIds()
-      if (current.includes(id)) {
-        safeWriteFavoriteIds(current.filter((favoriteId) => favoriteId !== id))
-        return
-      }
-      const resolvableCount = current.filter((favoriteId) =>
-        allPresets.some((preset) => preset.id === favoriteId),
-      ).length
-      if (resolvableCount < MAX_FAVORITE_PRESETS) {
-        safeWriteFavoriteIds([...current, id])
-      }
-    },
-    [allPresets],
-  )
-
-  // A stale id (preset deleted elsewhere or not yet synced here) resolves to
-  // null so callers fall back to the server prompt instead of a missing one.
-  const defaultPreset = getPresetById(defaultPresetId)
-
-  const setDefaultPreset = useCallback((id: string | null) => {
-    writeDefaultPresetId(id)
-  }, [])
-
+  // The harness keeps the preset new chats start with, and stamps it on a
+  // stored chat's first turn.
+  const defaultPresetId =
+    typeof profile.defaultPromptPresetId === 'string' &&
+    profile.defaultPromptPresetId
+      ? profile.defaultPromptPresetId
+      : null
+  const save = (
+    change: (presets: UserPromptPreset[]) => UserPromptPreset[],
+  ) => {
+    void api
+      .updateProfile((current) => ({
+        customPromptPresets: change(current.customPromptPresets ?? []),
+      }))
+      .catch(reportHarnessError)
+  }
+  const createUserPreset = (
+    input: Pick<UserPromptPreset, 'name' | 'description' | 'systemPrompt'> &
+      PromptPresetSettings,
+  ) => {
+    const p = withSettings(
+      {
+        name: input.name,
+        description: input.description,
+        systemPrompt: input.systemPrompt,
+        id: `user:${crypto.randomUUID()}`,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+      input,
+    )
+    save((presets) => [...presets, p])
+    return { ...p, Icon: TfWriting, isBuiltIn: false }
+  }
   return {
-    builtInPresets: BUILT_IN_PROMPT_PRESETS,
+    builtInPresets,
     userPresets,
     allPresets,
+    favoritePresetIds,
     getPresetById,
     createUserPreset,
-    updateUserPreset,
-    deleteUserPreset,
-    duplicatePreset,
-    favoritePresetIds,
+    updateUserPreset: (
+      id: string,
+      patch: Partial<Omit<UserPromptPreset, keyof PromptPresetSettings>> &
+        PromptPresetSettings,
+    ) =>
+      save((presets) =>
+        presets.map((p) =>
+          p.id === id
+            ? withSettings({ ...p, ...patch, updatedAt: Date.now() }, patch)
+            : p,
+        ),
+      ),
+    // A deleted preset is no longer a favorite or the default.
+    deleteUserPreset: (id: string) => {
+      void api
+        .updateProfile((current) => ({
+          customPromptPresets: (
+            (current.customPromptPresets ?? []) as UserPromptPreset[]
+          ).filter((p) => p.id !== id),
+          favoritePromptPresetIds: (
+            (current.favoritePromptPresetIds ?? []) as string[]
+          ).filter((favorite) => favorite !== id),
+          ...(current.defaultPromptPresetId === id
+            ? { defaultPromptPresetId: '' }
+            : {}),
+        }))
+        .catch(reportHarnessError)
+    },
+    duplicatePreset: (id: string) => {
+      const p = allPresets.find((p) => p.id === id)
+      return p ? createUserPreset({ ...p, name: `${p.name} copy` }) : null
+    },
     favoritePresets,
-    isFavorite,
-    canAddFavorite,
-    toggleFavorite,
+    isFavorite: (id: string) => favoritePresetIds.includes(id),
+    // Only favorites that are still prompts take a slot, so one deleted on
+    // another device does not block adding another.
+    canAddFavorite: favoritePresets.length < MAX_FAVORITE_PRESETS,
+    // Each toggle applies to the profile as the previous change left it.
+    toggleFavorite: (id: string) => {
+      void api
+        .updateProfile((current) => {
+          const ids: string[] = current.favoritePromptPresetIds ?? []
+          if (ids.includes(id))
+            return { favoritePromptPresetIds: ids.filter((p) => p !== id) }
+          const kept = ids.filter((p) => allPresets.some((q) => q.id === p))
+          return kept.length < MAX_FAVORITE_PRESETS
+            ? { favoritePromptPresetIds: [...ids, id] }
+            : {}
+        })
+        .catch(reportHarnessError)
+    },
+    // Clears the model of saved prompts whose model the catalog no longer
+    // offers, so a retired model does not linger. Returns their ids.
+    pruneUnavailableModels: (models: BaseModel[]) => {
+      const stale = raw
+        .filter(
+          (p) =>
+            typeof p.model === 'string' &&
+            !isPresetModelAvailable(p.model, models),
+        )
+        .map((p) => p.id)
+      if (!models.length || !stale.length) return []
+      save((presets) =>
+        presets.map((p) =>
+          stale.includes(p.id)
+            ? withSettings(
+                { ...p, updatedAt: Date.now() },
+                { model: undefined },
+              )
+            : p,
+        ),
+      )
+      return stale
+    },
     defaultPresetId,
-    defaultPreset,
-    setDefaultPreset,
+    defaultPreset: getPresetById(defaultPresetId),
+    // An empty string clears the default, as the harness and the iOS app
+    // store it.
+    setDefaultPreset: (id: string | null) => {
+      void api
+        .updateProfile({ defaultPromptPresetId: id ?? '' })
+        .catch(reportHarnessError)
+    },
   }
 }

@@ -6,7 +6,7 @@ import {
   buildChatExport,
   sanitizeFilename,
 } from '@/services/chat-export/export-archive'
-import { parseLocalTinfoilExport } from '@/services/chat-import/local-tinfoil-import'
+import { parseLocalTinfoilExportForAccess } from '@/services/chat-import/local-tinfoil-import'
 import { createFunctionalImportWorker } from '../chat-import/functional-import-worker'
 
 function chat(overrides: Partial<Chat>): Chat {
@@ -310,7 +310,7 @@ describe('buildChatExport', () => {
         async (attachment) =>
           attachment.fileName === 'first.png' ? firstBytes : secondBytes,
       )
-      const imported = await parseLocalTinfoilExport(
+      const { chats: imported } = await parseLocalTinfoilExportForAccess(
         new File(
           [new Uint8Array(result.data as Uint8Array)],
           'tinfoil-chats.zip',
@@ -322,6 +322,7 @@ describe('buildChatExport', () => {
           generateChatId: () => 'imported-chat',
           isCloudSyncEnabled: false,
         },
+        true,
       )
 
       expect(
@@ -345,6 +346,93 @@ describe('buildChatExport', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  it('reads the text of a document the chat carries without its content', async () => {
+    const synced = chat({
+      id: 'synced-chat',
+      messages: [
+        {
+          role: 'user',
+          content: 'summarize',
+          timestamp: new Date('2023-11-14T22:13:21.000Z'),
+          attachments: [
+            { id: 'doc-1', type: 'document', fileName: 'notes.md' },
+            {
+              id: 'doc-2',
+              type: 'document',
+              fileName: 'inline.txt',
+              textContent: 'already here',
+            },
+          ],
+        },
+      ],
+    })
+    const fetched: [string, string][] = []
+
+    const result = await buildChatExport([synced], async (att, owner) => {
+      fetched.push([att.id, owner.id])
+      return new TextEncoder().encode('fetched text')
+    })
+
+    expect(fetched).toEqual([['doc-1', 'synced-chat']])
+    expect(result.isZip).toBe(false)
+    expect(result.warnings).toEqual([])
+    const parsed = JSON.parse(result.data as string)
+    expect(parsed[0].chat_messages[0].attachments).toEqual([
+      {
+        id: 'doc-1',
+        type: 'document',
+        fileName: 'notes.md',
+        textContent: 'fetched text',
+      },
+      {
+        id: 'doc-2',
+        type: 'document',
+        fileName: 'inline.txt',
+        textContent: 'already here',
+      },
+    ])
+  })
+
+  it('keeps a document whose text cannot be read and records a warning', async () => {
+    const chats = [
+      chat({
+        messages: [
+          {
+            role: 'user',
+            content: 'see both',
+            timestamp: new Date('2023-11-14T22:13:21.000Z'),
+            attachments: [
+              { id: 'img-1', type: 'image', fileName: 'pic.png' },
+              { id: 'doc-gone', type: 'document', fileName: 'gone.pdf' },
+              { id: 'doc-bad', type: 'document', fileName: 'bad.txt' },
+            ],
+          },
+        ],
+      }),
+    ]
+
+    const result = await buildChatExport(chats, async (att) =>
+      att.id === 'img-1'
+        ? new Uint8Array([1, 2])
+        : att.id === 'doc-bad'
+          ? new Uint8Array([0xff, 0xfe])
+          : null,
+    )
+
+    expect(result.warnings).toEqual([
+      'Could not fetch document doc-gone',
+      'Could not read document doc-bad',
+    ])
+    const entries = unzipSync(result.data as Uint8Array)
+    const manifest = JSON.parse(strFromU8(entries['manifest.json']))
+    expect(manifest.warnings).toEqual(result.warnings)
+    const conversations = JSON.parse(strFromU8(entries['conversations.json']))
+    expect(conversations[0].chat_messages[0].attachments.slice(1)).toEqual([
+      { id: 'doc-gone', type: 'document', fileName: 'gone.pdf' },
+      { id: 'doc-bad', type: 'document', fileName: 'bad.txt' },
+    ])
   })
 })
 

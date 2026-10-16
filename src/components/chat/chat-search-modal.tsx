@@ -116,7 +116,14 @@ export function ChatSearchModal({
     )
     let matches: SearchableChat[] = localMatches
     if (searchEnabled && search.available) {
-      const remoteMatches = search.isSearching ? [] : search.results
+      const remoteMatches: SearchableChat[] = search.isSearching
+        ? []
+        : search.results.map((result) => ({
+            id: result.id,
+            title: result.title,
+            updatedAt: result.updatedAt,
+            projectId: result.projectId ?? undefined,
+          }))
       const remoteIds = new Set(remoteMatches.map((chat) => chat.id))
       matches = [
         ...remoteMatches,

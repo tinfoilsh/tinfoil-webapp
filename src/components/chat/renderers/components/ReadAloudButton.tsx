@@ -1,3 +1,4 @@
+import { useSessionFeature } from '@/services/harness/provider'
 import { speechPlayer } from '@/services/speech/player'
 import type { SpeechTextFormat } from '@/services/speech/text'
 import { TfAudio, TfPlay, TfStop } from '@tinfoilsh/tinfoil-icons'
@@ -14,6 +15,7 @@ export function ReadAloudButton({
   variant?: 'icon' | 'menu'
 }) {
   const [owner] = useState(() => Symbol('read-aloud'))
+  const available = useSessionFeature('speech')
   const snapshot = useSyncExternalStore(
     speechPlayer.subscribe,
     speechPlayer.getSnapshot,
@@ -37,6 +39,9 @@ export function ReadAloudButton({
     status === 'loading' ? 'Buffering audio — click to cancel' : label
 
   useEffect(() => () => speechPlayer.stop(owner), [owner, content, textFormat])
+
+  // The harness reads aloud only when its session offers speech.
+  if (!available) return null
 
   return (
     <div className="relative flex items-center">
