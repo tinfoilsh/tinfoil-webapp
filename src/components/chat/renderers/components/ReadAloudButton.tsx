@@ -1,8 +1,7 @@
 import { useSessionFeature } from '@/services/harness/provider'
 import { speechPlayer } from '@/services/speech/player'
 import type { SpeechTextFormat } from '@/services/speech/text'
-import { PlayIcon } from '@heroicons/react/24/outline'
-import { TfAudio, TfStop } from '@tinfoilsh/tinfoil-icons'
+import { TfAudio, TfPlay, TfStop } from '@tinfoilsh/tinfoil-icons'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { PiSpinner } from 'react-icons/pi'
 
@@ -69,7 +68,7 @@ export function ReadAloudButton({
             aria-hidden="true"
           />
         ) : status === 'paused' ? (
-          <PlayIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          <TfPlay className="h-3.5 w-3.5" aria-hidden="true" />
         ) : active ? (
           <TfStop className="-m-0.5 h-[18px] w-[18px]" aria-hidden="true" />
         ) : (
