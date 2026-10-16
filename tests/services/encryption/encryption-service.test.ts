@@ -8,7 +8,7 @@ import {
   ENCRYPTION_KEY_CHANGED_EVENT,
   EncryptionService,
 } from '@/services/encryption/encryption-service'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const KEY_BYTES = new Uint8Array(32).fill(0x11)
 const KEY_STRING = `key_${'ar'.repeat(32)}`
@@ -20,10 +20,7 @@ describe('EncryptionService', () => {
 
   beforeEach(() => {
     service = new EncryptionService()
-    localStorage.clear()
   })
-
-  afterEach(() => vi.restoreAllMocks())
 
   describe('generateKey', () => {
     it('should generate distinct canonical 256-bit keys', async () => {

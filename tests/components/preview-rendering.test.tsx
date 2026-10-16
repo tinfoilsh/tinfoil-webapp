@@ -27,7 +27,6 @@ beforeEach(() =>
 )
 afterEach(() => {
   cleanup()
-  vi.restoreAllMocks()
 })
 
 const MAX_OUTPUT_LINES = 1000

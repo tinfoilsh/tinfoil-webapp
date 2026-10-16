@@ -101,7 +101,6 @@ beforeEach(() => {
 afterEach(() => {
   resetSafeguards()
   authTokenManager.reset()
-  vi.unstubAllGlobals()
 })
 
 describe('a chat the safeguards flagged', () => {

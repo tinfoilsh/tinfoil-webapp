@@ -80,7 +80,6 @@ describe('parseLocalTinfoilExport', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-    vi.unstubAllGlobals()
   })
 
   it('parses exports in a worker when workers are available', async () => {

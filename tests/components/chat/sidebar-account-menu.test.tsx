@@ -54,8 +54,6 @@ describe('SidebarAccountMenu', () => {
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
-    vi.restoreAllMocks()
-    vi.unstubAllGlobals()
   })
   beforeEach(() => {
     routerAsPath = DEFAULT_AS_PATH

@@ -82,8 +82,6 @@ describe('GenUIToolCallRenderer', () => {
       window.removeEventListener(OPEN_ARTIFACT_PREVIEW_EVENT, listener)
     }
     artifactPreviewListeners.length = 0
-    vi.restoreAllMocks()
-    vi.unstubAllGlobals()
   })
 
   it('renders completed widget arguments while the assistant stream continues', () => {

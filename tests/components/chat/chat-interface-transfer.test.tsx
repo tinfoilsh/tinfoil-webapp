@@ -155,7 +155,6 @@ beforeEach(async () => {
   chatPage.premium = false
   authTokenManager.initialize(async () => 'clerk-jwt')
   stubSafeguardFlags()
-  sessionStorage.clear()
   deletedChatsTracker.clear()
   await indexedDBStorage.deleteAllChats()
   deletedChatsTracker.clear()
@@ -167,8 +166,6 @@ afterEach(() => {
   authTokenManager.reset()
   chatEvents.clear()
   deletedChatsTracker.clear()
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
 })
 
 describe('moving chats from the chat page', () => {

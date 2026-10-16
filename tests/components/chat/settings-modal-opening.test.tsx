@@ -63,7 +63,6 @@ function Harness(props: Partial<Parameters<typeof SettingsModal>[0]> = {}) {
 
 describe('settings opening', () => {
   beforeEach(() => {
-    localStorage.clear()
     authState.isSignedIn = false
     toasts.mockReset()
   })
@@ -389,7 +388,6 @@ describe('settings opening', () => {
 
 describe('settings prompts', () => {
   beforeEach(() => {
-    localStorage.clear()
     authState.isSignedIn = false
   })
 
@@ -443,7 +441,6 @@ describe('settings prompts', () => {
 
 describe('settings imports', () => {
   beforeEach(() => {
-    localStorage.clear()
     authState.isSignedIn = true
     toasts.mockReset()
     localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')

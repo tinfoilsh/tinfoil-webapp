@@ -51,7 +51,6 @@ const finished: Frame = {
   event: { type: 'RUN_FINISHED', threadId: thread.id, runId: 'run-1' },
 }
 beforeEach(() => {
-  sessionStorage.clear()
   signIn({
     userId: null,
     session: { ...testSession, widgets: ['render_chart'] },

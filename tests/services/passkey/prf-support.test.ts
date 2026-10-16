@@ -28,7 +28,6 @@ describe('prf-support', () => {
       writable: true,
       configurable: true,
     })
-    vi.restoreAllMocks()
   })
 
   it('should return false when PublicKeyCredential is not available', async () => {

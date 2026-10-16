@@ -23,15 +23,7 @@ import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { zipSync } from 'fflate'
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { client, KEY, signIn as signInTo } from '../../harness-fixture'
 
 const backupId = '123e4567-e89b-42d3-a456-426614174000'
@@ -314,7 +306,6 @@ beforeAll(() => {
 })
 
 beforeEach(async () => {
-  sessionStorage.clear()
   deletedChatsTracker.clear()
   await indexedDBStorage.deleteAllChats()
   deletedChatsTracker.clear()
@@ -323,7 +314,6 @@ beforeEach(async () => {
 afterEach(() => {
   chatEvents.clear()
   deletedChatsTracker.clear()
-  vi.restoreAllMocks()
 })
 
 describe('creating a native backup', () => {

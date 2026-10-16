@@ -4,7 +4,7 @@ import {
   SYNC_SESSION_CHATS,
 } from '@/constants/storage-keys'
 import { sessionChatStorage } from '@/services/storage/session-storage'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -35,11 +35,6 @@ function leaveDraft(draft: Chat): void {
 }
 
 describe('sessionChatStorage streaming drafts', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-    sessionStorage.clear()
-  })
-
   it('merges a streaming draft over the saved chat', () => {
     const persisted = chat('chat-1', 'partial')
     sessionChatStorage.saveChat(persisted)

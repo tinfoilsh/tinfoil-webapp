@@ -5,7 +5,7 @@ import {
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
 import { PrfNotSupportedError } from '@/services/passkey'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   inspectRemoteEncryptedState: vi.fn(),
@@ -117,7 +117,6 @@ const baseOptions = {
 
 describe('usePasskeyBackup', () => {
   beforeEach(() => {
-    localStorage.clear()
     vi.resetAllMocks()
     mocks.inspectRemoteEncryptedState.mockResolvedValue('empty')
     mocks.validateCurrentPrimaryKey.mockResolvedValue({ canWrite: true })
@@ -135,8 +134,6 @@ describe('usePasskeyBackup', () => {
     }))
     mocks.passkeyEventsOn.mockReturnValue(() => {})
   })
-
-  afterEach(() => vi.restoreAllMocks())
 
   it('keeps transient remote-state failures retriable during initialization', async () => {
     mocks.inspectRemoteEncryptedState.mockResolvedValue('unknown')

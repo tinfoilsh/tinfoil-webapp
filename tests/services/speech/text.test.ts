@@ -1,8 +1,6 @@
 import { SPEECH } from '@/services/speech/constants'
 import { prepareSpeechText, splitSpeechText } from '@/services/speech/text'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
-afterEach(() => vi.unstubAllGlobals())
+import { describe, expect, it, vi } from 'vitest'
 
 describe('speech text', () => {
   it.each(['<br>', '<br/>', '<br />', '<BR>'])(

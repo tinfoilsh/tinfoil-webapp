@@ -236,7 +236,6 @@ describe('SignInPage', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-    vi.restoreAllMocks()
   })
 
   it('offers a manual reload when auth loading stalls', async () => {

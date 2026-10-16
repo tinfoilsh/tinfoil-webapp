@@ -1,7 +1,7 @@
 import { OnboardingView } from '@/components/onboarding/onboarding-view'
 import { SETTINGS_HAS_SEEN_ONBOARDING } from '@/constants/storage-keys'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   useUser: vi.fn(),
@@ -32,10 +32,6 @@ describe('OnboardingView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.useUser.mockReturnValue({ user: null })
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
   })
 
   it('shows safeguards last and only persists completion after Get Started', async () => {

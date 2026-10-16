@@ -112,7 +112,6 @@ beforeEach(() => {
 afterEach(() => {
   resetSafeguards()
   authTokenManager.reset()
-  vi.unstubAllGlobals()
 })
 
 describe('message actions on the chat page', () => {

@@ -10,7 +10,7 @@ import {
   TINFOIL_PASSKEY_PROFILE,
   tinfoilPasskeyStorage,
 } from '@/services/passkey/kit'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const CREDENTIAL_ID = 'AQID'
 const PRF_OUTPUT = new Uint8Array(32).map((_, index) => index)
@@ -37,14 +37,9 @@ function installCredentialEvaluation(get: () => Promise<unknown>): void {
 }
 
 describe('Tinfoil passkey manager configuration', () => {
-  beforeEach(() => {
-    localStorage.clear()
-  })
-
   afterEach(() => {
     vi.useRealTimers()
     resetPasskeyCapabilityCache()
-    vi.restoreAllMocks()
     if (originalCredentials)
       Object.defineProperty(navigator, 'credentials', originalCredentials)
     else Reflect.deleteProperty(navigator, 'credentials')

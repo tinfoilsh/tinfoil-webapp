@@ -61,7 +61,6 @@ function gate() {
 beforeAll(() => initializeRenderers())
 
 beforeEach(() => {
-  sessionStorage.clear()
   summarize.mockReset().mockResolvedValue('Weighing the options')
 })
 

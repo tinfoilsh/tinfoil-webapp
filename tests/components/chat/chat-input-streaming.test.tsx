@@ -23,8 +23,6 @@ vi.mock('@/components/chat/hooks/use-chat-font', () => ({
 
 describe('ChatInput streaming action', () => {
   afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 

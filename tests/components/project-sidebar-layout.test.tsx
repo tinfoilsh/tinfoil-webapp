@@ -69,7 +69,6 @@ function renderSidebar(
 describe('project sidebar layout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    sessionStorage.clear()
   })
 
   it('orders project chats by update time with creation time as the fallback', () => {

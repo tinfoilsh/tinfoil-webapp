@@ -63,8 +63,6 @@ async function seedVersionThree(chats: StoredChat[]): Promise<void> {
 describe('IndexedDB pending sync index', () => {
   afterEach(() => {
     vi.useRealTimers()
-    vi.restoreAllMocks()
-    vi.unstubAllGlobals()
   })
 
   beforeEach(() => {

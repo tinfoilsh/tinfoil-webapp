@@ -153,7 +153,6 @@ beforeAll(() => {
 beforeEach(async () => {
   page.isSignedIn = true
   page.toast.mockReset()
-  sessionStorage.clear()
   deletedChatsTracker.clear()
   await indexedDBStorage.deleteAllChats()
   deletedChatsTracker.clear()
@@ -173,9 +172,6 @@ beforeEach(async () => {
 afterEach(() => {
   chatEvents.clear()
   deletedChatsTracker.clear()
-  sessionStorage.clear()
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
 })
 
 async function exportChats() {

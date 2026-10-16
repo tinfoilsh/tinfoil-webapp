@@ -103,9 +103,6 @@ beforeEach(() => {
 })
 afterEach(() => {
   authTokenManager.reset()
-  vi.unstubAllGlobals()
-  vi.unstubAllEnvs()
-  vi.restoreAllMocks()
 })
 
 it('opens a signed-out session with an issued key without loading saved encryption keys', async () => {

@@ -14,7 +14,7 @@ import {
   IDBObjectStore as FakeIDBObjectStore,
   IDBFactory,
 } from 'fake-indexeddb'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 interface FakeResetTransaction {
   oncomplete: (() => void) | null
@@ -73,14 +73,8 @@ describe('IndexedDBStorage account reset', () => {
     transaction.oncomplete?.()
   }
 
-  beforeEach(() => {
-    sessionStorage.clear()
-  })
-
   afterEach(() => {
     vi.useRealTimers()
-    vi.restoreAllMocks()
-    vi.unstubAllGlobals()
   })
 
   it('bypasses a stalled write queue and empties every store but migrations', async () => {

@@ -155,7 +155,6 @@ afterEach(() => {
   cleanup()
   resetRendererRegistry()
   window.getSelection()?.removeAllRanges()
-  vi.restoreAllMocks()
 })
 
 describe('QuoteSelectionPopover', () => {

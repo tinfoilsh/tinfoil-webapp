@@ -240,7 +240,6 @@ beforeAll(() => {
 })
 
 beforeEach(async () => {
-  sessionStorage.clear()
   deletedChatsTracker.clear()
   await indexedDBStorage.deleteAllChats()
   deletedChatsTracker.clear()
@@ -250,7 +249,6 @@ beforeEach(async () => {
 afterEach(() => {
   chatEvents.clear()
   deletedChatsTracker.clear()
-  vi.restoreAllMocks()
 })
 
 describe('restoring a native backup', () => {

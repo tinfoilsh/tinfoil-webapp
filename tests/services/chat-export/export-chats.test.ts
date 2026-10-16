@@ -174,7 +174,6 @@ beforeAll(() => {
 })
 
 beforeEach(async () => {
-  sessionStorage.clear()
   deletedChatsTracker.clear()
   await indexedDBStorage.deleteAllChats()
   deletedChatsTracker.clear()
@@ -183,8 +182,6 @@ beforeEach(async () => {
 afterEach(() => {
   chatEvents.clear()
   deletedChatsTracker.clear()
-  sessionStorage.clear()
-  vi.restoreAllMocks()
 })
 
 describe('collecting chats for an export', () => {

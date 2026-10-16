@@ -153,7 +153,6 @@ describe('RateLimitUsage', () => {
 
 describe('usage reported by runs', () => {
   beforeEach(() => {
-    sessionStorage.clear()
     // A finished run refreshes the session.
     client.post.mockImplementation(async (path: string) => {
       if (path !== '/v1/session') throw new Error(`Unexpected request: ${path}`)

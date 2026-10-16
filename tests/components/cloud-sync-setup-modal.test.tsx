@@ -40,8 +40,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks()
-  vi.restoreAllMocks()
-  localStorage.clear()
 })
 
 describe('CloudSyncSetupModal onboarding', () => {

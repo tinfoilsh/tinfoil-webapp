@@ -111,16 +111,12 @@ beforeEach(() => {
   deletedChatsTracker.clear()
   authTokenManager.reset()
   encryptionService.clearKey()
-  sessionStorage.clear()
 })
 
 afterEach(() => {
   speechPlayer.stop()
   authTokenManager.reset()
   encryptionService.clearKey()
-  sessionStorage.clear()
-  vi.unstubAllGlobals()
-  vi.restoreAllMocks()
 })
 
 describe('performSignoutCleanup', () => {

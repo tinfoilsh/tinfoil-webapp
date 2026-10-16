@@ -3,13 +3,9 @@ import {
   isCloudSyncEnabled,
   recordCloudSyncPreference,
 } from '@/utils/cloud-sync-settings'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 describe('recordCloudSyncPreference', () => {
-  beforeEach(() => {
-    localStorage.clear()
-  })
-
   it('clears the opt-out marker when sync is turned back on', () => {
     recordCloudSyncPreference(false)
     recordCloudSyncPreference(true)

@@ -4,14 +4,12 @@ import {
 } from '@/components/chat/stream-error-banner'
 import { REQUEST_UPGRADE_EVENT } from '@/constants/chat-events'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 const CONNECTION_ERROR: StreamErrorInfo = {
   code: 'STREAM_INTERRUPTED',
   message: 'Connection failure details',
 }
-
-afterEach(() => vi.restoreAllMocks())
 
 describe('StreamErrorBanner', () => {
   it('explains an authentication failure without blaming connectivity', () => {

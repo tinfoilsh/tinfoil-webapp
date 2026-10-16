@@ -175,7 +175,6 @@ function entry(
 
 describe('recoverPasskeyKeyBundle', () => {
   beforeEach(() => {
-    localStorage.clear()
     encryptionService.clearKey()
     cachePrf()
     mockKeyCurrent.mockReset().mockResolvedValue({ key_id: null, bundles: {} })
@@ -188,7 +187,6 @@ describe('recoverPasskeyKeyBundle', () => {
   })
 
   afterEach(() => {
-    vi.restoreAllMocks()
     if (originalCredentials)
       Object.defineProperty(navigator, 'credentials', originalCredentials)
     else Reflect.deleteProperty(navigator, 'credentials')

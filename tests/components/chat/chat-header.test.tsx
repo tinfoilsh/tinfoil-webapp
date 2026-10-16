@@ -30,7 +30,6 @@ describe('ChatHeader', () => {
   })
 
   afterEach(() => {
-    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 

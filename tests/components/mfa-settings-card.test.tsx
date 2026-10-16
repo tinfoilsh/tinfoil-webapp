@@ -1,6 +1,6 @@
 import { MfaSettingsCard } from '@/components/chat/mfa-settings-card'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => {
   const user = {
@@ -49,10 +49,6 @@ beforeEach(() => {
     configurable: true,
     value: mocks.revokeObjectURL,
   })
-})
-
-afterEach(() => {
-  vi.restoreAllMocks()
 })
 
 describe('MfaSettingsCard', () => {

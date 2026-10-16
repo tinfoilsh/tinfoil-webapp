@@ -13,7 +13,7 @@ import {
 } from '@/constants/storage-keys'
 import { loadLocalProfile, turnProfile } from '@/services/harness/local-profile'
 import { getView } from '@/services/harness/runtime'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
@@ -21,10 +21,6 @@ vi.mock('@/utils/error-handling', () => ({
   logInfo: vi.fn(),
   logWarning: vi.fn(),
 }))
-
-beforeEach(() => {
-  vi.restoreAllMocks()
-})
 
 describe('loadLocalProfile', () => {
   it('imports the previous client’s settings once', () => {

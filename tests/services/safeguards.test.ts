@@ -55,7 +55,6 @@ function deferredFetch() {
 
 describe('safeguards store', () => {
   beforeEach(() => {
-    vi.restoreAllMocks()
     resetSafeguards()
   })
 

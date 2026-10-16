@@ -15,7 +15,6 @@ beforeEach(() => {
   document.documentElement.removeAttribute('data-chat-font')
   document.documentElement.removeAttribute('data-theme')
   document.documentElement.classList.remove('dark')
-  sessionStorage.clear()
 })
 
 describe('the theme', () => {

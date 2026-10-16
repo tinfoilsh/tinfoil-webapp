@@ -4,7 +4,7 @@ import {
 } from '@/constants/storage-keys'
 import { useOnboarding } from '@/hooks/use-onboarding'
 import { act, renderHook } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -19,10 +19,6 @@ const signedInOptions = {
 }
 
 describe('useOnboarding', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
   it('waits for auth and user data, then shows onboarding after sign-in', () => {
     const { result, rerender } = renderHook(useOnboarding, {
       initialProps: {

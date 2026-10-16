@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mockIsAuthenticated = vi.fn()
 const mockGetAuthHeaders = vi.fn()
@@ -16,10 +16,6 @@ describe('fetchLegacyPasskeyCredentials', () => {
   beforeEach(() => {
     mockIsAuthenticated.mockReset().mockResolvedValue(true)
     mockGetAuthHeaders.mockReset().mockResolvedValue({ Authorization: 'test' })
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
   })
 
   it('propagates fetch failures', async () => {

@@ -6,7 +6,7 @@ import {
   indexedDBStorage,
 } from '@/services/storage/indexed-db'
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
-import { afterEach, beforeAll, beforeEach, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach } from 'vitest'
 
 // The rows of a chat database store, read with their own transaction.
 export async function rawRows(store: 'chats' | 'attachmentPayloads') {
@@ -40,7 +40,6 @@ export function resetChatStoresAroundEachTest() {
   })
 
   beforeEach(async () => {
-    sessionStorage.clear()
     deletedChatsTracker.clear()
     await indexedDBStorage.deleteAllChats()
     deletedChatsTracker.clear()
@@ -49,7 +48,5 @@ export function resetChatStoresAroundEachTest() {
   afterEach(() => {
     chatEvents.clear()
     deletedChatsTracker.clear()
-    sessionStorage.clear()
-    vi.restoreAllMocks()
   })
 }
