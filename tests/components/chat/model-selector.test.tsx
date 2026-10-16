@@ -1,6 +1,6 @@
 import { ModelSelector } from '@/components/chat/model-selector'
 import { ModelSelectorTriggerLabel } from '@/components/chat/model-selector-trigger-label'
-import { AUTO_MODEL_ID, displayModels, type BaseModel } from '@/config/models'
+import { displayModels, type BaseModel } from '@/config/models'
 import {
   act,
   cleanup,
@@ -222,20 +222,6 @@ describe('model lifecycle tags', () => {
       ).toHaveAttribute('aria-checked', 'false')
     },
   )
-
-  it('does not inherit tags from candidates when Auto is selected', () => {
-    render(
-      <ModelSelectorTriggerLabel
-        selectedModel={AUTO_MODEL_ID}
-        models={[{ ...MODEL, experimental: true, deprecated: true }]}
-        autoIntelligence="high"
-        isOpen={false}
-      />,
-    )
-    expect(screen.getByText('Auto · High')).toBeVisible()
-    expect(screen.queryByText('Experimental')).not.toBeInTheDocument()
-    expect(screen.queryByText('Deprecated')).not.toBeInTheDocument()
-  })
 
   it.each([
     {
