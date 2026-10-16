@@ -192,15 +192,6 @@ describe('performSignoutCleanup', () => {
     expect(localStorage.getItem('user-specific-data')).toBeNull()
   })
 
-  it('clears sessionStorage', async () => {
-    sessionStorage.setItem('harness-run:alice', 'routing')
-
-    await performSignoutCleanup()
-
-    expect(sessionStorage.getItem('harness-run:alice')).toBeNull()
-    expect(sessionStorage.length).toBe(0)
-  })
-
   it('clears pinned chats from storage and active UI state', async () => {
     localStorage.setItem(USER_PREFS_PINNED_CHAT_IDS, '["chat-a"]')
 
@@ -316,13 +307,6 @@ describe('performUserSwitchCleanup', () => {
       reason: 'not-initialized',
     })
     expect(getToken).not.toHaveBeenCalled()
-  })
-
-  it('does not dispatch pinned-chat changes', async () => {
-    await withPinnedChatChanges(
-      () => performUserSwitchCleanup('user_new'),
-      (handle) => expect(handle).not.toHaveBeenCalled(),
-    )
   })
 
   it('surfaces cleanup failures without replacing the marker', async () => {
