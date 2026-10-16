@@ -172,6 +172,11 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(ids).toEqual(['cred-a', 'cred-b'])
       expect(entries.find((e) => e.id === 'cred-a')?.source).toBe('enclave')
       expect(entries.find((e) => e.id === 'cred-b')?.source).toBe('legacy')
+
+      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+      expect((await loadRecoveryCandidates()).map((e) => e.id)).toEqual([
+        'cred-b',
+      ])
     })
 
     it('prefers the enclave entry when an id is in both sources', async () => {
@@ -227,11 +232,14 @@ describe('passkey-key-storage load + delete (enclave wire)', () => {
       expect(arg.idempotencyKey).toMatch(/^[0-9a-f]{32}$/)
     })
 
-    it.each(['absent', 'legacy-only', 'lookup-failed'] as const)(
+    it.each(['absent', 'legacy-only', 'lookup-failed', 'keyless'] as const)(
       'checks legacy credentials before deleting an absent enclave bundle: %s',
       async (legacyState) => {
-        mockKeyCurrent.mockResolvedValue({ key_id: 'abc', bundles: {} })
-        if (legacyState === 'legacy-only')
+        mockKeyCurrent.mockResolvedValue({
+          key_id: legacyState === 'keyless' ? null : 'abc',
+          bundles: {},
+        })
+        if (legacyState === 'legacy-only' || legacyState === 'keyless')
           mockFetchLegacy.mockResolvedValue([LEGACY_CREDENTIAL])
         if (legacyState === 'lookup-failed')
           mockFetchLegacy.mockRejectedValue(new Error('lookup failed'))
