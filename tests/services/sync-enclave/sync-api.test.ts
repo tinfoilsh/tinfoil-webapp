@@ -77,7 +77,7 @@ describe('sync-api (enclave JSON-RPC)', () => {
       plaintext,
       ifMatch: null,
       idempotencyKey: 'idem-1',
-      metadata: { projectId: null, messageCount: 1 },
+      metadata: { projectId: null },
     })
     expect(resp).toEqual({ ok: true, etag: '1', key_id: 'aa'.repeat(16) })
     const [path, init] = lastRequest()
@@ -90,7 +90,7 @@ describe('sync-api (enclave JSON-RPC)', () => {
       plaintext: 'aGVsbG8=',
       if_match: null,
       idempotency_key: 'idem-1',
-      metadata: { projectId: null, messageCount: 1 },
+      metadata: { projectId: null },
     })
   })
 

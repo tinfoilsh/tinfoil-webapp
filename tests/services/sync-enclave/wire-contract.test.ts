@@ -95,9 +95,7 @@ describe('wire-contract', () => {
       expect(body.key).toBe(PRIMARY_KEY_B64)
       expect(body.if_match).toBe(restoreDeleted ? null : '7')
       expect(body.metadata).toEqual(
-        restoreDeleted
-          ? { messageCount: 0, projectId: 'project-1', restoreDeleted: true }
-          : { messageCount: 0 },
+        restoreDeleted ? { projectId: 'project-1', restoreDeleted: true } : {},
       )
     },
   )

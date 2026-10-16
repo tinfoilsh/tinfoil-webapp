@@ -445,7 +445,7 @@ export class CloudStorageService {
     )
     const plaintext = buildPlaintext()
 
-    const metadata: Record<string, unknown> = { messageCount: messages.length }
+    const metadata: Record<string, unknown> = {}
     const projectIntentIncluded =
       options.restoreDeleted ||
       (chat.syncVersion ?? 0) === 0 ||
