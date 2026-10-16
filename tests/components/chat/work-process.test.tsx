@@ -5,6 +5,7 @@ import {
 } from '@/components/chat/renderers/components/WorkProcess'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { client } from '../../harness-fixture'
 
 const summarize = vi.hoisted(() => vi.fn())
 vi.mock('@/services/inference/summary-client', () => ({ summarize }))
@@ -47,6 +48,12 @@ const getHeader = () => screen.getAllByRole('button')[0]
 beforeEach(() => {
   summarize.mockReset()
   summarize.mockResolvedValue('')
+  // Sources show their site's favicon, which these sites lack.
+  client.post.mockImplementation(async (path: string) => {
+    if (path !== '/v1/metadata/favicon')
+      throw new Error(`Unexpected request: ${path}`)
+    return { status: 'missing', favicon_bytes: '', favicon_content_type: '' }
+  })
 })
 
 afterEach(() => {

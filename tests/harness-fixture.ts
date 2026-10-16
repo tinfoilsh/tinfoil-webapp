@@ -74,8 +74,9 @@ function unexpected(path: string): never {
   throw new Error(`Unexpected harness request: ${path}`)
 }
 
-// The client of the harness the last sign-in activated. It rejects every
-// request until the test scripts it.
+// The client of the harness the last sign-in activated. It answers the
+// session, which a finished run refreshes, and rejects every other request
+// until the test scripts it.
 export let client: FakeClient
 
 // Signs an account in to a fake harness, as HarnessProvider does. The
@@ -103,7 +104,9 @@ export function signIn({
     events: vi.fn(async function* (path: string): AsyncGenerator<never> {
       unexpected(path)
     }),
-    post: vi.fn(async (path: string) => unexpected(path)),
+    post: vi.fn(async (path: string) =>
+      path === '/v1/session' ? structuredClone(session) : unexpected(path),
+    ),
     upload: vi.fn(async (path: string) => unexpected(path)),
     download: vi.fn(async (path: string) => unexpected(path)),
     stream: vi.fn(async (path: string) => unexpected(path)),

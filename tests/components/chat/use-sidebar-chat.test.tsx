@@ -38,6 +38,11 @@ it('stops streaming a cancelled ask and keeps its partial answer', async () => {
       }
     },
   )
+  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
+    if (path !== '/v1/threads/cancel')
+      throw new Error(`Unexpected request: ${path}`)
+    return {}
+  })
   const { result } = renderHook(() =>
     useSidebarChat({
       context: async () => ({ threadId: 'thread-1', key: 'content-key' }),
