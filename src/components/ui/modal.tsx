@@ -70,9 +70,9 @@ export function Modal({
                     size="icon"
                     onClick={onClose}
                     aria-label="Close"
-                    className="absolute right-4 top-4 z-30 h-7 w-7 text-content-secondary hover:bg-surface-chat hover:text-content-secondary"
+                    className="absolute right-4 top-4 z-30 h-8 w-8 rounded-lg text-content-secondary hover:bg-surface-chat hover:text-content-secondary [&_svg]:size-5"
                   >
-                    <TfBoxX className="h-5 w-5" aria-hidden="true" />
+                    <TfBoxX aria-hidden="true" />
                   </Button>
                 )}
                 {children}
