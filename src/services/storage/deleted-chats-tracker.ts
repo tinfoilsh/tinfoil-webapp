@@ -22,9 +22,9 @@ export class DeletedChatsTracker {
         const parsed: unknown[] = JSON.parse(stored)
         parsed.forEach((entry) => {
           if (typeof entry === 'string') {
-            // The legacy string format combined local and remote tombstones.
-            // Revision sync is authoritative, so an upsert must be able to
-            // retire these after they suppress any stale in-flight save.
+            // The previous client's string format combined local and remote
+            // tombstones. Treat them as remote, so a local rollback cannot
+            // bring back a chat that was deleted elsewhere.
             this.remoteDeletedChats.add(entry)
           } else if (entry && typeof entry === 'object' && 'chatId' in entry) {
             const persisted = entry as {
