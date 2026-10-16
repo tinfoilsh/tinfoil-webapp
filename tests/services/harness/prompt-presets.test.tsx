@@ -67,12 +67,12 @@ function signIn({
     profile: { customPromptPresets: [RESEARCH, QUIET], ...profile },
   })
   client.post.mockImplementation(
-    async (path: string, input: Record<string, unknown>) =>
-      path === '/v1/threads/list'
-        ? { threads: [], nextCursor: null }
-        : path === '/v1/profile/update'
-          ? { ...getView().profile, ...(input.patch as object) }
-          : {},
+    async (path: string, input: Record<string, unknown>) => {
+      if (path === '/v1/threads/list') return { threads: [], nextCursor: null }
+      if (path === '/v1/profile/update')
+        return { ...getView().profile, ...(input.patch as object) }
+      throw new Error(`Unexpected harness request: ${path}`)
+    },
   )
   return api
 }

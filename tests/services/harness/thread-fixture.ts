@@ -42,7 +42,6 @@ export function resetChatStoresAroundEachTest() {
   beforeEach(async () => {
     deletedChatsTracker.clear()
     await indexedDBStorage.deleteAllChats()
-    deletedChatsTracker.clear()
   })
 
   afterEach(() => {

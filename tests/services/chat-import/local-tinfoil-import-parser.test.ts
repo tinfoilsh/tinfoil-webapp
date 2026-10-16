@@ -6,12 +6,6 @@ import {
   parseTinfoilExportBytes,
 } from '@/services/chat-import/local-tinfoil-import-parser'
 
-const parserOptions = {
-  fileName: 'conversations.json',
-  mimeType: 'application/json',
-  maxArchiveBytes: 1024,
-}
-
 describe('parseTinfoilExportBytes', () => {
   it('deduplicates shared buffers before worker transfer', () => {
     const buffer = new ArrayBuffer(8)
@@ -32,7 +26,6 @@ describe('parseTinfoilExportBytes', () => {
 
     expect(() =>
       parseTinfoilExportBytes({
-        ...parserOptions,
         bytes,
         fileName: 'export.zip',
         mimeType: 'application/zip',
