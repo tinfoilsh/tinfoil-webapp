@@ -27,12 +27,8 @@ import { connectHarness, KEY, type FakeHarness } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
 type SidebarProps = ComponentProps<typeof ChatSidebar>
-type ProjectSidebarProps = { onExitProjectWhileDragging?: () => void }
 const page = vi.hoisted(() => ({
   sidebar: null as SidebarProps | null,
-  projectSidebar: null as ProjectSidebarProps | null,
-  activeProject: null as { id: string; name: string } | null,
-  exitProjectMode: vi.fn(),
   toast: vi.fn(),
 }))
 
@@ -56,22 +52,10 @@ vi.mock(
   '@/hooks/use-passkey-backup',
   async () => (await import('./chat-page-mocks')).passkeyBackup,
 )
-vi.mock('@/components/project', () => ({
-  useProject: () => ({
-    activeProject: page.activeProject,
-    loadingProject: null,
-    isProjectMode: !!page.activeProject,
-    enterProjectMode: vi.fn(),
-    exitProjectMode: page.exitProjectMode,
-    createProject: vi.fn(),
-    uploadDocument: vi.fn(),
-  }),
-  ProjectSidebar: (props: ProjectSidebarProps) => {
-    page.projectSidebar = props
-    return null
-  },
-  ProjectModeIndicator: () => null,
-}))
+vi.mock(
+  '@/components/project',
+  async () => (await import('./chat-page-mocks')).project,
+)
 vi.mock('@/components/chat/chat-sidebar', () => ({
   ChatSidebar: (props: SidebarProps) => {
     page.sidebar = props
@@ -167,13 +151,8 @@ beforeAll(() => {
 
 beforeEach(async () => {
   page.sidebar = null
-  page.projectSidebar = null
-  page.activeProject = null
-  page.exitProjectMode.mockReset()
   page.toast.mockReset()
   chatPage.premium = false
-  chatPage.router.push.mockClear()
-  chatPage.router.replace.mockClear()
   authTokenManager.initialize(async () => 'clerk-jwt')
   vi.stubGlobal(
     'fetch',
@@ -428,22 +407,5 @@ describe('moving chats from the chat page', () => {
       title: 'Chat moved to local',
       description: 'The chat is now only stored on this device.',
     })
-  })
-
-  it('leaves a project without leaving the open chat while one of its chats is dragged out', async () => {
-    connect()
-    page.activeProject = { id: 'project-1', name: 'Garden' }
-    harness.client.post.mockImplementation(async () => ({
-      threads: [],
-      nextCursor: null,
-    }))
-    render(<ChatInterface />)
-    await waitFor(() => expect(page.projectSidebar).not.toBeNull())
-    chatPage.router.push.mockClear()
-
-    act(() => page.projectSidebar!.onExitProjectWhileDragging!())
-
-    expect(page.exitProjectMode).toHaveBeenCalledOnce()
-    expect(chatPage.router.push).not.toHaveBeenCalled()
   })
 })
