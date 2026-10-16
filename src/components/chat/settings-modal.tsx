@@ -2690,17 +2690,8 @@ ${encryptionKey.replace('key_', '')}
 
         {/* Left sidebar navigation (desktop only) */}
         <div className="hidden w-56 flex-none flex-col border-r border-border-subtle md:flex">
-          {/* Close button */}
-          <div className="flex h-14 items-center px-4">
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              aria-label="Close settings"
-              className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
-            >
-              <TfBoxX className="h-5 w-5" aria-hidden="true" />
-            </button>
-          </div>
+          {/* Spacer matching the content header so tabs start below it */}
+          <div className="h-14 flex-none" />
 
           {/* Navigation items */}
           <nav className="flex-1 px-3 py-2">
@@ -2745,16 +2736,26 @@ ${encryptionKey.replace('key_', '')}
             <h2 className="font-aeonik text-lg font-semibold text-content-primary">
               {navItems.find((item) => item.id === activeTab)?.label}
             </h2>
-            {activeTab === 'personalization' &&
-              isUsingPersonalization &&
-              hasUnsavedPersonalization && (
-                <button
-                  onClick={handleSavePersonalization}
-                  className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
-                >
-                  Save
-                </button>
-              )}
+            <div className="flex items-center gap-2">
+              {activeTab === 'personalization' &&
+                isUsingPersonalization &&
+                hasUnsavedPersonalization && (
+                  <button
+                    onClick={handleSavePersonalization}
+                    className="rounded-lg bg-brand-accent-dark px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-accent-dark/90"
+                  >
+                    Save
+                  </button>
+                )}
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                aria-label="Close settings"
+                className="rounded-lg p-1.5 text-content-secondary transition-colors hover:bg-surface-chat"
+              >
+                <TfBoxX className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
           </div>
 
           {/* Content */}
