@@ -37,7 +37,6 @@ const props = {
   isDarkMode: false,
   chatId: 'chat-id',
   share: mocks.share,
-  canRevoke: true,
 }
 
 function deferred<T>() {
@@ -532,24 +531,5 @@ describe('ShareModal', () => {
     ).toBeDisabled()
     expect(mocks.share).not.toHaveBeenCalled()
     expect(mocks.status).not.toHaveBeenCalled()
-  })
-
-  it('only creates links when the harness cannot report or revoke shares', async () => {
-    render(<ShareModal {...props} canRevoke={false} />)
-    const checkbox = await readyCheckbox()
-    expect(screen.getByText('Private')).toBeVisible()
-    expect(
-      screen.queryByText(/Disabling sharing deactivates existing links/),
-    ).not.toBeInTheDocument()
-
-    fireEvent.click(checkbox)
-    fireEvent.click(screen.getByRole('button', { name: 'Create share link' }))
-    expect(
-      await screen.findByRole('textbox', { name: 'Share link' }),
-    ).toHaveValue(SHARE_URL)
-    fireEvent.click(await readyCheckbox())
-    expect(screen.getByRole('checkbox')).not.toBeChecked()
-    expect(mocks.status).not.toHaveBeenCalled()
-    expect(mocks.revoke).not.toHaveBeenCalled()
   })
 })

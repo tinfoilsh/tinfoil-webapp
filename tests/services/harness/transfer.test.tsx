@@ -55,7 +55,7 @@ function signInWithCloudSync() {
   vi.spyOn(api, 'key').mockReturnValue(KEY)
   activateAPI(api)
   publish({
-    session: { ...testSession, features: { transfer: true } },
+    session: testSession,
     profile: {},
     keyReady: true,
     profileReady: true,

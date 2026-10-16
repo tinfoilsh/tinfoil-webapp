@@ -39,9 +39,6 @@ type ShareModalProps = {
   chatId?: string
   // Creates the chat's share link and returns it.
   share: (chatId: string) => Promise<string>
-  // The harness reports whether a chat is shared and revokes its link. An
-  // older harness only creates links.
-  canRevoke?: boolean
   // Reads the text of a document whose message does not carry it, so the
   // markdown includes it.
   loadDocumentText?: LoadDocumentText
@@ -62,7 +59,6 @@ function ShareModalContent({
   chatCreatedAt,
   chatId,
   share,
-  canRevoke = false,
   loadDocumentText,
 }: ShareModalProps) {
   const { toast } = useToast()
@@ -70,10 +66,8 @@ function ShareModalContent({
   const [isLinkCopied, setIsLinkCopied] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isRevoking, setIsRevoking] = useState(false)
-  const [isCheckingShare, setIsCheckingShare] = useState(canRevoke)
-  const [hasShare, setHasShare] = useState<boolean | null>(
-    canRevoke ? null : false,
-  )
+  const [isCheckingShare, setIsCheckingShare] = useState(true)
+  const [hasShare, setHasShare] = useState<boolean | null>(null)
   const [statusRetry, setStatusRetry] = useState(0)
   const [isShareEnabled, setIsShareEnabled] = useState(false)
   const [shareUrl, setShareUrl] = useState<string | null>(null)
@@ -98,7 +92,7 @@ function ShareModalContent({
   }, [])
 
   useEffect(() => {
-    if (!isOpen || !canRevoke) return
+    if (!isOpen) return
     if (!chatId) {
       setHasShare(false)
       setIsCheckingShare(false)
@@ -124,7 +118,7 @@ function ShareModalContent({
     return () => {
       ignore = true
     }
-  }, [chatId, isOpen, statusRetry, canRevoke])
+  }, [chatId, isOpen, statusRetry])
 
   // Reset modal state when chatId changes (different chat)
   useEffect(() => {
@@ -355,7 +349,7 @@ function ShareModalContent({
         position: 'top-left',
       })
       // The link may have been stored though its response was lost.
-      if (canRevoke) setStatusRetry((value) => value + 1)
+      setStatusRetry((value) => value + 1)
     } finally {
       if (isMountedRef.current) setIsUploading(false)
     }
@@ -363,7 +357,7 @@ function ShareModalContent({
 
   const handleShareEnabledChange = async (enabled: boolean) => {
     if (!canChangeSharing) return
-    if (enabled || !chatId || !hasShare || !canRevoke) {
+    if (enabled || !chatId || !hasShare) {
       setIsShareEnabled(enabled)
       return
     }
@@ -519,13 +513,11 @@ function ShareModalContent({
                           </span>
                         </label>
 
-                        {canRevoke && (
-                          <p className="text-sm text-content-secondary">
-                            {isRevoking
-                              ? 'Revoking share link...'
-                              : 'Disabling sharing deactivates existing links. Copies already saved by recipients cannot be removed.'}
-                          </p>
-                        )}
+                        <p className="text-sm text-content-secondary">
+                          {isRevoking
+                            ? 'Revoking share link...'
+                            : 'Disabling sharing deactivates existing links. Copies already saved by recipients cannot be removed.'}
+                        </p>
 
                         {hasShare && !shareUrl && (
                           <p className="text-sm text-content-secondary">

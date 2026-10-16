@@ -403,22 +403,14 @@ export function ChatInterface({
       ? `${currentChat.title} · Tinfoil`
       : 'Tinfoil Private Chat'
   const handleInputFocusWithRateLimitCheck = handleInputFocus
-  const features = session?.features ?? {}
-  // A chat on this device changes its own copy; a stored chat needs the
-  // harness's message actions, and a temporary one is not stored at all.
+  // A chat on this device changes its own copy; the harness changes a stored
+  // chat, and a temporary one is not stored at all.
   const canChangeMessages =
-    !!currentChat.id &&
-    (thread.runsLocally || (!isTemporaryMode && !!features.messageActions))
+    !!currentChat.id && (thread.runsLocally || !isTemporaryMode)
   const canFork =
-    !!currentChat.id &&
-    !currentChat.isTemporary &&
-    !currentChat.isBlankChat &&
-    (currentChat.isLocalOnly || !!features.fork)
+    !!currentChat.id && !currentChat.isTemporary && !currentChat.isBlankChat
   const canShare =
-    !!isSignedIn &&
-    !currentChat.isTemporary &&
-    currentChat.messages.length > 0 &&
-    (!currentChat.isLocalOnly || !!session?.features.localShare)
+    !!isSignedIn && !currentChat.isTemporary && currentChat.messages.length > 0
   const canChat = profileReady && (thread.runsLocally || keyReady)
   const reloadChats = () => thread.refresh()
   const createNewChat = (isLocalOnly = false, fromUserAction = true) => {
@@ -621,8 +613,8 @@ export function ChatInterface({
   const unpinChat = (id: string) => {
     void thread.update(id, { pinned: false }).catch(thread.report)
   }
-  // Chats move between the cloud and this device when the harness offers it.
-  const canMoveChats = cloudSyncEnabled && !!features.transfer
+  // Chats move between the cloud and this device with cloud sync.
+  const canMoveChats = cloudSyncEnabled
   const isAbort = (cause: unknown) =>
     cause instanceof DOMException && cause.name === 'AbortError'
   const handleConvertChatToCloud = async (chatId: string): Promise<boolean> => {
@@ -1893,9 +1885,6 @@ export function ChatInterface({
           chatId={currentChat.id}
           share={thread.share}
           loadDocumentText={thread.documentText}
-          // Every harness that seals local shares also reports and revokes
-          // shares; no other feature flag marks those routes.
-          canRevoke={!!session?.features.localShare}
         />
       )}
 
@@ -2155,9 +2144,7 @@ export function ChatInterface({
                       onEditAssistantMessage={
                         canChangeMessages ? editAssistantMessage : undefined
                       }
-                      onContinueAssistantMessage={
-                        features.continue ? continueAssistantMessage : undefined
-                      }
+                      onContinueAssistantMessage={continueAssistantMessage}
                       onForkMessage={
                         canFork && !isStreaming && !isForking
                           ? handleForkMessage

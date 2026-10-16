@@ -23,7 +23,6 @@ import {
   it,
   vi,
 } from 'vitest'
-import { testSession } from '../../harness-fixture'
 import { connectHarness, KEY, type FakeHarness } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
@@ -133,11 +132,9 @@ const imported: ThreadSummary = {
 let harness: FakeHarness
 let cloud: ThreadSummary[]
 
-function connect(features: Record<string, boolean>) {
+function connect() {
   cloud = []
-  harness = connectHarness({
-    session: { features: { ...testSession.features, ...features } },
-  })
+  harness = connectHarness()
 }
 
 const sidebar = () => {
@@ -209,30 +206,8 @@ afterEach(() => {
 })
 
 describe('moving chats from the chat page', () => {
-  it('offers no moves against a harness without the transfer routes', async () => {
-    connect({})
-    harness.client.post.mockImplementation(async () => ({
-      threads: [],
-      nextCursor: null,
-    }))
-    await renderPage()
-
-    expect(sidebar().onConvertChatToCloud).toBeUndefined()
-    expect(sidebar().onConvertChatToLocal).toBeUndefined()
-
-    await act(async () => {
-      await sidebar().onToggleFavorite?.({
-        id: CHAT_ID,
-        title: '',
-        isLocalOnly: true,
-      })
-    })
-    expect(calls()).toEqual([])
-    expect(await stored()).toEqual(deviceChat)
-  })
-
   it('pins a device chat by moving it to the cloud first', async () => {
-    connect({ transfer: true })
+    connect()
     harness.client.post.mockImplementation(async (path: string, input) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
@@ -270,7 +245,7 @@ describe('moving chats from the chat page', () => {
   })
 
   it('leaves a device chat unpinned on the device when its move fails', async () => {
-    connect({ transfer: true })
+    connect()
     harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
@@ -299,7 +274,7 @@ describe('moving chats from the chat page', () => {
 
   it('files a device chat into a project through the cloud', async () => {
     chatPage.premium = true
-    connect({ transfer: true })
+    connect()
     harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
@@ -335,7 +310,7 @@ describe('moving chats from the chat page', () => {
 
   it('returns a device chat to the device as it was when its project move fails', async () => {
     chatPage.premium = true
-    connect({ transfer: true })
+    connect()
     harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
@@ -383,7 +358,7 @@ describe('moving chats from the chat page', () => {
 
   it('names unreadable attachments when a synced chat cannot move to the device', async () => {
     await localThreadStore('device').delete(CHAT_ID)
-    connect({ transfer: true })
+    connect()
     cloud = [imported]
     harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
@@ -414,7 +389,7 @@ describe('moving chats from the chat page', () => {
 
   it('moves a synced chat to the device and says so', async () => {
     await localThreadStore('device').delete(CHAT_ID)
-    connect({ transfer: true })
+    connect()
     cloud = [imported]
     harness.client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
@@ -456,7 +431,7 @@ describe('moving chats from the chat page', () => {
   })
 
   it('leaves a project without leaving the open chat while one of its chats is dragged out', async () => {
-    connect({ transfer: true })
+    connect()
     page.activeProject = { id: 'project-1', name: 'Garden' }
     harness.client.post.mockImplementation(async () => ({
       threads: [],

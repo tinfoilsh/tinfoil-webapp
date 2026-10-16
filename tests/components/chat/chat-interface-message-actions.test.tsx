@@ -10,7 +10,6 @@ import {
   within,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
 import { connectHarness, KEY, type FakeHarness } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
@@ -76,18 +75,10 @@ const thread: Thread = {
     },
   ],
 }
-const ACTIONS = {
-  fork: true,
-  messageActions: true,
-  continue: true,
-}
-
 let harness: FakeHarness
 
-function open(features: Record<string, boolean>) {
-  harness = connectHarness({
-    session: { features: { ...testSession.features, ...features } },
-  })
+function open() {
+  harness = connectHarness()
   harness.client.post.mockImplementation(async (path: string, input) => {
     if (path === '/v1/threads/get')
       return (input as { id: string }).id === THREAD_ID
@@ -139,8 +130,8 @@ afterEach(() => {
 })
 
 describe('message actions on the chat page', () => {
-  it("offers a stored chat's message actions when the harness has them", async () => {
-    open(ACTIONS)
+  it("offers a stored chat's message actions", async () => {
+    open()
 
     fireEvent.click((await moreActions())!)
     const menu = screen.getByRole('menu')
@@ -156,24 +147,8 @@ describe('message actions on the chat page', () => {
     ])
   })
 
-  it('leaves them out against a harness without them', async () => {
-    open({})
-
-    expect(await moreActions()).toBeNull()
-    expect(
-      screen.queryByRole('button', { name: 'Delete message' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('button', { name: 'Fork conversation from here' }),
-    ).not.toBeInTheDocument()
-    // Regenerating needs no new route.
-    expect(
-      screen.getAllByRole('button', { name: 'Regenerate response' }).length,
-    ).toBeGreaterThan(0)
-  })
-
   it('deletes a message once the deletion is confirmed', async () => {
-    open(ACTIONS)
+    open()
     await screen.findByText('Hello there')
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete message' }))
@@ -201,7 +176,7 @@ describe('message actions on the chat page', () => {
   })
 
   it('forks a stored chat and moves to the fork', async () => {
-    open(ACTIONS)
+    open()
     fireEvent.click((await moreActions())!)
 
     fireEvent.click(
