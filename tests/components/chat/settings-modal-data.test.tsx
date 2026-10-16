@@ -6,22 +6,11 @@ import {
 } from '@/services/harness/local-threads'
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
-import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
 import { createFunctionalImportWorker } from '../../services/chat-import/functional-import-worker'
+import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 
 const page = vi.hoisted(() => ({
   isSignedIn: true,
@@ -139,23 +128,11 @@ function summary(id: string, projectId: string | null): ThreadSummary {
   }
 }
 
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
-})
+resetChatStoresAroundEachTest()
 
-beforeEach(async () => {
+beforeEach(() => {
   page.isSignedIn = true
   page.toast.mockReset()
-  deletedChatsTracker.clear()
-  await indexedDBStorage.deleteAllChats()
-  deletedChatsTracker.clear()
   downloads = []
   vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
     downloads.push({ name: '', blob: blob as Blob })
@@ -167,11 +144,6 @@ beforeEach(async () => {
   ) {
     downloads[downloads.length - 1].name = this.download
   })
-})
-
-afterEach(() => {
-  chatEvents.clear()
-  deletedChatsTracker.clear()
 })
 
 async function exportChats() {

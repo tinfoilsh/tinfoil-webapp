@@ -17,14 +17,11 @@ import {
   validateAndPackageNativeBackup,
 } from '@/services/native-backup/restore'
 import { writeNativeBackupArchive } from '@/services/native-backup/write'
-import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { uint8ArrayToBase64 } from '@/utils/binary-codec'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import { zipSync } from 'fflate'
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { client, KEY, signIn as signInTo } from '../../harness-fixture'
+import { resetChatStoresAroundEachTest } from '../harness/thread-fixture'
 
 const backupId = '123e4567-e89b-42d3-a456-426614174000'
 const timestamp = '2026-08-20T12:00:00.000Z'
@@ -294,27 +291,7 @@ async function exportBackup() {
   return { result, file: new File([saved!], 'tinfoil-backup.zip') }
 }
 
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
-})
-
-beforeEach(async () => {
-  deletedChatsTracker.clear()
-  await indexedDBStorage.deleteAllChats()
-  deletedChatsTracker.clear()
-})
-
-afterEach(() => {
-  chatEvents.clear()
-  deletedChatsTracker.clear()
-})
+resetChatStoresAroundEachTest()
 
 describe('creating a native backup', () => {
   it("adds this device's chats to the harness's backup of the cloud", async () => {

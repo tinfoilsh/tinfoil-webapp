@@ -8,22 +8,11 @@ import {
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
 import { resetSafeguards } from '@/services/safeguards'
-import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, render, waitFor } from '@testing-library/react'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
 import type { ComponentProps } from 'react'
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { client, KEY, signIn } from '../../harness-fixture'
+import { resetChatStoresAroundEachTest } from '../../services/harness/thread-fixture'
 import { stubSafeguardFlags } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
@@ -138,16 +127,7 @@ async function renderPage() {
   )
 }
 
-beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
-})
+resetChatStoresAroundEachTest()
 
 beforeEach(async () => {
   page.sidebar = null
@@ -155,17 +135,12 @@ beforeEach(async () => {
   chatPage.premium = false
   authTokenManager.initialize(async () => 'clerk-jwt')
   stubSafeguardFlags()
-  deletedChatsTracker.clear()
-  await indexedDBStorage.deleteAllChats()
-  deletedChatsTracker.clear()
   await localThreadStore('device').update(CHAT_ID, () => deviceChat)
 })
 
 afterEach(() => {
   resetSafeguards()
   authTokenManager.reset()
-  chatEvents.clear()
-  deletedChatsTracker.clear()
 })
 
 describe('moving chats from the chat page', () => {
