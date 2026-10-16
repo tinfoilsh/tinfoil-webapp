@@ -24,7 +24,6 @@ export const SYNC_HEADERS = {
   IfMatch: 'If-Match',
   ETag: 'ETag',
   OperationHash: 'X-Operation-Hash',
-  MessageCount: 'X-Message-Count',
   ProjectID: 'X-Project-Id',
   ProjectIDSet: 'X-Project-Id-Set',
   ProfileSyncProtocol: 'X-Profile-Sync-Protocol',
