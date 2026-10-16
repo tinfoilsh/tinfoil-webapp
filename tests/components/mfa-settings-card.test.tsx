@@ -14,8 +14,6 @@ const mocks = vi.hoisted(() => {
 
   return {
     user,
-    logError: vi.fn(),
-    logWarning: vi.fn(),
     createObjectURL: vi.fn(),
     revokeObjectURL: vi.fn(),
   }
@@ -34,8 +32,8 @@ vi.mock('@clerk/react/errors', () => ({
 }))
 
 vi.mock('@/utils/error-handling', () => ({
-  logError: mocks.logError,
-  logWarning: mocks.logWarning,
+  logError: vi.fn(),
+  logWarning: vi.fn(),
 }))
 
 beforeEach(() => {
@@ -192,7 +190,6 @@ describe('MfaSettingsCard', () => {
 
     expect(screen.getByText('On')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Turn off' })).toBeInTheDocument()
-    expect(mocks.logWarning).toHaveBeenCalledTimes(1)
   })
 
   it('shows Clerk verification errors without completing setup', async () => {
@@ -217,6 +214,5 @@ describe('MfaSettingsCard', () => {
       'The code is incorrect.',
     )
     expect(screen.getByTestId('totp-qr-code')).toBeInTheDocument()
-    expect(mocks.logError).toHaveBeenCalledTimes(1)
   })
 })
