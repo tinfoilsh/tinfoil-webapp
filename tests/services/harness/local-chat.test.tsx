@@ -1119,7 +1119,9 @@ describe('stored local chat changes', () => {
       useThread(SEEDED_ID, null, { local: true }),
     )
     await waitFor(() => expect(result.current.chat.messages).toHaveLength(1))
-    client.post.mockResolvedValue({ url: 'https://chat.tinfoil.sh/share/x' })
+    client.post.mockResolvedValueOnce({
+      url: 'https://chat.tinfoil.sh/share/x',
+    })
 
     await act(async () => {
       await result.current.share(SEEDED_ID)

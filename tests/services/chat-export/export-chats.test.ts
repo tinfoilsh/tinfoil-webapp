@@ -1,12 +1,9 @@
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import { buildChatExport } from '@/services/chat-export/export-archive'
 import { collectChatExport } from '@/services/chat-export/export-chats'
-import type { HarnessClient } from '@/services/harness/client'
 import {
   localThreadStore,
   type LocalThread,
 } from '@/services/harness/local-threads'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { ThreadSummary } from '@/services/harness/types'
 import { chatEvents } from '@/services/storage/chat-events'
@@ -23,7 +20,7 @@ import {
   it,
   vi,
 } from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { client, KEY, signIn } from '../../harness-fixture'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -31,40 +28,9 @@ vi.mock('@/utils/error-handling', () => ({
   logWarning: vi.fn(),
 }))
 
-const KEY = 'Y29udGVudC1rZXk='
 const IMAGE = new Uint8Array([137, 80, 78, 71, 1, 2, 3])
 const IMAGE_BASE64 = 'iVBORwECAw=='
 const LOCAL_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
-
-let client: {
-  events: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  upload: ReturnType<typeof vi.fn>
-  download: ReturnType<typeof vi.fn>
-}
-
-function connect(userId: string | null, cloud = false) {
-  localStorage.setItem(
-    'tinfoil-settings-cloud-sync-enabled',
-    cloud ? 'true' : 'false',
-  )
-  if (userId) localStorage.setItem(AUTH_ACTIVE_USER_ID, userId)
-  client = {
-    events: vi.fn(),
-    post: vi.fn(async (path: string) => {
-      throw new Error(`Unexpected ${path}`)
-    }),
-    upload: vi.fn(),
-    download: vi.fn(async (path: string) => {
-      throw new Error(`Unexpected ${path}`)
-    }),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, userId)
-  if (userId) vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({ session: testSession, keyReady: true, profileReady: true })
-  return api
-}
 
 const deviceChat: LocalThread = {
   id: LOCAL_ID,
@@ -223,7 +189,7 @@ afterEach(() => {
 
 describe('collecting chats for an export', () => {
   it("writes this device's chats in the previous client's export format", async () => {
-    const api = connect('alice')
+    const api = signIn()
     await localThreadStore('device').update(LOCAL_ID, () => deviceChat)
 
     const source = await collectChatExport(api, {
@@ -248,7 +214,7 @@ describe('collecting chats for an export', () => {
   })
 
   it("exports a signed-out visitor's chats from this tab", async () => {
-    const api = connect(null)
+    const api = signIn({ userId: null })
     await localThreadStore('tab').update(LOCAL_ID, () => ({
       ...deviceChat,
       messages: [deviceChat.messages[1]],
@@ -277,7 +243,7 @@ describe('collecting chats for an export', () => {
   })
 
   it('adds the stored chats with cloud sync, read through their transcripts', async () => {
-    const api = connect('alice', true)
+    const api = signIn({ cloud: true })
     await localThreadStore('device').update(LOCAL_ID, () => deviceChat)
     const pages: Record<string, unknown> = {
       first: {
@@ -390,7 +356,7 @@ describe('collecting chats for an export', () => {
   })
 
   it('reads a chat whose transcript is refused through its messages and attachments', async () => {
-    const api = connect('alice', true)
+    const api = signIn({ cloud: true })
     const refused = new HarnessError(
       { code: 'ATTACHMENTS_UNAVAILABLE', message: '1 attachments' },
       409,
@@ -543,7 +509,7 @@ describe('collecting chats for an export', () => {
   })
 
   it('fails when a stored chat cannot be read at all', async () => {
-    const api = connect('alice', true)
+    const api = signIn({ cloud: true })
     const failure = new HarnessError(
       { code: 'UPSTREAM_REFUSED', message: 'Sync is unavailable' },
       503,

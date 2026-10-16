@@ -1,10 +1,7 @@
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import type { HarnessClient } from '@/services/harness/client'
 import {
   localThreadStore,
   type LocalThread,
 } from '@/services/harness/local-threads'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { collectNativeBackupV2 } from '@/services/native-backup/collect'
 import {
   runNativeBackupExport,
@@ -35,21 +32,13 @@ import {
   it,
   vi,
 } from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { client, KEY, signIn as signInTo } from '../../harness-fixture'
 
-const KEY = 'Y29udGVudC1rZXk='
 const backupId = '123e4567-e89b-42d3-a456-426614174000'
 const timestamp = '2026-08-20T12:00:00.000Z'
 const LOCAL_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
 const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13])
 const jpeg = new Uint8Array([255, 216, 255, 224, 0, 16])
-
-let client: {
-  events: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  upload: ReturnType<typeof vi.fn>
-  download: ReturnType<typeof vi.fn>
-}
 
 // The harness's archive of the cloud's data: a project, a chat in it, and
 // the chat's image.
@@ -286,20 +275,11 @@ const backedUpChat = {
 }
 
 function signIn(archive: Blob) {
-  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
-  client = {
-    events: vi.fn(),
-    post: vi.fn(),
-    upload: vi.fn(),
-    download: vi.fn(async (path: string) => {
-      if (path !== '/v1/export') throw new Error(`Unexpected ${path}`)
-      return archive
-    }),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
-  vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({ session: testSession, keyReady: true, profileReady: true })
+  signInTo()
+  client.download.mockImplementation(async (path: string) => {
+    if (path !== '/v1/export') throw new Error(`Unexpected ${path}`)
+    return archive
+  })
 }
 
 // Runs the export as the backup panel does, keeping the saved archive.

@@ -128,9 +128,10 @@ describe('hourly limit recheck', () => {
       ...structuredClone(testSession),
       rateLimit: capped,
     })
-    vi.mocked(harnessAPI().client.post).mockImplementation(async (path) =>
-      path === '/v1/session' ? session() : {},
-    )
+    vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
+      if (path !== '/v1/session') throw new Error(`Unexpected request: ${path}`)
+      return session()
+    })
     await act(async () => {
       await harnessAPI().refresh()
     })

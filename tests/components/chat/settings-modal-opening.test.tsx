@@ -463,13 +463,13 @@ describe('settings imports', () => {
       'job-1': { status: 'completed', imported: 3, failed: 0, total: 3 },
       'job-2': { status: 'running', imported: 0, failed: 0, total: 0 },
     }
-    vi.mocked(client.post).mockImplementation(async (path, input) =>
-      path === '/v1/import/status'
-        ? statuses[(input as { jobId: string }).jobId]
-        : path === '/v1/projects/list'
-          ? { projects: [], nextCursor: null }
-          : {},
-    )
+    vi.mocked(client.post).mockImplementation(async (path, input) => {
+      if (path === '/v1/import/status')
+        return statuses[(input as { jobId: string }).jobId]
+      if (path === '/v1/projects/list')
+        return { projects: [], nextCursor: null }
+      throw new Error(`Unexpected request: ${path}`)
+    })
     const onChatsUpdated = vi.fn()
     render(
       <Harness initialTab="data" isSignedIn onChatsUpdated={onChatsUpdated} />,
@@ -518,20 +518,20 @@ describe('settings imports', () => {
   it('names the file that failed and the files never started', async () => {
     const client = harnessAPI().client
     vi.mocked(client.upload).mockResolvedValue({ jobId: 'job-1' })
-    vi.mocked(client.post).mockImplementation(async (path) =>
-      path === '/v1/import/status'
-        ? {
-            status: 'failed',
-            imported: 0,
-            failed: 0,
-            total: 0,
-            failureReason: 'invalid_archive',
-            failureDetail: 'unexpected_json',
-          }
-        : path === '/v1/projects/list'
-          ? { projects: [], nextCursor: null }
-          : {},
-    )
+    vi.mocked(client.post).mockImplementation(async (path) => {
+      if (path === '/v1/import/status')
+        return {
+          status: 'failed',
+          imported: 0,
+          failed: 0,
+          total: 0,
+          failureReason: 'invalid_archive',
+          failureDetail: 'unexpected_json',
+        }
+      if (path === '/v1/projects/list')
+        return { projects: [], nextCursor: null }
+      throw new Error(`Unexpected request: ${path}`)
+    })
     render(<Harness initialTab="data" isSignedIn />)
     fireEvent.click(screen.getByRole('button', { name: 'Import from ChatGPT' }))
     fireEvent.change(

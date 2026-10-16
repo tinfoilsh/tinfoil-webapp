@@ -437,7 +437,7 @@ describe('changing messages of a stored chat', () => {
           title: 'Numbers (fork)',
           messages: undefined,
         }
-      return {}
+      throw new Error(`Unexpected ${path}`)
     })
     return renderHook(() => useThread(THREAD_ID, null))
   }

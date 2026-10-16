@@ -1,7 +1,4 @@
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import type { HarnessClient } from '@/services/harness/client'
 import { localThreadStore } from '@/services/harness/local-threads'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import {
   formatNativeBackupV2,
@@ -27,39 +24,13 @@ import {
   it,
   vi,
 } from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { client, KEY, signIn } from '../../harness-fixture'
 
-const KEY = 'Y29udGVudC1rZXk='
 const backupId = '123e4567-e89b-42d3-a456-426614174000'
 const timestamp = '2026-08-20T12:00:00.000Z'
 const later = '2026-08-20T12:05:00.000Z'
 const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13])
 const pageImage = new Uint8Array([255, 216, 255, 224, 0, 16])
-
-let client: {
-  events: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  upload: ReturnType<typeof vi.fn>
-  download: ReturnType<typeof vi.fn>
-}
-
-function signIn() {
-  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
-  client = {
-    events: vi.fn(),
-    post: vi.fn(async (path: string) => {
-      throw new Error(`Unexpected ${path}`)
-    }),
-    upload: vi.fn(async (path: string) => {
-      throw new Error(`Unexpected ${path}`)
-    }),
-    download: vi.fn(),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
-  vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({ session: testSession, keyReady: true, profileReady: true })
-}
 
 const localChat: NativeBackupV2Input['localChats'][number] = {
   id: 'local-1',
@@ -432,7 +403,8 @@ describe('restoring a native backup', () => {
   it('reports an interrupted restore when the chat service forgets the job', async () => {
     client.upload.mockResolvedValue({ jobId: 'job-1' })
     let polls = 0
-    client.post.mockImplementation(async () => {
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
       if (polls++ === 0)
         return {
           jobId: 'job-1',
@@ -457,7 +429,8 @@ describe('restoring a native backup', () => {
       503,
     )
     let polls = 0
-    client.post.mockImplementation(async () => {
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/import/status') throw new Error(`Unexpected ${path}`)
       if (polls++ === 0)
         return {
           jobId: 'job-1',

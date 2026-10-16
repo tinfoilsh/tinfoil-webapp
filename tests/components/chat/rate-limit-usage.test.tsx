@@ -3,14 +3,7 @@ import {
   formatTokenCount,
   RateLimitUsage,
 } from '@/components/chat/rate-limit-usage'
-import type { HarnessClient } from '@/services/harness/client'
-import {
-  activateAPI,
-  getView,
-  HarnessAPI,
-  harnessAPI,
-  publish,
-} from '@/services/harness/runtime'
+import { getView, harnessAPI } from '@/services/harness/runtime'
 import type { Frame, RateLimit } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import {
@@ -21,7 +14,7 @@ import {
   screen,
 } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { client, testSession } from '../../harness-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({
@@ -43,11 +36,10 @@ const hourly = (
 })
 
 async function refreshSession(rateLimit: RateLimit) {
-  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) =>
-    path === '/v1/session'
-      ? { ...structuredClone(testSession), rateLimit }
-      : {},
-  )
+  vi.mocked(harnessAPI().client.post).mockImplementation(async (path) => {
+    if (path !== '/v1/session') throw new Error(`Unexpected request: ${path}`)
+    return { ...structuredClone(testSession), rateLimit }
+  })
   await act(async () => {
     await harnessAPI().refresh()
   })
@@ -160,26 +152,13 @@ describe('RateLimitUsage', () => {
 })
 
 describe('usage reported by runs', () => {
-  let events: ReturnType<typeof vi.fn>
-
   beforeEach(() => {
     sessionStorage.clear()
-    events = vi.fn()
-    activateAPI(
-      new HarnessAPI(
-        {
-          events,
-          // A finished run refreshes the session.
-          post: vi
-            .fn()
-            .mockImplementation(async (path: string) =>
-              path === '/v1/session' ? structuredClone(testSession) : {},
-            ),
-        } as unknown as HarnessClient,
-        null,
-      ),
-    )
-    publish({ session: testSession, keyReady: true, profileReady: true })
+    // A finished run refreshes the session.
+    client.post.mockImplementation(async (path: string) => {
+      if (path !== '/v1/session') throw new Error(`Unexpected request: ${path}`)
+      return structuredClone(testSession)
+    })
   })
 
   afterEach(cleanup)
@@ -214,7 +193,7 @@ describe('usage reported by runs', () => {
     render(<RateLimitUsage isPremium />)
     const { result } = renderHook(() => useThread())
 
-    events.mockImplementationOnce(
+    client.events.mockImplementationOnce(
       run('run-1', hourly(500_000), {
         prompt_tokens: 100_000,
         completion_tokens: 2_000,
@@ -230,17 +209,17 @@ describe('usage reported by runs', () => {
     expect(screen.getByText('600K / 2M')).toBeInTheDocument()
 
     // The next run reports the same stale exchange; usage does not move back.
-    events.mockImplementationOnce(run('run-2', hourly(500_000)))
+    client.events.mockImplementationOnce(run('run-2', hourly(500_000)))
     await act(() => result.current.send({ content: 'second' }))
     expect(screen.getByText('600K / 2M')).toBeInTheDocument()
 
     // A fresh exchange that counted more takes over.
-    events.mockImplementationOnce(run('run-3', hourly(700_000)))
+    client.events.mockImplementationOnce(run('run-3', hourly(700_000)))
     await act(() => result.current.send({ content: 'third' }))
     expect(screen.getByText('700K / 2M')).toBeInTheDocument()
 
     // A new window starts from its own report.
-    events.mockImplementationOnce(
+    client.events.mockImplementationOnce(
       run('run-4', hourly(5_000, '2026-07-24T12:00:00Z')),
     )
     await act(() => result.current.send({ content: 'fourth' }))
@@ -252,7 +231,7 @@ describe('usage reported by runs', () => {
   it('does not count a replayed final event twice', async () => {
     const { result } = renderHook(() => useThread())
     const spend = { prompt_tokens: 1_000, completion_tokens: 10 }
-    events.mockImplementationOnce(async function* () {
+    client.events.mockImplementationOnce(async function* () {
       yield* run('run-1', hourly(0), spend)()
       // The same final event again, as a reconnect replays it.
       yield {
