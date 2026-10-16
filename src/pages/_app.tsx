@@ -140,7 +140,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
   return (
     <>
       <Head>
-        <title key="page-title">Tinfoil Private Chat</title>
+        <title key="page-title">Tinfoil Chat</title>
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
@@ -150,11 +150,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
           name="description"
           content="Verifiably Private AI chat application supporting open source models through Tinfoil"
         />
-        <meta
-          key="og:title"
-          property="og:title"
-          content="Tinfoil Private Chat"
-        />
+        <meta key="og:title" property="og:title" content="Tinfoil Chat" />
         <meta
           key="og:description"
           property="og:description"
@@ -162,11 +158,7 @@ export default function App({ Component, pageProps, router }: AppProps) {
         />
         <meta key="og:type" property="og:type" content="website" />
         <meta key="twitter:card" name="twitter:card" content="summary" />
-        <meta
-          key="twitter:title"
-          name="twitter:title"
-          content="Tinfoil Private Chat"
-        />
+        <meta key="twitter:title" name="twitter:title" content="Tinfoil Chat" />
         <meta
           key="twitter:description"
           name="twitter:description"

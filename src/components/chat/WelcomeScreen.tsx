@@ -299,7 +299,7 @@ export const WelcomeScreen = memo(function WelcomeScreen({
   const getGreeting = () => {
     const name = nickname || user?.firstName
     if (!name) {
-      return 'Tinfoil Private Chat'
+      return 'Tinfoil Chat'
     }
 
     const hour = new Date().getHours()

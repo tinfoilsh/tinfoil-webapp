@@ -114,7 +114,7 @@ export const CONSTANTS = {
   // Placeholder once a conversation has started
   REPLY_PLACEHOLDER: 'Reply to Al...',
   // Base document title used when no chat title is meaningful
-  BASE_DOCUMENT_TITLE: 'Tinfoil Private Chat',
+  BASE_DOCUMENT_TITLE: 'Tinfoil Chat',
   // Row bounds for the in-place message edit textarea
   EDIT_TEXTAREA_MIN_ROWS: 3,
   EDIT_TEXTAREA_MAX_ROWS: 10,
