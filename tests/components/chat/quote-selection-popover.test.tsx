@@ -8,7 +8,6 @@ import {
 } from '@/components/chat/renderers/registry'
 import type { MessageRenderer } from '@/components/chat/renderers/types'
 import type { BaseModel } from '@/config/models'
-import { publish } from '@/services/harness/runtime'
 import {
   act,
   cleanup,
@@ -19,7 +18,6 @@ import {
 } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
 import {
   controlledSpeech,
   FakeAudioContext,
@@ -142,12 +140,6 @@ beforeEach(() => {
   audio = new FakeAudioContext()
   audioMocks.stream.mockReset().mockImplementation(generation.stream)
   audioMocks.context.mockReset().mockReturnValue(audio)
-  publish({
-    session: {
-      ...testSession,
-      features: { ...testSession.features, speech: true },
-    },
-  })
   frames.clear()
   nextFrame = 0
   vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {

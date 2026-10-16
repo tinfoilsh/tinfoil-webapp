@@ -27,17 +27,16 @@ describe('read aloud button', () => {
     audio = new FakeAudioContext()
     fakes.stream.mockReset().mockImplementation(generation.stream)
     fakes.context.mockReset().mockReturnValue(audio)
-    publish({
-      session: {
-        ...testSession,
-        features: { ...testSession.features, speech: true },
-      },
-    })
   })
   afterEach(() => act(() => speechPlayer.stop()))
 
   it('is not offered by a harness without speech', () => {
-    publish({ session: testSession })
+    publish({
+      session: {
+        ...testSession,
+        features: { ...testSession.features, speech: false },
+      },
+    })
     const { container } = render(<ReadAloudButton content="Hello." />)
     expect(container).toBeEmptyDOMElement()
     expect(fakes.stream).not.toHaveBeenCalled()

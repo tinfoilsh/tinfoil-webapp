@@ -1,10 +1,3 @@
-import {
-  AUTH_ACTIVE_USER_ID,
-  SETTINGS_CLOUD_SYNC_ENABLED,
-} from '@/constants/storage-keys'
-import type { HarnessClient } from '@/services/harness/client'
-import { activateAPI, HarnessAPI, publish } from '@/services/harness/runtime'
-import type { Session } from '@/services/harness/types'
 import { chatEvents } from '@/services/storage/chat-events'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
@@ -13,54 +6,7 @@ import {
   indexedDBStorage,
 } from '@/services/storage/indexed-db'
 import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
-import { afterEach, beforeAll, beforeEach, vi, type Mock } from 'vitest'
-import { testSession } from '../../harness-fixture'
-
-export const KEY = 'Y29udGVudC1rZXk='
-
-export let client: {
-  events: Mock
-  post: Mock
-  upload: Mock
-  download: Mock
-}
-
-// Signs an account in to a harness whose client each test scripts. The
-// account's content key is unlocked unless `locked`; a signed-out visitor
-// has none.
-export function signIn({
-  userId = 'alice',
-  cloud = false,
-  locked = false,
-  session = testSession,
-  profile = {},
-}: {
-  userId?: string | null
-  cloud?: boolean
-  locked?: boolean
-  session?: Session
-  profile?: Record<string, unknown>
-} = {}) {
-  if (userId) localStorage.setItem(AUTH_ACTIVE_USER_ID, userId)
-  localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, String(cloud))
-  client = {
-    events: vi.fn(),
-    post: vi.fn().mockResolvedValue({}),
-    upload: vi.fn(),
-    download: vi.fn(),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, userId)
-  const unlocked = !!userId && !locked
-  if (unlocked) vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({
-    session,
-    profile,
-    keyReady: unlocked || !userId,
-    profileReady: true,
-  })
-  return api
-}
+import { afterEach, beforeAll, beforeEach, vi } from 'vitest'
 
 // The rows of a chat database store, read with their own transaction.
 export async function rawRows(store: 'chats' | 'attachmentPayloads') {

@@ -1,10 +1,8 @@
 import { DefaultMessageRenderer } from '@/components/chat/renderers/default/DefaultMessageRenderer'
 import type { Message, TimelineBlock } from '@/components/chat/types'
 import type { BaseModel } from '@/config/models'
-import { publish } from '@/services/harness/runtime'
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { describe, expect, it, vi } from 'vitest'
 
 const model = {
   modelName: 'current-model',
@@ -542,15 +540,6 @@ describe('DefaultMessageRenderer message actions', () => {
 })
 
 describe('DefaultMessageRenderer read aloud', () => {
-  beforeEach(() => {
-    publish({
-      session: {
-        ...testSession,
-        features: { ...testSession.features, speech: true },
-      },
-    })
-  })
-
   it('offers read aloud only on completed assistant responses', () => {
     renderMessage({
       role: 'assistant',

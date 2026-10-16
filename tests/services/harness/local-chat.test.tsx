@@ -9,14 +9,13 @@ import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { IDBFactory } from 'fake-indexeddb'
 import { describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
 import {
   client,
   KEY,
-  rawRows,
-  resetChatStoresAroundEachTest,
   signIn as signInTo,
-} from './thread-fixture'
+  testSession,
+} from '../../harness-fixture'
+import { rawRows, resetChatStoresAroundEachTest } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({
   GENUI_WIDGETS: [{ name: 'render_chart' }],
@@ -900,6 +899,11 @@ describe('local chats of a signed-in account without cloud sync', () => {
           metadata: { cancelled: true },
         },
       }
+    })
+    client.post.mockImplementation(async (path: string) => {
+      if (['/v1/threads/cancel', '/v1/threads/queue/remove'].includes(path))
+        return {}
+      throw new Error(`Unexpected ${path}`)
     })
     const { result } = renderHook(() => useThread())
     let sending!: Promise<boolean | undefined> | undefined

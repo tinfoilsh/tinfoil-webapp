@@ -7,13 +7,13 @@ import type { Frame, Session, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
 import {
   client,
   KEY,
-  resetChatStoresAroundEachTest,
   signIn as signInTo,
-} from './thread-fixture'
+  testSession,
+} from '../../harness-fixture'
+import { resetChatStoresAroundEachTest } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({

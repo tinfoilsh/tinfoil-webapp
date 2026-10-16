@@ -35,8 +35,9 @@ beforeEach(() => {
 // and its dependencies load after a test file's mocks are registered.
 let releaseHarness: (() => void) | undefined
 beforeEach(async () => {
-  const { setupHarness } = await import('./tests/harness-fixture')
-  releaseHarness = setupHarness().release
+  const { signIn } = await import('./tests/harness-fixture')
+  signIn({ userId: null })
+  releaseHarness = (await import('@/services/harness/runtime')).resetHarnessAPI
 })
 afterEach(() => {
   releaseHarness?.()

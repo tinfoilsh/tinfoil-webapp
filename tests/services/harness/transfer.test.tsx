@@ -9,12 +9,8 @@ import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  client,
-  KEY,
-  resetChatStoresAroundEachTest,
-  signIn,
-} from './thread-fixture'
+import { client, KEY, signIn } from '../../harness-fixture'
+import { resetChatStoresAroundEachTest } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({ GENUI_WIDGETS: [] }))
 vi.mock('@/utils/error-handling', () => ({

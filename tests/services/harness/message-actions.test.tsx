@@ -18,13 +18,8 @@ import {
   waitFor,
 } from '@testing-library/react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { testSession } from '../../harness-fixture'
-import {
-  client,
-  KEY,
-  resetChatStoresAroundEachTest,
-  signIn,
-} from './thread-fixture'
+import { client, KEY, signIn, testSession } from '../../harness-fixture'
+import { resetChatStoresAroundEachTest } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({
   GENUI_WIDGETS: [{ name: 'render_chart' }],
