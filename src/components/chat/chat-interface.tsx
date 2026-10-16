@@ -76,8 +76,6 @@ import { PromptPresetSuggestions } from './components/prompt-preset-suggestions'
 import { CONSTANTS } from './constants'
 import { DragProvider } from './drag-context'
 import { ForkOverlay } from './fork-overlay'
-import { GenUIInputAreaRenderer } from './genui/GenUIInputAreaRenderer'
-import { selectPendingInputToolCallFromChat } from './genui/pending-input-tool-call'
 import {
   artifactPreviewTargetsEqual,
   OPEN_ARTIFACT_PREVIEW_EVENT,
@@ -522,17 +520,6 @@ export function ChatInterface({
   const regenerateMessage = (index: number) => {
     if (generationBlocked) return
     void thread.regenerate(index, { options }).catch(thread.report)
-  }
-  const resolveInputToolCall = (
-    toolCallId: string,
-    text: string,
-    data?: unknown,
-  ) => {
-    void handleQuery('', {
-      kind: 'resolve',
-      toolCallId,
-      resolution: { text, data: data as any },
-    })
   }
   const retryToolCall = async (index: number, toolCallId: string) => {
     return Boolean(
@@ -2240,19 +2227,7 @@ export function ChatInterface({
                       }
                     />
                   </div>
-                  {currentChatIsFlagged ? null : selectPendingInputToolCallFromChat(
-                      currentChat,
-                    ) ? (
-                    <div className="pointer-events-auto relative z-10 mx-auto max-w-3xl rounded-xl border border-border-subtle bg-surface-card p-3 px-1 @3xl/conversation:px-8">
-                      <GenUIInputAreaRenderer
-                        pending={selectPendingInputToolCallFromChat(
-                          currentChat,
-                        )!}
-                        isDarkMode={isDarkMode}
-                        onResolve={resolveInputToolCall}
-                      />
-                    </div>
-                  ) : (
+                  {currentChatIsFlagged ? null : (
                     <form
                       onSubmit={handleSubmit}
                       className="pointer-events-auto relative z-10 mx-auto max-w-3xl px-1 @3xl/conversation:px-8"
