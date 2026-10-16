@@ -370,10 +370,15 @@ export function ArtifactPreviewPanel({
 }: ArtifactPreviewPanelProps) {
   // HTML runs on the unverified sandbox, so it waits for an explicit click,
   // for every artifact shown in this panel.
+  // The mode is tied to the artifact it was chosen for and derived during
+  // render, so a new artifact never renders a frame with the previous mode.
   const initialMode = (s: ArtifactSource): ViewMode =>
     s.type === 'html' ? 'source' : 'preview'
-  const [mode, setMode] = useState<ViewMode>(() => initialMode(source))
-  useEffect(() => setMode(initialMode(source)), [source])
+  const [view, setView] = useState<{ source: ArtifactSource; mode: ViewMode }>(
+    () => ({ source, mode: initialMode(source) }),
+  )
+  const mode = view.source === source ? view.mode : initialMode(source)
+  const setMode = (nextMode: ViewMode) => setView({ source, mode: nextMode })
   const isSidebarLayout = layout === 'sidebar'
   const copyText = sourceToCopyString(source)
 

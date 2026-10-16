@@ -454,7 +454,10 @@ it('returns HTML artifacts to source view when the panel shows a new one', () =>
     />,
   )
   fireEvent.click(getByRole('button', { name: 'Preview' }))
-  expect(getByTitle('Artifact')).not.toBeNull()
+  const frame = getByTitle('Artifact') as HTMLIFrameElement
+  expect(sandboxRun(frame)).toMatchObject({ html: '<p>a</p>' })
+  // The ready frame would forward any new run it receives.
+  const post = vi.spyOn(frame.contentWindow!, 'postMessage')
   rerender(
     <ArtifactPreviewPanel
       source={{ type: 'html', html: '<p>b</p>' }}
@@ -462,6 +465,7 @@ it('returns HTML artifacts to source view when the panel shows a new one', () =>
     />,
   )
   expect(queryByTitle('Artifact')).toBeNull()
+  expect(post).not.toHaveBeenCalled()
 })
 
 it('frames URL artifacts directly with the same sandbox permissions', () => {
