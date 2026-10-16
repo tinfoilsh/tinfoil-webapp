@@ -84,10 +84,7 @@ function connect({ cloud = false }: { cloud?: boolean } = {}) {
   if (userId) vi.spyOn(api, 'key').mockReturnValue(KEY)
   activateAPI(api)
   publish({
-    session: {
-      ...testSession,
-      features: { ...testSession.features, transfer: true },
-    },
+    session: testSession,
     profile: {},
     keyReady: true,
     profileReady: true,

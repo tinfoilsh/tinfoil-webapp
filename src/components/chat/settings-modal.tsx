@@ -681,7 +681,7 @@ export function SettingsModal({
   const { builtInPresets, userPresets, defaultPreset, setDefaultPreset } =
     usePromptLibrary()
   const { toast } = useToast()
-  const { api, session, profile, keyReady } = useHarness()
+  const { api, profile, keyReady } = useHarness()
 
   const { refresh: refreshProjects } = useProjects({ autoLoad: false })
   // Encryption key management state
@@ -1833,7 +1833,6 @@ export function SettingsModal({
     try {
       const source = await collectChatExport(api, {
         cloud: cloudSyncEnabled,
-        transcripts: !!session?.features.transfer,
         signal,
       })
       const hasPremiumProjectAccess = Boolean(isPremium)

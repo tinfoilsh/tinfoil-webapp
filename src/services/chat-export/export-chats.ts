@@ -227,16 +227,10 @@ async function mapInOrder<T, R>(
 }
 
 // Every chat the user can export from here: the chats kept on this device
-// (in this tab when signed out) and, with cloud sync, the stored chats. A
-// harness without the transcript route (`transfer`) has every stored chat
-// read through its messages.
+// (in this tab when signed out) and, with cloud sync, the stored chats.
 export async function collectChatExport(
   api: HarnessAPI,
-  {
-    cloud,
-    transcripts,
-    signal,
-  }: { cloud: boolean; transcripts: boolean; signal: AbortSignal },
+  { cloud, signal }: { cloud: boolean; signal: AbortSignal },
 ): Promise<ChatExportSource> {
   const store = localThreadStore(api.userId ? 'device' : 'tab')
   const chats = new Map<string, Chat>()
@@ -260,13 +254,12 @@ export async function collectChatExport(
           isLocalOnly: false,
           projectId: summary.projectId ?? undefined,
         }
-        if (transcripts)
-          try {
-            const thread = await cloudTranscript(api, summary.id, signal)
-            return exportedChat(thread, fields, heldImages)
-          } catch (error) {
-            if (!readThroughMessages(error)) throw error
-          }
+        try {
+          const thread = await cloudTranscript(api, summary.id, signal)
+          return exportedChat(thread, fields, heldImages)
+        } catch (error) {
+          if (!readThroughMessages(error)) throw error
+        }
         readOnRequest.add(summary.id)
         return storedChat(
           summary,
