@@ -56,8 +56,6 @@ describe('AuthCleanupHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
-    localStorage.clear()
-    sessionStorage.clear()
 
     authState = {
       isSignedIn: false,
@@ -76,7 +74,6 @@ describe('AuthCleanupHandler', () => {
   })
 
   afterEach(() => {
-    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 

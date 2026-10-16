@@ -23,8 +23,6 @@ vi.mock('@/components/chat/hooks/use-chat-font', () => ({
 
 describe('ChatInput streaming action', () => {
   afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
@@ -82,34 +80,11 @@ describe('ChatInput streaming action', () => {
 
   it('shows Stop while a recovered response is streaming', () => {
     const cancelGeneration = vi.fn()
-    render(
-      <ChatInput
-        input=""
-        setInput={vi.fn()}
-        handleSubmit={vi.fn()}
-        loadingState="streaming"
-        cancelGeneration={cancelGeneration}
-        inputRef={createRef<HTMLTextAreaElement>()}
-        handleInputFocus={vi.fn()}
-        inputMinHeight="40px"
-        isDarkMode
-      />,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
-
-    expect(cancelGeneration).toHaveBeenCalledOnce()
-    expect(
-      screen.queryByRole('button', { name: 'Send' }),
-    ).not.toBeInTheDocument()
-  })
-
-  it('returns to the Send action as soon as cancellation is reflected', () => {
     const props = {
       input: '',
       setInput: vi.fn(),
       handleSubmit: vi.fn(),
-      cancelGeneration: vi.fn(),
+      cancelGeneration,
       inputRef: createRef<HTMLTextAreaElement>(),
       handleInputFocus: vi.fn(),
       inputMinHeight: '40px',
@@ -118,6 +93,13 @@ describe('ChatInput streaming action', () => {
     const { rerender } = render(
       <ChatInput {...props} loadingState="streaming" />,
     )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
+
+    expect(cancelGeneration).toHaveBeenCalledOnce()
+    expect(
+      screen.queryByRole('button', { name: 'Send' }),
+    ).not.toBeInTheDocument()
 
     rerender(<ChatInput {...props} loadingState="idle" />)
 

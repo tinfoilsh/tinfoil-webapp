@@ -103,9 +103,6 @@ beforeEach(() => {
 })
 afterEach(() => {
   authTokenManager.reset()
-  vi.unstubAllGlobals()
-  vi.unstubAllEnvs()
-  vi.restoreAllMocks()
 })
 
 it('opens a signed-out session with an issued key without loading saved encryption keys', async () => {
@@ -148,8 +145,10 @@ it('does not request anonymous access when a signed-in account has no JWT', asyn
   )
   expect(controlplane).not.toHaveBeenCalled()
   expect(secure.fetch).not.toHaveBeenCalled()
-  expect(authTokenManager.isInitialized()).toBe(true)
   expect(authTokenManager.isSignedOut()).toBe(false)
+  await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
+    reason: 'unavailable',
+  })
 })
 
 it('aborts pending anonymous key issuance when the signed-in account changes', async () => {
@@ -179,7 +178,7 @@ it('aborts pending anonymous key issuance when the signed-in account changes', a
   expect(controlplane).toHaveBeenCalledTimes(1)
 })
 
-it('shows the loader without contacting services until Clerk loads', () => {
+it('shows the loader without contacting services until Clerk loads', async () => {
   auth.isLoaded = false
   render(
     <HarnessProvider>
@@ -192,7 +191,9 @@ it('shows the loader without contacting services until Clerk loads', () => {
   expect(screen.queryByText('Connecting')).not.toBeInTheDocument()
   expect(controlplane).not.toHaveBeenCalled()
   expect(secure.fetch).not.toHaveBeenCalled()
-  expect(authTokenManager.isInitialized()).toBe(false)
+  await expect(authTokenManager.getValidToken()).rejects.toMatchObject({
+    reason: 'not-initialized',
+  })
 })
 
 function StorageMode() {

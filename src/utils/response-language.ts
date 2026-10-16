@@ -75,37 +75,3 @@ export const RESPONSE_LANGUAGES = [
     'Yiddish',
   ].sort(),
 ] as const
-
-export function normalizeResponseLanguage(
-  language: string | null | undefined,
-): string {
-  return language && language.trim() ? language : SYSTEM_RESPONSE_LANGUAGE
-}
-
-export function resolveResponseLanguage(
-  language: string | null | undefined,
-  locales?: readonly string[],
-): string {
-  const normalized = normalizeResponseLanguage(language)
-  if (normalized !== SYSTEM_RESPONSE_LANGUAGE) return normalized
-
-  const browserLocales =
-    locales ??
-    (typeof navigator === 'undefined'
-      ? []
-      : [...navigator.languages, navigator.language])
-  const locale = browserLocales.find((candidate) => candidate.trim())
-  if (!locale) return 'English'
-
-  try {
-    const canonicalLocale = Intl.getCanonicalLocales(
-      locale.replace('_', '-'),
-    )[0]
-    return (
-      new Intl.DisplayNames(['en'], { type: 'language' }).of(canonicalLocale) ??
-      'English'
-    )
-  } catch {
-    return 'English'
-  }
-}

@@ -1,24 +1,14 @@
 import { ChatMessages } from '@/components/chat/chat-messages'
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import type { BaseModel } from '@/config/models'
-import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
-import type { HarnessClient } from '@/services/harness/client'
 import {
   localThreadStore,
   type LocalThread,
 } from '@/services/harness/local-threads'
-import {
-  activateAPI,
-  getView,
-  HarnessAPI,
-  publish,
-} from '@/services/harness/runtime'
+import { getView } from '@/services/harness/runtime'
 import { HarnessError } from '@/services/harness/sse'
 import type { Frame, Message, Thread, Turn } from '@/services/harness/types'
 import { useThread } from '@/services/harness/use-thread'
-import { chatEvents } from '@/services/storage/chat-events'
-import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
-import { indexedDBStorage } from '@/services/storage/indexed-db'
 import {
   act,
   fireEvent,
@@ -27,17 +17,9 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react'
-import { IDBKeyRange as FakeIDBKeyRange, IDBFactory } from 'fake-indexeddb'
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest'
-import { testSession } from '../../harness-fixture'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { client, KEY, signIn, testSession } from '../../harness-fixture'
+import { resetChatStoresAroundEachTest } from './thread-fixture'
 
 vi.mock('@/components/chat/genui/registry', () => ({
   GENUI_WIDGETS: [{ name: 'render_chart' }],
@@ -50,7 +32,6 @@ vi.mock('@/utils/error-handling', () => ({
 vi.mock('@/hooks/use-chat-print', () => ({ useChatPrint: () => undefined }))
 
 const THREAD_ID = '8233746419000_1c4e7a52-9a2b-4f7e-8d1a-5b6c7d8e9f00'
-const KEY = 'Y29udGVudC1rZXk='
 const models: BaseModel[] = [
   {
     modelName: 'test-model',
@@ -63,36 +44,7 @@ const models: BaseModel[] = [
   },
 ]
 
-let client: {
-  events: ReturnType<typeof vi.fn>
-  post: ReturnType<typeof vi.fn>
-  upload: ReturnType<typeof vi.fn>
-  download: ReturnType<typeof vi.fn>
-}
-
-function signIn({ cloud }: { cloud: boolean }) {
-  localStorage.setItem(AUTH_ACTIVE_USER_ID, 'alice')
-  localStorage.setItem(
-    'tinfoil-settings-cloud-sync-enabled',
-    cloud ? 'true' : 'false',
-  )
-  client = {
-    events: vi.fn(),
-    post: vi.fn().mockResolvedValue({}),
-    upload: vi.fn(),
-    download: vi.fn(),
-  }
-  const api = new HarnessAPI(client as unknown as HarnessClient, 'alice')
-  vi.spyOn(api, 'key').mockReturnValue(KEY)
-  activateAPI(api)
-  publish({
-    session: { ...testSession, widgets: ['render_chart'] },
-    profile: {},
-    keyReady: true,
-    profileReady: true,
-  })
-  return api
-}
+const session = { ...testSession, widgets: ['render_chart'] }
 
 const transcript: LocalThread['messages'] = [
   { id: 'u1', role: 'user', createdAt: '2026-04-01T09:00:00Z', content: 'one' },
@@ -196,35 +148,14 @@ function Conversation({ local }: { local: boolean }) {
   )
 }
 
+resetChatStoresAroundEachTest()
 beforeAll(() => {
-  Object.defineProperty(globalThis, 'indexedDB', {
-    configurable: true,
-    value: new IDBFactory(),
-  })
-  Object.defineProperty(globalThis, 'IDBKeyRange', {
-    configurable: true,
-    value: FakeIDBKeyRange,
-  })
   initializeRenderers()
-})
-
-beforeEach(async () => {
-  sessionStorage.clear()
-  deletedChatsTracker.clear()
-  await indexedDBStorage.deleteAllChats()
-  deletedChatsTracker.clear()
-})
-
-afterEach(() => {
-  chatEvents.clear()
-  deletedChatsTracker.clear()
-  sessionStorage.clear()
-  vi.restoreAllMocks()
 })
 
 describe('regenerating a reply', () => {
   it("names the reply when a stored chat's Regenerate buttons are used", async () => {
-    signIn({ cloud: true })
+    signIn({ cloud: true, session })
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/get'
         ? cloudThread()
@@ -264,7 +195,7 @@ describe('regenerating a reply', () => {
   })
 
   it("regenerates a local chat's reply and stores the new one in its place", async () => {
-    signIn({ cloud: false })
+    signIn({ cloud: false, session })
     await localThreadStore('device').update(THREAD_ID, () => storedThread())
     client.events.mockImplementation(
       regenerated(transcript.slice(0, 3).map(wire)),
@@ -302,7 +233,7 @@ describe('regenerating a reply', () => {
   })
 
   it('sends a user message without a reply again as an edit of its text', async () => {
-    signIn({ cloud: false })
+    signIn({ cloud: false, session })
     await localThreadStore('device').update(THREAD_ID, () =>
       storedThread(transcript.slice(0, 3)),
     )
@@ -324,7 +255,7 @@ describe('regenerating a reply', () => {
   })
 
   it('stops the run in progress before regenerating', async () => {
-    signIn({ cloud: true })
+    signIn({ cloud: true, session })
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/get'
         ? { ...cloudThread(), activeRun: { runId: 'run-1', lastEventId: 0 } }
@@ -370,7 +301,7 @@ describe('regenerating a reply', () => {
 
 describe('retrying after an error', () => {
   function openCloud() {
-    signIn({ cloud: true })
+    signIn({ cloud: true, session })
     client.post.mockImplementation(async (path: string) =>
       path === '/v1/threads/get'
         ? cloudThread(transcript.slice(0, 2))
@@ -482,7 +413,7 @@ describe('retrying after an error', () => {
 
 describe('changing messages of a stored chat', () => {
   function openCloud() {
-    signIn({ cloud: true })
+    signIn({ cloud: true, session })
     client.post.mockImplementation(async (path: string, input: unknown) => {
       if (path === '/v1/threads/get')
         return (input as { id: string }).id === THREAD_ID
@@ -506,7 +437,7 @@ describe('changing messages of a stored chat', () => {
           title: 'Numbers (fork)',
           messages: undefined,
         }
-      return {}
+      throw new Error(`Unexpected ${path}`)
     })
     return renderHook(() => useThread(THREAD_ID, null))
   }
@@ -621,7 +552,7 @@ describe('changing messages of a stored chat', () => {
 
 describe('changing messages of a local chat', () => {
   async function openLocal(messages = transcript) {
-    signIn({ cloud: false })
+    signIn({ cloud: false, session })
     await localThreadStore('device').update(THREAD_ID, () =>
       storedThread(messages),
     )

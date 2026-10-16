@@ -1,8 +1,4 @@
-interface TokenReadOptions {
-  skipCache?: boolean
-}
-
-type TokenGetter = (options?: TokenReadOptions) => Promise<string | null>
+type TokenGetter = () => Promise<string | null>
 
 export class AuthTokenUnavailableError extends Error {
   constructor(
@@ -19,65 +15,22 @@ export class AuthTokenUnavailableError extends Error {
   }
 }
 
-export class AuthTokenRefreshError extends Error {
-  constructor(options?: ErrorOptions) {
-    super('Authentication token refresh failed', options)
-    this.name = 'AuthTokenRefreshError'
-  }
-}
-
 export class AuthTokenManager {
   private getToken: TokenGetter | null = null
   private initialized = false
-  private initResolvers: Array<() => void> = []
-  private refreshByRejectedToken = new Map<string, Promise<string>>()
   private generation = 0
 
   /** A null getter represents a confirmed signed-out session, not loading. */
   initialize(getToken: TokenGetter | null) {
     if (this.getToken !== getToken) {
       this.generation++
-      this.refreshByRejectedToken.clear()
     }
     this.getToken = getToken
     this.initialized = true
-    for (const resolve of this.initResolvers) {
-      resolve()
-    }
-    this.initResolvers = []
-  }
-
-  isInitialized(): boolean {
-    return this.initialized
   }
 
   isSignedOut(): boolean {
     return this.initialized && this.getToken === null
-  }
-
-  /**
-   * Returns a promise that resolves to `true` when `initialize()` is called,
-   * or `false` if the timeout expires first.  If already initialized,
-   * resolves immediately.
-   */
-  waitForInit(timeoutMs: number): Promise<boolean> {
-    if (this.initialized) return Promise.resolve(true)
-    return new Promise((resolve) => {
-      let settled = false
-      const resolver = () => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        resolve(true)
-      }
-      const timer = setTimeout(() => {
-        if (settled) return
-        settled = true
-        this.initResolvers = this.initResolvers.filter((r) => r !== resolver)
-        resolve(false)
-      }, timeoutMs)
-      this.initResolvers.push(resolver)
-    })
   }
 
   async getValidToken(signal?: AbortSignal): Promise<string> {
@@ -104,24 +57,10 @@ export class AuthTokenManager {
     return token
   }
 
-  refreshToken(rejectedToken: string): Promise<string> {
-    const existing = this.refreshByRejectedToken.get(rejectedToken)
-    if (existing) return existing
-
-    const refresh = this.readFreshToken().finally(() => {
-      if (this.refreshByRejectedToken.get(rejectedToken) === refresh) {
-        this.refreshByRejectedToken.delete(rejectedToken)
-      }
-    })
-    this.refreshByRejectedToken.set(rejectedToken, refresh)
-    return refresh
-  }
-
   reset(): void {
     this.generation++
     this.getToken = null
     this.initialized = false
-    this.refreshByRejectedToken.clear()
   }
 
   async getAuthHeaders(signal?: AbortSignal): Promise<Record<string, string>> {
@@ -138,29 +77,6 @@ export class AuthTokenManager {
     } catch {
       signal?.throwIfAborted()
       return false
-    }
-  }
-
-  private async readFreshToken(): Promise<string> {
-    const getToken = this.getToken
-    const generation = this.generation
-    if (!getToken) {
-      throw new AuthTokenRefreshError({
-        cause: new AuthTokenUnavailableError('not-initialized'),
-      })
-    }
-
-    try {
-      const token = await getToken({ skipCache: true })
-      if (generation !== this.generation) {
-        throw new AuthTokenUnavailableError('unavailable')
-      }
-      if (!token) {
-        throw new AuthTokenUnavailableError('unavailable')
-      }
-      return token
-    } catch (error) {
-      throw new AuthTokenRefreshError({ cause: error })
     }
   }
 }

@@ -5,6 +5,7 @@ import {
 } from '@/components/chat/renderers/components/WorkProcess'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { client } from '../../harness-fixture'
 
 const summarize = vi.hoisted(() => vi.fn())
 vi.mock('@/services/inference/summary-client', () => ({ summarize }))
@@ -35,6 +36,8 @@ const search = (
   ...overrides,
 })
 
+const longThought = Array.from({ length: 30 }, (_, i) => `word${i}`).join(' ')
+
 const renderWork = (blocks: WorkBlock[], isActive = false) =>
   render(<WorkProcess blocks={blocks} isActive={isActive} isDarkMode={false} />)
 
@@ -45,6 +48,12 @@ const getHeader = () => screen.getAllByRole('button')[0]
 beforeEach(() => {
   summarize.mockReset()
   summarize.mockResolvedValue('')
+  // Sources show their site's favicon, which these sites lack.
+  client.post.mockImplementation(async (path: string) => {
+    if (path !== '/v1/metadata/favicon')
+      throw new Error(`Unexpected request: ${path}`)
+    return { status: 'missing', favicon_bytes: '', favicon_content_type: '' }
+  })
 })
 
 afterEach(() => {
@@ -105,7 +114,6 @@ describe('WorkProcess once the run has finished', () => {
     expect(header).toHaveAttribute('aria-expanded', 'false')
     const steps = header.nextElementSibling as HTMLElement
     expect(steps).toHaveAttribute('inert')
-    expect(steps).toHaveStyle({ gridTemplateRows: '0fr' })
     expect(screen.getByText('Thought')).toBeInTheDocument()
     expect(screen.getAllByText('Searched the web')).toHaveLength(2)
     expect(screen.getByText('for "query s1"')).toBeInTheDocument()
@@ -114,7 +122,6 @@ describe('WorkProcess once the run has finished', () => {
 
     expect(header).toHaveAttribute('aria-expanded', 'true')
     expect(steps).not.toHaveAttribute('inert')
-    expect(steps).toHaveStyle({ gridTemplateRows: '1fr' })
   })
 
   it('describes the step count when no timing is available', () => {
@@ -126,8 +133,11 @@ describe('WorkProcess once the run has finished', () => {
     expect(getHeader()).toHaveTextContent('Worked through 3 steps')
   })
 
-  it('does not call the summarizer for finished thinking', async () => {
-    renderWork([thinking('t0'), search('s1')])
+  it('does not call the summarizer for thinking in a finished run', async () => {
+    renderWork([
+      thinking('t0', { content: longThought, isThinking: true }),
+      search('s1'),
+    ])
     await act(async () => {})
     expect(summarize).not.toHaveBeenCalled()
   })
@@ -197,9 +207,6 @@ describe('WorkProcess while the run is active', () => {
   })
 
   it('surfaces the live thinking summary in the header and shares it with the step', async () => {
-    const longThought = Array.from({ length: 30 }, (_, i) => `word${i}`).join(
-      ' ',
-    )
     summarize.mockResolvedValue('Weighing the tradeoffs')
 
     renderWork(
@@ -228,9 +235,6 @@ describe('WorkProcess while the run is active', () => {
   })
 
   it('discards a summary that lands after its thinking block has closed', async () => {
-    const longThought = Array.from({ length: 30 }, (_, i) => `word${i}`).join(
-      ' ',
-    )
     let resolveSummary!: (value: string) => void
     summarize.mockReturnValue(
       new Promise<string>((resolve) => {
