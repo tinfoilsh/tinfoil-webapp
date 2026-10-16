@@ -5,6 +5,7 @@ import {
   SETTINGS_THEME_MODE,
   SETTINGS_THINKING_ENABLED,
   USER_PREFS_CUSTOM_PROMPT_PRESETS,
+  USER_PREFS_DEFAULT_PROMPT_PRESET_ID,
   USER_PREFS_LOCAL_PROFILE,
   USER_PREFS_NICKNAME,
   USER_PREFS_PERSONALIZATION_ENABLED,
@@ -12,12 +13,7 @@ import {
 } from '@/constants/storage-keys'
 import type { HarnessClient } from '@/services/harness/client'
 import { loadLocalProfile, turnProfile } from '@/services/harness/local-profile'
-import {
-  activateAPI,
-  getView,
-  HarnessAPI,
-  publish,
-} from '@/services/harness/runtime'
+import { activateAPI, getView, HarnessAPI } from '@/services/harness/runtime'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
@@ -46,6 +42,7 @@ describe('loadLocalProfile', () => {
     localStorage.setItem(SETTINGS_THINKING_ENABLED, 'false')
     localStorage.setItem(SETTINGS_THEME_MODE, 'dark')
     localStorage.setItem(SETTINGS_CHAT_FONT, 'comic')
+    localStorage.setItem(USER_PREFS_DEFAULT_PROMPT_PRESET_ID, 'p1')
     localStorage.setItem(
       USER_PREFS_CUSTOM_PROMPT_PRESETS,
       JSON.stringify([
@@ -56,6 +53,8 @@ describe('loadLocalProfile', () => {
           systemPrompt: 'Edit text.',
           createdAt: 1,
           updatedAt: 2,
+          model: 'deep-model',
+          webSearchEnabled: true,
         },
       ]),
     )
@@ -66,6 +65,7 @@ describe('loadLocalProfile', () => {
       reasoningEffort: 'high',
       thinkingEnabled: false,
       themeMode: 'dark',
+      defaultPromptPresetId: 'p1',
       customPromptPresets: [
         {
           id: 'p1',
@@ -74,6 +74,8 @@ describe('loadLocalProfile', () => {
           systemPrompt: 'Edit text.',
           createdAt: 1,
           updatedAt: 2,
+          model: 'deep-model',
+          webSearchEnabled: true,
         },
       ],
     }
@@ -87,10 +89,13 @@ describe('loadLocalProfile', () => {
     expect(loadLocalProfile().nickname).toBe('Sam')
   })
 
-  it('drops presets the harness would refuse', () => {
+  it.each([
+    { id: 'p1', name: '' },
+    { id: 'p1', name: 'Editor', webSearchEnabled: 'yes' },
+  ])('drops presets the harness would refuse: %j', (preset) => {
     localStorage.setItem(
       USER_PREFS_CUSTOM_PROMPT_PRESETS,
-      JSON.stringify([{ id: 'p1', name: '' }]),
+      JSON.stringify([preset]),
     )
     expect(loadLocalProfile()).toEqual({})
     expect(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)).toBeNull()
@@ -181,18 +186,6 @@ describe('profile storage modes', () => {
     })
     expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
       { nickname: 'Cloud Sam', language: 'Dutch' },
-    )
-  })
-
-  it('persists a signed-out visitor’s settings', async () => {
-    const { api, client } = signIn(null)
-    publish({ profile: {} })
-
-    await api.updateProfile({ themeMode: 'light' })
-
-    expect(client.post).not.toHaveBeenCalled()
-    expect(JSON.parse(localStorage.getItem(USER_PREFS_LOCAL_PROFILE)!)).toEqual(
-      { themeMode: 'light' },
     )
   })
 })

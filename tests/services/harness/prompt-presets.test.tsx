@@ -1,7 +1,6 @@
 import { usePromptLibrary } from '@/components/chat/hooks/use-prompt-library'
 import { AUTH_ACTIVE_USER_ID } from '@/constants/storage-keys'
 import type { HarnessClient } from '@/services/harness/client'
-import { localThreadStore } from '@/services/harness/local-threads'
 import {
   activateAPI,
   getView,
@@ -495,43 +494,5 @@ describe('the custom default prompt', () => {
         defaultPromptPresetId: 'builtin:tutor',
       }),
     )
-  })
-})
-
-describe('local settings', () => {
-  it("import the previous client's default prompt once", async () => {
-    signIn({ cloud: false })
-    localStorage.setItem(
-      'tinfoil-user-prefs-default-prompt-preset-id',
-      QUIET.id,
-    )
-    localStorage.setItem(
-      'tinfoil-user-prefs-custom-prompt-presets',
-      JSON.stringify([QUIET, { ...RESEARCH, webSearchEnabled: 'yes' }]),
-    )
-    const { loadLocalProfile } =
-      await import('@/services/harness/local-profile')
-
-    expect(loadLocalProfile()).toEqual({ defaultPromptPresetId: QUIET.id })
-    localStorage.setItem(
-      'tinfoil-user-prefs-default-prompt-preset-id',
-      RESEARCH.id,
-    )
-    expect(loadLocalProfile()).toEqual({ defaultPromptPresetId: QUIET.id })
-  })
-
-  it('keep valid saved prompt settings', async () => {
-    signIn({ cloud: false })
-    localStorage.setItem(
-      'tinfoil-user-prefs-custom-prompt-presets',
-      JSON.stringify([QUIET, RESEARCH]),
-    )
-    const { loadLocalProfile } =
-      await import('@/services/harness/local-profile')
-
-    expect(loadLocalProfile()).toEqual({
-      customPromptPresets: [QUIET, RESEARCH],
-    })
-    expect(await localThreadStore('device').list()).toEqual([])
   })
 })

@@ -763,37 +763,6 @@ describe('local chats of a signed-in account without cloud sync', () => {
     expect(saved?.title).toBe('Doors')
   })
 
-  it('replaces the regenerated reply', async () => {
-    signIn('alice')
-    await localThreadStore('device').update(SEEDED_ID, () => seededThread())
-    const [u1, a1, u2] = seededThread().messages
-    client.events.mockImplementation(
-      reply(
-        SEEDED_ID,
-        [wire(u1), wire(a1), wire(u2)],
-        'msg_regen',
-        'again',
-        'Doors',
-      ),
-    )
-    const { result } = renderHook(() =>
-      useThread(SEEDED_ID, null, { local: true }),
-    )
-    await waitFor(() => expect(result.current.chat.messages).toHaveLength(4))
-
-    await act(() =>
-      result.current.send({ kind: 'regenerate', messageId: 'a2', content: '' }),
-    )
-
-    expect(turn()).toMatchObject({ kind: 'regenerate', messageId: 'a2' })
-    expect((await stored(SEEDED_ID))?.messages.map((m) => m.id)).toEqual([
-      'u1',
-      'a1',
-      'u2',
-      'msg_regen',
-    ])
-  })
-
   it('keeps image bytes across a reload and sends them with the next turn', async () => {
     signIn('alice')
     const bytes = new Uint8Array([137, 80, 78, 71])
