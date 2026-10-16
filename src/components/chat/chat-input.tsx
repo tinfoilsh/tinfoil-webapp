@@ -33,6 +33,7 @@ import {
   type ContextUsage,
 } from './components/context-usage-indicator'
 import { FilePreview, imageDataUrl } from './components/file-preview'
+import { UnsavedImagesNotice } from './components/unsaved-images-notice'
 import { CONSTANTS } from './constants'
 import { useEnterToNewline } from './hooks/use-enter-to-newline'
 import { isImeComposition } from './keyboard-utils'
@@ -376,6 +377,11 @@ export function ChatInput({
     .filter((doc) => doc.isUnsupported)
     .map((doc) => doc.name)
   const unsupportedAttachmentStatus = unsupportedAttachmentNames.join(', ')
+  // A signed-out visitor's chat keeps its images only while the page is open.
+  const imagesUnsaved =
+    !api.userId &&
+    !isTemporaryMode &&
+    !!processedDocuments?.some((doc) => doc.attachment?.type === 'image')
   const recordingButtonLabel = isTranscribing
     ? 'Transcribing audio'
     : isRecording
@@ -905,6 +911,8 @@ export function ChatInput({
               ))}
             </div>
           )}
+
+          {imagesUnsaved && <UnsavedImagesNotice className="mb-3" />}
 
           {/* In compact mode the toolbar below uses display: contents so its
               button groups become flex siblings of the textarea and can be

@@ -15,6 +15,7 @@ import React, {
   useState,
 } from 'react'
 import { canRemoveChatSpacerWithoutJump } from './chat-scroll'
+import { UnsavedImagesProvider } from './components/unsaved-images-notice'
 import { CONSTANTS } from './constants'
 import {
   DocumentTextProvider,
@@ -72,6 +73,8 @@ type ChatMessagesProps = {
   // it, and the text of a document whose message does not carry it.
   loadImage?: (attachment: Attachment, signal: AbortSignal) => Promise<Blob>
   loadDocumentText?: LoadDocumentText
+  // The chat keeps its images only while the page is open.
+  imagesUnsaved?: boolean
   showScrollButton?: boolean
   webSearchEnabled?: boolean
   onWebSearchToggle?: () => void
@@ -273,6 +276,7 @@ export function ChatMessages({
   onRetryToolCall,
   loadImage,
   loadDocumentText,
+  imagesUnsaved = false,
   showScrollButton,
   webSearchEnabled,
   onWebSearchToggle,
@@ -477,23 +481,27 @@ export function ChatMessages({
           aria-busy={isStreamingResponse}
           className="mx-auto w-full min-w-0 px-0 pb-6 pt-6 font-chat md:px-4"
         >
-          {messages.map((message, index) => (
-            <ChatMessage
-              key={message.id ?? `${chatId}-${index}`}
-              message={message}
-              messageIndex={index}
-              model={currentModel}
-              isDarkMode={isDarkMode}
-              isLastMessage={index === messages.length - 1}
-              isStreaming={index === messages.length - 1 && isStreamingResponse}
-              activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
-                message,
-                activeArtifactToolCallId,
-              )}
-              hideActions={readOnly}
-              {...messageActions}
-            />
-          ))}
+          <UnsavedImagesProvider value={imagesUnsaved}>
+            {messages.map((message, index) => (
+              <ChatMessage
+                key={message.id ?? `${chatId}-${index}`}
+                message={message}
+                messageIndex={index}
+                model={currentModel}
+                isDarkMode={isDarkMode}
+                isLastMessage={index === messages.length - 1}
+                isStreaming={
+                  index === messages.length - 1 && isStreamingResponse
+                }
+                activeArtifactToolCallId={getMessageActiveArtifactToolCallId(
+                  message,
+                  activeArtifactToolCallId,
+                )}
+                hideActions={readOnly}
+                {...messageActions}
+              />
+            ))}
+          </UnsavedImagesProvider>
           {showLoadingPlaceholder && (
             <LoadingMessage
               isDarkMode={isDarkMode}

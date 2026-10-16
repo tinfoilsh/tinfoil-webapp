@@ -6,6 +6,10 @@ import { createPortal } from 'react-dom'
 import { PiSpinner } from 'react-icons/pi'
 
 import { FilePreview } from '../../components/file-preview'
+import {
+  UnsavedImagesNotice,
+  useUnsavedImages,
+} from '../../components/unsaved-images-notice'
 
 import { getMessageAttachments } from '../../attachment-helpers'
 import { useDocumentText } from '../../document-text-context'
@@ -73,6 +77,7 @@ export const DocumentList = memo(function DocumentList({
 }: DocumentListProps) {
   const gallery = useImageGallery()
   const loadText = useDocumentText()
+  const imagesUnsaved = useUnsavedImages()
   const [modalOpen, setModalOpen] = useState(false)
   const [modalContent, setModalContent] = useState<{
     attachment: Attachment
@@ -222,6 +227,11 @@ export const DocumentList = memo(function DocumentList({
               )
             })}
           </div>
+        </div>
+      )}
+      {imageAttachments.length > 0 && imagesUnsaved && (
+        <div className="mb-2 flex justify-end px-4">
+          <UnsavedImagesNotice />
         </div>
       )}
       {docAttachments.length > 0 && (

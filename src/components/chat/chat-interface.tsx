@@ -2166,6 +2166,7 @@ export function ChatInterface({
                       onRetryToolCall={retryToolCall}
                       loadImage={thread.loadImage}
                       loadDocumentText={thread.documentText}
+                      imagesUnsaved={!api.userId && !isTemporaryMode}
                       showScrollButton={showScrollButton}
                       webSearchEnabled={effectiveWebSearchEnabled}
                       onWebSearchToggle={
