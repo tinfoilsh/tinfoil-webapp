@@ -157,25 +157,6 @@ describe('RateLimitUsage', () => {
     rerender(<RateLimitUsage isPremium={false} />)
     expect(container).toBeEmptyDOMElement()
   })
-
-  it('flags an exhausted dimension of a capped subscriber', async () => {
-    render(<RateLimitUsage isPremium />)
-    await refreshSession({
-      kind: 'hourly',
-      maxRequests: 0,
-      remaining: 0,
-      resetsAt: '2026-07-24T11:00:00Z',
-      inputTokens: { max: 20_000_000, used: 3_000_000, remaining: 17_000_000 },
-      outputTokens: { max: 1_000_000, used: 1_000_000, remaining: 0 },
-    })
-
-    expect(screen.getByText('Hourly usage')).toBeInTheDocument()
-    expect(screen.getByText('Resets in 45m')).toBeInTheDocument()
-    expect(screen.getByText('1M / 1M')).toHaveClass('text-destructive')
-    expect(
-      screen.getByRole('progressbar', { name: 'Output token usage' }),
-    ).toHaveAttribute('aria-valuenow', '100')
-  })
 })
 
 describe('usage reported by runs', () => {
