@@ -121,13 +121,12 @@ describe('OnboardingView', () => {
     )
     const safeguardsParagraphs = [
       'Privacy-preserving safeguards review AI responses for safety.',
-      'Safeguards run inside secure enclaves at inference time, keeping your conversations private and notifying you in case of a flag.',
       'Tinfoil never sees conversation content or nature of the flag raised.',
     ].map((text) => screen.getByText(text).closest('p'))
     for (const paragraph of safeguardsParagraphs) {
       expect(paragraph).toBeInTheDocument()
     }
-    expect(new Set(safeguardsParagraphs).size).toBe(3)
+    expect(new Set(safeguardsParagraphs).size).toBe(2)
     expect(onComplete).not.toHaveBeenCalled()
     expect(localStorage.getItem(SETTINGS_HAS_SEEN_ONBOARDING)).toBeNull()
     expect(update).not.toHaveBeenCalled()

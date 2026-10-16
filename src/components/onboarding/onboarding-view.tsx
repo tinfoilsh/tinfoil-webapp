@@ -231,10 +231,6 @@ function OnboardingSafeguardsPage() {
             Privacy-preserving safeguards review AI responses for safety.
           </p>
           <p className="text-balance text-base text-content-secondary">
-            Safeguards run inside secure enclaves at inference time, keeping
-            your conversations private and notifying you in case of a flag.
-          </p>
-          <p className="text-balance text-base text-content-secondary">
             <strong className="font-semibold text-content-primary">
               Tinfoil never sees conversation content or nature of the flag
               raised.
