@@ -25,20 +25,23 @@ export async function authorizeCurrentPrimaryKeyOrThrow(): Promise<void> {
     if (current.has_data) {
       // Only key candidates cross the connection. The service owns the migration job.
       const keys = [
-        { key: requirePrimaryKeyB64() },
-        ...[
-          encryptionService.getKey(),
-          ...encryptionService.getStoredAlternatives(),
-        ].flatMap((value) => {
-          const bytes = value && encryptionService.getAlternativeKeyBytes(value)
-          if (!bytes) return []
-          try {
-            return [{ key: btoa(String.fromCharCode(...bytes)) }]
-          } finally {
-            bytes.fill(0)
-          }
-        }),
-      ]
+        ...new Set([
+          requirePrimaryKeyB64(),
+          ...[
+            encryptionService.getKey(),
+            ...encryptionService.getStoredAlternatives(),
+          ].flatMap((value) => {
+            const bytes =
+              value && encryptionService.getAlternativeKeyBytes(value)
+            if (!bytes) return []
+            try {
+              return [btoa(String.fromCharCode(...bytes))]
+            } finally {
+              bytes.fill(0)
+            }
+          }),
+        ]),
+      ].map((key) => ({ key }))
       await harnessAPI().post(
         '/v1/keys/migrate-all',
         { keys, target: { key: requirePrimaryKeyB64() } },

@@ -108,7 +108,7 @@ it('moves legacy data to a recovered Start Fresh key instead of dropping it', as
   expect(harnessAPI().client.post).toHaveBeenCalledExactlyOnceWith(
     '/v1/keys/migrate-all',
     {
-      keys: [{ key: base64(2) }, { key: base64(2) }, { key: base64(1) }],
+      keys: [{ key: base64(2) }, { key: base64(1) }],
       target: { key: base64(2) },
     },
     expect.any(AbortSignal),
