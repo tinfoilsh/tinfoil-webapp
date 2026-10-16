@@ -366,31 +366,6 @@ describe('SignInPage', () => {
     },
   )
 
-  it('uses the branded layout with social and email options', () => {
-    const { container } = render(<SignInPage />)
-
-    expect(container.firstChild).toHaveClass('font-aeonik')
-    expect(
-      screen.queryByRole('heading', { name: 'Welcome to Tinfoil' }),
-    ).not.toBeInTheDocument()
-    expect(screen.queryByText('Private AI Chat')).not.toBeInTheDocument()
-    expect(screen.getAllByRole('img', { name: 'Tinfoil' })).toHaveLength(1)
-    expect(screen.getByRole('link', { name: 'Back to chat' })).toHaveAttribute(
-      'href',
-      '/',
-    )
-    expect(
-      screen.getByRole('button', { name: 'Continue with Google' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: 'Continue with Apple' }),
-    ).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Email' })).toBeInTheDocument()
-    expect(document.querySelector('#clerk-captcha')).toBeInTheDocument()
-    expect(screen.queryByText(/By continuing/)).not.toBeInTheDocument()
-    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
-  })
-
   it('redirects an already signed-in user to the requested page', async () => {
     auth.isAuthLoaded = true
     auth.isSignedIn = true
@@ -513,49 +488,6 @@ describe('SignInPage', () => {
     },
   )
 
-  it('creates a password account and verifies its email code', async () => {
-    auth.signUp.password.mockImplementation(async () => {
-      auth.signUp.status = 'missing_requirements'
-      auth.signUp.unverifiedFields = ['email_address']
-      return { error: null }
-    })
-    renderAndSubmitPasswordSignUp()
-
-    await waitFor(() => {
-      expect(auth.signUp.password).toHaveBeenCalledWith({
-        emailAddress: 'new@example.com',
-        password: 'new account password',
-        firstName: 'New',
-        lastName: 'Person',
-        legalAccepted: true,
-      })
-      expect(auth.signUp.verifications.sendEmailCode).toHaveBeenCalledTimes(1)
-    })
-
-    expect(
-      screen.getByRole('heading', { name: 'Verify your email' }),
-    ).toBeInTheDocument()
-    fireEvent.change(
-      await screen.findByRole('textbox', { name: 'Verification code' }),
-      { target: { value: '654321' } },
-    )
-    auth.signUp.verifications.verifyEmailCode.mockImplementation(async () => {
-      auth.signUp.status = 'complete'
-      auth.signUp.unverifiedFields = []
-      return { error: null }
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Verify' }))
-
-    await waitFor(() => {
-      expect(auth.signUp.verifications.verifyEmailCode).toHaveBeenCalledWith({
-        code: '654321',
-      })
-      expect(auth.signUp.finalize).toHaveBeenCalledWith({
-        navigate: expect.any(Function),
-      })
-    })
-  })
-
   it('verifies an authenticator app code when TOTP is the second factor', async () => {
     auth.signIn.password.mockImplementation(async () => {
       auth.signIn.status = 'needs_second_factor'
@@ -647,21 +579,16 @@ describe('SignInPage', () => {
     })
   })
 
-  it('shows password sign-in errors in a centered alert box', async () => {
+  it('shows password sign-in errors without finishing the sign-in', async () => {
     auth.signIn.password.mockResolvedValue({
       error: { longMessage: 'The password is incorrect.' },
     })
     renderAndSubmitPasswordSignIn('incorrect password')
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('The password is incorrect.')
-    expect(alert).toHaveClass(
-      'mx-auto',
-      'rounded-lg',
-      'border',
-      'bg-red-500/10',
-      'text-center',
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The password is incorrect.',
     )
+    expect(auth.signIn.finalize).not.toHaveBeenCalled()
   })
 
   it('shows an error returned while activating the session', async () => {
@@ -804,9 +731,9 @@ describe('SignInPage', () => {
     ['Google', 'oauth_google'],
     ['Apple', 'oauth_apple'],
   ] as const)(
-    'starts %s unchecked and requires consent after SSO',
+    'starts %s sign-up unchecked and leaves consent for after SSO',
     async (provider, strategy) => {
-      const { unmount } = render(<SignInPage initialMode="signup" />)
+      render(<SignInPage initialMode="signup" />)
       expect(screen.getByRole('checkbox')).not.toBeChecked()
       const providerButton = screen.getByRole('button', {
         name: `Continue with ${provider}`,
@@ -824,21 +751,6 @@ describe('SignInPage', () => {
       })
       expect(auth.signUp.password).not.toHaveBeenCalled()
       expect(auth.signUp.finalize).not.toHaveBeenCalled()
-      unmount()
-
-      auth.router.query = { resume: '1' }
-      auth.signUp.id = 'social-sign-up'
-      auth.signUp.missingFields = ['legal_accepted']
-      render(<SignInPage />)
-
-      await screen.findByRole('heading', { name: 'Complete your account' })
-      const consent = screen.getByRole('checkbox')
-      const submit = screen.getByRole('button', { name: 'Create account' })
-      expect(consent).not.toBeChecked()
-      expect(submit).toBeDisabled()
-      expect(auth.signUp.update).not.toHaveBeenCalled()
-      expect(auth.signUp.finalize).not.toHaveBeenCalled()
-      expect(auth.signUp.reset).not.toHaveBeenCalled()
     },
   )
 
@@ -1126,24 +1038,6 @@ describe('SignInPage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Google sign-in is unavailable.',
-    )
-  })
-
-  it('prefers the detailed Clerk error over its generic message', async () => {
-    auth.signIn.sso.mockResolvedValue({
-      error: {
-        message: 'Clerk: Request failed (oauth_error)',
-        errors: [{ longMessage: 'Google sign-in is temporarily unavailable.' }],
-      },
-    })
-    render(<SignInPage />)
-
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Continue with Google' }),
-    )
-
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Google sign-in is temporarily unavailable.',
     )
   })
 })

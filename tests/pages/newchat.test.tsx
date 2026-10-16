@@ -33,21 +33,19 @@ describe('NewChatPage', () => {
     mocks.router.query = {}
   })
 
-  it('starts a routed local new chat in local-only mode', () => {
-    mocks.router.query = { storage: 'local' }
+  it.each([
+    [{ storage: 'local' }, true],
+    [{}, false],
+  ])(
+    'starts a routed new chat for %j with local-only mode %s',
+    (query, localOnly) => {
+      mocks.router.query = query
 
-    render(<NewChatPage />)
+      render(<NewChatPage />)
 
-    expect(mocks.chatInterface).toHaveBeenCalledWith(
-      expect.objectContaining({ initialNewChatIsLocalOnly: true }),
-    )
-  })
-
-  it('uses cloud mode for the default new-chat destination', () => {
-    render(<NewChatPage />)
-
-    expect(mocks.chatInterface).toHaveBeenCalledWith(
-      expect.objectContaining({ initialNewChatIsLocalOnly: false }),
-    )
-  })
+      expect(mocks.chatInterface).toHaveBeenCalledWith(
+        expect.objectContaining({ initialNewChatIsLocalOnly: localOnly }),
+      )
+    },
+  )
 })
