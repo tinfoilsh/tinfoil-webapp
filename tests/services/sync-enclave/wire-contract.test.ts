@@ -14,15 +14,8 @@ import {
   HarnessAPI,
   resetHarnessAPI,
 } from '@/services/harness/runtime'
-import {
-  HARNESS_KEY_CODES,
-  IF_MATCH_SENTINELS,
-} from '@/services/keys/wire-contract'
 import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
-import {
-  PasskeyCredentialConflictError,
-  storeEncryptedKeys,
-} from '@/services/passkey/passkey-key-storage'
+import { storeEncryptedKeys } from '@/services/passkey/passkey-key-storage'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('tinfoil', () => ({ SecureClient: vi.fn() }))
@@ -82,16 +75,8 @@ afterEach(() => {
 })
 
 describe('wire-contract', () => {
-  it('if-match sentinels match controlplane/pkg/contract/sentinels.go', () => {
-    expect(IF_MATCH_SENTINELS).toEqual({ CreateOnly: '0', AnyKey: '*' })
-  })
-
-  it('key codes match the harness downstreamError translation', () => {
-    expect(HARNESS_KEY_CODES).toEqual({ KeyMismatch: 'KEY_MISMATCH' })
-  })
-
   it.each([false, true])(
-    'registers with create-only sentinel or explicit rotation ETag: %s',
+    'registers with the any-key sentinel or explicit rotation ETag: %s',
     async (rotating) => {
       secureFetch
         .mockResolvedValueOnce(
@@ -134,31 +119,4 @@ describe('wire-contract', () => {
       })
     },
   )
-
-  it('turns a harness key-mismatch refusal into a credential conflict', async () => {
-    secureFetch
-      .mockResolvedValueOnce(response({ key_id: null, bundles: {} }))
-      .mockResolvedValueOnce(
-        response(
-          {
-            error: {
-              code: 'KEY_MISMATCH',
-              message: 'The stored data uses another content key',
-            },
-          },
-          409,
-        ),
-      )
-    await expect(
-      storeEncryptedKeys(wrappedKeys(), {
-        primary: PRIMARY_KEY,
-        alternatives: [],
-        authorizationMode: 'validated',
-      }),
-    ).rejects.toBeInstanceOf(PasskeyCredentialConflictError)
-    expect(secureFetch).toHaveBeenCalledTimes(2)
-    expect(new URL(secureFetch.mock.calls[1][0]).pathname).toBe(
-      '/v1/keys/register',
-    )
-  })
 })

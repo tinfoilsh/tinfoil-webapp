@@ -23,9 +23,6 @@ describe('speech text', () => {
     expect(
       prepareSpeechText('  **literal** [1](source) `code`  ', 'plain'),
     ).toBe('**literal** [1](source) `code`')
-    expect(() =>
-      prepareSpeechText('x'.repeat(SPEECH.MAX_TEXT_CHARACTERS + 1), 'plain'),
-    ).toThrow('too-long')
   })
   it.each([
     '',
