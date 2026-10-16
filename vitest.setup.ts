@@ -26,9 +26,10 @@ Object.defineProperty(globalThis, 'localStorage', {
   value: localStorageMock,
 })
 
-// Reset localStorage before each test
+// Reset web storage before each test
 beforeEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
 })
 
 // Imported per test rather than with this file, so that the harness runtime
