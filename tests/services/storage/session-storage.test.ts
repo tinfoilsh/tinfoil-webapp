@@ -26,22 +26,26 @@ function chat(id: string, content: string): Chat {
   }
 }
 
+// A streaming draft the previous client left in the tab's session storage.
+function leaveDraft(draft: Chat): void {
+  sessionStorage.setItem(
+    `${SYNC_SESSION_CHAT_DRAFT_PREFIX}${draft.id}`,
+    JSON.stringify(draft),
+  )
+}
+
 describe('sessionChatStorage streaming drafts', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     sessionStorage.clear()
   })
 
-  it('merges a streaming draft without rewriting the chat collection', () => {
+  it('merges a streaming draft over the saved chat', () => {
     const persisted = chat('chat-1', 'partial')
     sessionChatStorage.saveChat(persisted)
-    const collectionBeforeDraft = sessionStorage.getItem(SYNC_SESSION_CHATS)
 
-    sessionChatStorage.saveStreamingDraft(chat('chat-1', 'partial response'))
+    leaveDraft(chat('chat-1', 'partial response'))
 
-    expect(sessionStorage.getItem(SYNC_SESSION_CHATS)).toBe(
-      collectionBeforeDraft,
-    )
     expect(sessionChatStorage.getChat('chat-1')?.messages[0].content).toBe(
       'partial response',
     )
@@ -50,7 +54,7 @@ describe('sessionChatStorage streaming drafts', () => {
   it('keeps unrelated drafts separate when saving a chat', () => {
     sessionChatStorage.saveChat(chat('chat-a', 'before'))
     sessionChatStorage.saveChat(chat('chat-b', 'persisted'))
-    sessionChatStorage.saveStreamingDraft(chat('chat-b', 'streaming'))
+    leaveDraft(chat('chat-b', 'streaming'))
 
     sessionChatStorage.saveChat(chat('chat-a', 'complete'))
 
@@ -78,7 +82,7 @@ describe('sessionChatStorage streaming drafts', () => {
   it('keeps unrelated drafts separate when deleting a chat', () => {
     sessionChatStorage.saveChat(chat('chat-a', 'persisted'))
     sessionChatStorage.saveChat(chat('chat-b', 'persisted'))
-    sessionChatStorage.saveStreamingDraft(chat('chat-b', 'streaming'))
+    leaveDraft(chat('chat-b', 'streaming'))
 
     sessionChatStorage.deleteChat('chat-a')
 
@@ -97,7 +101,7 @@ describe('sessionChatStorage streaming drafts', () => {
     'restores the target draft when a canonical %s fails',
     (operation) => {
       sessionChatStorage.saveChat(chat('chat-1', 'persisted'))
-      sessionChatStorage.saveStreamingDraft(chat('chat-1', 'streaming'))
+      leaveDraft(chat('chat-1', 'streaming'))
       const canonicalBefore = sessionStorage.getItem(SYNC_SESSION_CHATS)
       const originalSetItem = sessionStorage.setItem.bind(sessionStorage)
       const setItemSpy = vi
@@ -136,15 +140,15 @@ describe('sessionChatStorage streaming drafts', () => {
 
   it('clears drafts when chats are deleted or storage is cleared', () => {
     sessionChatStorage.saveChat(chat('chat-1', 'before'))
-    sessionChatStorage.saveStreamingDraft(chat('chat-1', 'streaming'))
+    leaveDraft(chat('chat-1', 'streaming'))
     sessionChatStorage.deleteChat('chat-1')
     expect(sessionChatStorage.getChat('chat-1')).toBeNull()
 
     const unrelatedKey = 'unrelated-session-state'
     sessionStorage.setItem(unrelatedKey, 'retain')
     sessionChatStorage.saveChat(chat('chat-2', 'persisted'))
-    sessionChatStorage.saveStreamingDraft(chat('chat-2', 'streaming'))
-    sessionChatStorage.saveStreamingDraft(chat('chat-3', 'another draft'))
+    leaveDraft(chat('chat-2', 'streaming'))
+    leaveDraft(chat('chat-3', 'another draft'))
     sessionChatStorage.clearAll()
     expect(sessionChatStorage.getAllChats()).toEqual([])
     expect(sessionStorage.getItem(SYNC_SESSION_CHATS)).toBeNull()

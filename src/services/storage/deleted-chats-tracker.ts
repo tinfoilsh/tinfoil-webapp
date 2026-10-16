@@ -89,17 +89,6 @@ export class DeletedChatsTracker {
     })
   }
 
-  markAsRemoteDeleted(chatId: string): void {
-    this.remoteDeletedChats.add(chatId)
-    this.saveToStorage()
-
-    logInfo('Marked remote chat as deleted', {
-      component: 'DeletedChatsTracker',
-      action: 'markAsRemoteDeleted',
-      metadata: { chatId },
-    })
-  }
-
   isDeleted(chatId: string): boolean {
     return (
       this.localDeletedChats.has(chatId) || this.remoteDeletedChats.has(chatId)
@@ -118,18 +107,6 @@ export class DeletedChatsTracker {
       return true
     }
     return false
-  }
-
-  removeRemoteDeletion(chatId: string): boolean {
-    if (!this.remoteDeletedChats.delete(chatId)) return false
-    this.saveToStorage()
-
-    logInfo('Removed remote chat deletion from tracker', {
-      component: 'DeletedChatsTracker',
-      action: 'removeRemoteDeletion',
-      metadata: { chatId },
-    })
-    return !this.localDeletedChats.has(chatId)
   }
 
   clear(): void {
