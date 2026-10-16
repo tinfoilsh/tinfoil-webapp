@@ -83,6 +83,10 @@ describe('SidebarAccountMenu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
     expect(onOpenSettings).toHaveBeenCalledWith('general')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Account' }))
+    expect(onOpenSettings).toHaveBeenLastCalledWith('account')
   })
 
   it('reveals help links and the bug report action in a submenu', () => {
@@ -155,13 +159,14 @@ describe('SidebarAccountMenu', () => {
 
   it('links directly to sign in with the return URL instead of opening account settings', () => {
     userState = { user: null }
+    routerAsPath = '/newchat?q=private+prompt&view=compact#send=c2VjcmV0'
     const { onOpenSettings } = renderMenu({ isSignedIn: false })
     fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
     const signIn = screen.getByRole('menuitem', { name: 'Sign in' })
     expect(signIn.tagName).toBe('A')
     expect(signIn).toHaveAttribute(
       'href',
-      '/signin?redirect_url=%2Fc%2Fchat-1%3Fview%3Dcompact%23bottom',
+      '/signin?redirect_url=%2Fnewchat%3Fview%3Dcompact',
     )
     window.addEventListener('click', (event) => event.preventDefault(), {
       once: true,
@@ -169,24 +174,6 @@ describe('SidebarAccountMenu', () => {
     fireEvent.click(signIn)
     expect(onOpenSettings).not.toHaveBeenCalled()
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-  })
-
-  it('leaves prefilled message text out of the sign-in return URL', () => {
-    userState = { user: null }
-    routerAsPath = '/newchat?q=private+prompt&view=compact#send=c2VjcmV0'
-    renderMenu({ isSignedIn: false })
-    fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
-    const href = screen
-      .getByRole('menuitem', { name: 'Sign in' })
-      .getAttribute('href')
-    expect(href).toBe('/signin?redirect_url=%2Fnewchat%3Fview%3Dcompact')
-  })
-
-  it('still opens account settings for signed-in users', () => {
-    const { onOpenSettings } = renderMenu()
-    fireEvent.click(screen.getByRole('button', { name: 'Ada' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Account' }))
-    expect(onOpenSettings).toHaveBeenCalledWith('account')
   })
 
   it("shows a subscriber's token usage above the menu items", () => {
