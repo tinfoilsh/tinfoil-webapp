@@ -661,8 +661,33 @@ function indexedDBBackend(storage: IndexedDBStorage): Backend {
   }
 }
 
-// A signed-out visitor's chats last as long as the browser tab.
+// A signed-out visitor's chats last as long as the browser tab. Session
+// storage cannot hold large images, so an image's bytes stay in this page's
+// memory only, by chat and attachment id; after a reload the chat keeps the
+// image's thumbnail.
 function sessionBackend(): Backend {
+  const images = new Map<string, Map<string, string>>()
+  const withImages = (
+    row: Value,
+    kept: ReadonlyMap<string, string>,
+  ): Value => ({
+    ...row,
+    messages: arr(row.messages).map((item) => {
+      const message = obj(item)
+      return Array.isArray(message.attachments)
+        ? {
+            ...message,
+            attachments: message.attachments.map((value) => {
+              const attachment = obj(value)
+              const base64 = kept.get(str(attachment.id))
+              return base64 && !attachment.base64
+                ? { ...attachment, base64 }
+                : attachment
+            }),
+          }
+        : message
+    }),
+  })
   return {
     async summaries() {
       return sessionChatStorage.getAllChats().map((chat) => ({
@@ -671,23 +696,45 @@ function sessionBackend(): Backend {
       }))
     },
     async read(id) {
-      return sessionChatStorage.getChat(id) as unknown as Value | null
+      const row = sessionChatStorage.getChat(id) as unknown as Value | null
+      const kept = images.get(id)
+      if (!row) images.delete(id)
+      return row && kept ? withImages(row, kept) : row
     },
     async write(thread) {
+      const kept = new Map<string, string>()
+      const messages = thread.messages.map((message) =>
+        message.attachments
+          ? {
+              ...message,
+              attachments: message.attachments.map((attachment) => {
+                if (attachment.type !== 'image' || !attachment.base64)
+                  return attachment
+                kept.set(attachment.id, attachment.base64)
+                const { base64: _, ...stored } = attachment
+                return stored
+              }),
+            }
+          : message,
+      )
       sessionChatStorage.saveChat({
-        ...chatRow(thread),
+        ...chatRow({ ...thread, messages }),
         createdAt: new Date(thread.createdAt),
       } as Chat)
+      if (kept.size) images.set(thread.id, kept)
+      else images.delete(thread.id)
       return true
     },
     async remove(id) {
       sessionChatStorage.deleteChat(id)
+      images.delete(id)
     },
     async ids() {
       return sessionChatStorage.getAllChats().map((chat) => chat.id)
     },
     async removeAll() {
       sessionChatStorage.clearAll()
+      images.clear()
     },
   }
 }

@@ -357,6 +357,50 @@ describe('tab store', () => {
       })
     }
   })
+
+  it("stores a signed-out chat's image as its thumbnail and keeps its bytes in memory", async () => {
+    const store = localThreadStore('tab')
+    const saved = thread({
+      messages: [
+        {
+          id: 'm1',
+          role: 'user',
+          createdAt: '2026-05-01T10:00:01Z',
+          content: 'What is this?',
+          attachments: [IMAGE],
+        },
+      ],
+    })
+    try {
+      await store.update(CHAT_ID, () => saved)
+
+      const [row] = JSON.parse(
+        sessionStorage.getItem('tinfoil-sync-session-chats')!,
+      )
+      expect(row.messages).toEqual([
+        {
+          id: 'm1',
+          role: 'user',
+          createdAt: '2026-05-01T10:00:01Z',
+          timestamp: '2026-05-01T10:00:01Z',
+          content: 'What is this?',
+          attachments: [
+            {
+              id: 'att_image',
+              type: 'image',
+              fileName: 'photo.png',
+              mimeType: 'image/png',
+              fileSize: 4,
+              thumbnailBase64: 'dGh1bWI=',
+            },
+          ],
+        },
+      ])
+      expect(await store.get(CHAT_ID)).toEqual(saved)
+    } finally {
+      await store.deleteAll()
+    }
+  })
 })
 
 describe('mergeLocalThread', () => {
