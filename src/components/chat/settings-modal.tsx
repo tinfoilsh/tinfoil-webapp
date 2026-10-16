@@ -1277,7 +1277,6 @@ export function SettingsModal({
 
   const getParseOptions = () => ({
     generateChatId,
-    isCloudSyncEnabled: false,
   })
 
   // An import on this device ends with the modal or the account.

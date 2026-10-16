@@ -35,7 +35,6 @@ interface TinfoilExportedConversation {
 
 export interface LocalTinfoilImportOptions {
   generateChatId: (createdAt?: Date) => string
-  isCloudSyncEnabled: boolean
   signal?: AbortSignal
 }
 
@@ -47,8 +46,6 @@ interface ImportWorkerResponse {
 }
 
 export class LocalImportBackgroundProcessingUnavailableError extends Error {
-  readonly code = 'LOCAL_IMPORT_BACKGROUND_PROCESSING_UNAVAILABLE'
-
   constructor(options?: ErrorOptions) {
     super(
       'Background file processing is unavailable in this browser. Please try a supported browser.',
@@ -319,7 +316,6 @@ async function parseLocalTinfoilExportWithProjectPolicy(
         messages,
         createdAt,
         updatedAt: conversation.updated_at,
-        isLocalOnly: !options.isCloudSyncEnabled,
       })
     }
   }
