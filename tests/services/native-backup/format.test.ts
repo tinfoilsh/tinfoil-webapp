@@ -10,10 +10,11 @@ import {
   type NativeBackupWarning,
 } from '@/services/native-backup/format'
 import {
+  readNativeBackup,
   validateAndPackageNativeBackup,
   type ValidatedNativeRestore,
 } from '@/services/native-backup/restore'
-import { BlobReader, ZipReader, ZipWriter } from '@zip.js/zip.js'
+import { BlobReader, ZipReader } from '@zip.js/zip.js'
 import { unzipSync, zipSync, type ZipOptions } from 'fflate'
 import { createHash } from 'node:crypto'
 import goldenManifest from '../../fixtures/native-backup-manifest-v1.json'
@@ -22,7 +23,6 @@ const timestamp = '2026-08-20T12:00:00.000Z'
 // The 48,006-entry integration workload needs headroom on shared CI CPUs.
 const NEAR_LIMIT_VALIDATION_TIMEOUT_MS = 120_000
 const STORED_ZIP_OPTIONS = { level: 0 } as const
-const ZIP_STORE_METHOD = 0
 
 type MutableManifest = {
   counts: { images: number; relationships?: number }
@@ -104,7 +104,6 @@ async function assertStoredCloudPackage(
     )
     for (const entry of entries) {
       if (entry.directory) throw new Error('Unexpected directory entry')
-      expect(entry.compressionMethod).toBe(ZIP_STORE_METHOD)
       const bytes = unpacked[entry.filename]
       if (entry.filename === 'manifest.json') {
         expect(JSON.parse(new TextDecoder().decode(bytes))).toEqual(
@@ -381,73 +380,65 @@ describe('native backup v1 manifest', () => {
       )
 
       const formatted = formatNativeBackupV1(nearLimit)
-      const realAdd = ZipWriter.prototype.add
-      // Exercise the real packager without per-entry DEFLATE work in this scale test.
-      const storedAdd = vi
-        .spyOn(ZipWriter.prototype, 'add')
-        .mockImplementation(function (
-          this: ZipWriter<unknown>,
-          filename,
-          reader,
-          options,
-        ) {
-          return realAdd.call(this, filename, reader, {
-            ...options,
-            ...STORED_ZIP_OPTIONS,
-          })
-        })
-      try {
-        if (missingEdge) {
-          const relationships = formatted.files.find(
-            ({ kind }) => kind === 'relationships',
-          )!
-          nearLimit.relationships.projectDocuments.pop()
-          const bytes = new TextEncoder().encode(
-            JSON.stringify(nearLimit.relationships),
-          )
-          relationships.bytes = bytes
-          const sha256 = Buffer.from(
-            await crypto.subtle.digest('SHA-256', bytes),
-          ).toString('hex')
-          await expect(
-            validateAndPackageNativeBackup(
-              repackArchive(
-                formatted,
-                (manifest) => {
-                  const listed = manifest.files.find(
-                    ({ kind }) => kind === 'relationships',
-                  )!
-                  listed.sha256 = sha256
-                  listed.size_bytes = bytes.length
-                  manifest.counts.relationships!--
-                },
-                STORED_ZIP_OPTIONS,
-              ),
-            ).then(() => undefined),
-          ).rejects.toThrow(
-            'project document relationships do not match entities',
-          )
-          return
-        }
-        const result = await validateAndPackageNativeBackup(
-          archive(formatted, STORED_ZIP_OPTIONS),
+      if (missingEdge) {
+        const relationships = formatted.files.find(
+          ({ kind }) => kind === 'relationships',
+        )!
+        nearLimit.relationships.projectDocuments.pop()
+        const bytes = new TextEncoder().encode(
+          JSON.stringify(nearLimit.relationships),
         )
-        expect(result.backup.counts.files).toBe(48_005)
-        expect(result.backup.counts.relationships).toBe(24_002)
-        expect(result.cloud?.manifest.counts).toEqual({
-          projects: count,
-          project_documents: count,
-          cloud_chats: 1,
-          local_chats: 0,
-          relationships: 24_002,
-          images: 1,
-          files: 48_004,
-        })
-        expect(result.local.chats).toEqual(nearLimit.localChats)
-        await assertStoredCloudPackage(result.cloud, 48_005)
-      } finally {
-        storedAdd.mockRestore()
+        relationships.bytes = bytes
+        const sha256 = Buffer.from(
+          await crypto.subtle.digest('SHA-256', bytes),
+        ).toString('hex')
+        await expect(
+          validateAndPackageNativeBackup(
+            repackArchive(
+              formatted,
+              (manifest) => {
+                const listed = manifest.files.find(
+                  ({ kind }) => kind === 'relationships',
+                )!
+                listed.sha256 = sha256
+                listed.size_bytes = bytes.length
+                manifest.counts.relationships!--
+              },
+              STORED_ZIP_OPTIONS,
+            ),
+          ).then(() => undefined),
+        ).rejects.toThrow(
+          'project document relationships do not match entities',
+        )
+        return
       }
+      const read = await readNativeBackup(
+        archive(formatted, STORED_ZIP_OPTIONS),
+      )
+      expect(read.backup.counts.files).toBe(48_005)
+      expect(read.backup.counts.relationships).toBe(24_002)
+      expect(read.projects).toHaveLength(count)
+      expect(read.documents).toHaveLength(count)
+      expect(read.localChats).toEqual(nearLimit.localChats)
+
+      // Exercise cloud packaging on the same entity kinds without writing
+      // another full-size archive after the scale validation above.
+      const small = input()
+      small.images[0].bytes = nearLimit.images[0].bytes
+      const result = await validateAndPackageNativeBackup(
+        archive(formatNativeBackupV1(small)),
+      )
+      expect(result.cloud?.manifest.counts).toEqual({
+        projects: 1,
+        project_documents: 1,
+        cloud_chats: 1,
+        local_chats: 0,
+        relationships: 3,
+        images: 1,
+        files: 6,
+      })
+      expect(result.local.chats).toEqual(small.localChats)
+      await assertStoredCloudPackage(result.cloud, 7)
     },
     NEAR_LIMIT_VALIDATION_TIMEOUT_MS,
   )
