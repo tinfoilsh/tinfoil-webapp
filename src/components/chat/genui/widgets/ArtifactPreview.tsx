@@ -25,8 +25,15 @@ import {
 } from '@/components/ui/card'
 import { cn } from '@/components/ui/utils'
 import { sanitizeUrl } from '@braintree/sanitize-url'
-import { TfCode2, TfDownload, TfExternalLink } from '@tinfoilsh/tinfoil-icons'
-import { Eye, FileText } from 'lucide-react'
+import {
+  TfCode2,
+  TfDownload,
+  TfExternalLink,
+  TfEye,
+  TfPlay,
+  type IconType,
+} from '@tinfoilsh/tinfoil-icons'
+import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { z } from 'zod'
@@ -349,6 +356,39 @@ function getSidebarPreviewClassName(source: ArtifactSource): string {
   }
 }
 
+const VIEW_TABS: { mode: ViewMode; label: string; icon: IconType }[] = [
+  { mode: 'preview', label: 'Preview', icon: TfEye },
+  { mode: 'source', label: 'Source', icon: TfCode2 },
+]
+
+interface ArtifactView {
+  source: ArtifactSource
+  mode: ViewMode
+  isRunApproved: boolean
+}
+
+function initialView(source: ArtifactSource): ArtifactView {
+  return { source, mode: 'preview', isRunApproved: false }
+}
+
+function RunPreviewPrompt({ onRun }: { onRun: () => void }) {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-10 text-center">
+      <button
+        type="button"
+        onClick={onRun}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-chat-background px-3 py-1.5 text-xs font-medium text-content-primary transition-colors hover:bg-surface-chat"
+      >
+        <TfPlay className="h-3.5 w-3.5" aria-hidden="true" />
+        Run preview
+      </button>
+      <p className="max-w-xs text-xs text-content-muted">
+        HTML previews run in an isolated sandbox outside the verified app.
+      </p>
+    </div>
+  )
+}
+
 interface ArtifactPreviewPanelProps extends ArtifactPreviewSidebarDetail {
   isDarkMode?: boolean
   className?: string
@@ -368,14 +408,19 @@ export function ArtifactPreviewPanel({
   className,
   layout = 'card',
 }: ArtifactPreviewPanelProps) {
+  // The view is tied to the artifact it was chosen for and derived during
+  // render, so a new artifact never renders a frame with the previous view.
+  const [view, setView] = useState<ArtifactView>(() => initialView(source))
+  const currentView = view.source === source ? view : initialView(source)
+  const { mode } = currentView
   // HTML runs on the unverified sandbox, so it waits for an explicit click,
   // for every artifact shown in this panel.
-  const initialMode = (s: ArtifactSource): ViewMode =>
-    s.type === 'html' ? 'source' : 'preview'
-  const [mode, setMode] = useState<ViewMode>(() => initialMode(source))
-  useEffect(() => setMode(initialMode(source)), [source])
+  const canRunPreview = source.type !== 'html' || currentView.isRunApproved
   const isSidebarLayout = layout === 'sidebar'
   const copyText = sourceToCopyString(source)
+  const tabsId = useId()
+  const panelId = `${tabsId}-panel`
+  const tabId = (tabMode: ViewMode) => `${tabsId}-${tabMode}-tab`
 
   return (
     <Card
@@ -387,60 +432,78 @@ export function ArtifactPreviewPanel({
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-border-subtle bg-surface-chat-background px-4 py-2.5">
-        <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-content-muted">
-            {getSourceLabel(source)}
-          </p>
-          {title && <CardTitle className="mt-1 text-base">{title}</CardTitle>}
-          {description && (
-            <CardDescription className="mt-1">{description}</CardDescription>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setMode(mode === 'preview' ? 'source' : 'preview')}
-            className="flex h-6 items-center gap-1 rounded px-2 text-xs text-content-muted hover:bg-surface-card hover:text-content-primary"
+      <div className="border-b border-border-subtle bg-surface-chat-background px-4 py-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-content-muted">
+          {getSourceLabel(source)}
+        </p>
+        {title && <CardTitle className="mt-1 text-base">{title}</CardTitle>}
+        {description && (
+          <CardDescription className="mt-1">{description}</CardDescription>
+        )}
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <div
+            role="tablist"
+            aria-label="Artifact view"
+            className="flex rounded-lg border border-border-subtle p-0.5"
           >
-            {mode === 'preview' ? (
-              <>
-                <TfCode2 className="h-3.5 w-3.5" />
-                <span>Source</span>
-              </>
-            ) : (
-              <>
-                <Eye className="h-3.5 w-3.5" />
-                <span>Preview</span>
-              </>
+            {VIEW_TABS.map((tab) => (
+              <button
+                key={tab.mode}
+                id={tabId(tab.mode)}
+                type="button"
+                role="tab"
+                aria-selected={mode === tab.mode}
+                aria-controls={panelId}
+                onClick={() => setView({ ...currentView, mode: tab.mode })}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  mode === tab.mode
+                    ? 'bg-surface-chat text-content-primary'
+                    : 'text-content-muted hover:text-content-primary',
+                )}
+              >
+                <tab.icon className="h-3.5 w-3.5" aria-hidden="true" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
+            {source.type === 'url' && (
+              <a
+                href={safeArtifactUrl(source.url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-6 items-center gap-1 rounded px-2 text-xs text-content-muted hover:bg-surface-card hover:text-content-primary"
+              >
+                <TfExternalLink className="h-3.5 w-3.5" />
+                <span>Open</span>
+              </a>
             )}
-          </button>
-          {source.type === 'url' && (
-            <a
-              href={safeArtifactUrl(source.url)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex h-6 items-center gap-1 rounded px-2 text-xs text-content-muted hover:bg-surface-card hover:text-content-primary"
-            >
-              <TfExternalLink className="h-3.5 w-3.5" />
-              <span>Open</span>
-            </a>
-          )}
-          <CopyButton text={copyText} />
+            <CopyButton text={copyText} />
+          </div>
         </div>
       </div>
       <CardContent
+        id={panelId}
+        role="tabpanel"
+        aria-labelledby={tabId(mode)}
         className={cn(isSidebarLayout ? 'flex min-h-0 flex-1 p-0' : 'p-4')}
       >
         {mode === 'preview' ? (
-          <Preview
-            source={source}
-            title={title}
-            className={
-              isSidebarLayout ? getSidebarPreviewClassName(source) : undefined
-            }
-            shouldAutoFocusIframe={isSidebarLayout}
-          />
+          canRunPreview ? (
+            <Preview
+              source={source}
+              title={title}
+              className={
+                isSidebarLayout ? getSidebarPreviewClassName(source) : undefined
+              }
+              shouldAutoFocusIframe={isSidebarLayout}
+            />
+          ) : (
+            <RunPreviewPrompt
+              onRun={() => setView({ ...currentView, isRunApproved: true })}
+            />
+          )
         ) : (
           <pre
             className={cn(

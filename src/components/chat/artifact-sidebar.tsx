@@ -163,7 +163,8 @@ export function ArtifactSidebar({
           </div>
         )}
 
-        <div className="flex flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 py-3">
+        {/* Same padding and button box as the chat header so the two align. */}
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-border-subtle px-4 py-2.5">
           <div className="flex items-center gap-2 text-content-primary">
             <TfEye className="h-5 w-5" aria-hidden="true" />
             <span className="text-sm font-medium">Preview</span>
@@ -171,10 +172,10 @@ export function ArtifactSidebar({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border-subtle bg-surface-chat text-content-secondary transition-colors hover:bg-surface-chat-background"
+            className="rounded-lg border border-transparent p-2 text-content-secondary transition-colors hover:bg-surface-chat"
             aria-label="Close artifact sidebar"
           >
-            <TfBoxX className="h-4 w-4" aria-hidden="true" />
+            <TfBoxX className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
