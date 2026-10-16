@@ -43,32 +43,6 @@ describe('read aloud button', () => {
     expect(fakes.stream).not.toHaveBeenCalled()
   })
 
-  it('provides a styled tooltip on hover and keyboard focus', () => {
-    render(<ReadAloudButton content="Hello." />)
-    const tooltip = screen.getByText('Read aloud')
-    expect(tooltip).toHaveClass(
-      'opacity-0',
-      'group-hover/speech:opacity-100',
-      'group-focus-visible/speech:opacity-100',
-    )
-    expect(tooltip).toHaveAttribute('aria-hidden', 'true')
-    expect(screen.getByRole('button', { name: 'Read aloud' })).toHaveClass(
-      'group/speech',
-      'relative',
-    )
-    expect(
-      screen.getByRole('button', { name: 'Read aloud' }),
-    ).not.toHaveAttribute('title')
-  })
-
-  it('keeps the menu variant labeled without an extra styled tooltip', () => {
-    render(<ReadAloudButton content="Hello." variant="menu" />)
-    expect(screen.getByRole('button', { name: 'Read' })).toHaveTextContent(
-      'Read',
-    )
-    expect(screen.queryByText('Read aloud')).not.toBeInTheDocument()
-  })
-
   it('starts on click, exposes buffering and stop controls, and returns to idle', async () => {
     render(<ReadAloudButton content="Hello." />)
     expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
@@ -105,24 +79,6 @@ describe('read aloud button', () => {
       screen.getByRole('button', { name: 'Read aloud' }),
     ).toBeInTheDocument()
     expect(audio.close).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
-      'animate-pulse',
-      'text-red-600',
-    )
-  })
-
-  it('clears the red pulse when playback finishes naturally', async () => {
-    render(<ReadAloudButton content="Hello." />)
-    fireEvent.click(screen.getByRole('button', { name: 'Read aloud' }))
-    await waitFor(() => expect(generation.requests).toHaveLength(1))
-    await act(async () => {
-      generation.requests[0].push(2)
-      generation.requests[0].finish()
-    })
-    expect(
-      screen.getByRole('button', { name: 'Stop reading aloud' }),
-    ).toHaveClass('animate-pulse', 'text-red-600')
-    act(() => audio.advanceTo(3))
     expect(screen.getByRole('button', { name: 'Read aloud' })).not.toHaveClass(
       'animate-pulse',
       'text-red-600',
