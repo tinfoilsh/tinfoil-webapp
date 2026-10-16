@@ -9,10 +9,8 @@ import {
   AUTH_ACCOUNT_RESET_SIGNAL,
   AUTH_ACTIVE_USER_ID,
 } from '@/constants/storage-keys'
-import { nextClock } from '@/services/cloud/edit-clock'
 import type { PendingRecoveryEnvelope } from '@/types/chat-recovery'
 import { logError, logWarning } from '@/utils/error-handling'
-import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import { deletedChatsTracker } from './deleted-chats-tracker'
 
@@ -26,8 +24,6 @@ export interface Chat extends Omit<ChatType, 'createdAt'> {
 export interface StoredChat extends Chat {
   lastAccessedAt: number
   syncedAt?: number
-  locallyModified?: boolean
-  syncPending?: 0 | 1
   syncVersion?: number
   formatVersion?: number
   decryptionFailed?: boolean
@@ -36,14 +32,6 @@ export interface StoredChat extends Chat {
   loadedAt?: number
   isLocalOnly?: boolean
   isBlankChat?: boolean
-  // Logical edit clock for conflict arbitration. `clock`/`writer` are
-  // bumped on each local content edit; `clockVersion` records the
-  // syncVersion the clock was last maintained at, so a reader can tell
-  // whether a clock-unaware client wrote since (see remoteWins).
-  clock?: number
-  writer?: string
-  clockVersion?: number
-  pendingUpload?: 0 | 1
   syncUserId?: string
   projectLocallyModified?: boolean
 }
@@ -107,10 +95,6 @@ const ACCOUNT_CHANGE_WRITE_ERROR =
   'IndexedDB write superseded by account change'
 const textEncoder = new TextEncoder()
 
-function hashString(input: string): string {
-  return bytesToHex(sha256(textEncoder.encode(input)))
-}
-
 function deserializeStoredChat(chat: StoredChat): StoredChat {
   if (!Array.isArray(chat.messages)) {
     throw new Error('Stored chat has invalid messages')
@@ -130,139 +114,6 @@ function deserializeStoredChat(chat: StoredChat): StoredChat {
   } as StoredChat
 }
 
-/**
- * Computes a stable fingerprint for a chat's meaningful content.
- * Used to decide if a chat is "locally modified" (and should be re-uploaded).
- *
- * Intentionally ignores `updatedAt` so we don't treat "save time changed" as a content change.
- * Avoids hashing huge blobs (documentContent/image base64) by hashing or summarizing those fields.
- */
-export function chatContentFingerprint(chat: {
-  title?: string
-  projectId?: string
-  messages?: any[]
-  pendingRecoveries?: any[]
-}): string {
-  const messages = (chat.messages || []).map((m) => ({
-    role: m.role,
-    content: m.content,
-    turnId: m.turnId,
-    thoughts: m.thoughts,
-    isThinking: m.isThinking,
-    thinkingDuration: m.thinkingDuration,
-    isError: m.isError,
-    timestamp: m.timestamp,
-    timeline: m.timeline,
-    // New format: hash attachment data to avoid huge fingerprints
-    attachments:
-      Array.isArray(m.attachments) && m.attachments.length > 0
-        ? m.attachments.map((a: any) => ({
-            id: a.id,
-            type: a.type,
-            fileName: a.fileName,
-            mimeType: a.mimeType,
-            fileSize: a.fileSize,
-            description: a.description,
-            encryptionKey: a.encryptionKey,
-            base64Hash:
-              typeof a.base64 === 'string' ? hashString(a.base64) : null,
-            base64Length: typeof a.base64 === 'string' ? a.base64.length : 0,
-            thumbnailBase64Hash:
-              typeof a.thumbnailBase64 === 'string'
-                ? hashString(a.thumbnailBase64)
-                : null,
-            thumbnailBase64Length:
-              typeof a.thumbnailBase64 === 'string'
-                ? a.thumbnailBase64.length
-                : 0,
-            textContentHash:
-              typeof a.textContent === 'string'
-                ? hashString(a.textContent)
-                : null,
-            textContentLength:
-              typeof a.textContent === 'string' ? a.textContent.length : 0,
-            pagesHash: Array.isArray(a.pages)
-              ? hashString(JSON.stringify(a.pages))
-              : null,
-          }))
-        : [],
-    // Legacy fields — still included for old messages that haven't been migrated
-    documents: m.documents,
-    documentContentHash:
-      typeof m.documentContent === 'string'
-        ? hashString(m.documentContent)
-        : null,
-    documentContentLength:
-      typeof m.documentContent === 'string' ? m.documentContent.length : 0,
-    imageData:
-      Array.isArray(m.imageData) && m.imageData.length > 0
-        ? m.imageData.map((img: any) => ({
-            mimeType: img?.mimeType,
-            base64Hash:
-              typeof img?.base64 === 'string' ? hashString(img.base64) : null,
-            base64Length:
-              typeof img?.base64 === 'string' ? img.base64.length : 0,
-          }))
-        : [],
-  }))
-
-  return JSON.stringify({
-    title: chat.title ?? '',
-    projectId: chat.projectId ?? null,
-    messages,
-    pendingRecoveries: chat.pendingRecoveries ?? [],
-  })
-}
-
-/**
- * Determine whether a chat should be marked as locally modified (needing upload).
- *
- * Rules:
- * 1. Chats that failed decryption are NEVER marked modified — they are placeholders
- *    with empty messages that would overwrite real encrypted data on the server.
- * 2. Existing chats: mark modified if meaningful content changed, or preserve the
- *    existing modified flag so previously-dirty chats stay dirty.
- * 3. New chats: use the caller-provided value, defaulting to true.
- */
-export function computeLocallyModified(opts: {
-  isFailedDecryption: boolean
-  existingChat: StoredChat | undefined
-  hasContentChanges: boolean
-  callerValue: boolean | undefined
-}): boolean {
-  if (opts.isFailedDecryption) {
-    return false
-  }
-  if (opts.existingChat) {
-    return opts.hasContentChanges || opts.existingChat.locallyModified === true
-  }
-  return opts.callerValue ?? true
-}
-
-export function chatNeedsSync(
-  chat: Pick<
-    StoredChat,
-    'locallyModified' | 'syncedAt' | 'isLocalOnly' | 'decryptionFailed'
-  >,
-): 0 | 1 {
-  if (chat.isLocalOnly || chat.decryptionFailed) return 0
-  return chat.locallyModified === true || chat.syncedAt == null ? 1 : 0
-}
-
-export function resolveStoredLocalOnly(
-  incoming: boolean | undefined,
-  existing: boolean | undefined,
-  allowExplicitChange = false,
-): boolean {
-  if (allowExplicitChange) return incoming === true
-  return incoming === true || existing === true
-}
-
-function updateSyncPending(chat: StoredChat): StoredChat {
-  chat.syncPending = chatNeedsSync(chat)
-  return chat
-}
-
 function toStoredChatSummary(chat: StoredChat): StoredChat {
   return {
     ...chat,
@@ -277,11 +128,10 @@ function putStoredChat(
   summaryStore: IDBObjectStore,
   chat: StoredChat,
 ): IDBRequest<IDBValidKey> {
-  const prepared = updateSyncPending(chat)
-  summaryStore.put(toStoredChatSummary(prepared))
+  summaryStore.put(toStoredChatSummary(chat))
   // isMetadataOnly/messageCount describe summary rows only; persisting
   // them on the full row would make hydrated reads look like summaries.
-  const { isMetadataOnly, messageCount, ...fullRow } = prepared
+  const { isMetadataOnly, messageCount, ...fullRow } = chat
   return chatStore.put(fullRow)
 }
 
@@ -289,7 +139,7 @@ function putStoredChat(
  * Copies mutable chat containers without duplicating immutable attachment
  * payload strings. New nested message fields must be snapshotted here.
  */
-export function snapshotChatForStorage(chat: Chat): Chat {
+function snapshotChatForStorage(chat: Chat): Chat {
   return {
     ...chat,
     pendingRecoveries: chat.pendingRecoveries?.map((recovery) => ({
@@ -501,33 +351,6 @@ function deleteAttachmentPayloadsForChat(
   }
 }
 
-export function derivePendingUpload(
-  chat: Pick<
-    StoredChat,
-    | 'locallyModified'
-    | 'isLocalOnly'
-    | 'isBlankChat'
-    | 'decryptionFailed'
-    | 'dataCorrupted'
-    | 'messages'
-    | 'syncUserId'
-  > & { isMetadataOnly?: boolean },
-): 0 | 1 {
-  return chat.locallyModified === true &&
-    typeof chat.syncUserId === 'string' &&
-    chat.syncUserId.length > 0 &&
-    chat.isLocalOnly !== true &&
-    chat.isBlankChat !== true &&
-    chat.decryptionFailed !== true &&
-    chat.dataCorrupted !== true &&
-    chat.isMetadataOnly !== true &&
-    // A malformed legacy row must fail closed without aborting DB migration.
-    Array.isArray(chat.messages) &&
-    chat.messages.length > 0
-    ? 1
-    : 0
-}
-
 function activeUserId(): string | undefined {
   if (typeof window === 'undefined') return undefined
   try {
@@ -667,8 +490,6 @@ export class IndexedDBStorage {
               if (!cursor) return
               const chat = cursor.value as StoredChat
               chat.syncUserId ??= chatOwnerId(chat) ?? activeUserId()
-              chat.pendingUpload = derivePendingUpload(chat)
-              chat.syncPending = chatNeedsSync(chat)
               cursor.update(chat)
               cursor.continue()
             }
@@ -1002,76 +823,14 @@ export class IndexedDBStorage {
           }),
         )
 
-        // Determine if the chat's meaningful content has changed compared to existing version.
-        // NOTE: We intentionally ignore `updatedAt` so we don't create sync churn from timestamps.
-        const hasContentChanges = existingChat
-          ? chatContentFingerprint({
-              title: existingChat.title,
-              projectId: existingChat.projectId,
-              messages: existingChat.messages,
-              pendingRecoveries: existingChat.pendingRecoveries,
-            }) !==
-            chatContentFingerprint({
-              title: chat.title,
-              projectId: (chat as StoredChat).projectId,
-              messages: messagesForStorage,
-              pendingRecoveries: (chat as StoredChat).pendingRecoveries,
-            })
-          : false
-
-        // Never mark chats that failed to decrypt as locally modified.
-        // These are placeholder chats with empty messages that should NOT be uploaded.
-        // If we set locallyModified: true, they would overwrite real encrypted data on the server.
-        const isFailedDecryption =
-          (chat as StoredChat).decryptionFailed === true
-
-        // Bump the edit clock only on a genuine local content edit: a
-        // changed existing chat, or a brand-new locally-created one.
-        // Re-saves that don't touch content (and synced writes) keep the
-        // existing clock so they don't outrank a real concurrent edit.
-        const bumpClock =
-          !isFailedDecryption &&
-          (hasContentChanges ||
-            (!existingChat && ((chat as StoredChat).locallyModified ?? true)))
-        const bumpedClock = bumpClock
-          ? nextClock(existingChat?.clock ?? (chat as StoredChat).clock)
-          : null
-
-        const locallyModified = computeLocallyModified({
-          isFailedDecryption,
-          existingChat,
-          hasContentChanges,
-          callerValue: (chat as StoredChat).locallyModified,
-        })
-        const isLocalOnly = resolveStoredLocalOnly(
-          (chat as StoredChat).isLocalOnly,
-          existingChat?.isLocalOnly,
-        )
+        const isLocalOnly =
+          (chat as StoredChat).isLocalOnly === true ||
+          existingChat?.isLocalOnly === true
         const storedChat: StoredChat = {
           ...chat,
           messages: messagesForStorage as any,
           lastAccessedAt: Date.now(),
           syncedAt: existingChat?.syncedAt ?? (chat as StoredChat).syncedAt,
-          clock:
-            bumpedClock?.v ?? existingChat?.clock ?? (chat as StoredChat).clock,
-          writer:
-            bumpedClock?.w ??
-            existingChat?.writer ??
-            (chat as StoredChat).writer,
-          clockVersion:
-            existingChat?.clockVersion ?? (chat as StoredChat).clockVersion,
-          // For existing chats: mark as modified if content changed, or preserve existing modified state
-          // This ensures modified chats are always picked up for sync even if they were
-          // loaded with locallyModified: false from a previous sync
-          // For new chats: use provided value or default to true
-          // IMPORTANT: Never mark failed-to-decrypt chats as modified - they are placeholders
-          locallyModified,
-          syncPending: chatNeedsSync({
-            locallyModified,
-            syncedAt: existingChat?.syncedAt ?? (chat as StoredChat).syncedAt,
-            isLocalOnly,
-            decryptionFailed: isFailedDecryption,
-          }),
           syncVersion:
             existingChat?.syncVersion ?? (chat as StoredChat).syncVersion,
           decryptionFailed: (chat as StoredChat).decryptionFailed,
@@ -1103,7 +862,6 @@ export class IndexedDBStorage {
           const putRequest = putStoredChat(store, summaryStore, storedChat)
           putRequest.onerror = () => reject(new Error('Failed to save chat'))
         }
-        storedChat.pendingUpload = derivePendingUpload(storedChat)
 
         const payloadCursor = payloadStore
           .index(ATTACHMENT_PAYLOADS_CHAT_INDEX)
