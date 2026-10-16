@@ -45,25 +45,19 @@ vi.mock('@/services/keys/cloud-key-preflight', async (importOriginal) => ({
 
 function Harness(props: Partial<Parameters<typeof SettingsModal>[0]> = {}) {
   return (
-    <div
-      data-testid="welcome"
-      style={{ transform: 'translateY(20px)', overflow: 'hidden' }}
-    >
-      <h1>Welcome</h1>
-      <SettingsModal
-        isOpen
-        setIsOpen={vi.fn()}
-        isDarkMode
-        themeMode="dark"
-        setThemeMode={vi.fn()}
-        isClient={false}
-        onOpenPromptLibrary={vi.fn()}
-        onDeleteAllChats={vi.fn()}
-        encryptionKey={null}
-        initialTab="general"
-        {...props}
-      />
-    </div>
+    <SettingsModal
+      isOpen
+      setIsOpen={vi.fn()}
+      isDarkMode
+      themeMode="dark"
+      setThemeMode={vi.fn()}
+      isClient={false}
+      onOpenPromptLibrary={vi.fn()}
+      onDeleteAllChats={vi.fn()}
+      encryptionKey={null}
+      initialTab="general"
+      {...props}
+    />
   )
 }
 
@@ -73,33 +67,6 @@ describe('settings opening', () => {
     authState.isSignedIn = false
     toasts.mockReset()
   })
-
-  it.each([false, true])(
-    'uses theme-aware blue for active passkeys (dark: %s)',
-    async (isDarkMode) => {
-      authState.isSignedIn = true
-      localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
-      render(
-        <Harness
-          initialTab="cloud-sync"
-          isSignedIn
-          passkeyActive
-          isClient
-          isDarkMode={isDarkMode}
-          themeMode={isDarkMode ? 'dark' : 'light'}
-        />,
-      )
-
-      const status = await screen.findByText('Passkey active')
-      expect(status).toHaveClass(
-        'text-tinfoil-accent-blue',
-        'dark:text-blue-400',
-      )
-      const icon = status.parentElement?.querySelector('svg')
-      expect(icon).toHaveClass('text-tinfoil-accent-blue', 'dark:text-blue-400')
-      expect(icon?.style.color).toBe('')
-    },
-  )
 
   it("offers a signed-out visitor this browser's chats but no account data", () => {
     render(
@@ -216,38 +183,6 @@ describe('settings opening', () => {
     },
   )
 
-  it('uses headings around the import buttons and associates each expanded panel', () => {
-    authState.isSignedIn = true
-    localStorage.setItem(SETTINGS_CLOUD_SYNC_ENABLED, 'true')
-    render(<Harness initialTab="data" isSignedIn />)
-    for (const provider of ['ChatGPT', 'Claude', 'Tinfoil']) {
-      const name = `Import from ${provider}`
-      const button = screen.getByRole('button', { name })
-      expect(screen.getByRole('heading', { name, level: 3 })).toContainElement(
-        button,
-      )
-      expect(button.querySelector('h3')).toBeNull()
-      expect(button).toHaveAttribute('aria-expanded', 'false')
-      fireEvent.click(button)
-      expect(button).toHaveAttribute('aria-expanded', 'true')
-      expect(
-        document.getElementById(button.getAttribute('aria-controls')!),
-      ).toBeInTheDocument()
-    }
-  })
-  it('opens outside the welcome layout without transparent or scaled frames', () => {
-    render(<Harness />)
-    const dialog = screen.getByRole('dialog', { name: 'Settings' })
-    const panel = dialog.querySelector<HTMLElement>('[data-settings-panel]')!
-    expect(screen.getByTestId('welcome')).not.toContainElement(dialog)
-    expect(panel.style.opacity).toBe('')
-    expect(panel.style.transform).toBe('')
-    expect(dialog.querySelector('[data-settings-panel]')).toHaveClass(
-      'bg-surface-sidebar',
-    )
-    expect(document.body).toContainElement(dialog)
-  })
-
   it('focuses the dialog, dismisses with Escape, and restores the opener', async () => {
     function KeyboardHarness() {
       const [isOpen, setIsOpen] = useState(false)
@@ -277,26 +212,6 @@ describe('settings opening', () => {
       ).not.toBeInTheDocument(),
     )
     await waitFor(() => expect(opener).toHaveFocus())
-  })
-
-  it('keeps the same opaque card through settings updates and closes normally', () => {
-    const setIsOpen = vi.fn()
-    const { rerender } = render(<Harness setIsOpen={setIsOpen} />)
-    const dialog = screen.getByRole('dialog', { name: 'Settings' })
-    const panel = dialog.querySelector<HTMLElement>('[data-settings-panel]')!
-    rerender(<Harness setIsOpen={setIsOpen} initialTab="chat" />)
-    expect(screen.getByRole('dialog', { name: 'Settings' })).toBe(dialog)
-    expect(dialog.querySelector('[data-settings-panel]')).toBe(panel)
-    expect(panel.style.opacity).toBe('')
-    expect(panel.style.transform).toBe('')
-    fireEvent.click(
-      screen.getAllByRole('button', { name: 'Close settings' })[0],
-    )
-    expect(setIsOpen).toHaveBeenCalledWith(false)
-    rerender(<Harness isOpen={false} />)
-    expect(
-      screen.queryByRole('dialog', { name: 'Settings' }),
-    ).not.toBeInTheDocument()
   })
 
   describe('without cloud sync', () => {

@@ -2083,7 +2083,6 @@ ${encryptionKey.replace('key_', '')}
 
       {/* Settings modal */}
       <Dialog.Panel
-        data-settings-panel
         className={cn(
           'relative z-10 flex h-[80vh] w-[90vw] max-w-4xl flex-col overflow-hidden rounded-site-lg border font-aeonik shadow-xl md:flex-row',
           'border-border-subtle bg-surface-sidebar text-content-primary',
