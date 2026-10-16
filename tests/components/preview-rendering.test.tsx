@@ -432,28 +432,40 @@ describe('code previews', () => {
   })
 })
 
-it('shows HTML artifacts only on request and runs them on the sandbox', () => {
+it('opens HTML artifacts on the preview tab but runs them on the sandbox only on request', () => {
   const html = '<h1>Artifact</h1>'
-  const { getByRole, getByTitle, queryByTitle } = render(
+  const { getByRole, getByTitle, queryByRole, queryByTitle } = render(
     <ArtifactPreviewPanel source={{ type: 'html', html }} title="Artifact" />,
   )
+  expect(getByRole('tab', { name: 'Preview' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
   expect(queryByTitle('Artifact')).toBeNull()
-  fireEvent.click(getByRole('button', { name: 'Preview' }))
+  fireEvent.click(getByRole('button', { name: 'Run preview' }))
   const frame = getByTitle('Artifact') as HTMLIFrameElement
   expect(frame.src.startsWith(`${SANDBOX_PREVIEW_URL}#`)).toBe(true)
   expect(frame).toHaveAttribute('sandbox', 'allow-scripts')
   expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer')
   expect(sandboxRun(frame)).toMatchObject({ kind: 'artifact', html })
+
+  fireEvent.click(getByRole('tab', { name: 'Source' }))
+  expect(queryByTitle('Artifact')).toBeNull()
+  expect(getByRole('tabpanel')).toHaveTextContent(html)
+  // Returning to the same artifact's preview does not ask again.
+  fireEvent.click(getByRole('tab', { name: 'Preview' }))
+  expect(getByTitle('Artifact')).not.toBeNull()
+  expect(queryByRole('button', { name: 'Run preview' })).toBeNull()
 })
 
-it('returns HTML artifacts to source view when the panel shows a new one', () => {
+it('asks again before running a new HTML artifact shown in the panel', () => {
   const { getByRole, getByTitle, queryByTitle, rerender } = render(
     <ArtifactPreviewPanel
       source={{ type: 'html', html: '<p>a</p>' }}
       title="Artifact"
     />,
   )
-  fireEvent.click(getByRole('button', { name: 'Preview' }))
+  fireEvent.click(getByRole('button', { name: 'Run preview' }))
   const frame = getByTitle('Artifact') as HTMLIFrameElement
   expect(sandboxRun(frame)).toMatchObject({ html: '<p>a</p>' })
   // The ready frame would forward any new run it receives.
@@ -465,7 +477,30 @@ it('returns HTML artifacts to source view when the panel shows a new one', () =>
     />,
   )
   expect(queryByTitle('Artifact')).toBeNull()
+  expect(getByRole('button', { name: 'Run preview' })).not.toBeNull()
   expect(post).not.toHaveBeenCalled()
+})
+
+it('opens a new artifact on the preview tab after viewing source', () => {
+  const { getByRole, getByText, rerender } = render(
+    <ArtifactPreviewPanel
+      source={{ type: 'markdown', markdown: 'First **note**' }}
+      title="Artifact"
+    />,
+  )
+  fireEvent.click(getByRole('tab', { name: 'Source' }))
+  expect(getByRole('tabpanel')).toHaveTextContent('First **note**')
+  rerender(
+    <ArtifactPreviewPanel
+      source={{ type: 'markdown', markdown: 'Second **note**' }}
+      title="Artifact"
+    />,
+  )
+  expect(getByRole('tab', { name: 'Preview' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  expect(getByText('note').tagName).toBe('STRONG')
 })
 
 it('frames URL artifacts directly with the same sandbox permissions', () => {
