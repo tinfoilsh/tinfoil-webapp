@@ -23,7 +23,8 @@ import {
   it,
   vi,
 } from 'vitest'
-import { connectHarness, KEY, type FakeHarness } from './chat-interface-fixture'
+import { client, KEY, signIn } from '../../harness-fixture'
+import { stubSafeguardFlags } from './chat-interface-fixture'
 import { chatPage } from './chat-page-mocks'
 
 type SidebarProps = ComponentProps<typeof ChatSidebar>
@@ -113,12 +114,11 @@ const imported: ThreadSummary = {
   contextUsage: null,
 }
 
-let harness: FakeHarness
 let cloud: ThreadSummary[]
 
 function connect() {
   cloud = []
-  harness = connectHarness()
+  signIn({ cloud: true })
 }
 
 const sidebar = () => {
@@ -126,7 +126,7 @@ const sidebar = () => {
   return page.sidebar
 }
 const calls = () =>
-  harness.client.post.mock.calls
+  client.post.mock.calls
     .map(([path, input]) => [path, input])
     .filter(([path]) => path !== '/v1/threads/list')
 const stored = () => localThreadStore('device').get(CHAT_ID)
@@ -154,20 +154,7 @@ beforeEach(async () => {
   page.toast.mockReset()
   chatPage.premium = false
   authTokenManager.initialize(async () => 'clerk-jwt')
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (url: string) => {
-      if (String(url).endsWith('/api/users/me/safeguard-flags'))
-        return Response.json({
-          flags: [],
-          in_window: 0,
-          window_hours: 168,
-          warn_threshold: 2,
-          ban_threshold: 3,
-        })
-      throw new Error(`Unexpected request: ${url}`)
-    }),
-  )
+  stubSafeguardFlags()
   sessionStorage.clear()
   deletedChatsTracker.clear()
   await indexedDBStorage.deleteAllChats()
@@ -187,7 +174,7 @@ afterEach(() => {
 describe('moving chats from the chat page', () => {
   it('pins a device chat by moving it to the cloud first', async () => {
     connect()
-    harness.client.post.mockImplementation(async (path: string, input) => {
+    client.post.mockImplementation(async (path: string, input) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import') {
@@ -225,7 +212,7 @@ describe('moving chats from the chat page', () => {
 
   it('leaves a device chat unpinned on the device when its move fails', async () => {
     connect()
-    harness.client.post.mockImplementation(async (path: string) => {
+    client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import')
@@ -254,7 +241,7 @@ describe('moving chats from the chat page', () => {
   it('files a device chat into a project through the cloud', async () => {
     chatPage.premium = true
     connect()
-    harness.client.post.mockImplementation(async (path: string) => {
+    client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import') {
@@ -290,7 +277,7 @@ describe('moving chats from the chat page', () => {
   it('returns a device chat to the device as it was when its project move fails', async () => {
     chatPage.premium = true
     connect()
-    harness.client.post.mockImplementation(async (path: string) => {
+    client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/import') {
@@ -339,7 +326,7 @@ describe('moving chats from the chat page', () => {
     await localThreadStore('device').delete(CHAT_ID)
     connect()
     cloud = [imported]
-    harness.client.post.mockImplementation(async (path: string) => {
+    client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/transcript')
@@ -370,7 +357,7 @@ describe('moving chats from the chat page', () => {
     await localThreadStore('device').delete(CHAT_ID)
     connect()
     cloud = [imported]
-    harness.client.post.mockImplementation(async (path: string) => {
+    client.post.mockImplementation(async (path: string) => {
       if (path === '/v1/threads/list')
         return { threads: cloud, nextCursor: null }
       if (path === '/v1/threads/transcript')
