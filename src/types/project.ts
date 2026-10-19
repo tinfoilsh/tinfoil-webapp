@@ -11,7 +11,6 @@ export interface Project {
   color?: string
   createdAt: string
   updatedAt: string
-  decryptionFailed?: boolean
 }
 
 export interface ProjectDocument {
@@ -26,7 +25,6 @@ export interface ProjectDocument {
   // Small JPEG preview stored alongside image documents so the sidebar can
   // show a real thumbnail; the full image is never persisted.
   thumbnailBase64?: string
-  decryptionFailed?: boolean
 }
 
 export interface CreateProjectData {

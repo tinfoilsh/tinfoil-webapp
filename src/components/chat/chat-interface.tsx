@@ -781,10 +781,6 @@ export function ChatInterface({
     setSettingsInitialTab('safeguards')
     handleOpenSettingsModal()
   }
-  const handleOpenEncryptionKeyModal = () => {
-    setSettingsInitialTab('cloud-sync')
-    handleOpenSettingsModal()
-  }
   const handleOpenShareModal = () => {
     setHasMountedShareModal(true)
     setIsShareModalOpen(true)
@@ -1498,8 +1494,6 @@ export function ChatInterface({
         updatedAt: c.updatedAt,
         projectId: c.projectId,
         isBlankChat: c.isBlankChat,
-        decryptionFailed: c.decryptionFailed,
-        dataCorrupted: c.dataCorrupted,
         isTemporary: c.isTemporary,
         activeRun: c.activeRun,
       }))
@@ -1641,9 +1635,6 @@ export function ChatInterface({
                   chats={projectSidebarChats(activeProject.id)}
                   deleteChat={deleteChat}
                   updateChatTitle={updateChatTitle}
-                  onEncryptionKeyClick={
-                    isSignedIn ? handleOpenEncryptionKeyModal : undefined
-                  }
                   onRemoveChatFromProject={handleRemoveChatFromProject}
                   onDeleteProjectChats={handleDeleteProjectChats}
                   onAddChatToProject={(chatId) =>
@@ -1722,9 +1713,6 @@ export function ChatInterface({
                 isClient={isClient}
                 isPremium={isPremium}
                 isSubscriptionLoading={isSubscriptionLoading}
-                onEncryptionKeyClick={
-                  isSignedIn ? handleOpenEncryptionKeyModal : undefined
-                }
                 onCloudSyncSetupClick={
                   isSignedIn ? handleOpenCloudSyncSetup : undefined
                 }

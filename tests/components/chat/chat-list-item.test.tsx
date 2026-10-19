@@ -155,19 +155,18 @@ describe('ChatListItem favorites', () => {
     ).toBeNull()
   })
 
-  it.each([
-    { isTemporary: true },
-    { pendingSave: true },
-    { dataCorrupted: true },
-  ])('does not offer pinning for a chat with %j', (state) => {
-    renderChatListItem({
-      chat: { ...savedChat, ...state },
-      onTogglePin: vi.fn(),
-    })
-    expect(
-      screen.queryByRole('button', { name: 'Pin to Favorites' }),
-    ).not.toBeInTheDocument()
-  })
+  it.each([{ isTemporary: true }, { pendingSave: true }])(
+    'does not offer pinning for a chat with %j',
+    (state) => {
+      renderChatListItem({
+        chat: { ...savedChat, ...state },
+        onTogglePin: vi.fn(),
+      })
+      expect(
+        screen.queryByRole('button', { name: 'Pin to Favorites' }),
+      ).not.toBeInTheDocument()
+    },
+  )
 
   it('only offers unpinning while a chat save is pending', () => {
     renderChatListItem({

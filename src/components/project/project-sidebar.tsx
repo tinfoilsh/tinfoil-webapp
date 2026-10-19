@@ -77,8 +77,6 @@ interface ProjectChat {
   updatedAt?: string
   projectId?: string
   isBlankChat?: boolean
-  decryptionFailed?: boolean
-  dataCorrupted?: boolean
   isTemporary?: boolean
 }
 
@@ -105,7 +103,6 @@ interface ProjectSidebarProps {
   chats?: ProjectChat[]
   deleteChat?: (chatId: string) => void
   updateChatTitle?: (chatId: string, newTitle: string) => void
-  onEncryptionKeyClick?: () => void
   onRemoveChatFromProject?: (chatId: string) => Promise<void>
   onDeleteProjectChats?: (projectId: string) => Promise<void>
   onAddChatToProject?: (chatId: string) => Promise<void>
@@ -218,7 +215,6 @@ export function ProjectSidebar({
   chats: chatsProp,
   deleteChat,
   updateChatTitle,
-  onEncryptionKeyClick,
   onRemoveChatFromProject,
   onDeleteProjectChats,
   onAddChatToProject,
@@ -561,8 +557,6 @@ export function ProjectSidebar({
       title: c.title,
       messageCount: c.messageCount,
       projectId: c.projectId,
-      decryptionFailed: c.decryptionFailed,
-      dataCorrupted: c.dataCorrupted,
       isTemporary: c.isTemporary,
     }))
 
@@ -1346,16 +1340,12 @@ export function ProjectSidebar({
                             />
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-aeonik-fono text-xs text-content-primary">
-                                {doc.decryptionFailed
-                                  ? 'Unable to load document'
-                                  : doc.filename}
+                                {doc.filename}
                               </div>
                               <div className="font-aeonik-fono text-[10px] text-content-muted">
-                                {doc.decryptionFailed
-                                  ? 'Unavailable'
-                                  : !doc.content?.trim()
-                                    ? 'No readable content'
-                                    : formatFileSize(doc.sizeBytes)}
+                                {!doc.content?.trim()
+                                  ? 'No readable content'
+                                  : formatFileSize(doc.sizeBytes)}
                               </div>
                             </div>
                             <button

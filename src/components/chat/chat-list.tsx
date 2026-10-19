@@ -28,7 +28,6 @@ interface ChatListProps {
   isDarkMode: boolean
   pixelateSidebarChatTitles: boolean
   isLoading?: boolean
-  showEncryptionStatus?: boolean
   enableTitleAnimation?: boolean
   animatedDeleteConfirmation?: boolean
   isDraggable?: boolean
@@ -39,7 +38,6 @@ interface ChatListProps {
   onAfterSelect?: () => void
   onUpdateTitle?: (chatId: string, title: string) => void
   onDeleteChat: (chatId: string) => void
-  onEncryptionKeyClick?: () => void
   onDragStart?: (chatId: string) => void
   onDragEnd?: () => void
   onMoveToProject?: (chatId: string, projectId: string) => void
@@ -71,7 +69,6 @@ export function ChatList({
   isDarkMode,
   pixelateSidebarChatTitles,
   isLoading = false,
-  showEncryptionStatus = false,
   enableTitleAnimation = false,
   animatedDeleteConfirmation = true,
   isDraggable = false,
@@ -82,7 +79,6 @@ export function ChatList({
   onAfterSelect,
   onUpdateTitle,
   onDeleteChat,
-  onEncryptionKeyClick,
   onDragStart,
   onDragEnd,
   onMoveToProject,
@@ -129,11 +125,6 @@ export function ChatList({
   }
 
   const handleSelect = (chat: ChatItemData) => {
-    if (chat.decryptionFailed) {
-      onEncryptionKeyClick?.()
-      return
-    }
-
     if (chat.isBlankChat) {
       onSelectChat(getBlankChatSelectId(chat))
     } else {
@@ -214,20 +205,13 @@ export function ChatList({
                 editingTitle={editingTitle}
                 isDarkMode={isDarkMode}
                 pixelateSidebarChatTitles={pixelateSidebarChatTitles}
-                showEncryptionStatus={showEncryptionStatus}
                 isStreaming={!chat.isBlankChat && !!chat.activeRun}
                 isFlagged={Boolean(flaggedChatIds[chat.id])}
                 enableTitleAnimation={
                   enableTitleAnimation && manuallyEditedChatId !== chat.id
                 }
-                isDraggable={
-                  isDraggable && !chat.isBlankChat && !chat.decryptionFailed
-                }
-                showMoveToProject={
-                  showMoveToProject &&
-                  !chat.isBlankChat &&
-                  !chat.decryptionFailed
-                }
+                isDraggable={isDraggable && !chat.isBlankChat}
+                showMoveToProject={showMoveToProject && !chat.isBlankChat}
                 projects={projects}
                 href={getChatHref?.(chat)}
                 onSelect={() => handleSelect(chat)}

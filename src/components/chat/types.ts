@@ -193,8 +193,6 @@ export type Chat = {
   // Sync metadata - optional for backward compatibility
   syncedAt?: number
   locallyModified?: boolean
-  decryptionFailed?: boolean
-  dataCorrupted?: boolean
   // Blank chat flag - true for new chats that haven't been used yet
   isBlankChat?: boolean
   // Local-only flag - true for chats that should never sync to cloud
