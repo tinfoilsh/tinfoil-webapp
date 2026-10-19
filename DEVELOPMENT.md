@@ -46,7 +46,7 @@ Select **Dev Simulator** in the model picker. Send `help` for the full command l
 - `test retry`: fails three times, then succeeds after automatic retries
 - `test error`: the connection-error banner (send a different message to resume)
 - `flag safeguard`: flags the chat in the local safeguards mock (requires sign-in)
-- `reset safeguards`: clears all mock flags when sent from an unflagged chat (restarting `dev:backend` also clears them)
+- `reset safeguards`: clears all mock flags, as does restarting `dev:backend` (flagged chats are read-only, so send it from another chat)
 
 ## Optional local model router
 
