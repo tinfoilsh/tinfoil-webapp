@@ -4,7 +4,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
 describe('StreamingChunkedText', () => {
-  it('renders and updates short live text next to a code block', () => {
+  it('renders and updates short live text without an inline mask', () => {
     const content = '```js\nconst ready = true\n```\nHi'
     const view = (text: string) => (
       <StreamingContentWrapper isStreaming>
@@ -23,5 +23,6 @@ describe('StreamingChunkedText', () => {
     rerender(view(`${content} there`))
     expect(screen.getByText('Hi there')).toBeVisible()
     expect(container).toHaveTextContent('const ready = true')
+    expect(container.querySelector('[style*="mask-image"]')).toBeNull()
   })
 })

@@ -6,21 +6,17 @@ import {
   LOCAL_IMPORT_MAX_ARCHIVE_BYTES,
   LocalImportBackgroundProcessingUnavailableError,
   LocalImportWorkerTimeoutError,
+  parseLocalTinfoilExport,
   parseLocalTinfoilExportForAccess,
   PremiumProjectImportRequiredError,
-  type LocalTinfoilImportOptions,
 } from '@/services/chat-import/local-tinfoil-import'
+import { parseTinfoilExportBytes } from '@/services/chat-import/local-tinfoil-import-parser'
 import { createFunctionalImportWorker } from './functional-import-worker'
 
 const options = {
   generateChatId: () => 'imported-chat',
+  isCloudSyncEnabled: false,
 }
-
-// Every chat of an export, as an account with project access imports it.
-const parseLocalTinfoilExport = async (
-  file: File,
-  parseOptions: LocalTinfoilImportOptions,
-) => (await parseLocalTinfoilExportForAccess(file, parseOptions, true)).chats
 
 function conversation(attachments?: unknown[]) {
   return [
@@ -42,36 +38,9 @@ function conversation(attachments?: unknown[]) {
   ]
 }
 
-const FunctionalImportWorker = createFunctionalImportWorker()
-
-interface ScriptedWorker {
-  onmessage: ((event: MessageEvent) => void) | null
-  onerror: ((event: ErrorEvent) => void) | null
-  onmessageerror: (() => void) | null
-}
-
-// Installs a worker that answers each request as `respond` scripts and
-// records its termination.
-function scriptWorker(respond: (worker: ScriptedWorker) => void) {
-  const terminate = vi.fn()
-  vi.stubGlobal(
-    'Worker',
-    class implements ScriptedWorker {
-      onmessage: ScriptedWorker['onmessage'] = null
-      onerror: ScriptedWorker['onerror'] = null
-      onmessageerror: ScriptedWorker['onmessageerror'] = null
-
-      postMessage() {
-        queueMicrotask(() => respond(this))
-      }
-
-      terminate() {
-        terminate()
-      }
-    },
-  )
-  return terminate
-}
+const FunctionalImportWorker = createFunctionalImportWorker(
+  parseTinfoilExportBytes,
+)
 
 describe('parseLocalTinfoilExport', () => {
   beforeEach(() => {
@@ -80,6 +49,7 @@ describe('parseLocalTinfoilExport', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it('parses exports in a worker when workers are available', async () => {
@@ -137,9 +107,23 @@ describe('parseLocalTinfoilExport', () => {
   })
 
   it('rejects malformed worker messages as unavailable background processing', async () => {
-    const terminate = scriptWorker((worker) =>
-      worker.onmessage?.({ data: null } as MessageEvent),
-    )
+    const terminate = vi.fn()
+    class MalformedMessageWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: (() => void) | null = null
+      onmessageerror: (() => void) | null = null
+
+      postMessage() {
+        queueMicrotask(() => {
+          this.onmessage?.({ data: null } as MessageEvent)
+        })
+      }
+
+      terminate() {
+        terminate()
+      }
+    }
+    vi.stubGlobal('Worker', MalformedMessageWorker)
     const file = new File(
       [JSON.stringify(conversation())],
       'conversations.json',
@@ -153,7 +137,19 @@ describe('parseLocalTinfoilExport', () => {
 
   it('terminates timed-out workers without retrying on the main thread', async () => {
     vi.useFakeTimers()
-    const terminate = scriptWorker(() => {})
+    const terminate = vi.fn()
+    class HangingWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: (() => void) | null = null
+      onmessageerror: (() => void) | null = null
+
+      postMessage() {}
+
+      terminate() {
+        terminate()
+      }
+    }
+    vi.stubGlobal('Worker', HangingWorker)
     const file = new File(
       [JSON.stringify(conversation())],
       'conversations.json',
@@ -168,8 +164,59 @@ describe('parseLocalTinfoilExport', () => {
     expect(terminate).toHaveBeenCalledOnce()
   })
 
+  it('ignores worker events after the first settlement', async () => {
+    const terminate = vi.fn()
+    class DuplicateEventWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: (() => void) | null = null
+      onmessageerror: (() => void) | null = null
+
+      postMessage() {
+        const onmessage = this.onmessage
+        const onerror = this.onerror
+        queueMicrotask(() => {
+          onmessage?.({
+            data: { ok: true, conversations: conversation() },
+          } as MessageEvent)
+          onerror?.()
+          onmessage?.({ data: null } as MessageEvent)
+        })
+      }
+
+      terminate() {
+        terminate()
+      }
+    }
+    vi.stubGlobal('Worker', DuplicateEventWorker)
+    const file = new File(
+      [JSON.stringify(conversation())],
+      'conversations.json',
+    )
+
+    const chats = await parseLocalTinfoilExport(file, options)
+
+    expect(chats).toHaveLength(1)
+    expect(terminate).toHaveBeenCalledOnce()
+  })
+
   it('fails explicitly when a worker response cannot deserialize', async () => {
-    const terminate = scriptWorker((worker) => worker.onmessageerror?.())
+    const terminate = vi.fn()
+    class MessageErrorWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: (() => void) | null = null
+      onmessageerror: (() => void) | null = null
+
+      postMessage() {
+        queueMicrotask(() => {
+          this.onmessageerror?.()
+        })
+      }
+
+      terminate() {
+        terminate()
+      }
+    }
+    vi.stubGlobal('Worker', MessageErrorWorker)
     const file = new File(
       [JSON.stringify(conversation())],
       'conversations.json',
@@ -193,15 +240,62 @@ describe('parseLocalTinfoilExport', () => {
       'conversations.json',
     )
 
+    await expect(parseLocalTinfoilExport(file, options)).rejects.toMatchObject({
+      name: 'LocalImportBackgroundProcessingUnavailableError',
+      code: 'LOCAL_IMPORT_BACKGROUND_PROCESSING_UNAVAILABLE',
+    })
+  })
+
+  it('fails explicitly when workers are unavailable', async () => {
+    vi.stubGlobal('Worker', undefined)
+    const file = new File(
+      [JSON.stringify(conversation())],
+      'conversations.json',
+    )
+
     await expect(parseLocalTinfoilExport(file, options)).rejects.toBeInstanceOf(
       LocalImportBackgroundProcessingUnavailableError,
     )
   })
 
   it('fails explicitly when worker execution errors', async () => {
-    scriptWorker((worker) =>
-      worker.onerror?.(new ErrorEvent('error', { message: 'worker failed' })),
+    class ErroringWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: ((event: ErrorEvent) => void) | null = null
+      onmessageerror: (() => void) | null = null
+
+      postMessage() {
+        queueMicrotask(() => {
+          this.onerror?.(new ErrorEvent('error', { message: 'worker failed' }))
+        })
+      }
+
+      terminate() {}
+    }
+    vi.stubGlobal('Worker', ErroringWorker)
+    const file = new File(
+      [JSON.stringify(conversation())],
+      'conversations.json',
     )
+
+    await expect(parseLocalTinfoilExport(file, options)).rejects.toBeInstanceOf(
+      LocalImportBackgroundProcessingUnavailableError,
+    )
+  })
+
+  it('fails explicitly when posting to the worker fails', async () => {
+    class PostMessageFailureWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: ((event: ErrorEvent) => void) | null = null
+      onmessageerror: (() => void) | null = null
+
+      postMessage() {
+        throw new DOMException('Clone failed', 'DataCloneError')
+      }
+
+      terminate() {}
+    }
+    vi.stubGlobal('Worker', PostMessageFailureWorker)
     const file = new File(
       [JSON.stringify(conversation())],
       'conversations.json',
@@ -213,11 +307,22 @@ describe('parseLocalTinfoilExport', () => {
   })
 
   it('preserves parser errors returned by a running worker', async () => {
-    scriptWorker((worker) =>
-      worker.onmessage?.({
-        data: { ok: false, error: 'The export archive is malformed' },
-      } as MessageEvent),
-    )
+    class ParserErrorWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: ((event: ErrorEvent) => void) | null = null
+      onmessageerror: (() => void) | null = null
+
+      postMessage() {
+        queueMicrotask(() => {
+          this.onmessage?.({
+            data: { ok: false, error: 'The export archive is malformed' },
+          } as MessageEvent)
+        })
+      }
+
+      terminate() {}
+    }
+    vi.stubGlobal('Worker', ParserErrorWorker)
     const file = new File(['not-json'], 'conversations.json')
 
     await expect(parseLocalTinfoilExport(file, options)).rejects.toThrow(
@@ -225,7 +330,7 @@ describe('parseLocalTinfoilExport', () => {
     )
   })
 
-  it('imports the chats of conversations.json', async () => {
+  it('imports conversations.json as local-only chats', async () => {
     const file = new File(
       [JSON.stringify(conversation())],
       'conversations.json',
@@ -237,12 +342,28 @@ describe('parseLocalTinfoilExport', () => {
     expect(chats[0]).toMatchObject({
       id: 'imported-chat',
       title: 'Portable chat',
+      isLocalOnly: true,
       updatedAt: '2025-01-01T11:00:00.000Z',
     })
     expect(chats[0].messages[0]).toMatchObject({
       role: 'user',
       content: 'Hello from another device',
     })
+  })
+
+  it('marks chats as syncable when cloud sync is enabled', async () => {
+    const file = new File(
+      [JSON.stringify(conversation())],
+      'conversations.json',
+    )
+
+    const chats = await parseLocalTinfoilExport(file, {
+      ...options,
+      isCloudSyncEnabled: true,
+    })
+
+    expect(chats).toHaveLength(1)
+    expect(chats[0].isLocalOnly).toBe(false)
   })
 
   it('drops project associations that local import cannot restore', async () => {
@@ -313,6 +434,21 @@ describe('parseLocalTinfoilExport', () => {
         base64: 'AQIDBA==',
       },
     ])
+  })
+
+  it('allows free users to import a chat-only Tinfoil ZIP', async () => {
+    const archive = zipSync({
+      'conversations.json': strToU8(JSON.stringify(conversation())),
+    })
+    const file = new File([archive], 'tinfoil-chats.zip', {
+      type: 'application/zip',
+    })
+
+    const result = await parseLocalTinfoilExportForAccess(file, options, false)
+
+    expect(result.chats).toHaveLength(1)
+    expect(result.chats[0].title).toBe('Portable chat')
+    expect(result.skippedProjectChats).toBe(0)
   })
 
   it('imports ordinary chats and reports skipped project chats from mixed archives', async () => {

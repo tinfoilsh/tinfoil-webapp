@@ -5,7 +5,7 @@ import {
 import { usePasskeyBackup } from '@/hooks/use-passkey-backup'
 import { PrfNotSupportedError } from '@/services/passkey'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   inspectRemoteEncryptedState: vi.fn(),
@@ -35,18 +35,19 @@ const mocks = vi.hoisted(() => ({
   generateKey: vi.fn(),
   promoteRecoveredCekToEnclave: vi.fn(),
   keyCurrent: vi.fn(),
+  setCloudSyncEnabled: vi.fn(),
   passkeyEventsOn: vi.fn(),
   passkeyEventsEmit: vi.fn(),
   logError: vi.fn(),
   logInfo: vi.fn(),
 }))
 
-vi.mock('@/services/keys/cloud-key-preflight', () => ({
+vi.mock('@/services/cloud/cloud-key-preflight', () => ({
   inspectRemoteEncryptedState: mocks.inspectRemoteEncryptedState,
   validateCurrentPrimaryKey: mocks.validateCurrentPrimaryKey,
 }))
 
-vi.mock('@/services/keys/cloud-key-authorization', () => ({
+vi.mock('@/services/cloud/cloud-key-authorization', () => ({
   authorizeCurrentPrimaryKeyOrThrow: mocks.authorizeCurrentPrimaryKeyOrThrow,
   getCurrentCloudKeyAuthorizationMode:
     mocks.getCurrentCloudKeyAuthorizationMode,
@@ -57,6 +58,23 @@ vi.mock('@/services/passkey/prf-support', () => ({
 }))
 
 vi.mock('@/services/passkey', () => {
+  class MockPasskeyCredentialConflictError extends Error {
+    remoteSyncVersion: number | null
+    remoteBundleVersion: number
+
+    constructor(
+      message: string,
+      options: {
+        remoteSyncVersion: number | null
+        remoteBundleVersion: number
+      },
+    ) {
+      super(message)
+      this.remoteSyncVersion = options.remoteSyncVersion
+      this.remoteBundleVersion = options.remoteBundleVersion
+    }
+  }
+
   return {
     addWrappedKeyForCurrentKey: mocks.addWrappedKeyForCurrentKey,
     createAndWrapTinfoilKey: mocks.createAndWrapTinfoilKey,
@@ -66,7 +84,7 @@ vi.mock('@/services/passkey', () => {
     getPasskeyDeviceState: mocks.getPasskeyDeviceState,
     loadPasskeyCredentials: mocks.loadPasskeyCredentials,
     loadRecoveryCandidates: mocks.loadRecoveryCandidates,
-    PasskeyCredentialConflictError: class MockPasskeyCredentialConflictError extends Error {},
+    PasskeyCredentialConflictError: MockPasskeyCredentialConflictError,
     PasskeyTimeoutError: class MockPasskeyTimeoutError extends Error {},
     PrfNotSupportedError: class MockPrfNotSupportedError extends Error {},
     recoverPasskeyKeyBundle: mocks.recoverPasskeyKeyBundle,
@@ -92,15 +110,19 @@ vi.mock('@/services/encryption/encryption-service', () => ({
   },
 }))
 
-vi.mock('@/services/keys/passkey-events', () => ({
+vi.mock('@/services/sync-enclave/passkey-events', () => ({
   passkeyEvents: {
     on: mocks.passkeyEventsOn,
     emit: mocks.passkeyEventsEmit,
   },
 }))
 
-vi.mock('@/services/harness/keys', () => ({
+vi.mock('@/services/sync-enclave/sync-api', () => ({
   keyCurrent: mocks.keyCurrent,
+}))
+
+vi.mock('@/utils/cloud-sync-settings', () => ({
+  setCloudSyncEnabled: mocks.setCloudSyncEnabled,
 }))
 
 vi.mock('@/utils/error-handling', () => ({
@@ -117,6 +139,7 @@ const baseOptions = {
 
 describe('usePasskeyBackup', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.resetAllMocks()
     mocks.inspectRemoteEncryptedState.mockResolvedValue('empty')
     mocks.validateCurrentPrimaryKey.mockResolvedValue({ canWrite: true })
@@ -134,6 +157,8 @@ describe('usePasskeyBackup', () => {
     }))
     mocks.passkeyEventsOn.mockReturnValue(() => {})
   })
+
+  afterEach(() => vi.restoreAllMocks())
 
   it('keeps transient remote-state failures retriable during initialization', async () => {
     mocks.inspectRemoteEncryptedState.mockResolvedValue('unknown')
@@ -508,6 +533,31 @@ describe('usePasskeyBackup', () => {
     expect(result.current.passkeyActive).toBe(false)
   })
 
+  it('does not initialize twice for equivalent rerenders', async () => {
+    mocks.getPasskeyDeviceState.mockResolvedValue('this-device')
+    const { rerender } = renderHook(
+      ({ user }) =>
+        usePasskeyBackup({
+          ...baseOptions,
+          user,
+          encryptionKey: 'key_current',
+        }),
+      { initialProps: { user: { id: 'user_1' } as any } },
+    )
+
+    await waitFor(() =>
+      expect(mocks.getPasskeyDeviceState).toHaveBeenCalledTimes(1),
+    )
+    rerender({ user: { id: 'user_1' } as any })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(mocks.isPrfSupported).toHaveBeenCalledTimes(1)
+    expect(mocks.validateCurrentPrimaryKey).toHaveBeenCalledTimes(1)
+    expect(mocks.getPasskeyDeviceState).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     {
       name: 'signed-in user changes',
@@ -599,6 +649,20 @@ describe('usePasskeyBackup', () => {
       )
     })
 
+    it('proceeds with promotion when no remote data exists', async () => {
+      mocks.keyCurrent.mockResolvedValue({ key_id: null, has_data: false })
+
+      const { result } = renderHook(() => usePasskeyBackup(baseOptions))
+
+      let success = false
+      await act(async () => {
+        success = await result.current.addPasskeyToThisDevice()
+      })
+
+      expect(success).toBe(true)
+      expect(mocks.promoteRecoveredCekToEnclave).toHaveBeenCalledOnce()
+    })
+
     it('fails before reading remote key state when authorization is unavailable', async () => {
       mocks.getCurrentCloudKeyAuthorizationMode.mockResolvedValue(null)
 
@@ -612,6 +676,20 @@ describe('usePasskeyBackup', () => {
       expect(mocks.keyCurrent).not.toHaveBeenCalled()
       expect(mocks.createAndWrapTinfoilKey).not.toHaveBeenCalled()
       expect(mocks.promoteRecoveredCekToEnclave).not.toHaveBeenCalled()
+    })
+
+    it('makes no authorization or remote calls without a local primary key', async () => {
+      mocks.getAllKeys.mockReturnValue({ primary: null, alternatives: [] })
+
+      const { result } = renderHook(() => usePasskeyBackup(baseOptions))
+      let success = true
+      await act(async () => {
+        success = await result.current.addPasskeyToThisDevice()
+      })
+
+      expect(success).toBe(false)
+      expect(mocks.getCurrentCloudKeyAuthorizationMode).not.toHaveBeenCalled()
+      expect(mocks.keyCurrent).not.toHaveBeenCalled()
     })
 
     it('makes no authorization or remote calls for invalid local key bytes', async () => {

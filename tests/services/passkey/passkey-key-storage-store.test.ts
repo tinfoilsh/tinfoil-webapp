@@ -9,8 +9,6 @@
  * conflict) rather than version counters.
  */
 
-import { HarnessError } from '@/services/harness/sse'
-import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import { TINFOIL_PASSKEY_PROFILE } from '@/services/passkey/kit'
 import {
   PasskeyCredentialConflictError,
@@ -18,7 +16,9 @@ import {
   type KeyBundle,
   type TinfoilWrappedKeyBundle,
 } from '@/services/passkey/passkey-key-storage'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
+import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/utils/error-handling', () => ({
   logError: vi.fn(),
@@ -29,10 +29,10 @@ const mockRegisterKey = vi.fn()
 const mockAddBundle = vi.fn()
 const mockKeyCurrent = vi.fn()
 
-vi.mock('@/services/harness/keys', async () => {
-  const real = await vi.importActual<typeof import('@/services/harness/keys')>(
-    '@/services/harness/keys',
-  )
+vi.mock('@/services/sync-enclave/sync-api', async () => {
+  const real = await vi.importActual<
+    typeof import('@/services/sync-enclave/sync-api')
+  >('@/services/sync-enclave/sync-api')
   return {
     ...real,
     registerKey: (...args: unknown[]) => mockRegisterKey(...args),
@@ -66,7 +66,14 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
       kekIvHex: '01'.repeat(12),
       wrappedKeyHex: '02'.repeat(48),
     },
-    alternatives: [],
+    alternatives: [
+      {
+        profile: TINFOIL_PASSKEY_PROFILE,
+        credentialId,
+        kekIvHex: '03'.repeat(12),
+        wrappedKeyHex: '04'.repeat(48),
+      },
+    ],
   })
 
   beforeEach(async () => {
@@ -79,6 +86,35 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     mockKeyCurrent.mockReset()
 
     expectedKeyId = await deriveTinfoilKeyIdHex(PRIMARY_BYTES)
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('registers the key + initial bundle when the enclave has no key yet', async () => {
+    mockKeyCurrent
+      .mockResolvedValueOnce({ key_id: null, bundles: {} })
+      .mockResolvedValueOnce({
+        key_id: expectedKeyId,
+        bundles: { AQID: { bundle_version: 1 } },
+      })
+    mockRegisterKey.mockResolvedValue({ ok: true, key_id: expectedKeyId })
+
+    const bundle = wrappedKeys('AQID')
+    const result = await storeEncryptedKeys(bundle, KEY_BUNDLE)
+
+    expect(result).toEqual({ syncVersion: 1, bundleVersion: 1 })
+    expect(mockRegisterKey).toHaveBeenCalledOnce()
+    expect(mockAddBundle).not.toHaveBeenCalled()
+    const arg = mockRegisterKey.mock.calls[0][0]
+    expect(arg).toEqual({
+      keyB64: PRIMARY_KEY_B64,
+      ifMatch: '*',
+      createdVia: 'passkey',
+      idempotencyKey: expect.stringMatching(/^[0-9a-f]{32}$/),
+      initialBundle: expectedBundle(bundle),
+    })
   })
 
   it('uses created_via=start_fresh when the bundle is marked explicit_start_fresh', async () => {
@@ -118,25 +154,15 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(arg.initialBundle.credentialId).toBe('AQID')
   })
 
-  it.each([
-    { code: 'KEY_MISMATCH', conflict: true },
-    { code: 'REVISION_CONFLICT', conflict: false },
-  ])(
-    'maps only the harness key-mismatch refusal to a credential conflict: $code',
-    async ({ code, conflict }) => {
-      mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
-      mockRegisterKey.mockRejectedValue(
-        new HarnessError({ message: 'refused', code }, 409),
-      )
-      const stored = storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE)
-      if (conflict)
-        await expect(stored).rejects.toBeInstanceOf(
-          PasskeyCredentialConflictError,
-        )
-      else await expect(stored).resolves.toBeNull()
-      expect(mockRegisterKey).toHaveBeenCalledOnce()
-    },
-  )
+  it('maps EXISTING_DATA_UNDER_OTHER_KEY from register-key to a credential conflict', async () => {
+    mockKeyCurrent.mockResolvedValue({ key_id: null, bundles: {} })
+    mockRegisterKey.mockRejectedValue(
+      new SyncEnclaveError('exists', 409, 'EXISTING_DATA_UNDER_OTHER_KEY'),
+    )
+    await expect(
+      storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE),
+    ).rejects.toBeInstanceOf(PasskeyCredentialConflictError)
+  })
 
   it('adds a bundle when the enclave already has the same primary CEK registered', async () => {
     mockKeyCurrent
@@ -172,4 +198,22 @@ describe('passkey-key-storage storeEncryptedKeys (enclave wire)', () => {
     expect(mockRegisterKey).not.toHaveBeenCalled()
     expect(mockAddBundle).not.toHaveBeenCalled()
   })
+
+  it.each(['register', 'refresh'] as const)(
+    'returns null when the enclave fails during %s',
+    async (stage) => {
+      mockKeyCurrent.mockResolvedValueOnce({ key_id: null, bundles: {} })
+      if (stage === 'register')
+        mockRegisterKey.mockRejectedValue(new Error('boom'))
+      else {
+        mockRegisterKey.mockResolvedValue({ ok: true, key_id: expectedKeyId })
+        mockKeyCurrent.mockRejectedValueOnce(new Error('refresh failed'))
+      }
+      const result = await storeEncryptedKeys(wrappedKeys('AQID'), KEY_BUNDLE)
+      expect(result).toBeNull()
+      expect(mockRegisterKey).toHaveBeenCalledOnce()
+      expect(mockAddBundle).not.toHaveBeenCalled()
+      expect(mockKeyCurrent).toHaveBeenCalledTimes(stage === 'register' ? 1 : 2)
+    },
+  )
 })

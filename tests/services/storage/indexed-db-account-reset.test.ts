@@ -5,7 +5,6 @@ import {
 } from '@/constants/storage-keys'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import {
-  DB_NAME,
   handleIndexedDBAccountResetStorageEvent,
   IndexedDBStorage,
 } from '@/services/storage/indexed-db'
@@ -14,7 +13,7 @@ import {
   IDBObjectStore as FakeIDBObjectStore,
   IDBFactory,
 } from 'fake-indexeddb'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 interface FakeResetTransaction {
   oncomplete: (() => void) | null
@@ -28,44 +27,56 @@ interface FakeResetTransaction {
 
 describe('IndexedDBStorage account reset', () => {
   function prepareReset(storage: IndexedDBStorage) {
+    const clear = vi.fn(() => ({ onerror: null }))
+    const clearProjects = vi.fn(() => ({ onerror: null }))
+    const clearPayloads = vi.fn(() => ({ onerror: null }))
+    const clearSummaries = vi.fn(() => ({ onerror: null }))
+    const clearSyncState = vi.fn(() => ({ onerror: null }))
+    const clearRemoteState = vi.fn(() => ({ onerror: null }))
+    const clearOutbox = vi.fn(() => ({ onerror: null }))
+    const clearMigrations = vi.fn(() => ({ onerror: null }))
+    const clearByStoreName = new Map([
+      ['chats', clear],
+      ['projects', clearProjects],
+      ['attachmentPayloads', clearPayloads],
+      ['chatSummaries', clearSummaries],
+      ['sync_state', clearSyncState],
+      ['remote_chat_state', clearRemoteState],
+      ['sync_outbox', clearOutbox],
+      ['migrations', clearMigrations],
+    ])
     const transaction: FakeResetTransaction = {
       oncomplete: null,
       onerror: null,
       onabort: null,
       abort: vi.fn(),
-      objectStore: () => ({ clear: vi.fn(() => ({ onerror: null })) }),
+      objectStore: (storeName) => ({ clear: clearByStoreName.get(storeName)! }),
     }
-    vi.spyOn(storage as any, 'ensureDB').mockResolvedValue({
-      objectStoreNames: ['chats'],
+    const resetDb = {
+      objectStoreNames: [
+        'chats',
+        'projects',
+        'attachmentPayloads',
+        'chatSummaries',
+        'sync_state',
+        'remote_chat_state',
+        'sync_outbox',
+        'migrations',
+      ],
       transaction: vi.fn(() => transaction),
-    })
-    return { transaction }
-  }
-
-  function openDatabase(): Promise<IDBDatabase> {
-    return new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME)
-      request.onerror = () => reject(request.error)
-      request.onsuccess = () => resolve(request.result)
-    })
-  }
-
-  async function countRows(): Promise<Record<string, number>> {
-    const db = await openDatabase()
-    const names = Array.from(db.objectStoreNames)
-    const transaction = db.transaction(names)
-    const counts = await Promise.all(
-      names.map(
-        (name) =>
-          new Promise<[string, number]>((resolve, reject) => {
-            const request = transaction.objectStore(name).count()
-            request.onerror = () => reject(request.error)
-            request.onsuccess = () => resolve([name, request.result])
-          }),
-      ),
-    )
-    db.close()
-    return Object.fromEntries(counts)
+    }
+    vi.spyOn(storage as any, 'ensureDB').mockResolvedValue(resetDb)
+    return {
+      clear,
+      clearProjects,
+      clearPayloads,
+      clearSummaries,
+      clearSyncState,
+      clearRemoteState,
+      clearOutbox,
+      clearMigrations,
+      transaction,
+    }
   }
 
   async function completeReset(transaction: FakeResetTransaction) {
@@ -73,33 +84,62 @@ describe('IndexedDBStorage account reset', () => {
     transaction.oncomplete?.()
   }
 
-  afterEach(() => {
-    vi.useRealTimers()
+  beforeEach(() => {
+    sessionStorage.clear()
   })
 
-  it('bypasses a stalled write queue and empties every store but migrations', async () => {
-    vi.stubGlobal('indexedDB', new IDBFactory())
-    vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange)
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('bypasses a stalled write queue and closes the old connection', async () => {
     const storage = new IndexedDBStorage()
-    await storage.initialize()
-    const seeded = await openDatabase()
-    const names = Array.from(seeded.objectStoreNames)
-    const seed = seeded.transaction(names, 'readwrite')
-    for (const name of names)
-      seed.objectStore(name).put({ id: 'seed', cacheKey: 'seed', userId: 'u' })
-    await new Promise((resolve) => (seed.oncomplete = resolve))
-    seeded.close()
-    const before = await countRows()
-    expect(Object.values(before).every((count) => count > 0)).toBe(true)
-    Object.assign(storage as any, { saveQueue: new Promise(() => {}) })
+    const {
+      clear,
+      clearProjects,
+      clearPayloads,
+      clearSummaries,
+      clearSyncState,
+      clearRemoteState,
+      clearOutbox,
+      clearMigrations,
+      transaction,
+    } = prepareReset(storage)
+    const close = vi.fn()
+    Object.assign(storage as any, {
+      db: { close },
+      saveQueue: new Promise(() => {}),
+    })
 
-    await storage.resetForAccountChange()
+    const reset = storage.resetForAccountChange()
 
-    expect(await countRows()).toEqual(
-      Object.fromEntries(
-        names.map((name) => [name, name === 'migrations' ? before[name] : 0]),
-      ),
-    )
+    expect(close).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(clear).toHaveBeenCalledTimes(1))
+    expect(clearProjects).toHaveBeenCalledTimes(1)
+    expect(clearPayloads).toHaveBeenCalledTimes(1)
+    expect(clearSummaries).toHaveBeenCalledTimes(1)
+    expect(clearSyncState).toHaveBeenCalledTimes(1)
+    expect(clearRemoteState).toHaveBeenCalledTimes(1)
+    expect(clearOutbox).toHaveBeenCalledTimes(1)
+    expect(clearMigrations).not.toHaveBeenCalled()
+    await completeReset(transaction)
+    await reset
+  })
+
+  it('coalesces concurrent account reset requests', async () => {
+    const storage = new IndexedDBStorage()
+    const { clear, transaction } = prepareReset(storage)
+
+    const firstReset = storage.resetForAccountChange()
+    const secondReset = storage.resetForAccountChange()
+
+    await vi.waitFor(() => expect(clear).toHaveBeenCalledTimes(1))
+    await completeReset(transaction)
+    await Promise.all([firstReset, secondReset])
+
+    expect(clear).toHaveBeenCalledTimes(1)
   })
 
   it('resets storage when another tab signals an account change', async () => {
@@ -247,10 +287,10 @@ describe('IndexedDBStorage account reset', () => {
     const { transaction } = prepareReset(storage)
     const reset = storage.resetForAccountChange()
 
-    await expect(storage.getAllChatIds()).rejects.toThrow(
+    await expect(storage.getAllChats()).rejects.toThrow(
       'IndexedDB read superseded by account change',
     )
-    await expect(storage.getChat('chat_123')).rejects.toThrow(
+    await expect(storage.getProjectsForUser('user_123')).rejects.toThrow(
       'IndexedDB read superseded by account change',
     )
 
@@ -261,7 +301,7 @@ describe('IndexedDBStorage account reset', () => {
   it('rejects reads waiting behind a stalled save queue when reset starts', async () => {
     const storage = new IndexedDBStorage()
     Object.assign(storage as any, { saveQueue: new Promise(() => {}) })
-    const read = storage.getChat('chat_123')
+    const read = storage.getAllChats()
     const { transaction } = prepareReset(storage)
 
     const reset = storage.resetForAccountChange()
@@ -306,36 +346,36 @@ describe('IndexedDBStorage account reset', () => {
     await reset
   })
 
-  it('rejects a save whose database open finishes after the reset starts', async () => {
-    vi.stubGlobal('indexedDB', new IDBFactory())
-    vi.stubGlobal('IDBKeyRange', FakeIDBKeyRange)
+  it('rejects a final write after reset interrupts a multi-stage mutation', async () => {
     const storage = new IndexedDBStorage()
-    const openDatabase = (storage as any).ensureDB.bind(storage)
-    let parked!: () => void
-    let release!: () => void
-    const waiting = new Promise<void>((resolve) => (parked = resolve))
-    const held = new Promise<void>((resolve) => (release = resolve))
-    vi.spyOn(storage as any, 'ensureDB').mockImplementationOnce(async () => {
-      parked()
-      await held
-      return openDatabase()
-    })
-    const save = storage.saveChat({
-      id: 'old-account-chat',
+    let finishRead!: (chat: any) => void
+    const getChat = vi
+      .spyOn(storage as any, 'getStoredChatInternal')
+      .mockReturnValue(
+        new Promise((resolve) => {
+          finishRead = resolve
+        }),
+      )
+
+    const update = storage.updateChatProject('chat_123', 'project_123')
+    await vi.waitFor(() => expect(getChat).toHaveBeenCalledTimes(1))
+    const { transaction } = prepareReset(storage)
+    const reset = storage.resetForAccountChange()
+
+    finishRead({
+      id: 'chat_123',
       title: 'Old account chat',
       messages: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      lastAccessedAt: Date.now(),
     })
-    await waiting
 
-    await storage.resetForAccountChange(false)
-    release()
-
-    await expect(save).rejects.toThrow(
+    await expect(update).rejects.toThrow(
       'IndexedDB write superseded by account change',
     )
-    expect(await new IndexedDBStorage().getAllChatIds()).toEqual([])
+    await completeReset(transaction)
+    await reset
   })
 
   it('aborts a stalled reset transaction before rejecting', async () => {
@@ -352,5 +392,53 @@ describe('IndexedDBStorage account reset', () => {
 
     await rejection
     expect(transaction.abort).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects malformed stored chats instead of leaving reads pending', async () => {
+    vi.stubGlobal('IDBKeyRange', { only: (key: IDBValidKey) => key })
+    const storage = new IndexedDBStorage()
+    const cursorRequest = {
+      onsuccess: null,
+      onerror: null,
+    } as {
+      onsuccess: ((event: unknown) => void) | null
+      onerror: (() => void) | null
+    }
+    const openCursor = vi.fn(() => cursorRequest)
+    const payloadRequest = {
+      onsuccess: null,
+      onerror: null,
+      result: [],
+    } as {
+      onsuccess: (() => void) | null
+      onerror: (() => void) | null
+      result: unknown[]
+    }
+    const transaction = {
+      oncomplete: null,
+      objectStore: (storeName: string) =>
+        storeName === 'chats'
+          ? { openCursor }
+          : { index: () => ({ getAll: () => payloadRequest }) },
+    }
+    vi.spyOn(storage as any, 'ensureDB').mockResolvedValue({
+      transaction: () => transaction,
+    })
+
+    const chats = storage.getAllChats()
+    await vi.waitFor(() => expect(cursorRequest.onsuccess).not.toBeNull())
+
+    cursorRequest.onsuccess?.({
+      target: {
+        result: {
+          value: { id: 'broken_chat', messages: null },
+          continue: vi.fn(),
+        },
+      },
+    })
+    await vi.waitFor(() => expect(payloadRequest.onsuccess).not.toBeNull())
+    payloadRequest.onsuccess?.()
+
+    await expect(chats).rejects.toThrow('Stored chat has invalid messages')
   })
 })

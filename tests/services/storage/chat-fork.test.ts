@@ -74,6 +74,7 @@ describe('buildForkedChat', () => {
     webSearchEnabled: false,
     syncedAt: 123,
     locallyModified: true,
+    pendingRecoveries: [{ turnId: 't1' } as never],
     codeExecutionAccessToken: 'secret',
     messageCount: 3,
   })
@@ -88,6 +89,26 @@ describe('buildForkedChat', () => {
       'Here is a photo',
       'Nice photo',
     ])
+    expect(fork.messages[1].thoughts).toBe('looking')
+    expect(fork).toMatchObject({
+      isLocalOnly: true,
+      projectId: 'project-1',
+      presetId: 'preset-1',
+      model: 'gpt-oss-120b',
+      webSearchEnabled: false,
+      isBlankChat: false,
+    })
+    expect(fork.createdAt.getTime()).toBeGreaterThan(source.createdAt.getTime())
+    for (const field of [
+      'updatedAt',
+      'syncedAt',
+      'locallyModified',
+      'pendingRecoveries',
+      'codeExecutionAccessToken',
+      'messageCount',
+    ]) {
+      expect(fork).not.toHaveProperty(field)
+    }
   })
 
   it('gives attachments fresh ids and detaches them from source storage', () => {
@@ -100,10 +121,34 @@ describe('buildForkedChat', () => {
       fileName: 'a.png',
       base64: 'IMAGEBYTES',
     })
+    expect(image).not.toHaveProperty('encryptionKey')
+    expect(image).not.toHaveProperty('storagePayloadId')
     expect(document.id).not.toBe('att-doc')
     expect(document.textContent).toBe('hello')
     expect(legacy.base64).toBe('LEGACYBYTES')
+    expect(legacy).not.toHaveProperty('key')
     expect(source.messages[0].attachments![0].id).toBe('att-image')
+  })
+
+  it('does not share nested message state with the source', () => {
+    const fork = buildForkedChat(source, 2, 'chat-fork')
+
+    expect(fork.messages[1].timeline).toEqual(source.messages[1].timeline)
+    expect(fork.messages[1].timeline).not.toBe(source.messages[1].timeline)
+    expect(fork.messages[0].attachments![0]).not.toBe(
+      source.messages[0].attachments![0],
+    )
+    const timelineEntry = fork.messages[1].timeline![0]
+    if (timelineEntry.type !== 'content')
+      throw new Error('Expected content entry')
+    timelineEntry.content = 'Fork-only edit'
+    fork.messages[0].attachments![0].fileName = 'renamed.png'
+    fork.messages[0].attachments![1].pages![0].text = 'Fork-only page'
+    expect(source.messages[1].timeline).toEqual([
+      { type: 'content', id: 'content-0', content: 'Nice photo' },
+    ])
+    expect(source.messages[0].attachments![0].fileName).toBe('a.png')
+    expect(source.messages[0].attachments![1].pages![0].text).toBe('page text')
   })
 
   it('does not stack the fork suffix when forking a fork', () => {

@@ -1,16 +1,20 @@
-import { NATIVE_BACKUP_LIMITS } from '@/services/native-backup/constants'
+import { hydrateDocumentAttachments } from '@/services/cloud/document-hydration'
 import {
+  decodeDocumentPayload,
+  encodeDocumentPayload,
+} from '@/services/cloud/document-payload'
+import { ChatQueryBuilder } from '@/services/inference/chat-query-builder'
+import {
+  NATIVE_BACKUP_LIMITS,
+  forEachNativeBackupLocalImage,
   formatNativeBackupV1,
   formatNativeBackupV2,
+  validateAndPackageNativeBackup,
   type NativeBackupFileEntry,
   type NativeBackupFormatInput,
-} from '@/services/native-backup/format'
-import {
-  forEachNativeBackupLocalImage,
-  readNativeBackup,
-  validateAndPackageNativeBackup,
   type NativeRestoreArchive,
-} from '@/services/native-backup/restore'
+} from '@/services/native-backup'
+import { base64ToUint8Array } from '@/utils/binary-codec'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import {
@@ -21,12 +25,10 @@ import {
   ZipReader,
   ZipWriter,
 } from '@zip.js/zip.js'
+import contract from '../../fixtures/native-cloud-import-v1.json'
 
 const timestamp = '2026-08-20T12:00:00.000Z'
-const backupId = '123e4567-e89b-42d3-a456-426614174000'
-const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13])
-const decode = (bytes: Uint8Array | undefined) =>
-  JSON.parse(new TextDecoder().decode(bytes))
+const png = base64ToUint8Array(contract.blobs[0].base64)
 
 type MutableInput = {
   [
@@ -38,7 +40,7 @@ type MutableInput = {
 
 function backupInput(): MutableInput {
   return {
-    backupId,
+    backupId: contract.source_backup_id,
     createdAt: timestamp,
     projects: [
       {
@@ -175,75 +177,111 @@ async function unzip(blob: Blob) {
 }
 
 describe('native backup restore validation and cloud packaging', () => {
-  it('keeps a scanned page and its image in the cloud part', async () => {
-    const input = backupInput()
-    input.cloudChats[0].messages[0].attachments!.push({
-      id: 'document-attachment',
-      type: 'document',
-      fileName: 'restored.pdf',
-      pages: [
-        {
-          page: 1,
-          text: 'restored page content',
-          is_scanned: true,
+  it.each([
+    { page: 0, is_scanned: true },
+    { page: 1, is_scanned: false },
+    { page: 0, is_scanned: false },
+  ])(
+    'preserves restored document page %j through hydration and inference',
+    async ({ page, is_scanned }) => {
+      const input = backupInput()
+      input.cloudChats[0].messages[0].attachments!.push({
+        id: 'document-attachment',
+        type: 'document',
+        fileName: 'restored.pdf',
+        pages: [
+          {
+            page,
+            text: 'restored page content',
+            is_scanned,
+            ...(is_scanned ? { imageId: 'page-image' } : {}),
+          },
+        ],
+      })
+      if (is_scanned) {
+        input.images.push({
+          metadata: {
+            id: 'page-image',
+            chatId: 'cloud-1',
+            messageIndex: 0,
+            attachmentId: 'document-attachment',
+            page,
+            fileName: 'page.png',
+            mimeType: 'image/png',
+          },
+          bytes: png,
+        })
+        input.relationships.chatImages.push({
+          chatId: 'cloud-1',
           imageId: 'page-image',
+        })
+      }
+      const formatted = formatNativeBackupV1(input)
+      const result = await validateAndPackageNativeBackup(
+        await zip(formatted.manifestBytes, formatted.files),
+      )
+      const files = await unzip((result.cloud!.upload as { blob: Blob }).blob)
+      const chat = result.cloud!.manifest.entities.find(
+        ({ kind }) => kind === 'chat',
+      )!
+      const restored = JSON.parse(
+        new TextDecoder().decode(files.get(chat.path)),
+      )
+      const attachment = restored.messages[0].attachments.find(
+        (value: { id: string }) => value.id === 'document-attachment',
+      )
+      if (!is_scanned) expect(attachment.pages[0]).not.toHaveProperty('image')
+
+      const messages = await hydrateDocumentAttachments([
+        {
+          role: 'user',
+          content: 'summarize',
+          timestamp: new Date(timestamp),
+          attachments: [attachment],
         },
-      ],
-    })
-    input.images.push({
-      metadata: {
-        id: 'page-image',
-        chatId: 'cloud-1',
-        messageIndex: 0,
-        attachmentId: 'document-attachment',
-        page: 1,
-        fileName: 'page.png',
-        mimeType: 'image/png',
-      },
-      bytes: png,
-    })
-    input.relationships.chatImages.push({
-      chatId: 'cloud-1',
-      imageId: 'page-image',
-    })
-    const formatted = formatNativeBackupV1(input)
-    const sourceFiles = new Map(
-      formatted.files.map(({ path, bytes }) => [path, bytes]),
-    )
-
-    const result = await validateAndPackageNativeBackup(
-      await zip(formatted.manifestBytes, formatted.files),
-    )
-    const files = await unzip((result.cloud!.upload as { blob: Blob }).blob)
-
-    const chatPath = 'cloud_chats/id-636c6f75642d31.json'
-    expect(files.get(chatPath)).toEqual(sourceFiles.get(chatPath))
-    expect(
-      decode(files.get(chatPath)).messages[0].attachments[1].pages,
-    ).toEqual([
-      {
-        page: 1,
+      ])
+      const expectedPage = {
+        page,
         text: 'restored page content',
-        is_scanned: true,
-        imageId: 'page-image',
-      },
-    ])
-    const pageImage = 'images/id-706167652d696d616765'
-    expect(files.get(`${pageImage}.bin`)).toEqual(png)
-    expect(files.get(`${pageImage}.json`)).toEqual(
-      sourceFiles.get(`${pageImage}.json`),
-    )
-    expect(decode(files.get('relationships.json')).chatImages).toEqual([
-      { chatId: 'cloud-1', imageId: 'cloud-image' },
-      { chatId: 'cloud-1', imageId: 'page-image' },
-    ])
-  })
+        is_scanned,
+        image: is_scanned ? contract.blobs[0].base64 : '',
+      }
+      expect(messages[0].attachments![0].pages).toEqual([expectedPage])
+      expect(
+        decodeDocumentPayload(
+          attachment.id,
+          encodeDocumentPayload(messages[0].attachments![0]),
+        ),
+      ).toEqual({ pages: [expectedPage] })
+      const query = ChatQueryBuilder.buildMessages({
+        model: {
+          modelName: 'gpt-oss-120b',
+          name: 'Test',
+          nameShort: 'Test',
+          description: '',
+          image: '',
+          type: 'chat',
+          multimodal: true,
+        },
+        systemPrompt: '',
+        messages,
+      })
+      expect(query[0].content).toContainEqual({
+        type: 'text',
+        text: `Page ${page}${is_scanned ? ' (scanned)' : ''}:\nrestored page content`,
+      })
+      if (is_scanned)
+        expect(query[0].content).toContainEqual({
+          type: 'image_url',
+          image_url: {
+            url: `data:image/png;base64,${contract.blobs[0].base64}`,
+          },
+        })
+    },
+  )
 
-  it('partitions local records and packages the cloud part as a backup of its own', async () => {
+  it('partitions local records and matches the deployed semantic contract', async () => {
     const formatted = formatNativeBackupV1(backupInput())
-    const sourceFiles = new Map(
-      formatted.files.map(({ path, bytes }) => [path, bytes]),
-    )
     const result = await validateAndPackageNativeBackup(
       await zip(formatted.manifestBytes, formatted.files),
     )
@@ -252,110 +290,51 @@ describe('native backup restore validation and cloud packaging', () => {
     expect(result.local.images.map(({ metadata }) => metadata.id)).toEqual([
       'local-image',
     ])
-    expect(result.cloud?.upload).toMatchObject({
-      kind: 'blob',
-      filename: 'tinfoil-backup.zip',
+    expect(result.cloud?.manifest.counts).toEqual({
+      projects: 1,
+      documents: 1,
+      chats: 1,
+      blobs: 1,
     })
-    const files = await unzip((result.cloud!.upload as { blob: Blob }).blob)
-    const relationships = files.get('relationships.json')!
-    expect(decode(relationships)).toEqual({
-      projectChats: [{ projectId: 'project-1', chatId: 'cloud-1' }],
-      projectDocuments: [{ projectId: 'project-1', documentId: 'document-1' }],
-      chatImages: [{ chatId: 'cloud-1', imageId: 'cloud-image' }],
-    })
-    const kept = [
-      'cloud_chats/id-636c6f75642d31.json',
-      'images/id-636c6f75642d696d616765.bin',
-      'images/id-636c6f75642d696d616765.json',
-      'project_documents/id-70726f6a6563742d31/id-646f63756d656e742d31.json',
-      'projects/id-70726f6a6563742d31.json',
-    ]
-    expect([...files.keys()].sort()).toEqual(
-      [...kept, 'manifest.json', 'relationships.json'].sort(),
-    )
-    for (const path of kept)
-      expect(files.get(path)).toEqual(sourceFiles.get(path))
-    expect(result.cloud!.manifest).toEqual({
-      format: 'tinfoil-native-backup',
-      version: 2,
-      backup_id: backupId,
-      created_at: timestamp,
-      complete: true,
-      counts: {
-        projects: 1,
-        project_documents: 1,
-        cloud_chats: 1,
-        local_chats: 0,
-        relationships: 3,
-        images: 1,
-        files: 6,
-      },
-      notices: {
-        contains_plaintext: true,
-        documents_are_extracted_text_only: true,
-      },
-      files: expect.arrayContaining([
-        {
-          path: 'relationships.json',
-          kind: 'relationships',
-          sha256: bytesToHex(sha256(relationships)),
-          size_bytes: relationships.length,
-        },
-      ]),
-      omissions: [],
-      warnings: [],
-    })
-    expect(decode(files.get('manifest.json'))).toEqual(result.cloud!.manifest)
-    expect(new TextDecoder().decode(relationships)).not.toContain('local')
+    expect(result.cloud?.upload.kind).toBe('blob')
 
-    // The cloud part is itself a valid backup, with no local chats.
-    const again = await validateAndPackageNativeBackup(
-      new File([(result.cloud!.upload as { blob: Blob }).blob], 'cloud.zip'),
+    const files = await unzip((result.cloud!.upload as { blob: Blob }).blob)
+    const semantic = {
+      source_backup_id: result.cloud!.manifest.source_backup_id,
+      entities: result.cloud!.manifest.entities.map((entity) => ({
+        kind: entity.kind,
+        source_id: entity.source_id,
+        ...(entity.project_source_id
+          ? { project_source_id: entity.project_source_id }
+          : {}),
+        payload: JSON.parse(new TextDecoder().decode(files.get(entity.path))),
+      })),
+      blobs: result.cloud!.manifest.blobs.map((blob) => ({
+        path: blob.path,
+        base64: btoa(String.fromCharCode(...files.get(blob.path)!)),
+      })),
+    }
+    expect(semantic).toEqual(contract)
+    expect(JSON.stringify(semantic)).not.toMatch(
+      /encryptionKey|codeExecutionAccessToken|syncUserId|local-1/,
     )
-    expect(again.local).toEqual({ chats: [], images: [] })
-    expect(again.backup).toEqual(result.cloud!.manifest)
   })
 
-  it("leaves the local chats' omissions out of the cloud part", async () => {
-    const input = backupInput()
+  it('accepts a partial V2 archive while preserving its source warnings', async () => {
     const formatted = formatNativeBackupV2({
-      ...input,
+      ...backupInput(),
       omissions: [
         {
           kind: 'attachment',
-          source_id: 'missing-cloud-image',
+          source_id: 'missing-source-image',
           parent_source_id: 'cloud-1',
           category: 'unavailable',
           reason: 'attachment_not_found',
-        },
-        {
-          kind: 'attachment',
-          source_id: 'missing-local-image',
-          parent_source_id: 'local-1',
-          category: 'invalid',
-          reason: 'attachment_type_unsupported',
-        },
-        {
-          kind: 'local_chat',
-          source_id: 'unreadable-local',
-          category: 'invalid',
-          reason: 'record_invalid',
-        },
-        {
-          kind: 'local_inventory',
-          source_id: 'eligible_local_chats',
-          category: 'unstable',
-          reason: 'inventory_did_not_converge',
         },
       ],
       warnings: [
         {
           code: 'source_items_omitted',
-          category: 'source_coverage',
-          count: 3,
-        },
-        {
-          code: 'local_inventory_unstable',
           category: 'source_coverage',
           count: 1,
         },
@@ -366,12 +345,13 @@ describe('native backup restore validation and cloud packaging', () => {
       await zip(formatted.manifestBytes, formatted.files),
     )
 
-    expect(result.cloud!.manifest).toMatchObject({
+    expect(result.backup).toMatchObject({
+      version: 2,
       complete: false,
       omissions: [
         {
           kind: 'attachment',
-          source_id: 'missing-cloud-image',
+          source_id: 'missing-source-image',
           parent_source_id: 'cloud-1',
           category: 'unavailable',
           reason: 'attachment_not_found',
@@ -385,11 +365,23 @@ describe('native backup restore validation and cloud packaging', () => {
         },
       ],
     })
-    expect(result.backup).toMatchObject({ omissions: { length: 4 } })
   })
 
-  it('rejects mislabeled and malformed archive entries', async () => {
+  it('rejects incomplete, tampered, unknown, and malformed archives', async () => {
     const formatted = formatNativeBackupV1(backupInput())
+    const manifest = JSON.parse(
+      new TextDecoder().decode(formatted.manifestBytes),
+    )
+    manifest.complete = false
+    await expect(
+      validateAndPackageNativeBackup(
+        await zip(
+          new TextEncoder().encode(JSON.stringify(manifest)),
+          formatted.files,
+        ),
+      ),
+    ).rejects.toThrow()
+
     const wrongKind = JSON.parse(
       new TextDecoder().decode(formatted.manifestBytes),
     )
@@ -405,6 +397,23 @@ describe('native backup restore validation and cloud packaging', () => {
       ),
     ).rejects.toThrow('invalid kind')
 
+    const tampered = formatted.files.map((file, index) =>
+      index ? file : { ...file, bytes: new Uint8Array([1]) },
+    )
+    await expect(
+      validateAndPackageNativeBackup(
+        await zip(formatted.manifestBytes, tampered),
+      ),
+    ).rejects.toThrow('size mismatch')
+
+    await expect(
+      validateAndPackageNativeBackup(
+        await zip(formatted.manifestBytes, formatted.files, [
+          ['tmp/partial', new Uint8Array()],
+        ]),
+      ),
+    ).rejects.toThrow('invalid, unknown, or duplicate')
+
     const malformedInput = backupInput()
     malformedInput.images[0].bytes = new Uint8Array([255, 0, 0, 0])
     const malformed = formatNativeBackupV1(malformedInput)
@@ -415,15 +424,17 @@ describe('native backup restore validation and cloud packaging', () => {
     ).rejects.toThrow('image is malformed')
   })
 
-  it('copies image metadata that leaves out its optional size', async () => {
+  it('uses verified image bytes when optional size metadata is absent', async () => {
     const formatted = formatNativeBackupV1(backupInput())
     const metadataFile = formatted.files.find(
-      ({ path }) => path === 'images/id-636c6f75642d696d616765.json',
+      ({ path }) => path.endsWith('.json') && path.startsWith('images/'),
     )!
-    const metadata = decode(metadataFile.bytes)
+    const metadata = JSON.parse(new TextDecoder().decode(metadataFile.bytes))
     delete metadata.sizeBytes
     metadataFile.bytes = new TextEncoder().encode(JSON.stringify(metadata))
-    const manifest = decode(formatted.manifestBytes)
+    const manifest = JSON.parse(
+      new TextDecoder().decode(formatted.manifestBytes),
+    )
     const listed = manifest.files.find(
       ({ path }: { path: string }) => path === metadataFile.path,
     )
@@ -437,68 +448,12 @@ describe('native backup restore validation and cloud packaging', () => {
       ),
     )
     const files = await unzip((result.cloud!.upload as { blob: Blob }).blob)
+    const chat = result.cloud!.manifest.entities.find(
+      ({ kind }) => kind === 'chat',
+    )!
+    const payload = JSON.parse(new TextDecoder().decode(files.get(chat.path)))
 
-    expect(files.get(metadataFile.path)).toEqual(metadataFile.bytes)
-    expect(result.cloud!.manifest.files).toContainEqual(listed)
-    await expect(
-      validateAndPackageNativeBackup(
-        new File([(result.cloud!.upload as { blob: Blob }).blob], 'cloud.zip'),
-      ),
-    ).resolves.toMatchObject({ local: { chats: [] } })
-  })
-
-  it('reads a whole backup with its image bytes', async () => {
-    const input = backupInput()
-    const formatted = formatNativeBackupV1(input)
-
-    const contents = await readNativeBackup(
-      await zip(formatted.manifestBytes, formatted.files),
-    )
-
-    expect(contents.backup).toEqual(decode(formatted.manifestBytes))
-    expect(contents.projects).toEqual(input.projects)
-    expect(contents.documents).toEqual(input.projectDocuments)
-    expect(contents.cloudChats).toEqual(input.cloudChats)
-    expect(contents.localChats).toEqual(input.localChats)
-    expect(contents.relationships).toEqual(input.relationships)
-    expect(contents.images).toEqual(
-      input.images.map(({ metadata, bytes }) => ({
-        metadata: { ...metadata, sizeBytes: bytes.length },
-        bytes,
-      })),
-    )
-
-    // An archive reader may reuse an entry's buffer once it is released.
-    const reused: NativeRestoreArchive = {
-      entries: [
-        { path: 'manifest.json', bytes: formatted.manifestBytes },
-        ...formatted.files,
-      ].map(({ path, bytes }) => ({
-        path,
-        directory: false,
-        encrypted: false,
-        compressedSize: bytes.length,
-        uncompressedSize: bytes.length,
-        read: async () => {
-          const buffer = new Uint8Array(bytes)
-          return { bytes: buffer, release: () => buffer.fill(0) }
-        },
-      })),
-      close: async () => undefined,
-    }
-    const released = await readNativeBackup(new File([], 'backup.zip'), {
-      dependencies: { openArchive: async () => reused },
-    })
-    expect(released.images.map(({ bytes }) => bytes)).toEqual([png, png])
-
-    const tampered = formatted.files.map((file) =>
-      file.path.endsWith('.bin')
-        ? { ...file, bytes: new Uint8Array([...file.bytes.slice(0, -1), 1]) }
-        : file,
-    )
-    await expect(
-      readNativeBackup(await zip(formatted.manifestBytes, tampered)),
-    ).rejects.toThrow('hash mismatch')
+    expect(payload.messages[0].attachments[0].fileSize).toBe(png.length)
   })
 
   it('checks outer and per-entry limits without calling File.arrayBuffer', async () => {

@@ -13,8 +13,8 @@
  *
  * The legacy decoder `decryptKeyBundle` uses client-side AES-256-GCM. Optimistic
  * concurrency is enforced by the enclave: register-key uses
- * `if_match='*'` for first-time writes and the harness returns
- * KEY_MISMATCH when a key already exists;
+ * `if_match='*'` for first-time writes and returns
+ * EXISTING_DATA_UNDER_OTHER_KEY when a key already exists;
  * add-bundle is idempotent per credential_id. The legacy
  * `sync_version` / `bundle_version` counters are synthesized from the
  * enclave's `bundle_version` so callers that read them keep working.
@@ -28,6 +28,8 @@ import {
   type PRFResult,
   type WrappedKey,
 } from '@tinfoilsh/passkey-kit'
+import { requirePrimaryKeyB64 } from '../cloud/cek-encoding'
+import type { CloudKeyAuthorizationMode } from '../cloud/cloud-key-authorization'
 import { encryptionService } from '../encryption/encryption-service'
 import {
   bytesToBase64,
@@ -37,12 +39,10 @@ import {
   removeBundle as enclaveRemoveBundle,
   hexToB64,
   newIdempotencyKey,
-} from '../harness/keys'
-import { HarnessError as SyncEnclaveError } from '../harness/sse'
-import { requirePrimaryKeyB64 } from '../keys/cek-encoding'
-import type { CloudKeyAuthorizationMode } from '../keys/cloud-key-authorization'
-import { deriveTinfoilKeyIdHex } from '../keys/tinfoil-key-id'
-import { HARNESS_KEY_CODES, IF_MATCH_SENTINELS } from '../keys/wire-contract'
+} from '../sync-enclave/sync-api'
+import { SyncEnclaveError } from '../sync-enclave/sync-enclave-client'
+import { deriveTinfoilKeyIdHex } from '../sync-enclave/tinfoil-key-id'
+import { IF_MATCH_SENTINELS, WIRE_CODES } from '../sync-enclave/wire-contract'
 import {
   evaluateTinfoilCredential,
   getCachedCredentialId,
@@ -341,21 +341,28 @@ export async function loadPasskeyCredentials(
     signal?: AbortSignal
   } = {},
 ): Promise<PasskeyCredentialEntry[]> {
-  const resp = await enclaveKeyCurrent(options.signal)
-  if (resp.key_id) {
-    const entries = Object.values(resp.bundles).map((bundle) => ({
-      ...reshapeBundleToEntry(bundle),
-      source: 'enclave' as const,
-    }))
-    if (entries.length > 0) return entries
-    // A registered key with zero bundles is an orphan: the enclave's
-    // migrate-all bootstrap stamps a current key before any passkey
-    // bundle is written, so a key_id can exist with no way to unlock
-    // it. Fall back to the legacy passkey so the user can still
-    // recover instead of being forced into manual key entry.
+  try {
+    const resp = await enclaveKeyCurrent(options.signal)
+    if (resp.key_id) {
+      const entries = Object.values(resp.bundles).map((bundle) => ({
+        ...reshapeBundleToEntry(bundle),
+        source: 'enclave' as const,
+      }))
+      if (entries.length > 0) return entries
+      // A registered key with zero bundles is an orphan: the enclave's
+      // migrate-all bootstrap stamps a current key before any passkey
+      // bundle is written, so a key_id can exist with no way to unlock
+      // it. Fall back to the legacy passkey so the user can still
+      // recover instead of being forced into manual key entry.
+      return await loadLegacyFallback(options.signal)
+    }
     return await loadLegacyFallback(options.signal)
+  } catch (err) {
+    if (err instanceof SyncEnclaveError && err.status === 404) {
+      return loadLegacyFallback(options.signal)
+    }
+    throw err
   }
-  return await loadLegacyFallback(options.signal)
 }
 
 async function loadLegacyFallback(
@@ -384,12 +391,16 @@ export async function loadRecoveryCandidates(): Promise<
   PasskeyCredentialEntry[]
 > {
   let enclaveEntries: PasskeyCredentialEntry[] = []
-  const resp = await enclaveKeyCurrent()
-  if (resp.key_id) {
-    enclaveEntries = Object.values(resp.bundles).map((bundle) => ({
-      ...reshapeBundleToEntry(bundle),
-      source: 'enclave' as const,
-    }))
+  try {
+    const resp = await enclaveKeyCurrent()
+    if (resp.key_id) {
+      enclaveEntries = Object.values(resp.bundles).map((bundle) => ({
+        ...reshapeBundleToEntry(bundle),
+        source: 'enclave' as const,
+      }))
+    }
+  } catch (err) {
+    if (!(err instanceof SyncEnclaveError) || err.status !== 404) throw err
   }
   const legacyEntries = await loadLegacyFallback()
   const byId = new Map<string, PasskeyCredentialEntry>()
@@ -537,7 +548,7 @@ export async function storeEncryptedKeys(
       } catch (err) {
         if (
           err instanceof SyncEnclaveError &&
-          err.code === HARNESS_KEY_CODES.KeyMismatch
+          err.code === WIRE_CODES.ExistingDataUnderOtherKey
         ) {
           throw new PasskeyCredentialConflictError(
             'Remote key already exists under a different CEK; recover first.',
@@ -836,8 +847,9 @@ async function acceptLegacyBundleForCurrentKey(
   let currentKeyId: string | null = null
   try {
     currentKeyId = (await enclaveKeyCurrent()).key_id
-  } catch {
-    return false
+  } catch (error) {
+    if (!(error instanceof SyncEnclaveError) || error.status !== 404)
+      return false
   }
   if (!currentKeyId) return true
   const primaryBytes = encryptionService.getAlternativeKeyBytes(bundle.primary)
@@ -995,8 +1007,9 @@ export async function promoteRecoveredCekToEnclave(input: {
   let current: Awaited<ReturnType<typeof enclaveKeyCurrent>> | null = null
   try {
     current = await enclaveKeyCurrent()
-  } catch {
-    return false
+  } catch (error) {
+    if (!(error instanceof SyncEnclaveError) || error.status !== 404)
+      return false
   }
   if (current?.key_id) {
     if (current.key_id !== keyIdHex) return false

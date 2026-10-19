@@ -2,10 +2,17 @@
 
 import { initializeRenderers } from '@/components/chat/renderers/client'
 import { SharedChatView } from '@/components/chat/shared-chat-view'
-import { displayModels, type BaseModel } from '@/config/models'
-import { useHarness } from '@/services/harness/provider'
-import { HarnessError } from '@/services/harness/sse'
-import type { SharedThread } from '@/services/harness/types'
+import { getAIModels, type BaseModel } from '@/config/models'
+import {
+  fetchSharedChat,
+  SharedChatNotFoundError,
+  UnsupportedShareFormatError,
+} from '@/services/share-api'
+import { shareOpen as enclaveShareOpen } from '@/services/sync-enclave/sync-api'
+import {
+  validateShareableChatData,
+  type ShareableChatData,
+} from '@/utils/share-payload'
 import Head from 'next/head'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
@@ -21,10 +28,9 @@ const UNSUPPORTED_SHARE_LINK_MESSAGE =
   'This share link uses an unsupported format. Ask the sender to create a new link.'
 
 export default function SharePage({ chatId }: { chatId?: string }) {
-  const { api, session } = useHarness()
   const [loadingState, setLoadingState] = useState<LoadingState>('loading')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [chatData, setChatData] = useState<SharedThread | null>(null)
+  const [chatData, setChatData] = useState<ShareableChatData | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
   const [model, setModel] = useState<BaseModel | null>(null)
 
@@ -81,38 +87,60 @@ export default function SharePage({ chatId }: { chatId?: string }) {
       const shareKeyHex = fragmentMatch[1]
 
       try {
-        const parsed = await api.post<SharedThread>(
-          '/v1/shares/open',
-          { shareId: chatId, fragment: `v2:${shareKeyHex}` },
-          undefined,
-          false,
-        )
-        const chatModel = displayModels(session)[0] ?? {
-          modelName: '',
-          name: 'Shared chat',
-          nameShort: 'Shared chat',
-          description: '',
-          image: '',
-          type: 'chat' as const,
-          chat: true,
+        const fetched = await fetchSharedChat(chatId)
+        const plaintext = await enclaveShareOpen({
+          shareKeyHex,
+          ciphertext: new Uint8Array(fetched.binary),
+        })
+        let decrypted: object | null
+        try {
+          decrypted = JSON.parse(new TextDecoder().decode(plaintext)) as object
+        } catch {
+          decrypted = null
         }
+
+        if (!decrypted) {
+          setErrorMessage('Failed to decrypt chat data')
+          setLoadingState('error')
+          return
+        }
+
+        const parsed = validateShareableChatData(decrypted)
+        if (!parsed) {
+          setErrorMessage('Invalid chat data format')
+          setLoadingState('error')
+          return
+        }
+
+        const models = (await getAIModels()) ?? []
+        const chatModel = models.find((m) => m.type === 'chat') || models[0]
+        if (!chatModel) {
+          setErrorMessage('Failed to load model configuration')
+          setLoadingState('error')
+          return
+        }
+
         setChatData(parsed)
         setModel(chatModel)
         setLoadingState('success')
       } catch (error) {
-        setErrorMessage(
-          error instanceof HarnessError && error.code === 'THREAD_NOT_FOUND'
-            ? 'This shared chat does not exist or has been deleted'
-            : 'Failed to load shared chat',
-        )
+        if (error instanceof SharedChatNotFoundError) {
+          setErrorMessage('This shared chat does not exist or has been deleted')
+        } else if (error instanceof UnsupportedShareFormatError) {
+          setErrorMessage(UNSUPPORTED_SHARE_LINK_MESSAGE)
+          setLoadingState('unsupported')
+          return
+        } else {
+          setErrorMessage('Failed to load shared chat')
+        }
         setLoadingState('error')
       }
     }
 
     loadData()
-  }, [api, session, chatId])
+  }, [chatId])
 
-  const formatDate = (timestamp: string) => {
+  const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'long',

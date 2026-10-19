@@ -1,8 +1,5 @@
 import { SECRET_PASSKEY_PRF_OUTPUT } from '@/constants/storage-keys'
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { hexToB64 } from '@/services/harness/keys'
-import { HarnessError } from '@/services/harness/sse'
-import { deriveTinfoilKeyIdHex } from '@/services/keys/tinfoil-key-id'
 import {
   passkeyKeyManager,
   TINFOIL_PASSKEY_PROFILE,
@@ -14,6 +11,9 @@ import {
   type KeyBundle,
   type PasskeyCredentialEntry,
 } from '@/services/passkey/passkey-key-storage'
+import { hexToB64 } from '@/services/sync-enclave/sync-api'
+import { SyncEnclaveError } from '@/services/sync-enclave/sync-enclave-client'
+import { deriveTinfoilKeyIdHex } from '@/services/sync-enclave/tinfoil-key-id'
 import {
   decodeWrappedKeyRecord,
   encodeWrappedKeyRecord,
@@ -29,10 +29,10 @@ const mockKeyCurrent = vi.fn()
 const mockAddBundle = vi.fn()
 const mockRegisterKey = vi.fn()
 
-vi.mock('@/services/harness/keys', async () => {
+vi.mock('@/services/sync-enclave/sync-api', async () => {
   const actual = await vi.importActual<
-    typeof import('@/services/harness/keys')
-  >('@/services/harness/keys')
+    typeof import('@/services/sync-enclave/sync-api')
+  >('@/services/sync-enclave/sync-api')
   return {
     ...actual,
     addBundle: (...args: unknown[]) => mockAddBundle(...args),
@@ -175,6 +175,7 @@ function entry(
 
 describe('recoverPasskeyKeyBundle', () => {
   beforeEach(() => {
+    localStorage.clear()
     encryptionService.clearKey()
     cachePrf()
     mockKeyCurrent.mockReset().mockResolvedValue({ key_id: null, bundles: {} })
@@ -187,6 +188,7 @@ describe('recoverPasskeyKeyBundle', () => {
   })
 
   afterEach(() => {
+    vi.restoreAllMocks()
     if (originalCredentials)
       Object.defineProperty(navigator, 'credentials', originalCredentials)
     else Reflect.deleteProperty(navigator, 'credentials')
@@ -308,11 +310,16 @@ describe('recoverPasskeyKeyBundle', () => {
       authorizationMode: 'validated' as const,
     }
     const candidate = await genericEnvelopeEntry(keyBundle)
+    const envelope = decodeEnvelope(candidate)
+    const ivs = [envelope.primary, ...envelope.alternatives].map(
+      (record) => decodeWrappedKeyRecord(record).kekIvHex,
+    )
     const recovered = await recoverPasskeyKeyBundle([candidate], {
       cachedOnly: true,
     })
 
     expect(recovered?.keyBundle).toEqual(keyBundle)
+    expect(new Set(ivs).size).toBe(3)
   })
 
   it.each(['matching', 'missing', 'other-credential'] as const)(
@@ -349,12 +356,72 @@ describe('recoverPasskeyKeyBundle', () => {
         cachedOnly: true,
       })
 
+      expect(localStorage.getItem(SECRET_PASSKEY_PRF_OUTPUT)).toBeNull()
+      expect(recoverFromCache).toHaveBeenCalledTimes(2)
       if (result === 'matching') expect(recovered?.keyBundle).toEqual(keyBundle)
       else expect(recovered).toBeNull()
     },
   )
 
-  it.each(['matching', 'rotated', 'unavailable', 'empty'] as const)(
+  it('rejects generic envelopes encrypted for the wrong PRF', async () => {
+    const keyBundle = {
+      primary: encryptionService.encodeKeyFromBytes(
+        new Uint8Array(32).fill(0x51),
+      ),
+      alternatives: [],
+    }
+    const candidate = await genericEnvelopeEntry(keyBundle)
+    localStorage.setItem(
+      SECRET_PASSKEY_PRF_OUTPUT,
+      JSON.stringify({
+        credentialId: CREDENTIAL_ID,
+        prfOutput: btoa(String.fromCharCode(...new Uint8Array(32).fill(0xff))),
+      }),
+    )
+
+    await expect(
+      recoverPasskeyKeyBundle([candidate], { cachedOnly: true }),
+    ).resolves.toBeNull()
+  })
+
+  it('rejects an envelope whose alternatives duplicate the primary key', async () => {
+    const keyBytes = new Uint8Array(32).fill(0x61)
+    const primary = await passkeyKeyManager.wrapKeyWithPRFResult({
+      keyMaterial: keyBytes,
+      credentialId: CREDENTIAL_ID,
+      prfResult: { output: PRF_OUTPUT },
+    })
+    const duplicate = await passkeyKeyManager.wrapKeyWithPRFResult({
+      keyMaterial: keyBytes,
+      credentialId: CREDENTIAL_ID,
+      prfResult: { output: PRF_OUTPUT },
+    })
+    const envelope = new TextEncoder().encode(
+      JSON.stringify({
+        version: 1,
+        authorizationMode: 'validated',
+        primary: encodeWrappedKeyRecord(primary),
+        alternatives: [encodeWrappedKeyRecord(duplicate)],
+      }),
+    )
+    const candidate = entry({
+      iv: btoa(String.fromCharCode(...new Uint8Array(12))),
+      encrypted_keys: btoa(String.fromCharCode(...envelope)),
+      source: 'enclave',
+    })
+
+    await expect(
+      recoverPasskeyKeyBundle([candidate], { cachedOnly: true }),
+    ).resolves.toBeNull()
+  })
+
+  it.each([
+    'matching',
+    'rotated',
+    'unavailable',
+    'not-found',
+    'empty',
+  ] as const)(
     'checks the registered key when recovering legacy candidates: %s',
     async (remoteState) => {
       const original = {
@@ -363,11 +430,11 @@ describe('recoverPasskeyKeyBundle', () => {
       }
       const encrypted = await encryptLegacyFixture(await legacyKek(), original)
       const keyId = await deriveTinfoilKeyIdHex(new Uint8Array(32).fill(0x11))
-      if (remoteState === 'unavailable') {
+      if (remoteState === 'unavailable' || remoteState === 'not-found') {
         mockKeyCurrent.mockRejectedValue(
-          new HarnessError(
-            { code: 'UPSTREAM_REFUSED', message: 'opaque' },
-            503,
+          new SyncEnclaveError(
+            'opaque',
+            remoteState === 'not-found' ? 404 : 503,
           ),
         )
       } else {
@@ -418,6 +485,7 @@ describe('recoverPasskeyKeyBundle', () => {
           expect(recovered?.source).toBe('legacy')
         }
       }
+      expect(mockKeyCurrent).toHaveBeenCalledTimes(2)
       expect(get).toHaveBeenCalledOnce()
       expect(get.mock.calls[0][0]?.publicKey?.allowCredentials).toHaveLength(3)
     },
@@ -463,6 +531,9 @@ describe('recoverPasskeyKeyBundle', () => {
         encryptionService.encodeKeyFromBytes(new Uint8Array(32).fill(0x83)),
       ],
     }
+    mockKeyCurrent
+      .mockResolvedValueOnce({ key_id: null, bundles: {} })
+      .mockResolvedValue({ key_id: null, bundles: {} })
     mockRegisterKey.mockResolvedValue({ ok: true })
 
     await expect(
@@ -486,6 +557,7 @@ describe('recoverPasskeyKeyBundle', () => {
         encryptedKeysHex: expect.stringMatching(/^[0-9a-f]{96}$/),
       },
     })
+    expect(initialBundle.encryptedKeysHex).toMatch(/^[0-9a-f]{96}$/)
     const recovered = await recoverPasskeyKeyBundle(
       [
         entry({
@@ -533,6 +605,8 @@ describe('recoverPasskeyKeyBundle', () => {
       ],
     }
     localStorage.clear()
+    const { deriveTinfoilKeyIdHex } =
+      await import('@/services/sync-enclave/tinfoil-key-id')
     mockKeyCurrent.mockResolvedValue({
       key_id: await deriveTinfoilKeyIdHex(cek),
       bundles: {},

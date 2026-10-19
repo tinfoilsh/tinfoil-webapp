@@ -53,34 +53,71 @@ describe('SafeguardsSettings', () => {
     setSnapshot()
   })
 
-  it('keeps the track mounted from loading through a zero-flags response', () => {
-    const { rerender } = render(
-      <SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />,
-    )
-    const track = progressBar()
-    expect(track).not.toHaveAttribute('aria-valuenow')
-    expect(track).toHaveAttribute('aria-valuetext', 'Loading')
-    expect(screen.getByText('Loading flag count…')).toBeVisible()
-    expect(
-      screen.queryByText(/No flagged chats in the last/),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByText(/more before account suspension/),
-    ).not.toBeInTheDocument()
-
+  it('splits the explanation into three headed sections with the policy link', () => {
     setSnapshot({ status: 'ready', policy: POLICY })
-    rerender(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)
+    render(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)
+    expect(screen.queryByText(/Local preview/i)).not.toBeInTheDocument()
 
-    expect(progressBar()).toBe(track)
-    expect(track).toHaveAttribute('aria-valuenow', '0')
-    expect(track).toHaveAttribute('aria-valuetext', '0 of 4 flags')
-    expect(screen.getByText('0 of 4 flags in the last 2 days')).toBeVisible()
-    expect(screen.getByText('4 more before account suspension')).toBeVisible()
     expect(
-      screen.getByText('No flagged chats in the last 2 days.'),
-    ).toBeVisible()
-    expect(screen.queryByRole('list')).not.toBeInTheDocument()
+      screen
+        .getAllByRole('heading', { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toEqual(['Flagged Chats', 'How it works'])
+
+    expect(
+      screen
+        .getAllByRole('heading', { level: 4 })
+        .map((heading) => heading.textContent),
+    ).toEqual([
+      'Your conversations stay private',
+      'Safeguards assess model responses',
+      'Only a flag leaves the enclave',
+    ])
+    expect(
+      screen.getByRole('link', { name: 'Learn how safeguards work' }),
+    ).toHaveAttribute('href', 'https://tinfoil.sh/safety-and-safeguards')
   })
+
+  it.each([true, false])(
+    'keeps the track mounted from loading through a zero-flags response (dark=%s)',
+    (isDarkMode) => {
+      const view = (
+        <SafeguardsSettings
+          isDarkMode={isDarkMode}
+          onNavigateToChat={vi.fn()}
+        />
+      )
+      const { rerender } = render(view)
+      const track = progressBar()
+      expect(track).not.toHaveAttribute('aria-valuenow')
+      expect(track).toHaveAttribute('aria-valuetext', 'Loading')
+      expect(screen.getByText('Loading flag count…')).toBeVisible()
+      expect(
+        screen.queryByText(/No flagged chats in the last/),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(/more before account suspension/),
+      ).not.toBeInTheDocument()
+
+      setSnapshot({ status: 'ready', policy: POLICY })
+      rerender(
+        <SafeguardsSettings
+          isDarkMode={isDarkMode}
+          onNavigateToChat={vi.fn()}
+        />,
+      )
+
+      expect(progressBar()).toBe(track)
+      expect(track).toHaveAttribute('aria-valuenow', '0')
+      expect(track).toHaveAttribute('aria-valuetext', '0 of 4 flags')
+      expect(screen.getByText('0 of 4 flags in the last 2 days')).toBeVisible()
+      expect(screen.getByText('4 more before account suspension')).toBeVisible()
+      expect(
+        screen.getByText('No flagged chats in the last 2 days.'),
+      ).toBeVisible()
+      expect(screen.queryByRole('list')).not.toBeInTheDocument()
+    },
+  )
 
   it('uses the server window count, not the length of the flag history, and keeps chat links', () => {
     setSnapshot({
@@ -212,6 +249,26 @@ describe('SafeguardsSettings', () => {
       'Showing the last loaded flags.',
     )
     expect(screen.getByRole('link', { name: /chat-1/ })).toBeVisible()
+  })
+
+  it('highlights the warning boundary while one flag remains before suspension', () => {
+    setSnapshot({ status: 'ready', policy: { ...POLICY, inWindow: 2 } })
+    const { rerender } = render(
+      <SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />,
+    )
+    expect(screen.getByText('2 more before account suspension')).toHaveClass(
+      'text-content-muted',
+    )
+
+    setSnapshot({ status: 'ready', policy: { ...POLICY, inWindow: 3 } })
+    rerender(<SafeguardsSettings isDarkMode onNavigateToChat={vi.fn()} />)
+    expect(progressBar()).toHaveAttribute('aria-valuenow', '75')
+    expect(screen.getByText('1 more before account suspension')).toHaveClass(
+      'text-red-600',
+    )
+    expect(
+      screen.queryByText('Suspension limit reached'),
+    ).not.toBeInTheDocument()
   })
 
   it.each([4, 6])(

@@ -13,6 +13,8 @@ describe('react-style-singleton', () => {
       `node_modules/react-style-singleton/dist/${dir}/singleton.js`,
       'utf8',
     )
+    expect(src).toContain('adoptedStyleSheets')
+    expect(src).toContain('function insertStyleTag(tag) {}')
     const exports: {
       stylesheetSingleton?: () => {
         add: (css: string) => void

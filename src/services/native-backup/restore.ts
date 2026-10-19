@@ -1,3 +1,4 @@
+import { uint8ArrayToBase64 } from '@/utils/binary-codec'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from '@noble/hashes/utils.js'
 import {
@@ -10,18 +11,14 @@ import {
 } from '@zip.js/zip.js'
 import {
   NATIVE_BACKUP_ENTITY_KINDS,
-  NATIVE_BACKUP_FORMAT,
   NATIVE_BACKUP_LIMITS,
   NATIVE_BACKUP_VERSION_V2,
 } from './constants'
 import {
   assertNativeBackupOmissionsConsistent,
   assertSemanticContent,
-  deriveNativeBackupWarnings,
   parseNativeBackupManifest,
-  type NativeBackupImageInput,
   type NativeBackupManifest,
-  type NativeBackupManifestV2,
 } from './format'
 import { detectNativeBackupImageMimeType } from './image-mime'
 import {
@@ -40,6 +37,7 @@ const MANIFEST_PATH = 'manifest.json'
 const MAX_MANIFEST_BYTES = 32 * 1024 * 1024
 const MAX_ENTRY_BYTES = 256 * 1024 * 1024
 const MAX_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
+const MAX_CLOUD_ENTITY_BYTES = 256 * 1024 * 1024
 const BLOB_OUTPUT_BYTES = 128 * 1024 * 1024
 const FILE_OUTPUT_BYTES = 512 * 1024 * 1024
 const encoder = new TextEncoder()
@@ -51,15 +49,13 @@ export type NativeRestoreArchive = { entries: NativeRestoreEntry[]; close(): Pro
 // prettier-ignore
 export type NativeRestoreDependencies = { openArchive(file: File): Promise<NativeRestoreArchive> }
 // prettier-ignore
+export type NativeCloudImportManifestV1 = { format: 'tinfoil-native-cloud-import'; version: 1; source_backup_id: string; counts: { projects: number; documents: number; chats: number; blobs: number }; entities: Array<{ kind: 'project' | 'document' | 'chat'; source_id: string; project_source_id?: string; path: string; sha256: string; size_bytes: number }>; blobs: Array<{ path: string; sha256: string; size_bytes: number }> }
+// prettier-ignore
 export type NativeCloudUpload = { kind: 'blob'; blob: Blob; filename: string } | { kind: 'file'; handle: FileSystemFileHandle; filename: string; cleanup(): Promise<void> }
 // prettier-ignore
 export type NativeBackupImageSource = { metadata: NativeBackupImage; source: { file: File; path: string; sizeBytes: number; sha256: string } }
-// The cloud part of a backup is uploaded as a native backup of its own, which
-// the chat service converts and imports; the local chats stay on this device.
 // prettier-ignore
-export type ValidatedNativeRestore = { backup: NativeBackupManifest; local: { chats: NativeBackupChat[]; images: NativeBackupImageSource[] }; cloud: { manifest: NativeBackupManifestV2; upload: NativeCloudUpload } | null }
-// prettier-ignore
-export type NativeBackupContents = { backup: NativeBackupManifest; projects: NativeBackupProject[]; documents: NativeBackupProjectDocument[]; cloudChats: NativeBackupChat[]; localChats: NativeBackupChat[]; relationships: NativeBackupRelationships; images: NativeBackupImageInput[] }
+export type ValidatedNativeRestore = { backup: NativeBackupManifest; local: { chats: NativeBackupChat[]; images: NativeBackupImageSource[] }; cloud: { manifest: NativeCloudImportManifestV1; upload: NativeCloudUpload } | null }
 // prettier-ignore
 type ParsedBackup = { backup: NativeBackupManifest; projects: NativeBackupProject[]; documents: NativeBackupProjectDocument[]; cloudChats: NativeBackupChat[]; localChats: NativeBackupChat[]; relationships: NativeBackupRelationships; images: Array<{ metadata: NativeBackupImage; entry: NativeRestoreEntry; sha256: string }> }
 function fail(message: string): never {
@@ -328,9 +324,9 @@ async function createCloudSink(
         await target!.close()
         committed = true
         // prettier-ignore
-        if (handle) return { kind: 'file', handle, filename: 'tinfoil-backup.zip', cleanup: () => root!.removeEntry(outputName) }
+        if (handle) return { kind: 'file', handle, filename: 'tinfoil-cloud-import.zip', cleanup: () => root!.removeEntry(outputName) }
         // prettier-ignore
-        return { kind: 'blob', blob: await blobWriter!.getData(), filename: 'tinfoil-backup.zip' }
+        return { kind: 'blob', blob: await blobWriter!.getData(), filename: 'tinfoil-cloud-import.zip' }
       },
       abort,
     }
@@ -340,44 +336,6 @@ async function createCloudSink(
     throw error
   }
 }
-// An image's bytes, checked against the archive's hash and the type its
-// metadata names.
-// prettier-ignore
-const readImage = async <T>(image: ParsedBackup['images'][number], signal: AbortSignal | undefined, consume: (bytes: Uint8Array) => T | Promise<T>) => readEntry(image.entry, { size_bytes: image.entry.uncompressedSize, sha256: image.sha256 }, signal, async (bytes) => {
-  const mime = detectNativeBackupImageMimeType(bytes)
-  if (!mime || mime !== image.metadata.mimeType.split(';', 1)[0].trim() || !image.metadata.fileName.trim()) fail(`image is malformed: ${image.metadata.id}`)
-  return consume(bytes)
-})
-
-// Reads a whole backup after validating it, image bytes included.
-export async function readNativeBackup(
-  file: File,
-  options: {
-    signal?: AbortSignal
-    dependencies?: NativeRestoreDependencies
-  } = {},
-): Promise<NativeBackupContents> {
-  if (file.size > NATIVE_BACKUP_LIMITS.archiveBytes)
-    fail('archive is too large')
-  options.signal?.throwIfAborted()
-  const archive = await (options.dependencies ?? defaults).openArchive(file)
-  try {
-    const value = await parseArchive(
-      checkEntries(archive.entries),
-      options.signal,
-    )
-    const images: NativeBackupImageInput[] = []
-    for (const image of value.images)
-      await readImage(image, options.signal, (bytes) => {
-        images.push({ metadata: image.metadata, bytes: bytes.slice() })
-      })
-    // prettier-ignore
-    return { backup: value.backup, projects: value.projects, documents: value.documents, cloudChats: value.cloudChats, localChats: value.localChats, relationships: value.relationships, images }
-  } finally {
-    await archive.close()
-  }
-}
-
 export async function validateAndPackageNativeBackup(
   file: File,
   options: {
@@ -391,107 +349,121 @@ export async function validateAndPackageNativeBackup(
   const archive = await (options.dependencies ?? defaults).openArchive(file)
   let sink: CloudSink | null = null
   try {
-    const entries = checkEntries(archive.entries)
-    const value = await parseArchive(entries, options.signal)
+    const value = await parseArchive(
+      checkEntries(archive.entries),
+      options.signal,
+    )
     const localIds = new Set(value.localChats.map(({ id }) => id))
-    const isLocal = ({ metadata }: ParsedBackup['images'][number]) =>
-      localIds.has(metadata.chatId)
     const hasCloud =
       value.projects.length + value.documents.length + value.cloudChats.length >
       0
     if (hasCloud)
       sink = await createCloudSink(value.backup.backup_id, options.signal)
     const localImages: NativeBackupImageSource[] = []
-    for (const image of value.images.filter(isLocal)) {
-      await readImage(image, options.signal, (bytes) => {
+    const blobs: NativeCloudImportManifestV1['blobs'] = []
+    // prettier-ignore
+    const readImage = async <T>(image: ParsedBackup['images'][number], consume: (bytes: Uint8Array) => T | Promise<T>) => readEntry(image.entry, { size_bytes: image.entry.uncompressedSize, sha256: image.sha256 }, options.signal, async (bytes) => {
+      const mime = detectNativeBackupImageMimeType(bytes)
+      if (!mime || mime !== image.metadata.mimeType.split(';', 1)[0].trim() || !image.metadata.fileName.trim()) fail(`image is malformed: ${image.metadata.id}`)
+      return consume(bytes)
+    })
+    for (const image of value.images.filter(({ metadata }) =>
+      localIds.has(metadata.chatId),
+    )) {
+      await readImage(image, (bytes) => {
         // prettier-ignore
         localImages.push({ metadata: image.metadata, source: { file, path: image.entry.path, sizeBytes: bytes.length, sha256: image.sha256 } })
       })
     }
     let cloud: ValidatedNativeRestore['cloud'] = null
     if (sink) {
-      // The cloud part keeps every entry of the projects, documents, and
-      // cloud chats byte for byte; only the relationships and the manifest
-      // are written again without the local chats.
-      const imageByPath = new Map(
-        value.images.map((image) => [image.entry.path, image]),
-      )
-      const localImagePaths = new Set(
-        value.images
-          .filter(isLocal)
-          .flatMap(({ metadata }) => [
-            `images/${idComponent(metadata.id)}.json`,
-            `images/${idComponent(metadata.id)}.bin`,
-          ]),
-      )
-      const relationships: NativeBackupRelationships = {
-        projectChats: value.relationships.projectChats.filter(
-          ({ chatId }) => !localIds.has(chatId),
-        ),
-        projectDocuments: value.relationships.projectDocuments,
-        chatImages: value.relationships.chatImages.filter(
-          ({ chatId }) => !localIds.has(chatId),
-        ),
+      const entities: NativeCloudImportManifestV1['entities'] = []
+      let entityBytes = 0
+      const add = async (
+        kind: 'project' | 'document' | 'chat',
+        sourceId: string,
+        payload: unknown,
+        projectSourceId?: string,
+      ) => {
+        const path = `entities/${kind}/${entities.length}.json`
+        const bytes = jsonBytes(payload)
+        entityBytes += bytes.length
+        if (
+          bytes.length > MAX_CLOUD_ENTITY_BYTES ||
+          entityBytes > MAX_CLOUD_ENTITY_BYTES
+        )
+          fail('cloud entity JSON limit exceeded')
+        // prettier-ignore
+        entities.push({ kind, source_id: sourceId, ...(projectSourceId ? { project_source_id: projectSourceId } : {}), path, sha256: hash(bytes), size_bytes: bytes.length })
+        await sink!.add(path, bytes)
       }
-      const relationshipBytes = jsonBytes(relationships)
-      const cloudImages = value.images.filter((image) => !isLocal(image))
-      const omissions =
-        value.backup.version === NATIVE_BACKUP_VERSION_V2
-          ? value.backup.omissions.filter(
-              (omission) =>
-                omission.kind !== 'local_chat' &&
-                omission.kind !== 'local_inventory' &&
-                !(
-                  omission.kind === 'attachment' &&
-                  localIds.has(omission.parent_source_id!)
-                ) &&
-                !(
-                  omission.kind === 'relationship' &&
-                  localIds.has(omission.source_id)
-                ),
-            )
-          : []
-      assertNativeBackupOmissionsConsistent(
-        omissions,
-        value.projects,
-        value.documents,
-        value.cloudChats,
-        [],
-        relationships,
-        cloudImages.map(({ metadata }) => metadata),
-      )
-      const files: NativeBackupManifest['files'] = []
-      for (const listed of value.backup.files) {
-        if (listed.kind === 'local_chats' || localImagePaths.has(listed.path))
-          continue
-        if (listed.kind === 'relationships') {
-          // prettier-ignore
-          files.push({ path: listed.path, kind: listed.kind, sha256: hash(relationshipBytes), size_bytes: relationshipBytes.length })
-          await sink.add(listed.path, relationshipBytes)
-          continue
-        }
-        const image = imageByPath.get(listed.path)
-        const copy = (bytes: Uint8Array) => sink!.add(listed.path, bytes)
-        if (image) await readImage(image, options.signal, copy)
-        else
-          await readEntry(
-            entries.get(listed.path)!,
-            listed,
-            options.signal,
-            copy,
-          )
-        files.push(listed)
+      for (const project of value.projects) {
+        if (!project.name.trim()) fail('project name is empty')
+        const {
+          id,
+          createdAt: _createdAt,
+          updatedAt: _updatedAt,
+          ...payload
+        } = project
+        await add('project', id, payload)
+      }
+      for (const document of value.documents) {
+        if (!document.filename.trim() || !document.contentType.trim())
+          fail('document field is empty')
+        // prettier-ignore
+        await add('document', document.id, { filename: document.filename, contentType: document.contentType, sourceSizeBytes: document.sizeBytes, sizeBytes: document.sizeBytes, content: document.extractedText }, document.projectId)
+      }
+      for (const chat of value.cloudChats) {
+        // prettier-ignore
+        const cloudImages = new Map<string, { metadata: NativeBackupImage; sizeBytes: number; path?: string; base64?: string }>()
+        for (const image of value.images.filter(
+          ({ metadata }) => metadata.chatId === chat.id,
+        ))
+          await readImage(image, async (bytes) => {
+            const direct =
+              image.metadata.page === undefined &&
+              image.metadata.legacyIndex === undefined
+            const path = direct ? `blobs/${blobs.length}` : undefined
+            if (path) {
+              blobs.push({
+                path,
+                sha256: image.sha256,
+                size_bytes: bytes.length,
+              })
+              await sink!.add(path, bytes)
+            }
+            // prettier-ignore
+            cloudImages.set(image.metadata.id, { metadata: image.metadata, sizeBytes: bytes.length, path, ...(!path ? { base64: uint8ArrayToBase64(bytes) } : {}) })
+          })
+        // prettier-ignore
+        const messages = chat.messages.map((message) => ({
+          ...message,
+          imageData: message.imageData?.map(({ imageId, mimeType }) => ({ base64: cloudImages.get(imageId)?.base64 ?? fail(`missing image ${imageId}`), mimeType })),
+          attachments: message.attachments?.map((attachment) => {
+            if (attachment.type === 'image') {
+              const image = cloudImages.get(attachment.imageId) ?? fail(`missing image ${attachment.imageId}`)
+              return { id: attachment.id, type: 'image', fileName: image.metadata.fileName, mimeType: image.metadata.mimeType, fileSize: image.sizeBytes, ...(image.metadata.description ? { description: image.metadata.description } : {}), archivePath: image.path }
+            }
+            if (!attachment.fileName.trim())
+              fail('document attachment filename is empty')
+            return { ...attachment, pages: attachment.pages?.map(({ imageId, ...page }) => imageId ? { ...page, image: cloudImages.get(imageId)?.base64 ?? fail(`missing image ${imageId}`) } : page) }
+          }),
+        }))
+        const { id, projectId, messages: _messages, ...payload } = chat
+        await add(
+          'chat',
+          id,
+          { ...payload, messages, isLocalOnly: false },
+          projectId ?? undefined,
+        )
       }
       // prettier-ignore
-      const manifest: NativeBackupManifestV2 = {
-        format: NATIVE_BACKUP_FORMAT, version: NATIVE_BACKUP_VERSION_V2, backup_id: value.backup.backup_id, created_at: value.backup.created_at, complete: omissions.length === 0,
-        counts: { projects: value.projects.length, project_documents: value.documents.length, cloud_chats: value.cloudChats.length, local_chats: 0, relationships: relationships.projectChats.length + relationships.projectDocuments.length + relationships.chatImages.length, images: cloudImages.length, files: files.length },
-        notices: value.backup.notices, files, omissions, warnings: deriveNativeBackupWarnings(omissions),
+      const manifest: NativeCloudImportManifestV1 = {
+        format: 'tinfoil-native-cloud-import', version: 1, source_backup_id: value.backup.backup_id, counts: { projects: value.projects.length, documents: value.documents.length, chats: value.cloudChats.length, blobs: blobs.length }, entities, blobs,
       }
-      const manifestBytes = jsonBytes(manifest)
-      parseNativeBackupManifest(manifestBytes)
-      await sink.add(MANIFEST_PATH, manifestBytes)
-      cloud = { manifest, upload: await sink.finish() }
+      await sink.add(MANIFEST_PATH, jsonBytes(manifest))
+      const upload = await sink.finish()
+      cloud = { manifest, upload }
     }
     // prettier-ignore
     return { backup: value.backup, local: { chats: value.localChats, images: localImages }, cloud }

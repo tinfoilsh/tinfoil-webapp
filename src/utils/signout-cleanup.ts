@@ -3,17 +3,28 @@ import { PINNED_CHAT_IDS_CHANGED_EVENT } from '@/constants/settings-events'
 import {
   AUTH_ACCOUNT_RESET_FAILED,
   AUTH_ACTIVE_USER_ID,
+  CONFIG_CACHED_MODELS,
+  CONFIG_CACHED_SYSTEM_PROMPT,
   SECRET_PASSKEY_BACKED_UP,
   SETTINGS_HAS_SEEN_ONBOARDING,
   USER_ENCRYPTION_KEY,
-  USER_ENCRYPTION_KEY_HISTORY,
 } from '@/constants/storage-keys'
 import { authTokenManager } from '@/services/auth'
+import { cloudSync } from '@/services/cloud/cloud-sync'
+import { resetEditClockCache } from '@/services/cloud/edit-clock'
+import { profileSync } from '@/services/cloud/profile-sync'
+import { invalidateProfileSyncGeneration } from '@/services/cloud/profile-sync-coordinator'
+import { streamingTracker } from '@/services/cloud/streaming-tracker'
+import { resetSyncHealth } from '@/services/cloud/sync-health'
 import { encryptionService } from '@/services/encryption/encryption-service'
-import { resetHarnessAPI } from '@/services/harness/runtime'
+import { resetChatRecoveryState } from '@/services/inference/chat-recovery'
+import { resetTinfoilClient } from '@/services/inference/tinfoil-client'
+import { projectEvents } from '@/services/project/project-events'
 import { speechPlayer } from '@/services/speech/player'
 import { deletedChatsTracker } from '@/services/storage/deleted-chats-tracker'
 import { indexedDBStorage } from '@/services/storage/indexed-db'
+import { projectCache } from '@/services/storage/project-cache'
+import { resetSyncEnclaveClient } from '@/services/sync-enclave'
 import { logError, logInfo } from '@/utils/error-handling'
 import {
   completeSignoutStep,
@@ -51,7 +62,10 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
     if (!skipProgressReporting) completeSignoutStep(step)
   }
 
-  resetHarnessAPI()
+  invalidateProfileSyncGeneration(true)
+  projectCache.invalidate()
+  cloudSync.resetForAccountChange()
+  streamingTracker.reset()
   // Clerk's confirmed sign-out remains authoritative while local data is cleared.
   if (!authTokenManager.isSignedOut()) {
     authTokenManager.reset()
@@ -68,7 +82,27 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   // Reset renderer registry to clear any cached renderers
   reportStep(SIGNOUT_STEPS.RESET_CACHES)
   resetRendererRegistry()
+
+  // Reset tinfoil client to clear cached API key
+  resetTinfoilClient()
+  resetChatRecoveryState()
+
+  // Drop the verified sync-enclave SecureClient so the next signed-in
+  // user re-runs attestation from scratch.
+  resetSyncEnclaveClient()
+
+  // Clear profile sync cache
+  profileSync.clearCache()
+
   deletedChatsTracker.clear()
+  resetSyncHealth()
+
+  // Drop the in-memory edit-clock counter/device-id so the next user
+  // re-reads from cleared storage instead of inheriting this session's.
+  resetEditClockCache()
+
+  // Clear project event handlers
+  projectEvents.clear()
 
   logInfo('Cleared in-memory caches', {
     component: context,
@@ -81,10 +115,10 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   try {
     const preservedKeys = new Set([
       AUTH_ACTIVE_USER_ID,
+      CONFIG_CACHED_MODELS,
+      CONFIG_CACHED_SYSTEM_PROMPT,
       SETTINGS_HAS_SEEN_ONBOARDING,
-      ...(preserveEncryptionKey
-        ? [USER_ENCRYPTION_KEY, USER_ENCRYPTION_KEY_HISTORY]
-        : []),
+      ...(preserveEncryptionKey ? [USER_ENCRYPTION_KEY] : []),
     ])
     const keys = Array.from({ length: localStorage.length }, (_, index) =>
       localStorage.key(index),
@@ -106,9 +140,9 @@ async function clearAllUserData(options: ClearUserDataOptions): Promise<void> {
   }
   completeStep(SIGNOUT_STEPS.CLEAR_STORAGE)
 
-  // Clear IndexedDB, which holds the chats kept on this device. Other tabs
-  // reset too, and this tab's store refuses writes until it reloads.
+  // Clear IndexedDB
   reportStep(SIGNOUT_STEPS.CLEAR_BROWSING_DATA)
+  projectCache.invalidate()
   try {
     await indexedDBStorage.resetForAccountChange()
   } catch (error) {

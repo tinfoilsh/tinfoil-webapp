@@ -2,10 +2,13 @@
   "name": "tinfoil-chat",
   "version": "1.0.6",
   "scripts": {
-    "dev": "next dev",
+    "dev": "npm run dev:frontend",
+    "dev:frontend": "next dev",
+    "dev:backend": "node scripts/dev-simulator.mjs",
     "build": "next build",
     "check:clerk-privacy": "node scripts/check-clerk-environment.mjs",
     "start": "npx serve out",
+    "dev:serve": "node scripts/dev-serve.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepare": "husky install",
@@ -75,9 +78,11 @@
     "unified": "^11.0.5",
     "uuid": "^11.1.1",
     "yet-another-react-lightbox": "^3.32.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
+    "@next/env": "16.3.0",
     "@tailwindcss/container-queries": "^0.1.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.1",
@@ -89,6 +94,7 @@
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/uuid": "^10.0.0",
     "@vitest/coverage-v8": "^4.0.16",
+    "concurrently": "^9.2.1",
     "eslint": "^9.28.0",
     "eslint-config-next": "^16.2.6",
     "fake-indexeddb": "^6.2.5",
@@ -101,8 +107,7 @@
     "tailwindcss": "^3.4.7",
     "ts-unused-exports": "^11.0.1",
     "typescript": "^5",
-    "vitest": "^4.0.16",
-    "zod-to-json-schema": "^3.25.2"
+    "vitest": "^4.0.16"
   },
   "overrides": {
     "@tinfoilsh/tinfoil-icons": {

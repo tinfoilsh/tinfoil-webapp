@@ -1,4 +1,4 @@
-import { harnessAPI } from '@/services/harness/runtime'
+import { getTinfoilClient } from '@/services/inference/tinfoil-client'
 import { SPEECH } from './constants'
 import { SpeechError } from './errors'
 
@@ -71,13 +71,22 @@ export const streamSpeech: SpeechStream = async function* (text, signal) {
   )
   try {
     signal.throwIfAborted()
-    // The harness reads the text with the voice and narration style the
-    // previous client asked the speech model for, over the attested
-    // connection, and streams the audio back as it is generated.
-    const response = await harnessAPI().stream(
-      '/v1/speech',
-      { text },
-      controller.signal,
+    const client = await getTinfoilClient()
+    controller.signal.throwIfAborted()
+    const response = await client.audio.speech.create(
+      {
+        model: SPEECH.MODEL,
+        voice: SPEECH.VOICE,
+        instructions: SPEECH.INSTRUCTIONS,
+        input: text,
+        response_format: 'pcm',
+        stream_format: 'audio',
+      },
+      {
+        signal: controller.signal,
+        maxRetries: 0,
+        timeout: SPEECH.REQUEST_TIMEOUT_MS,
+      },
     )
     controller.signal.throwIfAborted()
     const mediaType = response.headers.get('content-type')?.split(';')[0].trim()

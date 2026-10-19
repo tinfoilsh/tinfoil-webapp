@@ -1,12 +1,23 @@
 # Tinfoil Chat (Web)
 
-The Next.js chat UI for [chat.tinfoil.sh](https://chat.tinfoil.sh). It connects to the confidential Tinfoil harness through the attested Tinfoil JavaScript SDK.
+**Live at:** [chat.tinfoil.sh](https://chat.tinfoil.sh)
 
-The harness runs conversations and stores the encrypted chats of accounts with cloud sync. This repository contains the existing chat interface, message and widget renderers, project and settings screens, browser key/passkey custody, and the chats kept on the device. It no longer assembles inference requests, runs tools, or replicates chat rows.
+Tinfoil Chat is a private AI chat app. Messages are encrypted in the browser directly to a verified secure enclave, so only the model inside the enclave can read them. Learn more at [docs.tinfoil.sh](https://docs.tinfoil.sh/chat/overview).
 
-Set up the environment from `.env.example`, then install dependencies with `npm install`. The harness URL defaults to `https://chat-api.tinfoil.sh`; set `NEXT_PUBLIC_HARNESS_ENCLAVE_URL` to override it. See [HARNESS.md](./HARNESS.md) for the API integration and [dev.md](./dev.md) for development, verification, and the release process.
+## Architecture Overview
 
-With cloud sync, chats require the user's encryption key: the browser sends it through the verified connection, and the harness coordinates encrypted persistence. Passkeys recover the key across devices. Without cloud sync, and for signed-out visitors, chats stay in the browser (IndexedDB, or session storage for the tab) and need no key. Chats the previous client kept on the device open as they are.
+A static [Next.js](https://nextjs.org/) app (TypeScript, [Tailwind CSS](https://tailwindcss.com/), [Radix UI](https://www.radix-ui.com/)) with no server of its own. The browser talks to the Tinfoil model router through the [Tinfoil JavaScript SDK](https://docs.tinfoil.sh/sdk/javascript-sdk), which handles enclave attestation and [EHBP](https://docs.tinfoil.sh/resources/ehbp) encryption. Authentication uses [Clerk](https://clerk.com/).
+
+- **[src/services/inference/](src/services/inference/)**: Streaming chat requests to the model router
+- **[src/services/encryption/](src/services/encryption/)**, **[src/services/cloud/](src/services/cloud/)**: Client-side encryption and sync of saved chats
+- **[src/services/passkey/](src/services/passkey/)**: Passkey-protected backup keys via [passkey-kit](https://github.com/tinfoilsh/tinfoil-passkey-kit)
+- **[src/services/storage/](src/services/storage/)**: Local IndexedDB cache
+- **[src/components/chat/](src/components/chat/)**: Chat UI
+- **[src/components/verification-sidebar.tsx](src/components/verification-sidebar.tsx)**: Live enclave verification status
+
+## Development
+
+See **[dev.md](./dev.md)** for environment setup, the local workflow, Dev Simulator commands, controlplane mocks, safeguard testing, and the release process.
 
 ## Reporting Vulnerabilities
 

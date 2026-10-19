@@ -1,7 +1,6 @@
 import { CONSTANTS } from '@/components/chat/constants'
 import { SidebarAccountMenu } from '@/components/chat/sidebar-account-menu'
 import { PRIVACY_POLICY_URL, TERMS_URL } from '@/constants/external-links'
-import { publish } from '@/services/harness/runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,6 +14,10 @@ vi.mock('next/router', () => ({
 
 vi.mock('@clerk/react', () => ({
   useUser: () => userState,
+}))
+
+vi.mock('@/hooks/use-rate-limit', () => ({
+  useRateLimit: () => null,
 }))
 
 vi.mock('@/components/user-avatar', () => ({
@@ -36,24 +39,32 @@ function renderMenu(
 ) {
   const onOpenSettings = vi.fn()
   const onReportBug = vi.fn()
+  const onSync = vi.fn().mockResolvedValue(true)
   render(
     <SidebarAccountMenu
       isSidebarOpen
       isSignedIn
       isPremium={false}
       isDarkMode={false}
+      canSync
+      isSyncing={false}
+      syncFailed={false}
+      syncNeedsAttention={false}
+      onSync={onSync}
       onOpenSettings={onOpenSettings}
       onReportBug={onReportBug}
       {...overrides}
     />,
   )
-  return { onOpenSettings, onReportBug }
+  return { onOpenSettings, onReportBug, onSync }
 }
 
 describe('SidebarAccountMenu', () => {
   afterEach(() => {
     cleanup()
     vi.useRealTimers()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
   beforeEach(() => {
     routerAsPath = DEFAULT_AS_PATH
@@ -81,10 +92,14 @@ describe('SidebarAccountMenu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
     expect(onOpenSettings).toHaveBeenCalledWith('general')
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
 
-    fireEvent.click(trigger)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Account' }))
-    expect(onOpenSettings).toHaveBeenLastCalledWith('account')
+  it('routes settings to cloud sync when sync needs attention', () => {
+    const { onOpenSettings } = renderMenu({ syncNeedsAttention: true })
+
+    fireEvent.click(screen.getByRole('button', { name: /Ada/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Settings' }))
+    expect(onOpenSettings).toHaveBeenCalledWith('cloud-sync')
   })
 
   it('reveals help links and the bug report action in a submenu', () => {
@@ -108,11 +123,36 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  it('triggers a manual sync without closing the menu', async () => {
+    vi.useFakeTimers()
+    const { onSync } = renderMenu()
+
+    fireEvent.click(screen.getByRole('button', { name: /Ada/ }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Sync cloud data/ }))
+
+    expect(onSync).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(
+        CONSTANTS.SIDEBAR_SYNC_MIN_SPINNER_MS +
+          CONSTANTS.SIDEBAR_SYNC_SUCCESS_FEEDBACK_MS,
+      )
+    })
+    expect(
+      screen.getByRole('menuitem', { name: /Sync cloud data. Sync healthy/ }),
+    ).toBeEnabled()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('removes both menus when the parent sidebar closes and does not reopen them automatically', () => {
     const props = {
       isSignedIn: true,
       isPremium: false,
       isDarkMode: false,
+      canSync: false,
+      isSyncing: false,
+      syncFailed: false,
+      syncNeedsAttention: false,
       onOpenSettings: vi.fn(),
       onReportBug: vi.fn(),
     }
@@ -144,7 +184,7 @@ describe('SidebarAccountMenu', () => {
 
   it('activates the sign-in menu link with Space', () => {
     userState = { user: null }
-    const { onOpenSettings } = renderMenu({ isSignedIn: false })
+    const { onOpenSettings } = renderMenu({ isSignedIn: false, canSync: false })
     fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
     const signIn = screen.getByRole('menuitem', { name: 'Sign in' })
     const click = vi.fn((event: Event) => event.preventDefault())
@@ -155,16 +195,38 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
+  it.each([
+    { gate: 'availability', canSync: false, hasSyncCallback: true },
+    { gate: 'callback', canSync: true, hasSyncCallback: false },
+  ])(
+    'offers sign in and independently gates sync on $gate',
+    ({ canSync, hasSyncCallback }) => {
+      userState = { user: null }
+      renderMenu({
+        isSignedIn: false,
+        canSync,
+        onSync: hasSyncCallback ? vi.fn().mockResolvedValue(true) : undefined,
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: /Menu/ }))
+      expect(
+        screen.getByRole('menuitem', { name: 'Sign in' }),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('menuitem', { name: /Sync cloud data/ }),
+      ).not.toBeInTheDocument()
+    },
+  )
+
   it('links directly to sign in with the return URL instead of opening account settings', () => {
     userState = { user: null }
-    routerAsPath = '/newchat?q=private+prompt&view=compact#send=c2VjcmV0'
-    const { onOpenSettings } = renderMenu({ isSignedIn: false })
+    const { onOpenSettings } = renderMenu({ isSignedIn: false, canSync: false })
     fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
     const signIn = screen.getByRole('menuitem', { name: 'Sign in' })
     expect(signIn.tagName).toBe('A')
     expect(signIn).toHaveAttribute(
       'href',
-      '/signin?redirect_url=%2Fnewchat%3Fview%3Dcompact',
+      '/signin?redirect_url=%2Fc%2Fchat-1%3Fview%3Dcompact%23bottom',
     )
     window.addEventListener('click', (event) => event.preventDefault(), {
       once: true,
@@ -174,29 +236,22 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it("shows a subscriber's token usage above the menu items", () => {
-    act(() =>
-      publish({
-        rateLimit: {
-          kind: 'hourly',
-          inputTokens: { max: 2_000_000, used: 500_000, remaining: 1_500_000 },
-          outputTokens: { max: 100_000, used: 1_000, remaining: 99_000 },
-        },
-      }),
-    )
-    renderMenu({ isPremium: true })
-    fireEvent.click(screen.getByRole('button', { name: 'Ada' }))
-    expect(screen.getByText('Hourly usage')).toBeInTheDocument()
-    expect(screen.getByText('500K / 2M')).toBeInTheDocument()
-    cleanup()
+  it('leaves prefilled message text out of the sign-in return URL', () => {
+    userState = { user: null }
+    routerAsPath = '/newchat?q=private+prompt&view=compact#send=c2VjcmV0'
+    renderMenu({ isSignedIn: false, canSync: false })
+    fireEvent.click(screen.getByRole('button', { name: 'Menu' }))
+    const href = screen
+      .getByRole('menuitem', { name: 'Sign in' })
+      .getAttribute('href')
+    expect(href).toBe('/signin?redirect_url=%2Fnewchat%3Fview%3Dcompact')
+  })
 
-    for (const overrides of [{ isPremium: false }, { isSignedIn: false }]) {
-      renderMenu({ isPremium: true, ...overrides })
-      fireEvent.click(screen.getByRole('button', { name: /Ada|Menu/ }))
-      expect(screen.getByRole('menu')).toBeInTheDocument()
-      expect(screen.queryByText('Hourly usage')).not.toBeInTheDocument()
-      cleanup()
-    }
+  it('still opens account settings for signed-in users', () => {
+    const { onOpenSettings } = renderMenu()
+    fireEvent.click(screen.getByRole('button', { name: 'Ada' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Account' }))
+    expect(onOpenSettings).toHaveBeenCalledWith('account')
   })
 
   it('closes on Escape and on outside clicks', () => {
@@ -241,8 +296,8 @@ describe('SidebarAccountMenu', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 
-  it('moves up through the actions and lets Tab leave the menu', () => {
-    renderMenu()
+  it('skips disabled actions and lets Tab leave the menu', () => {
+    renderMenu({ isSyncing: true })
     const trigger = screen.getByRole('button', { name: 'Ada' })
     fireEvent.keyDown(trigger, { key: 'ArrowUp' })
     const help = screen.getByRole('menuitem', { name: 'Help' })

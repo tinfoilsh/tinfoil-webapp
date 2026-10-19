@@ -1,9 +1,41 @@
-import { useHarness } from '@/services/harness/provider'
-import { initialChat, reduceEvent } from '@/services/harness/reducer'
-import type { Turn } from '@/services/harness/types'
-import { messageView } from '@/services/harness/view-model'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { LoadingState, Message } from '../types'
+/**
+ * Ephemeral "Ask" sidebar chat hook.
+ *
+ * Drives a single, disposable streaming session for the quote-ask sidebar.
+ * Nothing is persisted — no IndexedDB, no sessionStorage, no cloud sync.
+ * Each call to askQuote() aborts the previous stream and starts fresh.
+ *
+ * Reuses the existing streaming pipeline (sendChatStream +
+ * processStreamingResponse), while publishing updates directly to its
+ * in-memory messages. This keeps parsing, thinking mode, web search, and
+ * citation processing identical to the main chat view.
+ */
+import type { AutoIntelligenceLevelId } from '@/config/models'
+import {
+  getKnownModelDisplayName,
+  resolveModelSelection,
+  type BaseModel,
+} from '@/config/models'
+import { streamingTracker } from '@/services/cloud/streaming-tracker'
+import { sendChatStream } from '@/services/inference/inference-client'
+import { logError } from '@/utils/error-handling'
+import { useCallback, useRef, useState } from 'react'
+import type { AIModel, LoadingState, Message } from '../types'
+import { processStreamingResponse } from './streaming'
+import type { ReasoningEffort } from './use-reasoning-effort'
+
+interface UseSidebarChatProps {
+  systemPrompt: string
+  rules?: string
+  models: BaseModel[]
+  selectedModel: AIModel
+  reasoningEffort?: ReasoningEffort
+  thinkingEnabled?: boolean
+  autoIntelligence?: AutoIntelligenceLevelId
+  webSearchEnabled?: boolean
+  piiCheckEnabled?: boolean
+}
+
 export interface SidebarChatState {
   messages: Message[]
   quote: string | null
@@ -11,139 +43,268 @@ export interface SidebarChatState {
   isThinking: boolean
   isWaitingForResponse: boolean
   isStreaming: boolean
-  retryInfo: null
+  retryInfo: { attempt: number; maxRetries: number; error?: string } | null
 }
-type AskContext = Pick<
-  Turn,
-  'key' | 'threadId' | 'local' | 'thread' | 'profile'
->
+
+interface UseSidebarChatReturn extends SidebarChatState {
+  askQuote: (quote: string, contextMessages?: Message[]) => void
+  cancel: () => void
+  reset: () => void
+}
+
+// A stable placeholder chat id used by the streaming processor. The id never
+// leaves this hook — nothing is saved under it.
+const EPHEMERAL_CHAT_ID = 'ask-sidebar-ephemeral'
+
+// Prompt prepended to the hidden user turn so the model understands that the
+// preceding transcript is the conversation the user highlighted from.
+const ASK_CONTEXT_INSTRUCTION =
+  'The following is the prior conversation the user was having. ' +
+  'They highlighted a snippet from it and want you to elaborate on, ' +
+  'clarify, or expand on that specific snippet. Use the conversation ' +
+  'above only as background context and focus your answer on the quoted ' +
+  'snippet in the user\u2019s next message.'
+
+// Render a Chat transcript as readable plain text for the hidden context turn.
+function serializeTranscript(messages: Message[]): string {
+  return messages
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => {
+      const role = m.role === 'user' ? 'User' : 'Assistant'
+      const quotePrefix = m.quote
+        ? `[In reply to: ${m.quote.replace(/\s+/g, ' ').trim()}]\n`
+        : ''
+      const body = (m.content || '').trim()
+      return `${role}:\n${quotePrefix}${body}`.trim()
+    })
+    .join('\n\n')
+}
+
 export function useSidebarChat({
-  context,
-  options,
-}: {
-  // The thread an ask reads: a stored thread by id and key, or a local
-  // thread's transcript.
-  context: () => Promise<AskContext>
-  options: Turn['options']
-}) {
-  const { api } = useHarness()
-  const [state, setState] = useState(initialChat)
+  systemPrompt,
+  rules = '',
+  models,
+  selectedModel,
+  reasoningEffort,
+  thinkingEnabled,
+  autoIntelligence,
+  webSearchEnabled,
+  piiCheckEnabled,
+}: UseSidebarChatProps): UseSidebarChatReturn {
+  const [messages, setMessages] = useState<Message[]>([])
   const [quote, setQuote] = useState<string | null>(null)
-  // A local ask's run starts from the whole transcript; only the quote and
-  // its answer belong in the sidebar.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
-  const controller = useRef<AbortController | null>(null)
-  const run = useRef<{ threadId: string; runId: string } | null>(null)
-  const local = useRef(false)
-  const reset = () => {
-    controller.current?.abort()
-    run.current = null
-    setState(initialChat())
+  const [loadingState, setLoadingState] = useState<LoadingState>('idle')
+  const [retryInfo, setRetryInfo] = useState<{
+    attempt: number
+    maxRetries: number
+    error?: string
+  } | null>(null)
+  const [isThinking, setIsThinking] = useState(false)
+  const [isWaitingForResponse, setIsWaitingForResponse] = useState(false)
+  const [isStreaming, setIsStreaming] = useState(false)
+
+  const streamChatIdRef = useRef<string>(EPHEMERAL_CHAT_ID)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  const cancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+      abortControllerRef.current = null
+      streamingTracker.endStreaming(EPHEMERAL_CHAT_ID)
+    }
+    setLoadingState('idle')
+    setRetryInfo(null)
+    setIsThinking(false)
+    setIsWaitingForResponse(false)
+    setIsStreaming(false)
+  }, [])
+
+  const reset = useCallback(() => {
+    cancel()
+    setMessages([])
     setQuote(null)
-    setHidden(new Set())
-  }
-  useEffect(() => () => controller.current?.abort(), [])
-  const askQuote = (text: string) => {
-    reset()
-    setQuote(text)
-    const abort = new AbortController()
-    controller.current = abort
-    void (async () => {
-      try {
-        const thread = await context()
-        if (abort.signal.aborted) return
-        local.current = !!thread.local
-        setHidden(
-          new Set(thread.thread?.messages.map((message) => message.id) ?? []),
-        )
-        const input: Turn = {
-          ...thread,
-          kind: 'ask',
-          ...(thread.local ? {} : { ephemeral: true }),
-          clientRequestId: crypto.randomUUID(),
-          content: text,
-          quote: text,
-          options,
-        }
-        for await (const frame of api.client.events(
-          '/v1/threads/turn',
-          input,
-          api.signal(abort.signal, !thread.local),
-        )) {
-          if (abort.signal.aborted) return
-          if (frame.event.type === 'RUN_STARTED')
-            run.current = {
-              threadId: frame.event.threadId!,
-              runId: frame.event.runId!,
-            }
-          setState((previous) =>
-            reduceEvent(previous, frame, run.current?.runId),
-          )
-        }
-      } catch (cause) {
-        if (!abort.signal.aborted)
-          setState((previous) => ({
-            ...previous,
-            status: 'error',
-            error: {
-              code: 'CONNECTION',
-              message:
-                cause instanceof Error
-                  ? cause.message
-                  : 'Unable to open this conversation.',
-            },
-          }))
-      }
-    })()
-  }
-  const isStreaming = state.status === 'streaming'
-  const shown = state.messages.filter((message) => !hidden.has(message.id))
-  // A failed ask shows why as an error reply, also when it failed before the
-  // harness sent any message.
-  const failure = useMemo<Message | null>(
-    () =>
-      state.status === 'error' && state.error
-        ? {
-            role: 'assistant',
-            content: `Error: ${state.error.message}`,
-            timestamp: new Date(),
-            isError: true,
-          }
-        : null,
-    [state.status, state.error],
-  )
-  return {
-    messages: [
-      ...shown.map((m, index) =>
-        messageView(m, isStreaming && index === shown.length - 1),
-      ),
-      ...(failure ? [failure] : []),
-    ],
-    quote,
-    loadingState: (isStreaming ? 'streaming' : 'idle') as LoadingState,
-    isThinking: false,
-    isWaitingForResponse:
-      isStreaming && !shown.some((m) => m.role === 'assistant'),
-    isStreaming,
-    retryInfo: null,
-    askQuote,
-    reset,
-    cancel: () => {
-      if (run.current)
-        void api.post(
-          '/v1/threads/cancel',
-          run.current,
-          undefined,
-          !local.current,
-        )
-      controller.current?.abort()
-      // The aborted stream reports nothing more, so the ask stops here and
-      // keeps what it received.
-      setState((previous) =>
-        previous.status === 'streaming' || previous.status === 'queued'
-          ? { ...previous, status: 'idle' }
-          : previous,
+  }, [cancel])
+
+  const askQuote = useCallback(
+    (quoteText: string, contextMessages?: Message[]) => {
+      if (!quoteText) return
+
+      // Discard any in-flight stream and any previous sidebar conversation.
+      cancel()
+      setMessages([])
+      setQuote(quoteText)
+
+      // The sidebar ask only sends quoted text plus a serialized transcript,
+      // so multimodal is never needed here; tool calling is preferred when web
+      // search is on.
+      const { model, autoCandidates } = resolveModelSelection(
+        selectedModel,
+        models,
+        { preferToolCalling: Boolean(webSearchEnabled) },
       )
+      if (!model) {
+        logError('Cannot start sidebar ask: model not found', undefined, {
+          component: 'useSidebarChat',
+          metadata: { selectedModel },
+        })
+        return
+      }
+
+      // Visible user message - shown in the sidebar UI. Content is empty so
+      // the default renderer only shows the quoted block.
+      const visibleUserMessage: Message = {
+        role: 'user',
+        content: '',
+        quote: quoteText,
+        timestamp: new Date(),
+      }
+      setMessages([visibleUserMessage])
+
+      // Hidden context message sent to the model but never shown in the UI.
+      // It carries the parent conversation transcript and tells the model to
+      // focus on the quote in the next user message.
+      const transcript = contextMessages?.length
+        ? serializeTranscript(contextMessages)
+        : ''
+      const hiddenContextMessage: Message | null = transcript
+        ? {
+            role: 'user',
+            content: `${ASK_CONTEXT_INSTRUCTION}\n\n----- Prior conversation -----\n${transcript}\n----- End of conversation -----`,
+            timestamp: new Date(),
+          }
+        : null
+
+      // What we actually send to the model.
+      const apiMessages: Message[] = hiddenContextMessage
+        ? [hiddenContextMessage, visibleUserMessage]
+        : [visibleUserMessage]
+
+      const controller = new AbortController()
+      abortControllerRef.current = controller
+      setLoadingState('loading')
+      setIsWaitingForResponse(true)
+      setIsStreaming(true)
+
+      ;(async () => {
+        try {
+          const response = await sendChatStream({
+            model,
+            autoCandidates,
+            systemPrompt,
+            rules,
+            onRetry: (attempt, max, error) => {
+              if (abortControllerRef.current !== controller) return
+              setLoadingState('retrying')
+              setRetryInfo({ attempt, maxRetries: max, error })
+            },
+            updatedMessages: apiMessages,
+            signal: controller.signal,
+            reasoningEffort,
+            thinkingEnabled,
+            autoIntelligence,
+            webSearchEnabled,
+            piiCheckEnabled,
+          })
+          if (abortControllerRef.current !== controller) {
+            return
+          }
+
+          const assistantMessage = await processStreamingResponse(response, {
+            streamChatIdRef,
+            onUpdate: (message) => {
+              if (
+                abortControllerRef.current !== controller ||
+                controller.signal.aborted
+              )
+                return
+              setMessages([visibleUserMessage, message])
+            },
+            setIsThinking: (value) => {
+              if (abortControllerRef.current === controller)
+                setIsThinking(value)
+            },
+            setIsWaitingForResponse: (value) => {
+              if (abortControllerRef.current === controller)
+                setIsWaitingForResponse(value)
+            },
+            setIsStreaming: (value) => {
+              if (abortControllerRef.current === controller)
+                setIsStreaming(value)
+            },
+            setLoadingState: (value) => {
+              if (abortControllerRef.current === controller)
+                setLoadingState(value)
+            },
+            signal: controller.signal,
+            modelDisplayName: model.name,
+            resolveModelDisplayName: getKnownModelDisplayName,
+          })
+
+          if (assistantMessage && abortControllerRef.current === controller) {
+            // Only the visible messages go into the UI state.
+            setMessages([visibleUserMessage, assistantMessage])
+          }
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return
+          }
+          // Ignore errors from a superseded request; the active request owns
+          // the visible messages state.
+          if (abortControllerRef.current !== controller) {
+            return
+          }
+          logError('Sidebar ask streaming failed', error, {
+            component: 'useSidebarChat',
+          })
+          const errMsg =
+            error instanceof Error ? error.message : 'Unknown error'
+          setMessages([
+            visibleUserMessage,
+            {
+              role: 'assistant',
+              content: `Error: ${errMsg}`,
+              timestamp: new Date(),
+              isError: true,
+            },
+          ])
+        } finally {
+          // Only clear streaming state if this request is still the active one.
+          // Otherwise a newer askQuote() call has already taken over the refs
+          // and setting them here would stomp on its flags.
+          if (abortControllerRef.current === controller) {
+            setLoadingState('idle')
+            setRetryInfo(null)
+            setIsWaitingForResponse(false)
+            setIsStreaming(false)
+            abortControllerRef.current = null
+          }
+        }
+      })()
     },
+    [
+      cancel,
+      models,
+      selectedModel,
+      systemPrompt,
+      rules,
+      reasoningEffort,
+      thinkingEnabled,
+      autoIntelligence,
+      webSearchEnabled,
+      piiCheckEnabled,
+    ],
+  )
+
+  return {
+    messages,
+    quote,
+    loadingState,
+    retryInfo,
+    isThinking,
+    isWaitingForResponse,
+    isStreaming,
+    askQuote,
+    cancel,
+    reset,
   }
 }

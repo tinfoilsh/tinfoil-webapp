@@ -1,3 +1,12 @@
+interface ReadExportFilesOptions {
+  /**
+   * Accept a file holding one record object instead of an array. Claude
+   * writes one <uuid>.json per project; conversation exports are always
+   * arrays, and stray object files such as users.json must be rejected.
+   */
+  allowSingleRecord?: boolean
+}
+
 /**
  * ChatGPT and Claude split large exports across several JSON files
  * (conversations-1.json, conversations-2.json, ...), so the on-device
@@ -6,6 +15,7 @@
 export async function readExportFiles<T extends object>(
   files: readonly File[],
   formatLabel: string,
+  options: ReadExportFilesOptions = {},
 ): Promise<T[]> {
   const records: T[] = []
   for (const file of files) {
@@ -23,6 +33,12 @@ export async function readExportFiles<T extends object>(
       for (const record of data as T[]) {
         records.push(record)
       }
+    } else if (
+      options.allowSingleRecord &&
+      data !== null &&
+      typeof data === 'object'
+    ) {
+      records.push(data as T)
     } else {
       throw new Error(`${file.name} is not a ${formatLabel} export`)
     }

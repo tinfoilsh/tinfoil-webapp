@@ -1,4 +1,4 @@
-import { HarnessError } from '@/services/harness/sse'
+import { APIError } from 'openai'
 
 export type SpeechErrorCode =
   'empty' | 'too-long' | 'unsupported' | 'invalid-audio' | 'interrupted'
@@ -11,7 +11,7 @@ export class SpeechError extends Error {
 }
 
 export function speechErrorMessage(error: unknown): string {
-  if (error instanceof HarnessError && error.status === 429) {
+  if (error instanceof APIError && error.status === 429) {
     return 'Speech usage limit reached. Please try again later.'
   }
   if (error instanceof SpeechError) {

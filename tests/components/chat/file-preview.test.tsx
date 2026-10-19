@@ -97,6 +97,15 @@ describe('FilePreview', () => {
     expect(screen.getByAltText('photo.png')).toBe(image)
     expect(tile.querySelector('svg.animate-spin')).toBeNull()
   })
+
+  it('does not render a thumbnail for images without data', () => {
+    render(<FilePreview filename="photo.png" textContent="A description" />)
+    expect(screen.getByTestId('file-preview')).toHaveAttribute(
+      'data-preview-kind',
+      'icon',
+    )
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
 })
 
 describe('buildTextPreviewExcerpt', () => {

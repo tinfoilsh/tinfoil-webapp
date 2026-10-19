@@ -1,4 +1,8 @@
-import { stripMessageMarkers } from '@/utils/redirect-url'
+import {
+  postAuthRedirectTarget,
+  sanitizeRelativeRedirect,
+  stripMessageMarkers,
+} from '@/utils/redirect-url'
 import { describe, expect, it } from 'vitest'
 
 describe('stripMessageMarkers', () => {
@@ -20,5 +24,20 @@ describe('stripMessageMarkers', () => {
     '/project/p1/chat/c1?tab=files',
   ])('leaves %s untouched', (path) => {
     expect(stripMessageMarkers(path)).toBe(path)
+  })
+})
+
+describe('postAuthRedirectTarget', () => {
+  it('encodes the stripped path for use in a query string', () => {
+    expect(postAuthRedirectTarget('/newchat?q=secret&view=compact')).toBe(
+      '%2Fnewchat%3Fview%3Dcompact',
+    )
+  })
+
+  it('round-trips through the sign-in sanitizer', () => {
+    const target = postAuthRedirectTarget('/c/chat-1?q=secret#bottom')
+    expect(sanitizeRelativeRedirect(decodeURIComponent(target))).toBe(
+      '/c/chat-1#bottom',
+    )
   })
 })

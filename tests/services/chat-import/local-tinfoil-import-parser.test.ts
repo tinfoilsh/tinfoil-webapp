@@ -6,6 +6,12 @@ import {
   parseTinfoilExportBytes,
 } from '@/services/chat-import/local-tinfoil-import-parser'
 
+const parserOptions = {
+  fileName: 'conversations.json',
+  mimeType: 'application/json',
+  maxArchiveBytes: 1024,
+}
+
 describe('parseTinfoilExportBytes', () => {
   it('deduplicates shared buffers before worker transfer', () => {
     const buffer = new ArrayBuffer(8)
@@ -18,6 +24,39 @@ describe('parseTinfoilExportBytes', () => {
     ).toEqual([buffer])
   })
 
+  it('parses JSON conversation arrays', () => {
+    const conversations = [{ name: 'Imported chat' }]
+
+    expect(
+      parseTinfoilExportBytes({
+        ...parserOptions,
+        bytes: new TextEncoder().encode(JSON.stringify(conversations)),
+      }),
+    ).toEqual({ conversations })
+  })
+
+  it('rejects JSON that is not a conversation array', () => {
+    expect(() =>
+      parseTinfoilExportBytes({
+        ...parserOptions,
+        bytes: new TextEncoder().encode('{}'),
+      }),
+    ).toThrow('Invalid Tinfoil export format')
+  })
+
+  it('rejects ZIP exports without conversations.json', () => {
+    const bytes = zipSync({ 'manifest.json': strToU8('{}') })
+
+    expect(() =>
+      parseTinfoilExportBytes({
+        ...parserOptions,
+        bytes,
+        fileName: 'export.zip',
+        mimeType: 'application/zip',
+      }),
+    ).toThrow('The Tinfoil export is missing conversations.json')
+  })
+
   it('enforces the uncompressed archive limit', () => {
     const bytes = zipSync({
       'conversations.json': strToU8(JSON.stringify([])),
@@ -26,6 +65,7 @@ describe('parseTinfoilExportBytes', () => {
 
     expect(() =>
       parseTinfoilExportBytes({
+        ...parserOptions,
         bytes,
         fileName: 'export.zip',
         mimeType: 'application/zip',

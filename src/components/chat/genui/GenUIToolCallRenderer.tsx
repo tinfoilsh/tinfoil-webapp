@@ -5,6 +5,9 @@
  * shown until the tool arguments are complete enough to render. This lets the
  * widget appear as soon as its own stream is done, even if the assistant turn
  * continues into another stage like thinking.
+ *
+ * Input-surface widgets are skipped here — they render inside `ChatInput`
+ * via `GenUIInputAreaRenderer`.
  */
 import { logError } from '@/utils/error-handling'
 import { TfRefresh1, TfStars } from '@tinfoilsh/tinfoil-icons'
@@ -79,7 +82,6 @@ function parseInput(
 
 function GenUIWidgetContent({
   toolCallId,
-  result,
   toolName,
   input,
   isActive,
@@ -87,7 +89,6 @@ function GenUIWidgetContent({
   isStreaming,
 }: {
   toolCallId: string
-  result?: unknown
   toolName: string
   input: unknown
   isActive: boolean
@@ -99,7 +100,6 @@ function GenUIWidgetContent({
     isDarkMode,
     isStreaming,
     toolCallId,
-    result,
   })
   if (rendered === null) throw new Error('Widget render returned null')
   return rendered
@@ -117,6 +117,13 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
     <React.Fragment>
       {toolCalls.map((tc) => {
         const widget = getGenUIWidget(tc.name)
+
+        // Input-surface widgets render inside ChatInput, not in the chat
+        // scroll — skip them here. They're handled by the renderer that
+        // shows resolved stamps when applicable.
+        if (widget && widget.surface === 'input') {
+          return null
+        }
 
         // The schema is unavailable on this client, so waiting for more
         // argument bytes cannot make this component renderable.
@@ -160,7 +167,6 @@ export const GenUIToolCallRenderer = memo(function GenUIToolCallRenderer({
             >
               <div className="my-4">
                 <GenUIWidgetContent
-                  result={tc.result}
                   toolCallId={tc.id}
                   toolName={tc.name}
                   input={parsedInput.data}

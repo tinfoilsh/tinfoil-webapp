@@ -50,8 +50,9 @@ const eslintConfig = [
   // the error, instead of swallowing it invisibly.
   {
     files: [
-      'src/services/harness/**/*.ts',
-      'src/services/keys/**/*.ts',
+      'src/services/cloud/**/*.ts',
+      'src/services/cloud/**/*.tsx',
+      'src/hooks/use-cloud-sync.ts',
       'src/hooks/use-passkey-backup.ts',
     ],
     rules: {

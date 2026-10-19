@@ -10,13 +10,17 @@ const schema = z.object({
         description: z.string().optional(),
       }),
     )
-    .min(1),
+    .min(1)
+    .describe('Chronological events'),
   title: z.string().optional(),
 })
 
 export const widget = defineGenUIWidget({
   name: 'render_timeline',
+  description:
+    'Display a chronological timeline of events. Use for history, news recaps, or project milestones.',
   schema,
+  promptHint: 'chronological events, history, news recaps, or milestones',
   render: ({ events, title }) => (
     <div className="my-3">
       {title && (

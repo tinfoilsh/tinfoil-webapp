@@ -1,108 +1,260 @@
-import { PROJECTS_CHANGED, useProjects } from '@/hooks/use-projects'
-import { HarnessError } from '@/services/harness/sse'
+import { SYNC_PROJECTS_INVALIDATED } from '@/constants/storage-keys'
+import { useProjects } from '@/hooks/use-projects'
+import type { Project, ProjectListResponse } from '@/types/project'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { beforeEach, expect, it, vi, type Mock } from 'vitest'
-import { client, signIn } from '../harness-fixture'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/utils/error-handling', () => ({
-  logError: vi.fn(),
-  logInfo: vi.fn(),
-  logWarning: vi.fn(),
+const mocks = vi.hoisted(() => ({
+  auth: { isSignedIn: true, userId: 'cached-project-user' },
+  getCachedProjects: vi.fn(),
+  replaceProjects: vi.fn(),
+  listProjects: vi.fn(),
+  getRemoteProjects: vi.fn(),
+  invalidateCache: vi.fn(),
+  cacheState: { generation: 0, refreshGeneration: 0 },
 }))
 
-const project = (id: string) => ({
-  id,
-  name: id,
+vi.mock('@clerk/react', () => ({
+  useAuth: () => mocks.auth,
+}))
+
+vi.mock('@/services/storage/project-cache', () => ({
+  PROJECT_CACHE_UPDATED_EVENT: 'projectCacheUpdated',
+  projectCache: {
+    captureGeneration: () => mocks.cacheState.generation,
+    captureRefreshGeneration: () => mocks.cacheState.refreshGeneration,
+    isCurrentRefreshGeneration: (generation: number) =>
+      generation === mocks.cacheState.refreshGeneration,
+    invalidate: () => {
+      mocks.cacheState.generation += 1
+      mocks.cacheState.refreshGeneration += 1
+      mocks.invalidateCache()
+    },
+    getProjects: mocks.getCachedProjects,
+    replaceProjects: mocks.replaceProjects,
+  },
+}))
+
+vi.mock('@/services/cloud/project-storage', () => ({
+  projectStorage: {
+    listProjects: mocks.listProjects,
+    getProjects: mocks.getRemoteProjects,
+  },
+}))
+
+const cachedProject: Project = {
+  id: 'project-1',
+  name: 'Cached project',
   description: '',
   systemInstructions: '',
   memory: [],
-  createdAt: '2026-09-01T12:00:00Z',
-  updatedAt: '2026-09-01T12:00:00Z',
+  createdAt: '2026-08-10T12:00:00.000Z',
+  updatedAt: '2026-08-10T12:00:00.000Z',
   syncVersion: 1,
-})
-const ALPHA = project('alpha')
-const BETA = project('beta')
+}
 
-let post: Mock
+describe('useProjects', () => {
+  beforeEach(() => {
+    mocks.auth.isSignedIn = true
+    mocks.auth.userId = 'cached-project-user'
+    mocks.cacheState.generation = 0
+    mocks.cacheState.refreshGeneration = 0
+    mocks.invalidateCache.mockReset()
+    mocks.getCachedProjects.mockReset().mockResolvedValue([cachedProject])
+    mocks.replaceProjects.mockReset().mockResolvedValue(undefined)
+    mocks.listProjects.mockReset()
+    mocks.getRemoteProjects.mockReset()
+  })
 
-beforeEach(() => {
-  signIn()
-  post = client.post
-})
-
-it('keeps the list read after a change when an earlier read finishes last', async () => {
-  let finishStale!: (page: unknown) => void
-  post
-    .mockReturnValueOnce(
+  it('renders cached projects while revalidating in the background', async () => {
+    let resolveRemotePage!: (value: {
+      projects: Array<{
+        id: string
+        key: string
+        createdAt: string
+        updatedAt: string
+        syncVersion: number
+        size: number
+      }>
+      hasMore: boolean
+    }) => void
+    mocks.listProjects.mockReturnValue(
       new Promise((resolve) => {
-        finishStale = resolve
+        resolveRemotePage = resolve
       }),
     )
-    .mockResolvedValueOnce({ projects: [ALPHA, BETA], nextCursor: null })
-  const { result } = renderHook(() => useProjects())
-  await waitFor(() => expect(post).toHaveBeenCalledOnce())
 
-  act(() => {
-    window.dispatchEvent(new Event(PROJECTS_CHANGED))
+    const { result } = renderHook(() => useProjects())
+
+    await waitFor(() => {
+      expect(result.current.projects).toEqual([cachedProject])
+      expect(result.current.loading).toBe(false)
+    })
+
+    const refreshedProject = { ...cachedProject, name: 'Refreshed project' }
+    mocks.getRemoteProjects.mockResolvedValue(
+      new Map([[refreshedProject.id, refreshedProject]]),
+    )
+    await act(async () => {
+      resolveRemotePage({
+        projects: [
+          {
+            id: refreshedProject.id,
+            key: refreshedProject.id,
+            createdAt: refreshedProject.createdAt,
+            updatedAt: refreshedProject.updatedAt,
+            syncVersion: refreshedProject.syncVersion,
+            size: 0,
+          },
+        ],
+        hasMore: false,
+      })
+    })
+
+    await waitFor(() =>
+      expect(result.current.projects[0]?.name).toBe('Refreshed project'),
+    )
+    expect(mocks.replaceProjects).toHaveBeenCalledWith(
+      'cached-project-user',
+      [refreshedProject],
+      0,
+    )
   })
-  await waitFor(() => expect(result.current.projects).toEqual([ALPHA, BETA]))
-  await act(async () => finishStale({ projects: [ALPHA], nextCursor: null }))
 
-  expect(result.current.projects).toEqual([ALPHA, BETA])
-  expect(result.current.loading).toBe(false)
-  expect(post.mock.calls.map(([path]) => path)).toEqual([
-    '/v1/projects/list',
-    '/v1/projects/list',
-  ])
-})
+  it('clears cross-tab stale state and ignores an invalidated in-flight refresh', async () => {
+    mocks.auth.userId = 'cross-tab-project-user'
+    let resolveStalePage!: (value: ProjectListResponse) => void
+    mocks.listProjects
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveStalePage = resolve
+        }),
+      )
+      .mockResolvedValueOnce({ projects: [], hasMore: false })
+    mocks.getRemoteProjects.mockImplementation(async (ids: string[]) =>
+      ids.includes(cachedProject.id)
+        ? new Map([[cachedProject.id, cachedProject]])
+        : new Map(),
+    )
 
-it('lists the projects once for the hooks that load them together', async () => {
-  post.mockResolvedValue({ projects: [ALPHA], nextCursor: null })
-  // The chat page and its sidebar both load the list when they mount.
-  const { result } = renderHook(() => [useProjects(), useProjects()])
+    const { result } = renderHook(() => useProjects())
+    await waitFor(() =>
+      expect(result.current.projects).toEqual([cachedProject]),
+    )
 
-  await waitFor(() =>
-    expect(result.current.map((hook) => hook.projects)).toEqual([
-      [ALPHA],
-      [ALPHA],
-    ]),
-  )
-  expect(post).toHaveBeenCalledExactlyOnceWith(
-    '/v1/projects/list',
-    { key: 'Y29udGVudC1rZXk=', cursor: null },
-    expect.any(AbortSignal),
-  )
-})
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: SYNC_PROJECTS_INVALIDATED,
+          newValue: 'another-tab-signal',
+        }),
+      )
+    })
 
-it('shows a refresh from one hook wherever the projects are listed', async () => {
-  post
-    .mockResolvedValueOnce({ projects: [ALPHA], nextCursor: null })
-    .mockResolvedValueOnce({ projects: [ALPHA, BETA], nextCursor: null })
-  // The sidebar lists the projects; settings refreshes them after an import.
-  const { result } = renderHook(() => ({
-    sidebar: useProjects(),
-    settings: useProjects({ autoLoad: false }),
-  }))
-  await waitFor(() => expect(result.current.sidebar.projects).toEqual([ALPHA]))
+    await waitFor(() => expect(mocks.listProjects).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(result.current.projects).toEqual([]))
+    expect(mocks.invalidateCache).toHaveBeenCalledOnce()
 
-  await act(() => result.current.settings.refresh())
+    await act(async () => {
+      resolveStalePage({
+        projects: [
+          {
+            id: cachedProject.id,
+            key: cachedProject.id,
+            createdAt: cachedProject.createdAt,
+            updatedAt: cachedProject.updatedAt,
+            syncVersion: cachedProject.syncVersion,
+            size: 0,
+          },
+        ],
+        hasMore: false,
+      })
+    })
 
-  expect(result.current.sidebar.projects).toEqual([ALPHA, BETA])
-  expect(post).toHaveBeenCalledTimes(2)
-})
+    await waitFor(() => expect(result.current.projects).toEqual([]))
+    expect(mocks.replaceProjects).toHaveBeenCalledTimes(1)
+    expect(mocks.replaceProjects).toHaveBeenCalledWith(
+      'cross-tab-project-user',
+      [],
+      1,
+    )
+  })
 
-it('resolves a failed refresh and keeps its error', async () => {
-  post.mockRejectedValue(
-    new HarnessError(
-      { code: 'UPSTREAM_REFUSED', message: 'Projects are unavailable' },
-      503,
-    ),
-  )
-  const { result } = renderHook(() => useProjects({ autoLoad: false }))
+  it('hides the previous account projects immediately on user change', async () => {
+    let resolveRemotePage!: (value: {
+      projects: ProjectListResponse['projects']
+      hasMore: boolean
+    }) => void
+    mocks.auth.userId = 'first-project-user'
+    mocks.listProjects.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRemotePage = resolve
+      }),
+    )
+    const { result, rerender } = renderHook(() => useProjects())
+    await waitFor(() =>
+      expect(result.current.projects).toEqual([cachedProject]),
+    )
 
-  await act(() => result.current.refresh())
+    mocks.auth.userId = 'second-project-user'
+    mocks.getCachedProjects.mockReturnValue(new Promise(() => {}))
+    mocks.listProjects.mockReturnValue(new Promise(() => {}))
+    rerender()
 
-  expect(result.current.error).toBe('Projects are unavailable')
-  expect(result.current.loading).toBe(false)
-  expect(result.current.projects).toEqual([])
+    expect(result.current.projects).toEqual([])
+    expect(result.current.loading).toBe(true)
+    const previousUserProject = {
+      ...cachedProject,
+      id: 'previous-user-project',
+    }
+    mocks.getRemoteProjects.mockResolvedValue(
+      new Map([[previousUserProject.id, previousUserProject]]),
+    )
+    await act(async () => {
+      resolveRemotePage({
+        projects: [
+          {
+            id: previousUserProject.id,
+            key: previousUserProject.id,
+            createdAt: previousUserProject.createdAt,
+            updatedAt: previousUserProject.updatedAt,
+            syncVersion: previousUserProject.syncVersion,
+            size: 0,
+          },
+        ],
+        hasMore: false,
+      })
+    })
+    await waitFor(() => expect(result.current.projects).toEqual([]))
+  })
+
+  it('settles loading when cache and remote reads fail', async () => {
+    mocks.auth.userId = 'failed-project-user'
+    mocks.getCachedProjects.mockRejectedValue(new Error('Cache unavailable'))
+    mocks.listProjects.mockRejectedValue(new Error('Remote unavailable'))
+
+    const { result } = renderHook(() => useProjects())
+
+    await waitFor(() => expect(result.current.error).toBe('Remote unavailable'))
+    expect(result.current.loading).toBe(false)
+    expect(result.current.projects).toEqual([])
+  })
+
+  it('does not expose the previous account cache when the next load fails', async () => {
+    mocks.auth.userId = 'loaded-project-user'
+    mocks.listProjects.mockReturnValue(new Promise(() => {}))
+    const { result, rerender } = renderHook(() => useProjects())
+    await waitFor(() =>
+      expect(result.current.projects).toEqual([cachedProject]),
+    )
+
+    mocks.auth.userId = 'failed-next-project-user'
+    mocks.getCachedProjects.mockRejectedValue(new Error('Cache unavailable'))
+    mocks.listProjects.mockRejectedValue(new Error('Remote unavailable'))
+    rerender()
+
+    await waitFor(() => expect(result.current.error).toBe('Remote unavailable'))
+    expect(result.current.projects).toEqual([])
+    expect(result.current.loading).toBe(false)
+  })
 })

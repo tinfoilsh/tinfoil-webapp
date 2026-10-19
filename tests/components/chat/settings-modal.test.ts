@@ -1,5 +1,4 @@
 import {
-  describeImportProgress,
   describeOffDeviceImportError,
   describeOffDeviceImportKickoff,
   describeOffDeviceImportOutcome,
@@ -7,7 +6,7 @@ import {
   getDeleteAllChatsSuccessTitle,
   importResultTitle,
 } from '@/components/chat/settings-modal'
-import { ImportSequenceError } from '@/services/harness/archives'
+import { OffDeviceImportSequenceError } from '@/services/chat-import/off-device-import'
 import { describe, expect, it } from 'vitest'
 
 describe('settings chat deletion confirmation', () => {
@@ -117,7 +116,7 @@ describe('off-device import kickoff', () => {
   })
 })
 
-describe('import outcome across split files', () => {
+describe('off-device import outcome across split files', () => {
   const files = [
     'conversations-000.json',
     'conversations-001.json',
@@ -153,8 +152,8 @@ describe('import outcome across split files', () => {
           failed: 0,
           total: 0,
           errors: ['import archive could not be read'],
-          failureReason: 'invalid_archive',
-          failureDetail: 'unexpected_json',
+          failure_reason: 'invalid_archive',
+          failure_detail: 'unexpected_json',
         },
         fileIndex: 0,
         importedBefore: 0,
@@ -201,7 +200,7 @@ describe('import outcome across split files', () => {
 
   it('keeps earlier chats and names the file when a later file throws', () => {
     const result = describeOffDeviceImportError(
-      new ImportSequenceError(
+      new OffDeviceImportSequenceError(
         new Error('an import is already in progress'),
         1,
         4,
@@ -222,7 +221,11 @@ describe('import outcome across split files', () => {
   it('reports a single file that throws by its message alone', () => {
     expect(
       describeOffDeviceImportError(
-        new ImportSequenceError(new Error('The export file is empty'), 0, 0),
+        new OffDeviceImportSequenceError(
+          new Error('The export file is empty'),
+          0,
+          0,
+        ),
         ['export.zip'],
       ),
     ).toEqual({
@@ -230,54 +233,6 @@ describe('import outcome across split files', () => {
       chatsImported: 0,
       projectsImported: 0,
       errors: ['The export file is empty'],
-    })
-  })
-})
-
-describe('import progress', () => {
-  it('advances an upload a file at a time', () => {
-    expect(
-      describeImportProgress({
-        type: 'upload',
-        file: 2,
-        files: 3,
-        uploadedBytes: 2 * 1024 * 1024,
-        totalBytes: 8 * 1024 * 1024,
-      }),
-    ).toEqual({
-      title: 'Uploading file 2 of 3...',
-      detail: '2.0 MB of 8.0 MB uploaded',
-      percent: 25,
-    })
-    expect(
-      describeImportProgress({
-        type: 'upload',
-        file: 1,
-        files: 1,
-        uploadedBytes: 0,
-        totalBytes: 3 * 1024,
-      }),
-    ).toEqual({
-      title: 'Uploading export...',
-      detail: '3.0 KB',
-      percent: 0,
-    })
-  })
-
-  it('counts the chats of a file being processed', () => {
-    expect(
-      describeImportProgress({
-        type: 'processing',
-        file: 1,
-        files: 2,
-        imported: 3,
-        total: 12,
-      }),
-    ).toEqual({
-      title: 'Importing file 1 of 2...',
-      detail:
-        '3 of 12 chats. Keep this page open until every file has started.',
-      percent: 25,
     })
   })
 })

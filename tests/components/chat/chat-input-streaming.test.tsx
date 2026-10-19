@@ -23,6 +23,8 @@ vi.mock('@/components/chat/hooks/use-chat-font', () => ({
 
 describe('ChatInput streaming action', () => {
   afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
@@ -62,6 +64,7 @@ describe('ChatInput streaming action', () => {
         inputMinHeight="40px"
         isDarkMode
         isPremium
+        audioModel="audio-model"
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Start recording' }))
@@ -80,18 +83,18 @@ describe('ChatInput streaming action', () => {
 
   it('shows Stop while a recovered response is streaming', () => {
     const cancelGeneration = vi.fn()
-    const props = {
-      input: '',
-      setInput: vi.fn(),
-      handleSubmit: vi.fn(),
-      cancelGeneration,
-      inputRef: createRef<HTMLTextAreaElement>(),
-      handleInputFocus: vi.fn(),
-      inputMinHeight: '40px',
-      isDarkMode: true,
-    }
-    const { rerender } = render(
-      <ChatInput {...props} loadingState="streaming" />,
+    render(
+      <ChatInput
+        input=""
+        setInput={vi.fn()}
+        handleSubmit={vi.fn()}
+        loadingState="streaming"
+        cancelGeneration={cancelGeneration}
+        inputRef={createRef<HTMLTextAreaElement>()}
+        handleInputFocus={vi.fn()}
+        inputMinHeight="40px"
+        isDarkMode
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Stop generation' }))
@@ -100,6 +103,22 @@ describe('ChatInput streaming action', () => {
     expect(
       screen.queryByRole('button', { name: 'Send' }),
     ).not.toBeInTheDocument()
+  })
+
+  it('returns to the Send action as soon as cancellation is reflected', () => {
+    const props = {
+      input: '',
+      setInput: vi.fn(),
+      handleSubmit: vi.fn(),
+      cancelGeneration: vi.fn(),
+      inputRef: createRef<HTMLTextAreaElement>(),
+      handleInputFocus: vi.fn(),
+      inputMinHeight: '40px',
+      isDarkMode: true,
+    }
+    const { rerender } = render(
+      <ChatInput {...props} loadingState="streaming" />,
+    )
 
     rerender(<ChatInput {...props} loadingState="idle" />)
 
