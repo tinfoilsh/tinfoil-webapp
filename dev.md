@@ -1,8 +1,8 @@
 # Local development
 
-Copy `.env.example` to `.env.local` and configure Clerk, the controlplane URL, and `NEXT_PUBLIC_HARNESS_ENCLAVE_URL`. The harness URL must be a deployed, attested HTTPS origin. The webapp no longer has a model-router proxy, simulator, or plain HTTP mode.
+Copy `.env.example` to `.env.local` and configure Clerk, the controlplane URL, and `NEXT_PUBLIC_HARNESS_ENCLAVE_URL` (default `https://chat-api.tinfoil.sh`). The harness URL must be a deployed, attested HTTPS origin.
 
-Use `npm run dev` to run the existing Next.js UI against that harness. Account, project, attachment, and key operations use the configured services and account. Use a test account for these checks.
+Use `npm run dev` to run the UI against that harness. It uses real services and the signed-in account, so use a test account.
 
 ## Automated tests
 
@@ -25,11 +25,8 @@ To reproduce a shuffled failure, pass the seed printed by Vitest:
 for normal validation. CI runs test typechecking and shuffled Vitest tests before
 the production build; `npm run test:unit` is the local watch command.
 
-The suite uses happy-dom, fake IndexedDB, and local HTTP servers for script tests.
-Configuration lints are not browser CSP or layout verification. The separate
-scheduled `check:clerk-privacy` command checks the live Clerk environment.
-
-The tests replace transport with fixtures and cover rendering, key custody, event reduction, reconnects, uploads, and account isolation. They do not verify a deployed enclave or replace a browser smoke test. See [HARNESS.md](./HARNESS.md) for ownership and cutover details.
+The separate scheduled `check:clerk-privacy` command checks the live Clerk
+environment.
 
 ## Releases
 
