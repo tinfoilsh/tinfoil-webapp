@@ -1,16 +1,13 @@
-# Local development
+# Development
 
-The recommended local workflow runs the webapp with the Dev Simulator, a local API gateway, and selected controlplane mocks. A local model router is optional.
-
-## Quick start
-
-### 1. Configure the environment
+## Setup
 
 ```bash
+npm install
 cp .env.example .env.local
 ```
 
-Set:
+In `.env.local`, add the Clerk keys and set:
 
 ```env
 NEXT_PUBLIC_DEV=true
@@ -18,176 +15,42 @@ NEXT_PUBLIC_API_BASE_URL=https://api.tinfoil.sh
 NEXT_PUBLIC_DEV_API_KEY=tf-api-key
 ```
 
-`NEXT_PUBLIC_DEV_API_KEY` is only used when testing inference against the optional local model router. Clerk continues to provide normal account authentication.
+`NEXT_PUBLIC_DEV_API_KEY` is only used by the optional local model router. Hosted builds reject `NEXT_PUBLIC_DEV=true`.
 
-### 2. Start the local API gateway
-
-```bash
-npm run dev:backend
-```
-
-This starts port 3001 and provides:
-
-- The Dev Simulator endpoint
-- Registered controlplane mocks
-- Forwarding for unmatched controlplane APIs
-
-### 3. Start the frontend
+## Running locally
 
 ```bash
-npm run dev
+npm run dev:backend   # port 3001: Dev Simulator, controlplane mocks, forwarding to NEXT_PUBLIC_API_BASE_URL
+npm run dev           # port 3000: the app
 ```
 
-Open http://localhost:3000 and sign in when testing account-scoped features such as safeguards.
+Open http://localhost:3000 and sign in to test account-scoped features such as safeguards. Add controlplane mocks in `scripts/mock-controlplane.mjs`.
 
-## Local architecture
-
-| Process            | Port | Required | Purpose                                                           |
-| ------------------ | ---: | -------- | ----------------------------------------------------------------- |
-| Next frontend      | 3000 | Yes      | Application UI and same-origin API entrypoint                     |
-| Local API gateway  | 3001 | Yes      | Dev Simulator, registered mocks, and real-controlplane forwarding |
-| Local model router | 8090 | No       | Optional testing of actual model-router requests                  |
-
-Frontend routing in explicit local dev mode:
-
-```text
-/api/local-router/* → optional model router on port 8090
-/api/*              → local API gateway on port 3001
-```
-
-Gateway routing:
-
-```text
-POST /api/dev/simulator → Dev Simulator
-registered mock route   → matching mock module
-unknown /api/dev/*      → 404; never forwarded to production
-remaining /api/*        → NEXT_PUBLIC_API_BASE_URL
-```
-
-Future controlplane mocks are registered in `scripts/mock-controlplane.mjs`. Next and the static development server do not know individual mock routes.
-
-## What changes in local mode
-
-| Concern            | Production                                   | Local development                                                                           |
-| ------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Controlplane API   | Browser contacts the configured API directly | Browser uses the same-origin gateway; selected routes are mocked and the rest are forwarded |
-| Clerk              | Real Clerk                                   | Real Clerk                                                                                  |
-| Safeguards         | Real controlplane                            | Local mock using the production client contract                                             |
-| Default UI testing | Production models                            | Dev Simulator                                                                               |
-| Local model router | Not applicable                               | Optional                                                                                    |
-| Inference auth     | Clerk/delegated token                        | Static key only for the optional local router                                               |
-| Attestation        | Enabled                                      | Disabled only for optional local-router inference                                           |
-| Stream logs        | Disabled                                     | Available locally                                                                           |
-
-Hosted builds reject `NEXT_PUBLIC_DEV=true`.
-
-## Dev Simulator
-
-Select **Dev Simulator** in the model picker. It does not require the local model router.
-
-Send:
-
-```text
-help
-```
-
-for the complete command list. Useful commands include:
-
-```text
-test thoughts
-test long thoughts
-test no thoughts
-test rapid
-test code
-test retry
-test error
-```
-
-`test error` shows the local connection-error banner. Resending repeats the error; a different message resumes normal simulator responses.
-
-## Testing safeguards
-
-Safeguard testing requires local Clerk sign-in so the production safeguards client obtains and sends its normal bearer header. The mock requires the header but does not validate the token cryptographically.
-
-1. Start both the gateway and frontend.
-2. Sign in.
-3. Select **Dev Simulator**.
-4. Create a chat and send:
-
-   ```text
-   flag safeguard
-   ```
-
-5. Confirm the sidebar marker, Settings → Safeguards entry, read-only banner, and disabled generation actions.
-6. Refresh and confirm the flag persists. Mock state lives in the backend process.
-7. Create an unflagged chat and send:
-
-   ```text
-   reset safeguards
-   ```
-
-Restarting `npm run dev:backend` also clears all mock flags. No real controlplane violation is created.
-
-The signed-in client fetches safeguards immediately, every 30 seconds while visible, and when the page regains focus or comes back online. Generation waits for the first successful safeguard response; later refreshes preserve the last successful state.
-
-## Verifying gateway routing
-
-```bash
-# Unmocked request forwarded to real controlplane
-curl -i 'http://localhost:3000/api/config/models?chat=true'
-
-# Mock endpoint requires a bearer header
-curl -i http://localhost:3000/api/users/me/safeguard-flags
-
-# Local mock response
-curl -i \
-  -H 'Authorization: Bearer local-test' \
-  http://localhost:3000/api/users/me/safeguard-flags
-
-# Unknown development routes never reach production
-curl -i http://localhost:3000/api/dev/not-a-real-route
-```
-
-If port 3001 is unavailable, local API requests fail rather than bypassing the gateway or contacting controlplane directly.
-
-## Optional local model router
-
-Run an OpenAI-compatible model router on `localhost:8090`, then select one of the normal development models instead of Dev Simulator.
-
-The frontend proxies `/api/local-router/*` to the router and strips the prefix. This path uses `NEXT_PUBLIC_DEV_API_KEY` and bypasses the production attested inference client.
-
-Development models are defined in `src/config/models.ts` under `DEV_MODELS`.
-
-## Static development server
-
-To test the production static export locally, leave `dev:backend` running and replace `npm run dev` with:
+To test the static export instead of `npm run dev`, keep `dev:backend` running:
 
 ```bash
 npm run build
 npm run dev:serve
 ```
 
-`dev:serve` serves `out/` on port 3000 and applies the same API-gateway and model-router boundaries as Next development mode.
+With `NEXT_PUBLIC_DEV=true`, streamed responses are saved per chat as Markdown under `logs/` (gitignored).
 
-## Stream logging
+## Dev Simulator
 
-In local mode, streaming responses can be written under `logs/` as per-chat Markdown transcripts. Both frontend modes accept stream-log uploads through:
+Select **Dev Simulator** in the model picker. Send `help` for the full command list. Useful commands:
 
-```text
-POST /api/dev/stream-log
-```
+- `test thoughts`, `test long thoughts`, `test no thoughts`: responses with and without reasoning
+- `test rapid`, `test code`: fast streaming and code blocks
+- `test retry`: fails three times, then succeeds after automatic retries
+- `test error`: the connection-error banner (send a different message to resume)
+- `flag safeguard`: flags the chat in the local safeguards mock (requires sign-in)
+- `reset safeguards`: clears all mock flags when sent from an unflagged chat (restarting `dev:backend` also clears them)
 
-The `logs/` directory is gitignored.
+## Optional local model router
 
-## Troubleshooting
+Run an OpenAI-compatible model router on `localhost:8090` and select a model from `DEV_MODELS` in `src/config/models.ts`. These requests use `NEXT_PUBLIC_DEV_API_KEY` and skip attestation.
 
-- **Port 3000 occupied:** stop the previous `npm run dev` or `npm run dev:serve` process.
-- **Port 3001 unavailable:** start `npm run dev:backend`; gateway requests otherwise return 502.
-- **Port 8090 unavailable:** only optional local-router models fail. Dev Simulator still works.
-- **Safeguard command asks for sign-in:** authenticate with Clerk locally.
-- **Stale mock flags:** send `reset safeguards` from an unflagged chat or restart `dev:backend`.
-
-## Automated tests
+## Testing
 
 ```bash
 npm test
@@ -197,44 +60,17 @@ npm run lint
 npm run build
 ```
 
-To reproduce a shuffled failure, pass the seed printed by Vitest:
-`npm run test:shuffle -- --sequence.seed=42`. Keep the workstation's timezone
-for normal validation. CI runs test typechecking and shuffled Vitest tests before
-the production build; `npm run test:unit` is the local watch command.
-
-The suite uses happy-dom, fake IndexedDB, and local HTTP servers for script tests.
-Configuration lints are not browser CSP or layout verification. The separate
-scheduled `check:clerk-privacy` command checks the live Clerk environment.
+Reproduce a shuffled failure with the seed Vitest prints: `npm run test:shuffle -- --sequence.seed=42`. `npm run test:unit` runs Vitest in watch mode. `npm run check:clerk-privacy` checks the live Clerk environment and runs on a schedule in CI.
 
 ## Releases
 
-Releases use a two-step local command so package versions are committed before the matching tag is created. Start with a clean `main` branch and an authenticated GitHub CLI (`gh auth status`).
-
-### 1. Prepare the version
+Start from a clean `main` with an authenticated GitHub CLI (`gh auth status`).
 
 ```bash
 git switch main
-npm run release -- prepare 1.0.3
-```
-
-The command:
-
-1. Updates `package.json` and `package-lock.json`.
-2. Creates and pushes a release branch.
-3. Opens a version pull request.
-4. Verifies the pull request head and immediately squash-merges it.
-
-The merge does not wait for CI checks. If it fails, the command prints the pull request URL and a manual recovery command.
-
-### 2. Publish the tag
-
-After preparation finishes, publish the same version:
-
-```bash
+npm run release -- prepare 1.0.3   # bumps the version, opens the version PR, and squash-merges it without waiting for CI
 git switch main
-npm run release -- publish 1.0.3
+npm run release -- publish 1.0.3   # tags the merged version and pushes only that tag, which starts the release workflow
 ```
 
-This updates local `main`, verifies the committed package version, creates one annotated tag, and pushes only that tag. The tag push starts the GitHub workflow that publishes the release and generated release notes.
-
-Do not use `git push --tags`; GitHub does not emit workflow events when more than three tags are pushed together. If a valid tag misses its release, run the **Create Release** workflow manually with that tag.
+Do not use `git push --tags`; GitHub skips workflow events when more than three tags are pushed together. If a tag misses its release, run the **Create Release** workflow manually with that tag.
