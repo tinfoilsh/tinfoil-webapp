@@ -19,6 +19,8 @@ NEXT_PUBLIC_DEV_API_KEY=tf-api-key
 
 ## Running locally
 
+Run each command in its own terminal:
+
 ```bash
 npm run dev:backend   # port 3001: Dev Simulator, controlplane mocks, forwarding to NEXT_PUBLIC_API_BASE_URL
 npm run dev           # port 3000: the app
