@@ -554,6 +554,39 @@ describe('chat revision synchronization', () => {
     )
   })
 
+  it('picks the recent missing rows by activity rather than write time', async () => {
+    getSyncState.mockResolvedValue(null)
+    revisionSummary.mockResolvedValue({
+      current_revision: '60',
+      oldest_replayable_revision: '1',
+    })
+    // Write times rise with the index while activity falls, as when old
+    // chats are imported or re-uploaded after newer conversations.
+    const items = Array.from({ length: MISSING_CHAT_COUNT }, (_, index) => ({
+      id: `missing-${index}`,
+      etag: '2',
+      key_id: 'key-1',
+      project_id: null,
+      updated_at: new Date(Date.UTC(2026, 0, index + 1)).toISOString(),
+      activity_at: new Date(Date.UTC(2025, 0, 60 - index)).toISOString(),
+    }))
+    revisionSnapshot.mockResolvedValue({ snapshot_revision: '60', items })
+    getChat.mockResolvedValue(null)
+    downloadChats.mockImplementation(async (ids: string[]) =>
+      ids.map((id) => ({ status: 'ok', id, content: '{}', syncVersion: 2 })),
+    )
+
+    await drainChatRevisionSync(adapter, userId)
+
+    const pulledIds = downloadChats.mock.calls.flatMap(([ids]) => ids)
+    expect(pulledIds).toEqual(
+      Array.from(
+        { length: EXPECTED_RECENT_CHAT_COUNT },
+        (_, index) => `missing-${index}`,
+      ),
+    )
+  })
+
   it('stores earlier bootstrap batches before a later batch fails', async () => {
     getSyncState.mockResolvedValue(null)
     revisionSummary.mockResolvedValue({
