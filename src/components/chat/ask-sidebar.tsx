@@ -63,14 +63,7 @@ export function AskSidebar({
   const currentModel = findSelectableModel(selectedModel, models) || models[0]
   const sidebarScrollRef = useRef<HTMLDivElement>(null)
 
-  const lastMessage = messages[messages.length - 1]
-  const showLoadingDots =
-    isWaitingForResponse &&
-    !(
-      lastMessage &&
-      lastMessage.role === 'assistant' &&
-      (lastMessage.isThinking || (lastMessage.thoughts && !lastMessage.content))
-    )
+  const showLoadingDots = isWaitingForResponse
 
   return (
     <>

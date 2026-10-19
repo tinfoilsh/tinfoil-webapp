@@ -8,10 +8,6 @@ import { sanitizeUrl } from '@braintree/sanitize-url'
 import { TfLockLocked } from '@tinfoilsh/tinfoil-icons'
 import { memo } from 'react'
 import ReactMarkdown from 'react-markdown'
-import {
-  getMessageAttachments,
-  hasMessageAttachments,
-} from './attachment-helpers'
 import { useMathPlugins } from './renderers/components/use-math-plugins'
 import type { Message } from './types'
 
@@ -223,11 +219,11 @@ const PrintableMessage = memo(function PrintableMessage({
         </span>
       </div>
 
-      {hasMessageAttachments(message) && (
+      {!!message.attachments?.length && (
         <div className="printable-documents">
           <span className="printable-documents-label">Attachments:</span>
           <ul>
-            {getMessageAttachments(message).map((a) => (
+            {message.attachments.map((a) => (
               <li key={a.id}>{a.fileName}</li>
             ))}
           </ul>

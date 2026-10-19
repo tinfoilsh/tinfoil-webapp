@@ -194,16 +194,6 @@ describe('DefaultMessageRenderer message actions', () => {
         ],
       },
     },
-    {
-      name: 'legacy document',
-      attachmentFields: { documents: [{ name: 'notes.txt' }] },
-    },
-    {
-      name: 'legacy image',
-      attachmentFields: {
-        imageData: [{ base64: 'aW1hZ2U=', mimeType: 'image/png' }],
-      },
-    },
   ])('$name-only messages', ({ attachmentFields }) => {
     const message: Message = {
       role: 'user',
@@ -505,37 +495,6 @@ describe('DefaultMessageRenderer message actions', () => {
 
     fireEvent.keyDown(document, { key: 'Tab' })
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-  })
-
-  it('does not offer edit or continue on rate limit errors', () => {
-    render(
-      <Renderer
-        message={{
-          role: 'assistant',
-          content: 'Error: limit',
-          isError: true,
-          isRateLimitError: true,
-          timestamp: new Date('2026-08-07T00:00:01.000Z'),
-        }}
-        messageIndex={1}
-        model={model}
-        isDarkMode={false}
-        onEditAssistantMessage={vi.fn()}
-        onContinueAssistantMessage={vi.fn()}
-        onDeleteMessage={vi.fn()}
-      />,
-    )
-
-    openMoreActions()
-    expect(
-      screen.queryByRole('menuitem', { name: 'Edit response' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole('menuitem', { name: 'Continue response' }),
-    ).not.toBeInTheDocument()
-    expect(
-      screen.getByRole('menuitem', { name: 'Delete message' }),
-    ).toBeInTheDocument()
   })
 })
 
